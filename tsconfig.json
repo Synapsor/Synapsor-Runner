@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/control-plane-client" },
+    { "path": "./packages/worker-core" },
+    { "path": "./packages/postgres" },
+    { "path": "./packages/mysql" },
+    { "path": "./apps/runner" }
+  ]
+}
+

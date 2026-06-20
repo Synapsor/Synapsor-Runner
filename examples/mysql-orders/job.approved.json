@@ -1,0 +1,27 @@
+{
+  "protocol_version": "1.0",
+  "job_id": "wbj_mysql_order_1001",
+  "proposal_id": "wrp://external/xwp_mysql_order_1001",
+  "approval_id": "appr_mysql_order_1001",
+  "source_id": "src_mysql_orders_demo",
+  "engine": "mysql",
+  "target": {
+    "schema": "synapsor_runner_demo",
+    "table": "orders",
+    "primary_key": { "column": "id", "value": "O-1001" },
+    "tenant_guard": { "column": "tenant_id", "value": "acme" }
+  },
+  "allowed_columns": ["status", "refund_note"],
+  "patch": {
+    "status": "refund_requested",
+    "refund_note": "Refund requires manager approval"
+  },
+  "conflict_guard": {
+    "kind": "version_column",
+    "column": "updated_at",
+    "expected_value": "2026-06-20 12:00:00"
+  },
+  "idempotency_key": "mysql-order-O-1001-v1",
+  "lease_expires_at": "2026-06-20T12:01:00Z"
+}
+

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Synapsor writeback job v1",
+  "type": "object",
+  "required": ["protocol_version", "job_id", "proposal_id", "approval_id", "source_id", "engine", "target", "allowed_columns", "patch", "conflict_guard", "idempotency_key", "lease_expires_at"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "job_id": { "type": "string", "minLength": 1 },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "approval_id": { "type": "string", "minLength": 1 },
+    "source_id": { "type": "string", "minLength": 1 },
+    "engine": { "enum": ["postgres", "mysql"] },
+    "target": {
+      "type": "object",
+      "required": ["schema", "table", "primary_key", "tenant_guard"],
+      "properties": {
+        "schema": { "type": "string", "minLength": 1 },
+        "table": { "type": "string", "minLength": 1 },
+        "primary_key": {
+          "type": "object",
+          "required": ["column", "value"],
+          "properties": {
+            "column": { "type": "string", "minLength": 1 },
+            "value": {}
+          }
+        },
+        "tenant_guard": {
+          "type": "object",
+          "required": ["column", "value"],
+          "properties": {
+            "column": { "type": "string", "minLength": 1 },
+            "value": {}
+          }
+        }
+      }
+    },
+    "allowed_columns": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "patch": { "type": "object", "minProperties": 1 },
+    "conflict_guard": { "type": "object" },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "lease_expires_at": {}
+  }
+}
+

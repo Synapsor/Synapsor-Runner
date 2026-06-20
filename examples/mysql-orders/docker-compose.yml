@@ -1,0 +1,13 @@
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_DATABASE: synapsor_runner_demo
+      MYSQL_USER: synapsor_writer
+      MYSQL_PASSWORD: synapsor_writer_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "53306:3306"
+    volumes:
+      - ./seed:/docker-entrypoint-initdb.d:ro
+

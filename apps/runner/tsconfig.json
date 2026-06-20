@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/worker-core" },
+    { "path": "../../packages/postgres" },
+    { "path": "../../packages/mysql" }
+  ],
+  "include": ["src/**/*.ts"]
+}
+

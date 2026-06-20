@@ -1,0 +1,21 @@
+{
+  "name": "synapsor-runner-monorepo",
+  "private": true,
+  "version": "0.1.0-alpha.0",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "find . -path '*/dist' -type d -prune -exec rm -rf {} +",
+    "lint": "tsc -b --pretty false",
+    "test": "vitest run",
+    "test:docker": "node scripts/smoke-local-examples.mjs",
+    "typecheck": "tsc -b --pretty false",
+    "runner": "tsx apps/runner/src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

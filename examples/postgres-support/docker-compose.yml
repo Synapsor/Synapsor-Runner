@@ -1,0 +1,12 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: synapsor_runner_demo
+      POSTGRES_USER: synapsor_writer
+      POSTGRES_PASSWORD: synapsor_writer_password
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./seed:/docker-entrypoint-initdb.d:ro
+
