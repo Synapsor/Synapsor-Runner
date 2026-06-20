@@ -57,7 +57,10 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 - Reject arbitrary SQL, model-controlled table/schema/column names, missing tenant/primary guards, and proposal capabilities without allowlisted columns.
   - Current status: implemented in `packages/config` unit tests.
 - Add local SQLite migrations for proposals, events, evidence, query audit, approvals, jobs, receipts, replay, and runner state.
+  - Current status: proposal/event/approval/writeback receipt foundation implemented in `packages/proposal-store`.
+  - Remaining: evidence items, query audit, writeback jobs, idempotency receipts, replay records, and runner state tables.
 - Add proposal immutability and approval-by-hash/version.
+  - Current status: implemented for proposal creation and approval in `packages/proposal-store`.
 
 ### Phase 3: MCP stdio server
 
@@ -115,13 +118,13 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 
 - Phase 1 protocol schemas/fixtures are implemented locally and covered by protocol tests.
 - `synapsor mcp audit <target>` is implemented as a static MCP database risk review for exported manifests/tools-list payloads.
-- Next code-only work is Phase 2: SQLite proposal/event store, proposal immutability, and approval-by-hash/version.
+- Next code-only work is completing the local store tables for evidence, query audit, writeback jobs, idempotency receipts, replay records, and runner state, then wiring it into local MCP capability execution.
 - Preserve existing worker behavior while adding local MCP/runtime layers.
 - Keep the existing Docker smoke path working.
 
 ## Release blockers
 
 - No standalone MCP server exists yet.
-- No local SQLite proposal/event store exists yet.
 - No local approval/replay CLI exists yet.
 - No Cloud-linked MCP catalog path is implemented in this repo yet.
+- `packages/proposal-store` currently uses Node 22 `node:sqlite`, which is still marked experimental by Node. Before a public runner release, either pin/support that runtime explicitly or replace it with a stable SQLite dependency.

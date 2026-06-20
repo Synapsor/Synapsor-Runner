@@ -40,7 +40,7 @@ Synapsor Runner runs inside your environment. It is the local-first MCP and data
 
 The existing runner can validate and apply guarded writeback jobs. The new public protocol schemas are present under `schemas/`, and protocol fixtures are under `fixtures/protocol/`.
 
-The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator for reviewed read/proposal tools. The standalone MCP server, local SQLite proposal store, local approval CLI, and local replay CLI are still planned on the `mcp-commit-safe-runtime` branch.
+The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator and a SQLite proposal/event store foundation for reviewed read/proposal tools. The standalone MCP server, local approval CLI, and local replay CLI are still planned on the `mcp-commit-safe-runtime` branch.
 
 ## Local demo
 
@@ -108,6 +108,7 @@ See `docs/mcp-audit.md`.
 - `fixtures/protocol`: versioned protocol fixtures shared with the main Synapsor repository.
 - `packages/config`: strict local capability config validation.
 - `packages/protocol`: Zod schemas and normalization for public/legacy job and receipt validation.
+- `packages/proposal-store`: SQLite local proposal/event/approval/receipt store.
 - `packages/control-plane-client`: claim, heartbeat, and result HTTP client.
 - `packages/worker-core`: shared config, redaction, validation, polling, and apply orchestration.
 - `packages/postgres`: Postgres adapter and receipt migration.
