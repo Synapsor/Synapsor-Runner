@@ -3,7 +3,8 @@
   "version": "0.1.0-alpha.0",
   "type": "module",
   "bin": {
-    "synapsor-runner": "dist/cli.js"
+    "synapsor-runner": "dist/cli.js",
+    "synapsor": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc -b",
@@ -20,4 +21,3 @@
     "vitest": "^3.2.0"
   }
 }
-

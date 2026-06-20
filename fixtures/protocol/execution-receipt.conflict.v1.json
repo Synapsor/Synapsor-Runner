@@ -1,0 +1,15 @@
+{
+  "schema_version": "synapsor.execution-receipt.v1",
+  "writeback_job_id": "wbj_124",
+  "proposal_id": "wrp_124",
+  "runner_id": "runner_123",
+  "status": "conflict",
+  "rows_affected": 0,
+  "idempotency_key": "wrp_124:INV-3001",
+  "previous_version": "2026-06-20T14:31:08Z",
+  "new_version": "2026-06-20T14:39:19Z",
+  "source_database_mutated": false,
+  "executed_at": "2026-06-20T14:40:19Z",
+  "safe_error_code": "VERSION_CONFLICT",
+  "receipt_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+}

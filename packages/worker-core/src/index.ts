@@ -1,6 +1,8 @@
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { parseWritebackJob, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
+export * from "./mcp-audit.js";
+
 export type RunnerConfig = {
   controlPlaneUrl: string;
   runnerToken: string;

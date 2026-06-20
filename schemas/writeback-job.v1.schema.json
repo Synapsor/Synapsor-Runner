@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.writeback-job.v1.schema.json",
+  "title": "Synapsor Writeback Job v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "writeback_job_id",
+    "proposal_id",
+    "proposal_version",
+    "proposal_hash",
+    "runner_scope",
+    "engine",
+    "operation",
+    "target",
+    "tenant_guard",
+    "allowed_columns",
+    "patch",
+    "conflict_guard",
+    "idempotency_key",
+    "lease"
+  ],
+  "properties": {
+    "schema_version": { "const": "synapsor.writeback-job.v1" },
+    "writeback_job_id": { "type": "string", "minLength": 1 },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "proposal_hash": { "type": "string", "pattern": "^sha256:.+" },
+    "runner_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "source_id"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "engine": { "enum": ["postgres", "mysql"] },
+    "operation": { "const": "single_row_update" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "table", "primary_key"],
+      "properties": {
+        "schema": { "type": "string", "minLength": 1 },
+        "table": { "type": "string", "minLength": 1 },
+        "primary_key": { "$ref": "#/$defs/columnValue" }
+      }
+    },
+    "tenant_guard": { "$ref": "#/$defs/columnValue" },
+    "allowed_columns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "patch": { "$ref": "#/$defs/scalarMap" },
+    "conflict_guard": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "column", "expected_value"],
+          "properties": {
+            "kind": { "const": "column" },
+            "column": { "type": "string", "minLength": 1 },
+            "expected_value": { "$ref": "#/$defs/scalar" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "expected_hash"],
+          "properties": {
+            "kind": { "const": "row_hash" },
+            "expected_hash": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "none" }
+          }
+        }
+      ]
+    },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lease_id", "attempt", "expires_at"],
+      "properties": {
+        "lease_id": { "type": "string", "minLength": 1 },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "$defs": {
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "scalarMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/scalar" },
+      "minProperties": 1
+    },
+    "columnValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value"],
+      "properties": {
+        "column": { "type": "string", "minLength": 1 },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    }
+  }
+}

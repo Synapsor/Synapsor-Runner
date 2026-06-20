@@ -4,7 +4,15 @@ import process from "node:process";
 import { mysqlAdapter } from "@synapsor-runner/mysql";
 import { postgresAdapter } from "@synapsor-runner/postgres";
 import { parseWritebackJob } from "@synapsor-runner/protocol";
-import { createLogger, doctorChecks, loadConfig, startPolling, type RunnerConfig } from "@synapsor-runner/worker-core";
+import {
+  auditMcpManifest,
+  createLogger,
+  doctorChecks,
+  formatMcpAuditReport,
+  loadConfig,
+  startPolling,
+  type RunnerConfig,
+} from "@synapsor-runner/worker-core";
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
 
@@ -18,6 +26,7 @@ async function main(argv: string[]): Promise<number> {
   if (command === "validate") return validate(rest);
   if (command === "apply") return apply(rest);
   if (command === "start") return start();
+  if (command === "mcp") return mcp(rest);
   usage();
   return 2;
 }
@@ -68,6 +77,25 @@ async function start(): Promise<number> {
   return 0;
 }
 
+async function mcp(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "audit") return mcpAudit(rest);
+  usage();
+  return 2;
+}
+
+async function mcpAudit(args: string[]): Promise<number> {
+  const json = args.includes("--json");
+  const target = args.find((arg) => !arg.startsWith("--"));
+  if (!target) {
+    throw new Error("mcp audit requires <target>");
+  }
+  const manifest = JSON.parse(await fs.readFile(target, "utf8"));
+  const report = auditMcpManifest(manifest, { target });
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatMcpAuditReport(report));
+  return 0;
+}
+
 async function readJob(args: string[]): Promise<unknown> {
   const index = args.indexOf("--job");
   const jobPath = index >= 0 ? args[index + 1] : undefined;
@@ -85,6 +113,7 @@ Commands:
   validate --job ./job.json
   apply --job ./job.json [--dry-run]
   start
+  mcp audit ./tools-list.json [--json]
 `);
 }
 

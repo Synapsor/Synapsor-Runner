@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/config" },
     { "path": "./packages/protocol" },
     { "path": "./packages/control-plane-client" },
     { "path": "./packages/worker-core" },
@@ -9,4 +10,3 @@
     { "path": "./apps/runner" }
   ]
 }
-

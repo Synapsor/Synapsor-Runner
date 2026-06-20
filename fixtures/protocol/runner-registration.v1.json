@@ -1,0 +1,22 @@
+{
+  "schema_version": "synapsor.runner-registration.v1",
+  "runner_id": "runner_123",
+  "runner_version": "0.1.0-alpha.0",
+  "engines": [
+    "postgres",
+    "mysql"
+  ],
+  "capabilities": [
+    "single_row_update",
+    "idempotency_receipts",
+    "version_conflict_guard"
+  ],
+  "scope": {
+    "project_id": "acme-support",
+    "source_ids": [
+      "src_pg_acme",
+      "src_mysql_acme"
+    ]
+  },
+  "registered_at": "2026-06-20T14:30:00Z"
+}

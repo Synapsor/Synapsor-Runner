@@ -1,0 +1,44 @@
+{
+  "schema_version": "synapsor.writeback-job.v1",
+  "writeback_job_id": "wbj_123",
+  "proposal_id": "wrp_123",
+  "proposal_version": 1,
+  "proposal_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "runner_scope": {
+    "project_id": "acme-support",
+    "source_id": "src_pg_acme"
+  },
+  "engine": "postgres",
+  "operation": "single_row_update",
+  "target": {
+    "schema": "public",
+    "table": "invoices",
+    "primary_key": {
+      "column": "id",
+      "value": "INV-3001"
+    }
+  },
+  "tenant_guard": {
+    "column": "tenant_id",
+    "value": "acme"
+  },
+  "allowed_columns": [
+    "late_fee_cents",
+    "waiver_reason"
+  ],
+  "patch": {
+    "late_fee_cents": 0,
+    "waiver_reason": "approved support waiver"
+  },
+  "conflict_guard": {
+    "kind": "column",
+    "column": "updated_at",
+    "expected_value": "2026-06-20T14:31:08Z"
+  },
+  "idempotency_key": "wrp_123:INV-3001",
+  "lease": {
+    "lease_id": "lease_123",
+    "attempt": 1,
+    "expires_at": "2026-06-20T14:36:00Z"
+  }
+}

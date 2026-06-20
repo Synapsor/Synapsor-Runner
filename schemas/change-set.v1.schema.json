@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.change-set.v1.schema.json",
+  "title": "Synapsor Change Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proposal_id",
+    "proposal_version",
+    "action",
+    "mode",
+    "principal",
+    "scope",
+    "source",
+    "before",
+    "patch",
+    "after",
+    "guards",
+    "evidence",
+    "approval",
+    "writeback",
+    "source_database_mutated",
+    "integrity",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "synapsor.change-set.v1" },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["read_only", "shadow", "review_required", "approved_for_writeback"] },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["trusted_session", "cloud_session", "environment", "static_dev"] }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "business_object", "object_id"],
+      "properties": {
+        "tenant_id": { "type": "string", "minLength": 1 },
+        "business_object": { "type": "string", "minLength": 1 },
+        "object_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source_id", "schema", "table", "primary_key"],
+      "properties": {
+        "kind": { "enum": ["external_postgres", "external_mysql", "synapsor_table"] },
+        "source_id": { "type": "string", "minLength": 1 },
+        "schema": { "type": "string", "minLength": 1 },
+        "table": { "type": "string", "minLength": 1 },
+        "primary_key": { "$ref": "#/$defs/columnValue" }
+      }
+    },
+    "before": { "$ref": "#/$defs/scalarMap" },
+    "patch": { "$ref": "#/$defs/scalarMap" },
+    "after": { "$ref": "#/$defs/scalarMap" },
+    "guards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant", "allowed_columns", "expected_version"],
+      "properties": {
+        "tenant": { "$ref": "#/$defs/columnValue" },
+        "allowed_columns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "expected_version": { "$ref": "#/$defs/columnValue" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["bundle_id", "query_fingerprint", "items"],
+      "properties": {
+        "bundle_id": { "type": "string", "minLength": 1 },
+        "query_fingerprint": { "type": "string", "pattern": "^sha256:.+" },
+        "items": { "type": "array" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["pending", "approved", "rejected", "canceled"] },
+        "required_role": { "type": "string" }
+      }
+    },
+    "writeback": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "mode"],
+      "properties": {
+        "status": { "enum": ["not_applied", "pending_worker", "applied", "conflict", "failed", "canceled"] },
+        "mode": { "enum": ["trusted_worker_required", "synapsor_merge", "read_only"] }
+      }
+    },
+    "source_database_mutated": { "type": "boolean" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_hash"],
+      "properties": {
+        "proposal_hash": { "type": "string", "pattern": "^sha256:.+" }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "scalarMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/scalar" },
+      "minProperties": 1
+    },
+    "columnValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value"],
+      "properties": {
+        "column": { "type": "string", "minLength": 1 },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.runner-registration.v1.schema.json",
+  "title": "Synapsor Runner Registration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "runner_id",
+    "runner_version",
+    "engines",
+    "capabilities",
+    "scope",
+    "registered_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "synapsor.runner-registration.v1" },
+    "runner_id": { "type": "string", "minLength": 1 },
+    "runner_version": { "type": "string", "minLength": 1 },
+    "engines": {
+      "type": "array",
+      "items": { "enum": ["postgres", "mysql"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "source_ids"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "source_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "registered_at": { "type": "string", "format": "date-time" }
+  }
+}

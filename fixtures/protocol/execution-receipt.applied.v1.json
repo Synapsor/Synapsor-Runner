@@ -1,0 +1,14 @@
+{
+  "schema_version": "synapsor.execution-receipt.v1",
+  "writeback_job_id": "wbj_123",
+  "proposal_id": "wrp_123",
+  "runner_id": "runner_123",
+  "status": "applied",
+  "rows_affected": 1,
+  "idempotency_key": "wrp_123:INV-3001",
+  "previous_version": "2026-06-20T14:31:08Z",
+  "new_version": "2026-06-20T14:34:19Z",
+  "source_database_mutated": true,
+  "executed_at": "2026-06-20T14:34:19Z",
+  "receipt_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+}

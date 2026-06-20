@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { parseWritebackJob } from "./index.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  parseChangeSet,
+  parseExecutionReceipt,
+  parseRunnerRegistration,
+  parseWritebackJob,
+  parseWritebackResult,
+  protocolVersions
+} from "./index.js";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 const validJob = {
   protocol_version: "1.0",
@@ -43,3 +55,59 @@ describe("writeback job schema", () => {
     expect(() => parseWritebackJob(withoutApproval)).toThrow(/approval_id/i);
   });
 });
+
+describe("public protocol fixtures", () => {
+  it("parses the public change-set fixture", () => {
+    const changeSet = parseChangeSet(fixture("change-set.late-fee-waiver.v1.json"));
+    expect(changeSet.schema_version).toBe(protocolVersions.changeSet);
+    expect(changeSet.source_database_mutated).toBe(false);
+    expect(changeSet.patch.late_fee_cents).toBe(0);
+  });
+
+  it("normalizes a public writeback-job fixture for the existing worker", () => {
+    const job = parseWritebackJob(fixture("writeback-job.late-fee-waiver.v1.json"));
+    expect(job.protocol_version).toBe("1.0");
+    expect(job.job_id).toBe("wbj_123");
+    expect(job.source_id).toBe("src_pg_acme");
+    expect(job.target.tenant_guard).toEqual({ column: "tenant_id", value: "acme" });
+    expect(job.conflict_guard).toEqual({
+      kind: "version_column",
+      column: "updated_at",
+      expected_value: "2026-06-20T14:31:08Z"
+    });
+    expect(job.patch).toEqual({ late_fee_cents: 0, waiver_reason: "approved support waiver" });
+  });
+
+  it("parses public execution receipts and normalizes them for control-plane callbacks", () => {
+    const receipt = parseExecutionReceipt(fixture("execution-receipt.applied.v1.json"));
+    expect(receipt.schema_version).toBe(protocolVersions.executionReceipt);
+    expect(receipt.source_database_mutated).toBe(true);
+
+    const result = parseWritebackResult(fixture("execution-receipt.conflict.v1.json"));
+    expect(result.protocol_version).toBe("1.0");
+    expect(result.job_id).toBe("wbj_124");
+    expect(result.status).toBe("conflict");
+    expect(result.affected_rows).toBe(0);
+    expect(result.error_code).toBe("VERSION_CONFLICT");
+  });
+
+  it("parses runner registration fixtures", () => {
+    const registration = parseRunnerRegistration(fixture("runner-registration.v1.json"));
+    expect(registration.schema_version).toBe(protocolVersions.runnerRegistration);
+    expect(registration.engines).toContain("postgres");
+    expect(registration.scope.source_ids).toContain("src_pg_acme");
+  });
+
+  it("keeps credentials and unrestricted SQL out of protocol fixtures", () => {
+    const fixtureDir = path.resolve(here, "../../../fixtures/protocol");
+    for (const file of fs.readdirSync(fixtureDir)) {
+      const text = fs.readFileSync(path.join(fixtureDir, file), "utf8");
+      expect(text).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret|execute_sql|run_query|raw_sql/i);
+    }
+  });
+});
+
+function fixture(name: string): unknown {
+  const file = path.resolve(here, "../../../fixtures/protocol", name);
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
