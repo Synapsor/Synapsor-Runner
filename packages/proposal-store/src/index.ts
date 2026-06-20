@@ -2,8 +2,10 @@ import { DatabaseSync } from "node:sqlite";
 import {
   parseChangeSet,
   parseExecutionReceipt,
+  parseWritebackJob,
   type ChangeSetV1,
   type ExecutionReceiptV1,
+  type WritebackJob,
 } from "@synapsor-runner/protocol";
 
 export type LocalProposalState =
@@ -42,6 +44,27 @@ export type ProposalEvent = {
   actor: string;
   payload: Record<string, unknown>;
   created_at: string;
+};
+
+export type StoredWritebackReceipt = {
+  writeback_job_id: string;
+  proposal_id: string;
+  runner_id: string;
+  status: string;
+  idempotency_key: string;
+  source_database_mutated: boolean;
+  receipt: ExecutionReceiptV1;
+  created_at: string;
+};
+
+export type ProposalReplayRecord = {
+  replay_id: string;
+  proposal: StoredProposal;
+  events: ProposalEvent[];
+  receipts: StoredWritebackReceipt[];
+  query_audit: Record<string, unknown>[];
+  evidence: Record<string, unknown>[];
+  generated_at: string;
 };
 
 export class ProposalStoreError extends Error {
@@ -126,6 +149,78 @@ export class ProposalStore {
         UNIQUE (writeback_job_id, idempotency_key),
         FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
       );
+
+      CREATE TABLE IF NOT EXISTS evidence_bundles (
+        evidence_bundle_id TEXT PRIMARY KEY,
+        proposal_id TEXT,
+        tenant_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS evidence_items (
+        evidence_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        evidence_bundle_id TEXT NOT NULL,
+        item_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (evidence_bundle_id) REFERENCES evidence_bundles(evidence_bundle_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS query_audit (
+        audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proposal_id TEXT,
+        evidence_bundle_id TEXT,
+        source_id TEXT NOT NULL,
+        query_fingerprint TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        row_count INTEGER NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id),
+        FOREIGN KEY (evidence_bundle_id) REFERENCES evidence_bundles(evidence_bundle_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS writeback_jobs (
+        writeback_job_id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL,
+        proposal_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        job_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS idempotency_receipts (
+        idempotency_key TEXT PRIMARY KEY,
+        writeback_job_id TEXT NOT NULL,
+        proposal_id TEXT NOT NULL,
+        receipt_status TEXT NOT NULL,
+        receipt_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (writeback_job_id) REFERENCES writeback_jobs(writeback_job_id),
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS replay_records (
+        replay_id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS runner_state (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_proposal_events_proposal_id ON proposal_events(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_query_audit_proposal_id ON query_audit(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_writeback_receipts_proposal_id ON writeback_receipts(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_replay_records_proposal_id ON replay_records(proposal_id);
 
       INSERT OR IGNORE INTO proposal_store_schema(version, applied_at)
       VALUES (1, datetime('now'));
@@ -303,6 +398,25 @@ export class ProposalStore {
       );
       this.db.prepare("UPDATE proposals SET state = ?, source_database_mutated = ?, updated_at = ? WHERE proposal_id = ?")
         .run(state, receipt.source_database_mutated ? 1 : proposal.source_database_mutated ? 1 : 0, now, receipt.proposal_id);
+      this.db.prepare(`
+        INSERT OR REPLACE INTO idempotency_receipts (
+          idempotency_key,
+          writeback_job_id,
+          proposal_id,
+          receipt_status,
+          receipt_json,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        receipt.idempotency_key,
+        receipt.writeback_job_id,
+        receipt.proposal_id,
+        receipt.status,
+        JSON.stringify(receipt),
+        now,
+      );
+      this.db.prepare("UPDATE writeback_jobs SET status = ?, updated_at = ? WHERE writeback_job_id = ?")
+        .run(receipt.status, now, receipt.writeback_job_id);
       this.appendEvent(receipt.proposal_id, `writeback_${receipt.status}`, receipt.runner_id, {
         writeback_job_id: receipt.writeback_job_id,
         rows_affected: receipt.rows_affected,
@@ -313,11 +427,149 @@ export class ProposalStore {
     return this.requireProposal(receipt.proposal_id);
   }
 
+  recordWritebackJob(input: unknown): WritebackJob {
+    const job = parseWritebackJob(input);
+    const proposal = this.requireProposal(job.proposal_id);
+    const proposalHash = job.approval_id;
+    assertProposalIdentity(proposal, proposalHash, proposal.proposal_version);
+    const now = new Date().toISOString();
+    this.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO writeback_jobs (
+          writeback_job_id,
+          proposal_id,
+          proposal_hash,
+          status,
+          job_json,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(writeback_job_id) DO UPDATE SET
+          status = excluded.status,
+          job_json = excluded.job_json,
+          updated_at = excluded.updated_at
+      `).run(job.job_id, job.proposal_id, proposalHash, "pending_worker", JSON.stringify(job), now, now);
+      this.appendEvent(job.proposal_id, "writeback_job_recorded", "runner", {
+        writeback_job_id: job.job_id,
+        proposal_hash: proposalHash,
+        source_id: job.source_id,
+      });
+    });
+    return job;
+  }
+
+  recordEvidenceBundle(input: {
+    evidence_bundle_id: string;
+    proposal_id?: string;
+    tenant_id: string;
+    payload: Record<string, unknown>;
+    items?: Record<string, unknown>[];
+  }): void {
+    const now = new Date().toISOString();
+    if (input.proposal_id) this.requireProposal(input.proposal_id);
+    this.transaction(() => {
+      this.db.prepare(`
+        INSERT OR REPLACE INTO evidence_bundles (
+          evidence_bundle_id,
+          proposal_id,
+          tenant_id,
+          payload_json,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?)
+      `).run(input.evidence_bundle_id, input.proposal_id ?? null, input.tenant_id, JSON.stringify(input.payload), now);
+      for (const item of input.items ?? []) {
+        this.db.prepare(`
+          INSERT INTO evidence_items (evidence_bundle_id, item_json, created_at)
+          VALUES (?, ?, ?)
+        `).run(input.evidence_bundle_id, JSON.stringify(item), now);
+      }
+      if (input.proposal_id) {
+        this.appendEvent(input.proposal_id, "evidence_recorded", "runner", {
+          evidence_bundle_id: input.evidence_bundle_id,
+          item_count: input.items?.length ?? 0,
+        });
+      }
+    });
+  }
+
+  recordQueryAudit(input: {
+    proposal_id?: string;
+    evidence_bundle_id?: string;
+    source_id: string;
+    query_fingerprint: string;
+    table_name: string;
+    row_count: number;
+    payload: Record<string, unknown>;
+  }): void {
+    const now = new Date().toISOString();
+    if (input.proposal_id) this.requireProposal(input.proposal_id);
+    this.db.prepare(`
+      INSERT INTO query_audit (
+        proposal_id,
+        evidence_bundle_id,
+        source_id,
+        query_fingerprint,
+        table_name,
+        row_count,
+        payload_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.proposal_id ?? null,
+      input.evidence_bundle_id ?? null,
+      input.source_id,
+      input.query_fingerprint,
+      input.table_name,
+      input.row_count,
+      JSON.stringify(input.payload),
+      now,
+    );
+  }
+
   events(proposalId: string): ProposalEvent[] {
     const rows = this.db
       .prepare("SELECT * FROM proposal_events WHERE proposal_id = ? ORDER BY event_id ASC")
       .all(proposalId);
     return rows.map(rowToEvent).filter((event): event is ProposalEvent => event !== undefined);
+  }
+
+  receipts(proposalId: string): StoredWritebackReceipt[] {
+    const rows = this.db
+      .prepare("SELECT * FROM writeback_receipts WHERE proposal_id = ? ORDER BY receipt_id ASC")
+      .all(proposalId);
+    return rows.map(rowToReceipt).filter((receipt): receipt is StoredWritebackReceipt => receipt !== undefined);
+  }
+
+  replay(proposalId: string): ProposalReplayRecord {
+    const proposal = this.requireProposal(proposalId);
+    const replay: ProposalReplayRecord = {
+      replay_id: `replay_${proposalId}`,
+      proposal,
+      events: this.events(proposalId),
+      receipts: this.receipts(proposalId),
+      query_audit: this.queryAudit(proposalId),
+      evidence: this.evidence(proposalId),
+      generated_at: new Date().toISOString(),
+    };
+    this.db.prepare(`
+      INSERT OR REPLACE INTO replay_records (replay_id, proposal_id, payload_json, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(replay.replay_id, proposalId, JSON.stringify(replay), replay.generated_at);
+    return replay;
+  }
+
+  setRunnerState(key: string, value: Record<string, unknown>): void {
+    this.db.prepare(`
+      INSERT INTO runner_state (key, value_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+    `).run(key, JSON.stringify(value), new Date().toISOString());
+  }
+
+  getRunnerState(key: string): Record<string, unknown> | undefined {
+    const row = this.db.prepare("SELECT value_json FROM runner_state WHERE key = ?").get(key);
+    if (!isRecord(row)) return undefined;
+    return JSON.parse(String(row.value_json)) as Record<string, unknown>;
   }
 
   private requireProposal(proposalId: string): StoredProposal {
@@ -351,6 +603,46 @@ export class ProposalStore {
       INSERT INTO proposal_events (proposal_id, kind, actor, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(proposalId, kind, actor, JSON.stringify(payload), new Date().toISOString());
+  }
+
+  private queryAudit(proposalId: string): Record<string, unknown>[] {
+    const rows = this.db
+      .prepare("SELECT * FROM query_audit WHERE proposal_id = ? ORDER BY audit_id ASC")
+      .all(proposalId);
+    const records: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      records.push({
+        audit_id: Number(row.audit_id),
+        proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+        evidence_bundle_id: row.evidence_bundle_id == null ? undefined : String(row.evidence_bundle_id),
+        source_id: String(row.source_id),
+        query_fingerprint: String(row.query_fingerprint),
+        table_name: String(row.table_name),
+        row_count: Number(row.row_count),
+        payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+        created_at: String(row.created_at),
+      });
+    }
+    return records;
+  }
+
+  private evidence(proposalId: string): Record<string, unknown>[] {
+    const rows = this.db
+      .prepare("SELECT * FROM evidence_bundles WHERE proposal_id = ? ORDER BY created_at ASC")
+      .all(proposalId);
+    const records: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      records.push({
+        evidence_bundle_id: String(row.evidence_bundle_id),
+        proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+        tenant_id: String(row.tenant_id),
+        payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+        created_at: String(row.created_at),
+      });
+    }
+    return records;
   }
 
   private transaction<T>(fn: () => T): T {
@@ -419,6 +711,20 @@ function rowToEvent(row: unknown): ProposalEvent | undefined {
     kind: String(row.kind),
     actor: String(row.actor),
     payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+    created_at: String(row.created_at),
+  };
+}
+
+function rowToReceipt(row: unknown): StoredWritebackReceipt | undefined {
+  if (!isRecord(row)) return undefined;
+  return {
+    writeback_job_id: String(row.writeback_job_id),
+    proposal_id: String(row.proposal_id),
+    runner_id: String(row.runner_id),
+    status: String(row.status),
+    idempotency_key: String(row.idempotency_key),
+    source_database_mutated: Number(row.source_database_mutated) === 1,
+    receipt: parseExecutionReceipt(JSON.parse(String(row.receipt_json))),
     created_at: String(row.created_at),
   };
 }

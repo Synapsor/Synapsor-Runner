@@ -7,10 +7,10 @@
   },
   "references": [
     { "path": "../../packages/protocol" },
+    { "path": "../../packages/proposal-store" },
     { "path": "../../packages/worker-core" },
     { "path": "../../packages/postgres" },
     { "path": "../../packages/mysql" }
   ],
   "include": ["src/**/*.ts"]
 }
-

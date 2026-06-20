@@ -29,6 +29,9 @@ importers:
       '@synapsor-runner/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
+      '@synapsor-runner/proposal-store':
+        specifier: workspace:*
+        version: link:../../packages/proposal-store
       '@synapsor-runner/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

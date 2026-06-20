@@ -40,7 +40,7 @@ Synapsor Runner runs inside your environment. It is the local-first MCP and data
 
 The existing runner can validate and apply guarded writeback jobs. The new public protocol schemas are present under `schemas/`, and protocol fixtures are under `fixtures/protocol/`.
 
-The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator and a SQLite proposal/event store foundation for reviewed read/proposal tools. The standalone MCP server, local approval CLI, and local replay CLI are still planned on the `mcp-commit-safe-runtime` branch.
+The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator, SQLite proposal/event/replay store foundation, and local proposal/replay CLI commands. The standalone MCP server and full local capability runtime are still planned on the `mcp-commit-safe-runtime` branch.
 
 ## Local demo
 
@@ -102,6 +102,19 @@ This is a static risk review, not proof that an MCP server is secure.
 
 See `docs/mcp-audit.md`.
 
+Review local proposals from the SQLite store:
+
+```bash
+corepack pnpm runner proposals list --store ./.synapsor/local.db
+corepack pnpm runner proposals show wrp_123 --store ./.synapsor/local.db
+corepack pnpm runner proposals approve wrp_123 --store ./.synapsor/local.db --actor local_reviewer --yes
+corepack pnpm runner proposals reject wrp_123 --store ./.synapsor/local.db --reason "needs review" --yes
+corepack pnpm runner replay show wrp_123 --store ./.synapsor/local.db
+corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output replay.json
+```
+
+`approve` and `reject` require interactive confirmation or explicit `--yes` for noninteractive scripts.
+
 ## Repository layout
 
 - `schemas`: public JSON Schemas for change sets, writeback jobs, execution receipts, and runner registration.
@@ -115,6 +128,7 @@ See `docs/mcp-audit.md`.
 - `packages/mysql`: MySQL adapter and receipt migration.
 - `apps/runner`: CLI entrypoint.
 - `docs/capability-config.md`: reviewed local capability config shape and validation rules.
+- `docs/local-mode.md`: local store, proposal review, and replay commands.
 - `docs/mcp-audit.md`: static MCP database risk review command.
 - `examples/postgres-support`: local Postgres ticket fixture.
 - `examples/mysql-orders`: local MySQL order fixture.

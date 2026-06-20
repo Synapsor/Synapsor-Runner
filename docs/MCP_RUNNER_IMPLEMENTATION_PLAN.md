@@ -90,7 +90,13 @@ This plan maps the existing open-source runner repository to the commit-safe dat
   - `synapsor replay export`
   - `synapsor mcp serve`
 - Add `synapsor mcp audit`
+- Current status:
+  - `synapsor proposals list/show/approve/reject` implemented against `packages/proposal-store`.
+  - `synapsor replay show/export` implemented against `packages/proposal-store`.
+  - `synapsor mcp audit` implemented.
+  - `synapsor mcp serve` remains pending.
 - Approval must show exact diff, evidence summary, conflict guard, tenant/object scope, source mutation state, and proposal hash/version.
+  - Current status: proposal details show target, tenant, source-mutation state, hash/version, and diff. Evidence summary is present in replay output; a richer approval prompt remains pending.
 
 ### Phase 5: demos
 
@@ -118,13 +124,12 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 
 - Phase 1 protocol schemas/fixtures are implemented locally and covered by protocol tests.
 - `synapsor mcp audit <target>` is implemented as a static MCP database risk review for exported manifests/tools-list payloads.
-- Next code-only work is completing the local store tables for evidence, query audit, writeback jobs, idempotency receipts, replay records, and runner state, then wiring it into local MCP capability execution.
+- Next code-only work is wiring validated capability config and the local store into a real MCP stdio server/runtime.
 - Preserve existing worker behavior while adding local MCP/runtime layers.
 - Keep the existing Docker smoke path working.
 
 ## Release blockers
 
 - No standalone MCP server exists yet.
-- No local approval/replay CLI exists yet.
 - No Cloud-linked MCP catalog path is implemented in this repo yet.
 - `packages/proposal-store` currently uses Node 22 `node:sqlite`, which is still marked experimental by Node. Before a public runner release, either pin/support that runtime explicitly or replace it with a stable SQLite dependency.

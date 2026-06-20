@@ -13,6 +13,7 @@
   "dependencies": {
     "@synapsor-runner/mysql": "workspace:*",
     "@synapsor-runner/postgres": "workspace:*",
+    "@synapsor-runner/proposal-store": "workspace:*",
     "@synapsor-runner/protocol": "workspace:*",
     "@synapsor-runner/worker-core": "workspace:*"
   },
