@@ -721,7 +721,7 @@ describe("runner cli", () => {
         allowed_columns: ["late_fee_cents", "waiver_reason"],
         patch: { "late_fee_cents = 0; DROP TABLE invoices; --": 0 },
       },
-      /patch column not allowed/i,
+      /fixed safe identifier/i,
     );
 
     await expectTamperRejected(
