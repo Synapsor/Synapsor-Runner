@@ -7,11 +7,19 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
+import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { serveStdio } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter } from "@synapsor-runner/mysql";
 import { postgresAdapter } from "@synapsor-runner/postgres";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { parseWritebackJob, protocolVersions, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import {
+  generateRunnerConfigFromSpec,
+  inspectDatabase,
+  summarizeInspection,
+  type InspectEngine,
+  type OnboardingSelectionSpec,
+} from "@synapsor-runner/schema-inspector";
 import {
   auditMcpManifest,
   createLogger,
@@ -31,6 +39,8 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (command === "init") return init(rest);
+  if (command === "inspect") return inspect(rest);
+  if (command === "config") return configCommand(rest);
   if (command === "doctor") return doctor();
   if (command === "validate") return validate(rest);
   if (command === "apply") return apply(rest);
@@ -45,6 +55,10 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 async function init(args: string[]): Promise<number> {
+  const specPath = optionalArg(args, "--spec");
+  if (specPath) {
+    return initFromSpec(args, specPath);
+  }
   const output = optionalArg(args, "--output") ?? "synapsor.runner.json";
   const engine = optionalArg(args, "--engine") ?? "postgres";
   const mode = optionalArg(args, "--mode") ?? "review";
@@ -70,6 +84,83 @@ async function init(args: string[]): Promise<number> {
   await fs.writeFile(resolved, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   process.stdout.write(`created ${output}\n`);
   process.stdout.write("Edit table/column names and set the referenced environment variables before serving MCP tools.\n");
+  return 0;
+}
+
+async function initFromSpec(args: string[], specPath: string): Promise<number> {
+  if (!args.includes("--non-interactive")) {
+    throw new Error("init --spec requires --non-interactive so reviewed selections are explicit.");
+  }
+  const output = optionalArg(args, "--output") ?? "synapsor.runner.json";
+  const force = args.includes("--force");
+  const spec = JSON.parse(await fs.readFile(specPath, "utf8")) as OnboardingSelectionSpec;
+  const generated = generateRunnerConfigFromSpec(spec);
+  await writeFileGuarded(output, `${JSON.stringify(generated.config, null, 2)}\n`, force);
+  await writeFileGuarded(".env.example", generated.envExample, force);
+  await fs.mkdir(path.resolve(".synapsor/mcp"), { recursive: true });
+  for (const [fileName, snippet] of Object.entries(generated.mcpSnippets)) {
+    await writeFileGuarded(path.join(".synapsor/mcp", fileName), `${JSON.stringify(snippet, null, 2)}\n`, force);
+  }
+  await fs.mkdir(path.resolve(".synapsor"), { recursive: true });
+  process.stdout.write(`created ${output}\n`);
+  process.stdout.write("created .env.example\n");
+  process.stdout.write("created MCP client snippets under .synapsor/mcp\n");
+  process.stdout.write("Next: set the referenced environment variables, run `synapsor config validate`, then run `synapsor mcp serve`.\n");
+  return 0;
+}
+
+async function inspect(args: string[]): Promise<number> {
+  const databaseUrlEnv = optionalArg(args, "--database-url-env") ?? "SYNAPSOR_DATABASE_READ_URL";
+  const engine = (optionalArg(args, "--engine") ?? "auto") as InspectEngine;
+  if (!["postgres", "mysql", "auto"].includes(engine)) {
+    throw new Error("inspect --engine must be postgres, mysql, or auto.");
+  }
+  const inspection = await inspectDatabase({
+    engine,
+    databaseUrlEnv,
+    schema: optionalArg(args, "--schema"),
+  });
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(inspection, null, 2)}\n`);
+  } else {
+    process.stdout.write(summarizeInspection(inspection));
+  }
+  return 0;
+}
+
+async function configCommand(args: string[]): Promise<number> {
+  const [subcommand] = args;
+  if (subcommand === "validate") return configValidate(args.slice(1));
+  if (subcommand === "show") return configShow(args.slice(1));
+  usage();
+  return 2;
+}
+
+async function configValidate(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
+  const result = validateRunnerCapabilityConfig(parsed);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (result.ok) {
+    process.stdout.write(`config valid: ${configPath}\n`);
+    for (const warning of result.warnings) {
+      process.stdout.write(`warning ${warning.path} ${warning.code}: ${warning.message}\n`);
+    }
+  } else {
+    process.stdout.write(`config invalid: ${configPath}\n`);
+    for (const error of result.errors) {
+      process.stdout.write(`error ${error.path} ${error.code}: ${error.message}\n`);
+    }
+  }
+  return result.ok ? 0 : 1;
+}
+
+async function configShow(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
+  const output = args.includes("--redacted") ? redactConfig(parsed) : parsed;
+  process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   return 0;
 }
 
@@ -527,6 +618,32 @@ async function openLocalStore(args: string[]): Promise<ProposalStore> {
   return new ProposalStore(storePath);
 }
 
+async function writeFileGuarded(filePath: string, content: string, force: boolean): Promise<void> {
+  const resolved = path.resolve(filePath);
+  if (!force) {
+    try {
+      await fs.access(resolved);
+      throw new Error(`${filePath} already exists. Use --force to overwrite.`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.writeFile(resolved, content, "utf8");
+}
+
+function redactConfig(value: unknown, key = ""): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactConfig(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, redactConfig(entryValue, entryKey)]));
+  }
+  if (typeof value === "string") {
+    if (/(url|password|secret|token|key|credential)/i.test(key)) return "<redacted>";
+    if (/^(postgres(?:ql)?:\/\/|mysql:\/\/|Bearer\s+|syn_wbr_)/i.test(value)) return "<redacted>";
+  }
+  return value;
+}
+
 function requireLocalProposal(store: ProposalStore, proposalId: string): StoredProposal {
   const proposal = store.getProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
@@ -824,6 +941,10 @@ function usage(): void {
 
 Commands:
   init [--engine postgres|mysql] [--mode read_only|shadow|review|cloud] [--output synapsor.runner.json] [--force]
+  init --spec onboarding-selection.json --non-interactive [--output synapsor.runner.json] [--force]
+  inspect --database-url-env SYNAPSOR_DATABASE_READ_URL [--engine auto|postgres|mysql] [--schema public] [--json]
+  config validate [--config synapsor.runner.json] [--json]
+  config show [--config synapsor.runner.json] [--redacted]
   doctor
   validate --job ./job.json
   apply --job ./job.json [--dry-run] [--store ./.synapsor/local.db]

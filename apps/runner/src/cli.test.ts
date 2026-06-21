@@ -68,6 +68,103 @@ describe("runner cli", () => {
     await expect(main(["init", "--output", configPath])).rejects.toThrow(/already exists/);
   });
 
+  it("initializes from a reviewed onboarding spec and generates MCP snippets", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-spec-"));
+    const oldCwd = process.cwd();
+    const specPath = path.join(tempDir, "selection.json");
+    await fs.writeFile(specPath, JSON.stringify({
+      version: 1,
+      engine: "postgres",
+      mode: "review",
+      schema: "public",
+      table: "invoices",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      conflict_column: "updated_at",
+      namespace: "billing",
+      object_name: "invoice",
+      visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+      allowed_columns: ["late_fee_cents", "waiver_reason"],
+      patch: {
+        late_fee_cents: { fixed: 0 },
+        waiver_reason: { from_arg: "reason" },
+      },
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      process.chdir(tempDir);
+      await expect(main(["init", "--spec", specPath, "--non-interactive"])).resolves.toBe(0);
+      const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_invoice_update",
+      ]);
+      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password/i);
+      expect(await fs.readFile(path.join(tempDir, ".synapsor/mcp/generic-stdio.json"), "utf8")).toContain("mcp");
+      expect(await fs.readFile(path.join(tempDir, ".env.example"), "utf8")).toContain("SYNAPSOR_DATABASE_READ_URL");
+      expect(output.join("")).toContain("MCP client snippets");
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
+  it("validates and shows redacted runner config", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.inspect_invoice",
+          kind: "read",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at"],
+          evidence: "required",
+          max_rows: 1,
+        },
+      ],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main(["config", "validate", "--config", configPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("config valid");
+    output.length = 0;
+    await expect(main(["config", "show", "--config", configPath, "--redacted"])).resolves.toBe(0);
+    expect(output.join("")).toContain("<redacted>");
+  });
+
   it("reports missing cloud connection environment without printing secrets", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-"));
     const configPath = path.join(tempDir, "synapsor.cloud.json");

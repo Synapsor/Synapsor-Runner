@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/runner/onboarding-selection.v1.schema.json",
+  "title": "Synapsor Runner onboarding selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["engine", "schema", "table", "primary_key", "namespace", "visible_columns"],
+  "properties": {
+    "version": { "const": 1 },
+    "engine": { "enum": ["postgres", "mysql"] },
+    "mode": { "enum": ["read_only", "shadow", "review"] },
+    "source_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "read_url_env": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+    "database_url_env": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+    "write_url_env": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+    "statement_timeout_ms": { "type": "integer", "minimum": 1 },
+    "schema": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "table": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "primary_key": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "tenant_key": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "single_tenant_dev": { "type": "boolean" },
+    "conflict_column": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "namespace": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "object_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "inspect_tool_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$" },
+    "proposal_tool_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$" },
+    "lookup_arg": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "visible_columns": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "allowed_columns": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "uniqueItems": true
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fixed": { "type": ["string", "number", "boolean", "null"] },
+          "from_arg": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        },
+        "oneOf": [
+          { "required": ["fixed"] },
+          { "required": ["from_arg"] }
+        ]
+      }
+    },
+    "patch_args": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": { "enum": ["string", "number", "boolean"] },
+          "required": { "type": "boolean" },
+          "max_length": { "type": "integer", "minimum": 1 },
+          "enum": {
+            "type": "array",
+            "items": { "type": ["string", "number", "boolean", "null"] }
+          }
+        }
+      }
+    },
+    "trusted_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id_env": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+        "principal_env": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_role": { "type": "string" }
+      }
+    }
+  },
+  "anyOf": [
+    { "required": ["tenant_key"] },
+    { "required": ["single_tenant_dev"] }
+  ]
+}

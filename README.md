@@ -145,6 +145,8 @@ stdio MCP server, and proves:
 After the Docker demo, point Synapsor Runner at a staging database and define
 one safe business capability.
 
+Full walkthrough: `docs/getting-started-own-database.md`.
+
 Synapsor Runner does not auto-generate arbitrary database tools. You define the
 source, table, primary key, tenant key, visible columns, allowed write columns,
 conflict guard, and mode in `synapsor.runner.json`.
@@ -537,10 +539,12 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 - `apps/runner`: CLI entrypoint.
 - `docs/capability-config.md`: reviewed local capability config shape and validation rules.
 - `docs/cloud-mode.md`: Cloud-linked runner mode, token scope, and metadata boundary.
+- `docs/getting-started-own-database.md`: own staging Postgres/MySQL onboarding path.
 - `docs/limitations.md`: explicit v0.1 limits and non-claims.
 - `docs/local-mode.md`: local store, proposal review, and replay commands.
 - `docs/mcp-audit.md`: static MCP database risk review command.
 - `docs/mcp-client-setup.md`: stdio MCP client setup patterns.
+- `docs/schema-inspection.md`: metadata inspection command and safety behavior.
 - `examples/postgres-support`: local Postgres ticket fixture.
 - `examples/mysql-orders`: local MySQL order fixture.
 - `examples/mcp-postgres-billing`: stdio MCP billing fixture with source-unchanged, approval, idempotency, and stale-row conflict proof.

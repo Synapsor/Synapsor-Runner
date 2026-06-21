@@ -26,6 +26,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
+      '@synapsor-runner/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@synapsor-runner/control-plane-client':
         specifier: workspace:*
         version: link:../../packages/control-plane-client
@@ -44,6 +47,9 @@ importers:
       '@synapsor-runner/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@synapsor-runner/schema-inspector':
+        specifier: workspace:*
+        version: link:../../packages/schema-inspector
       '@synapsor-runner/worker-core':
         specifier: workspace:*
         version: link:../../packages/worker-core
@@ -174,6 +180,25 @@ importers:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)
+
+  packages/schema-inspector:
+    dependencies:
+      mysql2:
+        specifier: ^3.11.0
+        version: 3.22.5(@types/node@22.19.21)
+      pg:
+        specifier: ^8.13.0
+        version: 8.22.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
