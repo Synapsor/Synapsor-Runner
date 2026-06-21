@@ -1,6 +1,9 @@
 # Synapsor Runner
 
-Commit-safe database MCP for Postgres and MySQL.
+Local mini Synapsor trust loop for database MCP.
+
+Synapsor Runner lets you try Synapsor's core commit-safety idea locally with
+Postgres or MySQL:
 
 Without Synapsor:
 
@@ -18,33 +21,58 @@ Turn risky writes into exact proposals.
 Commit only through guarded execution.
 ```
 
-Local-first. No Synapsor Cloud account is required for the local demo.
+Run the local demo and you should see the important moment:
 
-Synapsor Runner runs inside your environment. It is the local-first MCP and database safety runtime for approved AI-agent changes to Postgres and MySQL. It claims approved structured writeback jobs from Synapsor, validates the target, allowed columns, tenant scope, idempotency key, and conflict guard, then performs a parameterized single-row update and reports applied, conflict, already applied, or failed.
+```text
+The business state changed after the agent saw it, so Synapsor refused to commit.
+```
+
+That is the point of this repo. It shows how an MCP agent can request a
+database change without receiving raw SQL or write credentials, and how
+Synapsor turns that request into a reviewable, conflict-checked business
+state transition.
 
 > Alpha status: v0.1 is intentionally small. It supports guarded single-row `UPDATE` jobs only. It is not a self-hosted Synapsor control plane, not HA, not exactly-once across networks, and not a compliance certification.
 
-## What it does
+## What This Repo Is
 
-- Keeps database credentials local.
-- Gives MCP agents semantic capability tools instead of raw SQL tools.
-- Polls Synapsor for approved writeback jobs.
-- Rejects arbitrary SQL and model-generated SQL.
-- Validates primary key, tenant guard, allowed patch columns, idempotency key, and version-column conflict guard.
-- Builds parameterized SQL inside the Postgres/MySQL adapter.
-- Applies exactly one row inside a transaction.
-- Stores an idempotency receipt in the target database.
-- Reports `applied`, `conflict`, `already_applied`, or `failed` back to Synapsor.
+This is a local-first MCP and database safety runtime. Think of it as the
+smallest local version of Synapsor's trust workflow, not a miniature database
+engine.
 
-## Current status
+It gives a developer a way to run this loop on their own machine:
 
-The existing runner can validate and apply guarded writeback jobs. The new public protocol schemas are present under `schemas/`, and protocol fixtures are under `fixtures/protocol/`.
+```text
+MCP client
+  -> semantic business tool
+  -> trusted tenant/principal context
+  -> scoped read from Postgres/MySQL
+  -> evidence and exact proposal diff
+  -> local approval outside the model
+  -> guarded single-row writeback
+  -> applied/conflict/failed receipt
+  -> local replay
+```
 
-The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator, SQLite proposal/event/replay store foundation, local proposal/replay CLI commands, and a stdio MCP server that exposes reviewed semantic capabilities from config. The MCP server supports local read and proposal tools, stores evidence/proposals locally, and exposes proposal/evidence/replay resources. Local approved proposals can now generate versioned `synapsor.writeback-job.v1` jobs for guarded Postgres/MySQL writeback.
+The runner does not replace Postgres or MySQL. Your database remains the source
+of truth. The runner controls whether an agent-requested change is safe enough
+to apply.
 
-Cloud-linked MCP mode is wired for adapter tool catalog and tool-call delegation through the control-plane client. The repository includes a hosted-compatible Cloud-linked smoke that uses a mock Cloud API plus the real guarded Postgres writeback path. A live hosted Cloud run still depends on a compatible Synapsor Cloud workspace, adapter, and scoped runner token; the local disposable demos remain the primary no-account path.
+## Why A Developer Would Use It
 
-## Local demo
+Use this repo when you want to answer:
+
+- Can I expose database actions to an MCP agent without `execute_sql`?
+- Can I keep database credentials local?
+- Can the model propose a change without committing it?
+- Can a reviewer see the exact before/after diff first?
+- Can stale rows fail as conflicts instead of silent overwrites?
+- Can I inspect evidence, approvals, receipts, and replay afterward?
+- Can I test all of that locally before using Synapsor Cloud?
+
+The answer demonstrated here is yes.
+
+## The 90-Second Demo
 
 Run the full local MCP demo with Docker only:
 
@@ -65,11 +93,114 @@ corepack pnpm demo:docker
 corepack pnpm demo:local
 ```
 
-The Docker-only script builds a small local runner image, mounts the repository at the same path, uses your Docker daemon for disposable Postgres/MySQL containers, launches the local stdio MCP server, lists semantic tools, calls inspect/proposal tools, confirms source rows are unchanged before approval, approves locally, applies guarded writeback, retries idempotently, then simulates stale rows and returns conflict with no write.
-
 The host prerequisites for `./scripts/demo-docker.sh` are Docker and a reachable Docker daemon. You do not need a Synapsor Cloud account, an API key, a hosted workspace, or host Node/Corepack setup.
 
-Local modes are explicit: `read_only` exposes reads only, `shadow` records proposals/evidence/replay without any approval or writeback path, and `review` enables local approval plus guarded writeback.
+The demo starts disposable Postgres and MySQL containers, launches the local
+stdio MCP server, and proves:
+
+- MCP `tools/list` exposes semantic tools only, not `execute_sql`.
+- Reads are tenant-scoped and evidence-backed.
+- Proposal tools return exact before/after diffs.
+- The source row is unchanged after proposal creation.
+- Approval happens outside the model-facing MCP tool surface.
+- The runner applies only a structured, approved, single-row writeback job.
+- The writeback checks primary key, tenant scope, allowed columns, row version,
+  idempotency, and affected row count.
+- Retrying the same approved job is idempotent.
+- A stale row returns `conflict` with no write.
+- Replay can explain the proposal, approval, receipt, evidence, and query audit.
+
+## What The Model Sees
+
+The model gets narrow business tools like:
+
+```text
+billing.inspect_invoice
+billing.propose_late_fee_waiver
+support.inspect_ticket
+support.propose_ticket_resolution
+orders.inspect_order
+orders.propose_refund_review
+```
+
+The model does not get:
+
+```text
+execute_sql
+approve_proposal
+commit_proposal
+database_url
+write_credentials
+tenant_id as model-controlled authority
+arbitrary table or column names
+```
+
+MCP connects the agent. Synapsor Runner controls whether the requested database
+change can become durable business state.
+
+## What Is Local Versus Cloud
+
+Local mode is the no-account mini trust loop:
+
+- local MCP server
+- local SQLite proposal/evidence/replay store
+- local CLI approval
+- local guarded Postgres/MySQL writeback
+- local receipts and replay export
+
+Synapsor Cloud is the team/shared control plane:
+
+- reviewed adapter and capability catalog
+- RBAC and team approvals
+- hosted evidence and replay search
+- managed proposal state
+- runner fleet status
+- writeback job leases
+- retention and audit visibility
+
+The same boundary applies in both modes: the model proposes; the trusted runner
+executes only after approval.
+
+## What This Is Not
+
+This repo is intentionally narrow. It is not:
+
+- a self-hosted Synapsor Cloud;
+- the Synapsor C++ DBMS;
+- a physical branch engine for Postgres/MySQL;
+- a generic MCP security platform;
+- a claim that prompt injection is solved;
+- a framework for arbitrary SQL, DDL, INSERT, DELETE, UPSERT, or multi-row writes.
+
+It demonstrates Synapsor's database commit-safety boundary locally.
+
+## Current Capabilities
+
+- Keeps database credentials local.
+- Gives MCP agents semantic capability tools instead of raw SQL tools.
+- Supports local read-only, shadow, review, and Cloud-linked modes.
+- Stores local proposals, evidence, query audit, writeback receipts, and replay
+  in SQLite.
+- Rejects arbitrary SQL and model-generated SQL.
+- Validates primary key, tenant guard, allowed patch columns, idempotency key,
+  and version-column conflict guard.
+- Builds parameterized SQL inside the Postgres/MySQL adapter.
+- Applies exactly one row inside a transaction.
+- Stores an idempotency receipt in the target database.
+- Reports `applied`, `conflict`, `already_applied`, or `failed`.
+- Includes `synapsor mcp audit <target>` for a static MCP database risk review.
+
+## Local Modes
+
+Local modes are explicit:
+
+- `read_only`: exposes reads only.
+- `shadow`: records proposals, evidence, and replay without approval or writeback.
+- `review`: enables local approval plus guarded writeback.
+- `cloud`: delegates reviewed tools and approval state to Synapsor Cloud while
+  keeping the write credential local.
+
+## Manual Checks
 
 Manual lower-level checks are also available.
 
@@ -111,6 +242,8 @@ corepack pnpm test:mcp-cloud-linked
 ```
 
 This starts the disposable Postgres billing fixture, registers a runner against a mock Synapsor Cloud API, serves MCP in `mode: "cloud"`, fetches the Cloud adapter tool catalog, calls the proposal tool through the Cloud adapter API, confirms the source row is unchanged before approval, claims an approved writeback job, applies it through the real guarded Postgres adapter, and submits the terminal receipt back to the mock Cloud API without sending database credentials to Cloud.
+
+## Cloud-Linked Runner
 
 Run doctor against a configured Cloud source and local database:
 
@@ -157,6 +290,8 @@ corepack pnpm verify:hosted-cloud-linked
 
 That command checks runner-token auth, runner registration, heartbeat, adapter `tools/list`, semantic tool invocation, proposal/evidence/replay linkage, and that the tool response does not report source mutation before trusted writeback. It never creates runner tokens and never prints token values. To claim and apply one already approved writeback job through the guarded local adapter, add `SYNAPSOR_HOSTED_E2E_APPLY_JOB=1`, `SYNAPSOR_ENGINE=postgres|mysql`, and `SYNAPSOR_DATABASE_URL` for the trusted worker credential.
 
+## Static MCP Risk Review
+
 Audit an exported MCP tool manifest without calling business tools:
 
 ```bash
@@ -173,6 +308,8 @@ This is a static risk review, not proof that an MCP server is secure.
 ```
 
 See `docs/mcp-audit.md`.
+
+## Serve Your Own Local Capability
 
 Serve reviewed local capabilities over stdio MCP:
 

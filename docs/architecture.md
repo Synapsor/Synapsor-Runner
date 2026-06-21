@@ -1,11 +1,25 @@
 # Architecture
 
-Synapsor Runner is the local-first MCP and database safety runtime. It is not the Synapsor C++ DBMS and it does not physically branch Postgres or MySQL.
+Synapsor Runner is the local mini trust loop for database MCP. It gives developers
+the smallest useful version of Synapsor's commit-safety boundary on their own
+machine: semantic tools, trusted context, evidence, proposals, approval,
+guarded writeback, receipts, and replay.
+
+It is not the Synapsor C++ DBMS, not a self-hosted Synapsor Cloud, and it does
+not physically branch Postgres or MySQL.
 
 The product boundary is:
 
 ```text
 MCP connects the agent. Synapsor controls the commit.
+```
+
+The local proof should make one thing obvious:
+
+```text
+The agent can request a database change, but the runner commits only an
+approved, scoped, conflict-checked job. If the row changed after the agent saw
+it, the runner returns conflict with no write.
 ```
 
 ## Local mode
