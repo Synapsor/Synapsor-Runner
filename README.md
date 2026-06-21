@@ -42,7 +42,7 @@ The existing runner can validate and apply guarded writeback jobs. The new publi
 
 The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator, SQLite proposal/event/replay store foundation, local proposal/replay CLI commands, and a stdio MCP server that exposes reviewed semantic capabilities from config. The MCP server supports local read and proposal tools, stores evidence/proposals locally, and exposes proposal/evidence/replay resources. Local approved proposals can now generate versioned `synapsor.writeback-job.v1` jobs for guarded Postgres/MySQL writeback.
 
-Cloud-linked MCP mode is wired for adapter tool catalog and tool-call delegation through the control-plane client. Cloud mode still depends on a compatible Synapsor Cloud workspace, adapter, and scoped runner token; the local disposable demos remain the primary no-account path.
+Cloud-linked MCP mode is wired for adapter tool catalog and tool-call delegation through the control-plane client. The repository includes a hosted-compatible Cloud-linked smoke that uses a mock Cloud API plus the real guarded Postgres writeback path. A live hosted Cloud run still depends on a compatible Synapsor Cloud workspace, adapter, and scoped runner token; the local disposable demos remain the primary no-account path.
 
 ## Local demo
 
@@ -103,6 +103,14 @@ corepack pnpm test:mcp-local
 ```
 
 This starts disposable Postgres/MySQL databases, launches the local MCP server through the official stdio client transport, lists semantic tools, calls inspect/proposal tools, confirms source rows are unchanged before approval, approves locally, generates `synapsor.writeback-job.v1` jobs, applies them through the guarded worker, retries idempotently, then simulates stale rows and returns conflict with no write.
+
+Run the hosted-compatible Cloud-linked proof:
+
+```bash
+corepack pnpm test:mcp-cloud-linked
+```
+
+This starts the disposable Postgres billing fixture, registers a runner against a mock Synapsor Cloud API, serves MCP in `mode: "cloud"`, fetches the Cloud adapter tool catalog, calls the proposal tool through the Cloud adapter API, confirms the source row is unchanged before approval, claims an approved writeback job, applies it through the real guarded Postgres adapter, and submits the terminal receipt back to the mock Cloud API without sending database credentials to Cloud.
 
 Run doctor against a configured Cloud source and local database:
 

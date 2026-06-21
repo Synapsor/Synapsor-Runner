@@ -38,6 +38,7 @@ The runner exposes semantic MCP tools, not `execute_sql`. Local mode requires no
 - `apps/runner/src/cli.test.ts`, `docs/mcp-audit.md`, `README.md`: MCP audit coverage and documentation for local manifest, remote `tools/list`, and stdio MCP targets.
 - `examples/mcp-postgres-billing/`, `examples/mcp-postgres-support/`, `examples/mcp-mysql-orders/`: disposable local MCP examples.
 - `scripts/demo-docker.sh`: one-command Docker-only local demo.
+- `scripts/smoke-mcp-cloud-linked.mjs`: hosted-compatible Cloud-linked smoke with mock Cloud API plus real guarded Postgres writeback.
 - `scripts/demo-local.sh`, `scripts/smoke-mcp-local-examples.mjs`, `scripts/verify-mcp-client-configs.mjs`: contributor smoke and MCP client config verification.
 - `README.md`, `SECURITY.md`, `THREAT_MODEL.md`, `docs/local-mode.md`, `docs/cloud-mode.md`, `docs/mcp-client-setup.md`, `docs/limitations.md`: public docs and security boundary.
 
@@ -72,6 +73,7 @@ Contributor path:
 corepack pnpm install --frozen-lockfile
 corepack pnpm test
 corepack pnpm test:mcp-local
+corepack pnpm test:mcp-cloud-linked
 corepack pnpm test:mcp-client-configs
 ```
 
@@ -90,6 +92,9 @@ corepack pnpm runner cloud connect --config ./synapsor.cloud.json
 - `corepack pnpm test:mcp-local`
   - Passed for Postgres billing, Postgres support, and MySQL orders.
   - Covered semantic tool listing/calls, tenant spoof rejection, source unchanged before approval, disallowed-column job rejection, guarded writeback, idempotent retry, stale-row conflict, and replay export.
+- `corepack pnpm test:mcp-cloud-linked`
+  - Passed.
+  - Covered runner-token doctor, runner registration, runner heartbeat, Cloud-mode MCP `tools/list`, Cloud adapter tool call, trusted session binding, source unchanged before approval, approved job claim/lease, real guarded Postgres writeback, and terminal receipt submission back to the Cloud API surface.
 - `corepack pnpm test:mcp-client-configs`
   - Passed for `generic-stdio.json`, `claude-desktop.json`, `cursor.json`, and `vscode.json`.
   - Verified checked-in client configs are parseable, secret-free, and expose semantic tools only.
@@ -127,7 +132,7 @@ No browser screenshots were required for this runner-only repo. The user-facing 
 
 - v0.1 supports guarded single-row `UPDATE` writeback only.
 - Local approval is CLI-based; optional localhost approval UI remains follow-up.
-- Cloud-linked E2E requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token.
+- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. The local hosted-compatible Cloud-linked smoke passes against a mock Cloud API and real disposable Postgres writeback.
 - Local and Cloud histories remain separate unless a future import path is explicitly implemented.
 - Public release should still run dependency review, container scanning, and release/legal signoff.
 

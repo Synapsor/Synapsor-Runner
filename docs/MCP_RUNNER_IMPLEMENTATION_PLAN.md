@@ -135,6 +135,7 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 - Keep write credentials local.
 - Keep local and Cloud histories separate unless explicit import is later implemented.
   - Current status: `mode: "cloud"` delegates adapter tool catalog and tool calls through `ControlPlaneClient`. The main repository now exposes the compatible `/v1/agent/adapters/tools` and `/v1/agent/adapters/call-tool` runner-token bridge with `adapter:read` / `adapter:invoke` permissions.
+  - Current status: `corepack pnpm test:mcp-cloud-linked` exercises a hosted-compatible Cloud-linked lifecycle against a mock Cloud API and disposable Postgres billing fixture: runner-token doctor, runner registration, heartbeat, Cloud-mode MCP `tools/list`, Cloud adapter tool call, trusted session binding, source unchanged before approval, approved job claim/lease, real guarded Postgres writeback, and terminal receipt submission.
 
 ## Current next edits
 
@@ -144,13 +145,13 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 - Public local demo entrypoint is implemented as `./scripts/demo-docker.sh` / `corepack pnpm demo:docker`; it requires Docker only, builds a small local runner image, starts Docker fixture databases, runs the stdio MCP proof, proves guarded writeback/stale-row conflict, and tears down disposable resources. The contributor path remains `./scripts/demo-local.sh` / `corepack pnpm demo:local` for environments that already have Node/Corepack installed.
 - Runtime modes are enforced in the store/CLI/runtime layers: `read_only` exposes read tools only and direct proposal calls fail closed, `shadow` stores proposals/evidence/query-audit/replay but rejects approval and writeback-job creation, and `review` enables local approval plus guarded writeback.
 - Local `apply --store` records a public `synapsor.execution-receipt.v1` into the SQLite proposal store, so replay includes applied/conflict terminal writeback receipts instead of only pre-write proposal history.
-- Next code-only work is broader release hardening: optional localhost approval UI, main-repo Cloud/UI gaps, and any Cloud E2E fixture once a compatible Cloud workspace/adapter/token is available.
+- Next code-only work is broader release hardening: optional localhost approval UI, main-repo Cloud/UI gaps, and live hosted Cloud E2E once a compatible Cloud workspace/adapter/token is available.
 - Preserve existing worker behavior while adding local MCP/runtime layers.
 - Keep the existing Docker smoke path working.
 
 ## Release blockers
 
-- Full Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token.
+- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. A local hosted-compatible Cloud-linked smoke now covers the protocol/API lifecycle against a mock Cloud API and real disposable Postgres writeback.
 - `packages/proposal-store` currently uses Node 22 `node:sqlite`, which is still marked experimental by Node. Before a public runner release, either pin/support that runtime explicitly or replace it with a stable SQLite dependency.
 - Release docs present: `LICENSE` is Apache-2.0, and `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` exist with project-specific safety guidance.
 
@@ -178,6 +179,7 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 - `corepack pnpm test` passed after Docker-first demo and adapter hardening updates: 9 test files, 50 tests.
 - `corepack pnpm test:mcp-local` passed after disallowed-column tamper proof across Postgres billing, Postgres support, and MySQL orders.
 - `./scripts/demo-docker.sh` passed as the exact Docker-only first-run path: built the local runner image, ran the stdio MCP proof inside Docker, started disposable Postgres/MySQL fixtures, proved source unchanged before approval, guarded writeback, idempotent retry, disallowed-column rejection, stale-row conflict, and teardown. No demo containers or generated `.pnpm-store` cache remain.
+- `corepack pnpm test:mcp-cloud-linked` passed after adding the hosted-compatible Cloud-linked smoke with mock Cloud API plus real guarded Postgres writeback and terminal receipt submission.
 - `corepack pnpm --filter @synapsor-runner/runner test` passed after wiring `cloud connect` runner registration/heartbeat: 1 test file, 5 tests.
 - `corepack pnpm --filter @synapsor-runner/control-plane-client test` passed after the same change: 1 test file, 3 tests.
 - `corepack pnpm test` passed after `cloud connect` registration/heartbeat docs and tests: 9 test files, 48 tests.
