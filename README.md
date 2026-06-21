@@ -49,26 +49,26 @@ Approval: Required
 Conflict guard: updated_at
 ```
 
-That is the point of this repo. It shows how an MCP agent can request a
-database change without receiving raw SQL or write credentials, and how
-Synapsor turns that request into a reviewable, conflict-checked business
-state transition.
+That is the point of Synapsor Runner. It shows how an MCP agent can request a
+database change without receiving raw SQL or write credentials, and how the
+runner turns that request into a reviewable, conflict-checked business state
+transition.
 
-This is not just a demo repo. The examples are demos, but the CLI, MCP server,
-proposal store, adapters, and guarded runner are intended to be usable locally.
+The examples are demos, but the CLI, MCP server, proposal store, adapters, and
+guarded runner are usable locally.
 
 MCP connects the agent. Synapsor Runner controls whether the requested database
 change can become durable business state.
 
 > Alpha: v0.1 supports guarded single-row `UPDATE` jobs only. It is not HA, not a self-hosted Synapsor Cloud, not exactly-once across networks, and not a compliance certification.
 
-## What This Repo Is
+## How it works
 
-This is a local-first MCP and database safety runtime. Think of it as the
-smallest local version of Synapsor's trust workflow, not a miniature database
-engine.
+Synapsor Runner sits between your MCP client and your database. Think of it as
+the smallest local version of Synapsor's trust workflow, not a miniature
+database engine.
 
-It gives a developer a way to run this loop on their own machine:
+Run this loop on your own machine:
 
 ```text
 MCP client
@@ -86,21 +86,23 @@ The runner does not replace Postgres or MySQL. Your database remains the source
 of truth. The runner controls whether an agent-requested change is safe enough
 to apply.
 
-## Why A Developer Would Use It
+## Use it when
 
-Use this repo when you want to answer:
+Use Synapsor Runner when you want to give an MCP agent access to
+database-backed actions without exposing raw SQL or write credentials.
 
-- Can I expose database actions to an MCP agent without `execute_sql`?
-- Can I keep database credentials local?
-- Can the model propose a change without committing it?
-- Can a reviewer see the exact before/after diff first?
-- Can stale rows fail as conflicts instead of silent overwrites?
-- Can I inspect evidence, approvals, receipts, and replay afterward?
-- Can I test all of that locally before using Synapsor Cloud?
+It helps you:
 
-The answer demonstrated here is yes.
+- replace `execute_sql` with semantic tools;
+- keep database credentials in your environment;
+- turn writes into reviewable proposals;
+- show exact before/after diffs before anything changes;
+- approve outside the model-facing tool surface;
+- commit through tenant, column, idempotency, and row-version guards;
+- block stale-row writes instead of silently overwriting newer data;
+- inspect local evidence, approvals, receipts, and replay.
 
-## The 90-Second Demo
+## Quickstart
 
 Run the full local MCP demo with Docker only:
 
@@ -138,7 +140,7 @@ stdio MCP server, and proves:
 - A stale row returns `conflict` with no write.
 - Replay can explain the proposal, approval, receipt, evidence, and query audit.
 
-## What The Model Sees
+## MCP tools exposed to the model
 
 The model gets narrow business tools like:
 
@@ -166,7 +168,7 @@ arbitrary table or column names
 MCP connects the agent. Synapsor Runner controls whether the requested database
 change can become durable business state.
 
-## What Is Local Versus Cloud
+## Local first, Cloud when your team needs it
 
 Local mode is the no-account mini trust loop:
 
@@ -189,9 +191,9 @@ Synapsor Cloud is the team/shared control plane:
 The same boundary applies in both modes: the model proposes; the trusted runner
 executes only after approval.
 
-## What This Is Not
+## Limits
 
-This repo is intentionally narrow. It is not:
+Synapsor Runner is intentionally narrow. It is not:
 
 - a self-hosted Synapsor Cloud;
 - the Synapsor C++ DBMS;
@@ -202,7 +204,7 @@ This repo is intentionally narrow. It is not:
 
 It demonstrates Synapsor's database commit-safety boundary locally.
 
-## Current Capabilities
+## Features
 
 - Keeps database credentials local.
 - Gives MCP agents semantic capability tools instead of raw SQL tools.
@@ -228,9 +230,9 @@ Local modes are explicit:
 - `cloud`: delegates reviewed tools and approval state to Synapsor Cloud while
   keeping the write credential local.
 
-## Manual Checks
+## Test the runner
 
-Manual lower-level checks are also available.
+Lower-level checks are available when you want to validate specific pieces.
 
 Validate fixture jobs without a Synapsor Cloud account:
 
@@ -271,9 +273,13 @@ corepack pnpm test:mcp-cloud-linked
 
 This starts the disposable Postgres billing fixture, registers a runner against a mock Synapsor Cloud API, serves MCP in `mode: "cloud"`, fetches the Cloud adapter tool catalog, calls the proposal tool through the Cloud adapter API, confirms the source row is unchanged before approval, claims an approved writeback job, applies it through the real guarded Postgres adapter, and submits the terminal receipt back to the mock Cloud API without sending database credentials to Cloud.
 
-## Cloud-Linked Runner
+## Connect to Synapsor Cloud
 
-Run doctor against a configured Cloud source and local database:
+Use Cloud mode when you want shared approvals, RBAC, hosted evidence/replay
+search, runner fleet status, leases, retention, and audit visibility while
+keeping your database credentials local.
+
+Run `doctor` against a configured Cloud source and local database:
 
 ```bash
 cp .env.example .env
@@ -304,21 +310,9 @@ synapsor cloud connect --config ./synapsor.cloud.json
 
 `cloud connect` verifies the scoped token, registers runner metadata, and sends an initial heartbeat. It does not upload database URLs, passwords, write credentials, prompts, or table data. The local Docker demo above remains the primary no-account path.
 
-Verify a real hosted Cloud-linked adapter/tool path after you have a compatible Cloud workspace, source, adapter, and scoped runner token:
+For hosted adapter/tool verification commands, see `docs/cloud-mode.md`.
 
-```bash
-SYNAPSOR_CLOUD_BASE_URL="https://synapsor.ai" \
-SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
-SYNAPSOR_SOURCE_ID="src_..." \
-SYNAPSOR_ADAPTER_ID="mcp.billing" \
-SYNAPSOR_MCP_TOOL_NAME="billing.propose_late_fee_waiver" \
-SYNAPSOR_MCP_TOOL_INPUT_JSON='{"invoice_id":"INV-3001","reason":"support-approved waiver"}' \
-corepack pnpm verify:hosted-cloud-linked
-```
-
-That command checks runner-token auth, runner registration, heartbeat, adapter `tools/list`, semantic tool invocation, proposal/evidence/replay linkage, and that the tool response does not report source mutation before trusted writeback. It never creates runner tokens and never prints token values. To claim and apply one already approved writeback job through the guarded local adapter, add `SYNAPSOR_HOSTED_E2E_APPLY_JOB=1`, `SYNAPSOR_ENGINE=postgres|mysql`, and `SYNAPSOR_DATABASE_URL` for the trusted worker credential.
-
-## Static MCP Risk Review
+## Audit an MCP server
 
 Audit an exported MCP tool manifest without calling business tools:
 
@@ -337,7 +331,7 @@ This is a static risk review, not proof that an MCP server is secure.
 
 See `docs/mcp-audit.md`.
 
-## Serve Your Own Local Capability
+## Define your own safe tools
 
 Serve reviewed local capabilities over stdio MCP:
 

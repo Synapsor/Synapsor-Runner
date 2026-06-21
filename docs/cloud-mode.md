@@ -86,6 +86,38 @@ The runner token should be scoped to adapter read/invoke and writeback claim/res
 
 In Cloud mode, the local MCP server fetches the adapter tool catalog from Synapsor Cloud and delegates tool calls to Cloud adapter APIs. The returned result remains structured and must not expose raw SQL or database credentials.
 
+## Hosted Compatibility Check
+
+After you have a compatible Cloud workspace, external source, MCP adapter, and
+scoped runner token, verify the hosted adapter/tool path:
+
+```bash
+SYNAPSOR_CLOUD_BASE_URL="https://synapsor.ai" \
+SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
+SYNAPSOR_SOURCE_ID="src_..." \
+SYNAPSOR_ADAPTER_ID="mcp.billing" \
+SYNAPSOR_MCP_TOOL_NAME="billing.propose_late_fee_waiver" \
+SYNAPSOR_MCP_TOOL_INPUT_JSON='{"invoice_id":"INV-3001","reason":"support-approved waiver"}' \
+corepack pnpm verify:hosted-cloud-linked
+```
+
+That command checks runner-token auth, runner registration, heartbeat, adapter
+`tools/list`, semantic tool invocation, proposal/evidence/replay linkage, and
+that the tool response does not report source mutation before trusted
+writeback. It never creates runner tokens and never prints token values.
+
+To claim and apply one already approved writeback job through the guarded local
+adapter, add:
+
+```bash
+SYNAPSOR_HOSTED_E2E_APPLY_JOB=1
+SYNAPSOR_ENGINE="postgres|mysql"
+SYNAPSOR_DATABASE_URL="postgresql://..."
+```
+
+Use the trusted worker credential in `SYNAPSOR_DATABASE_URL`. Do not put that
+credential in an MCP client config or model-facing tool definition.
+
 ## Writeback
 
 The model-facing tool call creates or returns Cloud-managed proposal state. The external database is unchanged until:
