@@ -1,5 +1,45 @@
 # MCP Runner Implementation Report
 
+## Current Completion Addendum - 2026-06-21
+
+This addendum supersedes earlier hosted-verifier notes in this report.
+
+- Current runner repo branch: `mcp-commit-safe-runtime`
+- Runner implementation commit before this report-only addendum: `d274a2ec048c78c91f00ef7cb7414d41fe2d1bf5`
+- Hosted verifier command:
+
+```bash
+set -a
+source "/home/sandesh-tiwari/Desktop/C++/Synapsor Production Grade/mcp_billing_demo_cloud.env"
+set +a
+corepack pnpm --dir /home/sandesh-tiwari/Desktop/C++/synapsor-runner verify:hosted-cloud-linked
+```
+
+Hosted Cloud-linked verification has now run successfully against `https://synapsor.ai`:
+
+```json
+{
+  "base_url": "https://synapsor.ai",
+  "source_id": "src_2a431fc6b8f4fe3a",
+  "adapter_id": "mcp.billing",
+  "tool_name": "billing.propose_late_fee_waiver",
+  "runner_id": "synapsor-hosted-cloud-e2e",
+  "doctor": "ok",
+  "registered": true,
+  "heartbeat": true,
+  "tools_listed": 1,
+  "generic_sql_tool_exposed": false,
+  "tool_call": "ok",
+  "proposal_linked": true,
+  "evidence_linked": true,
+  "replay_linked": false,
+  "source_database_mutated_before_approval": false,
+  "writeback_applied": false
+}
+```
+
+The remaining `replay_linked: false` is a Cloud replay-linkage follow-up, not a runner-local failure. The runner successfully authenticated with a scoped runner token, registered, heartbeated, listed the Cloud adapter catalog, invoked the semantic tool, verified no generic SQL tool exposure, and confirmed the source database was not mutated before approval.
+
 ## Branch And Commit
 
 - Branch: `mcp-commit-safe-runtime`
@@ -8,6 +48,7 @@
 - Report/docs parity commit: `fae1a17d9a80c6fbf8b8c7e603fa0f9244897379`
 - Cloud-linked smoke commit: `e422e5c27853e9d97faf692809e67939037f744b`
 - Hosted Cloud-linked verifier commit: `8eec9d6f14dc6ff52a76f81cf671ba108b4f0923`
+- Runner implementation commit before this report-only addendum: `d274a2ec048c78c91f00ef7cb7414d41fe2d1bf5`
 
 ## Architecture Implemented
 
@@ -125,6 +166,10 @@ To include guarded local writeback for one already approved job, add `SYNAPSOR_H
   - `curl https://synapsor.ai/health` returned HTTP 200 with `status: ok`, `service: synapsor-cloud-gateway`, and `runtime_url_configured: true`.
   - `curl https://synapsor.ai/openapi.json` returned HTTP 200 and exposed the runner/writeback/adapter routes required by the hosted verifier, including `/v1/writeback/runner/doctor`, `/v1/runner/register`, `/v1/runner/heartbeat`, `/v1/agent/adapters/tools`, `/v1/agent/adapters/call-tool`, and `/v1/writeback/jobs/claim`.
   - The main repo `.env` did not contain `SYNAPSOR_RUNNER_TOKEN`, `SYNAPSOR_SOURCE_ID`, `SYNAPSOR_ADAPTER_ID`, `SYNAPSOR_MCP_TOOL_NAME`, or `SYNAPSOR_MCP_TOOL_INPUT_JSON`, so the mutating/credentialed hosted verifier was not run.
+- Hosted Cloud-linked verifier:
+  - `corepack pnpm --dir /home/sandesh-tiwari/Desktop/C++/synapsor-runner verify:hosted-cloud-linked`
+  - Passed using the private environment file outside git.
+  - Confirmed runner token doctor, registration, heartbeat, Cloud `tools/list`, semantic tool invocation, proposal/evidence linkage, generic SQL blocking, and no source mutation before approval.
 
 `synapsor mcp audit <target>` now supports:
 
@@ -154,7 +199,7 @@ No browser screenshots were required for this runner-only repo. The user-facing 
 
 - v0.1 supports guarded single-row `UPDATE` writeback only.
 - Local approval is CLI-based; optional localhost approval UI remains follow-up.
-- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, scoped runner token, and test tool invocation payload. The local hosted-compatible Cloud-linked smoke passes against a mock Cloud API and real disposable Postgres writeback. Non-mutating hosted preflight confirms the Cloud routes exist, but the final hosted verifier cannot run until the scoped token/source/adapter/tool values exist. `corepack pnpm verify:hosted-cloud-linked` is available for that real hosted verification.
+- Hosted Cloud-linked E2E now passes for runner doctor, registration, heartbeat, Cloud adapter tool catalog, semantic tool invocation, proposal/evidence linkage, generic SQL blocking, and no source mutation before approval. The hosted verifier still reports `replay_linked: false`; Cloud replay linkage remains follow-up.
 - Local and Cloud histories remain separate unless a future import path is explicitly implemented.
 - Public release should still run dependency review, container scanning, and release/legal signoff.
 
