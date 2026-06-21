@@ -824,6 +824,73 @@ describe("runner cli", () => {
     expect(report.summary.tools_inspected).toBe(1);
   });
 
+  it("prints MCP client configuration snippets without secrets", async () => {
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "mcp",
+      "configure",
+      "--client",
+      "claude-desktop",
+      "--config",
+      "./synapsor.runner.json",
+      "--store",
+      "./.synapsor/local.db",
+    ])).resolves.toBe(0);
+
+    const snippet = JSON.parse(output.join(""));
+    expect(snippet.mcpServers.synapsor).toEqual({
+      command: "synapsor",
+      args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
+    });
+    expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
+  });
+
+  it("writes MCP client configuration only with explicit destination and backup", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-mcp-configure-"));
+    const destination = path.join(tempDir, "cursor.json");
+    await fs.writeFile(destination, JSON.stringify({
+      mcpServers: {
+        existing: { command: "node", args: ["server.js"] },
+      },
+    }, null, 2), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "mcp",
+      "configure",
+      "--client",
+      "cursor",
+      "--config",
+      "./synapsor.runner.json",
+      "--store",
+      "./.synapsor/local.db",
+      "--write",
+      "--destination",
+      destination,
+      "--yes",
+    ])).resolves.toBe(0);
+
+    const written = JSON.parse(await fs.readFile(destination, "utf8"));
+    expect(written.mcpServers.existing.command).toBe("node");
+    expect(written.mcpServers.synapsor).toEqual({
+      command: "synapsor",
+      args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
+    });
+    const backups = (await fs.readdir(tempDir)).filter((name) => name.startsWith("cursor.json.bak."));
+    expect(backups).toHaveLength(1);
+    expect(output.join("")).toContain("wrote MCP cursor configuration");
+    expect(JSON.stringify(written)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
+  });
+
   it("lists, shows, approves, and exports local proposals", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-"));
     const storePath = path.join(tempDir, "local.db");

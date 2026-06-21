@@ -20,6 +20,43 @@ Validate them with:
 corepack pnpm test:mcp-client-configs
 ```
 
+## Generate A Client Snippet
+
+Print a snippet without modifying any client files:
+
+```bash
+synapsor mcp configure \
+  --client claude-desktop \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+Supported client names:
+
+```text
+generic-stdio
+claude-desktop
+cursor
+vscode
+```
+
+Write is opt-in and requires an explicit destination:
+
+```bash
+synapsor mcp configure \
+  --client cursor \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --write \
+  --destination ./cursor-mcp.json
+```
+
+When the destination already exists, Synapsor Runner creates a timestamped
+backup before writing. Noninteractive scripts must add `--yes`.
+
+The command writes only the local stdio MCP command and args. It does not write
+database URLs or passwords into the client config.
+
 ## Start Command
 
 From the runner repository:

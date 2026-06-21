@@ -760,6 +760,7 @@ async function mcp(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "serve") return mcpServe(rest);
   if (subcommand === "audit") return mcpAudit(rest);
+  if (subcommand === "configure") return mcpConfigure(rest);
   usage();
   return 2;
 }
@@ -783,6 +784,81 @@ async function mcpAudit(args: string[]): Promise<number> {
   const report = auditMcpManifest(payload, { target });
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatMcpAuditReport(report));
   return 0;
+}
+
+async function mcpConfigure(args: string[]): Promise<number> {
+  const client = optionalArg(args, "--client");
+  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude-desktop|cursor|vscode");
+  const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
+  const storePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
+  const snippet = mcpClientSnippet(client, configPath, storePath);
+  if (args.includes("--write")) {
+    const destination = optionalArg(args, "--destination");
+    if (!destination) throw new Error("mcp configure --write requires --destination <path>");
+    await writeMcpClientSnippet(destination, client, snippet, args.includes("--yes"));
+    process.stdout.write(`wrote MCP ${client} configuration to ${destination}\n`);
+  } else {
+    process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
+  }
+  return 0;
+}
+
+function mcpClientSnippet(client: string, configPath: string, storePath: string): Record<string, unknown> {
+  const command = "synapsor";
+  const args = ["mcp", "serve", "--config", configPath, "--store", storePath];
+  if (client === "generic" || client === "generic-stdio") return { command, args };
+  if (client === "claude-desktop" || client === "cursor") {
+    return { mcpServers: { synapsor: { command, args } } };
+  }
+  if (client === "vscode") {
+    return { servers: { synapsor: { type: "stdio", command, args } } };
+  }
+  throw new Error(`unsupported MCP client: ${client}`);
+}
+
+async function writeMcpClientSnippet(destination: string, client: string, snippet: Record<string, unknown>, yes: boolean): Promise<void> {
+  const resolved = path.resolve(destination);
+  let existing: Record<string, unknown> = {};
+  let hadExisting = false;
+  try {
+    existing = JSON.parse(await fs.readFile(resolved, "utf8")) as Record<string, unknown>;
+    hadExisting = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const merged = mergeMcpClientSnippet(client, existing, snippet);
+  JSON.parse(JSON.stringify(merged));
+  process.stderr.write(`Destination: ${resolved}\n`);
+  if (hadExisting) {
+    process.stderr.write("Existing file will be backed up before writing.\n");
+  }
+  await confirmDangerousAction(yes ? ["--yes"] : [], "Write MCP client configuration?");
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  if (hadExisting) {
+    const backupPath = `${resolved}.bak.${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    await fs.copyFile(resolved, backupPath);
+    process.stderr.write(`Backup: ${backupPath}\n`);
+  }
+  await fs.writeFile(resolved, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+}
+
+function mergeMcpClientSnippet(client: string, existing: Record<string, unknown>, snippet: Record<string, unknown>): Record<string, unknown> {
+  if (client === "generic" || client === "generic-stdio") return snippet;
+  if (client === "claude-desktop" || client === "cursor") {
+    const existingServers = isRecord(existing.mcpServers) ? existing.mcpServers : {};
+    const snippetServers = isRecord(snippet.mcpServers) ? snippet.mcpServers : {};
+    return { ...existing, mcpServers: { ...existingServers, ...snippetServers } };
+  }
+  if (client === "vscode") {
+    const existingServers = isRecord(existing.servers) ? existing.servers : {};
+    const snippetServers = isRecord(snippet.servers) ? snippet.servers : {};
+    return { ...existing, servers: { ...existingServers, ...snippetServers } };
+  }
+  throw new Error(`unsupported MCP client: ${client}`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function benchmark(args: string[]): Promise<number> {
@@ -1653,6 +1729,8 @@ Commands:
   cloud connect [--config ./synapsor.cloud.json]
   mcp serve [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   mcp audit ./tools-list.json [--json]
+  mcp configure --client generic-stdio|claude-desktop|cursor|vscode [--print] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  mcp configure --client claude-desktop --write --destination ./client-config.json [--yes]
   benchmark mcp-efficiency [--json]
   proposals list [--store ./.synapsor/local.db] [--state pending_review] [--json]
   proposals show <proposal_id> [--store ./.synapsor/local.db] [--json]
