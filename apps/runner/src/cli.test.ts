@@ -434,9 +434,36 @@ describe("runner cli", () => {
     await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).resolves.toBe(0);
     expect(JSON.parse(output.join("")).status).toBe("applied");
 
-    output.length = 0;
-    await fs.writeFile(jobPath, JSON.stringify({ ...baseJob, target: { ...baseJob.target, table: "accounts" } }), "utf8");
-    await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).rejects.toThrow(/does not match any reviewed proposal capability/i);
+    async function expectTamperRejected(job: unknown, pattern: RegExp) {
+      output.length = 0;
+      await fs.writeFile(jobPath, JSON.stringify(job), "utf8");
+      await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).rejects.toThrow(pattern);
+    }
+
+    await expectTamperRejected(
+      { ...baseJob, target: { ...baseJob.target, table: "accounts" } },
+      /does not match any reviewed proposal capability/i,
+    );
+
+    await expectTamperRejected(
+      { ...baseJob, target: { ...baseJob.target, schema: "private" } },
+      /does not match any reviewed proposal capability/i,
+    );
+
+    await expectTamperRejected(
+      { ...baseJob, target: { ...baseJob.target, primary_key: { column: "invoice_id", value: "INV-1" } } },
+      /does not match any reviewed proposal capability/i,
+    );
+
+    await expectTamperRejected(
+      { ...baseJob, target: { ...baseJob.target, tenant_guard: { column: "org_id", value: "acme" } } },
+      /does not match any reviewed proposal capability/i,
+    );
+
+    await expectTamperRejected(
+      { ...baseJob, conflict_guard: { kind: "version_column", column: "modified_at", expected_value: "2026-06-20T12:00:00Z" } },
+      /conflict guard does not match/i,
+    );
 
     await fs.writeFile(jobPath, JSON.stringify({
       ...baseJob,
@@ -445,6 +472,65 @@ describe("runner cli", () => {
       patch: { late_fee_cents: 0 },
     }), "utf8");
     await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).rejects.toThrow(/widens reviewed authority/i);
+
+    await expectTamperRejected(
+      {
+        ...baseJob,
+        allowed_columns: ["late_fee_cents", "waiver_reason"],
+        patch: { late_fee_cents: 0, admin_override: true },
+      },
+      /patch column not allowed: admin_override/i,
+    );
+
+    await expectTamperRejected(
+      {
+        ...baseJob,
+        allowed_columns: ["late_fee_cents", "waiver_reason"],
+        patch: { "late_fee_cents = 0; DROP TABLE invoices; --": 0 },
+      },
+      /patch column not allowed/i,
+    );
+
+    await expectTamperRejected(
+      { ...baseJob, lease_expires_at: new Date(Date.now() - 60_000).toISOString() },
+      /lease has expired/i,
+    );
+
+    const { approval_id: _approvalId, ...withoutApproval } = baseJob;
+    await expectTamperRejected(withoutApproval, /approval_id/i);
+
+    await fs.writeFile(jobPath, JSON.stringify(baseJob), "utf8");
+    await expect(main(["apply", "--job", jobPath, "--config", configPath])).rejects.toThrow(/requires --store/i);
+
+    const storePath = path.join(tempDir, "local.db");
+    const store = new ProposalStore(storePath);
+    const localChangeSet = {
+      ...structuredClone(changeSet),
+      proposal_id: "wrp_local",
+      proposal_version: 1,
+      source: {
+        ...changeSet.source,
+        source_id: "app_postgres",
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id", value: "INV-1" },
+      },
+      scope: { tenant_id: "acme", business_object: "invoice", object_id: "INV-1" },
+      guards: {
+        ...changeSet.guards,
+        tenant: { column: "tenant_id", value: "acme" },
+        allowed_columns: ["late_fee_cents", "waiver_reason"],
+        expected_version: { column: "updated_at", value: "2026-06-20T12:00:00Z" },
+      },
+      integrity: { proposal_hash: "sha256:proposal" },
+    };
+    store.createProposal(localChangeSet);
+    store.approveProposal("wrp_local", { approver: "local_reviewer", proposal_hash: "sha256:proposal", proposal_version: 1 });
+    store.close();
+
+    await fs.writeFile(jobPath, JSON.stringify({ ...baseJob, approval_id: "sha256:tampered" }), "utf8");
+    await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run", "--store", storePath]))
+      .rejects.toThrow(/digest does not match local proposal/i);
   });
 
   it("reports missing cloud connection environment without printing secrets", async () => {

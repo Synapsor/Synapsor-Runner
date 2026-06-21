@@ -404,6 +404,9 @@ async function apply(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? (await fileExists("synapsor.runner.json") ? "synapsor.runner.json" : undefined);
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
   if (configPath) {
+    if (!dryRun && !storePath) {
+      throw new Error("local config writeback apply requires --store so proposal approval and digest can be verified");
+    }
     await verifyLocalWritebackAuthority(job, configPath, storePath);
   }
   const config: RunnerConfig = {
