@@ -2,6 +2,10 @@
 
 `synapsor mcp audit <target>` performs a static MCP database risk review over an exported tool manifest, a remote MCP `tools/list` endpoint, or a stdio MCP server.
 
+From a source checkout, use `corepack pnpm runner mcp audit ...` with the same
+flags. The global `synapsor` command is only needed after installing or linking
+the CLI.
+
 It does not call business tools. It only inspects names, descriptions, input schemas, output schemas, annotations, and examples when those are present.
 
 Every report includes this disclaimer:

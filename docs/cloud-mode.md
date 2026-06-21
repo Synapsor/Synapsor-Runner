@@ -2,6 +2,10 @@
 
 Cloud mode connects the local Synapsor Runner to Synapsor Cloud without sending database credentials to Cloud.
 
+Command examples use `synapsor ...` for readability. From a source checkout,
+run the same CLI as `corepack pnpm runner ...`; the packaged `synapsor`
+executable is only needed after installing or linking the CLI.
+
 ```text
 MCP client
   -> local Synapsor Runner MCP server

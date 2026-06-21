@@ -2,6 +2,10 @@
 
 Run:
 
+From a source checkout, use `corepack pnpm runner benchmark mcp-efficiency`.
+The global `synapsor` command is only needed after installing or linking the
+CLI.
+
 ```bash
 synapsor benchmark mcp-efficiency
 ```

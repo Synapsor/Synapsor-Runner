@@ -2,13 +2,22 @@
 
 Local mode runs Synapsor Runner inside the developer or customer environment. No Synapsor Cloud account is required for local review flows.
 
+Command model:
+
+- `./scripts/demo-docker.sh` runs the no-install Docker demo.
+- `corepack pnpm runner <command>` runs the CLI from a source checkout.
+- `synapsor <command>` is the same CLI after a user installs or links the
+  packaged binary.
+
 Current local-mode foundation:
 
 - strict JSON capability config validation in `packages/config`;
 - local SQLite proposal/event/evidence/query-audit/writeback/replay store in `packages/proposal-store`;
 - local proposal review CLI in `apps/runner`;
-- local localhost proposal review UI through `synapsor ui`;
-- static MCP database risk review with `synapsor mcp audit`;
+- local localhost proposal review UI through the same CLI, such as
+  `synapsor ui` or `corepack pnpm runner ui`;
+- static MCP database risk review with `synapsor mcp audit` or
+  `corepack pnpm runner mcp audit`;
 - local stdio MCP server with semantic read/proposal tools;
 - MCP resource reads for `synapsor://proposals/*`, `synapsor://evidence/*`, and `synapsor://replay/*`;
 - local approved proposal to `synapsor.writeback-job.v1` job generation;

@@ -3,6 +3,10 @@
 `synapsor inspect` reads database metadata so you can choose a narrow reviewed
 capability without writing an entire runner config by hand.
 
+From a source checkout, replace `synapsor inspect` with
+`corepack pnpm runner inspect`. The global `synapsor` command is only needed
+after installing or linking the CLI.
+
 ```bash
 synapsor inspect \
   --engine auto \

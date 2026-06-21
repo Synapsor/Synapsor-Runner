@@ -8,6 +8,10 @@ The primary local proof path is still the one-command Docker demo:
 
 Use this page after that demo passes and you want to attach a local MCP client. The tested integration contract here is stdio. Client-specific UIs change, so the checked-in examples verify config shape and `tools/list`, not every client screen.
 
+Command examples use `synapsor ...` for readability. From a source checkout,
+run the same CLI as `corepack pnpm runner ...`; the packaged `synapsor`
+executable is only needed after installing or linking the CLI.
+
 Checked examples live in:
 
 ```text

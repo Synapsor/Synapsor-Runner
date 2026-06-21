@@ -3,6 +3,10 @@
 `synapsor ui` starts a lightweight browser review surface for a local Runner
 store.
 
+From a source checkout, use `corepack pnpm runner ui ...` with the same flags.
+The global `synapsor` command is only needed after installing or linking the
+CLI.
+
 ```bash
 synapsor ui --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```

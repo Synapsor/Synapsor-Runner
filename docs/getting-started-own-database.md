@@ -7,6 +7,11 @@ Do not start with your most sensitive production database. The v0.1 runner is a
 local commit-safety runtime for reviewed single-row business actions, not a
 production certification.
 
+Command examples use `synapsor ...` for readability. From a source checkout,
+run the same CLI as `corepack pnpm runner ...`; no global install is required.
+Use `./scripts/demo-docker.sh` first when you only want the no-install local
+demo.
+
 ## 1. Put the read URL in an environment variable
 
 Do not pass connection strings on the command line.

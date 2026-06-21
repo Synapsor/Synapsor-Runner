@@ -2,6 +2,10 @@
 
 Synapsor Runner config files are versioned with `version: 1`.
 
+Command examples use `synapsor ...` for readability. From a source checkout,
+run the same CLI as `corepack pnpm runner ...`; the packaged `synapsor`
+executable is only needed after installing or linking the CLI.
+
 Current v0.1 behavior:
 
 - `synapsor config validate` validates the current schema;
