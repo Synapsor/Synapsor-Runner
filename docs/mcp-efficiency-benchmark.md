@@ -1,21 +1,47 @@
 # MCP Efficiency Benchmark
 
-The benchmark command is planned but not implemented yet.
-
-The intended command is:
+Run:
 
 ```bash
 synapsor benchmark mcp-efficiency
 ```
 
-The benchmark should compare an included fixture, not make universal marketing
-claims.
+For machine-readable output:
 
-It should measure:
+```bash
+synapsor benchmark mcp-efficiency --json
+```
+
+The benchmark compares an included fixture, not universal model behavior.
+
+Current fixture:
+
+```text
+late-fee-waiver
+```
+
+Reference path:
+
+```text
+list_tables
+describe_table invoices
+query_database SELECT invoice
+formulate raw UPDATE
+execute_sql UPDATE invoice
+```
+
+Synapsor Runner semantic path:
+
+```text
+billing.inspect_invoice
+billing.propose_late_fee_waiver
+```
+
+It measures:
 
 - number of exposed tools;
 - serialized `tools/list` bytes;
-- token count with a pinned tokenizer;
+- token count with a pinned deterministic fixture tokenizer;
 - scripted tool-call count;
 - schema/context bytes and tokens exposed;
 - business result bytes and tokens;
@@ -23,6 +49,15 @@ It should measure:
 - whether write credentials are exposed;
 - whether approval is separated;
 - whether stale-row conflict is checked.
+
+Tokenizer:
+
+```text
+synapsor-fixture-tokenizer-v1
+```
+
+This tokenizer is a deterministic regex tokenizer used only for repeatable
+fixture comparison. It is not a model billing tokenizer.
 
 Allowed README phrasing after implementation:
 

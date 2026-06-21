@@ -486,6 +486,18 @@ corepack pnpm test:mcp-cloud-linked
 
 This starts the disposable Postgres billing fixture, registers a runner against a mock Synapsor Cloud API, serves MCP in `mode: "cloud"`, fetches the Cloud adapter tool catalog, calls the proposal tool through the Cloud adapter API, confirms the source row is unchanged before approval, claims an approved writeback job, applies it through the real guarded Postgres adapter, and submits the terminal receipt back to the mock Cloud API without sending database credentials to Cloud.
 
+Run the reproducible fixture benchmark:
+
+```bash
+corepack pnpm runner benchmark mcp-efficiency
+corepack pnpm runner benchmark mcp-efficiency --json
+```
+
+In the included fixture, semantic capabilities replace generic schema
+exploration and raw SQL with two compact business tools. Run the benchmark to
+inspect tool definitions, reference tool-call count, and tokenized context
+size. This is not a universal savings claim.
+
 ## Connect to Synapsor Cloud
 
 Use Cloud mode when you want shared approvals, RBAC, hosted evidence/replay

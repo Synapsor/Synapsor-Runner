@@ -48,6 +48,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "runner") return runnerCommand(rest);
   if (command === "cloud") return cloud(rest);
   if (command === "mcp") return mcp(rest);
+  if (command === "benchmark") return benchmark(rest);
   if (command === "proposals") return proposals(rest);
   if (command === "replay") return replay(rest);
   usage();
@@ -631,6 +632,256 @@ async function mcpAudit(args: string[]): Promise<number> {
   const report = auditMcpManifest(payload, { target });
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatMcpAuditReport(report));
   return 0;
+}
+
+async function benchmark(args: string[]): Promise<number> {
+  const [subcommand] = args;
+  if (subcommand !== "mcp-efficiency") {
+    usage();
+    return 2;
+  }
+  const report = buildMcpEfficiencyBenchmark();
+  process.stdout.write(args.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : formatMcpEfficiencyBenchmark(report));
+  return 0;
+}
+
+type BenchmarkPath = {
+  name: string;
+  tools: Array<Record<string, unknown>>;
+  scripted_plan: string[];
+  schema_context: Record<string, unknown>;
+  business_result: Record<string, unknown>;
+  exposes_raw_sql: boolean;
+  exposes_write_credentials: boolean;
+  approval_separated: boolean;
+  stale_row_conflict_checked: boolean;
+};
+
+type BenchmarkMeasurement = {
+  exposed_tools: number;
+  serialized_tools_list_bytes: number;
+  serialized_tools_list_tokens: number;
+  schema_context_bytes: number;
+  schema_context_tokens: number;
+  business_result_bytes: number;
+  business_result_tokens: number;
+  scripted_tool_calls: number;
+  exposes_raw_sql: boolean;
+  exposes_write_credentials: boolean;
+  approval_separated: boolean;
+  stale_row_conflict_checked: boolean;
+};
+
+function buildMcpEfficiencyBenchmark(): Record<string, unknown> {
+  const genericPath: BenchmarkPath = {
+    name: "generic_database_mcp_reference",
+    tools: [
+      {
+        name: "list_tables",
+        description: "List available database tables.",
+        input_schema: { type: "object", properties: {}, additionalProperties: false },
+      },
+      {
+        name: "describe_table",
+        description: "Describe columns and indexes for an arbitrary table.",
+        input_schema: {
+          type: "object",
+          properties: {
+            schema: { type: "string" },
+            table: { type: "string" },
+          },
+          required: ["table"],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "query_database",
+        description: "Run a read query against the database.",
+        input_schema: {
+          type: "object",
+          properties: {
+            sql: { type: "string" },
+          },
+          required: ["sql"],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "execute_sql",
+        description: "Execute a SQL statement that may modify database state.",
+        input_schema: {
+          type: "object",
+          properties: {
+            sql: { type: "string" },
+          },
+          required: ["sql"],
+          additionalProperties: false,
+        },
+      },
+    ],
+    scripted_plan: [
+      "list_tables",
+      "describe_table invoices",
+      "query_database SELECT invoice",
+      "formulate raw UPDATE",
+      "execute_sql UPDATE invoice",
+    ],
+    schema_context: {
+      tables: {
+        invoices: {
+          columns: ["id", "tenant_id", "customer_id", "late_fee_cents", "waiver_reason", "status", "updated_at"],
+          primary_key: "id",
+          tenant_key: "tenant_id",
+          mutable_columns: "not enforced by tool schema",
+        },
+      },
+    },
+    business_result: {
+      row: { id: "INV-3001", tenant_id: "acme", late_fee_cents: 5500, status: "overdue", updated_at: "2026-06-20T14:31:08Z" },
+      planned_sql: "UPDATE invoices SET late_fee_cents = 0 WHERE id = 'INV-3001';",
+    },
+    exposes_raw_sql: true,
+    exposes_write_credentials: false,
+    approval_separated: false,
+    stale_row_conflict_checked: false,
+  };
+
+  const semanticPath: BenchmarkPath = {
+    name: "synapsor_runner_semantic_path",
+    tools: [
+      {
+        name: "billing.inspect_invoice",
+        description: "Inspect one invoice within trusted tenant scope and return reviewed evidence fields.",
+        input_schema: {
+          type: "object",
+          properties: { invoice_id: { type: "string", maxLength: 128 } },
+          required: ["invoice_id"],
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true },
+      },
+      {
+        name: "billing.propose_late_fee_waiver",
+        description: "Create a review-required proposal to waive one invoice late fee; source DB remains unchanged.",
+        input_schema: {
+          type: "object",
+          properties: {
+            invoice_id: { type: "string", maxLength: 128 },
+            reason: { type: "string", maxLength: 500 },
+          },
+          required: ["invoice_id", "reason"],
+          additionalProperties: false,
+        },
+        annotations: { destructiveHint: false },
+      },
+    ],
+    scripted_plan: [
+      "billing.inspect_invoice",
+      "billing.propose_late_fee_waiver",
+    ],
+    schema_context: {
+      capability: "billing.propose_late_fee_waiver",
+      target: "public.invoices",
+      trusted_scope: ["tenant_id from SYNAPSOR_TENANT_ID", "principal from SYNAPSOR_PRINCIPAL"],
+      visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+      allowed_columns: ["late_fee_cents", "waiver_reason"],
+      conflict_guard: "updated_at",
+    },
+    business_result: {
+      status: "review_required",
+      proposal_id: "wrp_fixture",
+      source_database_changed: false,
+      diff: {
+        late_fee_cents: { before: 5500, proposed: 0 },
+        waiver_reason: { before: null, proposed: "customer requested review" },
+      },
+      approval: { status: "pending", required_role: "billing_lead" },
+    },
+    exposes_raw_sql: false,
+    exposes_write_credentials: false,
+    approval_separated: true,
+    stale_row_conflict_checked: true,
+  };
+
+  return {
+    benchmark: "mcp-efficiency",
+    fixture: "late-fee-waiver",
+    tokenizer: {
+      name: "synapsor-fixture-tokenizer-v1",
+      version: 1,
+      method: "deterministic regex tokenization for fixture comparison; not a model billing tokenizer",
+    },
+    note: "This benchmark compares the included fixture/reference workflow only. It is not a universal token-savings claim.",
+    paths: {
+      [genericPath.name]: measureBenchmarkPath(genericPath),
+      [semanticPath.name]: measureBenchmarkPath(semanticPath),
+    },
+    scripted_plans: {
+      [genericPath.name]: genericPath.scripted_plan,
+      [semanticPath.name]: semanticPath.scripted_plan,
+    },
+  };
+}
+
+function measureBenchmarkPath(pathSpec: BenchmarkPath): BenchmarkMeasurement {
+  const toolsJson = JSON.stringify({ tools: pathSpec.tools });
+  const schemaContextJson = JSON.stringify(pathSpec.schema_context);
+  const businessResultJson = JSON.stringify(pathSpec.business_result);
+  return {
+    exposed_tools: pathSpec.tools.length,
+    serialized_tools_list_bytes: Buffer.byteLength(toolsJson, "utf8"),
+    serialized_tools_list_tokens: countFixtureTokens(toolsJson),
+    schema_context_bytes: Buffer.byteLength(schemaContextJson, "utf8"),
+    schema_context_tokens: countFixtureTokens(schemaContextJson),
+    business_result_bytes: Buffer.byteLength(businessResultJson, "utf8"),
+    business_result_tokens: countFixtureTokens(businessResultJson),
+    scripted_tool_calls: pathSpec.scripted_plan.length,
+    exposes_raw_sql: pathSpec.exposes_raw_sql,
+    exposes_write_credentials: pathSpec.exposes_write_credentials,
+    approval_separated: pathSpec.approval_separated,
+    stale_row_conflict_checked: pathSpec.stale_row_conflict_checked,
+  };
+}
+
+function countFixtureTokens(text: string): number {
+  return text.match(/[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g)?.length ?? 0;
+}
+
+function formatMcpEfficiencyBenchmark(report: Record<string, unknown>): string {
+  const paths = report.paths as Record<string, BenchmarkMeasurement>;
+  const generic = paths.generic_database_mcp_reference;
+  const semantic = paths.synapsor_runner_semantic_path;
+  if (!generic || !semantic) {
+    throw new Error("benchmark report is missing expected fixture paths");
+  }
+  const lines = [
+    "MCP efficiency benchmark: late-fee-waiver fixture",
+    "Tokenizer: synapsor-fixture-tokenizer-v1 (deterministic fixture tokenizer; not a model billing tokenizer)",
+    "Scope: included fixture/reference workflow only; not a universal savings claim.",
+    "",
+    "Generic database MCP reference:",
+    `  exposed tools: ${generic.exposed_tools}`,
+    `  tools/list: ${generic.serialized_tools_list_bytes} bytes, ${generic.serialized_tools_list_tokens} tokens`,
+    `  scripted tool calls: ${generic.scripted_tool_calls}`,
+    `  schema/context: ${generic.schema_context_bytes} bytes, ${generic.schema_context_tokens} tokens`,
+    `  business result: ${generic.business_result_bytes} bytes, ${generic.business_result_tokens} tokens`,
+    `  raw SQL exposed: ${generic.exposes_raw_sql ? "yes" : "no"}`,
+    `  approval separated: ${generic.approval_separated ? "yes" : "no"}`,
+    `  stale-row conflict checked: ${generic.stale_row_conflict_checked ? "yes" : "no"}`,
+    "",
+    "Synapsor Runner semantic path:",
+    `  exposed tools: ${semantic.exposed_tools}`,
+    `  tools/list: ${semantic.serialized_tools_list_bytes} bytes, ${semantic.serialized_tools_list_tokens} tokens`,
+    `  scripted tool calls: ${semantic.scripted_tool_calls}`,
+    `  schema/context: ${semantic.schema_context_bytes} bytes, ${semantic.schema_context_tokens} tokens`,
+    `  business result: ${semantic.business_result_bytes} bytes, ${semantic.business_result_tokens} tokens`,
+    `  raw SQL exposed: ${semantic.exposes_raw_sql ? "yes" : "no"}`,
+    `  approval separated: ${semantic.approval_separated ? "yes" : "no"}`,
+    `  stale-row conflict checked: ${semantic.stale_row_conflict_checked ? "yes" : "no"}`,
+    "",
+    "Run with --json to inspect machine-readable measurements and scripted plans.",
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 async function readMcpAuditTarget(target: string, args: string[], timeoutMs: number): Promise<unknown> {
@@ -1249,6 +1500,7 @@ Commands:
   cloud connect [--config ./synapsor.cloud.json]
   mcp serve [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   mcp audit ./tools-list.json [--json]
+  benchmark mcp-efficiency [--json]
   proposals list [--store ./.synapsor/local.db] [--state pending_review] [--json]
   proposals show <proposal_id> [--store ./.synapsor/local.db] [--json]
   proposals approve <proposal_id> [--store ./.synapsor/local.db] [--actor local_user] [--yes]
