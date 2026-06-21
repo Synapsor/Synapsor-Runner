@@ -14,7 +14,7 @@ Give it a tool.
 Hope it behaves.
 ```
 
-With Synapsor:
+With Synapsor Runner:
 
 ```text
 Expose reviewed business capabilities.
@@ -400,11 +400,10 @@ MCP tool call equals request/proposal authority. Trusted runner equals execution
 
 The runner does not make MCP generally secure. It protects the Synapsor database path by avoiding model-facing raw SQL, binding trusted scope outside model arguments, enforcing allowlisted targets/columns, checking stale rows, and recording terminal receipts.
 
-## Remote setup later
+## Community
 
-When Supsmall Inc. is ready to publish the repo, create the remote and push:
+Synapsor Runner is maintained by Synapsor.
 
-```bash
-git remote add origin https://github.com/<owner>/synapsor-runner.git
-git push -u origin main
-```
+- Website: https://synapsor.ai
+- Docs: https://synapsor.ai/docs
+- Issues: use GitHub Issues
