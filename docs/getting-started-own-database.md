@@ -38,7 +38,50 @@ synapsor inspect \
 
 Inspection reads metadata only by default. It does not sample business rows.
 
-## 3. Create a reviewed selection spec
+## 3. Generate from reviewed selections
+
+If you already know the reviewed table/action, generate config directly from
+metadata and explicit flags:
+
+```bash
+synapsor init \
+  --database-url-env SYNAPSOR_DATABASE_READ_URL \
+  --engine postgres \
+  --schema public \
+  --table invoices \
+  --namespace billing \
+  --object-name invoice \
+  --mode review \
+  --visible-columns id,tenant_id,late_fee_cents,waiver_reason,updated_at \
+  --allowed-columns late_fee_cents,waiver_reason \
+  --patch-fixed late_fee_cents=0 \
+  --patch-from-arg waiver_reason=reason \
+  --write-url-env SYNAPSOR_DATABASE_WRITE_URL
+```
+
+Or generate from a saved inspection snapshot without reconnecting:
+
+```bash
+synapsor init \
+  --inspection-json schema-inspection.json \
+  --table invoices \
+  --namespace billing \
+  --object-name invoice \
+  --mode review \
+  --patch-fixed late_fee_cents=0 \
+  --patch-from-arg waiver_reason=reason
+```
+
+The command uses inspected metadata for primary-key, tenant-key, conflict-column,
+and default-visible-column suggestions. If a suggestion is ambiguous or missing,
+pass explicit flags such as `--primary-key`, `--tenant-key`, and
+`--conflict-column`.
+
+Review mode requires at least one explicit `--patch-fixed` or
+`--patch-from-arg` mapping. Use `--mode read_only` if you only want an inspect
+tool.
+
+## 4. Or create a reviewed selection spec
 
 Create `onboarding-selection.json` from one table and one safe business action.
 
@@ -68,7 +111,7 @@ Create `onboarding-selection.json` from one table and one safe business action.
 The selection file contains reviewed metadata selections only. It must not
 contain database URLs or passwords.
 
-## 4. Generate runner files
+## 5. Generate runner files
 
 ```bash
 synapsor init \
@@ -88,7 +131,7 @@ This creates:
 Use `--force` only if you intentionally want to overwrite existing generated
 files.
 
-## 5. Validate the config
+## 6. Validate the config
 
 ```bash
 synapsor config validate --config synapsor.runner.json
@@ -111,7 +154,7 @@ available, and the semantic MCP tool boundary. Use JSON for automation:
 synapsor doctor --config synapsor.runner.json --json
 ```
 
-## 6. Serve semantic MCP tools
+## 7. Serve semantic MCP tools
 
 ```bash
 export SYNAPSOR_TENANT_ID="acme"
@@ -129,7 +172,7 @@ billing.propose_invoice_update
 It does not expose `execute_sql`, approval tools, commit tools, database URLs,
 write credentials, or tenant authority.
 
-## 7. Review and apply outside MCP
+## 8. Review and apply outside MCP
 
 Proposal tools leave the source database unchanged. Review locally:
 

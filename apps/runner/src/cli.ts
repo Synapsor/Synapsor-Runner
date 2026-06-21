@@ -17,8 +17,11 @@ import {
   generateRunnerConfigFromSpec,
   inspectDatabase,
   summarizeInspection,
+  type GeneratedOnboardingFiles,
   type InspectEngine,
   type OnboardingSelectionSpec,
+  type SchemaInspection,
+  type TableInfo,
 } from "@synapsor-runner/schema-inspector";
 import {
   auditMcpManifest,
@@ -60,6 +63,24 @@ async function init(args: string[]): Promise<number> {
   if (specPath) {
     return initFromSpec(args, specPath);
   }
+  const inspectionJson = optionalArg(args, "--inspection-json");
+  if (inspectionJson) {
+    const inspection = JSON.parse(await fs.readFile(inspectionJson, "utf8")) as SchemaInspection;
+    return initFromInspection(args, inspection, optionalArg(args, "--database-url-env") ?? "SYNAPSOR_DATABASE_READ_URL");
+  }
+  const databaseUrlEnv = optionalArg(args, "--database-url-env");
+  if (databaseUrlEnv) {
+    const engine = (optionalArg(args, "--engine") ?? "auto") as InspectEngine;
+    if (!["postgres", "mysql", "auto"].includes(engine)) {
+      throw new Error("init --engine must be postgres, mysql, or auto when --database-url-env is used");
+    }
+    const inspection = await inspectDatabase({
+      engine,
+      databaseUrlEnv,
+      schema: optionalArg(args, "--schema"),
+    });
+    return initFromInspection(args, inspection, databaseUrlEnv);
+  }
   const output = optionalArg(args, "--output") ?? "synapsor.runner.json";
   const engine = optionalArg(args, "--engine") ?? "postgres";
   const mode = optionalArg(args, "--mode") ?? "review";
@@ -96,6 +117,82 @@ async function initFromSpec(args: string[], specPath: string): Promise<number> {
   const force = args.includes("--force");
   const spec = JSON.parse(await fs.readFile(specPath, "utf8")) as OnboardingSelectionSpec;
   const generated = generateRunnerConfigFromSpec(spec);
+  await writeGeneratedOnboardingFiles(output, generated, force);
+  return 0;
+}
+
+async function initFromInspection(args: string[], inspection: SchemaInspection, databaseUrlEnv: string): Promise<number> {
+  const tableName = optionalArg(args, "--table");
+  if (!tableName) {
+    const available = inspection.tables.slice(0, 12).map((table) => `${table.schema}.${table.name}`).join(", ");
+    throw new Error(`init from inspection requires --table <name>. Available objects: ${available || "(none)"}`);
+  }
+  const schemaName = optionalArg(args, "--schema");
+  const table = findInspectionTable(inspection, tableName, schemaName);
+  if (!table) {
+    throw new Error(`table not found in inspection: ${schemaName ? `${schemaName}.` : ""}${tableName}`);
+  }
+  const mode = optionalArg(args, "--mode") ?? "shadow";
+  if (!["read_only", "shadow", "review"].includes(mode)) {
+    throw new Error("init from inspection --mode must be read_only, shadow, or review");
+  }
+  const primaryKey = optionalArg(args, "--primary-key") ?? (table.primary_key.length === 1 ? table.primary_key[0] : undefined);
+  if (!primaryKey) {
+    throw new Error(`--primary-key is required for ${table.schema}.${table.name}; detected primary keys: ${table.primary_key.join(", ") || "none"}`);
+  }
+  const tenantKey = optionalArg(args, "--tenant-key") ?? table.suggestions.tenant_columns[0];
+  const singleTenantDev = args.includes("--single-tenant-dev");
+  if (!tenantKey && !singleTenantDev) {
+    throw new Error(`--tenant-key is required for ${table.schema}.${table.name}, or pass --single-tenant-dev for a reviewed single-tenant dev source.`);
+  }
+  const conflictColumn = optionalArg(args, "--conflict-column") ?? table.suggestions.conflict_columns[0];
+  if (mode !== "read_only" && !conflictColumn) {
+    process.stderr.write(`warning: no conflict/version column selected for ${table.schema}.${table.name}; generated proposal will require weak-guard acknowledgement.\n`);
+  }
+  const visibleColumns = listArg(args, "--visible-columns") ?? table.suggestions.default_visible_columns;
+  if (visibleColumns.length === 0) {
+    throw new Error(`no visible columns selected for ${table.schema}.${table.name}; pass --visible-columns col1,col2`);
+  }
+  const patch = parsePatchFlags(args);
+  if (mode !== "read_only" && Object.keys(patch).length === 0) {
+    throw new Error(`${mode} init requires at least one --patch-fixed column=value or --patch-from-arg column=arg. Use --mode read_only for inspect-only tools.`);
+  }
+  const allowedColumns = listArg(args, "--allowed-columns") ?? Object.keys(patch);
+  const spec: OnboardingSelectionSpec = {
+    version: 1,
+    engine: inspection.engine,
+    mode: mode as "read_only" | "shadow" | "review",
+    source_name: optionalArg(args, "--source-name"),
+    read_url_env: databaseUrlEnv,
+    write_url_env: optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL",
+    schema: table.schema,
+    table: table.name,
+    primary_key: primaryKey,
+    tenant_key: tenantKey,
+    single_tenant_dev: singleTenantDev,
+    conflict_column: conflictColumn,
+    namespace: optionalArg(args, "--namespace") ?? "source",
+    object_name: optionalArg(args, "--object-name"),
+    lookup_arg: optionalArg(args, "--lookup-arg"),
+    visible_columns: visibleColumns,
+    allowed_columns: allowedColumns,
+    patch,
+    trusted_context: {
+      tenant_id_env: optionalArg(args, "--tenant-env") ?? "SYNAPSOR_TENANT_ID",
+      principal_env: optionalArg(args, "--principal-env") ?? "SYNAPSOR_PRINCIPAL",
+    },
+    approval: {
+      required_role: optionalArg(args, "--approval-role") ?? "local_reviewer",
+    },
+  };
+  const generated = generateRunnerConfigFromSpec(spec);
+  await writeGeneratedOnboardingFiles(optionalArg(args, "--output") ?? "synapsor.runner.json", generated, args.includes("--force"));
+  process.stdout.write(`selected ${table.schema}.${table.name} from ${inspection.engine} inspection\n`);
+  process.stdout.write(`exposed tools: ${(generated.config.capabilities as Array<{ name: string }>).map((capability) => capability.name).join(", ")}\n`);
+  return 0;
+}
+
+async function writeGeneratedOnboardingFiles(output: string, generated: GeneratedOnboardingFiles, force: boolean): Promise<void> {
   await writeFileGuarded(output, `${JSON.stringify(generated.config, null, 2)}\n`, force);
   await writeFileGuarded(".env.example", generated.envExample, force);
   await fs.mkdir(path.resolve(".synapsor/mcp"), { recursive: true });
@@ -107,7 +204,58 @@ async function initFromSpec(args: string[], specPath: string): Promise<number> {
   process.stdout.write("created .env.example\n");
   process.stdout.write("created MCP client snippets under .synapsor/mcp\n");
   process.stdout.write("Next: set the referenced environment variables, run `synapsor config validate`, then run `synapsor mcp serve`.\n");
-  return 0;
+}
+
+function findInspectionTable(inspection: SchemaInspection, tableName: string, schemaName?: string): TableInfo | undefined {
+  const candidates = inspection.tables.filter((table) => {
+    if (schemaName && table.schema !== schemaName) return false;
+    return table.name === tableName || `${table.schema}.${table.name}` === tableName;
+  });
+  if (candidates.length === 1) return candidates[0];
+  return candidates.find((table) => table.schema === schemaName) ?? candidates[0];
+}
+
+function listArg(args: string[], flag: string): string[] | undefined {
+  const value = optionalArg(args, flag);
+  if (!value) return undefined;
+  return uniqueStrings(value.split(",").map((item) => item.trim()).filter(Boolean));
+}
+
+function repeatedArgs(args: string[], flag: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === flag && args[index + 1]) values.push(String(args[index + 1]));
+  }
+  return values;
+}
+
+function parsePatchFlags(args: string[]): NonNullable<OnboardingSelectionSpec["patch"]> {
+  const patch: NonNullable<OnboardingSelectionSpec["patch"]> = {};
+  for (const binding of repeatedArgs(args, "--patch-fixed")) {
+    const [column, ...rest] = binding.split("=");
+    const value = rest.join("=");
+    if (!column || rest.length === 0) throw new Error("--patch-fixed must use column=value");
+    patch[column] = { fixed: parseFixedPatchValue(value) };
+  }
+  for (const binding of repeatedArgs(args, "--patch-from-arg")) {
+    const [column, ...rest] = binding.split("=");
+    const arg = rest.join("=");
+    if (!column || !arg) throw new Error("--patch-from-arg must use column=arg_name");
+    patch[column] = { from_arg: arg };
+  }
+  return patch;
+}
+
+function parseFixedPatchValue(value: string): string | number | boolean | null {
+  if (value === "null") return null;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  return value;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 async function inspect(args: string[]): Promise<number> {
@@ -1491,6 +1639,8 @@ function usage(): void {
 Commands:
   init [--engine postgres|mysql] [--mode read_only|shadow|review|cloud] [--output synapsor.runner.json] [--force]
   init --spec onboarding-selection.json --non-interactive [--output synapsor.runner.json] [--force]
+  init --database-url-env SYNAPSOR_DATABASE_READ_URL --engine auto --table invoices --namespace billing --patch-from-arg waiver_reason=reason [--patch-fixed late_fee_cents=0]
+  init --inspection-json schema-inspection.json --table invoices --namespace billing --patch-from-arg waiver_reason=reason
   inspect --database-url-env SYNAPSOR_DATABASE_READ_URL [--engine auto|postgres|mysql] [--schema public] [--json]
   config validate [--config synapsor.runner.json] [--json]
   config show [--config synapsor.runner.json] [--redacted]

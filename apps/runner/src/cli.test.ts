@@ -112,6 +112,88 @@ describe("runner cli", () => {
     }
   });
 
+  it("initializes from an inspected schema snapshot and reviewed flags", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-inspection-"));
+    const oldCwd = process.cwd();
+    const inspectionPath = path.join(tempDir, "schema-inspection.json");
+    await fs.writeFile(inspectionPath, JSON.stringify({
+      engine: "postgres",
+      server_version: "PostgreSQL 16 fixture",
+      current_user: "synapsor_reader",
+      inspected_at: "2026-06-21T00:00:00Z",
+      schemas: ["public"],
+      warnings: [],
+      tables: [
+        {
+          schema: "public",
+          name: "invoices",
+          type: "table",
+          writable: true,
+          columns: [
+            { name: "id", data_type: "text", nullable: false, generated: false, ordinal_position: 1, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+            { name: "tenant_id", data_type: "text", nullable: false, generated: false, ordinal_position: 2, suggestions: { tenant: true, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+            { name: "late_fee_cents", data_type: "integer", nullable: false, generated: false, ordinal_position: 3, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+            { name: "waiver_reason", data_type: "text", nullable: true, generated: false, ordinal_position: 4, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+            { name: "updated_at", data_type: "timestamp", nullable: false, generated: false, ordinal_position: 5, suggestions: { tenant: false, conflict: true, sensitive: false, immutable: false, large_or_binary: false } },
+          ],
+          primary_key: ["id"],
+          unique_constraints: [],
+          foreign_keys: [],
+          indexes: [],
+          suggestions: {
+            tenant_columns: ["tenant_id"],
+            conflict_columns: ["updated_at"],
+            sensitive_columns: [],
+            default_visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+          },
+        },
+      ],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      process.chdir(tempDir);
+      await expect(main([
+        "init",
+        "--inspection-json",
+        inspectionPath,
+        "--database-url-env",
+        "SYNAPSOR_DATABASE_READ_URL",
+        "--table",
+        "invoices",
+        "--namespace",
+        "billing",
+        "--object-name",
+        "invoice",
+        "--mode",
+        "review",
+        "--patch-fixed",
+        "late_fee_cents=0",
+        "--patch-from-arg",
+        "waiver_reason=reason",
+      ])).resolves.toBe(0);
+      const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.sources.local_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
+      expect(config.sources.local_postgres.write_url_env).toBe("SYNAPSOR_DATABASE_WRITE_URL");
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_invoice_update",
+      ]);
+      expect(config.capabilities[1].patch).toEqual({
+        late_fee_cents: { fixed: 0 },
+        waiver_reason: { from_arg: "reason" },
+      });
+      expect(output.join("")).toContain("selected public.invoices");
+      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password/i);
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
   it("validates and shows redacted runner config", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");

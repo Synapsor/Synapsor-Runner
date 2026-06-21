@@ -167,6 +167,23 @@ synapsor inspect \
   --schema public
 ```
 
+Then generate config from explicit reviewed selections:
+
+```bash
+synapsor init \
+  --database-url-env SYNAPSOR_DATABASE_READ_URL \
+  --engine postgres \
+  --schema public \
+  --table invoices \
+  --namespace billing \
+  --object-name invoice \
+  --mode review \
+  --visible-columns id,tenant_id,late_fee_cents,waiver_reason,updated_at \
+  --allowed-columns late_fee_cents,waiver_reason \
+  --patch-fixed late_fee_cents=0 \
+  --patch-from-arg waiver_reason=reason
+```
+
 Create a reviewed selection file from that metadata:
 
 ```json
