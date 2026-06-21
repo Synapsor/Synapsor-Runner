@@ -62,6 +62,16 @@ change can become durable business state.
 
 > Alpha: v0.1 supports guarded single-row `UPDATE` jobs only. It is not HA, not a self-hosted Synapsor Cloud, not exactly-once across networks, and not a compliance certification.
 
+## 30-second TL;DR
+
+In a few minutes you can:
+
+1. Run a local Postgres/MySQL MCP demo.
+2. See an agent create a proposal instead of writing directly.
+3. Approve it outside the model-facing tool surface.
+4. Watch the runner apply or reject it with tenant, column, idempotency, and row-version guards.
+5. Replay the evidence, approval, writeback receipt, and conflict decision.
+
 ## How it works
 
 Synapsor Runner sits between your MCP client and your database. Think of it as
@@ -102,6 +112,27 @@ It helps you:
 - block stale-row writes instead of silently overwriting newer data;
 - inspect local evidence, approvals, receipts, and replay.
 
+## Command model
+
+Use the Docker demo when you only want to see the trust loop:
+
+```bash
+./scripts/demo-docker.sh
+```
+
+Use the source checkout when developing or evaluating the repo:
+
+```bash
+corepack enable
+corepack pnpm install
+corepack pnpm build
+corepack pnpm runner <command>
+```
+
+Use `synapsor <command>` only after installing or linking the CLI. In this
+README, `synapsor ...` and `corepack pnpm runner ...` refer to the same CLI
+entrypoint; the latter runs it directly from this repository.
+
 ## Quickstart
 
 Run the full local MCP demo with Docker only:
@@ -140,6 +171,57 @@ stdio MCP server, and proves:
 - A stale row returns `conflict` with no write.
 - Replay can explain the proposal, approval, receipt, evidence, and query audit.
 
+## Connect an MCP client
+
+After you generate a reviewed config, point an MCP client at the local stdio
+server. A minimal generic config looks like:
+
+```json
+{
+  "mcpServers": {
+    "synapsor-runner": {
+      "command": "synapsor",
+      "args": ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"]
+    }
+  }
+}
+```
+
+From a source checkout, use the generated snippets instead of hand-editing:
+
+```bash
+corepack pnpm runner mcp configure \
+  --client generic-stdio \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+The client config contains the local command and args only. It must not contain
+database URLs, passwords, approval tools, or write credentials.
+
+## Run the local UI
+
+Use the local UI when you want a browser-based proposal review surface without
+exposing approval or commit tools to the MCP model:
+
+```bash
+synapsor ui --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+From this repository:
+
+```bash
+corepack pnpm runner ui --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+The command binds to `127.0.0.1` by default and prints a per-run local URL with
+a session token. The UI shows setup summary, semantic tools, proposals, exact
+diffs, evidence, approval state, receipts, and replay. Approve/reject actions
+require the local session plus CSRF protection.
+
+The UI does not expose raw SQL, approval tools in MCP, commit tools in MCP,
+database URLs, or password values.
+
 ## Use your own Postgres or MySQL database
 
 After the Docker demo, point Synapsor Runner at a staging database and define
@@ -155,6 +237,14 @@ Full walkthrough: `docs/getting-started-own-database.md`.
 Synapsor Runner does not auto-generate arbitrary database tools. You define the
 source, table, primary key, tenant key, visible columns, allowed write columns,
 conflict guard, and mode in `synapsor.runner.json`.
+
+For v0.1, start with one table or safe view that has:
+
+- a primary key;
+- a tenant/scope column, unless it is truly a single-tenant safe view;
+- an `updated_at`, `version`, `lock_version`, or equivalent conflict column;
+- a small set of safe visible columns;
+- one or two safe writable columns for a reviewed single-row `UPDATE`.
 
 The path is:
 
@@ -254,21 +344,17 @@ synapsor inspect \
   --database-url-env SYNAPSOR_DATABASE_READ_URL
 ```
 
-The generated config will look like this:
+The generated config is intentionally explicit. A small excerpt looks like:
 
 ```json
 {
   "version": 1,
   "mode": "review",
-  "storage": {
-    "sqlite_path": "./.synapsor/local.db"
-  },
   "sources": {
     "app_postgres": {
       "engine": "postgres",
       "read_url_env": "SYNAPSOR_DATABASE_READ_URL",
-      "write_url_env": "SYNAPSOR_DATABASE_WRITE_URL",
-      "statement_timeout_ms": 3000
+      "write_url_env": "SYNAPSOR_DATABASE_WRITE_URL"
     }
   },
   "trusted_context": {
@@ -283,74 +369,21 @@ The generated config will look like this:
       "name": "billing.inspect_invoice",
       "kind": "read",
       "source": "app_postgres",
-      "target": {
-        "schema": "public",
-        "table": "invoices",
-        "primary_key": "id",
-        "tenant_key": "tenant_id"
-      },
-      "args": {
-        "invoice_id": {
-          "type": "string",
-          "required": true,
-          "max_length": 128
-        }
-      },
-      "lookup": {
-        "id_from_arg": "invoice_id"
-      },
-      "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
-      "evidence": "required",
-      "max_rows": 1
+      "target": { "schema": "public", "table": "invoices", "primary_key": "id", "tenant_key": "tenant_id" }
     },
     {
       "name": "billing.propose_late_fee_waiver",
       "kind": "proposal",
       "source": "app_postgres",
-      "target": {
-        "schema": "public",
-        "table": "invoices",
-        "primary_key": "id",
-        "tenant_key": "tenant_id"
-      },
-      "args": {
-        "invoice_id": {
-          "type": "string",
-          "required": true,
-          "max_length": 128
-        },
-        "reason": {
-          "type": "string",
-          "required": true,
-          "max_length": 500
-        }
-      },
-      "lookup": {
-        "id_from_arg": "invoice_id"
-      },
-      "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
-      "evidence": "required",
-      "max_rows": 1,
-      "patch": {
-        "late_fee_cents": {
-          "fixed": 0
-        },
-        "waiver_reason": {
-          "from_arg": "reason"
-        }
-      },
       "allowed_columns": ["late_fee_cents", "waiver_reason"],
-      "conflict_guard": {
-        "column": "updated_at"
-      },
-      "approval": {
-        "mode": "human",
-        "required_role": "billing_lead"
-      }
+      "patch": { "late_fee_cents": { "fixed": 0 }, "waiver_reason": { "from_arg": "reason" } },
+      "conflict_guard": { "column": "updated_at" }
     }
   ]
 }
 ```
+
+See `docs/capability-config.md` for the full config shape and validation rules.
 
 Serve the reviewed tools:
 
@@ -640,24 +673,8 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 
 `approve` and `reject` require interactive confirmation or explicit `--yes` for noninteractive scripts.
 
-## Run the local UI
-
-Use the local UI when you want a browser-based proposal review surface without
-exposing approval or commit tools to the MCP model:
-
-```bash
-synapsor ui --config ./synapsor.runner.json --store ./.synapsor/local.db
-```
-
-The command binds to `127.0.0.1` by default and prints a per-run local URL with
-a session token. The UI shows setup summary, semantic tools, proposals, exact
-diffs, evidence, approval state, receipts, and replay. Approve/reject actions
-require the local session plus CSRF protection.
-
-The UI does not expose raw SQL, approval tools in MCP, commit tools in MCP,
-database URLs, or password values.
-
-When applying a locally generated job, pass the same store path to attach the terminal execution receipt to replay:
+When applying a locally generated job, pass the same store path to attach the
+terminal execution receipt to replay:
 
 ```bash
 corepack pnpm runner apply --job job.json --store ./.synapsor/local.db
