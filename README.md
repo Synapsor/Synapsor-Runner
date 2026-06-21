@@ -145,10 +145,10 @@ stdio MCP server, and proves:
 After the Docker demo, point Synapsor Runner at a staging database and define
 one safe business capability.
 
-This works today in v0.1, but it is intentionally not "connect any database and
-let the model do anything." You inspect metadata, choose one table/view and one
-business action, generate a reviewed config, then expose narrow MCP tools from
-that config.
+This own-database path is implemented in v0.1, with narrow guardrails. It is
+not "connect any database and let the model do anything." You inspect metadata,
+choose one table/view and one business action, generate a reviewed config, then
+expose narrow MCP tools from that config.
 
 Full walkthrough: `docs/getting-started-own-database.md`.
 
@@ -156,7 +156,16 @@ Synapsor Runner does not auto-generate arbitrary database tools. You define the
 source, table, primary key, tenant key, visible columns, allowed write columns,
 conflict guard, and mode in `synapsor.runner.json`.
 
-Recommended path:
+The path is:
+
+1. Inspect database metadata with a read-only credential.
+2. Choose one reviewed table/view and one safe business action.
+3. Generate `synapsor.runner.json`.
+4. Serve only the reviewed semantic MCP tools.
+5. Approve proposals outside the model-facing tool surface.
+6. Apply approved writes through the guarded runner with a separate write credential.
+
+Start by inspecting metadata:
 
 ```bash
 export SYNAPSOR_DATABASE_READ_URL="postgresql://readonly:<password>@localhost:5432/app"
@@ -164,13 +173,16 @@ export SYNAPSOR_DATABASE_READ_URL="postgresql://readonly:<password>@localhost:54
 synapsor inspect \
   --engine postgres \
   --database-url-env SYNAPSOR_DATABASE_READ_URL \
-  --schema public
+  --schema public \
+  --json > schema-inspection.json
 ```
 
-Then generate config from explicit reviewed selections:
+Then generate config from explicit reviewed selections. This example exposes
+`billing.inspect_invoice` and `billing.propose_late_fee_waiver`:
 
 ```bash
 synapsor init \
+  --inspection-json schema-inspection.json \
   --database-url-env SYNAPSOR_DATABASE_READ_URL \
   --engine postgres \
   --schema public \
@@ -184,7 +196,7 @@ synapsor init \
   --patch-from-arg waiver_reason=reason
 ```
 
-Create a reviewed selection file from that metadata:
+You can also keep the reviewed selection in a file and generate from that file:
 
 ```json
 {
@@ -209,6 +221,14 @@ Create a reviewed selection file from that metadata:
 }
 ```
 
+Then run:
+
+```bash
+synapsor init --spec onboarding-selection.json --non-interactive
+synapsor config validate --config synapsor.runner.json
+synapsor doctor --config synapsor.runner.json
+```
+
 For MySQL, use the same flow with `--engine mysql`:
 
 ```bash
@@ -217,14 +237,6 @@ export SYNAPSOR_DATABASE_READ_URL="mysql://readonly:<password>@localhost:3306/ap
 synapsor inspect \
   --engine mysql \
   --database-url-env SYNAPSOR_DATABASE_READ_URL
-```
-
-Generate the config and MCP client snippets from your reviewed selection:
-
-```bash
-synapsor init --spec onboarding-selection.json --non-interactive
-synapsor config validate --config synapsor.runner.json
-synapsor doctor --config synapsor.runner.json
 ```
 
 The generated config will look like this:
