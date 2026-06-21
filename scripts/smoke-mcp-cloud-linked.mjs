@@ -45,16 +45,25 @@ function dockerSql(sql) {
 async function waitForPostgres() {
   let last = "";
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    const result = run(
+    const ready = run(
       "docker",
       ["exec", container, "pg_isready", "-U", "synapsor_admin", "-d", database],
       { capture: true, allowFailure: true },
     );
-    if (result.status === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return;
+    if (ready.status === 0) {
+      const query = run(
+        "docker",
+        ["exec", container, "psql", "-U", "synapsor_admin", "-d", database, "-tAc", "SELECT 1"],
+        { capture: true, allowFailure: true },
+      );
+      if (query.status === 0 && query.stdout.trim() === "1") {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return;
+      }
+      last = query.stderr || query.stdout || `psql exit ${query.status}`;
+    } else {
+      last = ready.stderr || ready.stdout || `pg_isready exit ${ready.status}`;
     }
-    last = result.stderr || result.stdout || `exit ${result.status}`;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(`Postgres billing database did not become ready: ${last}`);
