@@ -5,7 +5,7 @@
 This addendum supersedes earlier hosted-verifier notes in this report.
 
 - Current runner repo branch: `mcp-commit-safe-runtime`
-- Runner implementation commit before this report-only addendum: `d274a2ec048c78c91f00ef7cb7414d41fe2d1bf5`
+- Runner implementation commit before this report-only addendum: `c6ba7ffe60a8b9acd87ad29801e099f1dda46c7a`
 - Hosted verifier command:
 
 ```bash
@@ -32,13 +32,13 @@ Hosted Cloud-linked verification has now run successfully against `https://synap
   "tool_call": "ok",
   "proposal_linked": true,
   "evidence_linked": true,
-  "replay_linked": false,
+  "replay_linked": true,
   "source_database_mutated_before_approval": false,
   "writeback_applied": false
 }
 ```
 
-The remaining `replay_linked: false` is a Cloud replay-linkage follow-up, not a runner-local failure. The runner successfully authenticated with a scoped runner token, registered, heartbeated, listed the Cloud adapter catalog, invoked the semantic tool, verified no generic SQL tool exposure, and confirmed the source database was not mutated before approval.
+The runner successfully authenticated with a scoped runner token, registered, heartbeated, listed the Cloud adapter catalog, invoked the semantic tool, verified proposal/evidence/replay linkage, verified no generic SQL tool exposure, and confirmed the source database was not mutated before approval.
 
 ## Branch And Commit
 
@@ -48,7 +48,7 @@ The remaining `replay_linked: false` is a Cloud replay-linkage follow-up, not a 
 - Report/docs parity commit: `fae1a17d9a80c6fbf8b8c7e603fa0f9244897379`
 - Cloud-linked smoke commit: `e422e5c27853e9d97faf692809e67939037f744b`
 - Hosted Cloud-linked verifier commit: `8eec9d6f14dc6ff52a76f81cf671ba108b4f0923`
-- Runner implementation commit before this report-only addendum: `d274a2ec048c78c91f00ef7cb7414d41fe2d1bf5`
+- Runner implementation commit before this report-only addendum: `c6ba7ffe60a8b9acd87ad29801e099f1dda46c7a`
 
 ## Architecture Implemented
 
@@ -199,7 +199,7 @@ No browser screenshots were required for this runner-only repo. The user-facing 
 
 - v0.1 supports guarded single-row `UPDATE` writeback only.
 - Local approval is CLI-based; optional localhost approval UI remains follow-up.
-- Hosted Cloud-linked E2E now passes for runner doctor, registration, heartbeat, Cloud adapter tool catalog, semantic tool invocation, proposal/evidence linkage, generic SQL blocking, and no source mutation before approval. The hosted verifier still reports `replay_linked: false`; Cloud replay linkage remains follow-up.
+- Hosted Cloud-linked E2E now passes for runner doctor, registration, heartbeat, Cloud adapter tool catalog, semantic tool invocation, proposal/evidence/replay linkage, generic SQL blocking, and no source mutation before approval.
 - Local and Cloud histories remain separate unless a future import path is explicitly implemented.
 - Public release should still run dependency review, container scanning, and release/legal signoff.
 
@@ -211,7 +211,7 @@ No browser screenshots were required for this runner-only repo. The user-facing 
 ## Follow-Up Work
 
 - Optional local approval UI.
-- Cloud-linked staging E2E with a real workspace/adapter/runner token.
+- Keep the hosted verifier environment outside git and rerun it before any public MCP release candidate.
 - CI wiring for Docker-backed integration tests if not already enabled in the publishing pipeline.
 - Dependency/container scanning before public release.
 
