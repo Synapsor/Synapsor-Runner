@@ -56,8 +56,8 @@
       "properties": {
         "kind": { "enum": ["external_postgres", "external_mysql", "synapsor_table"] },
         "source_id": { "type": "string", "minLength": 1 },
-        "schema": { "type": "string", "minLength": 1 },
-        "table": { "type": "string", "minLength": 1 },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
         "primary_key": { "$ref": "#/$defs/columnValue" }
       }
     },
@@ -72,7 +72,7 @@
         "tenant": { "$ref": "#/$defs/columnValue" },
         "allowed_columns": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": { "$ref": "#/$defs/safeIdentifier" },
           "minItems": 1,
           "uniqueItems": true
         },
@@ -119,9 +119,11 @@
     "created_at": { "type": "string", "format": "date-time" }
   },
   "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
     "scalar": { "type": ["string", "number", "boolean", "null"] },
     "scalarMap": {
       "type": "object",
+      "propertyNames": { "$ref": "#/$defs/safeIdentifier" },
       "additionalProperties": { "$ref": "#/$defs/scalar" },
       "minProperties": 1
     },
@@ -130,7 +132,7 @@
       "additionalProperties": false,
       "required": ["column", "value"],
       "properties": {
-        "column": { "type": "string", "minLength": 1 },
+        "column": { "$ref": "#/$defs/safeIdentifier" },
         "value": { "$ref": "#/$defs/scalar" }
       }
     }

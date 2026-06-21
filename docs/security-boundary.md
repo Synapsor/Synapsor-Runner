@@ -35,6 +35,7 @@ outside the model-facing MCP server and verifies:
 
 - local reviewed config;
 - source and capability identity;
+- fixed safe schema, table, and column identifiers;
 - local approval state;
 - proposal and job digests;
 - target schema/table;
@@ -46,6 +47,11 @@ outside the model-facing MCP server and verifies:
 - exactly one affected row.
 
 If any authority check cannot be verified, the write fails closed.
+
+Writeback jobs and change sets also reject path-traversal or SQL-fragment-like
+database identifiers such as `../private`, `id/../../tenant_id`, or
+`status; DROP TABLE tickets` before adapter execution. Local CLI file paths
+remain explicit user-provided paths; they are not model-facing authority.
 
 Local review can happen through the CLI or `synapsor ui`. The UI is a localhost
 review surface with a per-run session token and CSRF protection for

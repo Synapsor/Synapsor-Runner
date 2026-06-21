@@ -20,6 +20,10 @@ single_row_update
 ```
 
 It does not support arbitrary SQL, DDL, INSERT, DELETE, UPSERT, stored procedures, dynamic table/column names from model input, or multi-row writes.
+Schema, table, primary-key, tenant, conflict-guard, allowed-column, and patch
+column identifiers must be fixed safe identifiers. Path-traversal strings and
+SQL-fragment-like identifiers are rejected by protocol validation before the
+Postgres/MySQL adapter can run.
 
 ## Change set
 

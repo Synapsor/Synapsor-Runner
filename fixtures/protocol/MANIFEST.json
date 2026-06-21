@@ -33,7 +33,7 @@
     {
       "kind": "schema",
       "name": "change-set.v1.schema.json",
-      "sha256": "d7aee774c03d276dd4c94bc161ab54120ffd23167f2ca32ff6e7b0aaa414e26e"
+      "sha256": "4e52b369b0d3bea30b0ed7b61ec239fc67de3dc691ed4014d6d5eabc7d2be4de"
     },
     {
       "kind": "schema",
@@ -48,7 +48,7 @@
     {
       "kind": "schema",
       "name": "writeback-job.v1.schema.json",
-      "sha256": "4a5f05b87911718dd13fcecd96a428e4575664017d40f08f2b82fe243e51467e"
+      "sha256": "eab35194dd6b6caa7694aa8f14afbf265338d6ee8ed3d3db5d08ec83c4e7092e"
     }
   ]
 }

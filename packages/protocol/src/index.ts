@@ -3,6 +3,7 @@ import { z } from "zod";
 const scalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const scalarMap = z.record(scalar).refine((value) => Object.keys(value).length > 0, "object must not be empty");
 const sha256 = z.string().regex(/^sha256:.+/, "expected sha256:<digest>");
+const safeIdentifier = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "expected fixed safe identifier");
 
 export const protocolVersions = {
   changeSet: "synapsor.change-set.v1",
@@ -22,7 +23,7 @@ export const writebackTerminalStatusSchema = z.enum([
 ]);
 
 const columnValueSchema = z.object({
-  column: z.string().min(1),
+  column: safeIdentifier,
   value: scalar
 });
 
@@ -102,7 +103,7 @@ export const changeSetV1Schema = z.object({
 });
 
 const publicConflictGuardSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("column"), column: z.string().min(1), expected_value: scalar }),
+  z.object({ kind: z.literal("column"), column: safeIdentifier, expected_value: scalar }),
   z.object({ kind: z.literal("row_hash"), expected_hash: z.string().min(1) }),
   z.object({ kind: z.literal("none") })
 ]);
@@ -120,12 +121,12 @@ export const writebackJobV1Schema = z.object({
   engine: writebackEngineSchema,
   operation: z.literal("single_row_update"),
   target: z.object({
-    schema: z.string().min(1),
-    table: z.string().min(1),
+    schema: safeIdentifier,
+    table: safeIdentifier,
     primary_key: columnValueSchema
   }),
   tenant_guard: columnValueSchema,
-  allowed_columns: z.array(z.string().min(1)).min(1),
+  allowed_columns: z.array(safeIdentifier).min(1),
   patch: scalarMap,
   conflict_guard: publicConflictGuardSchema,
   idempotency_key: z.string().min(1),
@@ -167,18 +168,18 @@ export const legacyWritebackJobSchema = z.object({
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   target: z.object({
-    schema: z.string().min(1),
-    table: z.string().min(1),
+    schema: safeIdentifier,
+    table: safeIdentifier,
     primary_key: z.object({
-      column: z.string().min(1),
+      column: safeIdentifier,
       value: scalar
     }),
     tenant_guard: z.object({
-      column: z.string().min(1),
+      column: safeIdentifier,
       value: scalar
     })
   }),
-  allowed_columns: z.array(z.string().min(1)).min(1),
+  allowed_columns: z.array(safeIdentifier).min(1),
   patch: scalarMap,
   conflict_guard: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("version_column"), column: z.string().min(1), expected_value: scalar }),
@@ -266,6 +267,14 @@ function validateAllowedPatchColumns(
 ): void {
   const allow = new Set(allowedColumns);
   for (const column of patchColumns) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(column)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `patch column is not a fixed safe identifier: ${column}`,
+        path: ["patch", column]
+      });
+      continue;
+    }
     if (!allow.has(column)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

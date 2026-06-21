@@ -55,6 +55,28 @@ describe("writeback job schema", () => {
     const { approval_id: _approvalId, ...withoutApproval } = validJob;
     expect(() => parseWritebackJob(withoutApproval)).toThrow(/approval_id/i);
   });
+
+  it("rejects path traversal and SQL-like database identifiers", () => {
+    expect(() => parseWritebackJob({
+      ...validJob,
+      target: { ...validJob.target, schema: "../private" },
+    })).toThrow(/fixed safe identifier/i);
+    expect(() => parseWritebackJob({
+      ...validJob,
+      target: {
+        ...validJob.target,
+        primary_key: { column: "id/../../tenant_id", value: "T-1042" },
+      },
+    })).toThrow(/fixed safe identifier/i);
+    expect(() => parseWritebackJob({
+      ...validJob,
+      allowed_columns: ["status", "../admin"],
+    })).toThrow(/fixed safe identifier/i);
+    expect(() => parseWritebackJob({
+      ...validJob,
+      patch: { "status; DROP TABLE tickets": "resolved" },
+    })).toThrow(/fixed safe identifier/i);
+  });
 });
 
 describe("public protocol fixtures", () => {

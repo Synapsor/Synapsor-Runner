@@ -43,15 +43,15 @@
       "additionalProperties": false,
       "required": ["schema", "table", "primary_key"],
       "properties": {
-        "schema": { "type": "string", "minLength": 1 },
-        "table": { "type": "string", "minLength": 1 },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
         "primary_key": { "$ref": "#/$defs/columnValue" }
       }
     },
     "tenant_guard": { "$ref": "#/$defs/columnValue" },
     "allowed_columns": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": { "$ref": "#/$defs/safeIdentifier" },
       "minItems": 1,
       "uniqueItems": true
     },
@@ -64,7 +64,7 @@
           "required": ["kind", "column", "expected_value"],
           "properties": {
             "kind": { "const": "column" },
-            "column": { "type": "string", "minLength": 1 },
+            "column": { "$ref": "#/$defs/safeIdentifier" },
             "expected_value": { "$ref": "#/$defs/scalar" }
           }
         },
@@ -100,9 +100,11 @@
     }
   },
   "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
     "scalar": { "type": ["string", "number", "boolean", "null"] },
     "scalarMap": {
       "type": "object",
+      "propertyNames": { "$ref": "#/$defs/safeIdentifier" },
       "additionalProperties": { "$ref": "#/$defs/scalar" },
       "minProperties": 1
     },
@@ -111,7 +113,7 @@
       "additionalProperties": false,
       "required": ["column", "value"],
       "properties": {
-        "column": { "type": "string", "minLength": 1 },
+        "column": { "$ref": "#/$defs/safeIdentifier" },
         "value": { "$ref": "#/$defs/scalar" }
       }
     }

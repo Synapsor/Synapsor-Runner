@@ -33,7 +33,8 @@ const scenarios = [
     writeUrl: postgresUrl(55433, "synapsor_runner_mcp_billing", "synapsor_writer", "synapsor_writer_password"),
     visibleColumns: "id,tenant_id,customer_name,status,late_fee_cents,waiver_reason,updated_at",
     allowedColumns: "late_fee_cents,waiver_reason",
-    patchFlags: ["--patch-fixed", "late_fee_cents=0", "--patch-from-arg", "waiver_reason=reason"],
+    patchFlags: ["--patch-fixed", "late_fee_cents=0", "--patch-from-arg", "waiver_reason=reason", "--numeric-bound", "late_fee_cents=0:5500"],
+    expectedNumericBounds: { late_fee_cents: { minimum: 0, maximum: 5500 } },
     inspectTool: "billing.inspect_invoice",
     proposalTool: "billing.propose_invoice_update",
     inspectArgs: { invoice_id: "INV-3001" },
@@ -66,7 +67,8 @@ const scenarios = [
     writeUrl: mysqlUrl(53307, "synapsor_runner_mcp_orders", "synapsor_writer", "synapsor_writer_password"),
     visibleColumns: "id,tenant_id,customer_name,status,refund_review_status,refund_note,updated_at",
     allowedColumns: "refund_review_status,refund_note",
-    patchFlags: ["--patch-fixed", "refund_review_status=review_required", "--patch-from-arg", "refund_note=refund_note"],
+    patchFlags: ["--patch-fixed", "refund_review_status=review_required", "--patch-from-arg", "refund_note=refund_note", "--transition-guard", "refund_review_status=none:review_required"],
+    expectedTransitionGuards: { refund_review_status: { allowed: { none: ["review_required"] } } },
     inspectTool: "orders.inspect_order",
     proposalTool: "orders.propose_order_update",
     inspectArgs: { order_id: "O-1001" },
@@ -224,6 +226,7 @@ function assertNoSecrets(paths, scenario) {
 }
 
 async function exerciseGeneratedOnboarding(scenario) {
+  const started = Date.now();
   const workDir = path.join(tmpRoot, scenario.key);
   const paths = {
     workDir,
@@ -293,6 +296,23 @@ async function exerciseGeneratedOnboarding(scenario) {
       path.join(workDir, ".synapsor", "mcp", "cursor.json"),
       path.join(workDir, ".synapsor", "mcp", "vscode.json"),
     ], scenario);
+    const generatedConfig = JSON.parse(fs.readFileSync(paths.config, "utf8"));
+    const generatedProposal = generatedConfig.capabilities.find((capability) => capability.kind === "proposal");
+    assert(Boolean(generatedProposal), "Generated proposal capability missing", generatedConfig);
+    if (scenario.expectedNumericBounds) {
+      assert(
+        JSON.stringify(generatedProposal.numeric_bounds) === JSON.stringify(scenario.expectedNumericBounds),
+        "Generated numeric bounds missing",
+        generatedProposal,
+      );
+    }
+    if (scenario.expectedTransitionGuards) {
+      assert(
+        JSON.stringify(generatedProposal.transition_guards) === JSON.stringify(scenario.expectedTransitionGuards),
+        "Generated transition guards missing",
+        generatedProposal,
+      );
+    }
 
     console.log(`== ${scenario.label}: validate and doctor generated config ==`);
     runner(scenario, ["config", "validate", "--config", paths.config]);
@@ -364,11 +384,17 @@ async function exerciseGeneratedOnboarding(scenario) {
     run("docker", ["compose", "down", "-v"], { cwd: scenario.exampleDir, allowFailure: true });
     fs.rmSync(workDir, { recursive: true, force: true });
   }
+  console.log(`== ${scenario.label}: completed in ${elapsedSeconds(started)}s ==`);
 }
 
+function elapsedSeconds(started) {
+  return ((Date.now() - started) / 1000).toFixed(1);
+}
+
+const suiteStarted = Date.now();
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 for (const scenario of scenarios) {
   await exerciseGeneratedOnboarding(scenario);
 }
 
-console.log("\nGenerated own-database onboarding smoke passed for Postgres and MySQL.");
+console.log(`\nGenerated own-database onboarding smoke passed for Postgres and MySQL in ${elapsedSeconds(suiteStarted)}s.`);
