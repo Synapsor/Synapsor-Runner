@@ -7,6 +7,7 @@
 - MCP audit parity commit: `64287070d7b7393a9d1b1b0718409f67c7494ef0`
 - Report/docs parity commit: `fae1a17d9a80c6fbf8b8c7e603fa0f9244897379`
 - Cloud-linked smoke commit: `e422e5c27853e9d97faf692809e67939037f744b`
+- Hosted Cloud-linked verifier commit: `8eec9d6f14dc6ff52a76f81cf671ba108b4f0923`
 
 ## Architecture Implemented
 
@@ -86,6 +87,20 @@ SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
 corepack pnpm runner cloud connect --config ./synapsor.cloud.json
 ```
 
+Hosted Cloud-linked E2E verifier after obtaining a compatible Cloud workspace/source/adapter/scoped runner token:
+
+```bash
+SYNAPSOR_CLOUD_BASE_URL="https://synapsor.ai" \
+SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
+SYNAPSOR_SOURCE_ID="src_..." \
+SYNAPSOR_ADAPTER_ID="mcp.billing" \
+SYNAPSOR_MCP_TOOL_NAME="billing.propose_late_fee_waiver" \
+SYNAPSOR_MCP_TOOL_INPUT_JSON='{"invoice_id":"INV-3001","reason":"support-approved waiver"}' \
+corepack pnpm verify:hosted-cloud-linked
+```
+
+To include guarded local writeback for one already approved job, add `SYNAPSOR_HOSTED_E2E_APPLY_JOB=1`, `SYNAPSOR_ENGINE=postgres|mysql`, and `SYNAPSOR_DATABASE_URL` for the trusted worker credential.
+
 ## Tests Executed
 
 - `corepack pnpm test`
@@ -104,6 +119,8 @@ corepack pnpm runner cloud connect --config ./synapsor.cloud.json
 - `./scripts/demo-docker.sh`
   - Passed as the exact Docker-only first-run path.
   - Built the local runner image, ran the TypeScript runner inside Docker, started disposable Postgres/MySQL containers, and tore down resources.
+- `corepack pnpm verify:hosted-cloud-linked -- --help`
+  - Passed. The command typechecks the runner and prints the real-hosted Cloud-linked verification contract without requiring or printing secrets.
 
 `synapsor mcp audit <target>` now supports:
 
@@ -133,7 +150,7 @@ No browser screenshots were required for this runner-only repo. The user-facing 
 
 - v0.1 supports guarded single-row `UPDATE` writeback only.
 - Local approval is CLI-based; optional localhost approval UI remains follow-up.
-- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. The local hosted-compatible Cloud-linked smoke passes against a mock Cloud API and real disposable Postgres writeback.
+- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. The local hosted-compatible Cloud-linked smoke passes against a mock Cloud API and real disposable Postgres writeback. `corepack pnpm verify:hosted-cloud-linked` is now available to run the real hosted verification once those values exist.
 - Local and Cloud histories remain separate unless a future import path is explicitly implemented.
 - Public release should still run dependency review, container scanning, and release/legal signoff.
 
