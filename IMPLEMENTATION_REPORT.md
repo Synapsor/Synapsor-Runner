@@ -27,6 +27,7 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `3b86ab8` - Add inspection driven init path
 - `061ec0c` - Add generated onboarding Docker smoke
 - `fa263db` - Add MCP client configure command
+- `016a4a5` - Add conservative config migration command
 
 ## What Changed
 
