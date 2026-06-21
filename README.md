@@ -140,6 +140,157 @@ stdio MCP server, and proves:
 - A stale row returns `conflict` with no write.
 - Replay can explain the proposal, approval, receipt, evidence, and query audit.
 
+## Use your own Postgres or MySQL database
+
+After the Docker demo, point Synapsor Runner at a staging database and define
+one safe business capability.
+
+Synapsor Runner does not auto-generate arbitrary database tools. You define the
+source, table, primary key, tenant key, visible columns, allowed write columns,
+conflict guard, and mode in `synapsor.runner.json`.
+
+Start from a generated config:
+
+```bash
+synapsor init --engine postgres --mode review --output synapsor.runner.json
+```
+
+For MySQL:
+
+```bash
+synapsor init --engine mysql --mode review --output synapsor.runner.json
+```
+
+Then edit the generated config to match one reviewed business action. For
+example:
+
+```json
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./.synapsor/local.db"
+  },
+  "sources": {
+    "app_postgres": {
+      "engine": "postgres",
+      "read_url_env": "APP_POSTGRES_READ_URL",
+      "write_url_env": "APP_POSTGRES_WRITE_URL",
+      "statement_timeout_ms": 3000
+    }
+  },
+  "trusted_context": {
+    "provider": "environment",
+    "values": {
+      "tenant_id_env": "SYNAPSOR_TENANT_ID",
+      "principal_env": "SYNAPSOR_PRINCIPAL"
+    }
+  },
+  "capabilities": [
+    {
+      "name": "billing.inspect_invoice",
+      "kind": "read",
+      "source": "app_postgres",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "kind": "proposal",
+      "source": "app_postgres",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "late_fee_cents": {
+          "fixed": 0
+        },
+        "waiver_reason": {
+          "from_arg": "reason"
+        }
+      },
+      "allowed_columns": ["late_fee_cents", "waiver_reason"],
+      "conflict_guard": {
+        "column": "updated_at"
+      },
+      "approval": {
+        "mode": "human",
+        "required_role": "billing_lead"
+      }
+    }
+  ]
+}
+```
+
+Serve the reviewed tools:
+
+```bash
+export APP_POSTGRES_READ_URL="postgresql://readonly:<password>@localhost:5432/app"
+export SYNAPSOR_TENANT_ID="acme"
+export SYNAPSOR_PRINCIPAL="local_operator"
+
+synapsor mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+The MCP server uses the read URL for inspect and proposal reads. Keep the write
+credential out of the MCP client config.
+
+The model gets the semantic tools. It does not get raw SQL, write credentials,
+approval tools, commit tools, or tenant authority.
+
+When you are ready to apply an approved proposal, run the guarded worker/apply
+path with a trusted write credential outside the model-facing MCP server:
+
+```bash
+synapsor proposals approve wrp_123 --store ./.synapsor/local.db --actor local_reviewer --yes
+synapsor proposals writeback-job wrp_123 --store ./.synapsor/local.db --output job.json
+
+SYNAPSOR_ENGINE=postgres \
+SYNAPSOR_DATABASE_URL="postgresql://writer:<password>@localhost:5432/app" \
+synapsor apply --job job.json --store ./.synapsor/local.db
+```
+
+Start with staging or a disposable database before pointing the runner at
+production-like data.
+
 ## MCP tools exposed to the model
 
 The model gets narrow business tools like:
@@ -191,15 +342,25 @@ Synapsor Cloud is the team/shared control plane:
 The same boundary applies in both modes: the model proposes; the trusted runner
 executes only after approval.
 
-## Limits
+## Current scope
 
-Synapsor Runner is intentionally narrow. It is not:
+Synapsor Runner is intentionally small in v0.1.
+
+It supports:
+
+- local MCP tools for Postgres/MySQL-backed business actions;
+- read-only, shadow, review, and Cloud-linked modes;
+- guarded single-row `UPDATE` writeback jobs;
+- semantic tools defined in local JSON config;
+- local proposals, approvals, receipts, evidence, query audit, and replay.
+
+It does not try to be:
 
 - a self-hosted Synapsor Cloud;
 - the Synapsor C++ DBMS;
 - a physical branch engine for Postgres/MySQL;
 - a generic MCP security platform;
-- a claim that prompt injection is solved;
+- a prompt-injection solution;
 - a framework for arbitrary SQL, DDL, INSERT, DELETE, UPSERT, or multi-row writes.
 
 It demonstrates Synapsor's database commit-safety boundary locally.
@@ -400,4 +561,5 @@ Synapsor Runner is maintained by Synapsor.
 
 - Website: https://synapsor.ai
 - Docs: https://synapsor.ai/docs
+- License: Apache-2.0
 - Issues: use GitHub Issues
