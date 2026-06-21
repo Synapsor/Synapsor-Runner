@@ -34,6 +34,11 @@ synapsor init --engine mysql --mode review --output synapsor.mysql.runner.json
 
 The generated config uses environment-variable names for read/write URLs and trusted context. Edit the table, column, and capability names before serving tools.
 
+Do not include credential-bearing columns in reviewed visible fields or
+evidence. The local store rejects obvious database URLs, bearer tokens, runner
+tokens, private-key blocks, and secret-like field names before they can be
+persisted into proposals, evidence, query audit, runner state, or replay.
+
 For a reviewed own-database setup generated from explicit selections, use:
 
 ```bash

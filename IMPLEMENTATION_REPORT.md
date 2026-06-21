@@ -120,6 +120,17 @@ Added tampering tests for:
 - missing local store on real apply;
 - approval/proposal digest mismatch.
 
+The local proposal store now rejects obvious credential material before it can
+be persisted into proposals, evidence bundles, query audit payloads, runner
+state, or replay:
+
+- database URLs;
+- bearer tokens;
+- Synapsor runner tokens;
+- private-key blocks;
+- secret-like fields such as password, token, API key, private key, cookie,
+  credential, connection string, read URL, or write URL.
+
 ### Benchmark
 
 Added:
@@ -282,6 +293,14 @@ Tests       68 passed (68)
 License/content check passed.
 ```
 
+Latest after store-level secret persistence guard:
+
+```text
+Test Files  11 passed (11)
+Tests       69 passed (69)
+License/content check passed.
+```
+
 Additional spot checks run during implementation:
 
 ```bash
@@ -307,6 +326,12 @@ The latest Docker-backed smoke results after the local UI work:
   Postgres readiness check.
 - `corepack pnpm test:docker`: passed for local Postgres and MySQL runner
   apply/idempotency/conflict/tamper flows.
+- After adding store-level secret persistence guards:
+  - `corepack pnpm test`: passed, 69 tests.
+  - `corepack pnpm test:mcp-local`: passed for Postgres billing, Postgres
+    support, and MySQL orders.
+  - `corepack pnpm test:onboarding-generated`: passed for Postgres and MySQL.
+  - `corepack pnpm test:mcp-cloud-linked`: passed.
 
 ## Security Review
 
@@ -321,15 +346,16 @@ Current protections:
 - approval/commit tools are not exposed to the model-facing MCP catalog;
 - writeback uses a separate trusted apply path;
 - writeback jobs are cross-checked against reviewed config;
-- tampered jobs fail before adapter mutation.
+- tampered jobs fail before adapter mutation;
 - local UI binds localhost by default, requires a per-run token, requires CSRF
   on approve/reject, and redacts obvious secret values from API responses.
+- local proposal-store persistence rejects obvious credential material before it
+  reaches SQLite/replay.
 
 Remaining security work:
 
 - guided TTY wizard is incomplete;
-- broader path traversal and replay secret-scanning tests still need to be
-  added.
+- broader path traversal tests still need to be added.
 
 ## License Review
 
@@ -384,6 +410,8 @@ Current proof:
 - generated config path is Docker-smoked end to end for Postgres and MySQL;
 - semantic MCP/proposal/writeback/replay paths are covered by existing tests;
 - local UI proposal review is covered by token/CSRF/secret-redaction tests;
+- local proposal/evidence/query-audit persistence rejects obvious credential
+  material before replay storage;
 - benchmark command is reproducible, model-API-free, and checked against
   committed human/JSON snapshots;
 - license/content gate is automated.

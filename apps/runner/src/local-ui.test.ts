@@ -24,14 +24,12 @@ const changeSet = {
     late_fee_cents: 5500,
     waiver_reason: null,
     updated_at: "2026-06-20T14:31:08Z",
-    database_url: "postgresql://reader:reader_secret@localhost:5432/app",
   },
   patch: { late_fee_cents: 0, waiver_reason: "customer requested review" },
   after: {
     late_fee_cents: 0,
     waiver_reason: "customer requested review",
     updated_at: "2026-06-20T14:31:08Z",
-    database_url: "postgresql://reader:reader_secret@localhost:5432/app",
   },
   guards: {
     tenant: { column: "tenant_id", value: "acme" },
@@ -108,13 +106,25 @@ describe("local UI", () => {
     }, null, 2), "utf8");
     const store = new ProposalStore(storePath);
     store.createProposal(changeSet);
-    store.recordEvidenceBundle({
-      evidence_bundle_id: "ev_ui",
-      proposal_id: "wrp_ui",
-      tenant_id: "acme",
-      payload: { purpose: "local UI test", bearer: "Bearer should_not_leak" },
-      items: [{ table: "invoices", row: "INV-UI" }],
-    });
+    store.db.prepare(`
+      INSERT OR REPLACE INTO evidence_bundles (
+        evidence_bundle_id,
+        proposal_id,
+        tenant_id,
+        payload_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      "ev_ui",
+      "wrp_ui",
+      "acme",
+      JSON.stringify({
+        purpose: "local UI legacy redaction test",
+        bearer: "Bearer should_not_leak",
+        database_url: "postgresql://reader:reader_secret@localhost:5432/app",
+      }),
+      "2026-06-20T14:31:10Z",
+    );
     store.close();
 
     const server = await startLocalUiServer({

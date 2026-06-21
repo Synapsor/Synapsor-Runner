@@ -23,6 +23,13 @@ not be accepted from the model as authority.
 Proposal tools read the current row through the read credential, store evidence
 and an exact before/after diff, and leave the source database unchanged.
 
+The local proposal store rejects obvious credential material before persistence:
+database URLs, bearer tokens, Synapsor runner tokens, private-key blocks, and
+secret-like fields such as password, token, API key, private key, cookie,
+credential, connection string, read URL, or write URL. If a selected table
+contains one of those fields, remove it from the reviewed visible/evidence
+projection before creating proposals.
+
 Writeback is separate. A trusted local runner/apply path uses a write credential
 outside the model-facing MCP server and verifies:
 

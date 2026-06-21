@@ -104,6 +104,39 @@ describe("proposal store", () => {
     }
   });
 
+  it("rejects obvious secret material before it reaches local replay storage", () => {
+    const store = new ProposalStore();
+    try {
+      const secretProposal = structuredClone(changeSet) as typeof changeSet & { before: Record<string, unknown> };
+      secretProposal.before = {
+        ...secretProposal.before,
+        database_url: "postgresql://reader:reader_secret@localhost:5432/app",
+      };
+      expectSecretRejection(() => store.createProposal(secretProposal));
+
+      store.createProposal(changeSet);
+      expectSecretRejection(() => store.recordEvidenceBundle({
+        evidence_bundle_id: "ev_secret",
+        proposal_id: "wrp_123",
+        tenant_id: "acme",
+        payload: { bearer: "Bearer should_not_persist" },
+      }));
+      expectSecretRejection(() => store.recordQueryAudit({
+        proposal_id: "wrp_123",
+        source_id: "src_pg_acme",
+        query_fingerprint: "sha256:evidence",
+        table_name: "invoices",
+        row_count: 1,
+        payload: { api_key: "should_not_persist" },
+      }));
+      expectSecretRejection(() => store.setRunnerState("bad", {
+        runner_token: "syn_wbr_should_not_persist",
+      }));
+    } finally {
+      store.close();
+    }
+  });
+
   it("approves only the exact proposal hash and version", () => {
     const store = new ProposalStore();
     try {
@@ -248,3 +281,13 @@ describe("proposal store", () => {
     }
   });
 });
+
+function expectSecretRejection(fn: () => unknown): void {
+  try {
+    fn();
+    throw new Error("expected secret rejection");
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProposalStoreError);
+    expect((error as ProposalStoreError).code).toBe("SECRET_MATERIAL_REJECTED");
+  }
+}

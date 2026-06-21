@@ -248,6 +248,7 @@ export class ProposalStore {
 
   createProposal(input: unknown): StoredProposal {
     const changeSet = parseChangeSet(input);
+    assertNoSecretMaterial(changeSet, "change_set");
     const existing = this.getProposal(changeSet.proposal_id);
     if (existing) {
       if (
@@ -565,6 +566,7 @@ export class ProposalStore {
     payload: Record<string, unknown>;
     items?: Record<string, unknown>[];
   }): void {
+    assertNoSecretMaterial({ payload: input.payload, items: input.items ?? [] }, "evidence_bundle");
     const now = new Date().toISOString();
     if (input.proposal_id) this.requireProposal(input.proposal_id);
     this.transaction(() => {
@@ -601,6 +603,7 @@ export class ProposalStore {
     row_count: number;
     payload: Record<string, unknown>;
   }): void {
+    assertNoSecretMaterial(input.payload, "query_audit");
     const now = new Date().toISOString();
     if (input.proposal_id) this.requireProposal(input.proposal_id);
     this.db.prepare(`
@@ -675,6 +678,7 @@ export class ProposalStore {
   }
 
   setRunnerState(key: string, value: Record<string, unknown>): void {
+    assertNoSecretMaterial(value, `runner_state.${key}`);
     this.db.prepare(`
       INSERT INTO runner_state (key, value_json, updated_at)
       VALUES (?, ?, ?)
@@ -843,6 +847,35 @@ function assertWritebackAllowed(proposal: StoredProposal, operation: string): vo
     throw new ProposalStoreError(
       "READ_ONLY_WRITEBACK_DISABLED",
       `read-only proposal ${proposal.proposal_id} cannot be ${operation}; read-only mode does not allow proposal writeback`,
+    );
+  }
+}
+
+const secretKeyPattern = /(^|[_-])(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|cookie|credential|connection[_-]?string|database[_-]?url|read[_-]?url|write[_-]?url)($|[_-])/i;
+const secretValuePattern = /(postgres(?:ql)?:\/\/|mysql:\/\/|Bearer\s+[A-Za-z0-9._~+/=-]+|syn_wbr_[A-Za-z0-9._~+/=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i;
+
+function assertNoSecretMaterial(value: unknown, path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoSecretMaterial(item, `${path}[${index}]`));
+    return;
+  }
+  if (isRecord(value)) {
+    for (const [key, entry] of Object.entries(value)) {
+      const entryPath = `${path}.${key}`;
+      if (secretKeyPattern.test(key)) {
+        throw new ProposalStoreError(
+          "SECRET_MATERIAL_REJECTED",
+          `refusing to persist secret-like field ${entryPath}; remove it from reviewed visible/evidence/query-audit data`,
+        );
+      }
+      assertNoSecretMaterial(entry, entryPath);
+    }
+    return;
+  }
+  if (typeof value === "string" && secretValuePattern.test(value)) {
+    throw new ProposalStoreError(
+      "SECRET_MATERIAL_REJECTED",
+      `refusing to persist secret-like value at ${path}; remove it from reviewed visible/evidence/query-audit data`,
     );
   }
 }
