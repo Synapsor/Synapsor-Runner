@@ -110,7 +110,7 @@ The generated job uses the public `synapsor.writeback-job.v1` protocol and can b
 ```bash
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="postgresql://writer:<password>@localhost:5432/app" \
-synapsor apply --job job.json --store ./.synapsor/local.db
+synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Passing `--store` records the terminal `synapsor.execution-receipt.v1` locally. Replay then links the proposal, approval, writeback job, applied/conflict/failed receipt, evidence, and query audit.

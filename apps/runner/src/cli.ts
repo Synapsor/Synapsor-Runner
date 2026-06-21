@@ -400,6 +400,11 @@ async function apply(args: string[]): Promise<number> {
   const raw = await readJob(args);
   const job = parseWritebackJob(raw);
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
+  const configPath = optionalArg(args, "--config") ?? (await fileExists("synapsor.runner.json") ? "synapsor.runner.json" : undefined);
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  if (configPath) {
+    await verifyLocalWritebackAuthority(job, configPath, storePath);
+  }
   const config: RunnerConfig = {
     controlPlaneUrl: process.env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
     runnerToken: process.env.SYNAPSOR_RUNNER_TOKEN || "local-dry-run-token",
@@ -413,7 +418,6 @@ async function apply(args: string[]): Promise<number> {
     stateDir: process.env.SYNAPSOR_STATE_DIR || "./state"
   };
   const result = await adapters[job.engine].apply(job, config);
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
   if (storePath) {
     if (storePath !== ":memory:") {
       await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
@@ -427,6 +431,71 @@ async function apply(args: string[]): Promise<number> {
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   return result.status === "failed" ? 1 : 0;
+}
+
+async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: string, storePath?: string): Promise<void> {
+  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const validation = validateRunnerCapabilityConfig(config);
+  if (!validation.ok) {
+    throw new Error(`cannot apply writeback with invalid local config: ${validation.errors.map((error) => error.code).join(", ")}`);
+  }
+  if (config.mode !== "review") {
+    throw new Error(`local writeback apply requires review mode, got ${config.mode}`);
+  }
+  const source = config.sources?.[job.source_id];
+  if (!source) {
+    throw new Error(`writeback source ${job.source_id} is not present in reviewed config`);
+  }
+  if (source.engine !== job.engine) {
+    throw new Error(`writeback engine ${job.engine} does not match reviewed source ${job.source_id}`);
+  }
+  if (Date.parse(String(job.lease_expires_at)) < Date.now()) {
+    throw new Error("writeback job lease has expired");
+  }
+  const proposalCapabilities = (config.capabilities ?? []).filter((capability) => capability.kind === "proposal" && capability.source === job.source_id);
+  const matching = proposalCapabilities.find((capability) => capabilityMatchesJob(capability, job));
+  if (!matching) {
+    throw new Error("writeback job does not match any reviewed proposal capability in local config");
+  }
+  const reviewedAllowed = new Set(matching.allowed_columns ?? []);
+  for (const column of job.allowed_columns) {
+    if (!reviewedAllowed.has(column)) {
+      throw new Error(`writeback job allowlist widens reviewed authority: ${column}`);
+    }
+  }
+  for (const column of Object.keys(job.patch)) {
+    if (!reviewedAllowed.has(column)) {
+      throw new Error(`writeback patch column is not reviewed by local config: ${column}`);
+    }
+  }
+  if (matching.conflict_guard?.column && job.conflict_guard.kind === "version_column" && matching.conflict_guard.column !== job.conflict_guard.column) {
+    throw new Error("writeback conflict guard does not match reviewed capability");
+  }
+  if (storePath) {
+    const store = new ProposalStore(storePath);
+    try {
+      const proposal = store.getProposal(job.proposal_id);
+      if (!proposal) throw new Error(`local proposal not found for writeback job: ${job.proposal_id}`);
+      if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
+        throw new Error(`local proposal ${job.proposal_id} is ${proposal.state}, not approved for writeback`);
+      }
+      if (proposal.proposal_hash !== job.approval_id) {
+        throw new Error("writeback approval/proposal digest does not match local proposal");
+      }
+    } finally {
+      store.close();
+    }
+  }
+}
+
+function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilities"]>[number], job: WritebackJob): boolean {
+  if (capability.target.schema !== job.target.schema) return false;
+  if (capability.target.table !== job.target.table) return false;
+  if (capability.target.primary_key !== job.target.primary_key.column) return false;
+  if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
+  const reviewedAllowed = new Set(capability.allowed_columns ?? []);
+  if (reviewedAllowed.size === 0) return false;
+  return Object.keys(job.patch).every((column) => reviewedAllowed.has(column));
 }
 
 async function start(): Promise<number> {
@@ -1173,7 +1242,7 @@ Commands:
   config show [--config synapsor.runner.json] [--redacted]
   doctor
   validate --job ./job.json
-  apply --job ./job.json [--dry-run] [--store ./.synapsor/local.db]
+  apply --job ./job.json [--config synapsor.runner.json] [--dry-run] [--store ./.synapsor/local.db]
   start
   runner start
   runner doctor

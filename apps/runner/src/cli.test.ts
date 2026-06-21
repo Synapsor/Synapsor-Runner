@@ -324,6 +324,94 @@ describe("runner cli", () => {
     }
   });
 
+  it("cross-checks writeback jobs against reviewed local config before apply", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-authority-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const jobPath = path.join(tempDir, "job.json");
+    const baseJob = {
+      protocol_version: "1.0",
+      job_id: "wbj_local",
+      proposal_id: "wrp_local",
+      approval_id: "sha256:proposal",
+      source_id: "app_postgres",
+      engine: "postgres",
+      target: {
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id", value: "INV-1" },
+        tenant_guard: { column: "tenant_id", value: "acme" },
+      },
+      allowed_columns: ["late_fee_cents", "waiver_reason"],
+      patch: { late_fee_cents: 0, waiver_reason: "approved waiver" },
+      conflict_guard: { kind: "version_column", column: "updated_at", expected_value: "2026-06-20T12:00:00Z" },
+      idempotency_key: "idem_local",
+      lease_expires_at: new Date(Date.now() + 60_000).toISOString(),
+    };
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.propose_invoice_update",
+          kind: "proposal",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+            reason: { type: "string", required: true, max_length: 500 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at", "late_fee_cents", "waiver_reason"],
+          evidence: "required",
+          max_rows: 1,
+          patch: { late_fee_cents: { fixed: 0 }, waiver_reason: { from_arg: "reason" } },
+          allowed_columns: ["late_fee_cents", "waiver_reason"],
+          conflict_guard: { column: "updated_at" },
+        },
+      ],
+    }), "utf8");
+    await fs.writeFile(jobPath, JSON.stringify(baseJob), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).status).toBe("applied");
+
+    output.length = 0;
+    await fs.writeFile(jobPath, JSON.stringify({ ...baseJob, target: { ...baseJob.target, table: "accounts" } }), "utf8");
+    await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).rejects.toThrow(/does not match any reviewed proposal capability/i);
+
+    await fs.writeFile(jobPath, JSON.stringify({
+      ...baseJob,
+      target: { ...baseJob.target, table: "invoices" },
+      allowed_columns: ["late_fee_cents", "admin_override"],
+      patch: { late_fee_cents: 0 },
+    }), "utf8");
+    await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run"])).rejects.toThrow(/widens reviewed authority/i);
+  });
+
   it("reports missing cloud connection environment without printing secrets", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-"));
     const configPath = path.join(tempDir, "synapsor.cloud.json");

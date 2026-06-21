@@ -146,7 +146,7 @@ Apply through the trusted worker path with a separate writer credential:
 export SYNAPSOR_DATABASE_WRITE_URL="<postgres-or-mysql-write-url>"
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="$SYNAPSOR_DATABASE_WRITE_URL" \
-synapsor apply --job job.json --store ./.synapsor/local.db
+synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Replay afterward:

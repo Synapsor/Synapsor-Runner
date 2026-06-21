@@ -287,7 +287,7 @@ synapsor proposals writeback-job wrp_123 --store ./.synapsor/local.db --output j
 
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="postgresql://writer:<password>@localhost:5432/app" \
-synapsor apply --job job.json --store ./.synapsor/local.db
+synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Start with staging or a disposable database before pointing the runner at
