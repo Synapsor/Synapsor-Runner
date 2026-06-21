@@ -6,6 +6,7 @@
 - Implementation commit: `c4e6cd95ea6316ed880a0e803aa29ecc18338299`
 - MCP audit parity commit: `64287070d7b7393a9d1b1b0718409f67c7494ef0`
 - Report/docs parity commit: `fae1a17d9a80c6fbf8b8c7e603fa0f9244897379`
+- Cloud-linked smoke commit: `e422e5c27853e9d97faf692809e67939037f744b`
 
 ## Architecture Implemented
 
