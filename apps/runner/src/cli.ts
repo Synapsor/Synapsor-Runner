@@ -8,7 +8,7 @@ import readline from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { serveStdio } from "@synapsor-runner/mcp-server";
+import { createMcpRuntime, serveStdio, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter } from "@synapsor-runner/mysql";
 import { postgresAdapter } from "@synapsor-runner/postgres";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
@@ -41,7 +41,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "init") return init(rest);
   if (command === "inspect") return inspect(rest);
   if (command === "config") return configCommand(rest);
-  if (command === "doctor") return doctor();
+  if (command === "doctor") return doctor(rest);
   if (command === "validate") return validate(rest);
   if (command === "apply") return apply(rest);
   if (command === "start") return start();
@@ -164,12 +164,228 @@ async function configShow(args: string[]): Promise<number> {
   return 0;
 }
 
-async function doctor(): Promise<number> {
+function envPresenceCheck(envName: string, message: string): DoctorCheck {
+  return {
+    name: `env:${envName}`,
+    ok: Boolean(process.env[envName]),
+    level: process.env[envName] ? "pass" : "fail",
+    message: process.env[envName] ? `${envName} is set.` : message,
+  };
+}
+
+async function inspectConfiguredSource(input: {
+  config: RuntimeConfig;
+  sourceName: string;
+  source: NonNullable<RuntimeConfig["sources"]>[string];
+  checks: DoctorCheck[];
+}): Promise<void> {
+  if (!process.env[input.source.read_url_env]) return;
+  const capabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
+  const schemas = Array.from(new Set(capabilities.map((capability) => capability.target.schema)));
+  for (const schema of schemas.length ? schemas : [undefined]) {
+    try {
+      const inspection = await inspectDatabase({
+        engine: input.source.engine,
+        databaseUrlEnv: input.source.read_url_env,
+        schema,
+      });
+      input.checks.push({
+        name: `source:${input.sourceName}:read-connectivity${schema ? `:${schema}` : ""}`,
+        ok: true,
+        level: "pass",
+        message: `Read-only metadata inspection succeeded for ${input.sourceName}${schema ? ` schema ${schema}` : ""}.`,
+      });
+      for (const capability of capabilities.filter((item) => !schema || item.target.schema === schema)) {
+        const table = inspection.tables.find((item) => item.schema === capability.target.schema && item.name === capability.target.table);
+        if (!table) {
+          input.checks.push({
+            name: `capability:${capability.name}:target`,
+            ok: false,
+            level: "fail",
+            message: `Target ${capability.target.schema}.${capability.target.table} was not visible to ${input.source.read_url_env}.`,
+          });
+          continue;
+        }
+        input.checks.push({
+          name: `capability:${capability.name}:target`,
+          ok: true,
+          level: "pass",
+          message: `Found target ${capability.target.schema}.${capability.target.table}.`,
+        });
+        const columnNames = new Set(table.columns.map((column) => column.name));
+        for (const [label, column] of [
+          ["primary key", capability.target.primary_key],
+          ["tenant guard", capability.target.tenant_key],
+          ["conflict guard", capability.conflict_guard?.column],
+          ...capability.visible_columns.map((item) => ["visible column", item] as const),
+          ...(capability.allowed_columns ?? []).map((item) => ["allowed write column", item] as const),
+        ] as Array<readonly [string, string | undefined]>) {
+          if (!column) continue;
+          input.checks.push({
+            name: `capability:${capability.name}:column:${column}`,
+            ok: columnNames.has(column),
+            level: columnNames.has(column) ? "pass" : "fail",
+            message: columnNames.has(column) ? `${label} ${column} exists.` : `${label} ${column} does not exist on ${capability.target.schema}.${capability.target.table}.`,
+          });
+        }
+        if (capability.kind === "proposal" && !table.writable) {
+          input.checks.push({
+            name: `capability:${capability.name}:writable-target`,
+            ok: false,
+            level: "fail",
+            message: `Proposal capability targets a view/non-table object: ${capability.target.schema}.${capability.target.table}.`,
+          });
+        }
+      }
+    } catch (error) {
+      input.checks.push({
+        name: `source:${input.sourceName}:read-connectivity${schema ? `:${schema}` : ""}`,
+        ok: false,
+        level: "fail",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+function localToolNames(config: RuntimeConfig, checks: DoctorCheck[]): string[] {
+  try {
+    const runtime = createMcpRuntime(config, { storePath: ":memory:" });
+    try {
+      const tools = runtime.listTools().map((tool) => tool.name);
+      checks.push({
+        name: "mcp-runtime",
+        ok: true,
+        level: "pass",
+        message: `MCP runtime listed ${tools.length} configured tools.`,
+      });
+      return tools;
+    } finally {
+      runtime.close();
+    }
+  } catch (error) {
+    checks.push({
+      name: "mcp-runtime",
+      ok: false,
+      level: "fail",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+function formatLocalDoctorReport(report: LocalDoctorReport): string {
+  const lines = [`Synapsor Runner doctor: ${report.ok ? "ok" : "failed"}`, `Config: ${report.config_path}`, `Mode: ${report.mode}`];
+  if (report.tools.length) {
+    lines.push("Exposed MCP tools:");
+    for (const tool of report.tools) lines.push(`  - ${tool}`);
+  }
+  for (const check of report.checks) {
+    const prefix = check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
+    lines.push(`${prefix} ${check.message}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+type DoctorCheck = {
+  name: string;
+  ok: boolean;
+  level: "pass" | "warn" | "fail";
+  message: string;
+};
+
+type LocalDoctorReport = {
+  ok: boolean;
+  mode: string;
+  config_path: string;
+  checks: DoctorCheck[];
+  tools: string[];
+};
+
+async function doctor(args: string[] = []): Promise<number> {
+  const configPath = optionalArg(args, "--config");
+  if (configPath || await fileExists("synapsor.runner.json")) {
+    return localDoctor(args);
+  }
   const config = loadConfig();
   const logger = createLogger(config);
   const report = await doctorChecks(config, adapters[config.engine]);
   logger.info("doctor checks", report);
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  return report.ok ? 0 : 1;
+}
+
+async function localDoctor(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const allowSharedCredential = args.includes("--allow-shared-credential");
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const checks: DoctorCheck[] = [];
+  const validation = validateRunnerCapabilityConfig(parsed);
+  checks.push({
+    name: "config-valid",
+    ok: validation.ok,
+    level: validation.ok ? "pass" : "fail",
+    message: validation.ok ? "Config parses and validates." : validation.errors.map((error) => `${error.path} ${error.code}`).join("; "),
+  });
+  for (const warning of validation.warnings) {
+    checks.push({ name: `config-warning:${warning.code}`, ok: true, level: "warn", message: warning.message });
+  }
+
+  const trustedValues = parsed.trusted_context?.values ?? {};
+  const tenantEnv = String(trustedValues.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
+  const principalEnv = String(trustedValues.principal_env ?? "SYNAPSOR_PRINCIPAL");
+  for (const envName of [tenantEnv, principalEnv]) {
+    checks.push(envPresenceCheck(envName, `${envName} is required for trusted context.`));
+  }
+
+  const sources = parsed.sources ?? {};
+  for (const [sourceName, source] of Object.entries(sources)) {
+    checks.push(envPresenceCheck(source.read_url_env, `${source.read_url_env} is required for ${sourceName} reads.`));
+    if (parsed.mode === "review") {
+      if (source.write_url_env) {
+        checks.push(envPresenceCheck(source.write_url_env, `${source.write_url_env} is required for trusted writeback in review mode.`));
+        const readValue = process.env[source.read_url_env];
+        const writeValue = process.env[source.write_url_env];
+        if (readValue && writeValue && readValue === writeValue) {
+          checks.push({
+            name: `source:${sourceName}:credential-separation`,
+            ok: allowSharedCredential,
+            level: allowSharedCredential ? "warn" : "fail",
+            message: allowSharedCredential
+              ? "Read and write URL env vars currently resolve to the same value; accepted only because --allow-shared-credential was provided."
+              : "Read and write URL env vars resolve to the same value. Use separate credentials or rerun with --allow-shared-credential for local testing.",
+          });
+        } else if (readValue && writeValue) {
+          checks.push({ name: `source:${sourceName}:credential-separation`, ok: true, level: "pass", message: "Read and write URL env vars are distinct." });
+        }
+      } else {
+        checks.push({ name: `source:${sourceName}:write-url-env`, ok: false, level: "fail", message: "Review mode requires write_url_env for trusted writeback." });
+      }
+    }
+    await inspectConfiguredSource({ config: parsed, sourceName, source, checks });
+  }
+
+  const tools = localToolNames(parsed, checks);
+  const forbiddenTools = tools.filter((tool) => /execute_sql|run_query|approve|commit|apply_writeback/i.test(tool));
+  checks.push({
+    name: "mcp-tool-boundary",
+    ok: forbiddenTools.length === 0,
+    level: forbiddenTools.length === 0 ? "pass" : "fail",
+    message: forbiddenTools.length === 0 ? "MCP tool catalog is semantic-only." : `Forbidden model-facing tools: ${forbiddenTools.join(", ")}`,
+  });
+
+  const report: LocalDoctorReport = {
+    ok: checks.every((check) => check.level !== "fail"),
+    mode: String(parsed.mode),
+    config_path: configPath,
+    checks,
+    tools,
+  };
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    process.stdout.write(formatLocalDoctorReport(report));
+  }
   return report.ok ? 0 : 1;
 }
 
@@ -223,9 +439,9 @@ async function start(): Promise<number> {
 }
 
 async function runnerCommand(args: string[]): Promise<number> {
-  const [subcommand] = args;
+  const [subcommand, ...rest] = args;
   if (subcommand === "start") return start();
-  if (subcommand === "doctor") return doctor();
+  if (subcommand === "doctor") return doctor(rest);
   usage();
   return 2;
 }
@@ -630,6 +846,16 @@ async function writeFileGuarded(filePath: string, content: string, force: boolea
   }
   await fs.mkdir(path.dirname(resolved), { recursive: true });
   await fs.writeFile(resolved, content, "utf8");
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(path.resolve(filePath));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 function redactConfig(value: unknown, key = ""): unknown {

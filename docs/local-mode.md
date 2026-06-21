@@ -34,6 +34,17 @@ synapsor init --engine mysql --mode review --output synapsor.mysql.runner.json
 
 The generated config uses environment-variable names for read/write URLs and trusted context. Edit the table, column, and capability names before serving tools.
 
+For a reviewed own-database setup generated from explicit selections, use:
+
+```bash
+synapsor init --spec onboarding-selection.json --non-interactive
+synapsor doctor --config synapsor.runner.json
+```
+
+`doctor --config` checks config validation, required environment variables,
+read/write credential separation, metadata visibility for configured targets,
+and the semantic MCP tool boundary without printing credential values.
+
 ## Local safety modes
 
 The local runner modes are intentionally narrow:

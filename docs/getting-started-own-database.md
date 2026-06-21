@@ -97,6 +97,20 @@ synapsor config show --config synapsor.runner.json --redacted
 
 The config stores environment-variable names, not connection-string values.
 
+Run doctor after setting the referenced environment variables:
+
+```bash
+synapsor doctor --config synapsor.runner.json
+```
+
+Doctor validates config shape, trusted context env vars, source env vars,
+read/write credential separation, table/column metadata when the read URL is
+available, and the semantic MCP tool boundary. Use JSON for automation:
+
+```bash
+synapsor doctor --config synapsor.runner.json --json
+```
+
 ## 6. Serve semantic MCP tools
 
 ```bash

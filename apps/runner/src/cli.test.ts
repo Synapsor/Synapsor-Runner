@@ -165,6 +165,165 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("<redacted>");
   });
 
+  it("doctors a local config without printing secret values", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-local-doctor-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.inspect_invoice",
+          kind: "read",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at"],
+          evidence: "required",
+          max_rows: 1,
+        },
+      ],
+    }), "utf8");
+    const oldRead = process.env.APP_POSTGRES_READ_URL;
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    delete process.env.APP_POSTGRES_READ_URL;
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    process.env.SYNAPSOR_PRINCIPAL = "local_operator";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+      const report = JSON.parse(output.join(""));
+      expect(report.tools).toEqual(["billing.inspect_invoice"]);
+      expect(report.checks.some((check: { name: string; level: string }) => check.name === "env:APP_POSTGRES_READ_URL" && check.level === "fail")).toBe(true);
+      expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret/i);
+    } finally {
+      if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+    }
+  });
+
+  it("fails doctor when read and write credentials are shared without override", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-shared-doctor-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.inspect_invoice",
+          kind: "read",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at"],
+          evidence: "required",
+          max_rows: 1,
+        },
+        {
+          name: "billing.propose_invoice_update",
+          kind: "proposal",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+            reason: { type: "string", required: true, max_length: 500 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at", "waiver_reason"],
+          evidence: "required",
+          max_rows: 1,
+          patch: { waiver_reason: { from_arg: "reason" } },
+          allowed_columns: ["waiver_reason"],
+          conflict_guard: { column: "updated_at" },
+        },
+      ],
+    }), "utf8");
+    const oldRead = process.env.APP_POSTGRES_READ_URL;
+    const oldWrite = process.env.APP_POSTGRES_WRITE_URL;
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    process.env.APP_POSTGRES_READ_URL = "postgresql://reader:shared@example/app";
+    process.env.APP_POSTGRES_WRITE_URL = "postgresql://reader:shared@example/app";
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    process.env.SYNAPSOR_PRINCIPAL = "local_operator";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+      const report = JSON.parse(output.join(""));
+      expect(report.checks.some((check: { name: string; level: string }) => check.name.includes("credential-separation") && check.level === "fail")).toBe(true);
+      expect(output.join("")).not.toContain("reader:shared");
+      output.length = 0;
+      await expect(main(["doctor", "--config", configPath, "--json", "--allow-shared-credential"])).resolves.toBe(1);
+      const overrideReport = JSON.parse(output.join(""));
+      expect(overrideReport.checks.some((check: { name: string; level: string }) => check.name.includes("credential-separation") && check.level === "warn")).toBe(true);
+    } finally {
+      if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
+      if (oldWrite === undefined) delete process.env.APP_POSTGRES_WRITE_URL; else process.env.APP_POSTGRES_WRITE_URL = oldWrite;
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+    }
+  });
+
   it("reports missing cloud connection environment without printing secrets", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-"));
     const configPath = path.join(tempDir, "synapsor.cloud.json");

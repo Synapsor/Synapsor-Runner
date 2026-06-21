@@ -382,6 +382,8 @@ It demonstrates Synapsor's database commit-safety boundary locally.
 - Stores an idempotency receipt in the target database.
 - Reports `applied`, `conflict`, `already_applied`, or `failed`.
 - Includes `synapsor mcp audit <target>` for a static MCP database risk review.
+- Includes `synapsor doctor --config synapsor.runner.json` for local setup
+  readiness checks.
 
 ## Local Modes
 
