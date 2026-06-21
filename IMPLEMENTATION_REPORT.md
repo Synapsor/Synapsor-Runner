@@ -1,7 +1,9 @@
 # Implementation Report
 
-Status: in progress. This repository is closer to the requested local
-mini-Synapsor experience, but the full goal is not complete yet.
+Status: local implementation complete for the requested source-available
+mini-Synapsor runner experience. Publication, legal, repository-visibility, and
+external security decisions remain release gates and were intentionally not
+performed by this task.
 
 ## Repository State
 
@@ -40,6 +42,9 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `a51a8d6` - Add guided init wizard path
 - `cc19aac` - Update implementation report with guided init
 - `1181722` - Add guarded proposal value templates
+- `8a45cf1` - Update implementation report with proposal guards
+- `fdc2a2e` - Harden writeback protocol identifiers
+- `01f8e43` - Align writeback tamper test with identifier guard
 
 ## What Changed
 
@@ -90,6 +95,7 @@ Added or strengthened:
 - `synapsor doctor --config synapsor.runner.json`
 - `synapsor benchmark mcp-efficiency`
 - `synapsor mcp configure --client ...`
+- `synapsor mcp audit <target>`
 - `synapsor ui`
 
 ### Doctor
@@ -144,6 +150,20 @@ state, or replay:
 - secret-like fields such as password, token, API key, private key, cookie,
   credential, connection string, read URL, or write URL.
 
+Generated proposal capabilities now support reviewed declarative value
+constraints:
+
+- `numeric_bounds` for bounded numeric changes;
+- `transition_guards` for constrained status transitions;
+- runtime enforcement before proposal creation;
+- config and onboarding-spec validation;
+- CLI support through `--numeric-bound` and `--transition-guard`.
+
+Public change-set and writeback-job protocol validation now requires fixed safe
+schema, table, primary-key, tenant, conflict, allowed-column, and patch-column
+identifiers. Path-traversal and SQL-fragment-like identifier strings fail before
+adapter execution.
+
 ### Benchmark
 
 Added:
@@ -182,6 +202,21 @@ synapsor mcp configure --client cursor --write --destination ./cursor.json --yes
 Default behavior prints a snippet and writes nothing. Write mode requires an
 explicit destination and confirmation, merges known client formats, validates
 JSON, and creates a timestamped backup before replacing an existing file.
+
+### MCP Audit
+
+Added and documented:
+
+```bash
+synapsor mcp audit <target>
+synapsor mcp audit <target> --json
+```
+
+The audit command performs a static MCP database risk review over exported tool
+manifests, remote `tools/list` endpoints, or stdio MCP servers. It calls only
+`tools/list`, never business tools, and labels the result as a static risk
+review rather than proof that an MCP server is secure. Remote bearer tokens are
+read from environment variables and are not printed.
 
 ### Config Migration
 
@@ -253,21 +288,52 @@ The UI is a lightweight localhost proposal review surface. It:
 
 ## Golden-Path Transcript
 
-Docker-backed generated own-database onboarding now has an automated transcript
-through:
+Docker-backed generated own-database onboarding has an automated sanitized
+transcript through:
 
 ```bash
 corepack pnpm test:onboarding-generated
 ```
 
-That script proves both Postgres and MySQL:
+Latest sanitized transcript:
+
+```text
+> synapsor-runner-monorepo@0.1.0-alpha.0 test:onboarding-generated
+> tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs
+
+== generated Postgres billing onboarding: inspect schema ==
+== generated Postgres billing onboarding: generate config from inspection ==
+== generated Postgres billing onboarding: validate and doctor generated config ==
+== generated Postgres billing onboarding: generated MCP tools/list and tool calls ==
+== generated Postgres billing onboarding: local approval -> guarded apply with generated config ==
+== generated Postgres billing onboarding: stale-row conflict with generated config ==
+== generated Postgres billing onboarding: completed in 20.4s ==
+
+== generated MySQL orders onboarding: inspect schema ==
+== generated MySQL orders onboarding: generate config from inspection ==
+== generated MySQL orders onboarding: validate and doctor generated config ==
+== generated MySQL orders onboarding: generated MCP tools/list and tool calls ==
+== generated MySQL orders onboarding: local approval -> guarded apply with generated config ==
+== generated MySQL orders onboarding: stale-row conflict with generated config ==
+== generated MySQL orders onboarding: completed in 39.6s ==
+
+Generated own-database onboarding smoke passed for Postgres and MySQL in 60.0s.
+```
+
+The script proves both Postgres and MySQL:
 
 - start disposable fixture database;
+- set read/write URL environment variables without writing secret values to
+  generated artifacts;
 - run `synapsor inspect`;
 - generate temporary config through `synapsor init --inspection-json`;
+- generate MCP client snippets;
+- generate reviewed numeric bounds for the Postgres late-fee proposal;
+- generate reviewed status-transition guards for the MySQL order proposal;
 - run `synapsor config validate`;
 - run `synapsor doctor`;
 - launch generated semantic MCP tools;
+- confirm `tools/list` exposes only semantic tools;
 - call inspect/proposal tools;
 - confirm source row unchanged before approval;
 - approve outside MCP;
@@ -279,80 +345,44 @@ That script proves both Postgres and MySQL:
 - export replay;
 - scan generated text artifacts and replay exports for fixture secrets.
 
-A polished sanitized human-readable transcript can still be extracted for
-release docs, but the automated proof is present.
-
 ## Tests Run
 
-Latest verified command:
+Latest verified commands:
 
 ```bash
+corepack pnpm build
+corepack pnpm test:mcp-client-configs
+git diff --check
 corepack pnpm test
+corepack pnpm test:docker
+corepack pnpm test:mcp-local
+corepack pnpm test:onboarding-generated
+corepack pnpm test:mcp-cloud-linked
+corepack pnpm exec vitest run apps/runner/src/cli.test.ts -t "audits"
 ```
 
 Result:
 
 ```text
-Test Files  10 passed (10)
-Tests       66 passed (66)
-License/content check passed.
-```
-
-Latest after local UI:
-
-```text
+corepack pnpm build: passed
+corepack pnpm test:mcp-client-configs: passed
+git diff --check: passed
+corepack pnpm test: passed
 Test Files  11 passed (11)
-Tests       68 passed (68)
+Tests       77 passed (77)
 License/content check passed.
+corepack pnpm test:docker: passed for local Postgres/MySQL apply,
+  idempotency, stale-version conflict, tenant mismatch, and disallowed-column
+  flows.
+corepack pnpm test:mcp-local: passed for Postgres billing, Postgres support,
+  and MySQL orders.
+corepack pnpm test:onboarding-generated: passed for generated Postgres and
+  MySQL own-database onboarding in 60.0s total.
+corepack pnpm test:mcp-cloud-linked: passed for token, registration,
+  tools/list, proposal, approval, lease, guarded writeback, and receipt.
+corepack pnpm exec vitest run apps/runner/src/cli.test.ts -t "audits": passed,
+  2 audit tests passed.
 ```
-
-Latest after store-level secret persistence guard:
-
-```text
-Test Files  11 passed (11)
-Tests       69 passed (69)
-License/content check passed.
-```
-
-Latest after guided init wizard:
-
-```text
-Test Files  11 passed (11)
-Tests       70 passed (70)
-License/content check passed.
-```
-
-Additional spot checks run during implementation:
-
-```bash
-node scripts/check-license-content.mjs
-git diff --check
-corepack pnpm licenses list --json
-corepack pnpm runner benchmark mcp-efficiency
-corepack pnpm runner benchmark mcp-efficiency --json
-corepack pnpm exec vitest run apps/runner/src/cli.test.ts
-corepack pnpm exec vitest run apps/runner/src/local-ui.test.ts apps/runner/src/cli.test.ts
-corepack pnpm test:onboarding-generated
-corepack pnpm test:docker
-corepack pnpm test:mcp-local
-corepack pnpm test:mcp-cloud-linked
-```
-
-The latest Docker-backed smoke results after the local UI work:
-
-- `corepack pnpm test:onboarding-generated`: passed for Postgres and MySQL.
-- `corepack pnpm test:mcp-local`: passed for Postgres billing, Postgres
-  support, and MySQL orders.
-- `corepack pnpm test:mcp-cloud-linked`: passed after strengthening the
-  Postgres readiness check.
-- `corepack pnpm test:docker`: passed for local Postgres and MySQL runner
-  apply/idempotency/conflict/tamper flows.
-- After adding store-level secret persistence guards:
-  - `corepack pnpm test`: passed, 69 tests.
-  - `corepack pnpm test:mcp-local`: passed for Postgres billing, Postgres
-    support, and MySQL orders.
-  - `corepack pnpm test:onboarding-generated`: passed for Postgres and MySQL.
-  - `corepack pnpm test:mcp-cloud-linked`: passed.
 
 ## Security Review
 
@@ -368,14 +398,20 @@ Current protections:
 - writeback uses a separate trusted apply path;
 - writeback jobs are cross-checked against reviewed config;
 - tampered jobs fail before adapter mutation;
+- writeback jobs and public change sets reject path-traversal and
+  SQL-fragment-like database identifiers before adapter execution;
+- generated proposal capabilities can enforce reviewed numeric bounds and
+  status-transition maps before proposal creation;
 - local UI binds localhost by default, requires a per-run token, requires CSRF
   on approve/reject, and redacts obvious secret values from API responses.
 - local proposal-store persistence rejects obvious credential material before it
   reaches SQLite/replay.
 
-Remaining security work:
+Remaining security/release work:
 
-- broader path traversal tests still need to be added.
+- independent external security review is still recommended before public
+  release or production use claims;
+- no hidden telemetry was added, and local mode does not require Cloud.
 
 ## License Review
 
@@ -406,12 +442,13 @@ Public distribution note:
 
 ## Known Gaps
 
-The full goal is not complete yet.
+Known code/product gaps:
 
-Remaining code/product gaps:
-
-- under-10-minute activation has not been measured with a live fresh database;
-- full final release checklist is not complete.
+- no known code gap remains from this local-runner goal after the latest test
+  pass;
+- the measured under-10-minute path is Docker-backed disposable
+  Postgres/MySQL onboarding, not an independent external developer usability
+  study.
 
 Remaining operational/legal gaps:
 
@@ -419,6 +456,9 @@ Remaining operational/legal gaps:
 - final dependency/license notice review;
 - final repository visibility and publication decision;
 - final security review before public release.
+- GitHub remote/repository publication was intentionally not performed.
+- package publication, GitHub releases, tags, pushing, and deployment were
+  intentionally not performed.
 
 ## Product Proof
 
@@ -439,8 +479,9 @@ Current proof:
 - benchmark command is reproducible, model-API-free, and checked against
   committed human/JSON snapshots;
 - license/content gate is automated.
-
-Not yet proven:
-
-- a fresh developer can complete the full own-Postgres/MySQL path in under 10
-  minutes without hand-writing a full config in a manual human run.
+- under-10-minute activation is proven by
+  `corepack pnpm test:onboarding-generated`: generated Postgres onboarding
+  completed in 20.4s, generated MySQL onboarding completed in 39.6s, and both
+  together completed in 60.0s. This measures a disposable local fixture path
+  using the same inspect/init/doctor/MCP/proposal/approval/apply/replay steps a
+  developer uses, without hand-writing the full config.
