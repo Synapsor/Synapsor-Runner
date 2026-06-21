@@ -650,6 +650,7 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 
 - `schemas`: public JSON Schemas for change sets, writeback jobs, execution receipts, and runner registration.
 - `fixtures/protocol`: versioned protocol fixtures shared with the main Synapsor repository.
+- `fixtures/benchmark`: checked-in human/JSON snapshots for the MCP efficiency fixture.
 - `packages/config`: strict local capability config validation.
 - `packages/protocol`: Zod schemas and normalization for public/legacy job and receipt validation.
 - `packages/proposal-store`: SQLite local proposal/event/approval/receipt store.

@@ -318,13 +318,11 @@ describe("runner cli", () => {
       output.push(String(chunk));
       return true;
     });
+    const expected = await fs.readFile(path.join(process.cwd(), "fixtures/benchmark/mcp-efficiency.txt"), "utf8");
 
     await expect(main(["benchmark", "mcp-efficiency"])).resolves.toBe(0);
     const text = output.join("");
-    expect(text).toContain("MCP efficiency benchmark: late-fee-waiver fixture");
-    expect(text).toContain("not a universal savings claim");
-    expect(text).toContain("raw SQL exposed: yes");
-    expect(text).toContain("raw SQL exposed: no");
+    expect(text).toBe(expected);
   });
 
   it("emits JSON for the MCP efficiency benchmark", async () => {
@@ -333,18 +331,11 @@ describe("runner cli", () => {
       output.push(String(chunk));
       return true;
     });
+    const expected = JSON.parse(await fs.readFile(path.join(process.cwd(), "fixtures/benchmark/mcp-efficiency.json"), "utf8"));
 
     await expect(main(["benchmark", "mcp-efficiency", "--json"])).resolves.toBe(0);
     const report = JSON.parse(output.join(""));
-    expect(report.tokenizer.name).toBe("synapsor-fixture-tokenizer-v1");
-    expect(report.note).toContain("not a universal token-savings claim");
-    expect(report.paths.generic_database_mcp_reference.exposes_raw_sql).toBe(true);
-    expect(report.paths.synapsor_runner_semantic_path.exposes_raw_sql).toBe(false);
-    expect(report.paths.synapsor_runner_semantic_path.approval_separated).toBe(true);
-    expect(report.scripted_plans.synapsor_runner_semantic_path).toEqual([
-      "billing.inspect_invoice",
-      "billing.propose_late_fee_waiver",
-    ]);
+    expect(report).toEqual(expected);
   });
 
   it("doctors a local config without printing secret values", async () => {

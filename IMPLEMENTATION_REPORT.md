@@ -139,6 +139,11 @@ checking.
 
 It is explicitly not a universal token-savings claim.
 
+Checked-in golden snapshots now cover both output modes:
+
+- `fixtures/benchmark/mcp-efficiency.txt`
+- `fixtures/benchmark/mcp-efficiency.json`
+
 ### MCP Client Setup
 
 Added:
@@ -359,7 +364,6 @@ Remaining code/product gaps:
 
 - true interactive TTY `synapsor init` wizard is not implemented;
 - under-10-minute activation has not been measured with a live fresh database;
-- benchmark snapshots are not checked as golden files;
 - full final release checklist is not complete.
 
 Remaining operational/legal gaps:
@@ -378,7 +382,8 @@ Current proof:
 - generated config path is Docker-smoked end to end for Postgres and MySQL;
 - semantic MCP/proposal/writeback/replay paths are covered by existing tests;
 - local UI proposal review is covered by token/CSRF/secret-redaction tests;
-- benchmark command is reproducible and model-API-free;
+- benchmark command is reproducible, model-API-free, and checked against
+  committed human/JSON snapshots;
 - license/content gate is automated.
 
 Not yet proven:

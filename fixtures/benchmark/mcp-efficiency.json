@@ -1,0 +1,53 @@
+{
+  "benchmark": "mcp-efficiency",
+  "fixture": "late-fee-waiver",
+  "tokenizer": {
+    "name": "synapsor-fixture-tokenizer-v1",
+    "version": 1,
+    "method": "deterministic regex tokenization for fixture comparison; not a model billing tokenizer"
+  },
+  "note": "This benchmark compares the included fixture/reference workflow only. It is not a universal token-savings claim.",
+  "paths": {
+    "generic_database_mcp_reference": {
+      "exposed_tools": 4,
+      "serialized_tools_list_bytes": 822,
+      "serialized_tools_list_tokens": 298,
+      "schema_context_bytes": 215,
+      "schema_context_tokens": 75,
+      "business_result_bytes": 199,
+      "business_result_tokens": 77,
+      "scripted_tool_calls": 5,
+      "exposes_raw_sql": true,
+      "exposes_write_credentials": false,
+      "approval_separated": false,
+      "stale_row_conflict_checked": false
+    },
+    "synapsor_runner_semantic_path": {
+      "exposed_tools": 2,
+      "serialized_tools_list_bytes": 728,
+      "serialized_tools_list_tokens": 236,
+      "schema_context_bytes": 331,
+      "schema_context_tokens": 87,
+      "business_result_bytes": 277,
+      "business_result_tokens": 91,
+      "scripted_tool_calls": 2,
+      "exposes_raw_sql": false,
+      "exposes_write_credentials": false,
+      "approval_separated": true,
+      "stale_row_conflict_checked": true
+    }
+  },
+  "scripted_plans": {
+    "generic_database_mcp_reference": [
+      "list_tables",
+      "describe_table invoices",
+      "query_database SELECT invoice",
+      "formulate raw UPDATE",
+      "execute_sql UPDATE invoice"
+    ],
+    "synapsor_runner_semantic_path": [
+      "billing.inspect_invoice",
+      "billing.propose_late_fee_waiver"
+    ]
+  }
+}

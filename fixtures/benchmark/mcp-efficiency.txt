@@ -1,0 +1,25 @@
+MCP efficiency benchmark: late-fee-waiver fixture
+Tokenizer: synapsor-fixture-tokenizer-v1 (deterministic fixture tokenizer; not a model billing tokenizer)
+Scope: included fixture/reference workflow only; not a universal savings claim.
+
+Generic database MCP reference:
+  exposed tools: 4
+  tools/list: 822 bytes, 298 tokens
+  scripted tool calls: 5
+  schema/context: 215 bytes, 75 tokens
+  business result: 199 bytes, 77 tokens
+  raw SQL exposed: yes
+  approval separated: no
+  stale-row conflict checked: no
+
+Synapsor Runner semantic path:
+  exposed tools: 2
+  tools/list: 728 bytes, 236 tokens
+  scripted tool calls: 2
+  schema/context: 331 bytes, 87 tokens
+  business result: 277 bytes, 91 tokens
+  raw SQL exposed: no
+  approval separated: yes
+  stale-row conflict checked: yes
+
+Run with --json to inspect machine-readable measurements and scripted plans.

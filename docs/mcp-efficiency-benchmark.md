@@ -20,6 +20,17 @@ Current fixture:
 late-fee-waiver
 ```
 
+Checked-in snapshots:
+
+```text
+fixtures/benchmark/mcp-efficiency.txt
+fixtures/benchmark/mcp-efficiency.json
+```
+
+The CLI tests compare both human-readable and machine-readable output against
+those snapshots, so changes to the fixture, tokenizer, measurements, or wording
+are reviewable.
+
 Reference path:
 
 ```text
