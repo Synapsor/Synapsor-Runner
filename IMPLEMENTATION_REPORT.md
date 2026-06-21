@@ -52,6 +52,11 @@ mini-Synapsor experience, but the full goal is not complete yet.
   generation from explicit reviewed flags.
 - Added `synapsor init --inspection-json schema-inspection.json ...` so a saved
   sanitized inspection can drive config generation without reconnecting.
+- Added an interactive `synapsor init --wizard` flow for the core own-database
+  path: engine/read-env selection, schema inspection, table selection,
+  primary-key/tenant/conflict confirmation, visible columns, mode, semantic
+  names, trusted context env vars, proposal patch mappings, preview, and final
+  confirmation before writing files.
 - Added `scripts/smoke-generated-onboarding.mjs` and
   `corepack pnpm test:onboarding-generated` for generated own-database
   onboarding proof against disposable Postgres and MySQL fixtures.
@@ -73,6 +78,8 @@ Added or strengthened:
 - `synapsor init --spec ... --non-interactive`
 - `synapsor init --database-url-env ...`
 - `synapsor init --inspection-json ...`
+- `synapsor init --wizard`
+- `synapsor init --starter`
 - `synapsor config validate`
 - `synapsor config show --redacted`
 - `synapsor config migrate`
@@ -303,6 +310,14 @@ Tests       69 passed (69)
 License/content check passed.
 ```
 
+Latest after guided init wizard:
+
+```text
+Test Files  11 passed (11)
+Tests       70 passed (70)
+License/content check passed.
+```
+
 Additional spot checks run during implementation:
 
 ```bash
@@ -356,7 +371,6 @@ Current protections:
 
 Remaining security work:
 
-- guided TTY wizard is incomplete;
 - broader path traversal tests still need to be added.
 
 ## License Review
@@ -392,7 +406,9 @@ The full goal is not complete yet.
 
 Remaining code/product gaps:
 
-- true interactive TTY `synapsor init` wizard is not implemented;
+- guided init supports the core inspect-by-id plus explicit field-update
+  proposal flow, but constrained status-transition and bounded numeric-change
+  templates are not implemented yet;
 - under-10-minute activation has not been measured with a live fresh database;
 - full final release checklist is not complete.
 
@@ -409,6 +425,8 @@ Current proof:
 
 - developer can generate config from a reviewed spec;
 - developer can generate config from a saved inspection JSON and explicit flags;
+- developer can run an injectable/tested guided init flow for one reviewed
+  table/action without hand-authoring the full config;
 - generated config path is Docker-smoked end to end for Postgres and MySQL;
 - semantic MCP/proposal/writeback/replay paths are covered by existing tests;
 - local UI proposal review is covered by token/CSRF/secret-redaction tests;

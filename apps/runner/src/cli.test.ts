@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { main } from "./cli.js";
+import { main, runInitWizard } from "./cli.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v1",
@@ -189,6 +189,91 @@ describe("runner cli", () => {
       });
       expect(output.join("")).toContain("selected public.invoices");
       expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password/i);
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
+  it("runs guided init through injectable prompts without hand-authoring full config", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-wizard-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    const answers = [
+      "", // engine default auto
+      "", // read URL env default
+      "", // schema default public
+      "", // table default invoices
+      "", // primary key default id
+      "", // tenant default tenant_id
+      "", // conflict default updated_at
+      "", // visible columns default inspected safe columns
+      "review",
+      "late_fee_cents=fixed:0,waiver_reason=arg:reason",
+      "billing",
+      "invoice",
+      "invoice_id",
+      "", // tenant env default
+      "", // principal env default
+      "", // write URL env default
+      "billing_lead",
+      "yes",
+    ];
+    const ask = vi.fn(async () => answers.shift() ?? "");
+    try {
+      process.chdir(tempDir);
+      await expect(runInitWizard(["--force"], {
+        ask,
+        stdout: { write: (chunk: string | Uint8Array) => { output.push(String(chunk)); return true; } },
+        inspection: {
+          engine: "postgres",
+          server_version: "PostgreSQL 16 fixture",
+          current_user: "synapsor_reader",
+          inspected_at: "2026-06-21T00:00:00Z",
+          schemas: ["public"],
+          warnings: [],
+          tables: [
+            {
+              schema: "public",
+              name: "invoices",
+              type: "table",
+              writable: true,
+              columns: [
+                { name: "id", data_type: "text", nullable: false, generated: false, ordinal_position: 1, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+                { name: "tenant_id", data_type: "text", nullable: false, generated: false, ordinal_position: 2, suggestions: { tenant: true, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+                { name: "late_fee_cents", data_type: "integer", nullable: false, generated: false, ordinal_position: 3, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+                { name: "waiver_reason", data_type: "text", nullable: true, generated: false, ordinal_position: 4, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+                { name: "updated_at", data_type: "timestamp", nullable: false, generated: false, ordinal_position: 5, suggestions: { tenant: false, conflict: true, sensitive: false, immutable: false, large_or_binary: false } },
+              ],
+              primary_key: ["id"],
+              unique_constraints: [],
+              foreign_keys: [],
+              indexes: [],
+              suggestions: {
+                tenant_columns: ["tenant_id"],
+                conflict_columns: ["updated_at"],
+                sensitive_columns: [],
+                default_visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+              },
+            },
+          ],
+        },
+      })).resolves.toBe(0);
+      const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.mode).toBe("review");
+      expect(config.sources.local_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
+      expect(config.sources.local_postgres.write_url_env).toBe("SYNAPSOR_DATABASE_WRITE_URL");
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_invoice_update",
+      ]);
+      expect(config.capabilities[1].approval.required_role).toBe("billing_lead");
+      expect(config.capabilities[1].patch).toEqual({
+        late_fee_cents: { fixed: 0 },
+        waiver_reason: { from_arg: "reason" },
+      });
+      expect(output.join("")).toContain("not exposed: execute_sql");
+      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
+      expect(ask).toHaveBeenCalled();
     } finally {
       process.chdir(oldCwd);
     }

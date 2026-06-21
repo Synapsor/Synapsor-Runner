@@ -177,7 +177,18 @@ synapsor inspect \
   --json > schema-inspection.json
 ```
 
-Then generate config from explicit reviewed selections. This example exposes
+In an interactive terminal, the fastest reviewed path is:
+
+```bash
+synapsor init --wizard
+```
+
+The wizard asks you to confirm the selected schema/table, primary key,
+tenant/scope column, conflict/version column, visible fields, mode, semantic
+names, trusted context env vars, and proposal patch mappings before writing any
+files.
+
+For automation, generate config from explicit reviewed selections. This example exposes
 `billing.inspect_invoice` and `billing.propose_late_fee_waiver`:
 
 ```bash

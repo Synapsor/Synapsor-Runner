@@ -65,6 +65,9 @@ async function init(args: string[]): Promise<number> {
   if (specPath) {
     return initFromSpec(args, specPath);
   }
+  if (args.includes("--wizard") || (process.stdin.isTTY && process.stdout.isTTY && !args.includes("--starter"))) {
+    return runInitWizard(args);
+  }
   const inspectionJson = optionalArg(args, "--inspection-json");
   if (inspectionJson) {
     const inspection = JSON.parse(await fs.readFile(inspectionJson, "utf8")) as SchemaInspection;
@@ -108,6 +111,133 @@ async function init(args: string[]): Promise<number> {
   await fs.writeFile(resolved, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   process.stdout.write(`created ${output}\n`);
   process.stdout.write("Edit table/column names and set the referenced environment variables before serving MCP tools.\n");
+  return 0;
+}
+
+type WizardAsk = (question: string, defaultValue?: string) => Promise<string>;
+
+export async function runInitWizard(
+  args: string[],
+  options: {
+    ask?: WizardAsk;
+    env?: NodeJS.ProcessEnv;
+    inspection?: SchemaInspection;
+    stdout?: Pick<NodeJS.WriteStream, "write">;
+  } = {},
+): Promise<number> {
+  const ask = options.ask ?? askTtyQuestion;
+  const stdout = options.stdout ?? process.stdout;
+  stdout.write("Synapsor Runner guided init\n");
+  stdout.write("Use a staging or disposable Postgres/MySQL database first. The wizard stores environment-variable names, not credentials.\n\n");
+
+  const engineInput = await askChoice(ask, "Engine", optionalArg(args, "--engine") ?? "auto", ["postgres", "mysql", "auto"]);
+  const databaseUrlEnv = await askEnvName(ask, "Read URL environment variable", optionalArg(args, "--database-url-env") ?? "SYNAPSOR_DATABASE_READ_URL");
+  const inspection = options.inspection ?? await inspectDatabase({
+    engine: engineInput as InspectEngine,
+    databaseUrlEnv,
+    schema: optionalArg(args, "--schema"),
+    env: options.env ?? process.env,
+  });
+  stdout.write(summarizeInspection(inspection));
+  stdout.write("\n");
+
+  const schema = await askDefault(ask, "Schema/database to inspect", optionalArg(args, "--schema") ?? inspection.schemas[0] ?? "public");
+  const tables = inspection.tables.filter((table) => table.schema === schema);
+  if (tables.length === 0) throw new Error(`no tables/views found in schema ${schema}`);
+  stdout.write("Available objects:\n");
+  for (const table of tables.slice(0, 20)) {
+    stdout.write(`  - ${table.schema}.${table.name} (${table.type}, pk=${table.primary_key.join(",") || "none"}, tenant=${table.suggestions.tenant_columns.join(",") || "none"})\n`);
+  }
+  const tableName = await askDefault(ask, "Table/view for this capability", optionalArg(args, "--table") ?? tables[0]?.name ?? "");
+  const table = findInspectionTable(inspection, tableName, schema);
+  if (!table) throw new Error(`table not found in inspection: ${schema}.${tableName}`);
+  const columns = table.columns.map((column) => column.name);
+
+  const primaryKey = await askColumn(ask, "Primary-key column", optionalArg(args, "--primary-key") ?? table.primary_key[0], columns);
+  const suggestedTenant = optionalArg(args, "--tenant-key") ?? table.suggestions.tenant_columns[0];
+  const tenantAnswer = await askDefault(ask, "Tenant/scope column. Leave blank only for a reviewed single-tenant dev source", suggestedTenant ?? "");
+  const singleTenantDev = !tenantAnswer && (await askDefault(ask, "No tenant column selected. Type yes to mark this as a single-tenant dev source", "no")).toLowerCase() === "yes";
+  if (!tenantAnswer && !singleTenantDev) throw new Error("tenant/scope column is required unless single-tenant dev source is explicitly confirmed");
+  if (tenantAnswer && !columns.includes(tenantAnswer)) throw new Error(`tenant column ${tenantAnswer} does not exist on ${table.schema}.${table.name}`);
+
+  const conflictAnswer = await askDefault(ask, "Conflict/version column", optionalArg(args, "--conflict-column") ?? table.suggestions.conflict_columns[0] ?? "");
+  if (conflictAnswer && !columns.includes(conflictAnswer)) throw new Error(`conflict column ${conflictAnswer} does not exist on ${table.schema}.${table.name}`);
+
+  const defaultVisible = table.suggestions.default_visible_columns.join(",");
+  const visibleColumns = parseColumnList(await askDefault(ask, "Read-visible columns", optionalArg(args, "--visible-columns") ?? defaultVisible));
+  ensureColumnsExist(visibleColumns, columns, "visible");
+
+  const mode = await askChoice(ask, "Mode", optionalArg(args, "--mode") ?? "shadow", ["read_only", "shadow", "review"]);
+  if (mode !== "read_only" && !conflictAnswer) {
+    const weak = await askDefault(ask, "No conflict/version column selected. Type yes to continue with a weak guard", "no");
+    if (weak.toLowerCase() !== "yes") throw new Error("conflict/version column is required unless weak guard is explicitly acknowledged");
+  }
+
+  let patch: NonNullable<OnboardingSelectionSpec["patch"]> = {};
+  let patchArgs: OnboardingSelectionSpec["patch_args"] = undefined;
+  let allowedColumns: string[] | undefined;
+  if (mode !== "read_only") {
+    const patchable = columns.filter((column) => !new Set([primaryKey, tenantAnswer, conflictAnswer].filter(Boolean)).has(column));
+    const defaultPatch = optionalArg(args, "--patch-from-arg")
+      ? repeatedArgs(args, "--patch-from-arg").map((binding) => `${binding.split("=")[0]}=arg:${binding.split("=").slice(1).join("=")}`).join(",")
+      : `${patchable[0] ?? columns[0]}=arg:value`;
+    const patchInput = await askDefault(ask, "Proposal patch mappings (column=arg:name or column=fixed:value, comma-separated)", defaultPatch);
+    const parsed = parseWizardPatchMappings(patchInput);
+    patch = parsed.patch;
+    patchArgs = parsed.patchArgs;
+    allowedColumns = Object.keys(patch);
+    ensureColumnsExist(allowedColumns, columns, "patch");
+  }
+
+  const namespace = await askDefault(ask, "Capability namespace", optionalArg(args, "--namespace") ?? "source");
+  const objectName = await askDefault(ask, "Business object name", optionalArg(args, "--object-name") ?? safeObjectName(table.name));
+  const lookupArg = await askDefault(ask, "Model-visible object id argument", optionalArg(args, "--lookup-arg") ?? `${objectName}_id`);
+  const tenantEnv = await askEnvName(ask, "Trusted tenant env var", optionalArg(args, "--tenant-env") ?? "SYNAPSOR_TENANT_ID");
+  const principalEnv = await askEnvName(ask, "Trusted principal env var", optionalArg(args, "--principal-env") ?? "SYNAPSOR_PRINCIPAL");
+  const writeUrlEnv = mode === "review"
+    ? await askEnvName(ask, "Write URL env var for trusted apply path", optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL")
+    : optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL";
+  const approvalRole = mode === "read_only" ? "local_reviewer" : await askDefault(ask, "Required approval role", optionalArg(args, "--approval-role") ?? "local_reviewer");
+
+  const spec: OnboardingSelectionSpec = {
+    version: 1,
+    engine: inspection.engine,
+    mode: mode as "read_only" | "shadow" | "review",
+    source_name: optionalArg(args, "--source-name"),
+    read_url_env: databaseUrlEnv,
+    write_url_env: writeUrlEnv,
+    schema: table.schema,
+    table: table.name,
+    primary_key: primaryKey,
+    tenant_key: tenantAnswer || undefined,
+    single_tenant_dev: singleTenantDev,
+    conflict_column: conflictAnswer || undefined,
+    namespace,
+    object_name: objectName,
+    lookup_arg: lookupArg,
+    visible_columns: visibleColumns,
+    allowed_columns: allowedColumns,
+    patch,
+    patch_args: patchArgs,
+    trusted_context: {
+      tenant_id_env: tenantEnv,
+      principal_env: principalEnv,
+    },
+    approval: {
+      required_role: approvalRole,
+    },
+  };
+  const generated = generateRunnerConfigFromSpec(spec);
+  const tools = (generated.config.capabilities as Array<{ name: string; kind: string }>).map((capability) => `${capability.name} (${capability.kind})`);
+  stdout.write("\nPreview:\n");
+  stdout.write(`  source: ${inspection.engine} ${table.schema}.${table.name}\n`);
+  stdout.write(`  mode: ${mode}\n`);
+  stdout.write(`  exposed tools: ${tools.join(", ")}\n`);
+  stdout.write("  not exposed: execute_sql, approval tools, commit tools, database URLs, write credentials, model-controlled tenant authority\n");
+  const confirmed = await askDefault(ask, "Write generated config and MCP snippets? Type yes to continue", "no");
+  if (confirmed.toLowerCase() !== "yes") throw new Error("guided init canceled before writing files");
+  await writeGeneratedOnboardingFiles(optionalArg(args, "--output") ?? "synapsor.runner.json", generated, args.includes("--force"));
+  stdout.write("Next: run `synapsor doctor --config synapsor.runner.json`, then `synapsor mcp serve --config synapsor.runner.json --store ./.synapsor/local.db`.\n");
   return 0;
 }
 
@@ -206,6 +336,80 @@ async function writeGeneratedOnboardingFiles(output: string, generated: Generate
   process.stdout.write("created .env.example\n");
   process.stdout.write("created MCP client snippets under .synapsor/mcp\n");
   process.stdout.write("Next: set the referenced environment variables, run `synapsor config validate`, then run `synapsor mcp serve`.\n");
+}
+
+async function askTtyQuestion(question: string, defaultValue?: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const suffix = defaultValue ? ` [${defaultValue}]` : "";
+    return await rl.question(`${question}${suffix}: `);
+  } finally {
+    rl.close();
+  }
+}
+
+async function askDefault(ask: WizardAsk, question: string, defaultValue?: string): Promise<string> {
+  const answer = (await ask(question, defaultValue)).trim();
+  return answer || defaultValue || "";
+}
+
+async function askChoice(ask: WizardAsk, question: string, defaultValue: string, choices: string[]): Promise<string> {
+  const answer = await askDefault(ask, `${question} (${choices.join("/")})`, defaultValue);
+  if (!choices.includes(answer)) throw new Error(`${question} must be one of: ${choices.join(", ")}`);
+  return answer;
+}
+
+async function askEnvName(ask: WizardAsk, question: string, defaultValue: string): Promise<string> {
+  const answer = await askDefault(ask, question, defaultValue);
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(answer)) throw new Error(`${question} must be an environment-variable name`);
+  return answer;
+}
+
+async function askColumn(ask: WizardAsk, question: string, defaultValue: string | undefined, columns: string[]): Promise<string> {
+  const answer = await askDefault(ask, question, defaultValue);
+  if (!answer) throw new Error(`${question} is required`);
+  if (!columns.includes(answer)) throw new Error(`${question} ${answer} does not exist in selected table/view`);
+  return answer;
+}
+
+function parseColumnList(value: string): string[] {
+  return uniqueStrings(value.split(",").map((item) => item.trim()).filter(Boolean));
+}
+
+function ensureColumnsExist(selected: string[], available: string[], kind: string): void {
+  if (selected.length === 0) throw new Error(`at least one ${kind} column is required`);
+  const missing = selected.filter((column) => !available.includes(column));
+  if (missing.length > 0) throw new Error(`${kind} columns do not exist on selected table/view: ${missing.join(", ")}`);
+}
+
+function parseWizardPatchMappings(input: string): {
+  patch: NonNullable<OnboardingSelectionSpec["patch"]>;
+  patchArgs: OnboardingSelectionSpec["patch_args"];
+} {
+  const patch: NonNullable<OnboardingSelectionSpec["patch"]> = {};
+  const patchArgs: NonNullable<OnboardingSelectionSpec["patch_args"]> = {};
+  for (const entry of input.split(",").map((item) => item.trim()).filter(Boolean)) {
+    const [column, ...rest] = entry.split("=");
+    const value = rest.join("=");
+    if (!column || !value) throw new Error("patch mappings must use column=arg:name or column=fixed:value");
+    if (value.startsWith("arg:")) {
+      const arg = value.slice("arg:".length).trim();
+      if (!arg) throw new Error(`patch mapping for ${column} is missing argument name`);
+      patch[column] = { from_arg: arg };
+      patchArgs[arg] = { type: "string", required: true, max_length: 500 };
+    } else if (value.startsWith("fixed:")) {
+      patch[column] = { fixed: parseFixedPatchValue(value.slice("fixed:".length)) };
+    } else {
+      throw new Error("patch mappings must use arg: or fixed:");
+    }
+  }
+  if (Object.keys(patch).length === 0) throw new Error("at least one patch mapping is required for proposal modes");
+  return { patch, patchArgs: Object.keys(patchArgs).length > 0 ? patchArgs : undefined };
+}
+
+function safeObjectName(tableName: string): string {
+  const base = tableName.replace(/[^A-Za-z0-9_]/g, "_").replace(/s$/, "");
+  return /^[A-Za-z_]/.test(base) ? base : `record_${base}`;
 }
 
 function findInspectionTable(inspection: SchemaInspection, tableName: string, schemaName?: string): TableInfo | undefined {
@@ -1784,7 +1988,8 @@ function usage(): void {
   process.stdout.write(`synapsor-runner
 
 Commands:
-  init [--engine postgres|mysql] [--mode read_only|shadow|review|cloud] [--output synapsor.runner.json] [--force]
+  init [--wizard] [--engine auto|postgres|mysql] [--database-url-env SYNAPSOR_DATABASE_READ_URL] [--output synapsor.runner.json] [--force]
+  init --starter [--engine postgres|mysql] [--mode read_only|shadow|review|cloud] [--output synapsor.runner.json] [--force]
   init --spec onboarding-selection.json --non-interactive [--output synapsor.runner.json] [--force]
   init --database-url-env SYNAPSOR_DATABASE_READ_URL --engine auto --table invoices --namespace billing --patch-from-arg waiver_reason=reason [--patch-fixed late_fee_cents=0]
   init --inspection-json schema-inspection.json --table invoices --namespace billing --patch-from-arg waiver_reason=reason

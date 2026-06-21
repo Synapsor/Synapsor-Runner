@@ -40,6 +40,33 @@ Inspection reads metadata only by default. It does not sample business rows.
 
 ## 3. Generate from reviewed selections
 
+In an interactive terminal, run the guided wizard:
+
+```bash
+synapsor init --wizard
+```
+
+The wizard:
+
+- asks for the engine and read URL environment-variable name;
+- tests read connectivity through schema inspection;
+- lists discovered schemas and tables/views;
+- asks you to confirm primary key, tenant/scope column, conflict/version
+  column, visible columns, mode, semantic names, trusted context env vars, and
+  proposal patch mappings;
+- previews the MCP tools and what is not exposed;
+- writes the generated config, `.env.example`, and MCP client snippets only
+  after final confirmation.
+
+For proposal modes, v0.1 supports explicit field-update mappings such as:
+
+```text
+late_fee_cents=fixed:0,waiver_reason=arg:reason
+```
+
+Use `--starter` only when you intentionally want the old starter skeleton
+instead of the reviewed wizard.
+
 If you already know the reviewed table/action, generate config directly from
 metadata and explicit flags:
 
