@@ -1,6 +1,6 @@
 # Release Checklist
 
-- [ ] License/trademark review complete.
+- [ ] License and trademark text reviewed by qualified counsel.
 - [ ] Repository visibility decision made.
 - [ ] GitHub organization/owner chosen.
 - [ ] Remote creation command reviewed.

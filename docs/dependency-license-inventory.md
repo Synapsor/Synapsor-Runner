@@ -1,0 +1,35 @@
+# Dependency License Inventory
+
+Generated during the ELv2 migration with:
+
+```bash
+corepack pnpm licenses list --json
+```
+
+Summary from the current lockfile/install:
+
+| License | Package entries |
+| --- | ---: |
+| MIT | 149 |
+| Apache-2.0 | 4 |
+| BSD-3-Clause | 3 |
+| BSD-2-Clause | 1 |
+| ISC | 11 |
+
+Apache-2.0 dependency entries reported by pnpm:
+
+- `denque@2.1.0`
+- `expect-type@1.3.0`
+- `long@5.3.2`
+- `typescript@5.9.3`
+
+This file is an inventory summary, not a replacement for dependency license
+review. Third-party dependency licenses and notices are not changed by the
+first-party Synapsor Runner ELv2 migration.
+
+Before public release:
+
+- regenerate this inventory from a clean install;
+- review dependency notices with counsel or the release owner;
+- keep third-party notices separate from the first-party Synapsor Runner
+  license.

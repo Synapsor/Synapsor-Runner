@@ -2,7 +2,7 @@
 
 Branch: `mcp-commit-safe-runtime`
 
-This plan maps the existing open-source runner repository to the commit-safe database MCP goal. The runner is a local-first MCP and database safety runtime, not a copy of the Synapsor C++ DBMS.
+This plan maps the existing source-available runner repository to the commit-safe database MCP goal. The runner is a local-first MCP and database safety runtime, not a copy of the Synapsor C++ DBMS.
 
 ## Current inventory
 
@@ -153,7 +153,7 @@ This plan maps the existing open-source runner repository to the commit-safe dat
 
 - Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. A local hosted-compatible Cloud-linked smoke now covers the protocol/API lifecycle against a mock Cloud API and real disposable Postgres writeback.
 - `packages/proposal-store` currently uses Node 22 `node:sqlite`, which is still marked experimental by Node. Before a public runner release, either pin/support that runtime explicitly or replace it with a stable SQLite dependency.
-- Release docs present: `LICENSE` is Apache-2.0, and `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` exist with project-specific safety guidance.
+- Release docs present: `LICENSE` is Elastic License 2.0, and `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` exist with project-specific safety guidance.
 
 ## Verification log
 

@@ -1,6 +1,6 @@
 # Synapsor Runner
 
-Open-source commit-safe MCP runtime for Postgres and MySQL.
+Source-available commit-safe MCP runtime for Postgres and MySQL.
 
 Replace raw database MCP tools with reviewed business capabilities, proposal
 diffs, local approvals, and guarded commits. Synapsor Runner lets an MCP agent
@@ -590,11 +590,20 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 - `docs/capability-config.md`: reviewed local capability config shape and validation rules.
 - `docs/cloud-mode.md`: Cloud-linked runner mode, token scope, and metadata boundary.
 - `docs/getting-started-own-database.md`: own staging Postgres/MySQL onboarding path.
+- `docs/trusted-context.md`: trusted tenant/principal binding and model boundary.
 - `docs/limitations.md`: explicit v0.1 limits and non-claims.
+- `docs/local-ui.md`: local UI plan and security requirements.
 - `docs/local-mode.md`: local store, proposal review, and replay commands.
 - `docs/mcp-audit.md`: static MCP database risk review command.
+- `docs/mcp-efficiency-benchmark.md`: reproducible benchmark requirements.
 - `docs/mcp-client-setup.md`: stdio MCP client setup patterns.
+- `docs/security-boundary.md`: model/runner authority split.
 - `docs/schema-inspection.md`: metadata inspection command and safety behavior.
+- `docs/telemetry.md`: no-hidden-telemetry behavior for local mode.
+- `docs/config-migrations.md`: current config versioning and migration rules.
+- `docs/production-readiness.md`: current production-readiness limits.
+- `docs/licensing.md`: source-available ELv2 summary.
+- `docs/dependency-license-inventory.md`: third-party license inventory summary.
 - `examples/postgres-support`: local Postgres ticket fixture.
 - `examples/mysql-orders`: local MySQL order fixture.
 - `examples/mcp-postgres-billing`: stdio MCP billing fixture with source-unchanged, approval, idempotency, and stale-row conflict proof.
@@ -615,5 +624,5 @@ Synapsor Runner is maintained by Synapsor.
 
 - Website: https://synapsor.ai
 - Docs: https://synapsor.ai/docs
-- License: Apache-2.0
+- License: Elastic License 2.0 (`Elastic-2.0`)
 - Issues: use GitHub Issues

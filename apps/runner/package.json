@@ -1,6 +1,7 @@
 {
   "name": "@synapsor-runner/runner",
   "version": "0.1.0-alpha.0",
+  "license": "Elastic-2.0",
   "type": "module",
   "bin": {
     "synapsor-runner": "dist/cli.js",
