@@ -7,6 +7,7 @@ Current local-mode foundation:
 - strict JSON capability config validation in `packages/config`;
 - local SQLite proposal/event/evidence/query-audit/writeback/replay store in `packages/proposal-store`;
 - local proposal review CLI in `apps/runner`;
+- local localhost proposal review UI through `synapsor ui`;
 - static MCP database risk review with `synapsor mcp audit`;
 - local stdio MCP server with semantic read/proposal tools;
 - MCP resource reads for `synapsor://proposals/*`, `synapsor://evidence/*`, and `synapsor://replay/*`;
@@ -15,7 +16,6 @@ Current local-mode foundation:
 
 Still pending:
 
-- Optional localhost approval UI.
 - Public-release hardening around the experimental `node:sqlite` dependency.
 
 ## Initialize a config
@@ -129,6 +129,22 @@ synapsor proposals reject wrp_123 \
 Approval records the approver against the exact proposal hash/version. The proposal patch is immutable after creation.
 
 Shadow-mode proposals are inspectable through `proposals show` and `replay show`, but `proposals approve` and `proposals writeback-job` reject them. Shadow mode never mutates Postgres/MySQL.
+
+## Browser review UI
+
+Start a localhost-only review UI:
+
+```bash
+synapsor ui --config synapsor.runner.json --store ./.synapsor/local.db
+```
+
+The UI shows setup summary, semantic tools, proposal states, exact diffs,
+evidence, approval state, receipts, and replay. It binds to `127.0.0.1` by
+default, uses a per-run local session token, and requires CSRF protection for
+approve/reject actions.
+
+The UI does not expose raw SQL, database URLs, password values, MCP approval
+tools, MCP commit tools, or controls that widen configured tables/columns.
 
 ## Replay
 

@@ -40,6 +40,12 @@ outside the model-facing MCP server and verifies:
 
 If any authority check cannot be verified, the write fails closed.
 
+Local review can happen through the CLI or `synapsor ui`. The UI is a localhost
+review surface with a per-run session token and CSRF protection for
+approve/reject actions. It does not expose raw SQL, database URLs, write
+credentials, approval tools, commit tools, or controls that widen reviewed
+tables/columns.
+
 Synapsor Runner v0.1 supports guarded single-row `UPDATE` writebacks only. It
 does not support arbitrary SQL, DDL, `INSERT`, `DELETE`, `UPSERT`, or multi-row
 updates.

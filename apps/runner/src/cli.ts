@@ -32,6 +32,7 @@ import {
   startPolling,
   type RunnerConfig,
 } from "@synapsor-runner/worker-core";
+import { startLocalUiServer } from "./local-ui.js";
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
 
@@ -54,6 +55,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "benchmark") return benchmark(rest);
   if (command === "proposals") return proposals(rest);
   if (command === "replay") return replay(rest);
+  if (command === "ui") return ui(rest);
   usage();
   return 2;
 }
@@ -1260,6 +1262,30 @@ async function replay(args: string[]): Promise<number> {
   return 2;
 }
 
+async function ui(args: string[]): Promise<number> {
+  const portArg = optionalArg(args, "--port");
+  const server = await startLocalUiServer({
+    configPath: optionalArg(args, "--config") ?? "synapsor.runner.json",
+    storePath: optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db",
+    host: optionalArg(args, "--host") ?? "127.0.0.1",
+    port: portArg ? Number(portArg) : 0,
+    allowRemoteBind: args.includes("--allow-remote-bind"),
+  });
+  process.stdout.write(`Synapsor Runner local UI: ${server.url}\n`);
+  process.stdout.write("Approval and rejection actions require the per-run local session plus CSRF token. Press Ctrl+C to stop.\n");
+  await new Promise<void>((resolve) => {
+    const stop = async () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      await server.close();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  return 0;
+}
+
 async function proposalsList(args: string[]): Promise<number> {
   const store = await openLocalStore(args);
   try {
@@ -1503,6 +1529,8 @@ function firstPositional(args: string[]): string | undefined {
     "--state",
     "--store",
     "--timeout-ms",
+    "--host",
+    "--port",
   ]);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1784,6 +1812,7 @@ Commands:
   proposals writeback-job <proposal_id> [--store ./.synapsor/local.db] [--project local] [--runner local_runner] [--output job.json]
   replay show <proposal_id> [--store ./.synapsor/local.db] [--json]
   replay export <proposal_id> --output replay.json [--store ./.synapsor/local.db]
+  ui [--config synapsor.runner.json] [--store ./.synapsor/local.db] [--host 127.0.0.1] [--port 0]
 `);
 }
 

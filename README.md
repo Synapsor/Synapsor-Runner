@@ -622,6 +622,23 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 
 `approve` and `reject` require interactive confirmation or explicit `--yes` for noninteractive scripts.
 
+## Run the local UI
+
+Use the local UI when you want a browser-based proposal review surface without
+exposing approval or commit tools to the MCP model:
+
+```bash
+synapsor ui --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+The command binds to `127.0.0.1` by default and prints a per-run local URL with
+a session token. The UI shows setup summary, semantic tools, proposals, exact
+diffs, evidence, approval state, receipts, and replay. Approve/reject actions
+require the local session plus CSRF protection.
+
+The UI does not expose raw SQL, approval tools in MCP, commit tools in MCP,
+database URLs, or password values.
+
 When applying a locally generated job, pass the same store path to attach the terminal execution receipt to replay:
 
 ```bash
@@ -646,7 +663,7 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 - `docs/getting-started-own-database.md`: own staging Postgres/MySQL onboarding path.
 - `docs/trusted-context.md`: trusted tenant/principal binding and model boundary.
 - `docs/limitations.md`: explicit v0.1 limits and non-claims.
-- `docs/local-ui.md`: local UI plan and security requirements.
+- `docs/local-ui.md`: localhost proposal review UI and security requirements.
 - `docs/local-mode.md`: local store, proposal review, and replay commands.
 - `docs/mcp-audit.md`: static MCP database risk review command.
 - `docs/mcp-efficiency-benchmark.md`: reproducible benchmark requirements.
