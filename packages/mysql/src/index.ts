@@ -21,6 +21,7 @@ export function quoteMysqlIdentifier(identifier: string): string {
 }
 
 export function buildMysqlUpdate(job: WritebackJob): { sql: string; values: unknown[] } {
+  validateMysqlPatch(job);
   const values: unknown[] = [];
   const setFragments = Object.entries(job.patch).map(([column, value]) => {
     values.push(value);
@@ -41,8 +42,41 @@ WHERE ${where.join(" AND ")}`;
   return { sql, values };
 }
 
+function validateMysqlPatch(job: WritebackJob): void {
+  const patchColumns = Object.keys(job.patch || {});
+  if (!patchColumns.length) {
+    throw new Error("mysql writeback patch must not be empty");
+  }
+  const allowedColumns = new Set(Array.isArray(job.allowed_columns) ? job.allowed_columns : []);
+  if (allowedColumns.has(job.target.primary_key.column)) {
+    throw new Error("mysql primary key column must not be patch-allowlisted");
+  }
+  if (allowedColumns.has(job.target.tenant_guard.column)) {
+    throw new Error("mysql tenant guard column must not be patch-allowlisted");
+  }
+  for (const column of patchColumns) {
+    if (!allowedColumns.has(column)) {
+      throw new Error(`mysql patch column not allowlisted: ${column}`);
+    }
+  }
+}
+
 function resultHash(job: WritebackJob, status: string, version?: unknown): string {
   return `sha256:${crypto.createHash("sha256").update(JSON.stringify({ job_id: job.job_id, status, version })).digest("hex")}`;
+}
+
+function versionValuesMatch(actual: unknown, expected: unknown): boolean {
+  const normalizeTimestamp = (value: unknown): string => String(value ?? "")
+    .replace("T", " ")
+    .replace(/\.\d{3}Z$/, "")
+    .replace(/Z$/, "")
+    .slice(0, 19);
+  const actualNormalized = normalizeTimestamp(actual);
+  const expectedNormalized = normalizeTimestamp(expected);
+  if (actualNormalized && expectedNormalized && actualNormalized === expectedNormalized) {
+    return true;
+  }
+  return String(actual) === String(expected);
 }
 
 export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Promise<WritebackResult> {
@@ -75,7 +109,7 @@ FOR UPDATE`,
       await connection.commit();
       return conflict(job, config, "ROW_NOT_FOUND");
     }
-    if (job.conflict_guard.kind === "version_column" && String(rows[0][job.conflict_guard.column]) !== String(job.conflict_guard.expected_value)) {
+    if (job.conflict_guard.kind === "version_column" && !versionValuesMatch(rows[0][job.conflict_guard.column], job.conflict_guard.expected_value)) {
       await recordReceipt(connection, job, "conflict", resultHash(job, "VERSION_CONFLICT", rows[0][job.conflict_guard.column]));
       await connection.commit();
       return conflict(job, config, "VERSION_CONFLICT");

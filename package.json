@@ -9,6 +9,10 @@
     "lint": "tsc -b --pretty false",
     "test": "tsc -b --pretty false && vitest run",
     "test:docker": "node scripts/smoke-local-examples.mjs",
+    "test:mcp-local": "node scripts/smoke-mcp-local-examples.mjs",
+    "test:mcp-client-configs": "node scripts/verify-mcp-client-configs.mjs",
+    "demo:docker": "./scripts/demo-docker.sh",
+    "demo:local": "./scripts/demo-local.sh",
     "typecheck": "tsc -b --pretty false",
     "runner": "tsx apps/runner/src/cli.ts"
   },

@@ -9,7 +9,7 @@ Synapsor Runner is the local trusted writeback boundary. The write credential st
 - Compromised or prompt-injected model: runner ignores prompts and accepts only structured approved jobs.
 - Malicious model arguments: target, tenant, allowed columns, conflict guard, and idempotency key come from Synapsor proposal state.
 - Over-broad proposal target: runner requires primary key and tenant guard.
-- Compromised runner token: token is scoped to one source and can only claim, heartbeat, and report results.
+- Compromised runner token: token is scoped to one source and limited to configured runner permissions such as adapter read/invoke, runner heartbeat, job claim, and result reporting; it does not grant approval or arbitrary SQL authority.
 - Replayed job: receipt table makes applied retries idempotent.
 - Concurrent runners: receipt row and target row are locked inside a transaction.
 - Stale row/version conflict: version-column mismatch returns `conflict`.
@@ -23,4 +23,3 @@ Synapsor Runner is the local trusted writeback boundary. The write credential st
 ## Limitations
 
 v0.1 does not support arbitrary SQL, inserts, deletes, DDL, stored procedures, multi-row updates, cross-database transactions, automatic schema changes, or a self-hosted Synapsor control plane.
-

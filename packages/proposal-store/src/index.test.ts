@@ -69,6 +69,15 @@ const writebackJob = {
   lease: { lease_id: "lease_123", attempt: 1, expires_at: "2026-06-20T14:36:00Z" }
 };
 
+function shadowChangeSet() {
+  return {
+    ...structuredClone(changeSet),
+    proposal_id: "wrp_shadow",
+    mode: "shadow",
+    integrity: { proposal_hash: "sha256:shadow" },
+  };
+}
+
 describe("proposal store", () => {
   it("persists immutable proposals and append-only events", () => {
     const store = new ProposalStore();
@@ -142,6 +151,66 @@ describe("proposal store", () => {
         "writeback_job_recorded",
         "writeback_applied"
       ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("creates a public writeback job from an approved immutable proposal", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      expect(() => store.createWritebackJobFromProposal("wrp_123")).toThrowError(ProposalStoreError);
+      store.approveProposal("wrp_123", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1
+      });
+      const job = store.createWritebackJobFromProposal("wrp_123", {
+        project_id: "acme-support",
+        runner_id: "runner_123",
+        lease_id: "lease_123"
+      });
+      expect(job.schema_version).toBe("synapsor.writeback-job.v1");
+      expect(job.writeback_job_id).toBe("wbj_wrp_123");
+      expect(job.proposal_hash).toBe("sha256:proposal");
+      expect(job.runner_scope).toEqual({ project_id: "acme-support", source_id: "src_pg_acme" });
+      expect(job.target.primary_key).toEqual({ column: "id", value: "INV-3001" });
+      expect(job.tenant_guard).toEqual({ column: "tenant_id", value: "acme" });
+      expect(job.conflict_guard).toEqual({
+        kind: "column",
+        column: "updated_at",
+        expected_value: "2026-06-20T14:31:08Z"
+      });
+      expect(store.getProposal("wrp_123")?.state).toBe("pending_worker");
+      expect(store.events("wrp_123").map((event) => event.kind)).toEqual([
+        "proposal_created",
+        "proposal_approved",
+        "proposal_pending_worker",
+        "writeback_job_recorded"
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("keeps shadow proposals inspectable but blocks approval and writeback", () => {
+    const store = new ProposalStore();
+    try {
+      const proposal = store.createProposal(shadowChangeSet());
+      expect(proposal.state).toBe("pending_review");
+      expect(proposal.change_set.mode).toBe("shadow");
+      expect(store.replay("wrp_shadow").proposal.change_set.mode).toBe("shadow");
+
+      expect(() => store.approveProposal("wrp_shadow", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:shadow",
+        proposal_version: 1,
+      })).toThrowError(/shadow proposal wrp_shadow cannot be approved/);
+
+      expect(() => store.createWritebackJobFromProposal("wrp_shadow")).toThrowError(/shadow proposal wrp_shadow cannot be converted into a writeback job/);
+
+      expect(store.getProposal("wrp_shadow")?.source_database_mutated).toBe(false);
     } finally {
       store.close();
     }

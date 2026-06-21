@@ -25,7 +25,7 @@ MCP client
   -> local receipt and replay
 ```
 
-Current implementation status: the guarded worker, protocol validation, Postgres/MySQL adapters, receipt table, and Docker smoke fixtures exist. The standalone MCP server, local proposal/event store, approval CLI, and replay CLI are next implementation phases.
+Current implementation status: the guarded worker, protocol validation, Postgres/MySQL adapters, receipt table, Docker smoke fixtures, stdio MCP server, local proposal/event/evidence/query-audit store, approval CLI, writeback-job generation, replay CLI, and MCP resources are implemented in the current branch.
 
 ## Cloud-linked mode
 
@@ -38,6 +38,8 @@ Synapsor Cloud -> approved structured job -> local runner -> Postgres/MySQL
 ```
 
 The runner does not receive arbitrary SQL. It receives target schema/table, primary key, tenant guard, allowed columns, patch values, conflict guard, idempotency key, and lease expiry.
+
+Current implementation status: the control-plane client supports runner registration, heartbeat, adapter tool catalog fetch, adapter tool calls, writeback claim, lease renewal through heartbeat, and result/receipt submission. The MCP runtime can operate in `mode: "cloud"` by delegating tool calls to the Cloud adapter APIs. A full Cloud E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token.
 
 ## Execution authority split
 

@@ -1,0 +1,11 @@
+FROM docker:27-cli
+
+RUN apk add --no-cache bash g++ git libc6-compat make nodejs npm python3 \
+  && npm install -g corepack@latest \
+  && corepack enable \
+  && corepack prepare pnpm@10.14.0 --activate
+
+WORKDIR /workspace
+
+ENTRYPOINT ["bash", "-lc"]
+CMD ["corepack pnpm install --frozen-lockfile && corepack pnpm test:mcp-local"]

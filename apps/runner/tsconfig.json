@@ -8,6 +8,8 @@
   "references": [
     { "path": "../../packages/protocol" },
     { "path": "../../packages/proposal-store" },
+    { "path": "../../packages/control-plane-client" },
+    { "path": "../../packages/mcp-server" },
     { "path": "../../packages/worker-core" },
     { "path": "../../packages/postgres" },
     { "path": "../../packages/mysql" }

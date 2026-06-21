@@ -32,5 +32,11 @@ describe("mysql adapter", () => {
   it("rejects unsafe identifiers", () => {
     expect(() => buildMysqlUpdate({ ...job, target: { ...job.target, table: "orders;drop" } })).toThrow(/unsafe/i);
   });
-});
 
+  it("rejects non-allowlisted and protected patch columns at the adapter boundary", () => {
+    expect(() => buildMysqlUpdate({ ...job, patch: { admin_note: "bypass" } })).toThrow(/not allowlisted/i);
+    expect(() => buildMysqlUpdate({ ...job, allowed_columns: ["id", "status"] })).toThrow(/primary key/i);
+    expect(() => buildMysqlUpdate({ ...job, allowed_columns: ["tenant_id", "status"] })).toThrow(/tenant guard/i);
+    expect(() => buildMysqlUpdate({ ...job, patch: {} })).toThrow(/must not be empty/i);
+  });
+});

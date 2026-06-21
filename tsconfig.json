@@ -4,6 +4,7 @@
     { "path": "./packages/config" },
     { "path": "./packages/protocol" },
     { "path": "./packages/proposal-store" },
+    { "path": "./packages/mcp-server" },
     { "path": "./packages/control-plane-client" },
     { "path": "./packages/worker-core" },
     { "path": "./packages/postgres" },

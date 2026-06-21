@@ -1,0 +1,54 @@
+{
+  "schema_version": "synapsor.protocol-manifest.v1",
+  "protocol_set": "database-mcp-writeback",
+  "version": "0.1.0-alpha",
+  "hash_algorithm": "sha256",
+  "note": "This manifest is copied in Synapsor main protocol/MANIFEST.json and synapsor-runner fixtures/protocol/MANIFEST.json. Hashes are over the checked-in JSON artifact bytes.",
+  "artifacts": [
+    {
+      "kind": "fixture",
+      "name": "change-set.late-fee-waiver.v1.json",
+      "sha256": "7112d0f28832e61b4ac5846d169666c0476ba92eb68c6790c10ac614ee3f2b33"
+    },
+    {
+      "kind": "fixture",
+      "name": "execution-receipt.applied.v1.json",
+      "sha256": "5af8be1b72b03d5a4c7af22748d9ade9f0febbf5e9503931054361ef998b5870"
+    },
+    {
+      "kind": "fixture",
+      "name": "execution-receipt.conflict.v1.json",
+      "sha256": "64e8a5fd90cdeafa2dd92a2c67cad1307b9d09e585cc82b06b987bde382f7733"
+    },
+    {
+      "kind": "fixture",
+      "name": "runner-registration.v1.json",
+      "sha256": "3eaf844cdc94a4274601cedfed7252d65dd837a345c8c3b0f17ab6bbdf7f75da"
+    },
+    {
+      "kind": "fixture",
+      "name": "writeback-job.late-fee-waiver.v1.json",
+      "sha256": "577e7987427031b55134c3d7296e644b1c8b7adec495758d4cff3665e954dbc8"
+    },
+    {
+      "kind": "schema",
+      "name": "change-set.v1.schema.json",
+      "sha256": "d7aee774c03d276dd4c94bc161ab54120ffd23167f2ca32ff6e7b0aaa414e26e"
+    },
+    {
+      "kind": "schema",
+      "name": "execution-receipt.v1.schema.json",
+      "sha256": "69504ce51fa66440e42d57ef6cb36cc6d8543427d8d385c9ccff954ecae5ec83"
+    },
+    {
+      "kind": "schema",
+      "name": "runner-registration.v1.schema.json",
+      "sha256": "86242555545b44ae747965ddb8aa35e2982587c76c2538f0f646e8b63994286b"
+    },
+    {
+      "kind": "schema",
+      "name": "writeback-job.v1.schema.json",
+      "sha256": "4a5f05b87911718dd13fcecd96a428e4575664017d40f08f2b82fe243e51467e"
+    }
+  ]
+}

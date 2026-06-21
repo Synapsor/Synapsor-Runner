@@ -33,5 +33,11 @@ describe("postgres adapter", () => {
   it("rejects unsafe identifiers", () => {
     expect(() => buildPostgresUpdate({ ...job, target: { ...job.target, table: "tickets;drop" } })).toThrow(/unsafe/i);
   });
-});
 
+  it("rejects non-allowlisted and protected patch columns at the adapter boundary", () => {
+    expect(() => buildPostgresUpdate({ ...job, patch: { admin_note: "bypass" } })).toThrow(/not allowlisted/i);
+    expect(() => buildPostgresUpdate({ ...job, allowed_columns: ["id", "status"] })).toThrow(/primary key/i);
+    expect(() => buildPostgresUpdate({ ...job, allowed_columns: ["tenant_id", "status"] })).toThrow(/tenant guard/i);
+    expect(() => buildPostgresUpdate({ ...job, patch: {} })).toThrow(/must not be empty/i);
+  });
+});

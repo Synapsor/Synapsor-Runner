@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +58,24 @@ describe("writeback job schema", () => {
 });
 
 describe("public protocol fixtures", () => {
+  it("keeps the shared manifest in sync with checked-in schemas and fixtures", () => {
+    const manifest = fixture("MANIFEST.json") as {
+      schema_version: string;
+      hash_algorithm: string;
+      artifacts: Array<{ kind: string; name: string; sha256: string }>;
+    };
+    expect(manifest.schema_version).toBe("synapsor.protocol-manifest.v1");
+    expect(manifest.hash_algorithm).toBe("sha256");
+    expect(manifest.artifacts).toHaveLength(9);
+    for (const artifact of manifest.artifacts) {
+      const file = artifact.kind === "schema"
+        ? path.resolve(here, "../../../schemas", artifact.name)
+        : path.resolve(here, "../../../fixtures/protocol", artifact.name);
+      const digest = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      expect(digest, artifact.name).toBe(artifact.sha256);
+    }
+  });
+
   it("parses the public change-set fixture", () => {
     const changeSet = parseChangeSet(fixture("change-set.late-fee-waiver.v1.json"));
     expect(changeSet.schema_version).toBe(protocolVersions.changeSet);

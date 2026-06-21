@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./tmp/mcp-postgres-billing/local.db"
+  },
+  "sources": {
+    "app_postgres": {
+      "engine": "postgres",
+      "read_url_env": "BILLING_POSTGRES_READ_URL",
+      "write_url_env": "BILLING_POSTGRES_WRITE_URL",
+      "statement_timeout_ms": 3000
+    }
+  },
+  "trusted_context": {
+    "provider": "environment",
+    "values": {
+      "tenant_id_env": "SYNAPSOR_TENANT_ID",
+      "principal_env": "SYNAPSOR_PRINCIPAL"
+    }
+  },
+  "capabilities": [
+    {
+      "name": "billing.inspect_invoice",
+      "kind": "read",
+      "source": "app_postgres",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_name",
+        "status",
+        "late_fee_cents",
+        "waiver_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "kind": "proposal",
+      "source": "app_postgres",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_name",
+        "status",
+        "late_fee_cents",
+        "waiver_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "late_fee_cents": {
+          "fixed": 0
+        },
+        "waiver_reason": {
+          "from_arg": "reason"
+        }
+      },
+      "allowed_columns": [
+        "late_fee_cents",
+        "waiver_reason"
+      ],
+      "conflict_guard": {
+        "column": "updated_at"
+      },
+      "approval": {
+        "mode": "human",
+        "required_role": "billing_lead"
+      }
+    }
+  ]
+}

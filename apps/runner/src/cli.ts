@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { pathToFileURL } from "node:url";
+import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
+import { serveStdio } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter } from "@synapsor-runner/mysql";
 import { postgresAdapter } from "@synapsor-runner/postgres";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import {
   auditMcpManifest,
   createLogger,
@@ -26,15 +29,47 @@ export async function main(argv: string[]): Promise<number> {
     usage();
     return 0;
   }
+  if (command === "init") return init(rest);
   if (command === "doctor") return doctor();
   if (command === "validate") return validate(rest);
   if (command === "apply") return apply(rest);
   if (command === "start") return start();
+  if (command === "runner") return runnerCommand(rest);
+  if (command === "cloud") return cloud(rest);
   if (command === "mcp") return mcp(rest);
   if (command === "proposals") return proposals(rest);
   if (command === "replay") return replay(rest);
   usage();
   return 2;
+}
+
+async function init(args: string[]): Promise<number> {
+  const output = optionalArg(args, "--output") ?? "synapsor.runner.json";
+  const engine = optionalArg(args, "--engine") ?? "postgres";
+  const mode = optionalArg(args, "--mode") ?? "review";
+  if (engine !== "postgres" && engine !== "mysql") {
+    throw new Error("init --engine must be postgres or mysql");
+  }
+  if (!["read_only", "shadow", "review", "cloud"].includes(mode)) {
+    throw new Error("init --mode must be read_only, shadow, review, or cloud");
+  }
+  const resolved = path.resolve(output);
+  if (!args.includes("--force")) {
+    try {
+      await fs.access(resolved);
+      throw new Error(`${output} already exists. Use --force to overwrite.`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  const config = mode === "cloud" ? starterCloudConfig() : starterLocalConfig(engine, mode);
+  await fs.writeFile(resolved, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  process.stdout.write(`created ${output}\n`);
+  process.stdout.write("Edit table/column names and set the referenced environment variables before serving MCP tools.\n");
+  return 0;
 }
 
 async function doctor(): Promise<number> {
@@ -70,6 +105,18 @@ async function apply(args: string[]): Promise<number> {
     stateDir: process.env.SYNAPSOR_STATE_DIR || "./state"
   };
   const result = await adapters[job.engine].apply(job, config);
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  if (storePath) {
+    if (storePath !== ":memory:") {
+      await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
+    }
+    const store = new ProposalStore(storePath);
+    try {
+      store.recordExecutionReceipt(toExecutionReceipt(job, result, config.dryRun));
+    } finally {
+      store.close();
+    }
+  }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   return result.status === "failed" ? 1 : 0;
 }
@@ -83,11 +130,117 @@ async function start(): Promise<number> {
   return 0;
 }
 
+async function runnerCommand(args: string[]): Promise<number> {
+  const [subcommand] = args;
+  if (subcommand === "start") return start();
+  if (subcommand === "doctor") return doctor();
+  usage();
+  return 2;
+}
+
+async function cloud(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "connect") return cloudConnect(rest);
+  usage();
+  return 2;
+}
+
+async function cloudConnect(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG ?? "synapsor.cloud.json";
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as {
+    cloud?: {
+      base_url_env?: string;
+      runner_token_env?: string;
+      runner_id?: string;
+      runner_version?: string;
+      project_id?: string;
+      source_id?: string;
+      engines?: string[];
+      capabilities?: string[];
+    };
+  };
+  if (!parsed.cloud) {
+    process.stdout.write(`cloud config missing in ${configPath}\n`);
+    return 1;
+  }
+  const baseUrlEnv = parsed.cloud.base_url_env || "SYNAPSOR_CLOUD_BASE_URL";
+  const tokenEnv = parsed.cloud.runner_token_env || "SYNAPSOR_RUNNER_TOKEN";
+  const baseUrl = process.env[baseUrlEnv];
+  const runnerToken = process.env[tokenEnv];
+  const missing = [baseUrl ? "" : baseUrlEnv, runnerToken ? "" : tokenEnv].filter(Boolean);
+  if (missing.length > 0) {
+    process.stdout.write(`missing environment variables: ${missing.join(", ")}\n`);
+    return 1;
+  }
+  if (!baseUrl || !runnerToken) {
+    process.stdout.write("missing Cloud connection settings\n");
+    return 1;
+  }
+  const sourceId = String(parsed.cloud.source_id || process.env.SYNAPSOR_SOURCE_ID || "").trim();
+  if (!sourceId || sourceId === "src_replace_me") {
+    process.stdout.write("cloud.source_id is required before registering a runner. It must match the scoped Cloud runner token source.\n");
+    return 1;
+  }
+  const runnerId = String(parsed.cloud.runner_id || process.env.SYNAPSOR_RUNNER_ID || "synapsor_runner_local").trim();
+  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0-alpha.0").trim();
+  const engines = normalizeEngines(parsed.cloud.engines);
+  const capabilities = normalizeCapabilities(parsed.cloud.capabilities);
+  const client = new ControlPlaneClient({
+    baseUrl,
+    runnerToken,
+    sourceId,
+  });
+  const report = await client.doctor();
+  if (!report.ok) {
+    process.stdout.write(`cloud connection failed: status ${report.status}\n`);
+    return 1;
+  }
+  const registration: RunnerRegistrationV1 = {
+    schema_version: protocolVersions.runnerRegistration,
+    runner_id: runnerId,
+    runner_version: runnerVersion,
+    engines,
+    capabilities,
+    scope: {
+      project_id: String(parsed.cloud.project_id || "token_scope"),
+      source_ids: [sourceId],
+    },
+    registered_at: new Date().toISOString(),
+  };
+  await client.register(registration);
+  await client.runnerHeartbeat({
+    runner_id: runnerId,
+    runner_version: runnerVersion,
+    engines,
+    source_ids: [sourceId],
+    status: "online",
+    details: {
+      mode: "cloud_connect",
+      database_credentials_sent: false,
+      adapter_catalog_supported: true,
+      writeback_supported: true,
+    },
+  });
+  process.stdout.write(`cloud connection ok for ${sourceId}\n`);
+  process.stdout.write(`registered runner ${runnerId}\n`);
+  process.stdout.write("sent metadata: runner id/version, engines, capabilities, and source id. Database URLs and credentials were not sent.\n");
+  return 0;
+}
+
 async function mcp(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "serve") return mcpServe(rest);
   if (subcommand === "audit") return mcpAudit(rest);
   usage();
   return 2;
+}
+
+async function mcpServe(args: string[]): Promise<number> {
+  await serveStdio({
+    configPath: optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG,
+    storePath: optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE,
+  });
+  return 0;
 }
 
 async function mcpAudit(args: string[]): Promise<number> {
@@ -108,6 +261,7 @@ async function proposals(args: string[]): Promise<number> {
   if (subcommand === "show") return proposalsShow(rest);
   if (subcommand === "approve") return proposalsApprove(rest);
   if (subcommand === "reject") return proposalsReject(rest);
+  if (subcommand === "writeback-job") return proposalsWritebackJob(rest);
   usage();
   return 2;
 }
@@ -170,6 +324,9 @@ async function proposalsApprove(args: string[]): Promise<number> {
   const store = await openLocalStore(args);
   try {
     const proposal = requireLocalProposal(store, proposalId);
+    if (!args.includes("--json")) {
+      process.stdout.write(formatProposalDetail(proposal));
+    }
     await confirmDangerousAction(args, `Approve proposal ${proposalId} for guarded writeback?`);
     const updated = store.approveProposal(proposalId, {
       approver: optionalArg(args, "--actor") ?? process.env.USER ?? "local_operator",
@@ -192,6 +349,9 @@ async function proposalsReject(args: string[]): Promise<number> {
   const store = await openLocalStore(args);
   try {
     const proposal = requireLocalProposal(store, proposalId);
+    if (!args.includes("--json")) {
+      process.stdout.write(formatProposalDetail(proposal));
+    }
     await confirmDangerousAction(args, `Reject proposal ${proposalId}?`);
     const updated = store.rejectProposal(proposalId, {
       actor: optionalArg(args, "--actor") ?? process.env.USER ?? "local_operator",
@@ -200,6 +360,31 @@ async function proposalsReject(args: string[]): Promise<number> {
       reason,
     });
     process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : `rejected ${updated.proposal_id}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function proposalsWritebackJob(args: string[]): Promise<number> {
+  const proposalId = positional(args, 0);
+  if (!proposalId) throw new Error("proposals writeback-job requires <proposal_id>");
+  const output = optionalArg(args, "--output");
+  const store = await openLocalStore(args);
+  try {
+    const job = store.createWritebackJobFromProposal(proposalId, {
+      project_id: optionalArg(args, "--project") ?? "local",
+      runner_id: optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner",
+      lease_seconds: Number(optionalArg(args, "--lease-seconds") ?? "300"),
+    });
+    const text = `${JSON.stringify(job, null, 2)}\n`;
+    if (output) {
+      await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+      await fs.writeFile(output, text, "utf8");
+      process.stdout.write(`created writeback job ${job.writeback_job_id} for ${proposalId} at ${output}\n`);
+    } else {
+      process.stdout.write(text);
+    }
     return 0;
   } finally {
     store.close();
@@ -297,22 +482,67 @@ function formatProposalSummary(proposal: StoredProposal): string {
 }
 
 function formatProposalDetail(proposal: StoredProposal): string {
+  const changeSet = proposal.change_set;
+  const conflictGuard = changeSet.guards.expected_version;
+  const evidenceItems = changeSet.evidence.items?.length ?? 0;
   return [
     `proposal: ${proposal.proposal_id}`,
     `state: ${proposal.state}`,
     `action: ${proposal.action}`,
+    `principal: ${changeSet.principal.id} (${changeSet.principal.source})`,
     `tenant: ${proposal.tenant_id}`,
     `target: ${proposal.source_kind}:${proposal.source_id}/${proposal.source_schema}.${proposal.source_table}/${proposal.object_id}`,
+    `primary key: ${changeSet.source.primary_key.column}=${formatScalar(changeSet.source.primary_key.value)}`,
+    `approval: ${changeSet.approval.status}${changeSet.approval.required_role ? ` required role ${changeSet.approval.required_role}` : ""}`,
     `proposal hash: ${proposal.proposal_hash}`,
     `proposal version: ${proposal.proposal_version}`,
+    `allowed columns: ${changeSet.guards.allowed_columns.join(", ")}`,
+    `conflict guard: ${conflictGuard.column || "none"}=${formatScalar(conflictGuard.value)}`,
+    `evidence: ${changeSet.evidence.bundle_id}  query ${changeSet.evidence.query_fingerprint}  items ${evidenceItems}`,
+    `writeback: ${changeSet.writeback.status} via ${changeSet.writeback.mode}`,
     `source database changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
     "diff:",
-    ...Object.keys(proposal.change_set.patch).map((column) => {
-      const before = proposal.change_set.before[column as keyof typeof proposal.change_set.before];
-      const proposed = proposal.change_set.after[column as keyof typeof proposal.change_set.after];
+    ...Object.keys(changeSet.patch).map((column) => {
+      const before = changeSet.before[column as keyof typeof changeSet.before];
+      const proposed = changeSet.after[column as keyof typeof changeSet.after];
       return `  ${column}: ${JSON.stringify(before)} -> ${JSON.stringify(proposed)}`;
     }),
   ].join("\n") + "\n";
+}
+
+function formatScalar(value: unknown): string {
+  if (value === undefined) return "unset";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: boolean): Record<string, unknown> {
+  const affectedRows = result.affected_rows ?? 0;
+  const terminalStatus = result.status === "applied" && !dryRun && affectedRows === 0 ? "already_applied" : result.status;
+  const previousVersion = job.conflict_guard.kind === "version_column" ? job.conflict_guard.expected_value : undefined;
+  const receiptHash = typeof result.result_hash === "string" && result.result_hash.startsWith("sha256:")
+    ? result.result_hash
+    : `sha256:${crypto.createHash("sha256").update(JSON.stringify({
+      job_id: job.job_id,
+      status: terminalStatus,
+      affected_rows: affectedRows,
+      error_code: result.error_code ?? null,
+    })).digest("hex")}`;
+  return {
+    schema_version: protocolVersions.executionReceipt,
+    writeback_job_id: job.job_id,
+    proposal_id: job.proposal_id,
+    runner_id: result.runner_id,
+    status: terminalStatus,
+    rows_affected: affectedRows,
+    idempotency_key: job.idempotency_key,
+    previous_version: previousVersion,
+    new_version: result.result_version,
+    source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
+    executed_at: result.completed_at ?? new Date().toISOString(),
+    safe_error_code: result.error_code,
+    receipt_hash: receiptHash,
+  };
 }
 
 async function readJob(args: string[]): Promise<unknown> {
@@ -324,19 +554,116 @@ async function readJob(args: string[]): Promise<unknown> {
   return JSON.parse(await fs.readFile(jobPath, "utf8"));
 }
 
+function starterLocalConfig(engine: "postgres" | "mysql", mode: string): Record<string, unknown> {
+  const sourceName = engine === "postgres" ? "app_postgres" : "app_mysql";
+  const readUrlEnv = engine === "postgres" ? "APP_POSTGRES_READ_URL" : "APP_MYSQL_READ_URL";
+  const writeUrlEnv = engine === "postgres" ? "APP_POSTGRES_WRITE_URL" : "APP_MYSQL_WRITE_URL";
+  return {
+    version: 1,
+    mode,
+    storage: {
+      sqlite_path: "./.synapsor/local.db",
+    },
+    sources: {
+      [sourceName]: {
+        engine,
+        read_url_env: readUrlEnv,
+        write_url_env: writeUrlEnv,
+        statement_timeout_ms: 3000,
+      },
+    },
+    trusted_context: {
+      provider: "environment",
+      values: {
+        tenant_id_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+    },
+    capabilities: [
+      {
+        name: "records.inspect_record",
+        kind: "read",
+        source: sourceName,
+        target: {
+          schema: engine === "postgres" ? "public" : "app",
+          table: "records",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {
+          record_id: {
+            type: "string",
+            required: true,
+            max_length: 128,
+          },
+        },
+        lookup: {
+          id_from_arg: "record_id",
+        },
+        visible_columns: ["id", "tenant_id", "updated_at"],
+        evidence: "required",
+        max_rows: 1,
+      },
+    ],
+  };
+}
+
+function starterCloudConfig(): Record<string, unknown> {
+  return {
+    version: 1,
+    mode: "cloud",
+    storage: {
+      sqlite_path: "./.synapsor/local.db",
+    },
+    trusted_context: {
+      provider: "cloud_session",
+    },
+    cloud: {
+      base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
+      runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
+      runner_id: "synapsor_runner_local",
+      runner_version: "0.1.0-alpha.0",
+      project_id: "token_scope",
+      adapter_id: "mcp.billing",
+      source_id: "src_replace_me",
+      engines: ["postgres", "mysql"],
+      capabilities: ["adapter:read", "adapter:invoke", "writeback:claim", "writeback:complete"],
+      session: {},
+    },
+  };
+}
+
+function normalizeEngines(value: unknown): Array<"postgres" | "mysql"> {
+  const requested = Array.isArray(value) ? value.map((engine) => String(engine).trim().toLowerCase()) : [];
+  const engines = requested.filter((engine): engine is "postgres" | "mysql" => engine === "postgres" || engine === "mysql");
+  return engines.length > 0 ? engines : ["postgres", "mysql"];
+}
+
+function normalizeCapabilities(value: unknown): string[] {
+  const defaults = ["adapter:read", "adapter:invoke", "writeback:claim", "writeback:complete"];
+  const capabilities = Array.isArray(value) ? value.map((capability) => String(capability).trim()).filter(Boolean) : [];
+  return capabilities.length > 0 ? capabilities : defaults;
+}
+
 function usage(): void {
   process.stdout.write(`synapsor-runner
 
 Commands:
+  init [--engine postgres|mysql] [--mode read_only|shadow|review|cloud] [--output synapsor.runner.json] [--force]
   doctor
   validate --job ./job.json
-  apply --job ./job.json [--dry-run]
+  apply --job ./job.json [--dry-run] [--store ./.synapsor/local.db]
   start
+  runner start
+  runner doctor
+  cloud connect [--config ./synapsor.cloud.json]
+  mcp serve [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   mcp audit ./tools-list.json [--json]
   proposals list [--store ./.synapsor/local.db] [--state pending_review] [--json]
   proposals show <proposal_id> [--store ./.synapsor/local.db] [--json]
   proposals approve <proposal_id> [--store ./.synapsor/local.db] [--actor local_user] [--yes]
   proposals reject <proposal_id> --reason "..." [--store ./.synapsor/local.db] [--yes]
+  proposals writeback-job <proposal_id> [--store ./.synapsor/local.db] [--project local] [--runner local_runner] [--output job.json]
   replay show <proposal_id> [--store ./.synapsor/local.db] [--json]
   replay export <proposal_id> --output replay.json [--store ./.synapsor/local.db]
 `);

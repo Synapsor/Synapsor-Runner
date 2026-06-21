@@ -116,6 +116,31 @@ describe("runner capability config validation", () => {
     expect(accepted.errors.map((error) => error.code)).not.toContain("TENANT_GUARD_REQUIRED");
     expect(accepted.warnings.map((warning) => warning.code)).toContain("SINGLE_TENANT_DEV_EXCEPTION");
   });
+
+  it("accepts cloud mode with Cloud adapter config instead of local source mappings", () => {
+    const result = validateRunnerCapabilityConfig({
+      version: 1,
+      mode: "cloud",
+      storage: { sqlite_path: "./.synapsor/cloud-local.db" },
+      trusted_context: {
+        provider: "cloud_session",
+      },
+      cloud: {
+        base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
+        runner_id: "synapsor_runner_local",
+        runner_version: "0.1.0-alpha.0",
+        project_id: "token_scope",
+        adapter_id: "mcp.billing",
+        source_id: "src_pg_acme",
+        engines: ["postgres", "mysql"],
+        capabilities: ["adapter:read", "adapter:invoke", "writeback:claim", "writeback:complete"],
+        session: { tenant_id: "acme" },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
 });
 
 function mutableConfig(): any {

@@ -1,0 +1,79 @@
+# Threat Model
+
+Synapsor Runner protects one narrow boundary: model-facing MCP database actions that go through reviewed Synapsor capabilities and guarded writeback jobs.
+
+It is not a general MCP security gateway, not a prompt-injection cure, not a replacement for host security, and not a self-hosted copy of Synapsor Cloud.
+
+## Assets
+
+- Customer Postgres/MySQL credentials.
+- Business rows targeted by model-facing workflows.
+- Trusted tenant, principal, source, object, allowed-column, and version bindings.
+- Proposal diffs, evidence bundles, query audit, approvals, writeback jobs, receipts, and replay records.
+- Runner token and local SQLite proposal store.
+
+## Trust Boundaries
+
+```text
+MCP client/model
+  -> Synapsor Runner MCP server
+  -> reviewed capability config
+  -> read-only database credential
+  -> local proposal/evidence/replay store
+  -> human approval outside the model
+  -> guarded worker with write credential
+  -> Postgres/MySQL
+```
+
+In Cloud-linked mode:
+
+```text
+MCP client/model
+  -> local Synapsor Runner MCP server
+  -> Synapsor Cloud adapter/capability API
+  -> Cloud proposal/approval/replay/job lease
+  -> local guarded worker
+  -> Postgres/MySQL
+```
+
+The model-facing MCP tool call has request/proposal authority. The trusted runner has execution authority only for already-approved, scoped writeback jobs.
+
+## Covered Threats
+
+- Model asks for arbitrary SQL: no generic SQL tool is exposed in the Synapsor path.
+- Model supplies `tenant_id`, `principal`, source id, allowed columns, row version, or approval identity: runner rejects trusted-binding overrides.
+- Prompt injection in database content asks the model to bypass policy: the runner ignores text as authority and only accepts structured capability/job state.
+- Wrong tenant or object: reads and writes include trusted primary-key and tenant predicates.
+- Disallowed field update: patch columns must be allowlisted.
+- Stale row: conflict guard mismatch returns `conflict` instead of silently writing.
+- Duplicate retry: receipt/idempotency state prevents applying the same job twice.
+- Over-broad update: only single-row `UPDATE` is supported and success requires exactly one affected row.
+- Cloud credential leakage: database URLs and write credentials stay local and are not sent to Cloud.
+- Model-callable approval: approval/commit tools are not exposed to MCP clients by default.
+
+## Not Covered
+
+- A compromised local host, MCP host, or modified runner binary.
+- A malicious or compromised non-Synapsor MCP server.
+- Credential theft outside the runner process.
+- OAuth, SSRF, token-passthrough, or confused-deputy bugs in unrelated MCP systems.
+- Sensitive data already returned to a model.
+- Prompt injection itself.
+- Business invariants not represented in the capability config, proposal, application handler, or database constraints.
+- Multi-row business transactions, DDL, DELETE, INSERT, UPSERT, or cross-database atomicity in v0.1.
+
+## Required Operator Controls
+
+- Use a read-only credential for MCP reads.
+- Use a separate write credential only in the trusted runner environment.
+- Scope runner tokens to the project/source they serve.
+- Keep capability config under code review.
+- Prefer version/timestamp conflict guards over weak row-hash fallback.
+- Review proposal diffs and evidence before approval.
+- Monitor conflict/failed receipt rates.
+
+## Release Blockers
+
+- Client-specific MCP configuration must be tested before claiming support for that client.
+- Cloud-linked mode requires a compatible Synapsor Cloud API and scoped runner token.
+- Public release should include dependency review, secret scanning, and container-backed smoke results.

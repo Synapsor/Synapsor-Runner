@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./tmp/mcp-postgres-support/local.db"
+  },
+  "sources": {
+    "app_postgres_support": {
+      "engine": "postgres",
+      "read_url_env": "SUPPORT_POSTGRES_READ_URL",
+      "write_url_env": "SUPPORT_POSTGRES_WRITE_URL",
+      "statement_timeout_ms": 3000
+    }
+  },
+  "trusted_context": {
+    "provider": "environment",
+    "values": {
+      "tenant_id_env": "SYNAPSOR_TENANT_ID",
+      "principal_env": "SYNAPSOR_PRINCIPAL"
+    }
+  },
+  "capabilities": [
+    {
+      "name": "support.inspect_ticket",
+      "kind": "read",
+      "source": "app_postgres_support",
+      "target": {
+        "schema": "public",
+        "table": "tickets",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "ticket_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "ticket_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_name",
+        "status",
+        "resolution_note",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "support.propose_ticket_resolution",
+      "kind": "proposal",
+      "source": "app_postgres_support",
+      "target": {
+        "schema": "public",
+        "table": "tickets",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "ticket_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "resolution_note": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "ticket_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_name",
+        "status",
+        "resolution_note",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "status": {
+          "fixed": "pending_review"
+        },
+        "resolution_note": {
+          "from_arg": "resolution_note"
+        }
+      },
+      "allowed_columns": [
+        "status",
+        "resolution_note"
+      ],
+      "conflict_guard": {
+        "column": "updated_at"
+      },
+      "approval": {
+        "mode": "human",
+        "required_role": "support_lead"
+      }
+    }
+  ]
+}

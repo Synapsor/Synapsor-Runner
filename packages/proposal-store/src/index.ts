@@ -3,9 +3,11 @@ import {
   parseChangeSet,
   parseExecutionReceipt,
   parseWritebackJob,
+  protocolVersions,
   type ChangeSetV1,
   type ExecutionReceiptV1,
   type WritebackJob,
+  type WritebackJobV1,
 } from "@synapsor-runner/protocol";
 
 export type LocalProposalState =
@@ -65,6 +67,23 @@ export type ProposalReplayRecord = {
   query_audit: Record<string, unknown>[];
   evidence: Record<string, unknown>[];
   generated_at: string;
+};
+
+export type StoredEvidenceBundle = {
+  evidence_bundle_id: string;
+  proposal_id?: string;
+  tenant_id: string;
+  payload: Record<string, unknown>;
+  items: Record<string, unknown>[];
+  query_audit: Record<string, unknown>[];
+  created_at: string;
+};
+
+export type CreateWritebackJobOptions = {
+  project_id?: string;
+  runner_id?: string;
+  lease_seconds?: number;
+  lease_id?: string;
 };
 
 export class ProposalStoreError extends Error {
@@ -314,6 +333,7 @@ export class ProposalStore {
     options: { approver: string; proposal_hash: string; proposal_version: number; reason?: string },
   ): StoredProposal {
     const proposal = this.requireProposal(proposalId);
+    assertWritebackAllowed(proposal, "approved");
     assertProposalIdentity(proposal, options.proposal_hash, options.proposal_version);
     if (proposal.state !== "pending_review") {
       throw new ProposalStoreError("PROPOSAL_NOT_PENDING_REVIEW", `proposal ${proposalId} is ${proposal.state}`);
@@ -361,6 +381,7 @@ export class ProposalStore {
 
   markPendingWorker(proposalId: string, proposalHash: string, proposalVersion: number): StoredProposal {
     const proposal = this.requireProposal(proposalId);
+    assertWritebackAllowed(proposal, "moved to pending worker");
     assertProposalIdentity(proposal, proposalHash, proposalVersion);
     if (proposal.state !== "approved") {
       throw new ProposalStoreError("PROPOSAL_NOT_APPROVED", `proposal ${proposalId} is ${proposal.state}`);
@@ -372,6 +393,7 @@ export class ProposalStore {
   recordExecutionReceipt(input: unknown): StoredProposal {
     const receipt = parseExecutionReceipt(input);
     const proposal = this.requireProposal(receipt.proposal_id);
+    assertWritebackAllowed(proposal, "recorded with an execution receipt");
     const state = stateFromReceipt(receipt);
     const now = receipt.executed_at || new Date().toISOString();
     this.transaction(() => {
@@ -430,6 +452,7 @@ export class ProposalStore {
   recordWritebackJob(input: unknown): WritebackJob {
     const job = parseWritebackJob(input);
     const proposal = this.requireProposal(job.proposal_id);
+    assertWritebackAllowed(proposal, "recorded with a writeback job");
     const proposalHash = job.approval_id;
     assertProposalIdentity(proposal, proposalHash, proposal.proposal_version);
     const now = new Date().toISOString();
@@ -453,6 +476,83 @@ export class ProposalStore {
         writeback_job_id: job.job_id,
         proposal_hash: proposalHash,
         source_id: job.source_id,
+      });
+    });
+    return job;
+  }
+
+  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 {
+    const proposal = this.requireProposal(proposalId);
+    assertWritebackAllowed(proposal, "converted into a writeback job");
+    if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
+      throw new ProposalStoreError("PROPOSAL_NOT_APPROVED", `proposal ${proposalId} is ${proposal.state}`);
+    }
+    const changeSet = proposal.change_set;
+    if (changeSet.writeback.mode !== "trusted_worker_required") {
+      throw new ProposalStoreError("WRITEBACK_NOT_REQUIRED", `proposal ${proposalId} uses ${changeSet.writeback.mode}`);
+    }
+    if (changeSet.source.kind !== "external_postgres" && changeSet.source.kind !== "external_mysql") {
+      throw new ProposalStoreError("WRITEBACK_TARGET_NOT_EXTERNAL", `proposal ${proposalId} targets ${changeSet.source.kind}`);
+    }
+    const engine = changeSet.source.kind === "external_postgres" ? "postgres" : "mysql";
+    const leaseSeconds = Math.max(15, Math.min(Number(options.lease_seconds ?? 300), 3600));
+    const now = Date.now();
+    const job: WritebackJobV1 = {
+      schema_version: protocolVersions.writebackJob,
+      writeback_job_id: `wbj_${proposal.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}`,
+      proposal_id: proposal.proposal_id,
+      proposal_version: proposal.proposal_version,
+      proposal_hash: proposal.proposal_hash,
+      runner_scope: {
+        project_id: options.project_id ?? "local",
+        source_id: proposal.source_id,
+      },
+      engine,
+      operation: "single_row_update",
+      target: {
+        schema: proposal.source_schema,
+        table: proposal.source_table,
+        primary_key: changeSet.source.primary_key,
+      },
+      tenant_guard: changeSet.guards.tenant,
+      allowed_columns: changeSet.guards.allowed_columns,
+      patch: changeSet.patch,
+      conflict_guard: conflictGuardFromChangeSet(changeSet),
+      idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
+      lease: {
+        lease_id: options.lease_id ?? `lease_${proposal.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}`,
+        attempt: 1,
+        expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
+      },
+    };
+    this.transaction(() => {
+      if (proposal.state === "approved") {
+        this.db.prepare("UPDATE proposals SET state = ?, updated_at = ? WHERE proposal_id = ?").run("pending_worker", new Date().toISOString(), proposalId);
+        this.appendEvent(proposalId, "proposal_pending_worker", options.runner_id ?? "local_runner", {
+          proposal_hash: proposal.proposal_hash,
+          proposal_version: proposal.proposal_version,
+        });
+      }
+      const normalized = parseWritebackJob(job);
+      this.db.prepare(`
+        INSERT INTO writeback_jobs (
+          writeback_job_id,
+          proposal_id,
+          proposal_hash,
+          status,
+          job_json,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(writeback_job_id) DO UPDATE SET
+          status = excluded.status,
+          job_json = excluded.job_json,
+          updated_at = excluded.updated_at
+      `).run(normalized.job_id, proposal.proposal_id, proposal.proposal_hash, "pending_worker", JSON.stringify(normalized), new Date().toISOString(), new Date().toISOString());
+      this.appendEvent(proposal.proposal_id, "writeback_job_recorded", options.runner_id ?? "local_runner", {
+        writeback_job_id: normalized.job_id,
+        proposal_hash: proposal.proposal_hash,
+        source_id: normalized.source_id,
       });
     });
     return job;
@@ -524,6 +624,22 @@ export class ProposalStore {
       JSON.stringify(input.payload),
       now,
     );
+  }
+
+  getEvidenceBundle(evidenceBundleId: string): StoredEvidenceBundle | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM evidence_bundles WHERE evidence_bundle_id = ?")
+      .get(evidenceBundleId);
+    if (!isRecord(row)) return undefined;
+    return {
+      evidence_bundle_id: String(row.evidence_bundle_id),
+      proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+      tenant_id: String(row.tenant_id),
+      payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+      items: this.evidenceItems(evidenceBundleId),
+      query_audit: this.queryAuditByEvidence(evidenceBundleId),
+      created_at: String(row.created_at),
+    };
   }
 
   events(proposalId: string): ProposalEvent[] {
@@ -627,6 +743,13 @@ export class ProposalStore {
     return records;
   }
 
+  private queryAuditByEvidence(evidenceBundleId: string): Record<string, unknown>[] {
+    const rows = this.db
+      .prepare("SELECT * FROM query_audit WHERE evidence_bundle_id = ? ORDER BY audit_id ASC")
+      .all(evidenceBundleId);
+    return rows.map(rowToQueryAudit).filter((record): record is Record<string, unknown> => record !== undefined);
+  }
+
   private evidence(proposalId: string): Record<string, unknown>[] {
     const rows = this.db
       .prepare("SELECT * FROM evidence_bundles WHERE proposal_id = ? ORDER BY created_at ASC")
@@ -639,6 +762,23 @@ export class ProposalStore {
         proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
         tenant_id: String(row.tenant_id),
         payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+        created_at: String(row.created_at),
+      });
+    }
+    return records;
+  }
+
+  private evidenceItems(evidenceBundleId: string): Record<string, unknown>[] {
+    const rows = this.db
+      .prepare("SELECT * FROM evidence_items WHERE evidence_bundle_id = ? ORDER BY evidence_item_id ASC")
+      .all(evidenceBundleId);
+    const records: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      records.push({
+        evidence_item_id: Number(row.evidence_item_id),
+        evidence_bundle_id: String(evidenceBundleId),
+        item: JSON.parse(String(row.item_json)) as Record<string, unknown>,
         created_at: String(row.created_at),
       });
     }
@@ -672,12 +812,38 @@ function stateFromReceipt(receipt: ExecutionReceiptV1): LocalProposalState {
   return "failed";
 }
 
+function conflictGuardFromChangeSet(changeSet: ChangeSetV1): WritebackJobV1["conflict_guard"] {
+  const guard = changeSet.guards.expected_version;
+  if (guard.column === "__row_hash") {
+    return { kind: "row_hash", expected_hash: String(guard.value) };
+  }
+  if (!guard.column || guard.value === null || guard.value === undefined) {
+    return { kind: "none" };
+  }
+  return { kind: "column", column: guard.column, expected_value: guard.value };
+}
+
 function assertProposalIdentity(proposal: StoredProposal, hash: string, version: number): void {
   if (proposal.proposal_hash !== hash) {
     throw new ProposalStoreError("PROPOSAL_HASH_MISMATCH", `proposal ${proposal.proposal_id} hash mismatch`);
   }
   if (proposal.proposal_version !== version) {
     throw new ProposalStoreError("PROPOSAL_VERSION_MISMATCH", `proposal ${proposal.proposal_id} version mismatch`);
+  }
+}
+
+function assertWritebackAllowed(proposal: StoredProposal, operation: string): void {
+  if (proposal.change_set.mode === "shadow") {
+    throw new ProposalStoreError(
+      "SHADOW_WRITEBACK_DISABLED",
+      `shadow proposal ${proposal.proposal_id} cannot be ${operation}; shadow mode stores proposals, evidence, query audit, and replay only and never mutates the source database`,
+    );
+  }
+  if (proposal.change_set.mode === "read_only") {
+    throw new ProposalStoreError(
+      "READ_ONLY_WRITEBACK_DISABLED",
+      `read-only proposal ${proposal.proposal_id} cannot be ${operation}; read-only mode does not allow proposal writeback`,
+    );
   }
 }
 
@@ -725,6 +891,21 @@ function rowToReceipt(row: unknown): StoredWritebackReceipt | undefined {
     idempotency_key: String(row.idempotency_key),
     source_database_mutated: Number(row.source_database_mutated) === 1,
     receipt: parseExecutionReceipt(JSON.parse(String(row.receipt_json))),
+    created_at: String(row.created_at),
+  };
+}
+
+function rowToQueryAudit(row: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(row)) return undefined;
+  return {
+    audit_id: Number(row.audit_id),
+    proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+    evidence_bundle_id: row.evidence_bundle_id == null ? undefined : String(row.evidence_bundle_id),
+    source_id: String(row.source_id),
+    query_fingerprint: String(row.query_fingerprint),
+    table_name: String(row.table_name),
+    row_count: Number(row.row_count),
+    payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
     created_at: String(row.created_at),
   };
 }

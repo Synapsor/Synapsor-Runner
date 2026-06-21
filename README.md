@@ -40,19 +40,43 @@ Synapsor Runner runs inside your environment. It is the local-first MCP and data
 
 The existing runner can validate and apply guarded writeback jobs. The new public protocol schemas are present under `schemas/`, and protocol fixtures are under `fixtures/protocol/`.
 
-The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator, SQLite proposal/event/replay store foundation, and local proposal/replay CLI commands. The standalone MCP server and full local capability runtime are still planned on the `mcp-commit-safe-runtime` branch.
+The CLI also includes `synapsor mcp audit <target>` for a static MCP database risk review of exported tool manifests. The repository now has a strict local capability config validator, SQLite proposal/event/replay store foundation, local proposal/replay CLI commands, and a stdio MCP server that exposes reviewed semantic capabilities from config. The MCP server supports local read and proposal tools, stores evidence/proposals locally, and exposes proposal/evidence/replay resources. Local approved proposals can now generate versioned `synapsor.writeback-job.v1` jobs for guarded Postgres/MySQL writeback.
+
+Cloud-linked MCP mode is wired for adapter tool catalog and tool-call delegation through the control-plane client. Cloud mode still depends on a compatible Synapsor Cloud workspace, adapter, and scoped runner token; the local disposable demos remain the primary no-account path.
 
 ## Local demo
 
-Install dependencies:
+Run the full local MCP demo with Docker only:
 
 ```bash
-corepack pnpm install
+./scripts/demo-docker.sh
 ```
+
+Or use the contributor wrapper if you already have Node/Corepack installed:
+
+```bash
+./scripts/demo-local.sh
+```
+
+Or through pnpm:
+
+```bash
+corepack pnpm demo:docker
+corepack pnpm demo:local
+```
+
+The Docker-only script builds a small local runner image, mounts the repository at the same path, uses your Docker daemon for disposable Postgres/MySQL containers, launches the local stdio MCP server, lists semantic tools, calls inspect/proposal tools, confirms source rows are unchanged before approval, approves locally, applies guarded writeback, retries idempotently, then simulates stale rows and returns conflict with no write.
+
+The host prerequisites for `./scripts/demo-docker.sh` are Docker and a reachable Docker daemon. You do not need a Synapsor Cloud account, an API key, a hosted workspace, or host Node/Corepack setup.
+
+Local modes are explicit: `read_only` exposes reads only, `shadow` records proposals/evidence/replay without any approval or writeback path, and `review` enables local approval plus guarded writeback.
+
+Manual lower-level checks are also available.
 
 Validate fixture jobs without a Synapsor Cloud account:
 
 ```bash
+corepack pnpm install
 corepack pnpm runner validate --job examples/postgres-support/job.approved.json
 corepack pnpm runner validate --job examples/mysql-orders/job.approved.json
 ```
@@ -64,15 +88,6 @@ corepack pnpm runner apply --job examples/postgres-support/job.approved.json --d
 corepack pnpm runner apply --job examples/mysql-orders/job.approved.json --dry-run
 ```
 
-Run doctor against a configured source and local database:
-
-```bash
-cp .env.example .env
-corepack pnpm runner doctor
-```
-
-`doctor` verifies the runner token against Synapsor, confirms source-scoped writeback permissions, checks database engine/version, creates or verifies the receipt table, and performs a rollback-only receipt insert to confirm write permission without touching business rows.
-
 Run the Docker-backed local examples end to end:
 
 ```bash
@@ -81,11 +96,44 @@ corepack pnpm test:docker
 
 This starts the Postgres and MySQL fixtures, applies one approved guarded update, retries idempotently, verifies stale-version conflict, verifies tenant mismatch rejection, verifies disallowed-column validation, and tears the containers down with volumes.
 
+Run the stdio MCP local proof:
+
+```bash
+corepack pnpm test:mcp-local
+```
+
+This starts disposable Postgres/MySQL databases, launches the local MCP server through the official stdio client transport, lists semantic tools, calls inspect/proposal tools, confirms source rows are unchanged before approval, approves locally, generates `synapsor.writeback-job.v1` jobs, applies them through the guarded worker, retries idempotently, then simulates stale rows and returns conflict with no write.
+
+Run doctor against a configured Cloud source and local database:
+
+```bash
+cp .env.example .env
+corepack pnpm runner doctor
+```
+
+`doctor` verifies the runner token against Synapsor, confirms source-scoped writeback permissions, checks database engine/version, creates or verifies the receipt table, and performs a rollback-only receipt insert to confirm write permission without touching business rows.
+
 Start polling Synapsor:
+
+```bash
+synapsor runner start
+```
+
+From this repository, the equivalent shorthand is:
 
 ```bash
 corepack pnpm runner start
 ```
+
+Validate a Cloud-linked runner config without printing secrets:
+
+```bash
+SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai" \
+SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
+synapsor cloud connect --config ./synapsor.cloud.json
+```
+
+`cloud connect` verifies the scoped token, registers runner metadata, and sends an initial heartbeat. It does not upload database URLs, passwords, write credentials, prompts, or table data. The local Docker demo above remains the primary no-account path.
 
 Audit an exported MCP tool manifest without calling business tools:
 
@@ -102,6 +150,15 @@ This is a static risk review, not proof that an MCP server is secure.
 
 See `docs/mcp-audit.md`.
 
+Serve reviewed local capabilities over stdio MCP:
+
+```bash
+synapsor init --engine postgres --mode review
+synapsor mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+The MCP server exposes configured semantic tools only. It does not expose `execute_sql`, generic query tools, approval tools, or commit tools. Read tools return evidence handles. Proposal tools create exact local proposals and leave the source database unchanged.
+
 Review local proposals from the SQLite store:
 
 ```bash
@@ -115,6 +172,13 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 
 `approve` and `reject` require interactive confirmation or explicit `--yes` for noninteractive scripts.
 
+When applying a locally generated job, pass the same store path to attach the terminal execution receipt to replay:
+
+```bash
+corepack pnpm runner apply --job job.json --store ./.synapsor/local.db
+corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output replay.json
+```
+
 ## Repository layout
 
 - `schemas`: public JSON Schemas for change sets, writeback jobs, execution receipts, and runner registration.
@@ -122,16 +186,22 @@ corepack pnpm runner replay export wrp_123 --store ./.synapsor/local.db --output
 - `packages/config`: strict local capability config validation.
 - `packages/protocol`: Zod schemas and normalization for public/legacy job and receipt validation.
 - `packages/proposal-store`: SQLite local proposal/event/approval/receipt store.
-- `packages/control-plane-client`: claim, heartbeat, and result HTTP client.
+- `packages/control-plane-client`: runner registration, heartbeat, adapter catalog/call, writeback claim, lease renewal, and result HTTP client.
 - `packages/worker-core`: shared config, redaction, validation, polling, and apply orchestration.
 - `packages/postgres`: Postgres adapter and receipt migration.
 - `packages/mysql`: MySQL adapter and receipt migration.
 - `apps/runner`: CLI entrypoint.
 - `docs/capability-config.md`: reviewed local capability config shape and validation rules.
+- `docs/cloud-mode.md`: Cloud-linked runner mode, token scope, and metadata boundary.
+- `docs/limitations.md`: explicit v0.1 limits and non-claims.
 - `docs/local-mode.md`: local store, proposal review, and replay commands.
 - `docs/mcp-audit.md`: static MCP database risk review command.
+- `docs/mcp-client-setup.md`: stdio MCP client setup patterns.
 - `examples/postgres-support`: local Postgres ticket fixture.
 - `examples/mysql-orders`: local MySQL order fixture.
+- `examples/mcp-postgres-billing`: stdio MCP billing fixture with source-unchanged, approval, idempotency, and stale-row conflict proof.
+- `examples/mcp-postgres-support`: stdio MCP support-ticket fixture.
+- `examples/mcp-mysql-orders`: stdio MCP MySQL order fixture.
 
 ## Security boundary
 

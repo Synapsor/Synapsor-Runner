@@ -1,0 +1,23 @@
+{
+  "servers": {
+    "synapsor-runner": {
+      "type": "stdio",
+      "command": "corepack",
+      "args": [
+        "pnpm",
+        "runner",
+        "mcp",
+        "serve",
+        "--config",
+        "./examples/mcp-postgres-billing/synapsor.runner.json",
+        "--store",
+        "./.synapsor/local.db"
+      ],
+      "env": {
+        "BILLING_POSTGRES_READ_URL": "${BILLING_POSTGRES_READ_URL}",
+        "SYNAPSOR_TENANT_ID": "${SYNAPSOR_TENANT_ID}",
+        "SYNAPSOR_PRINCIPAL": "${SYNAPSOR_PRINCIPAL}"
+      }
+    }
+  }
+}

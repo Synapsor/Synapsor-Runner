@@ -21,6 +21,7 @@ export function quotePostgresIdentifier(identifier: string): string {
 }
 
 export function buildPostgresUpdate(job: WritebackJob): { sql: string; values: unknown[] } {
+  validatePostgresPatch(job);
   const values: unknown[] = [];
   const setFragments = Object.entries(job.patch).map(([column, value]) => {
     values.push(value);
@@ -42,6 +43,25 @@ export function buildPostgresUpdate(job: WritebackJob): { sql: string; values: u
 SET ${setFragments.join(", ")}
 WHERE ${where.join(" AND ")}`;
   return { sql, values };
+}
+
+function validatePostgresPatch(job: WritebackJob): void {
+  const patchColumns = Object.keys(job.patch || {});
+  if (!patchColumns.length) {
+    throw new Error("postgres writeback patch must not be empty");
+  }
+  const allowedColumns = new Set(Array.isArray(job.allowed_columns) ? job.allowed_columns : []);
+  if (allowedColumns.has(job.target.primary_key.column)) {
+    throw new Error("postgres primary key column must not be patch-allowlisted");
+  }
+  if (allowedColumns.has(job.target.tenant_guard.column)) {
+    throw new Error("postgres tenant guard column must not be patch-allowlisted");
+  }
+  for (const column of patchColumns) {
+    if (!allowedColumns.has(column)) {
+      throw new Error(`postgres patch column not allowlisted: ${column}`);
+    }
+  }
 }
 
 function resultHash(job: WritebackJob, status: string, version?: unknown): string {

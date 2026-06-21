@@ -11,6 +11,8 @@ synapsor.runner-registration.v1
 
 The schemas live in `schemas/`. Golden fixtures live in `fixtures/protocol/` and are copied into the main Synapsor repository so Cloud/C++/SDK work can validate the same contract.
 
+`fixtures/protocol/MANIFEST.json` is the shared checksum note for the public protocol set. The same logical manifest is copied to the main Synapsor repository as `protocol/MANIFEST.json`. Tests in both repositories verify the SHA-256 digest for every schema and fixture.
+
 The v0.1 write path supports one operation:
 
 ```text

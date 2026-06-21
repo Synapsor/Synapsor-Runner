@@ -17,8 +17,9 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "capabilities", "strict"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "capabilities", "cloud", "strict"]);
 const STORAGE_KEYS = new Set(["sqlite_path"]);
+const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
   "engine",
   "read_url_env",
@@ -123,9 +124,10 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
     errors.push({ path: "$.mode", code: "INVALID_MODE", message: "mode must be read_only, shadow, review, or cloud." });
   }
   validateStorage(input.storage, strict, errors);
-  validateSources(input.sources, strict, errors, warnings);
+  validateCloud(input.cloud, input.mode, strict, errors);
+  validateSources(input.sources, input.mode, strict, errors, warnings);
   validateTrustedContext(input.trusted_context, strict, errors, warnings);
-  validateCapabilities(input.capabilities, input.sources, strict, errors, warnings);
+  validateCapabilities(input.capabilities, input.sources, input.mode, strict, errors, warnings);
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
@@ -153,10 +155,12 @@ function validateStorage(value: unknown, strict: boolean, errors: ConfigIssue[])
 
 function validateSources(
   value: unknown,
+  mode: unknown,
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
 ): void {
+  if (mode === "cloud" && value === undefined) return;
   if (!isRecord(value) || Object.keys(value).length === 0) {
     errors.push({ path: "$.sources", code: "SOURCES_REQUIRED", message: "At least one source is required." });
     return;
@@ -201,6 +205,102 @@ function validateSources(
   }
 }
 
+function validateCloud(value: unknown, mode: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (mode !== "cloud") {
+    if (value !== undefined) {
+      errors.push({
+        path: "$.cloud",
+        code: "CLOUD_CONFIG_ONLY_FOR_CLOUD_MODE",
+        message: "cloud config is only valid when mode is cloud.",
+      });
+    }
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push({
+      path: "$.cloud",
+      code: "CLOUD_CONFIG_REQUIRED",
+      message: "cloud mode requires base_url_env, runner_token_env, and adapter_id.",
+    });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, CLOUD_KEYS, "$.cloud", errors);
+  if (!isEnvName(value.base_url_env)) {
+    errors.push({
+      path: "$.cloud.base_url_env",
+      code: "CLOUD_BASE_URL_ENV_REQUIRED",
+      message: "cloud.base_url_env must name the environment variable containing the Synapsor Cloud base URL.",
+    });
+  }
+  if (!isEnvName(value.runner_token_env)) {
+    errors.push({
+      path: "$.cloud.runner_token_env",
+      code: "CLOUD_RUNNER_TOKEN_ENV_REQUIRED",
+      message: "cloud.runner_token_env must name the environment variable containing the scoped runner token.",
+    });
+  }
+  if (!isNonEmptyString(value.adapter_id)) {
+    errors.push({
+      path: "$.cloud.adapter_id",
+      code: "CLOUD_ADAPTER_ID_REQUIRED",
+      message: "cloud.adapter_id must name the approved Synapsor Cloud agent adapter.",
+    });
+  }
+  if (value.source_id !== undefined && !isNonEmptyString(value.source_id)) {
+    errors.push({
+      path: "$.cloud.source_id",
+      code: "INVALID_CLOUD_SOURCE_ID",
+      message: "cloud.source_id must be a non-empty string when provided.",
+    });
+  }
+  if (value.runner_id !== undefined && !isNonEmptyString(value.runner_id)) {
+    errors.push({
+      path: "$.cloud.runner_id",
+      code: "INVALID_CLOUD_RUNNER_ID",
+      message: "cloud.runner_id must be a non-empty string when provided.",
+    });
+  }
+  if (value.runner_version !== undefined && !isNonEmptyString(value.runner_version)) {
+    errors.push({
+      path: "$.cloud.runner_version",
+      code: "INVALID_CLOUD_RUNNER_VERSION",
+      message: "cloud.runner_version must be a non-empty string when provided.",
+    });
+  }
+  if (value.project_id !== undefined && !isNonEmptyString(value.project_id)) {
+    errors.push({
+      path: "$.cloud.project_id",
+      code: "INVALID_CLOUD_PROJECT_ID",
+      message: "cloud.project_id must be a non-empty string when provided.",
+    });
+  }
+  if (value.engines !== undefined) {
+    if (!Array.isArray(value.engines) || value.engines.length === 0 || value.engines.some((engine) => !isSourceEngine(engine))) {
+      errors.push({
+        path: "$.cloud.engines",
+        code: "INVALID_CLOUD_ENGINES",
+        message: "cloud.engines must contain postgres and/or mysql when provided.",
+      });
+    }
+  }
+  if (value.capabilities !== undefined) {
+    if (!Array.isArray(value.capabilities) || value.capabilities.length === 0 || value.capabilities.some((capability) => !isNonEmptyString(capability))) {
+      errors.push({
+        path: "$.cloud.capabilities",
+        code: "INVALID_CLOUD_CAPABILITIES",
+        message: "cloud.capabilities must contain non-empty permission strings when provided.",
+      });
+    }
+  }
+  if (value.session !== undefined && !isRecord(value.session)) {
+    errors.push({
+      path: "$.cloud.session",
+      code: "INVALID_CLOUD_SESSION",
+      message: "cloud.session must be an object when provided.",
+    });
+  }
+}
+
 function validateTrustedContext(
   value: unknown,
   strict: boolean,
@@ -231,10 +331,12 @@ function validateTrustedContext(
 function validateCapabilities(
   value: unknown,
   sources: unknown,
+  mode: unknown,
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
 ): void {
+  if (mode === "cloud" && value === undefined) return;
   if (!Array.isArray(value) || value.length === 0) {
     errors.push({ path: "$.capabilities", code: "CAPABILITIES_REQUIRED", message: "At least one capability is required." });
     return;

@@ -1,0 +1,11 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: synapsor_runner_mcp_mysql_orders
+    environment:
+      MYSQL_DATABASE: synapsor_runner_mcp_orders
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "53307:3306"
+    volumes:
+      - ./seed:/docker-entrypoint-initdb.d:ro

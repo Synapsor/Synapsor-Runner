@@ -1,26 +1,25 @@
 {
-  "name": "@synapsor-runner/runner",
+  "name": "@synapsor-runner/mcp-server",
   "version": "0.1.0-alpha.0",
   "type": "module",
-  "bin": {
-    "synapsor-runner": "dist/cli.js",
-    "synapsor": "dist/cli.js"
-  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@synapsor-runner/config": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
-    "@synapsor-runner/mcp-server": "workspace:*",
-    "@synapsor-runner/mysql": "workspace:*",
-    "@synapsor-runner/postgres": "workspace:*",
     "@synapsor-runner/proposal-store": "workspace:*",
     "@synapsor-runner/protocol": "workspace:*",
-    "@synapsor-runner/worker-core": "workspace:*"
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }
