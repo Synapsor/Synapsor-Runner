@@ -121,6 +121,10 @@ To include guarded local writeback for one already approved job, add `SYNAPSOR_H
   - Built the local runner image, ran the TypeScript runner inside Docker, started disposable Postgres/MySQL containers, and tore down resources.
 - `corepack pnpm verify:hosted-cloud-linked -- --help`
   - Passed. The command typechecks the runner and prints the real-hosted Cloud-linked verification contract without requiring or printing secrets.
+- Hosted Cloud non-mutating preflight:
+  - `curl https://synapsor.ai/health` returned HTTP 200 with `status: ok`, `service: synapsor-cloud-gateway`, and `runtime_url_configured: true`.
+  - `curl https://synapsor.ai/openapi.json` returned HTTP 200 and exposed the runner/writeback/adapter routes required by the hosted verifier, including `/v1/writeback/runner/doctor`, `/v1/runner/register`, `/v1/runner/heartbeat`, `/v1/agent/adapters/tools`, `/v1/agent/adapters/call-tool`, and `/v1/writeback/jobs/claim`.
+  - The main repo `.env` did not contain `SYNAPSOR_RUNNER_TOKEN`, `SYNAPSOR_SOURCE_ID`, `SYNAPSOR_ADAPTER_ID`, `SYNAPSOR_MCP_TOOL_NAME`, or `SYNAPSOR_MCP_TOOL_INPUT_JSON`, so the mutating/credentialed hosted verifier was not run.
 
 `synapsor mcp audit <target>` now supports:
 
@@ -150,7 +154,7 @@ No browser screenshots were required for this runner-only repo. The user-facing 
 
 - v0.1 supports guarded single-row `UPDATE` writeback only.
 - Local approval is CLI-based; optional localhost approval UI remains follow-up.
-- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. The local hosted-compatible Cloud-linked smoke passes against a mock Cloud API and real disposable Postgres writeback. `corepack pnpm verify:hosted-cloud-linked` is now available to run the real hosted verification once those values exist.
+- Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, scoped runner token, and test tool invocation payload. The local hosted-compatible Cloud-linked smoke passes against a mock Cloud API and real disposable Postgres writeback. Non-mutating hosted preflight confirms the Cloud routes exist, but the final hosted verifier cannot run until the scoped token/source/adapter/tool values exist. `corepack pnpm verify:hosted-cloud-linked` is available for that real hosted verification.
 - Local and Cloud histories remain separate unless a future import path is explicitly implemented.
 - Public release should still run dependency review, container scanning, and release/legal signoff.
 
