@@ -38,6 +38,8 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `d498ac7` - Reject secret material in local store
 - `96bddad` - Update implementation report with store guard
 - `a51a8d6` - Add guided init wizard path
+- `cc19aac` - Update implementation report with guided init
+- `1181722` - Add guarded proposal value templates
 
 ## What Changed
 
