@@ -1,9 +1,10 @@
 # Synapsor Runner
 
-Local mini Synapsor trust loop for database MCP.
+Open-source commit-safe MCP runtime for Postgres and MySQL.
 
-Synapsor Runner lets you try Synapsor's core commit-safety idea locally with
-Postgres or MySQL:
+Replace raw database MCP tools with reviewed business capabilities, proposal
+diffs, local approvals, and guarded commits. Synapsor Runner lets an MCP agent
+request a database change without receiving raw SQL or write credentials.
 
 Without Synapsor:
 
@@ -21,10 +22,31 @@ Turn risky writes into exact proposals.
 Commit only through guarded execution.
 ```
 
+Run the Docker demo:
+
+```bash
+./scripts/demo-docker.sh
+```
+
+No Synapsor Cloud account, API key, hosted workspace, or host Node setup is
+required.
+
 Run the local demo and you should see the important moment:
 
 ```text
 The business state changed after the agent saw it, so Synapsor refused to commit.
+```
+
+The concrete shape looks like this:
+
+```diff
+invoice.late_fee_cents
+- 5500
++ 0
+
+Source DB changed: No
+Approval: Required
+Conflict guard: updated_at
 ```
 
 That is the point of this repo. It shows how an MCP agent can request a
@@ -32,7 +54,13 @@ database change without receiving raw SQL or write credentials, and how
 Synapsor turns that request into a reviewable, conflict-checked business
 state transition.
 
-> Alpha status: v0.1 is intentionally small. It supports guarded single-row `UPDATE` jobs only. It is not a self-hosted Synapsor control plane, not HA, not exactly-once across networks, and not a compliance certification.
+This is not just a demo repo. The examples are demos, but the CLI, MCP server,
+proposal store, adapters, and guarded runner are intended to be usable locally.
+
+MCP connects the agent. Synapsor Runner controls whether the requested database
+change can become durable business state.
+
+> Alpha: v0.1 supports guarded single-row `UPDATE` jobs only. It is not HA, not a self-hosted Synapsor Cloud, not exactly-once across networks, and not a compliance certification.
 
 ## What This Repo Is
 
