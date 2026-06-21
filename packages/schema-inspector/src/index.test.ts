@@ -69,6 +69,72 @@ describe("schema inspector helpers", () => {
     })).toThrow(/tenant_key|single_tenant_dev|unsafe/i);
   });
 
+  it("generates bounded numeric and transition-guarded proposal args", () => {
+    const generated = generateRunnerConfigFromSpec({
+      version: 1,
+      engine: "postgres",
+      mode: "review",
+      schema: "public",
+      table: "tickets",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      conflict_column: "updated_at",
+      namespace: "support",
+      object_name: "ticket",
+      visible_columns: ["id", "tenant_id", "status", "credit_cents", "updated_at"],
+      allowed_columns: ["status", "credit_cents"],
+      patch: {
+        status: { from_arg: "next_status" },
+        credit_cents: { from_arg: "credit_cents" },
+      },
+      numeric_bounds: {
+        credit_cents: { minimum: 0, maximum: 10000 },
+      },
+      transition_guards: {
+        status: {
+          allowed: {
+            open: ["pending_review"],
+            pending_review: ["resolved"],
+          },
+        },
+      },
+    });
+    const proposal = (generated.config.capabilities as any[])[1];
+    expect(proposal.args.credit_cents).toMatchObject({ type: "number", minimum: 0, maximum: 10000 });
+    expect(proposal.args.next_status).toMatchObject({ type: "string", enum: ["pending_review", "resolved"] });
+    expect(proposal.numeric_bounds).toEqual({ credit_cents: { minimum: 0, maximum: 10000 } });
+    expect(proposal.transition_guards).toEqual({
+      status: {
+        allowed: {
+          open: ["pending_review"],
+          pending_review: ["resolved"],
+        },
+      },
+    });
+  });
+
+  it("rejects generated guard specs that do not reference patch columns", () => {
+    expect(() => generateRunnerConfigFromSpec({
+      version: 1,
+      engine: "postgres",
+      mode: "review",
+      schema: "public",
+      table: "tickets",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      conflict_column: "updated_at",
+      namespace: "support",
+      visible_columns: ["id", "tenant_id", "status", "updated_at"],
+      allowed_columns: ["status"],
+      patch: {
+        status: { from_arg: "next_status" },
+      },
+      numeric_bounds: {
+        credit_cents: { minimum: 0, maximum: 10000 },
+      },
+    })).toThrow(/numeric bound column credit_cents is not in patch/i);
+  });
+
   it("summarizes inspections without row data", () => {
     const inspection: SchemaInspection = {
       engine: "postgres",

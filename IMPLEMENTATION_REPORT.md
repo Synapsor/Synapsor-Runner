@@ -408,9 +408,6 @@ The full goal is not complete yet.
 
 Remaining code/product gaps:
 
-- guided init supports the core inspect-by-id plus explicit field-update
-  proposal flow, but constrained status-transition and bounded numeric-change
-  templates are not implemented yet;
 - under-10-minute activation has not been measured with a live fresh database;
 - full final release checklist is not complete.
 
@@ -429,6 +426,9 @@ Current proof:
 - developer can generate config from a saved inspection JSON and explicit flags;
 - developer can run an injectable/tested guided init flow for one reviewed
   table/action without hand-authoring the full config;
+- generated proposal capabilities support reviewed numeric bounds and
+  status-transition guards, with config validation and runtime enforcement
+  before proposal creation;
 - generated config path is Docker-smoked end to end for Postgres and MySQL;
 - semantic MCP/proposal/writeback/replay paths are covered by existing tests;
 - local UI proposal review is covered by token/CSRF/secret-redaction tests;

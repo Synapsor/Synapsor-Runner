@@ -136,6 +136,67 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("rejects proposal patches outside reviewed numeric bounds", async () => {
+    const guardedConfig = structuredClone(config);
+    const proposal = guardedConfig.capabilities?.[1];
+    if (!proposal) throw new Error("proposal fixture missing");
+    proposal.patch = {
+      late_fee_cents: { fixed: 100000 },
+      waiver_reason: { from_arg: "reason" },
+    };
+    proposal.numeric_bounds = {
+      late_fee_cents: { minimum: 0, maximum: 5000 },
+    };
+    const runtime = createMcpRuntime(guardedConfig, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      await expect(runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        reason: "oversized waiver",
+      })).rejects.toMatchObject({ code: "PATCH_ABOVE_MAXIMUM" });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("rejects proposal status transitions outside reviewed transition guards", async () => {
+    const guardedConfig = structuredClone(config);
+    const proposal = guardedConfig.capabilities?.[1];
+    if (!proposal) throw new Error("proposal fixture missing");
+    proposal.args = {
+      invoice_id: { type: "string", required: true, max_length: 128 },
+      next_status: { type: "string", required: true, enum: ["pending_review", "closed"] },
+    };
+    proposal.visible_columns = ["id", "tenant_id", "status", "updated_at"];
+    proposal.patch = {
+      status: { from_arg: "next_status" },
+    };
+    proposal.allowed_columns = ["status"];
+    proposal.transition_guards = {
+      status: {
+        allowed: {
+          open: ["pending_review"],
+          pending_review: ["closed"],
+        },
+      },
+    };
+    const runtime = createMcpRuntime(guardedConfig, {
+      readRow: async () => ({ row: { ...fixtureRow, status: "open" }, rowCount: 1 }),
+    });
+    try {
+      const accepted = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        next_status: "pending_review",
+      });
+      expect(accepted.status).toBe("review_required");
+      await expect(runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        next_status: "closed",
+      })).rejects.toMatchObject({ code: "PATCH_TRANSITION_NOT_ALLOWED" });
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("disables proposal tools in read-only mode", async () => {
     const runtime = createMcpRuntime({ ...config, mode: "read_only" }, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
     try {

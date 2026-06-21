@@ -83,6 +83,7 @@ synapsor init \
   --allowed-columns late_fee_cents,waiver_reason \
   --patch-fixed late_fee_cents=0 \
   --patch-from-arg waiver_reason=reason \
+  --numeric-bound late_fee_cents=0:5500 \
   --write-url-env SYNAPSOR_DATABASE_WRITE_URL
 ```
 
@@ -108,6 +109,19 @@ Review mode requires at least one explicit `--patch-fixed` or
 `--patch-from-arg` mapping. Use `--mode read_only` if you only want an inspect
 tool.
 
+For bounded business actions, add reviewed value guards:
+
+```bash
+--numeric-bound credit_cents=0:10000
+--transition-guard status=open:pending_review
+```
+
+`--numeric-bound` keeps a proposed numeric column inside a fixed range before a
+proposal is created. `--transition-guard` keeps a status-like column on an
+approved state path such as `open -> pending_review`. For multiple states, use
+semicolon-separated paths, for example
+`status=open:pending_review;pending_review:resolved`.
+
 ## 4. Or create a reviewed selection spec
 
 Create `onboarding-selection.json` from one table and one safe business action.
@@ -131,6 +145,9 @@ Create `onboarding-selection.json` from one table and one safe business action.
   "patch": {
     "late_fee_cents": { "fixed": 0 },
     "waiver_reason": { "from_arg": "reason" }
+  },
+  "numeric_bounds": {
+    "late_fee_cents": { "minimum": 0, "maximum": 5500 }
   }
 }
 ```

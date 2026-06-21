@@ -204,7 +204,8 @@ synapsor init \
   --visible-columns id,tenant_id,late_fee_cents,waiver_reason,updated_at \
   --allowed-columns late_fee_cents,waiver_reason \
   --patch-fixed late_fee_cents=0 \
-  --patch-from-arg waiver_reason=reason
+  --patch-from-arg waiver_reason=reason \
+  --numeric-bound late_fee_cents=0:5500
 ```
 
 You can also keep the reviewed selection in a file and generate from that file:
@@ -228,6 +229,9 @@ You can also keep the reviewed selection in a file and generate from that file:
   "patch": {
     "late_fee_cents": { "fixed": 0 },
     "waiver_reason": { "from_arg": "reason" }
+  },
+  "numeric_bounds": {
+    "late_fee_cents": { "minimum": 0, "maximum": 5500 }
   }
 }
 ```
@@ -441,6 +445,7 @@ It supports:
 - local MCP tools for Postgres/MySQL-backed business actions;
 - read-only, shadow, review, and Cloud-linked modes;
 - guarded single-row `UPDATE` writeback jobs;
+- reviewed numeric bounds and status-transition guards for proposal values;
 - semantic tools defined in local JSON config;
 - local proposals, approvals, receipts, evidence, query audit, and replay.
 
@@ -465,6 +470,8 @@ It demonstrates Synapsor's database commit-safety boundary locally.
 - Rejects arbitrary SQL and model-generated SQL.
 - Validates primary key, tenant guard, allowed patch columns, idempotency key,
   and version-column conflict guard.
+- Enforces reviewed numeric bounds and status-transition maps before creating a
+  proposal.
 - Builds parameterized SQL inside the Postgres/MySQL adapter.
 - Applies exactly one row inside a transaction.
 - Stores an idempotency receipt in the target database.

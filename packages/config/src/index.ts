@@ -40,14 +40,18 @@ const CAPABILITY_KEYS = new Set([
   "max_rows",
   "patch",
   "allowed_columns",
+  "numeric_bounds",
+  "transition_guards",
   "conflict_guard",
   "approval",
   "single_tenant_dev_ack",
 ]);
 const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "single_tenant_dev"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
-const ARG_KEYS = new Set(["type", "required", "max_length", "enum"]);
+const ARG_KEYS = new Set(["type", "required", "max_length", "minimum", "maximum", "enum"]);
 const PATCH_BINDING_KEYS = new Set(["fixed", "from_arg"]);
+const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
+const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role"]);
 
@@ -440,6 +444,18 @@ function validateArgs(value: unknown, path: string, strict: boolean, errors: Con
     if (arg.max_length !== undefined && !isPositiveInteger(arg.max_length)) {
       errors.push({ path: `${argPath}.max_length`, code: "INVALID_MAX_LENGTH", message: "max_length must be a positive integer." });
     }
+    if ((arg.minimum !== undefined || arg.maximum !== undefined) && arg.type !== "number") {
+      errors.push({ path: argPath, code: "NUMERIC_BOUNDS_REQUIRE_NUMBER", message: "minimum/maximum can only be used with number arguments." });
+    }
+    if (arg.minimum !== undefined && !isFiniteNumber(arg.minimum)) {
+      errors.push({ path: `${argPath}.minimum`, code: "INVALID_MINIMUM", message: "minimum must be a finite number." });
+    }
+    if (arg.maximum !== undefined && !isFiniteNumber(arg.maximum)) {
+      errors.push({ path: `${argPath}.maximum`, code: "INVALID_MAXIMUM", message: "maximum must be a finite number." });
+    }
+    if (isFiniteNumber(arg.minimum) && isFiniteNumber(arg.maximum) && Number(arg.minimum) > Number(arg.maximum)) {
+      errors.push({ path: argPath, code: "INVALID_NUMERIC_RANGE", message: "minimum must be less than or equal to maximum." });
+    }
   }
 }
 
@@ -495,6 +511,8 @@ function validateProposalCapability(
       }
     }
   }
+  validateNumericBounds(capability, path, strict, errors);
+  validateTransitionGuards(capability, path, strict, errors);
   if (!Array.isArray(capability.allowed_columns) || capability.allowed_columns.length === 0) {
     errors.push({ path: `${path}.allowed_columns`, code: "ALLOWED_COLUMNS_REQUIRED", message: "Proposal capabilities must list allowed_columns." });
   } else {
@@ -525,6 +543,104 @@ function validateProposalCapability(
       errors.push({ path: `${path}.approval`, code: "APPROVAL_NOT_OBJECT", message: "approval must be an object." });
     } else if (strict) {
       checkUnknownKeys(capability.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+    }
+  }
+}
+
+function validateNumericBounds(
+  capability: JsonRecord,
+  path: string,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (capability.numeric_bounds === undefined) return;
+  if (!isRecord(capability.numeric_bounds)) {
+    errors.push({ path: `${path}.numeric_bounds`, code: "NUMERIC_BOUNDS_NOT_OBJECT", message: "numeric_bounds must map patch columns to reviewed numeric ranges." });
+    return;
+  }
+  const patchColumns = isRecord(capability.patch) ? new Set(Object.keys(capability.patch)) : new Set<string>();
+  for (const [column, bounds] of Object.entries(capability.numeric_bounds)) {
+    const boundPath = `${path}.numeric_bounds.${column}`;
+    if (!isSafeIdentifier(column)) {
+      errors.push({ path: boundPath, code: "INVALID_NUMERIC_BOUND_COLUMN", message: "numeric_bounds keys must be fixed safe patch columns." });
+    }
+    if (!patchColumns.has(column)) {
+      errors.push({ path: boundPath, code: "NUMERIC_BOUND_PATCH_COLUMN_REQUIRED", message: "numeric_bounds can only constrain columns in the proposal patch." });
+    }
+    if (!isRecord(bounds)) {
+      errors.push({ path: boundPath, code: "NUMERIC_BOUND_NOT_OBJECT", message: "numeric bound must be an object." });
+      continue;
+    }
+    if (strict) checkUnknownKeys(bounds, NUMERIC_BOUND_KEYS, boundPath, errors);
+    const hasMinimum = bounds.minimum !== undefined;
+    const hasMaximum = bounds.maximum !== undefined;
+    if (!hasMinimum && !hasMaximum) {
+      errors.push({ path: boundPath, code: "NUMERIC_BOUND_EMPTY", message: "numeric bound must define minimum, maximum, or both." });
+    }
+    if (hasMinimum && !isFiniteNumber(bounds.minimum)) {
+      errors.push({ path: `${boundPath}.minimum`, code: "INVALID_MINIMUM", message: "minimum must be a finite number." });
+    }
+    if (hasMaximum && !isFiniteNumber(bounds.maximum)) {
+      errors.push({ path: `${boundPath}.maximum`, code: "INVALID_MAXIMUM", message: "maximum must be a finite number." });
+    }
+    if (isFiniteNumber(bounds.minimum) && isFiniteNumber(bounds.maximum) && Number(bounds.minimum) > Number(bounds.maximum)) {
+      errors.push({ path: boundPath, code: "INVALID_NUMERIC_RANGE", message: "minimum must be less than or equal to maximum." });
+    }
+  }
+}
+
+function validateTransitionGuards(
+  capability: JsonRecord,
+  path: string,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (capability.transition_guards === undefined) return;
+  if (!isRecord(capability.transition_guards)) {
+    errors.push({ path: `${path}.transition_guards`, code: "TRANSITION_GUARDS_NOT_OBJECT", message: "transition_guards must map patch columns to reviewed state transitions." });
+    return;
+  }
+  const patchColumns = isRecord(capability.patch) ? new Set(Object.keys(capability.patch)) : new Set<string>();
+  const visibleColumns = Array.isArray(capability.visible_columns) ? new Set(capability.visible_columns.filter((value): value is string => typeof value === "string")) : new Set<string>();
+  const target = isRecord(capability.target) ? capability.target : {};
+  for (const [column, guard] of Object.entries(capability.transition_guards)) {
+    const guardPath = `${path}.transition_guards.${column}`;
+    if (!isSafeIdentifier(column)) {
+      errors.push({ path: guardPath, code: "INVALID_TRANSITION_GUARD_COLUMN", message: "transition_guards keys must be fixed safe patch columns." });
+    }
+    if (!patchColumns.has(column)) {
+      errors.push({ path: guardPath, code: "TRANSITION_PATCH_COLUMN_REQUIRED", message: "transition_guards can only constrain columns in the proposal patch." });
+    }
+    if (!isRecord(guard)) {
+      errors.push({ path: guardPath, code: "TRANSITION_GUARD_NOT_OBJECT", message: "transition guard must be an object." });
+      continue;
+    }
+    if (strict) checkUnknownKeys(guard, TRANSITION_GUARD_KEYS, guardPath, errors);
+    if (guard.from_column !== undefined) {
+      if (!isSafeIdentifier(guard.from_column)) {
+        errors.push({ path: `${guardPath}.from_column`, code: "INVALID_TRANSITION_FROM_COLUMN", message: "from_column must be a fixed safe identifier." });
+      }
+      const canReadFromColumn =
+        visibleColumns.has(String(guard.from_column)) ||
+        guard.from_column === target.primary_key ||
+        guard.from_column === target.tenant_key ||
+        guard.from_column === (isRecord(capability.conflict_guard) ? capability.conflict_guard.column : undefined);
+      if (!canReadFromColumn) {
+        errors.push({ path: `${guardPath}.from_column`, code: "TRANSITION_FROM_COLUMN_NOT_VISIBLE", message: "from_column must be visible or otherwise read by the capability." });
+      }
+    }
+    if (!isRecord(guard.allowed) || Object.keys(guard.allowed).length === 0) {
+      errors.push({ path: `${guardPath}.allowed`, code: "TRANSITION_ALLOWED_REQUIRED", message: "transition guard must define at least one allowed transition." });
+      continue;
+    }
+    for (const [from, toValues] of Object.entries(guard.allowed)) {
+      const allowedPath = `${guardPath}.allowed.${from}`;
+      if (!isNonEmptyString(from)) {
+        errors.push({ path: allowedPath, code: "TRANSITION_FROM_REQUIRED", message: "transition source state must be a non-empty string." });
+      }
+      if (!Array.isArray(toValues) || toValues.length === 0 || toValues.some((value) => !isNonEmptyString(value))) {
+        errors.push({ path: allowedPath, code: "TRANSITION_TO_VALUES_REQUIRED", message: "transition target states must be non-empty strings." });
+      }
     }
   }
 }
@@ -597,6 +713,10 @@ function isQualifiedName(value: unknown): value is string {
 
 function isPositiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function isRecord(value: unknown): value is JsonRecord {

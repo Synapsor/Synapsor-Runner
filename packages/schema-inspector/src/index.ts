@@ -99,7 +99,9 @@ export type OnboardingSelectionSpec = {
   visible_columns: string[];
   allowed_columns?: string[];
   patch?: Record<string, { fixed?: string | number | boolean | null; from_arg?: string }>;
-  patch_args?: Record<string, { type?: "string" | "number" | "boolean"; required?: boolean; max_length?: number; enum?: Array<string | number | boolean | null> }>;
+  patch_args?: Record<string, { type?: "string" | "number" | "boolean"; required?: boolean; max_length?: number; minimum?: number; maximum?: number; enum?: Array<string | number | boolean | null> }>;
+  numeric_bounds?: Record<string, { minimum?: number; maximum?: number }>;
+  transition_guards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
   trusted_context?: {
     tenant_id_env?: string;
     principal_env?: string;
@@ -194,7 +196,7 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
   };
   const capabilities: Array<Record<string, unknown>> = [readCapability];
   if (mode !== "read_only" && spec.patch && Object.keys(spec.patch).length > 0) {
-    const patchArgs = inferPatchArgs(spec.patch, spec.patch_args);
+    const patchArgs = inferPatchArgs(spec.patch, spec.patch_args, spec.numeric_bounds, spec.transition_guards);
     capabilities.push({
       name: proposalToolName,
       kind: "proposal",
@@ -210,6 +212,8 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
       max_rows: 1,
       patch: spec.patch,
       allowed_columns: spec.allowed_columns ?? Object.keys(spec.patch),
+      ...(spec.numeric_bounds ? { numeric_bounds: spec.numeric_bounds } : {}),
+      ...(spec.transition_guards ? { transition_guards: spec.transition_guards } : {}),
       conflict_guard: spec.conflict_column ? { column: spec.conflict_column } : { weak_guard_ack: true },
       approval: { mode: "human", required_role: spec.approval?.required_role ?? "local_reviewer" },
     });
@@ -602,11 +606,26 @@ function target(spec: OnboardingSelectionSpec): Record<string, unknown> {
 function inferPatchArgs(
   patch: NonNullable<OnboardingSelectionSpec["patch"]>,
   explicit: OnboardingSelectionSpec["patch_args"],
+  numericBounds?: OnboardingSelectionSpec["numeric_bounds"],
+  transitionGuards?: OnboardingSelectionSpec["transition_guards"],
 ): Record<string, unknown> {
   const args: Record<string, unknown> = {};
-  for (const binding of Object.values(patch)) {
+  for (const [column, binding] of Object.entries(patch)) {
     if (binding.from_arg) {
-      args[binding.from_arg] = explicit?.[binding.from_arg] ?? { type: "string", required: true, max_length: 500 };
+      const numericBound = numericBounds?.[column];
+      const transitionGuard = transitionGuards?.[column];
+      const inferred = numericBound
+        ? {
+            type: "number",
+            required: true,
+            ...(numericBound.minimum !== undefined ? { minimum: numericBound.minimum } : {}),
+            ...(numericBound.maximum !== undefined ? { maximum: numericBound.maximum } : {}),
+          }
+        : transitionGuard
+          ? { type: "string", required: true, enum: unique(Object.values(transitionGuard.allowed).flat()), max_length: 128 }
+          : { type: "string", required: true, max_length: 500 };
+      const explicitArg = explicit?.[binding.from_arg];
+      args[binding.from_arg] = explicitArg ? { ...explicitArg, ...inferred } : inferred;
     }
   }
   return args;
@@ -663,6 +682,27 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
     for (const column of Object.keys(spec.patch)) {
       if (!allowed.has(column)) throw new Error(`patch column ${column} is not in allowed_columns.`);
     }
+    for (const column of Object.keys(spec.numeric_bounds ?? {})) {
+      if (!Object.prototype.hasOwnProperty.call(spec.patch, column)) throw new Error(`numeric bound column ${column} is not in patch.`);
+      const bounds = spec.numeric_bounds?.[column] ?? {};
+      if (bounds.minimum === undefined && bounds.maximum === undefined) throw new Error(`numeric bound for ${column} must define minimum, maximum, or both.`);
+      if (bounds.minimum !== undefined && !Number.isFinite(bounds.minimum)) throw new Error(`numeric bound minimum for ${column} must be finite.`);
+      if (bounds.maximum !== undefined && !Number.isFinite(bounds.maximum)) throw new Error(`numeric bound maximum for ${column} must be finite.`);
+      if (bounds.minimum !== undefined && bounds.maximum !== undefined && bounds.minimum > bounds.maximum) throw new Error(`numeric bound minimum for ${column} must be <= maximum.`);
+    }
+    const readableColumns = new Set([spec.primary_key, spec.tenant_key, spec.conflict_column, ...spec.visible_columns].filter((value): value is string => Boolean(value)));
+    for (const [column, guard] of Object.entries(spec.transition_guards ?? {})) {
+      if (!Object.prototype.hasOwnProperty.call(spec.patch, column)) throw new Error(`transition guard column ${column} is not in patch.`);
+      const fromColumn = guard.from_column ?? column;
+      if (!readableColumns.has(fromColumn)) throw new Error(`transition guard from_column ${fromColumn} must be visible or otherwise read.`);
+      if (!guard.allowed || Object.keys(guard.allowed).length === 0) throw new Error(`transition guard for ${column} must define allowed transitions.`);
+      for (const [from, toValues] of Object.entries(guard.allowed)) {
+        if (!from.trim()) throw new Error(`transition guard source state for ${column} must not be empty.`);
+        if (!Array.isArray(toValues) || toValues.length === 0 || toValues.some((value) => typeof value !== "string" || !value.trim())) {
+          throw new Error(`transition guard target states for ${column} must be non-empty strings.`);
+        }
+      }
+    }
   }
   for (const name of [
     spec.source_name,
@@ -674,6 +714,9 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
     spec.lookup_arg,
     ...(spec.visible_columns ?? []),
     ...(spec.allowed_columns ?? []),
+    ...Object.keys(spec.numeric_bounds ?? {}),
+    ...Object.keys(spec.transition_guards ?? {}),
+    ...Object.values(spec.transition_guards ?? {}).map((guard) => guard.from_column).filter(Boolean),
   ].filter(Boolean)) {
     assertSafeIdentifier(String(name));
   }

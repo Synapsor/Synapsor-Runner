@@ -31,7 +31,19 @@ export type RuntimeArgConfig = {
   type: "string" | "number" | "boolean";
   required?: boolean;
   max_length?: number;
+  minimum?: number;
+  maximum?: number;
   enum?: Scalar[];
+};
+
+export type RuntimeNumericBoundConfig = {
+  minimum?: number;
+  maximum?: number;
+};
+
+export type RuntimeTransitionGuardConfig = {
+  from_column?: string;
+  allowed: Record<string, string[]>;
 };
 
 export type RuntimeCapabilityConfig = {
@@ -52,6 +64,8 @@ export type RuntimeCapabilityConfig = {
   max_rows?: number;
   patch?: Record<string, { fixed?: Scalar; from_arg?: string }>;
   allowed_columns?: string[];
+  numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
+  transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: { mode?: "human" | "policy" | string; required_role?: string };
 };
@@ -572,6 +586,7 @@ function buildChangeSet(input: {
 }): ChangeSetV1 {
   const patch = buildPatch(input.capability, input.args);
   const before = scalarRecord(input.currentRow);
+  enforcePatchGuards(input.capability, before, patch);
   const after = { ...before, ...patch };
   const guard = expectedVersionGuard(input.capability, before);
   const proposalCore = {
@@ -761,6 +776,8 @@ function validateToolArgs(capability: RuntimeCapabilityConfig, args: Record<stri
     if (spec.type === "number" && typeof value !== "number") throw new McpRuntimeError("ARGUMENT_TYPE_INVALID", `${name} must be a number.`);
     if (spec.type === "boolean" && typeof value !== "boolean") throw new McpRuntimeError("ARGUMENT_TYPE_INVALID", `${name} must be a boolean.`);
     if (typeof value === "string" && spec.max_length && value.length > spec.max_length) throw new McpRuntimeError("ARGUMENT_TOO_LONG", `${name} is longer than ${spec.max_length}.`);
+    if (typeof value === "number" && spec.minimum !== undefined && value < spec.minimum) throw new McpRuntimeError("ARGUMENT_BELOW_MINIMUM", `${name} must be at least ${spec.minimum}.`);
+    if (typeof value === "number" && spec.maximum !== undefined && value > spec.maximum) throw new McpRuntimeError("ARGUMENT_ABOVE_MAXIMUM", `${name} must be at most ${spec.maximum}.`);
     if (spec.enum && !spec.enum.includes(value as Scalar)) throw new McpRuntimeError("ARGUMENT_NOT_ALLOWED", `${name} is not an allowed value.`);
   }
 }
@@ -778,6 +795,8 @@ function zodInputShape(capability: RuntimeCapabilityConfig): Record<string, z.Zo
   for (const [name, spec] of Object.entries(capability.args)) {
     let schema: z.ZodTypeAny = spec.type === "number" ? z.number() : spec.type === "boolean" ? z.boolean() : z.string();
     if (spec.type === "string" && spec.max_length) schema = (schema as z.ZodString).max(spec.max_length);
+    if (spec.type === "number" && spec.minimum !== undefined) schema = (schema as z.ZodNumber).min(spec.minimum);
+    if (spec.type === "number" && spec.maximum !== undefined) schema = (schema as z.ZodNumber).max(spec.maximum);
     if (spec.enum && spec.enum.length > 0) schema = schema.refine((value) => spec.enum?.includes(value as Scalar), "value is not allowlisted");
     if (spec.required === false) schema = schema.optional();
     shape[name] = schema.describe(`${name} business argument`);
@@ -791,7 +810,14 @@ function toolMetadata(capability: RuntimeCapabilityConfig): LocalToolMetadata {
     title: capability.name,
     description: capabilityDescription(capability),
     kind: capability.kind,
-    input_schema: Object.fromEntries(Object.entries(capability.args).map(([name, spec]) => [name, { type: spec.type, required: spec.required !== false }])),
+    input_schema: Object.fromEntries(Object.entries(capability.args).map(([name, spec]) => [name, {
+      type: spec.type,
+      required: spec.required !== false,
+      ...(spec.max_length !== undefined ? { max_length: spec.max_length } : {}),
+      ...(spec.minimum !== undefined ? { minimum: spec.minimum } : {}),
+      ...(spec.maximum !== undefined ? { maximum: spec.maximum } : {}),
+      ...(spec.enum !== undefined ? { enum: spec.enum } : {}),
+    }])),
     annotations: {
       readOnlyHint: capability.kind === "read",
       destructiveHint: false,
@@ -818,6 +844,40 @@ function buildPatch(capability: RuntimeCapabilityConfig, args: Record<string, un
     else patch[column] = scalar(binding.fixed ?? null);
   }
   return patch;
+}
+
+function enforcePatchGuards(
+  capability: RuntimeCapabilityConfig,
+  before: Record<string, Scalar>,
+  patch: Record<string, Scalar>,
+): void {
+  for (const [column, bounds] of Object.entries(capability.numeric_bounds ?? {})) {
+    if (!(column in patch)) continue;
+    const proposed = patch[column];
+    if (typeof proposed !== "number") {
+      throw new McpRuntimeError("PATCH_NUMERIC_BOUND_TYPE_INVALID", `${column} must be numeric to use numeric_bounds.`);
+    }
+    if (bounds.minimum !== undefined && proposed < bounds.minimum) {
+      throw new McpRuntimeError("PATCH_BELOW_MINIMUM", `${column} must be at least ${bounds.minimum}.`);
+    }
+    if (bounds.maximum !== undefined && proposed > bounds.maximum) {
+      throw new McpRuntimeError("PATCH_ABOVE_MAXIMUM", `${column} must be at most ${bounds.maximum}.`);
+    }
+  }
+
+  for (const [column, guard] of Object.entries(capability.transition_guards ?? {})) {
+    if (!(column in patch)) continue;
+    const fromColumn = guard.from_column ?? column;
+    const current = before[fromColumn];
+    const proposed = patch[column];
+    if (typeof current !== "string" || typeof proposed !== "string") {
+      throw new McpRuntimeError("PATCH_TRANSITION_TYPE_INVALID", `${column} transition guard requires string current and proposed values.`);
+    }
+    const allowed = guard.allowed[current] ?? [];
+    if (!allowed.includes(proposed)) {
+      throw new McpRuntimeError("PATCH_TRANSITION_NOT_ALLOWED", `${column} cannot transition from ${current} to ${proposed}.`);
+    }
+  }
 }
 
 function diffFromChangeSet(changeSet: ChangeSetV1): Record<string, { before: Scalar; proposed: Scalar }> {

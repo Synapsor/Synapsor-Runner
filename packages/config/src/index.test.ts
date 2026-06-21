@@ -104,6 +104,53 @@ describe("runner capability config validation", () => {
     expect(result.errors.map((error) => error.code)).toContain("CONFLICT_GUARD_REQUIRED");
   });
 
+  it("accepts reviewed numeric bounds and status transitions", () => {
+    const config = mutableConfig();
+    config.capabilities[1].args.next_status = {
+      type: "string",
+      required: true,
+      enum: ["pending_review", "waived"],
+    };
+    config.capabilities[1].visible_columns.push("status");
+    config.capabilities[1].patch.status = { from_arg: "next_status" };
+    config.capabilities[1].allowed_columns.push("status");
+    config.capabilities[1].numeric_bounds = {
+      late_fee_cents: { minimum: 0, maximum: 5500 },
+    };
+    config.capabilities[1].transition_guards = {
+      status: {
+        allowed: {
+          open: ["pending_review"],
+          pending_review: ["waived"],
+        },
+      },
+    };
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects invalid proposal guard templates", () => {
+    const config = mutableConfig();
+    config.capabilities[1].numeric_bounds = {
+      admin_override: { minimum: 10, maximum: 1 },
+    };
+    config.capabilities[1].transition_guards = {
+      status: {
+        from_column: "internal_state",
+        allowed: {
+          open: ["closed"],
+        },
+      },
+    };
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("NUMERIC_BOUND_PATCH_COLUMN_REQUIRED");
+    expect(result.errors.map((error) => error.code)).toContain("INVALID_NUMERIC_RANGE");
+    expect(result.errors.map((error) => error.code)).toContain("TRANSITION_PATCH_COLUMN_REQUIRED");
+    expect(result.errors.map((error) => error.code)).toContain("TRANSITION_FROM_COLUMN_NOT_VISIBLE");
+  });
+
   it("requires a tenant guard unless single-tenant dev mode is explicit", () => {
     const config = mutableConfig();
     delete config.capabilities[0].target.tenant_key;

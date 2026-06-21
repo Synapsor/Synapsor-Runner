@@ -175,6 +175,8 @@ describe("runner cli", () => {
         "late_fee_cents=0",
         "--patch-from-arg",
         "waiver_reason=reason",
+        "--numeric-bound",
+        "late_fee_cents=0:5500",
       ])).resolves.toBe(0);
       const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
       expect(config.sources.local_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
@@ -186,6 +188,9 @@ describe("runner cli", () => {
       expect(config.capabilities[1].patch).toEqual({
         late_fee_cents: { fixed: 0 },
         waiver_reason: { from_arg: "reason" },
+      });
+      expect(config.capabilities[1].numeric_bounds).toEqual({
+        late_fee_cents: { minimum: 0, maximum: 5500 },
       });
       expect(output.join("")).toContain("selected public.invoices");
       expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password/i);
@@ -209,6 +214,8 @@ describe("runner cli", () => {
       "", // visible columns default inspected safe columns
       "review",
       "late_fee_cents=fixed:0,waiver_reason=arg:reason",
+      "late_fee_cents=0:5500",
+      "",
       "billing",
       "invoice",
       "invoice_id",
@@ -270,6 +277,9 @@ describe("runner cli", () => {
       expect(config.capabilities[1].patch).toEqual({
         late_fee_cents: { fixed: 0 },
         waiver_reason: { from_arg: "reason" },
+      });
+      expect(config.capabilities[1].numeric_bounds).toEqual({
+        late_fee_cents: { minimum: 0, maximum: 5500 },
       });
       expect(output.join("")).toContain("not exposed: execute_sql");
       expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);

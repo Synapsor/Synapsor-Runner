@@ -176,6 +176,8 @@ export async function runInitWizard(
   let patch: NonNullable<OnboardingSelectionSpec["patch"]> = {};
   let patchArgs: OnboardingSelectionSpec["patch_args"] = undefined;
   let allowedColumns: string[] | undefined;
+  let numericBounds: OnboardingSelectionSpec["numeric_bounds"] = undefined;
+  let transitionGuards: OnboardingSelectionSpec["transition_guards"] = undefined;
   if (mode !== "read_only") {
     const patchable = columns.filter((column) => !new Set([primaryKey, tenantAnswer, conflictAnswer].filter(Boolean)).has(column));
     const defaultPatch = optionalArg(args, "--patch-from-arg")
@@ -187,6 +189,24 @@ export async function runInitWizard(
     patchArgs = parsed.patchArgs;
     allowedColumns = Object.keys(patch);
     ensureColumnsExist(allowedColumns, columns, "patch");
+    const numericBoundsInput = await askDefault(
+      ask,
+      "Numeric patch bounds (optional, column=minimum:maximum, comma-separated)",
+      formatNumericBounds(parseNumericBoundsFlags(args)),
+    );
+    numericBounds = parseNumericBoundsInput(numericBoundsInput);
+    if (numericBounds) ensureColumnsExist(Object.keys(numericBounds), columns, "numeric bound");
+    const transitionInput = await askDefault(
+      ask,
+      "Status transition guards (optional, column=from:to|to;from:to, comma-separated)",
+      formatTransitionGuards(parseTransitionGuardFlags(args)),
+    );
+    transitionGuards = parseTransitionGuardsInput(transitionInput);
+    if (transitionGuards) {
+      ensureColumnsExist(Object.keys(transitionGuards), columns, "transition guard");
+      const transitionFromColumns = Object.values(transitionGuards).map((guard) => guard.from_column).filter((value): value is string => Boolean(value));
+      if (transitionFromColumns.length > 0) ensureColumnsExist(transitionFromColumns, columns, "transition from");
+    }
   }
 
   const namespace = await askDefault(ask, "Capability namespace", optionalArg(args, "--namespace") ?? "source");
@@ -219,6 +239,8 @@ export async function runInitWizard(
     allowed_columns: allowedColumns,
     patch,
     patch_args: patchArgs,
+    numeric_bounds: numericBounds,
+    transition_guards: transitionGuards,
     trusted_context: {
       tenant_id_env: tenantEnv,
       principal_env: principalEnv,
@@ -289,6 +311,8 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
   if (mode !== "read_only" && Object.keys(patch).length === 0) {
     throw new Error(`${mode} init requires at least one --patch-fixed column=value or --patch-from-arg column=arg. Use --mode read_only for inspect-only tools.`);
   }
+  const numericBounds = parseNumericBoundsFlags(args);
+  const transitionGuards = parseTransitionGuardFlags(args);
   const allowedColumns = listArg(args, "--allowed-columns") ?? Object.keys(patch);
   const spec: OnboardingSelectionSpec = {
     version: 1,
@@ -309,6 +333,8 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
     visible_columns: visibleColumns,
     allowed_columns: allowedColumns,
     patch,
+    numeric_bounds: numericBounds,
+    transition_guards: transitionGuards,
     trusted_context: {
       tenant_id_env: optionalArg(args, "--tenant-env") ?? "SYNAPSOR_TENANT_ID",
       principal_env: optionalArg(args, "--principal-env") ?? "SYNAPSOR_PRINCIPAL",
@@ -450,6 +476,72 @@ function parsePatchFlags(args: string[]): NonNullable<OnboardingSelectionSpec["p
     patch[column] = { from_arg: arg };
   }
   return patch;
+}
+
+function parseNumericBoundsFlags(args: string[]): OnboardingSelectionSpec["numeric_bounds"] {
+  return parseNumericBoundsInput(repeatedArgs(args, "--numeric-bound").join(","));
+}
+
+function parseNumericBoundsInput(input: string): OnboardingSelectionSpec["numeric_bounds"] {
+  const bounds: NonNullable<OnboardingSelectionSpec["numeric_bounds"]> = {};
+  for (const entry of input.split(",").map((item) => item.trim()).filter(Boolean)) {
+    const [column, ...rest] = entry.split("=");
+    const range = rest.join("=");
+    if (!column || !range) throw new Error("numeric bounds must use column=minimum:maximum");
+    const [minimumRaw, maximumRaw] = range.split(":");
+    const bound: { minimum?: number; maximum?: number } = {};
+    if (minimumRaw) {
+      const minimum = Number(minimumRaw);
+      if (!Number.isFinite(minimum)) throw new Error(`numeric bound minimum for ${column} must be a finite number`);
+      bound.minimum = minimum;
+    }
+    if (maximumRaw) {
+      const maximum = Number(maximumRaw);
+      if (!Number.isFinite(maximum)) throw new Error(`numeric bound maximum for ${column} must be a finite number`);
+      bound.maximum = maximum;
+    }
+    if (bound.minimum === undefined && bound.maximum === undefined) {
+      throw new Error(`numeric bound for ${column} must define minimum, maximum, or both`);
+    }
+    bounds[column] = bound;
+  }
+  return Object.keys(bounds).length > 0 ? bounds : undefined;
+}
+
+function formatNumericBounds(bounds: OnboardingSelectionSpec["numeric_bounds"]): string {
+  if (!bounds) return "";
+  return Object.entries(bounds)
+    .map(([column, bound]) => `${column}=${bound.minimum ?? ""}:${bound.maximum ?? ""}`)
+    .join(",");
+}
+
+function parseTransitionGuardFlags(args: string[]): OnboardingSelectionSpec["transition_guards"] {
+  return parseTransitionGuardsInput(repeatedArgs(args, "--transition-guard").join(","));
+}
+
+function parseTransitionGuardsInput(input: string): OnboardingSelectionSpec["transition_guards"] {
+  const guards: NonNullable<OnboardingSelectionSpec["transition_guards"]> = {};
+  for (const entry of input.split(",").map((item) => item.trim()).filter(Boolean)) {
+    const [column, ...rest] = entry.split("=");
+    const transitions = rest.join("=");
+    if (!column || !transitions) throw new Error("transition guards must use column=from:to|to;from:to");
+    const allowed: Record<string, string[]> = {};
+    for (const transition of transitions.split(";").map((item) => item.trim()).filter(Boolean)) {
+      const [from, ...targetParts] = transition.split(":");
+      const targets = targetParts.join(":").split("|").map((item) => item.trim()).filter(Boolean);
+      if (!from || targets.length === 0) throw new Error(`transition guard for ${column} must use from:to|to`);
+      allowed[from] = targets;
+    }
+    guards[column] = { allowed };
+  }
+  return Object.keys(guards).length > 0 ? guards : undefined;
+}
+
+function formatTransitionGuards(guards: OnboardingSelectionSpec["transition_guards"]): string {
+  if (!guards) return "";
+  return Object.entries(guards)
+    .map(([column, guard]) => `${column}=${Object.entries(guard.allowed).map(([from, targets]) => `${from}:${targets.join("|")}`).join(";")}`)
+    .join(",");
 }
 
 function parseFixedPatchValue(value: string): string | number | boolean | null {
@@ -1991,7 +2083,7 @@ Commands:
   init [--wizard] [--engine auto|postgres|mysql] [--database-url-env SYNAPSOR_DATABASE_READ_URL] [--output synapsor.runner.json] [--force]
   init --starter [--engine postgres|mysql] [--mode read_only|shadow|review|cloud] [--output synapsor.runner.json] [--force]
   init --spec onboarding-selection.json --non-interactive [--output synapsor.runner.json] [--force]
-  init --database-url-env SYNAPSOR_DATABASE_READ_URL --engine auto --table invoices --namespace billing --patch-from-arg waiver_reason=reason [--patch-fixed late_fee_cents=0]
+  init --database-url-env SYNAPSOR_DATABASE_READ_URL --engine auto --table invoices --namespace billing --patch-from-arg waiver_reason=reason [--patch-fixed late_fee_cents=0] [--numeric-bound late_fee_cents=0:10000] [--transition-guard status=open:pending_review]
   init --inspection-json schema-inspection.json --table invoices --namespace billing --patch-from-arg waiver_reason=reason
   inspect --database-url-env SYNAPSOR_DATABASE_READ_URL [--engine auto|postgres|mysql] [--schema public] [--json]
   config validate [--config synapsor.runner.json] [--json]
