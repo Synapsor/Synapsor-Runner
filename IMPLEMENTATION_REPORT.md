@@ -28,6 +28,10 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `061ec0c` - Add generated onboarding Docker smoke
 - `fa263db` - Add MCP client configure command
 - `016a4a5` - Add conservative config migration command
+- `84bfb62` - Update implementation report with config migration
+- `24c218a` - Clarify own database runner path
+- `982f9a4` - Add localhost proposal review UI
+- `5e92055` - Harden cloud smoke database readiness
 
 ## What Changed
 
@@ -71,6 +75,7 @@ Added or strengthened:
 - `synapsor doctor --config synapsor.runner.json`
 - `synapsor benchmark mcp-efficiency`
 - `synapsor mcp configure --client ...`
+- `synapsor ui`
 
 ### Doctor
 
@@ -161,6 +166,38 @@ Because version 1 is the only supported schema today, migration is conservative:
 it validates the current config, reports "already current" by default, rejects
 unsupported versions, and only writes a normalized copy when explicitly asked.
 
+### Smoke Reliability
+
+- Strengthened the Cloud-linked Docker smoke readiness check so it waits for a
+  real `psql SELECT 1` before resetting fixture data. This prevents the smoke
+  from racing `docker compose up -d` and failing before the runner path is
+  exercised.
+
+### Local UI
+
+Added:
+
+```bash
+synapsor ui --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+The UI is a lightweight localhost proposal review surface. It:
+
+- binds to `127.0.0.1` by default;
+- refuses non-localhost binding unless `--allow-remote-bind` is explicitly
+  passed;
+- prints a per-run local URL with a session token;
+- sets the session token in an HttpOnly SameSite cookie after initial token URL
+  load;
+- requires a CSRF token for approve/reject actions;
+- shows setup summary, semantic tools, proposals, exact diffs, evidence,
+  approval state, receipts, and replay;
+- redacts obvious database URLs, passwords, bearer tokens, runner tokens, and
+  secret-like fields from JSON API responses;
+- exposes no raw SQL editor;
+- exposes no MCP approval, commit, or writeback tools;
+- exposes no browser control that widens reviewed tables or columns.
+
 ### Licensing and Docs
 
 - Replaced first-party Apache license file with official Elastic License 2.0
@@ -230,6 +267,14 @@ Tests       66 passed (66)
 License/content check passed.
 ```
 
+Latest after local UI:
+
+```text
+Test Files  11 passed (11)
+Tests       68 passed (68)
+License/content check passed.
+```
+
 Additional spot checks run during implementation:
 
 ```bash
@@ -239,11 +284,22 @@ corepack pnpm licenses list --json
 corepack pnpm runner benchmark mcp-efficiency
 corepack pnpm runner benchmark mcp-efficiency --json
 corepack pnpm exec vitest run apps/runner/src/cli.test.ts
+corepack pnpm exec vitest run apps/runner/src/local-ui.test.ts apps/runner/src/cli.test.ts
 corepack pnpm test:onboarding-generated
 corepack pnpm test:docker
 corepack pnpm test:mcp-local
 corepack pnpm test:mcp-cloud-linked
 ```
+
+The latest Docker-backed smoke results after the local UI work:
+
+- `corepack pnpm test:onboarding-generated`: passed for Postgres and MySQL.
+- `corepack pnpm test:mcp-local`: passed for Postgres billing, Postgres
+  support, and MySQL orders.
+- `corepack pnpm test:mcp-cloud-linked`: passed after strengthening the
+  Postgres readiness check.
+- `corepack pnpm test:docker`: passed for local Postgres and MySQL runner
+  apply/idempotency/conflict/tamper flows.
 
 ## Security Review
 
@@ -259,11 +315,11 @@ Current protections:
 - writeback uses a separate trusted apply path;
 - writeback jobs are cross-checked against reviewed config;
 - tampered jobs fail before adapter mutation.
+- local UI binds localhost by default, requires a per-run token, requires CSRF
+  on approve/reject, and redacts obvious secret values from API responses.
 
 Remaining security work:
 
-- local UI is not implemented, so UI CSRF/localhost/browser-state protections
-  are documented but not enforced in code yet;
 - guided TTY wizard is incomplete;
 - broader path traversal and replay secret-scanning tests still need to be
   added.
@@ -302,9 +358,7 @@ The full goal is not complete yet.
 Remaining code/product gaps:
 
 - true interactive TTY `synapsor init` wizard is not implemented;
-- `synapsor ui` is not implemented;
 - under-10-minute activation has not been measured with a live fresh database;
-- local UI security tests are not applicable until the UI exists;
 - benchmark snapshots are not checked as golden files;
 - full final release checklist is not complete.
 
@@ -323,11 +377,11 @@ Current proof:
 - developer can generate config from a saved inspection JSON and explicit flags;
 - generated config path is Docker-smoked end to end for Postgres and MySQL;
 - semantic MCP/proposal/writeback/replay paths are covered by existing tests;
+- local UI proposal review is covered by token/CSRF/secret-redaction tests;
 - benchmark command is reproducible and model-API-free;
 - license/content gate is automated.
 
 Not yet proven:
 
 - a fresh developer can complete the full own-Postgres/MySQL path in under 10
-  minutes without hand-writing a full config in a manual human run;
-- local UI proposal review.
+  minutes without hand-writing a full config in a manual human run.
