@@ -1,6 +1,6 @@
 # MCP database risk review
 
-`synapsor mcp audit <target>` performs a static MCP database risk review over an exported tool manifest or `tools/list` response.
+`synapsor mcp audit <target>` performs a static MCP database risk review over an exported tool manifest, a remote MCP `tools/list` endpoint, or a stdio MCP server.
 
 It does not call business tools. It only inspects names, descriptions, input schemas, output schemas, annotations, and examples when those are present.
 
@@ -18,6 +18,25 @@ Human-readable output:
 
 ```bash
 synapsor mcp audit ./tools-list.json
+```
+
+Remote `tools/list` endpoint with a bearer token kept in the environment:
+
+```bash
+SYNAPSOR_MCP_AUDIT_BEARER="..." \
+synapsor mcp audit https://mcp.example.com --json
+```
+
+Remote endpoint with a custom bearer-token environment variable:
+
+```bash
+synapsor mcp audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --json
+```
+
+Stdio MCP server:
+
+```bash
+synapsor mcp audit 'stdio:node ./server.mjs' --timeout-ms 5000
 ```
 
 JSON output:
@@ -51,7 +70,7 @@ The audit accepts common exported shapes:
 
 It also scans nested `adapter`, `mcpServers`, and `servers` blocks when they include tool metadata.
 
-Remote live MCP server probing is not implemented in this slice. Export the server's `tools/list` response first.
+For live targets, the audit calls only JSON-RPC `tools/list`. It does not call business tools, approval tools, commit tools, or writeback tools.
 
 ## Findings
 

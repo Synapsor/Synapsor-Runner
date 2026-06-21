@@ -140,6 +140,8 @@ Audit an exported MCP tool manifest without calling business tools:
 ```bash
 corepack pnpm runner mcp audit ./tools-list.json
 corepack pnpm runner mcp audit ./tools-list.json --json
+corepack pnpm runner mcp audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --json
+corepack pnpm runner mcp audit 'stdio:node ./server.mjs' --timeout-ms 5000
 ```
 
 The audit always includes:

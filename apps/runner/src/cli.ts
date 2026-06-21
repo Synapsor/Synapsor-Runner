@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
@@ -245,14 +246,102 @@ async function mcpServe(args: string[]): Promise<number> {
 
 async function mcpAudit(args: string[]): Promise<number> {
   const json = args.includes("--json");
-  const target = args.find((arg) => !arg.startsWith("--"));
+  const target = firstPositional(args);
   if (!target) {
     throw new Error("mcp audit requires <target>");
   }
-  const manifest = JSON.parse(await fs.readFile(target, "utf8"));
-  const report = auditMcpManifest(manifest, { target });
+  const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "5000");
+  const payload = await readMcpAuditTarget(target, args, timeoutMs);
+  const report = auditMcpManifest(payload, { target });
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatMcpAuditReport(report));
   return 0;
+}
+
+async function readMcpAuditTarget(target: string, args: string[], timeoutMs: number): Promise<unknown> {
+  if (/^https?:\/\//i.test(target)) {
+    return fetchRemoteMcpTools(target, args, timeoutMs);
+  }
+  if (target.startsWith("stdio:")) {
+    const command = target.slice("stdio:".length).trim();
+    if (!command) throw new Error("mcp audit stdio target requires a command after stdio:");
+    return fetchStdioMcpTools(command, timeoutMs);
+  }
+  return JSON.parse(await fs.readFile(target, "utf8"));
+}
+
+async function fetchRemoteMcpTools(target: string, args: string[], timeoutMs: number): Promise<unknown> {
+  const bearerEnv = optionalArg(args, "--bearer-env") ?? "SYNAPSOR_MCP_AUDIT_BEARER";
+  const bearer = process.env[bearerEnv];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers: Record<string, string> = {
+      accept: "application/json",
+      "content-type": "application/json",
+    };
+    if (bearer) headers.authorization = `Bearer ${bearer}`;
+    const response = await fetch(target, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`mcp audit remote tools/list failed with HTTP ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchStdioMcpTools(commandText: string, timeoutMs: number): Promise<unknown> {
+  const [command, ...commandArgs] = splitCommand(commandText);
+  if (!command) throw new Error("mcp audit stdio target requires a command");
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, commandArgs, {
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        child.kill("SIGTERM");
+        reject(new Error(`mcp audit stdio tools/list timed out after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      const response = parseJsonRpcResponse(stdout, 2);
+      if (!response) {
+        reject(new Error(`mcp audit stdio tools/list response not found${stderr ? `: ${stderr.slice(0, 240)}` : ""}`));
+        return;
+      }
+      resolve(response);
+    });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "synapsor-mcp-audit", version: "0.1.0" } } })}\n`);
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
+    child.stdin.end();
+  });
 }
 
 async function proposals(args: string[]): Promise<number> {
@@ -465,12 +554,97 @@ function optionalArg(args: string[], flag: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function firstPositional(args: string[]): string | undefined {
+  const flagsWithValues = new Set([
+    "--actor",
+    "--bearer-env",
+    "--config",
+    "--engine",
+    "--job",
+    "--lease-seconds",
+    "--mode",
+    "--output",
+    "--project",
+    "--reason",
+    "--runner",
+    "--state",
+    "--store",
+    "--timeout-ms",
+  ]);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg.startsWith("--")) {
+      if (flagsWithValues.has(arg)) index += 1;
+      continue;
+    }
+    return arg;
+  }
+  return undefined;
+}
+
 function positional(args: string[], index: number): string | undefined {
   return args.filter((arg, argIndex) => {
     if (arg.startsWith("--")) return false;
     const previous = args[argIndex - 1];
     return previous === undefined || !previous.startsWith("--");
   })[index];
+}
+
+function splitCommand(text: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quote: "'" | "\"" | "" = "";
+  let escaped = false;
+  for (const char of text) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === "'" || char === "\"") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (escaped) current += "\\";
+  if (quote) throw new Error("unterminated quote in stdio command");
+  if (current) parts.push(current);
+  return parts;
+}
+
+function parseJsonRpcResponse(stdout: string, id: number): unknown | undefined {
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as { id?: unknown };
+      if (parsed.id === id) return parsed;
+    } catch {
+      // Ignore non-JSON log lines emitted by MCP servers.
+    }
+  }
+  return undefined;
 }
 
 function formatProposalSummary(proposal: StoredProposal): string {

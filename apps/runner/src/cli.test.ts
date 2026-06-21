@@ -203,6 +203,80 @@ describe("runner cli", () => {
     }
   });
 
+  it("audits a remote MCP tools/list endpoint without calling business tools", async () => {
+    const output: string[] = [];
+    const oldToken = process.env.SYNAPSOR_TEST_MCP_AUDIT_TOKEN;
+    process.env.SYNAPSOR_TEST_MCP_AUDIT_TOKEN = "audit_secret";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://mcp.example.test");
+      expect(init?.method).toBe("POST");
+      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer audit_secret");
+      const payload = JSON.parse(String(init?.body || "{}")) as { method?: string };
+      expect(payload.method).toBe("tools/list");
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          tools: [
+            {
+              name: "execute_sql",
+              description: "Run SQL",
+              inputSchema: { type: "object", properties: { sql: { type: "string" }, tenant_id: { type: "string" } } },
+            },
+          ],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+
+    try {
+      await expect(main(["mcp", "audit", "https://mcp.example.test", "--bearer-env", "SYNAPSOR_TEST_MCP_AUDIT_TOKEN", "--json"]))
+        .resolves.toBe(0);
+      const report = JSON.parse(output.join(""));
+      expect(report.findings.map((finding: { code: string }) => finding.code)).toContain("GENERIC_SQL_TOOL");
+      expect(output.join("")).toContain("static risk review");
+      expect(output.join("")).not.toContain("audit_secret");
+    } finally {
+      if (oldToken === undefined) {
+        delete process.env.SYNAPSOR_TEST_MCP_AUDIT_TOKEN;
+      } else {
+        process.env.SYNAPSOR_TEST_MCP_AUDIT_TOKEN = oldToken;
+      }
+    }
+  });
+
+  it("audits a stdio MCP tools/list server", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-mcp-audit-stdio-"));
+    const serverPath = path.join(tempDir, "server.mjs");
+    await fs.writeFile(serverPath, `
+      import readline from "node:readline";
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.on("line", (line) => {
+        const msg = JSON.parse(line);
+        if (msg.method === "initialize") {
+          process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-11-25", capabilities: {}, serverInfo: { name: "test", version: "1" } } }) + "\\n");
+        }
+        if (msg.method === "tools/list") {
+          process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "approve_proposal", description: "Approve proposal", inputSchema: { type: "object", properties: { proposal_id: { type: "string" } } } }] } }) + "\\n");
+        }
+      });
+    `, "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["mcp", "audit", `stdio:${process.execPath} ${serverPath}`, "--json", "--timeout-ms", "5000"]))
+      .resolves.toBe(0);
+    const report = JSON.parse(output.join(""));
+    expect(report.findings.map((finding: { code: string }) => finding.code)).toContain("MODEL_CALLABLE_COMMIT_OR_APPROVAL");
+    expect(report.summary.tools_inspected).toBe(1);
+  });
+
   it("lists, shows, approves, and exports local proposals", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-"));
     const storePath = path.join(tempDir, "local.db");

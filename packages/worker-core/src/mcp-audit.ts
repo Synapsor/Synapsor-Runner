@@ -150,6 +150,7 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
   const normalizedProperties = new Set([...propertyNames].map(normalizeToken));
   const text = `${tool.name} ${tool.description} ${safeStringify(tool.annotations)}`.toLowerCase();
   const normalizedToolName = normalizeToken(tool.name);
+  const lowerToolName = tool.name.toLowerCase();
   const sqlLike =
     GENERIC_SQL_TOOL_NAMES.includes(normalizedToolName) ||
     /\b(execute|run|raw)\s*(sql|query)\b/.test(text) ||
@@ -157,7 +158,11 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
   const writeLike = isWriteLike(text, tool.annotations);
   const readLike = /\b(read|get|list|search|inspect|select|query)\b/.test(text);
   const proposalBoundary = /\b(proposal|propose|change[- ]?set|review[- ]?required|approval|approve[- ]?required|guarded writeback|trusted worker)\b/.test(text);
-  const modelCallableCommit = /\b(approve|commit|apply|settle|merge|writeback)\b/.test(text) && !/\bproposal\b/.test(text);
+  const modelCallableCommit =
+    /(^|[._-])(approve|commit|apply|settle|merge)[._-]?(proposal|write|change|writeback)([._-]|$)/.test(lowerToolName) ||
+    /(^|[._-])(proposal|write|change|writeback)[._-]?(approve|commit|apply|settle|merge)([._-]|$)/.test(lowerToolName) ||
+    (/\b(approve|commit|apply|settle|merge)\b/.test(text) &&
+      !/\b(propose|proposal|review[- ]?required|approval[- ]?required)\b/.test(text));
 
   if (sqlLike) {
     addFinding(findings, {
