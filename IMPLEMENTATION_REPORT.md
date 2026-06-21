@@ -36,6 +36,8 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `3174099` - Add benchmark golden snapshots
 - `fea2ea7` - Update implementation report with benchmark snapshots
 - `d498ac7` - Reject secret material in local store
+- `96bddad` - Update implementation report with store guard
+- `a51a8d6` - Add guided init wizard path
 
 ## What Changed
 
