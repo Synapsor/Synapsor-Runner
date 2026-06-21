@@ -25,6 +25,7 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `21debe4` - Add MCP efficiency benchmark fixture
 - `34b3a33` - Expand writeback authority tamper tests
 - `3b86ab8` - Add inspection driven init path
+- `061ec0c` - Add generated onboarding Docker smoke
 
 ## What Changed
 
