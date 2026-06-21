@@ -281,6 +281,7 @@ async function configCommand(args: string[]): Promise<number> {
   const [subcommand] = args;
   if (subcommand === "validate") return configValidate(args.slice(1));
   if (subcommand === "show") return configShow(args.slice(1));
+  if (subcommand === "migrate") return configMigrate(args.slice(1));
   usage();
   return 2;
 }
@@ -311,6 +312,48 @@ async function configShow(args: string[]): Promise<number> {
   const output = args.includes("--redacted") ? redactConfig(parsed) : parsed;
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   return 0;
+}
+
+async function configMigrate(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const outputPath = optionalArg(args, "--output");
+  const write = args.includes("--write") || Boolean(outputPath);
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
+  const version = Number((parsed as { version?: unknown }).version ?? 1);
+  if (version !== 1) {
+    throw new Error(`unsupported config version ${String((parsed as { version?: unknown }).version)}; no automatic widening migration is available`);
+  }
+  const validation = validateRunnerCapabilityConfig(parsed);
+  if (!validation.ok) {
+    throw new Error(`cannot migrate invalid config: ${validation.errors.map((error) => `${error.path} ${error.code}`).join("; ")}`);
+  }
+  const normalized = normalizeConfigForMigration(parsed);
+  if (!write) {
+    process.stdout.write(`config already current: version ${version}\n`);
+    process.stdout.write("No file written. Use --output <path> or --write --yes to write a normalized copy.\n");
+    return 0;
+  }
+  const destination = outputPath ? path.resolve(outputPath) : path.resolve(configPath);
+  process.stderr.write(`Destination: ${destination}\n`);
+  if (!outputPath) {
+    process.stderr.write("Existing config will be backed up before writing.\n");
+  }
+  await confirmDangerousAction(args.includes("--yes") ? ["--yes"] : [], "Write migrated config?");
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  if (!outputPath) {
+    const backupPath = `${destination}.bak.${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    await fs.copyFile(path.resolve(configPath), backupPath);
+    process.stderr.write(`Backup: ${backupPath}\n`);
+  }
+  await fs.writeFile(destination, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  process.stdout.write(`wrote migrated config: ${destination}\n`);
+  return 0;
+}
+
+function normalizeConfigForMigration(config: unknown): Record<string, unknown> {
+  const clone = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  clone.version = 1;
+  return clone;
 }
 
 function envPresenceCheck(envName: string, message: string): DoctorCheck {
@@ -1720,6 +1763,8 @@ Commands:
   inspect --database-url-env SYNAPSOR_DATABASE_READ_URL [--engine auto|postgres|mysql] [--schema public] [--json]
   config validate [--config synapsor.runner.json] [--json]
   config show [--config synapsor.runner.json] [--redacted]
+  config migrate [--config synapsor.runner.json] [--output migrated.json]
+  config migrate --config synapsor.runner.json --write --yes
   doctor
   validate --job ./job.json
   apply --job ./job.json [--config synapsor.runner.json] [--dry-run] [--store ./.synapsor/local.db]

@@ -247,6 +247,71 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("<redacted>");
   });
 
+  it("migrates current config conservatively without widening permissions", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-migrate-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const migratedPath = path.join(tempDir, "migrated.json");
+    const config = {
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.propose_invoice_update",
+          kind: "proposal",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+            reason: { type: "string", required: true, max_length: 500 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at", "late_fee_cents", "waiver_reason"],
+          evidence: "required",
+          max_rows: 1,
+          patch: { late_fee_cents: { fixed: 0 }, waiver_reason: { from_arg: "reason" } },
+          allowed_columns: ["late_fee_cents", "waiver_reason"],
+          conflict_guard: { column: "updated_at" },
+        },
+      ],
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["config", "migrate", "--config", configPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("config already current");
+    await expect(fs.access(migratedPath)).rejects.toThrow();
+
+    output.length = 0;
+    await expect(main(["config", "migrate", "--config", configPath, "--output", migratedPath, "--yes"])).resolves.toBe(0);
+    const migrated = JSON.parse(await fs.readFile(migratedPath, "utf8"));
+    expect(migrated).toEqual(config);
+    expect(JSON.stringify(migrated)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
+  });
+
   it("runs the reproducible MCP efficiency benchmark", async () => {
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {

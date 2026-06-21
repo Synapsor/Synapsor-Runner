@@ -26,6 +26,7 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `34b3a33` - Expand writeback authority tamper tests
 - `3b86ab8` - Add inspection driven init path
 - `061ec0c` - Add generated onboarding Docker smoke
+- `fa263db` - Add MCP client configure command
 
 ## What Changed
 
@@ -65,8 +66,10 @@ Added or strengthened:
 - `synapsor init --inspection-json ...`
 - `synapsor config validate`
 - `synapsor config show --redacted`
+- `synapsor config migrate`
 - `synapsor doctor --config synapsor.runner.json`
 - `synapsor benchmark mcp-efficiency`
+- `synapsor mcp configure --client ...`
 
 ### Doctor
 
@@ -129,6 +132,33 @@ bytes/tokens, raw SQL exposure, approval separation, and stale-row conflict
 checking.
 
 It is explicitly not a universal token-savings claim.
+
+### MCP Client Setup
+
+Added:
+
+```bash
+synapsor mcp configure --client generic-stdio|claude-desktop|cursor|vscode
+synapsor mcp configure --client cursor --write --destination ./cursor.json --yes
+```
+
+Default behavior prints a snippet and writes nothing. Write mode requires an
+explicit destination and confirmation, merges known client formats, validates
+JSON, and creates a timestamped backup before replacing an existing file.
+
+### Config Migration
+
+Added:
+
+```bash
+synapsor config migrate --config synapsor.runner.json
+synapsor config migrate --config synapsor.runner.json --output migrated.json --yes
+synapsor config migrate --config synapsor.runner.json --write --yes
+```
+
+Because version 1 is the only supported schema today, migration is conservative:
+it validates the current config, reports "already current" by default, rejects
+unsupported versions, and only writes a normalized copy when explicitly asked.
 
 ### Licensing and Docs
 
@@ -195,7 +225,7 @@ Result:
 
 ```text
 Test Files  10 passed (10)
-Tests       63 passed (63)
+Tests       66 passed (66)
 License/content check passed.
 ```
 
@@ -271,9 +301,7 @@ The full goal is not complete yet.
 Remaining code/product gaps:
 
 - true interactive TTY `synapsor init` wizard is not implemented;
-- `synapsor mcp configure --client <client> --print/--write` is not implemented;
 - `synapsor ui` is not implemented;
-- `synapsor config migrate` is not implemented;
 - under-10-minute activation has not been measured with a live fresh database;
 - local UI security tests are not applicable until the UI exists;
 - benchmark snapshots are not checked as golden files;
