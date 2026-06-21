@@ -143,6 +143,20 @@ synapsor cloud connect --config ./synapsor.cloud.json
 
 `cloud connect` verifies the scoped token, registers runner metadata, and sends an initial heartbeat. It does not upload database URLs, passwords, write credentials, prompts, or table data. The local Docker demo above remains the primary no-account path.
 
+Verify a real hosted Cloud-linked adapter/tool path after you have a compatible Cloud workspace, source, adapter, and scoped runner token:
+
+```bash
+SYNAPSOR_CLOUD_BASE_URL="https://synapsor.ai" \
+SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
+SYNAPSOR_SOURCE_ID="src_..." \
+SYNAPSOR_ADAPTER_ID="mcp.billing" \
+SYNAPSOR_MCP_TOOL_NAME="billing.propose_late_fee_waiver" \
+SYNAPSOR_MCP_TOOL_INPUT_JSON='{"invoice_id":"INV-3001","reason":"support-approved waiver"}' \
+corepack pnpm verify:hosted-cloud-linked
+```
+
+That command checks runner-token auth, runner registration, heartbeat, adapter `tools/list`, semantic tool invocation, proposal/evidence/replay linkage, and that the tool response does not report source mutation before trusted writeback. It never creates runner tokens and never prints token values. To claim and apply one already approved writeback job through the guarded local adapter, add `SYNAPSOR_HOSTED_E2E_APPLY_JOB=1`, `SYNAPSOR_ENGINE=postgres|mysql`, and `SYNAPSOR_DATABASE_URL` for the trusted worker credential.
+
 Audit an exported MCP tool manifest without calling business tools:
 
 ```bash
