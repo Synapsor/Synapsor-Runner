@@ -34,6 +34,8 @@ mini-Synapsor experience, but the full goal is not complete yet.
 - `5e92055` - Harden cloud smoke database readiness
 - `103dd92` - Update implementation report for local UI
 - `3174099` - Add benchmark golden snapshots
+- `fea2ea7` - Update implementation report with benchmark snapshots
+- `d498ac7` - Reject secret material in local store
 
 ## What Changed
 
