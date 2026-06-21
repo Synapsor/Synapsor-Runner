@@ -367,7 +367,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
   try {
     await connection.query("START TRANSACTION READ ONLY").catch(() => connection.query("START TRANSACTION"));
     await connection.query("SET SESSION max_execution_time = ?", [Number(options.statementTimeoutMs ?? 3000)]).catch(() => undefined);
-    const [versionRows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, CURRENT_USER() AS current_user");
+    const [versionRows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, CURRENT_USER() AS `current_user`");
     const schemaParam = options.schema ?? null;
     const [schemaRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT schema_name FROM information_schema.schemata
@@ -384,9 +384,9 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       [schemaParam, schemaParam],
     );
     const [columnRows] = await connection.query<mysql.RowDataPacket[]>(
-      `SELECT table_schema AS \`schema\`, table_name, column_name AS name,
+      `SELECT table_schema AS \`schema\`, table_name AS table_name, column_name AS name,
               data_type, column_type AS udt_name, is_nullable,
-              column_default, extra AS is_generated, ordinal_position
+              column_default, extra AS is_generated, ordinal_position AS ordinal_position
        FROM information_schema.columns
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
@@ -394,8 +394,8 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       [schemaParam, schemaParam],
     );
     const [keyRows] = await connection.query<mysql.RowDataPacket[]>(
-      `SELECT tc.table_schema AS \`schema\`, tc.table_name, tc.constraint_name, tc.constraint_type,
-              kcu.column_name, kcu.ordinal_position
+      `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name, tc.constraint_name AS constraint_name, tc.constraint_type AS constraint_type,
+              kcu.column_name AS column_name, kcu.ordinal_position AS ordinal_position
        FROM information_schema.table_constraints tc
        JOIN information_schema.key_column_usage kcu
          ON tc.constraint_schema = kcu.constraint_schema
@@ -409,11 +409,11 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       [schemaParam, schemaParam],
     );
     const [fkRows] = await connection.query<mysql.RowDataPacket[]>(
-      `SELECT tc.table_schema AS \`schema\`, tc.table_name, tc.constraint_name,
-              kcu.column_name, kcu.referenced_table_schema AS referenced_schema,
+      `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name, tc.constraint_name AS constraint_name,
+              kcu.column_name AS column_name, kcu.referenced_table_schema AS referenced_schema,
               kcu.referenced_table_name AS referenced_table,
               kcu.referenced_column_name AS referenced_column,
-              kcu.ordinal_position
+              kcu.ordinal_position AS ordinal_position
        FROM information_schema.table_constraints tc
        JOIN information_schema.key_column_usage kcu
          ON tc.constraint_schema = kcu.constraint_schema
@@ -427,7 +427,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       [schemaParam, schemaParam],
     );
     const [indexRows] = await connection.query<mysql.RowDataPacket[]>(
-      `SELECT table_schema AS \`schema\`, table_name, index_name AS name,
+      `SELECT table_schema AS \`schema\`, table_name AS table_name, index_name AS name,
               GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns,
               MIN(non_unique) AS non_unique
        FROM information_schema.statistics

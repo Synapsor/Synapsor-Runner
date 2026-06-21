@@ -628,7 +628,7 @@ async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: stri
     try {
       const proposal = store.getProposal(job.proposal_id);
       if (!proposal) throw new Error(`local proposal not found for writeback job: ${job.proposal_id}`);
-      if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
+      if (proposal.state !== "approved" && proposal.state !== "pending_worker" && proposal.state !== "applied") {
         throw new Error(`local proposal ${job.proposal_id} is ${proposal.state}, not approved for writeback`);
       }
       if (proposal.proposal_hash !== job.approval_id) {

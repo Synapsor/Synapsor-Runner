@@ -495,6 +495,19 @@ corepack pnpm test:mcp-local
 
 This starts disposable Postgres/MySQL databases, launches the local MCP server through the official stdio client transport, lists semantic tools, calls inspect/proposal tools, confirms source rows are unchanged before approval, approves locally, generates `synapsor.writeback-job.v1` jobs, applies them through the guarded worker, retries idempotently, then simulates stale rows and returns conflict with no write.
 
+Run the generated onboarding proof:
+
+```bash
+corepack pnpm test:onboarding-generated
+```
+
+This starts disposable Postgres/MySQL databases, runs `synapsor inspect`, creates
+temporary generated configs through `synapsor init --inspection-json`, runs
+`doctor`, serves the generated semantic MCP tools, creates proposals, approves
+outside MCP, applies with `--config` and a separate write credential, retries
+idempotently, proves stale-row conflict, exports replay, and checks generated
+artifacts for fixture secrets.
+
 Run the hosted-compatible Cloud-linked proof:
 
 ```bash

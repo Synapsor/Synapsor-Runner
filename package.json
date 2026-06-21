@@ -13,6 +13,7 @@
     "test:docker": "node scripts/smoke-local-examples.mjs",
     "test:mcp-local": "node scripts/smoke-mcp-local-examples.mjs",
     "test:mcp-cloud-linked": "tsc -b --pretty false && node scripts/smoke-mcp-cloud-linked.mjs",
+    "test:onboarding-generated": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",
     "verify:hosted-cloud-linked": "tsc -b --pretty false && node scripts/verify-hosted-cloud-linked.mjs",
     "test:mcp-client-configs": "node scripts/verify-mcp-client-configs.mjs",
     "demo:docker": "./scripts/demo-docker.sh",

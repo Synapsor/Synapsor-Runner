@@ -41,6 +41,11 @@ mini-Synapsor experience, but the full goal is not complete yet.
   generation from explicit reviewed flags.
 - Added `synapsor init --inspection-json schema-inspection.json ...` so a saved
   sanitized inspection can drive config generation without reconnecting.
+- Added `scripts/smoke-generated-onboarding.mjs` and
+  `corepack pnpm test:onboarding-generated` for generated own-database
+  onboarding proof against disposable Postgres and MySQL fixtures.
+- Fixed MySQL metadata inspection aliases so table columns, primary keys, tenant
+  columns, and conflict columns are visible to `doctor`.
 - Generated files include:
   - `synapsor.runner.json`
   - `.env.example`
@@ -148,21 +153,34 @@ It is explicitly not a universal token-savings claim.
 
 ## Golden-Path Transcript
 
-Full Docker-backed own-Postgres and own-MySQL onboarding transcripts are still
-missing.
-
-Current verified local commands include:
+Docker-backed generated own-database onboarding now has an automated transcript
+through:
 
 ```bash
-corepack pnpm test
-corepack pnpm runner benchmark mcp-efficiency
-corepack pnpm runner benchmark mcp-efficiency --json
+corepack pnpm test:onboarding-generated
 ```
 
-A sanitized transcript still needs to be captured for:
+That script proves both Postgres and MySQL:
 
-- own staging Postgres onboarding;
-- own staging MySQL onboarding.
+- start disposable fixture database;
+- run `synapsor inspect`;
+- generate temporary config through `synapsor init --inspection-json`;
+- run `synapsor config validate`;
+- run `synapsor doctor`;
+- launch generated semantic MCP tools;
+- call inspect/proposal tools;
+- confirm source row unchanged before approval;
+- approve outside MCP;
+- apply through guarded writeback with `--config` and a separate write
+  credential;
+- retry idempotently;
+- mutate a second proposal between proposal/apply and return
+  `VERSION_CONFLICT`;
+- export replay;
+- scan generated text artifacts and replay exports for fixture secrets.
+
+A polished sanitized human-readable transcript can still be extracted for
+release docs, but the automated proof is present.
 
 ## Tests Run
 
@@ -189,6 +207,10 @@ corepack pnpm licenses list --json
 corepack pnpm runner benchmark mcp-efficiency
 corepack pnpm runner benchmark mcp-efficiency --json
 corepack pnpm exec vitest run apps/runner/src/cli.test.ts
+corepack pnpm test:onboarding-generated
+corepack pnpm test:docker
+corepack pnpm test:mcp-local
+corepack pnpm test:mcp-cloud-linked
 ```
 
 ## Security Review
@@ -211,7 +233,6 @@ Remaining security work:
 - local UI is not implemented, so UI CSRF/localhost/browser-state protections
   are documented but not enforced in code yet;
 - guided TTY wizard is incomplete;
-- Docker onboarding tests for fresh Postgres/MySQL user paths are still missing;
 - broader path traversal and replay secret-scanning tests still need to be
   added.
 
@@ -252,8 +273,6 @@ Remaining code/product gaps:
 - `synapsor mcp configure --client <client> --print/--write` is not implemented;
 - `synapsor ui` is not implemented;
 - `synapsor config migrate` is not implemented;
-- Docker integration tests for fresh own-Postgres and own-MySQL onboarding are
-  not implemented;
 - under-10-minute activation has not been measured with a live fresh database;
 - local UI security tests are not applicable until the UI exists;
 - benchmark snapshots are not checked as golden files;
@@ -272,6 +291,7 @@ Current proof:
 
 - developer can generate config from a reviewed spec;
 - developer can generate config from a saved inspection JSON and explicit flags;
+- generated config path is Docker-smoked end to end for Postgres and MySQL;
 - semantic MCP/proposal/writeback/replay paths are covered by existing tests;
 - benchmark command is reproducible and model-API-free;
 - license/content gate is automated.
@@ -279,6 +299,5 @@ Current proof:
 Not yet proven:
 
 - a fresh developer can complete the full own-Postgres/MySQL path in under 10
-  minutes without hand-writing a full config;
-- local UI proposal review;
-- full Docker-backed onboarding proof for generated configs.
+  minutes without hand-writing a full config in a manual human run;
+- local UI proposal review.
