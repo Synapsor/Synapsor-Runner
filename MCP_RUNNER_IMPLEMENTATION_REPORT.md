@@ -4,6 +4,7 @@
 
 - Branch: `mcp-commit-safe-runtime`
 - Implementation commit: `c4e6cd95ea6316ed880a0e803aa29ecc18338299`
+- MCP audit parity commit: `64287070d7b7393a9d1b1b0718409f67c7494ef0`
 
 ## Architecture Implemented
 
@@ -33,6 +34,7 @@ The runner exposes semantic MCP tools, not `execute_sql`. Local mode requires no
 - `packages/control-plane-client/`: runner registration, heartbeat, adapter catalog/call, writeback lease/result client.
 - `packages/postgres/`, `packages/mysql/`: guarded writeback validation for allowed columns, tenant scope, primary key, idempotency, and conflict guards.
 - `apps/runner/src/cli.ts`: init, MCP serve, proposal review, writeback job generation, replay export, Cloud connect, and MCP audit command surfaces.
+- `apps/runner/src/cli.test.ts`, `docs/mcp-audit.md`, `README.md`: MCP audit coverage and documentation for local manifest, remote `tools/list`, and stdio MCP targets.
 - `examples/mcp-postgres-billing/`, `examples/mcp-postgres-support/`, `examples/mcp-mysql-orders/`: disposable local MCP examples.
 - `scripts/demo-docker.sh`: one-command Docker-only local demo.
 - `scripts/demo-local.sh`, `scripts/smoke-mcp-local-examples.mjs`, `scripts/verify-mcp-client-configs.mjs`: contributor smoke and MCP client config verification.
@@ -83,13 +85,26 @@ corepack pnpm runner cloud connect --config ./synapsor.cloud.json
 ## Tests Executed
 
 - `corepack pnpm test`
-  - Passed: 9 files / 50 tests.
+  - Passed: 9 files / 52 tests.
 - `corepack pnpm test:mcp-local`
   - Passed for Postgres billing, Postgres support, and MySQL orders.
   - Covered semantic tool listing/calls, tenant spoof rejection, source unchanged before approval, disallowed-column job rejection, guarded writeback, idempotent retry, stale-row conflict, and replay export.
+- `corepack pnpm test:mcp-client-configs`
+  - Passed for `generic-stdio.json`, `claude-desktop.json`, `cursor.json`, and `vscode.json`.
+  - Verified checked-in client configs are parseable, secret-free, and expose semantic tools only.
+- `git diff --check`
+  - Passed after MCP audit parity changes.
 - `./scripts/demo-docker.sh`
   - Passed as the exact Docker-only first-run path.
   - Built the local runner image, ran the TypeScript runner inside Docker, started disposable Postgres/MySQL containers, and tore down resources.
+
+`synapsor mcp audit <target>` now supports:
+
+- local exported tool manifests / `tools/list` JSON;
+- remote HTTP MCP `tools/list` endpoints with optional `--bearer-env`;
+- stdio MCP servers through a JSON-RPC `initialize` and `tools/list` exchange.
+
+The audit still does not call business tools, approval tools, commit tools, or writeback tools.
 
 No demo containers or generated `.pnpm-store` cache remain after verification.
 
