@@ -145,26 +145,72 @@ stdio MCP server, and proves:
 After the Docker demo, point Synapsor Runner at a staging database and define
 one safe business capability.
 
+This works today in v0.1, but it is intentionally not "connect any database and
+let the model do anything." You inspect metadata, choose one table/view and one
+business action, generate a reviewed config, then expose narrow MCP tools from
+that config.
+
 Full walkthrough: `docs/getting-started-own-database.md`.
 
 Synapsor Runner does not auto-generate arbitrary database tools. You define the
 source, table, primary key, tenant key, visible columns, allowed write columns,
 conflict guard, and mode in `synapsor.runner.json`.
 
-Start from a generated config:
+Recommended path:
 
 ```bash
-synapsor init --engine postgres --mode review --output synapsor.runner.json
+export SYNAPSOR_DATABASE_READ_URL="postgresql://readonly:<password>@localhost:5432/app"
+
+synapsor inspect \
+  --engine postgres \
+  --database-url-env SYNAPSOR_DATABASE_READ_URL \
+  --schema public
 ```
 
-For MySQL:
+Create a reviewed selection file from that metadata:
+
+```json
+{
+  "version": 1,
+  "engine": "postgres",
+  "mode": "review",
+  "read_url_env": "SYNAPSOR_DATABASE_READ_URL",
+  "write_url_env": "SYNAPSOR_DATABASE_WRITE_URL",
+  "schema": "public",
+  "table": "invoices",
+  "primary_key": "id",
+  "tenant_key": "tenant_id",
+  "conflict_column": "updated_at",
+  "namespace": "billing",
+  "object_name": "invoice",
+  "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+  "allowed_columns": ["late_fee_cents", "waiver_reason"],
+  "patch": {
+    "late_fee_cents": { "fixed": 0 },
+    "waiver_reason": { "from_arg": "reason" }
+  }
+}
+```
+
+For MySQL, use the same flow with `--engine mysql`:
 
 ```bash
-synapsor init --engine mysql --mode review --output synapsor.runner.json
+export SYNAPSOR_DATABASE_READ_URL="mysql://readonly:<password>@localhost:3306/app"
+
+synapsor inspect \
+  --engine mysql \
+  --database-url-env SYNAPSOR_DATABASE_READ_URL
 ```
 
-Then edit the generated config to match one reviewed business action. For
-example:
+Generate the config and MCP client snippets from your reviewed selection:
+
+```bash
+synapsor init --spec onboarding-selection.json --non-interactive
+synapsor config validate --config synapsor.runner.json
+synapsor doctor --config synapsor.runner.json
+```
+
+The generated config will look like this:
 
 ```json
 {
@@ -176,8 +222,8 @@ example:
   "sources": {
     "app_postgres": {
       "engine": "postgres",
-      "read_url_env": "APP_POSTGRES_READ_URL",
-      "write_url_env": "APP_POSTGRES_WRITE_URL",
+      "read_url_env": "SYNAPSOR_DATABASE_READ_URL",
+      "write_url_env": "SYNAPSOR_DATABASE_WRITE_URL",
       "statement_timeout_ms": 3000
     }
   },
@@ -265,7 +311,7 @@ example:
 Serve the reviewed tools:
 
 ```bash
-export APP_POSTGRES_READ_URL="postgresql://readonly:<password>@localhost:5432/app"
+export SYNAPSOR_DATABASE_READ_URL="postgresql://readonly:<password>@localhost:5432/app"
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_operator"
 
@@ -285,8 +331,10 @@ path with a trusted write credential outside the model-facing MCP server:
 synapsor proposals approve wrp_123 --store ./.synapsor/local.db --actor local_reviewer --yes
 synapsor proposals writeback-job wrp_123 --store ./.synapsor/local.db --output job.json
 
+export SYNAPSOR_DATABASE_WRITE_URL="postgresql://writer:<password>@localhost:5432/app"
+
 SYNAPSOR_ENGINE=postgres \
-SYNAPSOR_DATABASE_URL="postgresql://writer:<password>@localhost:5432/app" \
+SYNAPSOR_DATABASE_URL="$SYNAPSOR_DATABASE_WRITE_URL" \
 synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
