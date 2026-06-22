@@ -67,13 +67,14 @@ docker run --rm \
   -e COREPACK_HOME=/tmp/synapsor-demo-corepack \
   -e PNPM_HOME=/tmp/synapsor-demo-pnpm-home \
   -e SYNAPSOR_RUNNER_TMP_ROOT=/tmp/synapsor-runner-local-demo \
+  -e SYNAPSOR_RUNNER_SKIP_RELEASE_ASSETS=1 \
   -e SYNAPSOR_LOCAL_DB_HOST=host.docker.internal \
   -e XDG_CACHE_HOME=/tmp/synapsor-demo-cache \
   -v "$DOCKER_SOCK:/var/run/docker.sock" \
   -v "$ROOT:$ROOT" \
   -w "$ROOT" \
   "$IMAGE" \
-  'mkdir -p "$HOME" "$COREPACK_HOME" "$PNPM_HOME" "$XDG_CACHE_HOME" "$SYNAPSOR_RUNNER_TMP_ROOT" /tmp/synapsor-demo-pnpm-store && corepack pnpm --store-dir=/tmp/synapsor-demo-pnpm-store install --frozen-lockfile && corepack pnpm run test:mcp-local'
+  'mkdir -p "$HOME" "$COREPACK_HOME" "$PNPM_HOME" "$XDG_CACHE_HOME" "$SYNAPSOR_RUNNER_TMP_ROOT" /tmp/synapsor-demo-pnpm-store && corepack pnpm --store-dir=/tmp/synapsor-demo-pnpm-store install --frozen-lockfile && corepack pnpm run build:runner-package && corepack pnpm run test:mcp-local'
 
 echo
 echo "Docker-only local demo complete."

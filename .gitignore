@@ -9,3 +9,7 @@ coverage/
 .DS_Store
 tmp/
 state/
+apps/runner/TRADEMARKS.md
+apps/runner/docs/
+apps/runner/examples/
+apps/runner/recipes/

@@ -53,7 +53,7 @@ Cloud mode uses the same MCP server command with a `mode: "cloud"` config:
     "base_url_env": "SYNAPSOR_CLOUD_BASE_URL",
     "runner_token_env": "SYNAPSOR_RUNNER_TOKEN",
     "runner_id": "synapsor_runner_local",
-    "runner_version": "0.1.0-alpha.1",
+    "runner_version": "0.1.0-alpha.2",
     "project_id": "token_scope",
     "adapter_id": "mcp.your_adapter",
     "source_id": "src_replace_me",

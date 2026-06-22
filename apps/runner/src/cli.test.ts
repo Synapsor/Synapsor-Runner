@@ -100,7 +100,7 @@ describe("runner cli", () => {
     expect(text).toContain("billing.propose_late_fee_waiver");
     expect(text).toContain("Source DB changed:");
     expect(text).toContain("no");
-    expect(text).toContain("synapsor audit examples/dangerous-mcp-tools.json");
+    expect(text).toContain("synapsor audit <your-mcp-tools.json>");
   });
 
   it("audits the bundled dangerous MCP database tool manifest", async () => {

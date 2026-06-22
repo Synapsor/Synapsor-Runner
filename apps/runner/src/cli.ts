@@ -1006,9 +1006,23 @@ type CapabilityRecipe = {
 };
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const recipeDir = path.resolve(moduleDir, "../../..", "recipes");
+const packageAssetRoot = path.resolve(moduleDir, "..");
+const sourceAssetRoot = path.resolve(moduleDir, "../../..");
+
+async function resolveAssetPath(relativePath: string): Promise<string> {
+  const candidates = [
+    path.resolve(process.cwd(), relativePath),
+    path.resolve(packageAssetRoot, relativePath),
+    path.resolve(sourceAssetRoot, relativePath),
+  ];
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) return candidate;
+  }
+  return candidates[0]!;
+}
 
 async function loadBuiltInRecipes(): Promise<CapabilityRecipe[]> {
+  const recipeDir = await resolveAssetPath("recipes");
   const entries = await fs.readdir(recipeDir, { withFileTypes: true });
   const files = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
@@ -1027,6 +1041,7 @@ async function requireRecipe(recipeIdOrPath: string): Promise<CapabilityRecipe> 
   if (looksLikeRecipePath(recipeIdOrPath)) {
     return loadRecipeFile(recipeIdOrPath);
   }
+  const recipeDir = await resolveAssetPath("recipes");
   const file = path.join(recipeDir, `${recipeIdOrPath}.json`);
   if (await fileExists(file)) {
     return loadRecipeFile(file);
@@ -2033,7 +2048,7 @@ async function cloudConnect(args: string[]): Promise<number> {
     return 1;
   }
   const runnerId = String(parsed.cloud.runner_id || process.env.SYNAPSOR_RUNNER_ID || "synapsor_runner_local").trim();
-  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0-alpha.1").trim();
+  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0-alpha.2").trim();
   const engines = normalizeEngines(parsed.cloud.engines);
   const capabilities = normalizeCapabilities(parsed.cloud.capabilities);
   const client = new ControlPlaneClient({
@@ -2166,7 +2181,7 @@ async function quickDemo(): Promise<number> {
     "",
     "Next:",
     `${cliCommandName()} demo`,
-    `${cliCommandName()} audit examples/dangerous-mcp-tools.json`,
+    `${cliCommandName()} audit <your-mcp-tools.json>`,
     "",
   ].join("\n"));
   return 0;
@@ -3351,7 +3366,8 @@ function isReferenceDemoConfig(config: RuntimeConfig, configPath: string): boole
 
 async function prepareReferenceDemo(args: string[]): Promise<number> {
   const force = args.includes("--force") || args.includes("--reset");
-  const composePath = path.resolve(referenceDemoDir, "docker-compose.yml");
+  const demoDir = await resolveAssetPath(referenceDemoDir);
+  const composePath = path.join(demoDir, "docker-compose.yml");
   if (!await fileExists(composePath)) throw new Error(`demo compose file not found: ${composePath}`);
   const configPath = path.resolve(defaultConfigPath);
   if (await fileExists(configPath) && !force) {
@@ -3381,7 +3397,7 @@ async function prepareReferenceDemo(args: string[]): Promise<number> {
   const up = spawnSync("docker", ["compose", "-f", composePath, "up", "-d"], { stdio: "inherit", env: process.env });
   if (up.status !== 0) return up.status ?? 1;
   await waitForReferenceDemoDatabase();
-  await fs.copyFile(path.resolve(referenceDemoConfigPath), configPath);
+  await fs.copyFile(path.join(demoDir, "synapsor.runner.json"), configPath);
   process.stdout.write([
     "Synapsor Runner demo is ready.",
     "",
@@ -3805,7 +3821,7 @@ function starterCloudConfig(): Record<string, unknown> {
       base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
       runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
       runner_id: "synapsor_runner_local",
-      runner_version: "0.1.0-alpha.1",
+      runner_version: "0.1.0-alpha.2",
       project_id: "token_scope",
       adapter_id: "mcp.your_adapter",
       source_id: "src_replace_me",
@@ -3833,7 +3849,9 @@ function isHelpRequest(args: string[]): boolean {
 }
 
 function cliCommandName(): string {
-  return process.env.SYNAPSOR_RUNNER_COMMAND_NAME || "synapsor";
+  if (process.env.SYNAPSOR_RUNNER_COMMAND_NAME) return process.env.SYNAPSOR_RUNNER_COMMAND_NAME;
+  const invoked = path.basename(process.argv[1] ?? "");
+  return invoked === "synapsor-runner" ? "synapsor-runner" : "synapsor";
 }
 
 function usage(args: string[] = []): void {

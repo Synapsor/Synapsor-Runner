@@ -1,22 +1,28 @@
 {
   "name": "@synapsor/runner",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Commit-safe MCP runner for Postgres and MySQL agents",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "synapsor-runner": "dist/bin.cjs"
+    "synapsor": "dist/cli.js",
+    "synapsor-runner": "dist/cli.js"
   },
   "files": [
-    "dist/bin.cjs",
     "dist/cli.js",
     "dist/cli.d.ts",
     "dist/cli.d.ts.map",
     "dist/local-ui.d.ts",
     "dist/local-ui.d.ts.map",
+    "dist/runner.mjs",
+    "docs/**/*.md",
+    "examples/dangerous-mcp-tools.json",
+    "examples/reference-support-billing-app/**",
+    "recipes/**/*.json",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "TRADEMARKS.md"
   ],
   "engines": {
     "node": ">=22.5.0"

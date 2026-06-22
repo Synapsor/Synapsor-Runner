@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "bin": {
@@ -38,5 +38,10 @@
     "tsx": "^4.20.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

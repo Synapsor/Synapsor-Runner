@@ -1,12 +1,34 @@
-import { chmod, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const entryPoint = resolve(root, "apps/runner/src/cli.ts");
-const outfile = resolve(root, "apps/runner/dist/cli.js");
-const binfile = resolve(root, "apps/runner/dist/bin.cjs");
+const outfile = resolve(root, "apps/runner/dist/runner.mjs");
+const binfile = resolve(root, "apps/runner/dist/cli.js");
+const workspaceAliases = new Map([
+  ["@synapsor-runner/config", "packages/config/src/index.ts"],
+  ["@synapsor-runner/control-plane-client", "packages/control-plane-client/src/index.ts"],
+  ["@synapsor-runner/mcp-server", "packages/mcp-server/src/index.ts"],
+  ["@synapsor-runner/mysql", "packages/mysql/src/index.ts"],
+  ["@synapsor-runner/postgres", "packages/postgres/src/index.ts"],
+  ["@synapsor-runner/proposal-store", "packages/proposal-store/src/index.ts"],
+  ["@synapsor-runner/protocol", "packages/protocol/src/index.ts"],
+  ["@synapsor-runner/schema-inspector", "packages/schema-inspector/src/index.ts"],
+  ["@synapsor-runner/worker-core", "packages/worker-core/src/index.ts"],
+]);
+
+const workspaceAliasPlugin = {
+  name: "synapsor-runner-workspace-aliases",
+  setup(build) {
+    build.onResolve({ filter: /^@synapsor-runner\/[^/]+$/ }, (args) => {
+      const target = workspaceAliases.get(args.path);
+      if (!target) return undefined;
+      return { path: resolve(root, target) };
+    });
+  },
+};
 
 await build({
   entryPoints: [entryPoint],
@@ -25,6 +47,7 @@ await build({
     "pg/*",
     "zod",
   ],
+  plugins: [workspaceAliasPlugin],
   logLevel: "info",
 });
 
@@ -34,11 +57,16 @@ await writeFile(
   binfile,
   [
     "#!/usr/bin/env node",
-    "const { spawnSync } = require('node:child_process');",
-    "const { join } = require('node:path');",
-    "const result = spawnSync(process.execPath, ['--no-warnings', join(__dirname, 'cli.js'), ...process.argv.slice(2)], {",
+    "import { spawnSync } from 'node:child_process';",
+    "import { dirname, basename, join } from 'node:path';",
+    "import { fileURLToPath } from 'node:url';",
+    "",
+    "const __dirname = dirname(fileURLToPath(import.meta.url));",
+    "const invoked = basename(process.argv[1] || 'synapsor');",
+    "const commandName = invoked === 'synapsor-runner' ? 'synapsor-runner' : 'synapsor';",
+    "const result = spawnSync(process.execPath, ['--no-warnings', join(__dirname, 'runner.mjs'), ...process.argv.slice(2)], {",
     "  stdio: 'inherit',",
-    "  env: { ...process.env, NODE_NO_WARNINGS: '1', SYNAPSOR_RUNNER_COMMAND_NAME: 'synapsor-runner' },",
+    "  env: { ...process.env, NODE_NO_WARNINGS: '1', SYNAPSOR_RUNNER_COMMAND_NAME: commandName },",
     "});",
     "if (result.error) {",
     "  console.error(result.error);",
@@ -50,3 +78,27 @@ await writeFile(
   ].join("\n"),
 );
 await chmod(binfile, 0o755);
+
+if (process.env.SYNAPSOR_RUNNER_SKIP_RELEASE_ASSETS === "1") {
+  process.exit(0);
+}
+
+const packageRoot = resolve(root, "apps/runner");
+const releaseAssets = [
+  ["TRADEMARKS.md", "TRADEMARKS.md"],
+  ["docs", "docs"],
+  ["recipes", "recipes"],
+  ["examples/dangerous-mcp-tools.json", "examples/dangerous-mcp-tools.json"],
+  ["examples/reference-support-billing-app", "examples/reference-support-billing-app"],
+];
+
+for (const [, destination] of releaseAssets) {
+  await rm(resolve(packageRoot, destination), { recursive: true, force: true });
+}
+
+for (const [source, destination] of releaseAssets) {
+  const from = resolve(root, source);
+  const to = resolve(packageRoot, destination);
+  await mkdir(dirname(to), { recursive: true });
+  await cp(from, to, { recursive: true });
+}

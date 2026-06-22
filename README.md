@@ -1,16 +1,17 @@
 # Synapsor Runner
 
-Safe MCP tools for your Postgres/MySQL database.
+Safe database tools for AI agents.
 
-Open-source MCP safety layer for Postgres and MySQL.
+Turn Postgres/MySQL into reviewed MCP capabilities, not raw SQL.
 
-Give AI agents reviewed database capabilities instead of raw SQL.
+Synapsor Runner sits between Claude, Cursor, or another MCP client and your
+database. The model can inspect scoped data and propose changes, but it cannot
+commit writes. Approved changes run through guarded writeback, with evidence
+and replay.
 
-Synapsor Runner is a local MCP server that sits between Claude, Cursor, or
-another MCP client and your database. The model can inspect scoped data and
-create evidence-backed proposals, but it cannot directly write to
-Postgres/MySQL. Approved changes are applied outside the model through guarded
-writeback, with audit and replay.
+Use Synapsor Runner when you are about to give an MCP client access to
+Postgres/MySQL and you do not want raw SQL, write credentials, or commit
+authority to be model-facing.
 
 Synapsor Runner is open source under Apache License 2.0. Apache-2.0 applies to
 this runner repository, not the Synapsor name, logo, hosted Cloud service, or
@@ -18,7 +19,8 @@ proprietary Synapsor platform features.
 
 ## The Problem
 
-Most database MCP demos expose tools like:
+The fastest way to connect an agent to a database is also the most dangerous:
+`execute_sql(sql: string)`.
 
 ```text
 execute_sql("UPDATE invoices SET late_fee_cents = 0 WHERE id = ...")
@@ -57,16 +59,18 @@ MCP client
 
 ## Try It
 
-Run the alpha CLI from npm:
+Run the current alpha CLI from npm:
 
 ```bash
 npx -y -p @synapsor/runner@alpha synapsor-runner --help
 ```
 
-Then run the local demo:
+`synapsor-runner` remains a backward-compatible alias. The package now prepares
+`synapsor` as the primary command for the next alpha. After installing that
+package version or running from this checkout, use:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner demo
+synapsor demo
 ```
 
 From a source checkout, you can also use the local wrapper:
@@ -78,7 +82,7 @@ From a source checkout, you can also use the local wrapper:
 Want the 15-second fixture-only version first?
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner demo --quick
+synapsor demo --quick
 ```
 
 The demo starts a disposable local Postgres app, writes a safe capability
@@ -87,11 +91,11 @@ config, and prints the next commands.
 Run the happy path:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner propose billing.propose_late_fee_waiver --sample
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals show latest
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals approve latest --yes
-npx -y -p @synapsor/runner@alpha synapsor-runner apply latest
-npx -y -p @synapsor/runner@alpha synapsor-runner replay latest
+synapsor propose billing.propose_late_fee_waiver --sample
+synapsor proposals show latest
+synapsor proposals approve latest --yes
+synapsor apply latest
+synapsor replay latest
 ```
 
 What you should see:
@@ -123,14 +127,14 @@ writeback.
 
 ## Audit Your MCP Database Tools
 
-`synapsor-runner audit` is a static MCP/database risk review. It is useful even before
+`synapsor audit` is a static MCP/database risk review. It is useful even before
 you adopt the full runner.
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner audit examples/dangerous-mcp-tools.json
-npx -y -p @synapsor/runner@alpha synapsor-runner audit ./synapsor.runner.json
-npx -y -p @synapsor/runner@alpha synapsor-runner audit --mcp-config ./claude_desktop_config.json
-npx -y -p @synapsor/runner@alpha synapsor-runner audit --stdio "node ./my-db-mcp-server.js"
+synapsor audit examples/dangerous-mcp-tools.json
+synapsor audit ./synapsor.runner.json
+synapsor audit --mcp-config ./claude_desktop_config.json
+synapsor audit --stdio "node ./my-db-mcp-server.js"
 ```
 
 It looks for patterns such as:
@@ -171,9 +175,9 @@ start with your most sensitive production database.
 
 ```bash
 export DATABASE_URL="postgres://..."
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect --from-env DATABASE_URL
-npx -y -p @synapsor/runner@alpha synapsor-runner init --wizard --from-env DATABASE_URL
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor inspect --from-env DATABASE_URL
+synapsor init --wizard --from-env DATABASE_URL
+synapsor mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 The default guided setup is read-only. Database credentials stay in your local
@@ -186,15 +190,15 @@ review mode, approval outside MCP, and a separate trusted write credential.
 Generate a local MCP client snippet:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor mcp config --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Use a specific client shape when needed:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config cursor --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config vscode --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config generic --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor mcp config cursor --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor mcp config vscode --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor mcp config generic --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 The generated config references the local runner command. It does not include:

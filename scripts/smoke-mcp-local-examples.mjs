@@ -138,7 +138,9 @@ function run(command, args, options = {}) {
 }
 
 function runner(scenario, args, env = {}, options = {}) {
-  return run("corepack", ["pnpm", "runner", ...args], {
+  const builtCli = path.join(root, "apps", "runner", "dist", "cli.js");
+  const useBuiltCli = fs.existsSync(builtCli);
+  return run(useBuiltCli ? process.execPath : "corepack", useBuiltCli ? [builtCli, ...args] : ["pnpm", "runner", ...args], {
     capture: true,
     allowFailure: options.allowFailure,
     env: {
@@ -234,10 +236,12 @@ async function waitForDatabase(scenario) {
 }
 
 async function withMcpClient(scenario, callback) {
+  const builtCli = path.join(root, "apps", "runner", "dist", "cli.js");
+  const useBuiltCli = fs.existsSync(builtCli);
   const transport = new StdioClientTransport({
-    command: path.join(root, "node_modules", ".bin", "tsx"),
+    command: useBuiltCli ? process.execPath : path.join(root, "node_modules", ".bin", "tsx"),
     args: [
-      "apps/runner/src/cli.ts",
+      useBuiltCli ? builtCli : "apps/runner/src/cli.ts",
       "mcp",
       "serve",
       "--config",
@@ -254,7 +258,14 @@ async function withMcpClient(scenario, callback) {
     serverStderr += String(chunk);
   });
   const client = new Client({ name: "synapsor-runner-local-smoke", version: "0.1.0" });
-  await client.connect(transport);
+  try {
+    await client.connect(transport);
+  } catch (error) {
+    if (error instanceof Error && serverStderr.trim()) {
+      error.message += `\nMCP server stderr:\n${serverStderr.trim()}`;
+    }
+    throw error;
+  }
   try {
     return await callback(client);
   } catch (error) {
