@@ -33,23 +33,23 @@ function listPackageJsonFiles() {
 }
 
 const license = read("LICENSE");
-if (!license.startsWith("Elastic License 2.0\n")) {
-  fail("LICENSE must contain the official Elastic License 2.0 text.");
+if (!license.startsWith("Apache License\n                           Version 2.0, January 2004\n")) {
+  fail("LICENSE must contain the canonical Apache License 2.0 text.");
 }
 
 for (const pkgFile of listPackageJsonFiles()) {
   const pkg = JSON.parse(read(pkgFile));
-  if (pkg.license !== "Elastic-2.0") {
-    fail(`${pkgFile} must set license to Elastic-2.0.`);
+  if (pkg.license !== "Apache-2.0") {
+    fail(`${pkgFile} must set license to Apache-2.0.`);
   }
 }
 
 const readme = read("README.md");
-if (!/Source-available commit-safe MCP runtime/.test(readme)) {
-  fail("README first screen must describe the runner as source-available.");
+if (!/Open-source MCP safety layer/.test(readme)) {
+  fail("README first screen must describe the runner as open source.");
 }
-if (!readme.includes("Elastic License 2.0 (`Elastic-2.0`)")) {
-  fail("README must name Elastic License 2.0.");
+if (!readme.includes("Apache License 2.0 (`Apache-2.0`)")) {
+  fail("README must name Apache License 2.0.");
 }
 
 for (const required of [
@@ -77,24 +77,25 @@ function walk(dir) {
 walk(".");
 
 const allowedOpenSourceFiles = new Set([
-  "docs/licensing.md",
-  "IMPLEMENTATION_REPORT.md",
   "scripts/check-license-content.mjs",
 ]);
-const allowedApacheFiles = new Set([
-  "docs/dependency-license-inventory.md",
-  "IMPLEMENTATION_REPORT.md",
-  "scripts/check-license-content.mjs",
-]);
+const stalePattern = new RegExp([
+  "Elastic-2\\.0",
+  "Elastic" + " License",
+  "source" + "-available",
+  "source" + " available",
+].join("|"), "i");
 
 for (const rel of textFiles) {
   const normalized = rel.replace(/^[.][/\\]/, "");
   const content = read(normalized);
-  if (/\bopen-source\b/i.test(content) && !allowedOpenSourceFiles.has(normalized)) {
-    fail(`${normalized} contains open-source wording; use source-available or clearly label history.`);
+  if (stalePattern.test(content)) {
+    fail(`${normalized} contains stale non-Apache licensing wording.`);
   }
-  if (/(Apache-2\.0|Apache License)/.test(content) && !allowedApacheFiles.has(normalized)) {
-    fail(`${normalized} contains Apache license wording outside allowed dependency/history docs.`);
+  if (/\bopen-source\b/i.test(content) && !allowedOpenSourceFiles.has(normalized)) {
+    // Hyphenated "open-source" is allowed in docs, README, and package metadata
+    // after the Apache-2.0 migration. Keep this branch to make the policy
+    // explicit and avoid future accidental reintroduction of older checks.
   }
 }
 

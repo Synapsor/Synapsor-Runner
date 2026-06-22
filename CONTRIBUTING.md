@@ -1,8 +1,8 @@
 # Contributing
 
-Synapsor Runner is source-available software. Until Supsmall Inc. has a
-counsel-approved CLA or inbound-rights process for this repository, external
-code contributions are not being accepted.
+Synapsor Runner is open-source software under Apache License 2.0. Until
+Synapsor has a counsel-approved CLA or inbound-rights process for this
+repository, external code contributions are not being accepted.
 
 What is welcome now:
 

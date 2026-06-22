@@ -1,0 +1,11 @@
+{
+  "command": "synapsor",
+  "args": [
+    "mcp",
+    "serve",
+    "--config",
+    "examples/reference-support-billing-app/synapsor.runner.json",
+    "--store",
+    "./tmp/reference-support-billing/local.db"
+  ]
+}

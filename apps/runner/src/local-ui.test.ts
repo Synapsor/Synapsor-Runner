@@ -143,9 +143,17 @@ describe("local UI", () => {
       expect(landing.headers.get("set-cookie")).toContain("synapsor_ui_token=");
       const html = await landing.text();
       expect(html).toContain("Synapsor Runner Local UI");
+      expect(html).toContain("Agent requested a change");
+      expect(html).toContain("Source database changed:");
+      expect(html).toContain("Approval boundary");
+      expect(html).toContain("Replay saved what happened");
+      expect(html).toContain("View raw JSON");
       expect(html).toContain("csrf-token");
       expect(html).not.toContain("ui-token");
       expect(html).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret|should_not_leak/i);
+
+      const tourLanding = await fetch(`${baseUrl}/?token=ui-token&tour=1`);
+      expect(await tourLanding.text()).toContain("Commit-safe MCP in one loop");
 
       const headers = { "x-synapsor-ui-token": "ui-token" };
       const summary = await getJson(`${baseUrl}/api/summary`, headers);
@@ -169,6 +177,18 @@ describe("local UI", () => {
 
       const detail = await getJson(`${baseUrl}/api/proposals/wrp_ui`, headers);
       expect(detail.proposal.proposal_id).toBe("wrp_ui");
+      expect(detail.review_view.message).toContain("cannot approve or commit");
+      expect(detail.review_view.guard_checklist).toMatchObject({
+        tenant_guard: { column: "tenant_id", value: "acme" },
+        primary_key: { column: "id", value: "INV-UI" },
+        conflict_version: { column: "updated_at", value: "2026-06-20T14:31:08Z" },
+        idempotency_key: "wrp_ui:INV-UI",
+        affected_row_count_required: 1,
+      });
+      expect(detail.review_view.diff).toMatchObject({
+        late_fee_cents: { before: 5500, proposed: 0 },
+      });
+      expect(detail.review_view.writeback.executor).toBe("sql_update");
       expect(JSON.stringify(detail)).toContain("<redacted>");
       expect(JSON.stringify(detail)).not.toMatch(/postgres(?:ql)?:\/\/|reader_secret|should_not_leak/i);
 

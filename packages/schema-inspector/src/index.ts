@@ -185,6 +185,7 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
     name: inspectToolName,
     kind: "read",
     source: sourceName,
+    context: "local_operator",
     target: target(spec),
     args: {
       [lookupArg]: { type: "string", required: true, max_length: 128 },
@@ -201,6 +202,7 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
       name: proposalToolName,
       kind: "proposal",
       source: sourceName,
+      context: "local_operator",
       target: target(spec),
       args: {
         [lookupArg]: { type: "string", required: true, max_length: 128 },
@@ -236,6 +238,15 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
       values: {
         tenant_id_env: tenantEnv,
         principal_env: principalEnv,
+      },
+    },
+    contexts: {
+      local_operator: {
+        provider: "environment",
+        values: {
+          tenant_id_env: tenantEnv,
+          principal_env: principalEnv,
+        },
       },
     },
     capabilities,

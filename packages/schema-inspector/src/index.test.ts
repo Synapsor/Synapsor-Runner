@@ -57,6 +57,45 @@ describe("schema inspector helpers", () => {
     expect(JSON.stringify(generated)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|secret_password/i);
   });
 
+  it("uses the reviewed namespace and object name instead of fixed starter capabilities", () => {
+    const generated = generateRunnerConfigFromSpec({
+      version: 1,
+      engine: "mysql",
+      mode: "review",
+      read_url_env: "APP_DATABASE_READ_URL",
+      write_url_env: "APP_DATABASE_WRITE_URL",
+      schema: "app",
+      table: "appointments",
+      primary_key: "appointment_id",
+      tenant_key: "clinic_id",
+      conflict_column: "updated_at",
+      namespace: "clinic",
+      object_name: "appointment",
+      lookup_arg: "appointment_id",
+      visible_columns: ["appointment_id", "clinic_id", "status", "review_note", "updated_at"],
+      allowed_columns: ["status", "review_note"],
+      patch: {
+        status: { from_arg: "next_status" },
+        review_note: { from_arg: "review_note" },
+      },
+      transition_guards: {
+        status: {
+          allowed: {
+            scheduled: ["needs_review"],
+            needs_review: ["confirmed", "canceled"],
+          },
+        },
+      },
+    });
+
+    const capabilities = (generated.config.capabilities as any[]);
+    expect(capabilities.map((capability) => capability.name)).toEqual([
+      "clinic.inspect_appointment",
+      "clinic.propose_appointment_update",
+    ]);
+    expect(JSON.stringify(generated.config)).not.toMatch(/billing|support|orders|late_fee|invoice/i);
+  });
+
   it("rejects unsafe identifiers and missing tenant scope", () => {
     expect(() => generateRunnerConfigFromSpec({
       engine: "postgres",

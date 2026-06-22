@@ -125,6 +125,7 @@ export function formatMcpAuditReport(report: McpAuditReport): string {
     "",
     `Tools inspected: ${report.summary.tools_inspected}`,
     `Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
+    `Overall risk: ${overallRisk(report).toLowerCase()}`,
   ];
 
   if (report.findings.length === 0) {
@@ -142,7 +143,23 @@ export function formatMcpAuditReport(report: McpAuditReport): string {
     }
     lines.push(`       Recommendation: ${finding.recommendation}`);
   }
+  lines.push(
+    "",
+    "Suggested safer shape:",
+    "- expose semantic inspect/propose tools instead of raw SQL;",
+    "- bind tenant/principal from trusted context;",
+    "- keep approval outside MCP;",
+    "- apply approved changes through guarded writeback;",
+    "- keep replay/evidence handles for later review.",
+  );
   return `${lines.join("\n")}\n`;
+}
+
+function overallRisk(report: McpAuditReport): McpAuditSeverity | "NONE" {
+  if (report.summary.high > 0) return "HIGH";
+  if (report.summary.medium > 0) return "MEDIUM";
+  if (report.summary.low > 0) return "LOW";
+  return "NONE";
 }
 
 function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {

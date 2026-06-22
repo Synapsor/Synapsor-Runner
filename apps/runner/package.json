@@ -1,30 +1,51 @@
 {
-  "name": "@synapsor-runner/runner",
-  "version": "0.1.0-alpha.0",
-  "license": "Elastic-2.0",
+  "name": "@synapsor/runner",
+  "version": "0.1.0-alpha.1",
+  "description": "Commit-safe MCP runner for Postgres and MySQL agents",
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "synapsor-runner": "dist/cli.js",
-    "synapsor": "dist/cli.js"
+    "synapsor-runner": "dist/bin.cjs"
+  },
+  "files": [
+    "dist/bin.cjs",
+    "dist/cli.js",
+    "dist/cli.d.ts",
+    "dist/cli.d.ts.map",
+    "dist/local-ui.d.ts",
+    "dist/local-ui.d.ts.map",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node ../../scripts/build-runner-package.mjs",
+    "prepack": "cd ../.. && corepack pnpm build:runner-package",
     "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@synapsor-runner/config": "workspace:*",
-    "@synapsor-runner/control-plane-client": "workspace:*",
-    "@synapsor-runner/mcp-server": "workspace:*",
-    "@synapsor-runner/mysql": "workspace:*",
-    "@synapsor-runner/postgres": "workspace:*",
-    "@synapsor-runner/proposal-store": "workspace:*",
-    "@synapsor-runner/protocol": "workspace:*",
-    "@synapsor-runner/schema-inspector": "workspace:*",
-    "@synapsor-runner/worker-core": "workspace:*"
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
+  },
+  "homepage": "https://synapsor.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/synapsor-ai/synapsor-runner.git"
+  },
+  "bugs": {
+    "url": "https://synapsor.ai/contact"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
   }
 }

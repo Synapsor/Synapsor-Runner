@@ -90,5 +90,5 @@ Cloud mode delegates tool catalog and tool calls to Synapsor Cloud while keeping
 - No local UI command yet.
 - Writeback apply does not yet cross-check a job against local reviewed config before applying.
 - No MCP efficiency benchmark yet.
-- Licensing has been migrated toward ELv2/source-available metadata after the initial audit. Final public release still requires counsel review.
+- Licensing now targets Apache-2.0/open-source metadata for the runner repo. Final public release still requires counsel review.
 - Required docs and final `IMPLEMENTATION_REPORT.md` are incomplete.

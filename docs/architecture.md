@@ -1,6 +1,6 @@
 # Architecture
 
-Synapsor Runner is the local mini trust loop for database MCP. It gives developers
+Synapsor Runner is the local commit-safety loop for database MCP. It gives developers
 the smallest useful version of Synapsor's commit-safety boundary on their own
 machine: semantic tools, trusted context, evidence, proposals, approval,
 guarded writeback, receipts, and replay.

@@ -1,0 +1,45 @@
+{
+  "id": "credits.account_credit",
+  "title": "Account credit",
+  "summary": "Inspect one account balance row and propose a bounded account credit.",
+  "expected_table_type": "account credits or balances table",
+  "required_columns": ["id", "tenant_id", "credit_cents", "credit_reason", "updated_at"],
+  "recommended_primary_key": "id",
+  "recommended_tenant_key": "tenant_id",
+  "recommended_conflict_column": "updated_at",
+  "visible_columns": ["id", "tenant_id", "credit_cents", "credit_reason", "updated_at"],
+  "allowed_write_columns": ["credit_cents", "credit_reason"],
+  "semantic_tools": ["credits.inspect_account_credit", "credits.propose_account_credit"],
+  "notes": [
+    "Configure the maximum credit bound before running against real data."
+  ],
+  "spec": {
+    "version": 1,
+    "engine": "postgres",
+    "mode": "review",
+    "schema": "public",
+    "table": "account_credits",
+    "primary_key": "id",
+    "tenant_key": "tenant_id",
+    "conflict_column": "updated_at",
+    "namespace": "credits",
+    "object_name": "account_credit",
+    "inspect_tool_name": "credits.inspect_account_credit",
+    "proposal_tool_name": "credits.propose_account_credit",
+    "lookup_arg": "credit_id",
+    "visible_columns": ["id", "tenant_id", "credit_cents", "credit_reason", "updated_at"],
+    "allowed_columns": ["credit_cents", "credit_reason"],
+    "patch": {
+      "credit_cents": { "from_arg": "credit_cents" },
+      "credit_reason": { "from_arg": "reason" }
+    },
+    "patch_args": {
+      "credit_cents": { "type": "number", "required": true, "minimum": 0, "maximum": 10000 },
+      "reason": { "type": "string", "required": true, "max_length": 500 }
+    },
+    "numeric_bounds": {
+      "credit_cents": { "minimum": 0, "maximum": 10000 }
+    },
+    "approval": { "required_role": "billing_lead" }
+  }
+}

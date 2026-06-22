@@ -13,7 +13,7 @@ The schemas live in `schemas/`. Golden fixtures live in `fixtures/protocol/` and
 
 `fixtures/protocol/MANIFEST.json` is the shared checksum note for the public protocol set. The same logical manifest is copied to the main Synapsor repository as `protocol/MANIFEST.json`. Tests in both repositories verify the SHA-256 digest for every schema and fixture.
 
-The v0.1 write path supports one operation:
+The current alpha write path supports one operation:
 
 ```text
 single_row_update

@@ -50,6 +50,8 @@ export type RuntimeCapabilityConfig = {
   name: string;
   kind: CapabilityKind;
   source: string;
+  context?: string;
+  executor?: string;
   target: {
     schema: string;
     table: string;
@@ -75,10 +77,15 @@ export type RuntimeConfig = {
   mode: RunnerMode;
   storage?: { sqlite_path?: string };
   sources?: Record<string, RuntimeSourceConfig>;
-  trusted_context: {
+  trusted_context?: {
     provider: ContextProvider;
     values?: Record<string, unknown>;
   };
+  contexts?: Record<string, {
+    provider: ContextProvider;
+    values?: Record<string, unknown>;
+  }>;
+  executors?: Record<string, unknown>;
   capabilities?: RuntimeCapabilityConfig[];
   cloud?: {
     base_url_env: string;
@@ -189,7 +196,7 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
 
 export function createSynapsorMcpServer(runtime: McpRuntime): McpServer {
   const server = new McpServer(
-    { name: "synapsor-runner", version: "0.1.0-alpha.0" },
+    { name: "synapsor-runner", version: "0.1.0-alpha.1" },
     { capabilities: { tools: {}, resources: {} } },
   );
 
@@ -266,8 +273,8 @@ export function createSynapsorMcpServer(runtime: McpRuntime): McpServer {
   return server;
 }
 
-export async function serveStdio(options: { configPath?: string; storePath?: string } = {}): Promise<void> {
-  const config = loadRuntimeConfigFromFile(options.configPath);
+export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig } = {}): Promise<void> {
+  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, process.env) : undefined;
   const runtime = createMcpRuntime(config, { storePath: options.storePath, cloudTools });
   const server = createSynapsorMcpServer(runtime);
@@ -421,7 +428,7 @@ async function callConfiguredTool(input: {
   }
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
-  const context = resolveTrustedContext(input.config, input.env);
+  const context = resolveTrustedContext(input.config, input.env, capability);
   const current = await input.readRow({
     sourceName: capability.source,
     source,
@@ -637,6 +644,7 @@ function buildChangeSet(input: {
     writeback: {
       status: "not_applied",
       mode: "trusted_worker_required",
+      executor: input.capability.executor ?? "sql_update",
     },
     source_database_mutated: false,
     created_at: new Date().toISOString(),
@@ -742,9 +750,16 @@ function quoteIdentifier(identifier: string, style: "$" | "?"): string {
   return style === "$" ? `"${identifier}"` : `\`${identifier}\``;
 }
 
-function resolveTrustedContext(config: RuntimeConfig, env: NodeJS.ProcessEnv): TrustedContext {
-  const provider = config.trusted_context.provider;
-  const values = config.trusted_context.values ?? {};
+function resolveTrustedContext(config: RuntimeConfig, env: NodeJS.ProcessEnv, capability?: RuntimeCapabilityConfig): TrustedContext {
+  const namedContext = capability?.context ? config.contexts?.[capability.context] : undefined;
+  const contextConfig = namedContext ?? config.trusted_context;
+  if (!contextConfig) {
+    throw new McpRuntimeError("TRUSTED_CONTEXT_MISSING", capability?.context
+      ? `Capability ${capability.name} references missing trusted context ${capability.context}.`
+      : "No trusted_context is configured for this capability.");
+  }
+  const provider = contextConfig.provider;
+  const values = contextConfig.values ?? {};
   if (provider === "environment") {
     const tenantEnv = String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(values.principal_env ?? "SYNAPSOR_PRINCIPAL");

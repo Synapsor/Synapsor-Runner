@@ -197,9 +197,9 @@ async function main() {
   runner(["proposals", "approve", firstProposalId, "--store", storePath, "--actor", "billing_lead", "--yes"]);
   const jobPath = path.join(tmpDir, "first-job.json");
   runner(["proposals", "writeback-job", firstProposalId, "--store", storePath, "--output", jobPath, "--project", "local", "--runner", "local_runner"]);
-  const applied = parseCliJson(runner(["apply", "--job", jobPath]));
+  const applied = parseCliJson(runner(["apply", "--job", jobPath, "--config", configPath, "--store", storePath]));
   assert(applied.status === "applied" && applied.affected_rows === 1, "Expected guarded apply", applied);
-  const retry = parseCliJson(runner(["apply", "--job", jobPath]));
+  const retry = parseCliJson(runner(["apply", "--job", jobPath, "--config", configPath, "--store", storePath]));
   assert(retry.status === "applied" && retry.affected_rows === 0, "Expected idempotent retry", retry);
 
   console.log("== stale-row conflict proof ==");
@@ -219,7 +219,7 @@ async function main() {
   runner(["proposals", "approve", staleProposalId, "--store", storePath, "--actor", "billing_lead", "--yes"]);
   const staleJobPath = path.join(tmpDir, "stale-job.json");
   runner(["proposals", "writeback-job", staleProposalId, "--store", storePath, "--output", staleJobPath, "--project", "local", "--runner", "local_runner"]);
-  const conflict = parseCliJson(runner(["apply", "--job", staleJobPath]));
+  const conflict = parseCliJson(runner(["apply", "--job", staleJobPath, "--config", configPath, "--store", storePath]));
   assert(conflict.status === "conflict" && conflict.error_code === "VERSION_CONFLICT", "Expected stale-row conflict", conflict);
   const finalRow = dockerSql("SELECT late_fee_cents || '|' || COALESCE(waiver_reason, '') FROM public.invoices WHERE id = 'INV-3001'");
   assert(finalRow === "5500|", "Conflict path should not apply write", finalRow);

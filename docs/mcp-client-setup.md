@@ -8,9 +8,9 @@ The primary local proof path is still the one-command Docker demo:
 
 Use this page after that demo passes and you want to attach a local MCP client. The tested integration contract here is stdio. Client-specific UIs change, so the checked-in examples verify config shape and `tools/list`, not every client screen.
 
-Command examples use `synapsor ...` for readability. From a source checkout,
-run the same CLI as `corepack pnpm runner ...`; the packaged `synapsor`
-executable is only needed after installing or linking the CLI.
+Command examples use the published alpha package through `npx`. From a source
+checkout, use `./bin/synapsor ...` only when you intentionally want the local
+source wrapper.
 
 Checked examples live in:
 
@@ -29,8 +29,7 @@ corepack pnpm test:mcp-client-configs
 Print a snippet without modifying any client files:
 
 ```bash
-synapsor mcp configure \
-  --client claude-desktop \
+npx -y -p @synapsor/runner@alpha synapsor-runner mcp config claude-desktop \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -39,15 +38,22 @@ Supported client names:
 
 ```text
 generic-stdio
+generic
 claude-desktop
 cursor
 vscode
 ```
 
+The older form is still supported:
+
+```bash
+npx -y -p @synapsor/runner@alpha synapsor-runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
 Write is opt-in and requires an explicit destination:
 
 ```bash
-synapsor mcp configure \
+npx -y -p @synapsor/runner@alpha synapsor-runner mcp configure \
   --client cursor \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -66,10 +72,10 @@ database URLs or passwords into the client config.
 From the runner repository:
 
 ```bash
-corepack pnpm runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
-For a packaged binary, the command should be the published `synapsor` executable with the same arguments.
+For the alpha package, keep the package tag explicit in client configuration.
 
 ## Generic stdio Client
 
@@ -77,10 +83,12 @@ For a packaged binary, the command should be the published `synapsor` executable
 {
   "mcpServers": {
     "synapsor-runner": {
-      "command": "corepack",
+      "command": "npx",
       "args": [
-        "pnpm",
-        "runner",
+        "-y",
+        "-p",
+        "@synapsor/runner@alpha",
+        "synapsor-runner",
         "mcp",
         "serve",
         "--config",
@@ -140,7 +148,7 @@ Before documenting a client UI as officially tested, verify:
 ## Troubleshooting
 
 - Server not listed: check the command path, working directory, and config path.
-- Tool schema mismatch: run `corepack pnpm runner mcp audit <exported-tools.json>`.
+- Tool schema mismatch: run `synapsor audit <exported-tools.json>`.
 - Missing trusted context: set `SYNAPSOR_TENANT_ID` and `SYNAPSOR_PRINCIPAL`, or use the environment variables configured in `trusted_context.values`.
 - Database unavailable: verify the read credential and host access.
 - Proposal waiting review: approve outside the model with `synapsor proposals approve`.

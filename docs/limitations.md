@@ -1,6 +1,6 @@
 # Limitations
 
-Synapsor Runner v0.1 is intentionally narrow.
+Synapsor Runner is intentionally narrow in the current alpha.
 
 ## Supported
 
@@ -14,12 +14,25 @@ Synapsor Runner v0.1 is intentionally narrow.
   - `synapsor.execution-receipt.v1`
   - `synapsor.runner-registration.v1`
 - Guarded single-row `UPDATE` for Postgres and MySQL.
+- App/API handler writeback through approved `http_handler` executors.
+- Local script writeback through approved `command_handler` executors.
 - Primary-key guard.
 - Tenant guard.
 - Allowed-column validation.
 - Version-column or explicit weak row-hash conflict guard.
 - Idempotency receipts.
+- Named local trusted contexts for capability configs.
+- Capability recipes that generate reviewed starter configs.
+- Shadow-mode proposal-vs-human-action comparison.
 - Static MCP database risk review.
+
+## Runtime Contract
+
+Local capabilities are config-defined, not built into the server. The runtime
+does not special-case billing, support, orders, refunds, invoices, or tickets.
+Those domains appear only in demos, smoke tests, and optional recipe JSON files.
+When you connect your own database, `synapsor.runner.json` is the source of
+truth for the model-facing tools.
 
 ## Not Supported
 
@@ -33,6 +46,9 @@ Synapsor Runner v0.1 is intentionally narrow.
 - Stored procedures.
 - Cross-database transactions.
 - Physical branching of Postgres/MySQL.
+- Full Synapsor workflow/DAG execution.
+- `CREATE AGENT WORKFLOW` or hosted Synapsor SQL generation.
+- Auto-merge or settlement policy semantics.
 - Automatic rollback of external database writes.
 - Model-callable approval or commit tools.
 - Generic MCP firewall behavior.

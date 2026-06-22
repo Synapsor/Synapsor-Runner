@@ -1,11 +1,15 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "0.1.0-alpha.0",
-  "license": "Elastic-2.0",
+  "version": "0.1.0-alpha.1",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
+  "bin": {
+    "synapsor": "./bin/synapsor"
+  },
   "scripts": {
     "build": "tsc -b",
+    "build:runner-package": "tsc -b && node scripts/build-runner-package.mjs",
     "clean": "find . -path '*/dist' -type d -prune -exec rm -rf {} +",
     "lint": "tsc -b --pretty false",
     "test": "tsc -b --pretty false && vitest run && node scripts/check-license-content.mjs",
@@ -14,15 +18,23 @@
     "test:mcp-local": "node scripts/smoke-mcp-local-examples.mjs",
     "test:mcp-cloud-linked": "tsc -b --pretty false && node scripts/smoke-mcp-cloud-linked.mjs",
     "test:onboarding-generated": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",
+    "test:reference-app": "tsc -b --pretty false && node scripts/smoke-reference-support-billing-app.mjs",
     "verify:hosted-cloud-linked": "tsc -b --pretty false && node scripts/verify-hosted-cloud-linked.mjs",
     "test:mcp-client-configs": "node scripts/verify-mcp-client-configs.mjs",
     "demo:docker": "./scripts/demo-docker.sh",
     "demo:local": "./scripts/demo-local.sh",
+    "demo:ui": "./scripts/open-demo-ui.sh",
+    "mcp:config": "./scripts/mcp-config.sh",
     "typecheck": "tsc -b --pretty false",
-    "runner": "tsx apps/runner/src/cli.ts"
+    "synapsor": "tsx apps/runner/src/cli.ts",
+    "runner": "tsx apps/runner/src/cli.ts",
+    "demo:reference": "./scripts/run-reference-app.sh",
+    "test:first-run": "./scripts/try-synapsor.sh",
+    "own-db": "./scripts/use-your-db.sh"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "0.28.1",
     "tsx": "^4.20.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"

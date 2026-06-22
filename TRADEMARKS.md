@@ -1,24 +1,23 @@
 # Trademark Policy
 
-This page is a practical summary for repository users and requires legal review
-before public release.
+Apache License 2.0 grants copyright and patent rights to the code in this
+repository. It does not grant trademark rights.
 
-Synapsor, Synapsor Runner, Supsmall, associated logos, and related marks are
-owned by Supsmall Inc. The source license does not grant trademark rights.
+The names "Synapsor" and "Synapsor Runner", Synapsor logos, and Synapsor brand
+assets may not be used to imply endorsement or to operate a confusingly similar
+hosted service.
 
-Permitted nominative uses include statements such as:
+Forks may accurately describe themselves as:
 
-- "works with Synapsor Runner";
+- "based on Synapsor Runner";
 - "built with Synapsor Runner";
 - "compatible with Synapsor Runner".
 
-Do not use Synapsor names or logos in a way that implies:
+Forks may not call themselves "Synapsor", use Synapsor branding as their own
+product branding, or imply that Synapsor sponsors, endorses, or operates the
+fork.
 
-- your fork, hosted service, product, or company is the official Synapsor
-  product;
-- Supsmall Inc. sponsors, endorses, or operates your service;
-- you own the Synapsor brand or logo;
-- your managed service is Synapsor Cloud.
+Hosted or commercial services based on this code must use their own branding.
 
 For trademark permission requests, use the contact form at
 https://synapsor.ai/contact.

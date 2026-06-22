@@ -1,8 +1,8 @@
 # Production Readiness
 
-Synapsor Runner v0.1 is a local, source-available MCP data-plane/runtime for
-reviewed Postgres/MySQL business actions. It is not Synapsor Cloud and it is not
-the Synapsor C++ DBMS.
+Synapsor Runner is a local, open-source MCP data-plane/runtime for reviewed
+Postgres/MySQL business actions. It is not Synapsor Cloud and it is not the
+Synapsor C++ DBMS.
 
 Use a staging or disposable database first.
 
@@ -14,6 +14,9 @@ Allowed current claims:
 - exact row diff;
 - local approval outside MCP;
 - tenant, column, version, affected-row, and idempotency checks;
+- approved app/API handler writeback with handler secrets kept in environment
+  variables;
+- shadow-mode comparison between agent proposals and human actions;
 - stale-row conflict detection in included fixtures;
 - local replay for proposal/evidence/approval/writeback receipts.
 

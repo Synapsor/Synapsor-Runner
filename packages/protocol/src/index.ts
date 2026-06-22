@@ -209,7 +209,7 @@ export const executionReceiptV1Schema = z.object({
   executed_at: z.string().min(1),
   safe_error_code: z.string().optional(),
   receipt_hash: sha256
-});
+}).passthrough();
 
 const normalizedExecutionReceiptV1Schema = executionReceiptV1Schema.transform((receipt) => ({
   protocol_version: protocolVersions.legacyWritebackJob,

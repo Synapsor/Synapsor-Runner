@@ -1,0 +1,57 @@
+{
+  "id": "orders.refund_review",
+  "title": "Refund review",
+  "summary": "Inspect one order and propose a reviewed refund status update.",
+  "expected_table_type": "orders table",
+  "required_columns": ["id", "tenant_id", "status", "refund_cents", "refund_reason", "updated_at"],
+  "recommended_primary_key": "id",
+  "recommended_tenant_key": "tenant_id",
+  "recommended_conflict_column": "updated_at",
+  "visible_columns": ["id", "tenant_id", "status", "total_cents", "refund_cents", "refund_reason", "updated_at"],
+  "allowed_write_columns": ["status", "refund_cents", "refund_reason"],
+  "semantic_tools": ["orders.inspect_order", "orders.propose_refund_review"],
+  "notes": [
+    "Use numeric bounds that match your real refund policy.",
+    "Keep payment-provider execution outside MCP."
+  ],
+  "spec": {
+    "version": 1,
+    "engine": "mysql",
+    "mode": "review",
+    "schema": "app",
+    "table": "orders",
+    "primary_key": "id",
+    "tenant_key": "tenant_id",
+    "conflict_column": "updated_at",
+    "namespace": "orders",
+    "object_name": "order",
+    "inspect_tool_name": "orders.inspect_order",
+    "proposal_tool_name": "orders.propose_refund_review",
+    "lookup_arg": "order_id",
+    "visible_columns": ["id", "tenant_id", "status", "total_cents", "refund_cents", "refund_reason", "updated_at"],
+    "allowed_columns": ["status", "refund_cents", "refund_reason"],
+    "patch": {
+      "status": { "from_arg": "next_status" },
+      "refund_cents": { "from_arg": "refund_cents" },
+      "refund_reason": { "from_arg": "reason" }
+    },
+    "patch_args": {
+      "next_status": { "type": "string", "required": true, "enum": ["refund_requested", "refunded", "needs_review"] },
+      "refund_cents": { "type": "number", "required": true, "minimum": 0, "maximum": 100000 },
+      "reason": { "type": "string", "required": true, "max_length": 500 }
+    },
+    "numeric_bounds": {
+      "refund_cents": { "minimum": 0, "maximum": 100000 }
+    },
+    "transition_guards": {
+      "status": {
+        "allowed": {
+          "paid": ["refund_requested", "needs_review"],
+          "shipped": ["refund_requested", "needs_review"],
+          "refund_requested": ["refunded", "needs_review"]
+        }
+      }
+    },
+    "approval": { "required_role": "ops_lead" }
+  }
+}

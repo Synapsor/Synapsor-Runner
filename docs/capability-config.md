@@ -4,6 +4,16 @@ Synapsor Runner uses a strict JSON capability config for local MCP/database safe
 
 YAML can be added later, but the first supported format is JSON so the runtime can validate untrusted config without adding a parser dependency.
 
+Capabilities are not hardcoded into the runtime. The MCP server exposes only
+the reviewed `capabilities` listed in `synapsor.runner.json`, or the tool
+catalog returned by Synapsor Cloud in `cloud` mode. The billing examples in
+this document are examples only; use your own namespace, object names, tables,
+columns, patch mappings, and approval roles.
+
+Synapsor Runner does not implement full Synapsor workflows or
+`CREATE AGENT WORKFLOW` in v0.1. It models the local commit-safety loop for
+reviewed read/proposal capabilities.
+
 ## Goals
 
 The config defines reviewed semantic capabilities. It must not define arbitrary SQL tools.
@@ -44,11 +54,33 @@ The validator rejects:
       "principal_env": "SYNAPSOR_PRINCIPAL"
     }
   },
+  "contexts": {
+    "local_billing_operator": {
+      "provider": "environment",
+      "values": {
+        "tenant_id_env": "SYNAPSOR_TENANT_ID",
+        "principal_env": "SYNAPSOR_PRINCIPAL"
+      }
+    }
+  },
+  "executors": {
+    "billing_api": {
+      "type": "http_handler",
+      "url_env": "SYNAPSOR_BILLING_HANDLER_URL",
+      "method": "POST",
+      "auth": {
+        "type": "bearer_env",
+        "token_env": "SYNAPSOR_BILLING_HANDLER_TOKEN"
+      },
+      "timeout_ms": 5000
+    }
+  },
   "capabilities": [
     {
       "name": "billing.inspect_invoice",
       "kind": "read",
       "source": "app_postgres",
+      "context": "local_billing_operator",
       "target": {
         "schema": "public",
         "table": "invoices",
@@ -73,6 +105,8 @@ The validator rejects:
       "name": "billing.propose_late_fee_waiver",
       "kind": "proposal",
       "source": "app_postgres",
+      "context": "local_billing_operator",
+      "executor": "billing_api",
       "target": {
         "schema": "public",
         "table": "invoices",
@@ -128,3 +162,19 @@ Supported providers:
 - `cloud_session`: reserved for Cloud-linked mode with scoped runner/session context.
 
 Model-facing tool arguments cannot override trusted context.
+
+`contexts` is the preferred shape for larger configs. A capability with
+`context: "local_billing_operator"` uses that named context. A capability
+without `context` falls back to the global `trusted_context` for backward
+compatibility. A missing named context fails validation.
+
+## Writeback executors
+
+Proposal capabilities default to `sql_update`, which means the trusted runner
+applies one guarded single-row `UPDATE` after approval. Set
+`executor: "billing_api"` to route approved proposals to a configured
+`http_handler` or `command_handler` instead.
+
+Executor URLs, commands, bearer tokens, and database credentials must be
+environment-variable references. They are never model-facing MCP arguments and
+are redacted from CLI/UI output. See `docs/writeback-executors.md`.

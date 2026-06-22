@@ -1,0 +1,51 @@
+{
+  "id": "support.ticket_resolution",
+  "title": "Support ticket resolution",
+  "summary": "Inspect one support ticket and propose a reviewed status/resolution update.",
+  "expected_table_type": "support ticket table",
+  "required_columns": ["id", "tenant_id", "status", "resolution_note", "updated_at"],
+  "recommended_primary_key": "id",
+  "recommended_tenant_key": "tenant_id",
+  "recommended_conflict_column": "updated_at",
+  "visible_columns": ["id", "tenant_id", "subject", "status", "resolution_note", "updated_at"],
+  "allowed_write_columns": ["status", "resolution_note"],
+  "semantic_tools": ["support.inspect_ticket", "support.propose_ticket_resolution"],
+  "notes": [
+    "Use a safe view if ticket bodies contain sensitive data.",
+    "Keep status transitions explicit."
+  ],
+  "spec": {
+    "version": 1,
+    "engine": "postgres",
+    "mode": "review",
+    "schema": "public",
+    "table": "support_tickets",
+    "primary_key": "id",
+    "tenant_key": "tenant_id",
+    "conflict_column": "updated_at",
+    "namespace": "support",
+    "object_name": "ticket",
+    "inspect_tool_name": "support.inspect_ticket",
+    "proposal_tool_name": "support.propose_ticket_resolution",
+    "lookup_arg": "ticket_id",
+    "visible_columns": ["id", "tenant_id", "subject", "status", "resolution_note", "updated_at"],
+    "allowed_columns": ["status", "resolution_note"],
+    "patch": {
+      "status": { "from_arg": "next_status" },
+      "resolution_note": { "from_arg": "resolution_note" }
+    },
+    "patch_args": {
+      "next_status": { "type": "string", "required": true, "enum": ["pending_review", "resolved", "needs_human"] },
+      "resolution_note": { "type": "string", "required": true, "max_length": 1000 }
+    },
+    "transition_guards": {
+      "status": {
+        "allowed": {
+          "open": ["pending_review", "needs_human"],
+          "pending_review": ["resolved", "needs_human"]
+        }
+      }
+    },
+    "approval": { "required_role": "support_lead" }
+  }
+}

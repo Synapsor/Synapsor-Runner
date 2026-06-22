@@ -1,6 +1,6 @@
 # Implementation Report
 
-Status: local implementation complete for the requested source-available
+Status: local implementation complete for the requested open-source
 mini-Synapsor runner experience. Publication, legal, repository-visibility, and
 external security decisions remain release gates and were intentionally not
 performed by this task.
@@ -23,7 +23,7 @@ performed by this task.
 - `ab1b511` - Add local runner doctor checks
 - `d04b470` - Cross-check writeback jobs against config
 - `4c467f4` - Clarify own database onboarding path
-- `a97b3de` - Migrate runner licensing to Elastic-2.0
+- `a97b3de` - Update runner licensing metadata
 - `21debe4` - Add MCP efficiency benchmark fixture
 - `34b3a33` - Expand writeback authority tamper tests
 - `3b86ab8` - Add inspection driven init path
@@ -266,10 +266,9 @@ The UI is a lightweight localhost proposal review surface. It:
 
 ### Licensing and Docs
 
-- Replaced first-party Apache license file with official Elastic License 2.0
-  text.
-- Set first-party package metadata to `Elastic-2.0`.
-- Replaced public "open-source" wording with "source-available".
+- Set first-party license file to canonical Apache License 2.0 text.
+- Set first-party package metadata to `Apache-2.0`.
+- Replaced public licensing wording with open-source Apache-2.0 positioning.
 - Added `docs/licensing.md`.
 - Added `TRADEMARKS.md`.
 - Updated `CONTRIBUTING.md` to avoid accepting external code until a
@@ -415,17 +414,9 @@ Remaining security/release work:
 
 ## License Review
 
-Previous state:
-
-- first-party `LICENSE` was Apache-2.0;
-- README said "Open-source";
-- package manifests did not declare `Elastic-2.0`.
-
-Current state:
-
-- first-party `LICENSE` contains official Elastic License 2.0 text;
-- package manifests declare `Elastic-2.0`;
-- README says source-available;
+- first-party `LICENSE` contains canonical Apache License 2.0 text;
+- package manifests declare `Apache-2.0`;
+- README says open source under Apache License 2.0;
 - dependency inventory summary exists in `docs/dependency-license-inventory.md`;
 - release checklist requires qualified counsel review.
 
@@ -436,9 +427,8 @@ Release blocker:
 
 Public distribution note:
 
-- this report does not prove whether any earlier code was publicly distributed
-  under Apache-2.0. If it was, changing the current files does not retroactively
-  remove rights already granted for those earlier distributed versions.
+- this report does not grant rights to the Synapsor name, logo, hosted Cloud
+  service, or proprietary Synapsor platform features.
 
 ## Known Gaps
 

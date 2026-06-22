@@ -1,10 +1,12 @@
 # MCP database risk review
 
-`synapsor mcp audit <target>` performs a static MCP database risk review over an exported tool manifest, a remote MCP `tools/list` endpoint, or a stdio MCP server.
+`npx -y -p @synapsor/runner@alpha synapsor-runner audit <target>` performs a
+static MCP database risk review over an exported tool manifest, a remote MCP
+`tools/list` endpoint, or a stdio MCP server. The `mcp audit` subcommand is also
+available for users who look for the command under the MCP namespace.
 
-From a source checkout, use `corepack pnpm runner mcp audit ...` with the same
-flags. The global `synapsor` command is only needed after installing or linking
-the CLI.
+From a source checkout, use `./bin/synapsor ...` if the global binary is not
+linked yet.
 
 It does not call business tools. It only inspects names, descriptions, input schemas, output schemas, annotations, and examples when those are present.
 
@@ -21,39 +23,39 @@ MCP annotations are treated as hints, not enforcement.
 Human-readable output:
 
 ```bash
-synapsor mcp audit ./tools-list.json
+npx -y -p @synapsor/runner@alpha synapsor-runner audit ./tools-list.json
 ```
 
 Remote `tools/list` endpoint with a bearer token kept in the environment:
 
 ```bash
 SYNAPSOR_MCP_AUDIT_BEARER="..." \
-synapsor mcp audit https://mcp.example.com --json
+npx -y -p @synapsor/runner@alpha synapsor-runner audit https://mcp.example.com --json
 ```
 
 Remote endpoint with a custom bearer-token environment variable:
 
 ```bash
-synapsor mcp audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --json
+npx -y -p @synapsor/runner@alpha synapsor-runner audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --json
 ```
 
 Stdio MCP server:
 
 ```bash
-synapsor mcp audit 'stdio:node ./server.mjs' --timeout-ms 5000
+npx -y -p @synapsor/runner@alpha synapsor-runner audit 'stdio:node ./server.mjs' --timeout-ms 5000
 ```
 
 JSON output:
 
 ```bash
-synapsor mcp audit ./tools-list.json --json
+npx -y -p @synapsor/runner@alpha synapsor-runner audit ./tools-list.json --json
 ```
 
-During local development, the package script can run the same command:
+During local development, the repo-local wrapper can run the same command:
 
 ```bash
-corepack pnpm runner mcp audit ./tools-list.json
-corepack pnpm runner mcp audit ./tools-list.json --json
+./bin/synapsor audit ./tools-list.json
+./bin/synapsor audit ./tools-list.json --json
 ```
 
 ## Supported inputs

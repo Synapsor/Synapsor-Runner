@@ -2,6 +2,7 @@ export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
 export type TrustedContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
 export type CapabilityKind = "read" | "proposal";
+export type ExecutorType = "sql_update" | "http_handler" | "command_handler";
 
 export type ConfigIssue = {
   path: string;
@@ -17,7 +18,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "capabilities", "cloud", "strict"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "cloud", "strict"]);
 const STORAGE_KEYS = new Set(["sqlite_path"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
@@ -28,10 +29,15 @@ const SOURCE_KEYS = new Set([
   "ssl",
 ]);
 const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values"]);
+const CONTEXT_KEYS = TRUSTED_CONTEXT_KEYS;
+const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "timeout_ms", "command_env"]);
+const EXECUTOR_AUTH_KEYS = new Set(["type", "token_env"]);
 const CAPABILITY_KEYS = new Set([
   "name",
   "kind",
   "source",
+  "context",
+  "executor",
   "target",
   "args",
   "lookup",
@@ -130,8 +136,10 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateStorage(input.storage, strict, errors);
   validateCloud(input.cloud, input.mode, strict, errors);
   validateSources(input.sources, input.mode, strict, errors, warnings);
-  validateTrustedContext(input.trusted_context, strict, errors, warnings);
-  validateCapabilities(input.capabilities, input.sources, input.mode, strict, errors, warnings);
+  validateContexts(input.contexts, strict, errors, warnings);
+  validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings);
+  validateExecutors(input.executors, input.mode, strict, errors);
+  validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings);
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
@@ -305,36 +313,144 @@ function validateCloud(value: unknown, mode: unknown, strict: boolean, errors: C
   }
 }
 
-function validateTrustedContext(
+function validateContexts(
   value: unknown,
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
 ): void {
-  if (!isRecord(value)) {
-    errors.push({ path: "$.trusted_context", code: "TRUSTED_CONTEXT_REQUIRED", message: "trusted_context is required." });
+  if (value === undefined) return;
+  if (!isRecord(value) || Object.keys(value).length === 0) {
+    errors.push({ path: "$.contexts", code: "CONTEXTS_NOT_OBJECT", message: "contexts must map context names to trusted context bindings." });
     return;
   }
-  if (strict) checkUnknownKeys(value, TRUSTED_CONTEXT_KEYS, "$.trusted_context", errors);
+  for (const [contextName, context] of Object.entries(value)) {
+    const path = `$.contexts.${contextName}`;
+    if (!isSafeName(contextName)) {
+      errors.push({ path, code: "INVALID_CONTEXT_NAME", message: "Context names must use letters, numbers, underscores, dots, or dashes." });
+    }
+    validateContextObject(context, path, strict, errors, warnings);
+  }
+}
+
+function validateTrustedContext(
+  value: unknown,
+  contexts: unknown,
+  capabilities: unknown,
+  mode: unknown,
+  strict: boolean,
+  errors: ConfigIssue[],
+  warnings: ConfigIssue[],
+): void {
+  if (value === undefined) {
+    if (mode === "cloud") return;
+    const allCapabilitiesHaveContext = Array.isArray(capabilities) &&
+      capabilities.length > 0 &&
+      capabilities.every((capability) => isRecord(capability) && isNonEmptyString(capability.context));
+    if (isRecord(contexts) && allCapabilitiesHaveContext) return;
+    errors.push({ path: "$.trusted_context", code: "TRUSTED_CONTEXT_REQUIRED", message: "trusted_context is required unless every local capability references a named context." });
+    return;
+  }
+  validateContextObject(value, "$.trusted_context", strict, errors, warnings);
+}
+
+function validateContextObject(
+  value: unknown,
+  path: string,
+  strict: boolean,
+  errors: ConfigIssue[],
+  warnings: ConfigIssue[],
+): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "TRUSTED_CONTEXT_NOT_OBJECT", message: "Trusted context config must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, path === "$.trusted_context" ? TRUSTED_CONTEXT_KEYS : CONTEXT_KEYS, path, errors);
   if (!isTrustedContextProvider(value.provider)) {
     errors.push({
-      path: "$.trusted_context.provider",
+      path: `${path}.provider`,
       code: "INVALID_CONTEXT_PROVIDER",
       message: "provider must be static_dev, environment, http_claims, or cloud_session.",
     });
   }
   if (value.provider === "static_dev") {
     warnings.push({
-      path: "$.trusted_context.provider",
+      path: `${path}.provider`,
       code: "STATIC_DEV_CONTEXT",
       message: "static_dev is for local demos only. Do not use it for shared or production deployments.",
     });
   }
 }
 
+function validateExecutors(value: unknown, mode: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value) || Object.keys(value).length === 0) {
+    errors.push({ path: "$.executors", code: "EXECUTORS_NOT_OBJECT", message: "executors must map executor names to executor config objects." });
+    return;
+  }
+  for (const [executorName, executor] of Object.entries(value)) {
+    const path = `$.executors.${executorName}`;
+    if (!isSafeName(executorName)) {
+      errors.push({ path, code: "INVALID_EXECUTOR_NAME", message: "Executor names must use letters, numbers, underscores, dots, or dashes." });
+    }
+    if (!isRecord(executor)) {
+      errors.push({ path, code: "EXECUTOR_NOT_OBJECT", message: "Executor config must be an object." });
+      continue;
+    }
+    if (strict) checkUnknownKeys(executor, EXECUTOR_KEYS, path, errors);
+    if (!isExecutorType(executor.type)) {
+      errors.push({ path: `${path}.type`, code: "INVALID_EXECUTOR_TYPE", message: "executor type must be sql_update, http_handler, or command_handler." });
+      continue;
+    }
+    if (executor.type === "sql_update") {
+      continue;
+    }
+    if (executor.type === "http_handler") {
+      if (!isEnvName(executor.url_env)) {
+        errors.push({ path: `${path}.url_env`, code: "HANDLER_URL_ENV_REQUIRED", message: "http_handler.url_env must name the environment variable containing the handler URL." });
+      }
+      if (executor.method !== undefined && !["POST", "PUT", "PATCH"].includes(String(executor.method))) {
+        errors.push({ path: `${path}.method`, code: "INVALID_HANDLER_METHOD", message: "http_handler.method must be POST, PUT, or PATCH." });
+      }
+      validateExecutorAuth(executor.auth, `${path}.auth`, strict, errors);
+      if (executor.timeout_ms !== undefined && !isPositiveInteger(executor.timeout_ms)) {
+        errors.push({ path: `${path}.timeout_ms`, code: "INVALID_HANDLER_TIMEOUT", message: "http_handler.timeout_ms must be a positive integer." });
+      }
+    }
+    if (executor.type === "command_handler") {
+      if (!isEnvName(executor.command_env)) {
+        errors.push({ path: `${path}.command_env`, code: "COMMAND_ENV_REQUIRED", message: "command_handler.command_env must name the environment variable containing the executable path." });
+      }
+      if (executor.timeout_ms !== undefined && !isPositiveInteger(executor.timeout_ms)) {
+        errors.push({ path: `${path}.timeout_ms`, code: "INVALID_HANDLER_TIMEOUT", message: "command_handler.timeout_ms must be a positive integer." });
+      }
+    }
+    if (mode === "read_only") {
+      errors.push({ path, code: "EXECUTOR_INVALID_IN_READ_ONLY", message: "writeback executors are only meaningful outside read_only mode." });
+    }
+  }
+}
+
+function validateExecutorAuth(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "EXECUTOR_AUTH_NOT_OBJECT", message: "executor auth must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, EXECUTOR_AUTH_KEYS, path, errors);
+  if (value.type !== "bearer_env") {
+    errors.push({ path: `${path}.type`, code: "INVALID_EXECUTOR_AUTH", message: "Only bearer_env executor auth is supported in v0.2." });
+  }
+  if (!isEnvName(value.token_env)) {
+    errors.push({ path: `${path}.token_env`, code: "EXECUTOR_TOKEN_ENV_REQUIRED", message: "bearer_env auth requires token_env." });
+  }
+}
+
 function validateCapabilities(
   value: unknown,
   sources: unknown,
+  contexts: unknown,
+  executors: unknown,
   mode: unknown,
   strict: boolean,
   errors: ConfigIssue[],
@@ -346,13 +462,17 @@ function validateCapabilities(
     return;
   }
   const sourceNames = isRecord(sources) ? new Set(Object.keys(sources)) : new Set<string>();
-  value.forEach((capability, index) => validateCapability(capability, index, sourceNames, strict, errors, warnings));
+  const contextNames = isRecord(contexts) ? new Set(Object.keys(contexts)) : new Set<string>();
+  const executorNames = isRecord(executors) ? new Set(Object.keys(executors)) : new Set<string>();
+  value.forEach((capability, index) => validateCapability(capability, index, sourceNames, contextNames, executorNames, strict, errors, warnings));
 }
 
 function validateCapability(
   value: unknown,
   index: number,
   sourceNames: Set<string>,
+  contextNames: Set<string>,
+  executorNames: Set<string>,
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
@@ -371,6 +491,16 @@ function validateCapability(
   }
   if (!isNonEmptyString(value.source) || !sourceNames.has(value.source)) {
     errors.push({ path: `${path}.source`, code: "UNKNOWN_SOURCE", message: "Capability source must reference a configured source." });
+  }
+  if (value.context !== undefined && (!isNonEmptyString(value.context) || !contextNames.has(value.context))) {
+    errors.push({ path: `${path}.context`, code: "UNKNOWN_CONTEXT", message: "Capability context must reference a configured named context." });
+  }
+  if (value.executor !== undefined) {
+    if (!isNonEmptyString(value.executor)) {
+      errors.push({ path: `${path}.executor`, code: "INVALID_EXECUTOR_REFERENCE", message: "executor must name a configured executor." });
+    } else if (value.executor !== "sql_update" && !executorNames.has(value.executor)) {
+      errors.push({ path: `${path}.executor`, code: "UNKNOWN_EXECUTOR", message: "Capability executor must be sql_update or reference a configured executor." });
+    }
   }
   validateTarget(value.target, `${path}.target`, strict, errors, warnings);
   validateArgs(value.args, `${path}.args`, strict, errors);
@@ -691,6 +821,10 @@ function isTrustedContextProvider(value: unknown): value is TrustedContextProvid
   return value === "static_dev" || value === "environment" || value === "http_claims" || value === "cloud_session";
 }
 
+function isExecutorType(value: unknown): value is ExecutorType {
+  return value === "sql_update" || value === "http_handler" || value === "command_handler";
+}
+
 function isCapabilityKind(value: unknown): value is CapabilityKind {
   return value === "read" || value === "proposal";
 }
@@ -705,6 +839,10 @@ function isEnvName(value: unknown): value is string {
 
 function isSafeIdentifier(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function isSafeName(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(value);
 }
 
 function isQualifiedName(value: unknown): value is string {

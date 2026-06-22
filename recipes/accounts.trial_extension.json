@@ -1,0 +1,42 @@
+{
+  "id": "accounts.trial_extension",
+  "title": "Trial extension",
+  "summary": "Inspect one account and propose a bounded trial extension.",
+  "expected_table_type": "accounts or subscriptions table",
+  "required_columns": ["id", "tenant_id", "trial_ends_at", "extension_reason", "updated_at"],
+  "recommended_primary_key": "id",
+  "recommended_tenant_key": "tenant_id",
+  "recommended_conflict_column": "updated_at",
+  "visible_columns": ["id", "tenant_id", "plan", "trial_ends_at", "extension_reason", "updated_at"],
+  "allowed_write_columns": ["trial_ends_at", "extension_reason"],
+  "semantic_tools": ["accounts.inspect_account", "accounts.propose_trial_extension"],
+  "notes": [
+    "Use a handler executor if trial changes must go through your billing service."
+  ],
+  "spec": {
+    "version": 1,
+    "engine": "postgres",
+    "mode": "review",
+    "schema": "public",
+    "table": "accounts",
+    "primary_key": "id",
+    "tenant_key": "tenant_id",
+    "conflict_column": "updated_at",
+    "namespace": "accounts",
+    "object_name": "account",
+    "inspect_tool_name": "accounts.inspect_account",
+    "proposal_tool_name": "accounts.propose_trial_extension",
+    "lookup_arg": "account_id",
+    "visible_columns": ["id", "tenant_id", "plan", "trial_ends_at", "extension_reason", "updated_at"],
+    "allowed_columns": ["trial_ends_at", "extension_reason"],
+    "patch": {
+      "trial_ends_at": { "from_arg": "trial_ends_at" },
+      "extension_reason": { "from_arg": "reason" }
+    },
+    "patch_args": {
+      "trial_ends_at": { "type": "string", "required": true, "max_length": 64 },
+      "reason": { "type": "string", "required": true, "max_length": 500 }
+    },
+    "approval": { "required_role": "account_admin" }
+  }
+}

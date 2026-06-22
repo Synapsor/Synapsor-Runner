@@ -1,0 +1,46 @@
+{
+  "id": "billing.late_fee_waiver",
+  "title": "Late-fee waiver",
+  "summary": "Inspect one invoice and create a review-required proposal to waive a late fee.",
+  "expected_table_type": "invoice or billing table",
+  "required_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+  "recommended_primary_key": "id",
+  "recommended_tenant_key": "tenant_id",
+  "recommended_conflict_column": "updated_at",
+  "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "status", "updated_at"],
+  "allowed_write_columns": ["late_fee_cents", "waiver_reason"],
+  "semantic_tools": ["billing.inspect_invoice", "billing.propose_late_fee_waiver"],
+  "notes": [
+    "Start against staging.",
+    "Keep the model-facing tool proposal-only.",
+    "Set a business-specific maximum waiver bound before real use."
+  ],
+  "spec": {
+    "version": 1,
+    "engine": "postgres",
+    "mode": "review",
+    "schema": "public",
+    "table": "invoices",
+    "primary_key": "id",
+    "tenant_key": "tenant_id",
+    "conflict_column": "updated_at",
+    "namespace": "billing",
+    "object_name": "invoice",
+    "inspect_tool_name": "billing.inspect_invoice",
+    "proposal_tool_name": "billing.propose_late_fee_waiver",
+    "lookup_arg": "invoice_id",
+    "visible_columns": ["id", "tenant_id", "late_fee_cents", "waiver_reason", "status", "updated_at"],
+    "allowed_columns": ["late_fee_cents", "waiver_reason"],
+    "patch": {
+      "late_fee_cents": { "fixed": 0 },
+      "waiver_reason": { "from_arg": "reason" }
+    },
+    "patch_args": {
+      "reason": { "type": "string", "required": true, "max_length": 500 }
+    },
+    "numeric_bounds": {
+      "late_fee_cents": { "minimum": 0, "maximum": 10000 }
+    },
+    "approval": { "required_role": "billing_lead" }
+  }
+}

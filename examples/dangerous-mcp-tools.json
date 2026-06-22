@@ -1,0 +1,88 @@
+{
+  "tools": [
+    {
+      "name": "execute_sql",
+      "description": "Execute arbitrary SQL against the application database.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sql": { "type": "string" }
+        },
+        "required": ["sql"]
+      }
+    },
+    {
+      "name": "run_query",
+      "description": "Run any query and return database rows.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "table": { "type": "string" },
+          "columns": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "approve_refund",
+      "description": "Approve and issue a customer refund immediately.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refund_id": { "type": "string" },
+          "tenant_id": { "type": "string" },
+          "amount_cents": { "type": "number" }
+        },
+        "required": ["refund_id", "tenant_id", "amount_cents"]
+      }
+    },
+    {
+      "name": "update_customer",
+      "description": "Update a customer record directly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "string" },
+          "tenant_id": { "type": "string" },
+          "column": { "type": "string" },
+          "value": { "type": "string" }
+        },
+        "required": ["customer_id", "tenant_id", "column", "value"]
+      }
+    },
+    {
+      "name": "delete_order",
+      "description": "Delete an order from the database.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "string" },
+          "tenant_id": { "type": "string" }
+        },
+        "required": ["order_id", "tenant_id"]
+      }
+    },
+    {
+      "name": "query_database",
+      "description": "Query arbitrary tables and columns from the database.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "database": { "type": "string" },
+          "schema": { "type": "string" },
+          "table": { "type": "string" },
+          "columns": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "where": { "type": "string" }
+        },
+        "required": ["table"]
+      }
+    }
+  ]
+}

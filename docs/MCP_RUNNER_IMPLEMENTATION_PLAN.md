@@ -2,7 +2,7 @@
 
 Branch: `mcp-commit-safe-runtime`
 
-This plan maps the existing source-available runner repository to the commit-safe database MCP goal. The runner is a local-first MCP and database safety runtime, not a copy of the Synapsor C++ DBMS.
+This plan maps the existing open-source runner repository to the commit-safe database MCP goal. The runner is a local-first MCP and database safety runtime, not a copy of the Synapsor C++ DBMS.
 
 ## Current inventory
 
@@ -153,7 +153,7 @@ This plan maps the existing source-available runner repository to the commit-saf
 
 - Live hosted Cloud-linked E2E still requires a compatible Synapsor Cloud workspace, adapter, and scoped runner token. A local hosted-compatible Cloud-linked smoke now covers the protocol/API lifecycle against a mock Cloud API and real disposable Postgres writeback.
 - `packages/proposal-store` currently uses Node 22 `node:sqlite`, which is still marked experimental by Node. Before a public runner release, either pin/support that runtime explicitly or replace it with a stable SQLite dependency.
-- Release docs present: `LICENSE` is Elastic License 2.0, and `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` exist with project-specific safety guidance.
+- Release docs present: `LICENSE` is Apache License 2.0, and `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` exist with project-specific safety guidance.
 
 ## Verification log
 
@@ -170,9 +170,9 @@ This plan maps the existing source-available runner repository to the commit-saf
 - `corepack pnpm --filter @synapsor-runner/protocol test` passed after adding manifest checksum verification.
 - `corepack pnpm test:mcp-client-configs` passed for `generic-stdio.json`, `claude-desktop.json`, `cursor.json`, and `vscode.json`: each config started stdio, returned semantic billing tools, and exposed no raw SQL/approval/commit tool.
 - `corepack pnpm test` passed after adding the MCP client config verifier script: 9 test files, 47 tests.
-- `corepack pnpm --filter @synapsor-runner/runner test` passed after enriching local approval display: 1 test file, 4 tests.
+- `corepack pnpm --filter ./apps/runner test` passed after enriching local approval display: 1 test file, 4 tests.
 - `corepack pnpm test` passed after enriching local approval display: 9 test files, 47 tests.
-- `corepack pnpm --filter @synapsor-runner/runner test` passed after adding local `apply --store` receipt recording and replay assertions: 1 test file, 4 tests.
+- `corepack pnpm --filter ./apps/runner test` passed after adding local `apply --store` receipt recording and replay assertions: 1 test file, 4 tests.
 - `corepack pnpm test` passed after adding local `apply --store` receipt recording: 9 test files, 47 tests.
 - `corepack pnpm test:mcp-local` passed after recording apply/conflict receipts into replay for Postgres billing, Postgres support, and MySQL orders.
 - `corepack pnpm demo:local` passed after receipt/replay updates: the public one-command demo ran disposable Postgres billing, Postgres support, and MySQL orders MCP scenarios, proved guarded writeback/idempotency/stale-row conflict, and tore down containers/volumes/temp demo files.
@@ -180,8 +180,8 @@ This plan maps the existing source-available runner repository to the commit-saf
 - `corepack pnpm test:mcp-local` passed after disallowed-column tamper proof across Postgres billing, Postgres support, and MySQL orders.
 - `./scripts/demo-docker.sh` passed as the exact Docker-only first-run path: built the local runner image, ran the stdio MCP proof inside Docker, started disposable Postgres/MySQL fixtures, proved source unchanged before approval, guarded writeback, idempotent retry, disallowed-column rejection, stale-row conflict, and teardown. No demo containers or generated `.pnpm-store` cache remain.
 - `corepack pnpm test:mcp-cloud-linked` passed after adding the hosted-compatible Cloud-linked smoke with mock Cloud API plus real guarded Postgres writeback and terminal receipt submission.
-- `corepack pnpm --filter @synapsor-runner/runner test` passed after wiring `cloud connect` runner registration/heartbeat: 1 test file, 5 tests.
+- `corepack pnpm --filter ./apps/runner test` passed after wiring `cloud connect` runner registration/heartbeat: 1 test file, 5 tests.
 - `corepack pnpm --filter @synapsor-runner/control-plane-client test` passed after the same change: 1 test file, 3 tests.
 - `corepack pnpm test` passed after `cloud connect` registration/heartbeat docs and tests: 9 test files, 48 tests.
-- `corepack pnpm --filter @synapsor-runner/config test`, `corepack pnpm --filter @synapsor-runner/mcp-server test`, and `corepack pnpm --filter @synapsor-runner/runner test` passed after allowing the generated Cloud config registration fields (`runner_id`, `runner_version`, `project_id`, `engines`, `capabilities`) in strict config validation.
+- `corepack pnpm --filter @synapsor-runner/config test`, `corepack pnpm --filter @synapsor-runner/mcp-server test`, and `corepack pnpm --filter ./apps/runner test` passed after allowing the generated Cloud config registration fields (`runner_id`, `runner_version`, `project_id`, `engines`, `capabilities`) in strict config validation.
 - `corepack pnpm test` passed after the same strict Cloud config fix: 9 test files, 48 tests.

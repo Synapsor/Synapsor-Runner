@@ -48,6 +48,12 @@ outside the model-facing MCP server and verifies:
 
 If any authority check cannot be verified, the write fails closed.
 
+When a capability uses an `http_handler` or `command_handler` executor, the
+same approval boundary applies. The runner sends a structured proposal/job
+payload to the configured handler after approval. Handler URLs, commands, bearer
+tokens, database URLs, and write credentials come from environment variables and
+are not exposed to MCP tools.
+
 Writeback jobs and change sets also reject path-traversal or SQL-fragment-like
 database identifiers such as `../private`, `id/../../tenant_id`, or
 `status; DROP TABLE tickets` before adapter execution. Local CLI file paths
@@ -59,6 +65,6 @@ approve/reject actions. It does not expose raw SQL, database URLs, write
 credentials, approval tools, commit tools, or controls that widen reviewed
 tables/columns.
 
-Synapsor Runner v0.1 supports guarded single-row `UPDATE` writebacks only. It
-does not support arbitrary SQL, DDL, `INSERT`, `DELETE`, `UPSERT`, or multi-row
-updates.
+Synapsor Runner supports reviewed single-row business actions only in the
+current alpha. It does not support arbitrary SQL, DDL, `INSERT`, `DELETE`,
+`UPSERT`, or multi-row updates.

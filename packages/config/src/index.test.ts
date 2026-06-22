@@ -130,6 +130,57 @@ describe("runner capability config validation", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("accepts named trusted contexts and rejects missing context references", () => {
+    const config = mutableConfig();
+    delete config.trusted_context;
+    config.contexts = {
+      local_support_operator: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+    };
+    for (const capability of config.capabilities) {
+      capability.context = "local_support_operator";
+    }
+    const accepted = validateRunnerCapabilityConfig(config);
+    expect(accepted.ok).toBe(true);
+    expect(accepted.errors).toEqual([]);
+
+    config.capabilities[0].context = "missing_context";
+    const rejected = validateRunnerCapabilityConfig(config);
+    expect(rejected.ok).toBe(false);
+    expect(rejected.errors.map((error) => error.code)).toContain("UNKNOWN_CONTEXT");
+  });
+
+  it("accepts app/API handler executors without inline handler secrets", () => {
+    const config = mutableConfig();
+    delete config.sources.app_postgres.write_url_env;
+    config.executors = {
+      billing_api: {
+        type: "http_handler",
+        url_env: "SYNAPSOR_BILLING_HANDLER_URL",
+        method: "POST",
+        auth: {
+          type: "bearer_env",
+          token_env: "SYNAPSOR_BILLING_HANDLER_TOKEN",
+        },
+        timeout_ms: 5000,
+      },
+    };
+    config.capabilities[1].executor = "billing_api";
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(config)).not.toMatch(/handler-secret|https:\/\/internal-with-token|postgres(?:ql)?:\/\/|mysql:\/\//i);
+
+    config.capabilities[1].executor = "missing_executor";
+    const rejected = validateRunnerCapabilityConfig(config);
+    expect(rejected.ok).toBe(false);
+    expect(rejected.errors.map((error) => error.code)).toContain("UNKNOWN_EXECUTOR");
+  });
+
   it("rejects invalid proposal guard templates", () => {
     const config = mutableConfig();
     config.capabilities[1].numeric_bounds = {
@@ -176,7 +227,7 @@ describe("runner capability config validation", () => {
         base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
         runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
         runner_id: "synapsor_runner_local",
-        runner_version: "0.1.0-alpha.0",
+        runner_version: "0.1.0-alpha.1",
         project_id: "token_scope",
         adapter_id: "mcp.billing",
         source_id: "src_pg_acme",

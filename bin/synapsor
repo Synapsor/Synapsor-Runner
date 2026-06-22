@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export NODE_NO_WARNINGS="${NODE_NO_WARNINGS:-1}"
+
+if [[ -f "$ROOT/apps/runner/src/cli.ts" && -d "$ROOT/node_modules" ]]; then
+  exec corepack pnpm --dir "$ROOT" exec tsx "$ROOT/apps/runner/src/cli.ts" "$@"
+fi
+
+exec node "$ROOT/apps/runner/dist/cli.js" "$@"

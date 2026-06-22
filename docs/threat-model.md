@@ -22,4 +22,4 @@ Synapsor Runner is the local trusted writeback boundary. The write credential st
 
 ## Limitations
 
-v0.1 does not support arbitrary SQL, inserts, deletes, DDL, stored procedures, multi-row updates, cross-database transactions, automatic schema changes, or a self-hosted Synapsor control plane.
+The current alpha does not support arbitrary SQL, inserts, deletes, DDL, stored procedures, multi-row updates, cross-database transactions, automatic schema changes, or a self-hosted Synapsor control plane.

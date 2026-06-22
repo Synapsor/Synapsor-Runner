@@ -79,11 +79,52 @@ export type StoredEvidenceBundle = {
   created_at: string;
 };
 
+export type StoredShadowHumanAction = {
+  action_id: number;
+  proposal_id: string;
+  actor: string;
+  patch: Record<string, unknown>;
+  notes?: string;
+  created_at: string;
+};
+
+export type ShadowComparison = {
+  proposal_id: string;
+  status: "exact_match" | "partial_match" | "mismatch" | "no_human_action";
+  agent_patch: Record<string, unknown>;
+  human_patch?: Record<string, unknown>;
+  matching_columns: string[];
+  differing_columns: string[];
+  missing_from_human: string[];
+  extra_human_columns: string[];
+  notes?: string;
+  compared_at: string;
+};
+
+export type ShadowReport = {
+  total_shadow_proposals: number;
+  with_human_action: number;
+  exact_matches: number;
+  partial_matches: number;
+  mismatches: number;
+  no_human_action: number;
+  comparisons: ShadowComparison[];
+};
+
 export type CreateWritebackJobOptions = {
   project_id?: string;
   runner_id?: string;
   lease_seconds?: number;
   lease_id?: string;
+};
+
+export type RecordHandlerWritebackJobInput = {
+  writeback_job_id: string;
+  proposal_id: string;
+  proposal_hash: string;
+  runner_id: string;
+  executor: string;
+  request: Record<string, unknown>;
 };
 
 export class ProposalStoreError extends Error {
@@ -230,6 +271,16 @@ export class ProposalStore {
         FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
       );
 
+      CREATE TABLE IF NOT EXISTS shadow_human_actions (
+        action_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proposal_id TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        patch_json TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
       CREATE TABLE IF NOT EXISTS runner_state (
         key TEXT PRIMARY KEY,
         value_json TEXT NOT NULL,
@@ -240,6 +291,7 @@ export class ProposalStore {
       CREATE INDEX IF NOT EXISTS idx_query_audit_proposal_id ON query_audit(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_writeback_receipts_proposal_id ON writeback_receipts(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_replay_records_proposal_id ON replay_records(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_shadow_human_actions_proposal_id ON shadow_human_actions(proposal_id);
 
       INSERT OR IGNORE INTO proposal_store_schema(version, applied_at)
       VALUES (1, datetime('now'));
@@ -482,6 +534,51 @@ export class ProposalStore {
     return job;
   }
 
+  recordHandlerWritebackJob(input: RecordHandlerWritebackJobInput): void {
+    const proposal = this.requireProposal(input.proposal_id);
+    assertWritebackAllowed(proposal, "recorded with a handler writeback job");
+    assertProposalIdentity(proposal, input.proposal_hash, proposal.proposal_version);
+    assertNoSecretMaterial(input.request, "handler_writeback_job");
+    const now = new Date().toISOString();
+    this.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO writeback_jobs (
+          writeback_job_id,
+          proposal_id,
+          proposal_hash,
+          status,
+          job_json,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(writeback_job_id) DO UPDATE SET
+          status = excluded.status,
+          job_json = excluded.job_json,
+          updated_at = excluded.updated_at
+      `).run(
+        input.writeback_job_id,
+        input.proposal_id,
+        input.proposal_hash,
+        "pending_worker",
+        JSON.stringify({
+          schema_version: "synapsor.handler-writeback.v1",
+          writeback_job_id: input.writeback_job_id,
+          proposal_id: input.proposal_id,
+          proposal_hash: input.proposal_hash,
+          runner_id: input.runner_id,
+          executor: input.executor,
+          request: input.request,
+        }),
+        now,
+        now,
+      );
+      this.appendEvent(input.proposal_id, "handler_writeback_job_recorded", input.runner_id, {
+        writeback_job_id: input.writeback_job_id,
+        executor: input.executor,
+      });
+    });
+  }
+
   createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 {
     const proposal = this.requireProposal(proposalId);
     assertWritebackAllowed(proposal, "converted into a writeback job");
@@ -690,6 +787,63 @@ export class ProposalStore {
     const row = this.db.prepare("SELECT value_json FROM runner_state WHERE key = ?").get(key);
     if (!isRecord(row)) return undefined;
     return JSON.parse(String(row.value_json)) as Record<string, unknown>;
+  }
+
+  recordShadowHumanAction(
+    proposalId: string,
+    input: { actor: string; patch: Record<string, unknown>; notes?: string },
+  ): StoredShadowHumanAction {
+    const proposal = this.requireProposal(proposalId);
+    if (proposal.change_set.mode !== "shadow") {
+      throw new ProposalStoreError("NOT_SHADOW_PROPOSAL", `proposal ${proposalId} is not a shadow proposal`);
+    }
+    assertNoSecretMaterial(input.patch, "shadow_human_action.patch");
+    const now = new Date().toISOString();
+    let actionId = 0;
+    this.transaction(() => {
+      const result = this.db.prepare(`
+        INSERT INTO shadow_human_actions (proposal_id, actor, patch_json, notes, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(proposalId, input.actor, JSON.stringify(input.patch), input.notes ?? null, now);
+      actionId = Number(result.lastInsertRowid);
+      this.appendEvent(proposalId, "shadow_human_action_recorded", input.actor, {
+        action_id: actionId,
+        patch_columns: Object.keys(input.patch),
+        notes: input.notes ?? null,
+      });
+    });
+    const action = this.shadowHumanActions(proposalId).find((item) => item.action_id === actionId);
+    if (!action) throw new ProposalStoreError("SHADOW_ACTION_CREATE_FAILED", `shadow action for ${proposalId} was not persisted`);
+    return action;
+  }
+
+  shadowHumanActions(proposalId: string): StoredShadowHumanAction[] {
+    const rows = this.db.prepare("SELECT * FROM shadow_human_actions WHERE proposal_id = ? ORDER BY action_id ASC").all(proposalId);
+    return rows.map(rowToShadowHumanAction).filter((action): action is StoredShadowHumanAction => action !== undefined);
+  }
+
+  compareShadowProposal(proposalId: string): ShadowComparison {
+    const proposal = this.requireProposal(proposalId);
+    if (proposal.change_set.mode !== "shadow") {
+      throw new ProposalStoreError("NOT_SHADOW_PROPOSAL", `proposal ${proposalId} is not a shadow proposal`);
+    }
+    const actions = this.shadowHumanActions(proposalId);
+    const latest = actions.at(-1);
+    return comparePatches(proposalId, proposal.change_set.patch, latest);
+  }
+
+  shadowReport(): ShadowReport {
+    const proposals = this.listProposals().filter((proposal) => proposal.change_set.mode === "shadow");
+    const comparisons = proposals.map((proposal) => this.compareShadowProposal(proposal.proposal_id));
+    return {
+      total_shadow_proposals: proposals.length,
+      with_human_action: comparisons.filter((comparison) => comparison.status !== "no_human_action").length,
+      exact_matches: comparisons.filter((comparison) => comparison.status === "exact_match").length,
+      partial_matches: comparisons.filter((comparison) => comparison.status === "partial_match").length,
+      mismatches: comparisons.filter((comparison) => comparison.status === "mismatch").length,
+      no_human_action: comparisons.filter((comparison) => comparison.status === "no_human_action").length,
+      comparisons,
+    };
   }
 
   private requireProposal(proposalId: string): StoredProposal {
@@ -940,6 +1094,59 @@ function rowToQueryAudit(row: unknown): Record<string, unknown> | undefined {
     row_count: Number(row.row_count),
     payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
     created_at: String(row.created_at),
+  };
+}
+
+function rowToShadowHumanAction(row: unknown): StoredShadowHumanAction | undefined {
+  if (!isRecord(row)) return undefined;
+  return {
+    action_id: Number(row.action_id),
+    proposal_id: String(row.proposal_id),
+    actor: String(row.actor),
+    patch: JSON.parse(String(row.patch_json)) as Record<string, unknown>,
+    notes: row.notes == null ? undefined : String(row.notes),
+    created_at: String(row.created_at),
+  };
+}
+
+function comparePatches(
+  proposalId: string,
+  agentPatch: Record<string, unknown>,
+  humanAction?: StoredShadowHumanAction,
+): ShadowComparison {
+  const comparedAt = new Date().toISOString();
+  if (!humanAction) {
+    return {
+      proposal_id: proposalId,
+      status: "no_human_action",
+      agent_patch: agentPatch,
+      matching_columns: [],
+      differing_columns: [],
+      missing_from_human: Object.keys(agentPatch),
+      extra_human_columns: [],
+      compared_at: comparedAt,
+    };
+  }
+  const humanPatch = humanAction.patch;
+  const agentColumns = Object.keys(agentPatch);
+  const humanColumns = Object.keys(humanPatch);
+  const matchingColumns = agentColumns.filter((column) => Object.is(agentPatch[column], humanPatch[column]));
+  const differingColumns = agentColumns.filter((column) => column in humanPatch && !Object.is(agentPatch[column], humanPatch[column]));
+  const missingFromHuman = agentColumns.filter((column) => !(column in humanPatch));
+  const extraHumanColumns = humanColumns.filter((column) => !(column in agentPatch));
+  const exact = matchingColumns.length === agentColumns.length && differingColumns.length === 0 && missingFromHuman.length === 0 && extraHumanColumns.length === 0;
+  const partial = !exact && matchingColumns.length > 0;
+  return {
+    proposal_id: proposalId,
+    status: exact ? "exact_match" : partial ? "partial_match" : "mismatch",
+    agent_patch: agentPatch,
+    human_patch: humanPatch,
+    matching_columns: matchingColumns,
+    differing_columns: differingColumns,
+    missing_from_human: missingFromHuman,
+    extra_human_columns: extraHumanColumns,
+    notes: humanAction.notes,
+    compared_at: comparedAt,
   };
 }
 

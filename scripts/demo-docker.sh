@@ -5,6 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="${SYNAPSOR_RUNNER_DEMO_IMAGE:-synapsor-runner-local-demo:latest}"
 DOCKER_SOCK="${DOCKER_HOST_SOCKET:-/var/run/docker.sock}"
 
+cleanup_generated_artifacts() {
+  "$ROOT/scripts/clean-local-generated.sh" --quiet >/dev/null 2>&1 || true
+}
+
 echo "Synapsor Runner Docker-only local MCP demo"
 echo
 echo "This path requires Docker only. It runs the TypeScript runner inside a"
@@ -31,6 +35,7 @@ fi
 echo "Building local demo runner image: $IMAGE"
 docker build -f "$ROOT/Dockerfile.local-demo" -t "$IMAGE" "$ROOT"
 echo
+trap cleanup_generated_artifacts EXIT
 
 node_module_mounts=(
   --mount "type=volume,destination=$ROOT/node_modules"
@@ -60,13 +65,15 @@ docker run --rm \
   -e CI=1 \
   -e HOME=/tmp/synapsor-demo-home \
   -e COREPACK_HOME=/tmp/synapsor-demo-corepack \
+  -e PNPM_HOME=/tmp/synapsor-demo-pnpm-home \
+  -e SYNAPSOR_RUNNER_TMP_ROOT=/tmp/synapsor-runner-local-demo \
   -e SYNAPSOR_LOCAL_DB_HOST=host.docker.internal \
   -e XDG_CACHE_HOME=/tmp/synapsor-demo-cache \
   -v "$DOCKER_SOCK:/var/run/docker.sock" \
   -v "$ROOT:$ROOT" \
   -w "$ROOT" \
   "$IMAGE" \
-  'mkdir -p "$HOME" "$COREPACK_HOME" "$XDG_CACHE_HOME" && corepack pnpm install --frozen-lockfile && corepack pnpm test:mcp-local'
+  'mkdir -p "$HOME" "$COREPACK_HOME" "$PNPM_HOME" "$XDG_CACHE_HOME" "$SYNAPSOR_RUNNER_TMP_ROOT" /tmp/synapsor-demo-pnpm-store && corepack pnpm --store-dir=/tmp/synapsor-demo-pnpm-store install --frozen-lockfile && corepack pnpm run test:mcp-local'
 
 echo
 echo "Docker-only local demo complete."

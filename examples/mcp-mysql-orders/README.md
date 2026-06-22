@@ -27,7 +27,7 @@ export ORDERS_MYSQL_WRITE_URL="mysql://synapsor_writer:synapsor_writer_password@
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_orders_agent"
 
-corepack pnpm runner mcp serve \
+npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve \
   --config examples/mcp-mysql-orders/synapsor.runner.json \
   --store ./tmp/mcp-mysql-orders/local.db
 ```

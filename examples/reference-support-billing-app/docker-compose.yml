@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: synapsor_runner_reference_support_billing
+    environment:
+      POSTGRES_DB: synapsor_reference_support_billing
+      POSTGRES_USER: synapsor_admin
+      POSTGRES_PASSWORD: synapsor_admin_password
+    ports:
+      - "55435:5432"
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+      - ./seed.sql:/docker-entrypoint-initdb.d/002_seed.sql:ro

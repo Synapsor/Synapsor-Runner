@@ -1,25 +1,24 @@
 # Schema Inspection
 
-`synapsor inspect` reads database metadata so you can choose a narrow reviewed
-capability without writing an entire runner config by hand.
+`synapsor inspect` reads database metadata so you can choose a
+narrow reviewed capability without writing an entire runner config by hand.
 
-From a source checkout, replace `synapsor inspect` with
-`corepack pnpm runner inspect`. The global `synapsor` command is only needed
-after installing or linking the CLI.
+Use the public `synapsor ...` runner CLI. From a source checkout, use
+`./bin/synapsor ...` if the global binary is not linked yet.
 
 ```bash
-synapsor inspect \
+npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
   --engine auto \
-  --database-url-env SYNAPSOR_DATABASE_READ_URL \
+  --from-env SYNAPSOR_DATABASE_READ_URL \
   --schema public
 ```
 
 JSON output:
 
 ```bash
-synapsor inspect \
+npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
   --engine mysql \
-  --database-url-env SYNAPSOR_DATABASE_READ_URL \
+  --from-env SYNAPSOR_DATABASE_READ_URL \
   --schema app \
   --json
 ```
@@ -85,5 +84,5 @@ Binary/blob/vector columns are excluded from generated default visible columns.
 Use the inspection result to create `onboarding-selection.json`, then run:
 
 ```bash
-synapsor init --spec onboarding-selection.json --non-interactive
+npx -y -p @synapsor/runner@alpha synapsor-runner init --spec onboarding-selection.json --non-interactive
 ```

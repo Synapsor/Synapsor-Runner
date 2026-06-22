@@ -2,9 +2,9 @@
 
 Cloud mode connects the local Synapsor Runner to Synapsor Cloud without sending database credentials to Cloud.
 
-Command examples use `synapsor ...` for readability. From a source checkout,
-run the same CLI as `corepack pnpm runner ...`; the packaged `synapsor`
-executable is only needed after installing or linking the CLI.
+Command examples use the public `synapsor ...` runner CLI. From a source
+checkout, use `./bin/synapsor ...` if the global binary is not linked yet. Do
+not use the separate hosted Synapsor Cloud CLI for these local runner commands.
 
 ```text
 MCP client
@@ -53,10 +53,10 @@ Cloud mode uses the same MCP server command with a `mode: "cloud"` config:
     "base_url_env": "SYNAPSOR_CLOUD_BASE_URL",
     "runner_token_env": "SYNAPSOR_RUNNER_TOKEN",
     "runner_id": "synapsor_runner_local",
-    "runner_version": "0.1.0-alpha.0",
+    "runner_version": "0.1.0-alpha.1",
     "project_id": "token_scope",
-    "adapter_id": "mcp.billing",
-    "source_id": "src_pg_acme",
+    "adapter_id": "mcp.your_adapter",
+    "source_id": "src_replace_me",
     "engines": ["postgres"],
     "capabilities": ["adapter:read", "adapter:invoke", "writeback:claim", "writeback:complete"],
     "session": {
@@ -71,7 +71,7 @@ Run:
 ```bash
 SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai" \
 SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
-synapsor mcp serve --config ./synapsor.cloud.json
+npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve --config ./synapsor.cloud.json
 ```
 
 Validate the Cloud runner token and source scope before serving tools:
@@ -79,7 +79,7 @@ Validate the Cloud runner token and source scope before serving tools:
 ```bash
 SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai" \
 SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
-synapsor cloud connect --config ./synapsor.cloud.json
+npx -y -p @synapsor/runner@alpha synapsor-runner cloud connect --config ./synapsor.cloud.json
 ```
 
 `cloud connect` verifies the runner token, registers the runner id/version, sends engine/capability/source metadata, and posts an initial heartbeat. It does not send Postgres/MySQL URLs, passwords, write credentials, prompts, or table data. The `project_id` field may be the literal `token_scope` because Synapsor Cloud validates the real project/source from the scoped runner token.
@@ -99,9 +99,9 @@ scoped runner token, verify the hosted adapter/tool path:
 SYNAPSOR_CLOUD_BASE_URL="https://synapsor.ai" \
 SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
 SYNAPSOR_SOURCE_ID="src_..." \
-SYNAPSOR_ADAPTER_ID="mcp.billing" \
-SYNAPSOR_MCP_TOOL_NAME="billing.propose_late_fee_waiver" \
-SYNAPSOR_MCP_TOOL_INPUT_JSON='{"invoice_id":"INV-3001","reason":"support-approved waiver"}' \
+SYNAPSOR_ADAPTER_ID="mcp.your_adapter" \
+SYNAPSOR_MCP_TOOL_NAME="your_namespace.propose_your_object_update" \
+SYNAPSOR_MCP_TOOL_INPUT_JSON='{"object_id":"replace-me","reason":"reviewed change"}' \
 corepack pnpm verify:hosted-cloud-linked
 ```
 

@@ -249,6 +249,52 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("resolves explicit named contexts before global trusted_context", async () => {
+    const namedContextConfig = structuredClone(config);
+    namedContextConfig.trusted_context = {
+      provider: "static_dev",
+      values: {
+        tenant_id: "wrong_global_tenant",
+        principal: "wrong_global_principal",
+      },
+    };
+    namedContextConfig.contexts = {
+      local_support_operator: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "TEST_NAMED_TENANT",
+          principal_env: "TEST_NAMED_PRINCIPAL",
+        },
+      },
+    };
+    for (const capability of namedContextConfig.capabilities ?? []) {
+      capability.context = "local_support_operator";
+    }
+    const runtime = createMcpRuntime(namedContextConfig, {
+      env: {
+        TEST_NAMED_TENANT: "acme_named",
+        TEST_NAMED_PRINCIPAL: "named_operator",
+      },
+      readRow: async (input) => ({
+        row: {
+          ...fixtureRow,
+          tenant_id: input.context.tenant_id,
+        },
+        rowCount: 1,
+      }),
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result.trusted_context).toMatchObject({
+        tenant_id: "acme_named",
+        principal: "named_operator",
+        provenance: "environment",
+      });
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("delegates cloud mode tool calls to Synapsor Cloud adapter APIs", async () => {
     const calls: Array<{ adapterId: string; toolName: string; input: Record<string, unknown>; session?: Record<string, unknown> }> = [];
     const runtime = createMcpRuntime({

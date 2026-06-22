@@ -6,6 +6,9 @@ import { Client } from "../packages/mcp-server/node_modules/@modelcontextprotoco
 import { StdioClientTransport } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const tmpRoot = process.env.SYNAPSOR_RUNNER_TMP_ROOT
+  ? path.resolve(process.env.SYNAPSOR_RUNNER_TMP_ROOT)
+  : path.join(root, "tmp");
 const localDbHost = process.env.SYNAPSOR_LOCAL_DB_HOST || "localhost";
 const postgresUrl = (port, database, user, password) =>
   `postgresql://${user}:${password}@${localDbHost}:${port}/${database}`;
@@ -19,8 +22,8 @@ const scenarios = [
     engine: "postgres",
     exampleDir: path.join(root, "examples", "mcp-postgres-billing"),
     configPath: path.join(root, "examples", "mcp-postgres-billing", "synapsor.runner.json"),
-    tmpDir: path.join(root, "tmp", "mcp-postgres-billing"),
-    storePath: path.join(root, "tmp", "mcp-postgres-billing", "local.db"),
+    tmpDir: path.join(tmpRoot, "mcp-postgres-billing"),
+    storePath: path.join(tmpRoot, "mcp-postgres-billing", "local.db"),
     container: "synapsor_runner_mcp_postgres_billing",
     dbName: "synapsor_runner_mcp_billing",
     readUrl: postgresUrl(55433, "synapsor_runner_mcp_billing", "synapsor_reader", "synapsor_reader_password"),
@@ -54,8 +57,8 @@ const scenarios = [
     engine: "postgres",
     exampleDir: path.join(root, "examples", "mcp-postgres-support"),
     configPath: path.join(root, "examples", "mcp-postgres-support", "synapsor.runner.json"),
-    tmpDir: path.join(root, "tmp", "mcp-postgres-support"),
-    storePath: path.join(root, "tmp", "mcp-postgres-support", "local.db"),
+    tmpDir: path.join(tmpRoot, "mcp-postgres-support"),
+    storePath: path.join(tmpRoot, "mcp-postgres-support", "local.db"),
     container: "synapsor_runner_mcp_postgres_support",
     dbName: "synapsor_runner_mcp_support",
     readUrl: postgresUrl(55434, "synapsor_runner_mcp_support", "synapsor_reader", "synapsor_reader_password"),
@@ -89,8 +92,8 @@ const scenarios = [
     engine: "mysql",
     exampleDir: path.join(root, "examples", "mcp-mysql-orders"),
     configPath: path.join(root, "examples", "mcp-mysql-orders", "synapsor.runner.json"),
-    tmpDir: path.join(root, "tmp", "mcp-mysql-orders"),
-    storePath: path.join(root, "tmp", "mcp-mysql-orders", "local.db"),
+    tmpDir: path.join(tmpRoot, "mcp-mysql-orders"),
+    storePath: path.join(tmpRoot, "mcp-mysql-orders", "local.db"),
     container: "synapsor_runner_mcp_mysql_orders",
     dbName: "synapsor_runner_mcp_orders",
     readUrl: mysqlUrl(53307, "synapsor_runner_mcp_orders", "synapsor_reader", "synapsor_reader_password"),
@@ -293,7 +296,9 @@ async function exerciseMcpScenario(scenario) {
       const names = tools.tools.map((tool) => tool.name);
       assert(names.includes(scenario.inspectTool), `${scenario.inspectTool} missing`, names);
       assert(names.includes(scenario.proposalTool), `${scenario.proposalTool} missing`, names);
+      console.log("ACCEPT semantic tools present");
       assert(!names.some((name) => /execute_sql|run_query|approve|commit/i.test(name)), "Unsafe or approval/commit tool exposed", names);
+      console.log("ACCEPT execute_sql approval and commit tools absent");
 
       const inspected = structured(await client.callTool({
         name: scenario.inspectTool,
@@ -322,6 +327,7 @@ async function exerciseMcpScenario(scenario) {
       assert(proposed.diff?.[scenario.diffColumn]?.proposed === scenario.expectedProposed, "Proposal diff proposed value wrong", proposed);
       assert(proposed.source_database_mutated === false, "Proposal mutated source", proposed);
       firstProposalId = String(proposed.proposal_id);
+      console.log("ACCEPT proposal created successfully");
 
       const evidence = await client.readResource({ uri: String(proposed.evidence_resource) });
       assert(evidence.contents?.[0]?.text?.includes("external_row"), "Evidence resource did not include external row", evidence);
@@ -329,9 +335,11 @@ async function exerciseMcpScenario(scenario) {
 
     const unchanged = dockerSql(scenario, scenario.unchangedSql);
     assert(unchanged === scenario.expectedUnchanged, "Source database changed before approval", unchanged);
+    console.log("ACCEPT source row unchanged after proposal");
 
     console.log(`== ${scenario.label}: local approval -> generated writeback job -> guarded apply ==`);
     runner(scenario, ["proposals", "approve", firstProposalId, "--store", scenario.storePath, "--actor", "local_reviewer", "--yes"]);
+    console.log("ACCEPT approval happened outside MCP");
     const jobPath = path.join(scenario.tmpDir, "first-job.json");
     runner(scenario, ["proposals", "writeback-job", firstProposalId, "--store", scenario.storePath, "--output", jobPath, "--project", "local", "--runner", "local_runner"]);
     const unsafeJobPath = path.join(scenario.tmpDir, "disallowed-column-job.json");
@@ -346,9 +354,10 @@ async function exerciseMcpScenario(scenario) {
       "Disallowed-column validation did not explain the safety failure",
       { stdout: invalid.stdout, stderr: invalid.stderr },
     );
-    const applied = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--store", scenario.storePath]));
+    const applied = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--config", scenario.configPath, "--store", scenario.storePath]));
     assert(applied.status === "applied" && applied.affected_rows === 1, "Expected guarded apply", applied);
-    const retry = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--store", scenario.storePath]));
+    console.log("ACCEPT guarded writeback applied");
+    const retry = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--config", scenario.configPath, "--store", scenario.storePath]));
     assert(retry.status === "applied" && retry.affected_rows === 0, "Expected idempotent retry", retry);
     const appliedReplayPath = path.join(scenario.tmpDir, "applied-replay.json");
     runner(scenario, ["replay", "export", firstProposalId, "--store", scenario.storePath, "--output", appliedReplayPath]);
@@ -358,6 +367,7 @@ async function exerciseMcpScenario(scenario) {
       "Replay should include applied execution receipt",
       appliedReplay,
     );
+    console.log("ACCEPT replay export contains applied receipt");
 
     console.log(`== ${scenario.label}: stale-row conflict proof ==`);
     dockerSql(scenario, scenario.resetSql);
@@ -376,8 +386,9 @@ async function exerciseMcpScenario(scenario) {
     runner(scenario, ["proposals", "approve", staleProposalId, "--store", scenario.storePath, "--actor", "local_reviewer", "--yes"]);
     const staleJobPath = path.join(scenario.tmpDir, "stale-job.json");
     runner(scenario, ["proposals", "writeback-job", staleProposalId, "--store", scenario.storePath, "--output", staleJobPath, "--project", "local", "--runner", "local_runner"]);
-    const conflict = parseCliJson(runner(scenario, ["apply", "--job", staleJobPath, "--store", scenario.storePath]));
+    const conflict = parseCliJson(runner(scenario, ["apply", "--job", staleJobPath, "--config", scenario.configPath, "--store", scenario.storePath]));
     assert(conflict.status === "conflict" && conflict.error_code === "VERSION_CONFLICT", "Expected stale-row conflict", conflict);
+    console.log("ACCEPT stale-row conflict detected");
     const finalRow = dockerSql(scenario, scenario.finalSql);
     assert(finalRow === scenario.expectedFinal, "Conflict path should not apply write", finalRow);
     const conflictReplayPath = path.join(scenario.tmpDir, "conflict-replay.json");

@@ -20,7 +20,7 @@ describe("control plane client", () => {
     await client.register({
       schema_version: "synapsor.runner-registration.v1",
       runner_id: "runner_1",
-      runner_version: "0.1.0-alpha.0",
+      runner_version: "0.1.0-alpha.1",
       engines: ["postgres"],
       capabilities: ["writeback:claim", "writeback:complete"],
       scope: { project_id: "proj_1", source_ids: ["src_1"] },

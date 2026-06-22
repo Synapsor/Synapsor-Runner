@@ -11,7 +11,7 @@ docker compose up -d
 Dry-run without writing:
 
 ```bash
-corepack pnpm runner apply --job examples/postgres-support/job.approved.json --dry-run
+npx -y -p @synapsor/runner@alpha synapsor-runner apply --job examples/postgres-support/job.approved.json --dry-run
 ```
 
 Apply to the fixture database:
@@ -19,7 +19,7 @@ Apply to the fixture database:
 ```bash
 SYNAPSOR_DATABASE_URL=postgresql://synapsor_writer:synapsor_writer_password@localhost:55432/synapsor_runner_demo \
 SYNAPSOR_DRY_RUN=false \
-corepack pnpm runner apply --job examples/postgres-support/job.approved.json
+npx -y -p @synapsor/runner@alpha synapsor-runner apply --job examples/postgres-support/job.approved.json
 ```
 
 Expected cases to test:
