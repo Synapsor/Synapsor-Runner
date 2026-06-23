@@ -3,6 +3,17 @@
 Synapsor Runner controls a narrow database path for MCP agents. It does not make
 MCP generally secure and it does not solve prompt injection.
 
+## Least-privilege database access
+
+Use a read-only database user, restricted views, row-level security, and staging
+data where appropriate. Synapsor Runner is not a replacement for database
+permissions.
+
+Database permissions protect the connection. Synapsor Runner shapes the
+model-facing interface: reviewed semantic capabilities, trusted context
+binding, evidence, audit, replay, and proposal-first writes instead of
+model-facing commit authority.
+
 The model-facing MCP server exposes reviewed semantic tools such as
 `billing.inspect_invoice` and `billing.propose_late_fee_waiver`.
 

@@ -184,6 +184,26 @@ environment. MCP client config does not include database URLs. Generated tools
 are semantic capabilities, not raw table access. Proposal writeback requires
 review mode, approval outside MCP, and a separate trusted write credential.
 
+## Why Not Just Use A Read-Only Database User?
+
+You should use one.
+
+Synapsor Runner is not a replacement for least-privilege database permissions.
+Start with a read-only user, restricted views, row-level security, and staging
+data where appropriate.
+
+The difference is that database permissions protect the connection. Synapsor
+Runner shapes the model-facing interface.
+
+Instead of exposing `execute_sql`, `query_database`, table names, or
+model-controlled tenant filters, Synapsor exposes reviewed business
+capabilities such as `billing.inspect_invoice` and
+`billing.propose_late_fee_waiver`.
+
+For read-only use cases, that gives you scoped semantic tools, trusted context
+binding, evidence, audit, and replay. When you later need writes, the same
+boundary creates proposals instead of giving the model commit authority.
+
 ## Connect Claude, Cursor, Or Another MCP Client
 
 Generate a local MCP client snippet:
