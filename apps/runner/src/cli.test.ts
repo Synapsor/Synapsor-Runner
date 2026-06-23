@@ -100,19 +100,20 @@ describe("runner cli", () => {
     expect(text).toContain("billing.propose_late_fee_waiver");
     expect(text).toContain("Source DB changed:");
     expect(text).toContain("no");
-    expect(text).toContain("synapsor audit <your-mcp-tools.json>");
+    expect(text).toContain("synapsor audit --example dangerous-db-mcp");
   });
 
-  it("audits the bundled dangerous MCP database tool manifest", async () => {
+  it("audits the built-in dangerous MCP database tool example without a checkout file", async () => {
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
       return true;
     });
 
-    await expect(main(["audit", "examples/dangerous-mcp-tools.json"])).resolves.toBe(0);
+    await expect(main(["audit", "--example", "dangerous-db-mcp"])).resolves.toBe(0);
     const text = output.join("");
     expect(text).toContain("Synapsor MCP database risk review");
+    expect(text).toContain("Target: example:dangerous-db-mcp");
     expect(text).toContain("GENERIC_SQL_TOOL");
     expect(text).toContain("MODEL_CALLABLE_COMMIT_OR_APPROVAL");
     expect(text).toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");

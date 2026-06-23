@@ -196,7 +196,7 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
 
 export function createSynapsorMcpServer(runtime: McpRuntime): McpServer {
   const server = new McpServer(
-    { name: "synapsor-runner", version: "0.1.0-alpha.2" },
+    { name: "synapsor-runner", version: "0.1.0-alpha.3" },
     { capabilities: { tools: {}, resources: {} } },
   );
 

@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Commit-safe MCP runner for Postgres and MySQL agents",
   "license": "Apache-2.0",
   "type": "module",

@@ -20,6 +20,17 @@ MCP annotations are treated as hints, not enforcement.
 
 ## Usage
 
+Built-in database MCP risk example:
+
+```bash
+npx -y -p @synapsor/runner@alpha synapsor audit --example dangerous-db-mcp
+```
+
+This bundled example does not require a source checkout or local examples file.
+It audits a deliberately risky database MCP shape with `execute_sql`,
+`run_query`, model-callable approval/update/delete tools, arbitrary
+table/column inputs, and model-controlled tenant/principal fields.
+
 Human-readable output:
 
 ```bash

@@ -12,10 +12,14 @@ or commit tools.
 ```bash
 npx -y -p @synapsor/runner@alpha synapsor --help
 npx -y -p @synapsor/runner@alpha synapsor demo --quick
+npx -y -p @synapsor/runner@alpha synapsor audit --example dangerous-db-mcp
 ```
 
 `synapsor` is the public command. `synapsor-runner` remains available as a
 backward-compatible alias for earlier alpha commands.
+
+`synapsor demo --quick` is fixture-only and does not require Docker. Use
+`synapsor demo` for the disposable local Postgres-backed demo.
 
 Use it with a local or staging database:
 

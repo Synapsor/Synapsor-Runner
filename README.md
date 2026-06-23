@@ -74,20 +74,15 @@ package or running from this checkout, use:
 synapsor demo
 ```
 
-From a source checkout, you can also use the local wrapper:
-
-```bash
-./bin/synapsor demo
-```
-
 Want the 15-second fixture-only version first?
 
 ```bash
 synapsor demo --quick
 ```
 
-The demo starts a disposable local Postgres app, writes a safe capability
-config, and prints the next commands.
+`synapsor demo --quick` is fixture-only and does not require Docker.
+`synapsor demo` starts the disposable local Postgres-backed demo, writes a safe
+capability config, and prints the next commands.
 
 Run the happy path:
 
@@ -132,11 +127,15 @@ writeback.
 you adopt the full runner.
 
 ```bash
-synapsor audit examples/dangerous-mcp-tools.json
+synapsor audit --example dangerous-db-mcp
 synapsor audit ./synapsor.runner.json
 synapsor audit --mcp-config ./claude_desktop_config.json
 synapsor audit --stdio "node ./my-db-mcp-server.js"
 ```
+
+The built-in example runs without cloning this repository or downloading an
+examples file. File-based audits still work when you have your own exported MCP
+tool manifest.
 
 It looks for patterns such as:
 

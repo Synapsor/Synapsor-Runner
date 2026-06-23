@@ -36,14 +36,14 @@ examples/reference-support-billing-app/scripts/run-demo.sh
 Validate the reviewed contract:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner config validate --config examples/reference-support-billing-app/synapsor.runner.json
-npx -y -p @synapsor/runner@alpha synapsor-runner doctor --config examples/reference-support-billing-app/synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor config validate --config examples/reference-support-billing-app/synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor doctor --config examples/reference-support-billing-app/synapsor.runner.json
 ```
 
 Serve MCP:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve \
+npx -y -p @synapsor/runner@alpha synapsor mcp serve \
   --config examples/reference-support-billing-app/synapsor.runner.json \
   --store ./tmp/reference-support-billing/local.db
 ```
@@ -64,17 +64,17 @@ The model does not receive approval tools, commit tools, write credentials, raw 
 After a proposal exists:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals list --store ./tmp/reference-support-billing/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals approve <proposal_id> --store ./tmp/reference-support-billing/local.db --actor local_reviewer --yes
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals writeback-job <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/job.json
-npx -y -p @synapsor/runner@alpha synapsor-runner apply --job ./tmp/reference-support-billing/job.json --store ./tmp/reference-support-billing/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner replay export <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/replay.json
+npx -y -p @synapsor/runner@alpha synapsor proposals list --store ./tmp/reference-support-billing/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals approve <proposal_id> --store ./tmp/reference-support-billing/local.db --actor local_reviewer --yes
+npx -y -p @synapsor/runner@alpha synapsor proposals writeback-job <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/job.json
+npx -y -p @synapsor/runner@alpha synapsor apply --job ./tmp/reference-support-billing/job.json --store ./tmp/reference-support-billing/local.db
+npx -y -p @synapsor/runner@alpha synapsor replay export <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/replay.json
 ```
 
 To inspect locally in a browser:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner ui \
+npx -y -p @synapsor/runner@alpha synapsor ui \
   --config examples/reference-support-billing-app/synapsor.runner.json \
   --store ./tmp/reference-support-billing/local.db
 ```

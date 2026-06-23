@@ -38,6 +38,95 @@ import { startLocalUiServer } from "./local-ui.js";
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
+
+const dangerousDatabaseMcpAuditExample = {
+  tools: [
+    {
+      name: "execute_sql",
+      description: "Execute arbitrary SQL against the application database.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          sql: { type: "string" },
+        },
+        required: ["sql"],
+      },
+    },
+    {
+      name: "run_query",
+      description: "Run any query and return database rows.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          table: { type: "string" },
+          columns: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "approve_refund",
+      description: "Approve and issue a customer refund immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          refund_id: { type: "string" },
+          tenant_id: { type: "string" },
+          amount_cents: { type: "number" },
+        },
+        required: ["refund_id", "tenant_id", "amount_cents"],
+      },
+    },
+    {
+      name: "update_customer",
+      description: "Update a customer record directly.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          customer_id: { type: "string" },
+          tenant_id: { type: "string" },
+          column: { type: "string" },
+          value: { type: "string" },
+        },
+        required: ["customer_id", "tenant_id", "column", "value"],
+      },
+    },
+    {
+      name: "delete_order",
+      description: "Delete an order from the database.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          order_id: { type: "string" },
+          tenant_id: { type: "string" },
+        },
+        required: ["order_id", "tenant_id"],
+      },
+    },
+    {
+      name: "query_database",
+      description: "Query arbitrary tables and columns from the database.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          database: { type: "string" },
+          schema: { type: "string" },
+          table: { type: "string" },
+          columns: {
+            type: "array",
+            items: { type: "string" },
+          },
+          where: { type: "string" },
+        },
+        required: ["table"],
+      },
+    },
+  ],
+};
 const defaultConfigPath = "synapsor.runner.json";
 const defaultStorePath = "./.synapsor/local.db";
 const referenceDemoDir = "examples/reference-support-billing-app";
@@ -2048,7 +2137,7 @@ async function cloudConnect(args: string[]): Promise<number> {
     return 1;
   }
   const runnerId = String(parsed.cloud.runner_id || process.env.SYNAPSOR_RUNNER_ID || "synapsor_runner_local").trim();
-  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0-alpha.2").trim();
+  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0-alpha.3").trim();
   const engines = normalizeEngines(parsed.cloud.engines);
   const capabilities = normalizeCapabilities(parsed.cloud.capabilities);
   const client = new ControlPlaneClient({
@@ -2181,7 +2270,7 @@ async function quickDemo(): Promise<number> {
     "",
     "Next:",
     `${cliCommandName()} demo`,
-    `${cliCommandName()} audit <your-mcp-tools.json>`,
+    `${cliCommandName()} audit --example dangerous-db-mcp`,
     "",
   ].join("\n"));
   return 0;
@@ -2203,12 +2292,13 @@ async function mcpServe(args: string[]): Promise<number> {
 
 async function mcpAudit(args: string[]): Promise<number> {
   const json = args.includes("--json");
-  const target = firstPositional(args);
+  const example = optionalArg(args, "--example");
+  const target = example ? `example:${example}` : firstPositional(args);
   if (!target) {
-    throw new Error("mcp audit requires <target>");
+    throw new Error("mcp audit requires <target> or --example dangerous-db-mcp");
   }
   const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "5000");
-  const payload = await readMcpAuditTarget(target, args, timeoutMs);
+  const payload = example ? builtInMcpAuditExample(example) : await readMcpAuditTarget(target, args, timeoutMs);
   const report = auditMcpManifest(payload, { target });
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatMcpAuditReport(report));
   return 0;
@@ -2244,8 +2334,9 @@ async function audit(args: string[]): Promise<number> {
   const url = optionalArg(args, "--url");
   const stdio = optionalArg(args, "--stdio");
   const mcpConfig = optionalArg(args, "--mcp-config");
-  const target = url ?? (stdio ? `stdio:${stdio}` : mcpConfig ?? firstPositional(args));
-  if (!target) throw new Error("audit requires <target>, --mcp-config <path>, --stdio <command>, or --url <url>");
+  const example = optionalArg(args, "--example");
+  const target = example ? `example:${example}` : url ?? (stdio ? `stdio:${stdio}` : mcpConfig ?? firstPositional(args));
+  if (!target) throw new Error("audit requires <target>, --example dangerous-db-mcp, --mcp-config <path>, --stdio <command>, or --url <url>");
   const forwarded = args.filter((arg, index) => {
     const previous = args[index - 1];
     return !["--url", "--stdio", "--mcp-config"].includes(arg) && !["--url", "--stdio", "--mcp-config"].includes(previous ?? "");
@@ -2901,6 +2992,11 @@ async function readMcpAuditTarget(target: string, args: string[], timeoutMs: num
   return parsed;
 }
 
+function builtInMcpAuditExample(example: string): unknown {
+  if (example === "dangerous-db-mcp") return dangerousDatabaseMcpAuditExample;
+  throw new Error(`unknown audit example: ${example}. Available examples: dangerous-db-mcp`);
+}
+
 function isRunnerConfigLike(value: unknown): boolean {
   return isRecord(value) && value.version === 1 && Array.isArray(value.capabilities);
 }
@@ -3522,6 +3618,7 @@ function firstPositional(args: string[]): string | undefined {
     "--database-url-env",
     "--destination",
     "--engine",
+    "--example",
     "--from",
     "--from-env",
     "--host",
@@ -3821,7 +3918,7 @@ function starterCloudConfig(): Record<string, unknown> {
       base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
       runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
       runner_id: "synapsor_runner_local",
-      runner_version: "0.1.0-alpha.2",
+      runner_version: "0.1.0-alpha.3",
       project_id: "token_scope",
       adapter_id: "mcp.your_adapter",
       source_id: "src_replace_me",
@@ -3900,6 +3997,7 @@ Generate a reviewed Synapsor Runner contract. Defaults to read-only in the wizar
     mcp: `Usage:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp audit --example dangerous-db-mcp
   ${cmd} mcp audit ./tools-list.json
 
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
@@ -3922,6 +4020,7 @@ Print MCP client configuration that references the local runner command, not dat
 Create the same evidence-backed proposal the MCP tool would create. The source database is not mutated.
 `,
     audit: `Usage:
+  ${cmd} audit --example dangerous-db-mcp
   ${cmd} audit ./synapsor.runner.json
   ${cmd} audit --mcp-config ./claude_desktop_config.json
   ${cmd} audit --stdio "node ./server.js"

@@ -227,7 +227,7 @@ describe("runner capability config validation", () => {
         base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
         runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
         runner_id: "synapsor_runner_local",
-        runner_version: "0.1.0-alpha.2",
+        runner_version: "0.1.0-alpha.3",
         project_id: "token_scope",
         adapter_id: "mcp.billing",
         source_id: "src_pg_acme",
