@@ -29,7 +29,7 @@ validation.
 Because version 1 is the only supported schema today, migration is conservative:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner config migrate --config synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor config migrate --config synapsor.runner.json
 ```
 
 prints that the config is already current and writes nothing.
@@ -37,7 +37,7 @@ prints that the config is already current and writes nothing.
 To write a normalized copy:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner config migrate \
+npx -y -p @synapsor/runner@alpha synapsor config migrate \
   --config synapsor.runner.json \
   --output migrated.json \
   --yes
@@ -47,7 +47,7 @@ To rewrite in place, the command requires an explicit write and creates a
 timestamped backup:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner config migrate \
+npx -y -p @synapsor/runner@alpha synapsor config migrate \
   --config synapsor.runner.json \
   --write \
   --yes

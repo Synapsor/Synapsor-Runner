@@ -32,7 +32,7 @@ That command runs inspection, guided config generation, and tool preview. The
 rest of this page shows the same steps explicitly.
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect --from-env DATABASE_URL --engine auto
+npx -y -p @synapsor/runner@alpha synapsor inspect --from-env DATABASE_URL --engine auto
 ```
 
 This prints discovered tables/views, primary keys, possible tenant/scope
@@ -43,7 +43,7 @@ write credentials to the model.
 For disposable staging databases, this shorter form also works:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect "$DATABASE_URL" --engine auto
+npx -y -p @synapsor/runner@alpha synapsor inspect "$DATABASE_URL" --engine auto
 ```
 
 Prefer `--from-env` on shared machines so URLs do not land in shell history.
@@ -51,7 +51,7 @@ Prefer `--from-env` on shared machines so URLs do not land in shell history.
 ## 3. Run The Guided Wizard
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init --from-env DATABASE_URL --mode review --wizard
+npx -y -p @synapsor/runner@alpha synapsor init --from-env DATABASE_URL --mode review --wizard
 ```
 
 The wizard asks for:
@@ -100,9 +100,9 @@ The generated config stores environment-variable names, not database secrets.
 ## 5. Preview What The Model Sees
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner config validate --config synapsor.runner.json
-npx -y -p @synapsor/runner@alpha synapsor-runner doctor --config synapsor.runner.json
-npx -y -p @synapsor/runner@alpha synapsor-runner tools preview --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor config validate --config synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor doctor --config synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor tools preview --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 `doctor` checks config shape, trusted context env vars, source env vars,
@@ -124,7 +124,7 @@ vars, and the semantic MCP tool boundary.
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_operator"
 
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve \
+npx -y -p @synapsor/runner@alpha synapsor mcp serve \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -138,15 +138,15 @@ model-controlled tenant authority.
 If a proposal is created:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals list --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals show <proposal_id> --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner replay show <proposal_id> --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals list --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals show <proposal_id> --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor replay show <proposal_id> --store ./.synapsor/local.db
 ```
 
 Open the UI:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner ui --tour --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor ui --tour --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 ## 8. Apply Only After Review
@@ -160,12 +160,12 @@ export SYNAPSOR_DATABASE_WRITE_URL="<postgres-or-mysql-writer-url>"
 Then:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals approve <proposal_id> --store ./.synapsor/local.db --actor local_reviewer --yes
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals writeback-job <proposal_id> --store ./.synapsor/local.db --output job.json
+npx -y -p @synapsor/runner@alpha synapsor proposals approve <proposal_id> --store ./.synapsor/local.db --actor local_reviewer --yes
+npx -y -p @synapsor/runner@alpha synapsor proposals writeback-job <proposal_id> --store ./.synapsor/local.db --output job.json
 
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="$SYNAPSOR_DATABASE_WRITE_URL" \
-npx -y -p @synapsor/runner@alpha synapsor-runner apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 If your application should own the business write, configure an `http_handler`

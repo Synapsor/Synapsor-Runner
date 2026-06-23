@@ -7,13 +7,13 @@ The global `synapsor` command is only needed after installing or linking the
 CLI.
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner benchmark mcp-efficiency
+npx -y -p @synapsor/runner@alpha synapsor benchmark mcp-efficiency
 ```
 
 For machine-readable output:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner benchmark mcp-efficiency --json
+npx -y -p @synapsor/runner@alpha synapsor benchmark mcp-efficiency --json
 ```
 
 The benchmark compares an included fixture, not universal model behavior.

@@ -7,7 +7,7 @@ From a source checkout, use `./bin/synapsor ui ...` if the global binary is not
 linked yet.
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner ui --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor ui --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 By default it binds to localhost only and prints a per-run URL:
@@ -135,7 +135,7 @@ For normal use, do not bind the UI to anything except localhost.
 For a deliberate trusted local-network demo:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner ui --host 0.0.0.0 --allow-remote-bind
+npx -y -p @synapsor/runner@alpha synapsor ui --host 0.0.0.0 --allow-remote-bind
 ```
 
 Do this only in an isolated environment. The local UI is not a hosted
@@ -156,8 +156,8 @@ The UI is intentionally small in the current alpha:
 Use the CLI apply path after approval:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals writeback-job wrp_123 --store ./.synapsor/local.db --output job.json
+npx -y -p @synapsor/runner@alpha synapsor proposals writeback-job wrp_123 --store ./.synapsor/local.db --output job.json
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="$SYNAPSOR_DATABASE_WRITE_URL" \
-npx -y -p @synapsor/runner@alpha synapsor-runner apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```

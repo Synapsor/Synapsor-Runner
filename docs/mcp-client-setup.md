@@ -29,7 +29,7 @@ corepack pnpm test:mcp-client-configs
 Print a snippet without modifying any client files:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config claude-desktop \
+npx -y -p @synapsor/runner@alpha synapsor mcp config claude-desktop \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -47,13 +47,13 @@ vscode
 The older form is still supported:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Write is opt-in and requires an explicit destination:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp configure \
+npx -y -p @synapsor/runner@alpha synapsor mcp configure \
   --client cursor \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -72,7 +72,7 @@ database URLs or passwords into the client config.
 From the runner repository:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 For the alpha package, keep the package tag explicit in client configuration.
@@ -82,13 +82,13 @@ For the alpha package, keep the package tag explicit in client configuration.
 ```json
 {
   "mcpServers": {
-    "synapsor-runner": {
+    "synapsor": {
       "command": "npx",
       "args": [
         "-y",
         "-p",
         "@synapsor/runner@alpha",
-        "synapsor-runner",
+        "synapsor",
         "mcp",
         "serve",
         "--config",

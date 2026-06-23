@@ -71,7 +71,7 @@ Run:
 ```bash
 SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai" \
 SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve --config ./synapsor.cloud.json
+npx -y -p @synapsor/runner@alpha synapsor mcp serve --config ./synapsor.cloud.json
 ```
 
 Validate the Cloud runner token and source scope before serving tools:
@@ -79,7 +79,7 @@ Validate the Cloud runner token and source scope before serving tools:
 ```bash
 SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai" \
 SYNAPSOR_RUNNER_TOKEN="syn_wbr_..." \
-npx -y -p @synapsor/runner@alpha synapsor-runner cloud connect --config ./synapsor.cloud.json
+npx -y -p @synapsor/runner@alpha synapsor cloud connect --config ./synapsor.cloud.json
 ```
 
 `cloud connect` verifies the runner token, registers the runner id/version, sends engine/capability/source metadata, and posts an initial heartbeat. It does not send Postgres/MySQL URLs, passwords, write credentials, prompts, or table data. The `project_id` field may be the literal `token_scope` because Synapsor Cloud validates the real project/source from the scoped runner token.

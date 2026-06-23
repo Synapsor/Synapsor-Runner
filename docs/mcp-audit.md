@@ -1,6 +1,6 @@
 # MCP database risk review
 
-`npx -y -p @synapsor/runner@alpha synapsor-runner audit <target>` performs a
+`npx -y -p @synapsor/runner@alpha synapsor audit <target>` performs a
 static MCP database risk review over an exported tool manifest, a remote MCP
 `tools/list` endpoint, or a stdio MCP server. The `mcp audit` subcommand is also
 available for users who look for the command under the MCP namespace.
@@ -23,32 +23,32 @@ MCP annotations are treated as hints, not enforcement.
 Human-readable output:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner audit ./tools-list.json
+npx -y -p @synapsor/runner@alpha synapsor audit ./tools-list.json
 ```
 
 Remote `tools/list` endpoint with a bearer token kept in the environment:
 
 ```bash
 SYNAPSOR_MCP_AUDIT_BEARER="..." \
-npx -y -p @synapsor/runner@alpha synapsor-runner audit https://mcp.example.com --json
+npx -y -p @synapsor/runner@alpha synapsor audit https://mcp.example.com --json
 ```
 
 Remote endpoint with a custom bearer-token environment variable:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --json
+npx -y -p @synapsor/runner@alpha synapsor audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --json
 ```
 
 Stdio MCP server:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner audit 'stdio:node ./server.mjs' --timeout-ms 5000
+npx -y -p @synapsor/runner@alpha synapsor audit 'stdio:node ./server.mjs' --timeout-ms 5000
 ```
 
 JSON output:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner audit ./tools-list.json --json
+npx -y -p @synapsor/runner@alpha synapsor audit ./tools-list.json --json
 ```
 
 During local development, the repo-local wrapper can run the same command:

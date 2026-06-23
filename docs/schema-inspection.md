@@ -7,7 +7,7 @@ Use the public `synapsor ...` runner CLI. From a source checkout, use
 `./bin/synapsor ...` if the global binary is not linked yet.
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
+npx -y -p @synapsor/runner@alpha synapsor inspect \
   --engine auto \
   --from-env SYNAPSOR_DATABASE_READ_URL \
   --schema public
@@ -16,7 +16,7 @@ npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
 JSON output:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
+npx -y -p @synapsor/runner@alpha synapsor inspect \
   --engine mysql \
   --from-env SYNAPSOR_DATABASE_READ_URL \
   --schema app \
@@ -84,5 +84,5 @@ Binary/blob/vector columns are excluded from generated default visible columns.
 Use the inspection result to create `onboarding-selection.json`, then run:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init --spec onboarding-selection.json --non-interactive
+npx -y -p @synapsor/runner@alpha synapsor init --spec onboarding-selection.json --non-interactive
 ```

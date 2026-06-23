@@ -17,7 +17,7 @@ Run a shadow config:
 List shadow proposals:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner shadow list --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor shadow list --store ./.synapsor/local.db
 ```
 
 Record the human action:
@@ -30,7 +30,7 @@ cat > human-action.json <<'JSON'
 }
 JSON
 
-npx -y -p @synapsor/runner@alpha synapsor-runner shadow record-human-action wrp_123 \
+npx -y -p @synapsor/runner@alpha synapsor shadow record-human-action wrp_123 \
   --store ./.synapsor/local.db \
   --patch human-action.json \
   --actor human_operator \
@@ -40,13 +40,13 @@ npx -y -p @synapsor/runner@alpha synapsor-runner shadow record-human-action wrp_
 Compare:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner shadow compare wrp_123 --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor shadow compare wrp_123 --store ./.synapsor/local.db
 ```
 
 Report:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner shadow report --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor shadow report --store ./.synapsor/local.db
 ```
 
 The report counts:

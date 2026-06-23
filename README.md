@@ -62,12 +62,13 @@ MCP client
 Run the current alpha CLI from npm:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner --help
+npx -y -p @synapsor/runner@alpha synapsor demo --quick
+npx -y -p @synapsor/runner@alpha synapsor demo
 ```
 
-`synapsor-runner` remains a backward-compatible alias. The package now prepares
-`synapsor` as the primary command for the next alpha. After installing that
-package version or running from this checkout, use:
+`synapsor` is the public command. `synapsor-runner` remains available as a
+backward-compatible alias for earlier alpha commands. After installing the alpha
+package or running from this checkout, use:
 
 ```bash
 synapsor demo

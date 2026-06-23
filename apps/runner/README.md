@@ -10,12 +10,12 @@ or commit tools.
 ## Run The Alpha
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner --help
+npx -y -p @synapsor/runner@alpha synapsor --help
+npx -y -p @synapsor/runner@alpha synapsor demo --quick
 ```
 
-The already-published alpha may expose only `synapsor-runner`. This package now
-also exposes `synapsor` as the primary command, with `synapsor-runner` kept as a
-backward-compatible alias.
+`synapsor` is the public command. `synapsor-runner` remains available as a
+backward-compatible alias for earlier alpha commands.
 
 Use it with a local or staging database:
 

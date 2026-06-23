@@ -76,7 +76,7 @@ other trusted database TLS setup.
 ## 2. Inspect metadata
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
+npx -y -p @synapsor/runner@alpha synapsor inspect \
   --engine auto \
   --from-env DATABASE_URL \
   --schema public
@@ -85,13 +85,13 @@ npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
 For a disposable staging URL, this also works:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect "$DATABASE_URL" --engine auto --schema public
+npx -y -p @synapsor/runner@alpha synapsor inspect "$DATABASE_URL" --engine auto --schema public
 ```
 
 For automation:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner inspect \
+npx -y -p @synapsor/runner@alpha synapsor inspect \
   --engine postgres \
   --from-env DATABASE_URL \
   --schema public \
@@ -108,9 +108,9 @@ to your staging table, primary key, tenant key, conflict column, visible fields,
 allowed write fields, and business limits.
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner recipes list
-npx -y -p @synapsor/runner@alpha synapsor-runner recipes show billing.late_fee_waiver
-npx -y -p @synapsor/runner@alpha synapsor-runner recipes init billing.late_fee_waiver --output synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor recipes list
+npx -y -p @synapsor/runner@alpha synapsor recipes show billing.late_fee_waiver
+npx -y -p @synapsor/runner@alpha synapsor recipes init billing.late_fee_waiver --output synapsor.runner.json
 ```
 
 Use a recipe when the shape is close. Use the guided wizard or explicit flags
@@ -125,7 +125,7 @@ only the capabilities in your generated `synapsor.runner.json`.
 In an interactive terminal, run the guided wizard:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init --from-env DATABASE_URL --mode read_only --wizard
+npx -y -p @synapsor/runner@alpha synapsor init --from-env DATABASE_URL --mode read_only --wizard
 ```
 
 The generated capabilities are based on your selections. Synapsor Runner does
@@ -161,7 +161,7 @@ If you already know the reviewed table/action, generate config directly from
 metadata and explicit flags:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init \
+npx -y -p @synapsor/runner@alpha synapsor init \
   --from-env DATABASE_URL \
   --engine postgres \
   --schema public \
@@ -180,7 +180,7 @@ npx -y -p @synapsor/runner@alpha synapsor-runner init \
 Or generate from a saved inspection snapshot without reconnecting:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init \
+npx -y -p @synapsor/runner@alpha synapsor init \
   --inspection-json schema-inspection.json \
   --table invoices \
   --namespace billing \
@@ -248,7 +248,7 @@ contain database URLs or passwords.
 ## 6. Generate runner files
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init \
+npx -y -p @synapsor/runner@alpha synapsor init \
   --spec onboarding-selection.json \
   --non-interactive
 ```
@@ -268,10 +268,10 @@ files.
 Generate or refresh MCP client snippets later with:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config generic --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config cursor --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor mcp config generic --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor mcp config claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor mcp config cursor --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 The snippets contain the local command and args. They must not contain database
@@ -280,8 +280,8 @@ URLs, passwords, approval tools, commit tools, or write credentials.
 ## 7. Validate the config
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner config validate --config synapsor.runner.json
-npx -y -p @synapsor/runner@alpha synapsor-runner config show --config synapsor.runner.json --redacted
+npx -y -p @synapsor/runner@alpha synapsor config validate --config synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor config show --config synapsor.runner.json --redacted
 ```
 
 The config stores environment-variable names, not connection-string values.
@@ -289,7 +289,7 @@ The config stores environment-variable names, not connection-string values.
 Run doctor after setting the referenced environment variables:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner doctor --config synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor doctor --config synapsor.runner.json
 ```
 
 Doctor validates config shape, trusted context env vars, source env vars,
@@ -297,7 +297,7 @@ read/write credential separation, table/column metadata when the read URL is
 available, and the semantic MCP tool boundary. Use JSON for automation:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner doctor --config synapsor.runner.json --json
+npx -y -p @synapsor/runner@alpha synapsor doctor --config synapsor.runner.json --json
 ```
 
 ## 8. Serve semantic MCP tools
@@ -305,7 +305,7 @@ npx -y -p @synapsor/runner@alpha synapsor-runner doctor --config synapsor.runner
 ```bash
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_operator"
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 The model-facing MCP server exposes semantic tools such as:
@@ -325,10 +325,10 @@ tools, commit tools, database URLs, write credentials, or tenant authority.
 Proposal tools leave the source database unchanged. Review locally:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals list --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals show wrp_123 --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals approve wrp_123 --store ./.synapsor/local.db --actor local_reviewer --yes
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals writeback-job wrp_123 --store ./.synapsor/local.db --output job.json
+npx -y -p @synapsor/runner@alpha synapsor proposals list --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals show wrp_123 --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals approve wrp_123 --store ./.synapsor/local.db --actor local_reviewer --yes
+npx -y -p @synapsor/runner@alpha synapsor proposals writeback-job wrp_123 --store ./.synapsor/local.db --output job.json
 ```
 
 Apply through the trusted worker path with a separate writer credential:
@@ -337,7 +337,7 @@ Apply through the trusted worker path with a separate writer credential:
 export SYNAPSOR_DATABASE_WRITE_URL="<postgres-or-mysql-write-url>"
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="$SYNAPSOR_DATABASE_WRITE_URL" \
-npx -y -p @synapsor/runner@alpha synapsor-runner apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 If your application/API should own the business write, use an `http_handler`
@@ -346,7 +346,7 @@ from environment variables, and the handler receives a structured proposal/job
 payload, not arbitrary model SQL:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner apply --proposal wrp_123 --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor apply --proposal wrp_123 --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 See `docs/writeback-executors.md`.
@@ -354,8 +354,8 @@ See `docs/writeback-executors.md`.
 Replay afterward:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner replay show wrp_123 --store ./.synapsor/local.db
-npx -y -p @synapsor/runner@alpha synapsor-runner replay export wrp_123 --store ./.synapsor/local.db --output replay.json
+npx -y -p @synapsor/runner@alpha synapsor replay show wrp_123 --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor replay export wrp_123 --store ./.synapsor/local.db --output replay.json
 ```
 
 ## Boundary

@@ -12,9 +12,9 @@
 ## Routine checks
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner doctor
-npx -y -p @synapsor/runner@alpha synapsor-runner validate --job examples/postgres-support/job.approved.json
-npx -y -p @synapsor/runner@alpha synapsor-runner validate --job examples/mysql-orders/job.approved.json
+npx -y -p @synapsor/runner@alpha synapsor doctor
+npx -y -p @synapsor/runner@alpha synapsor validate --job examples/postgres-support/job.approved.json
+npx -y -p @synapsor/runner@alpha synapsor validate --job examples/mysql-orders/job.approved.json
 ```
 
 `doctor` validates local configuration, calls Synapsor's runner-token doctor endpoint, confirms the token is authenticated for the configured source, checks database reachability and engine version, creates/verifies `synapsor_writeback_receipts`, and performs a rollback-only receipt insert to prove the configured credential can write runner receipts. It does not mutate business tables.

@@ -41,18 +41,18 @@ The model did not get:
 Next:
 
 1. Open proposal UI:
-   npx -y -p @synapsor/runner@alpha synapsor-runner ui --tour --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+   npx -y -p @synapsor/runner@alpha synapsor ui --tour --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 
 2. Run the reference app:
    corepack pnpm demo:reference
 
 3. Generate MCP client config:
-   npx -y -p @synapsor/runner@alpha synapsor-runner mcp config --absolute-paths --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+   npx -y -p @synapsor/runner@alpha synapsor mcp config --absolute-paths --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 
 4. Use your own staging Postgres/MySQL:
    export DATABASE_URL='<postgres-or-mysql-read-url>'
-   npx -y -p @synapsor/runner@alpha synapsor-runner inspect --from-env DATABASE_URL
-   npx -y -p @synapsor/runner@alpha synapsor-runner init --wizard --from-env DATABASE_URL
+   npx -y -p @synapsor/runner@alpha synapsor inspect --from-env DATABASE_URL
+   npx -y -p @synapsor/runner@alpha synapsor init --wizard --from-env DATABASE_URL
 ```
 
 The full log should include the lower-level proof:

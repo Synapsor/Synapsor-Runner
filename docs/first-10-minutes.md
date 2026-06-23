@@ -70,7 +70,7 @@ authority.
 ## Next Command 1: Open The Local UI
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner ui --tour \
+npx -y -p @synapsor/runner@alpha synapsor ui --tour \
   --config ./examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -97,7 +97,7 @@ The reference app uses a disposable support/billing Postgres database and proves
 ## Next Command 3: Generate MCP Client Config
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner mcp config claude-desktop \
+npx -y -p @synapsor/runner@alpha synapsor mcp config claude-desktop \
   --absolute-paths \
   --config ./examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./.synapsor/local.db
@@ -110,7 +110,7 @@ tools, commit tools, or write credentials.
 Verify the configured tool boundary with:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner tools preview \
+npx -y -p @synapsor/runner@alpha synapsor tools preview \
   --config ./examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./.synapsor/local.db
 ```

@@ -30,13 +30,13 @@ Still pending:
 Create a starter config without putting credentials in the file:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init --engine postgres --mode review
+npx -y -p @synapsor/runner@alpha synapsor init --engine postgres --mode review
 ```
 
 For MySQL:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init --engine mysql --mode review --output synapsor.mysql.runner.json
+npx -y -p @synapsor/runner@alpha synapsor init --engine mysql --mode review --output synapsor.mysql.runner.json
 ```
 
 The generated config uses environment-variable names for read/write URLs and trusted context. Edit the table, column, and capability names before serving tools.
@@ -49,8 +49,8 @@ persisted into proposals, evidence, query audit, runner state, or replay.
 For a reviewed own-database setup generated from explicit selections, use:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner init --spec onboarding-selection.json --non-interactive
-npx -y -p @synapsor/runner@alpha synapsor-runner doctor --config synapsor.runner.json
+npx -y -p @synapsor/runner@alpha synapsor init --spec onboarding-selection.json --non-interactive
+npx -y -p @synapsor/runner@alpha synapsor doctor --config synapsor.runner.json
 ```
 
 `doctor --config` checks config validation, required environment variables,
@@ -87,19 +87,19 @@ If neither is set, the CLI uses:
 List proposals:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals list --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals list --store ./.synapsor/local.db
 ```
 
 Show a proposal:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals show wrp_123 --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor proposals show wrp_123 --store ./.synapsor/local.db
 ```
 
 Approve:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals approve wrp_123 \
+npx -y -p @synapsor/runner@alpha synapsor proposals approve wrp_123 \
   --store ./.synapsor/local.db \
   --actor local_reviewer \
   --yes
@@ -110,7 +110,7 @@ Before approval, the CLI prints the reviewer-critical proposal details: trusted 
 Create a guarded writeback job from an approved proposal:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals writeback-job wrp_123 \
+npx -y -p @synapsor/runner@alpha synapsor proposals writeback-job wrp_123 \
   --store ./.synapsor/local.db \
   --project local \
   --runner local_runner \
@@ -122,7 +122,7 @@ The generated job uses the public `synapsor.writeback-job.v1` protocol and can b
 ```bash
 SYNAPSOR_ENGINE=postgres \
 SYNAPSOR_DATABASE_URL="postgresql://writer:<password>@localhost:5432/app" \
-npx -y -p @synapsor/runner@alpha synapsor-runner apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Passing `--store` records the terminal `synapsor.execution-receipt.v1` locally. Replay then links the proposal, approval, writeback job, applied/conflict/failed receipt, evidence, and query audit.
@@ -130,7 +130,7 @@ Passing `--store` records the terminal `synapsor.execution-receipt.v1` locally. 
 Reject:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner proposals reject wrp_123 \
+npx -y -p @synapsor/runner@alpha synapsor proposals reject wrp_123 \
   --store ./.synapsor/local.db \
   --reason "policy evidence is incomplete" \
   --yes
@@ -147,7 +147,7 @@ Shadow-mode proposals are inspectable through `proposals show` and `replay show`
 Start a localhost-only review UI:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner ui --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor ui --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 The UI shows setup summary, semantic tools, proposal states, exact diffs,
@@ -163,13 +163,13 @@ tools, MCP commit tools, or controls that widen configured tables/columns.
 Show replay:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner replay show wrp_123 --store ./.synapsor/local.db
+npx -y -p @synapsor/runner@alpha synapsor replay show wrp_123 --store ./.synapsor/local.db
 ```
 
 Export replay:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner replay export wrp_123 \
+npx -y -p @synapsor/runner@alpha synapsor replay export wrp_123 \
   --store ./.synapsor/local.db \
   --output replay.json
 ```

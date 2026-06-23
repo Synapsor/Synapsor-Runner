@@ -59,7 +59,7 @@ literal values.
 Run after approval:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor-runner apply \
+npx -y -p @synapsor/runner@alpha synapsor apply \
   --proposal wrp_123 \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
