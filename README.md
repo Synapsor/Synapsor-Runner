@@ -63,7 +63,6 @@ Run the current alpha CLI from npm:
 
 ```bash
 npx -y -p @synapsor/runner@alpha synapsor demo --quick
-npx -y -p @synapsor/runner@alpha synapsor demo
 ```
 
 `synapsor` is the public command. `synapsor-runner` remains available as a
@@ -74,10 +73,10 @@ package or running from this checkout, use:
 synapsor demo
 ```
 
-Want the 15-second fixture-only version first?
+Full Docker-backed demo:
 
 ```bash
-synapsor demo --quick
+npx -y -p @synapsor/runner@alpha synapsor demo
 ```
 
 `synapsor demo --quick` is fixture-only and does not require Docker.
