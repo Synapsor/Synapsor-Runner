@@ -200,7 +200,7 @@ async function main() {
   const applied = parseCliJson(runner(["apply", "--job", jobPath, "--config", configPath, "--store", storePath]));
   assert(applied.status === "applied" && applied.affected_rows === 1, "Expected guarded apply", applied);
   const retry = parseCliJson(runner(["apply", "--job", jobPath, "--config", configPath, "--store", storePath]));
-  assert(retry.status === "applied" && retry.affected_rows === 0, "Expected idempotent retry", retry);
+  assert((retry.status === "applied" || retry.status === "already_applied") && retry.affected_rows === 0, "Expected idempotent retry", retry);
 
   console.log("== stale-row conflict proof ==");
   dockerSql("UPDATE public.invoices SET late_fee_cents = 5500, waiver_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'INV-3001'; DELETE FROM public.synapsor_writeback_receipts;");

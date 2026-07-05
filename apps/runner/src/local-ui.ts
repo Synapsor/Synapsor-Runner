@@ -32,7 +32,7 @@ export type LocalUiServer = {
 export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<LocalUiServer> {
   const host = options.host ?? "127.0.0.1";
   if (!isLocalHost(host) && options.allowRemoteBind !== true) {
-    throw new Error("synapsor ui binds to localhost by default. Use --allow-remote-bind only for an intentional trusted local-network demo.");
+    throw new Error("synapsor-runner ui binds to localhost by default. Use --allow-remote-bind only for an intentional trusted local-network demo.");
   }
   const configPath = path.resolve(options.configPath ?? "synapsor.runner.json");
   const storePath = path.resolve(options.storePath ?? "./.synapsor/local.db");
@@ -95,7 +95,7 @@ async function handleRequest(input: {
 
   if (request.method === "GET" && url.pathname === "/") {
     response.setHeader("set-cookie", `synapsor_ui_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`);
-    sendHtml(response, renderShell(csrfToken, tour || url.searchParams.get("tour") === "1"));
+    sendHtml(response, renderShell(csrfToken, tour || url.searchParams.get("tour") === "1", configPath, storePath));
     return;
   }
 
@@ -420,8 +420,10 @@ function sendHtml(response: ServerResponse, html: string): void {
   response.end(html);
 }
 
-function renderShell(csrfToken: string, tour = false): string {
+function renderShell(csrfToken: string, tour = false, configPath = "synapsor.runner.json", storePath = "./.synapsor/local.db"): string {
   const escapedCsrf = escapeScriptString(csrfToken);
+  const escapedConfigPath = escapeScriptString(configPath);
+  const escapedStorePath = escapeScriptString(storePath);
   const tourHtml = tour ? `
     <div class="card full tour">
       <h2>Commit-safe MCP in one loop</h2>
@@ -551,6 +553,8 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
 </main>
 <script>
 const csrfToken = "${escapedCsrf}";
+const configPath = "${escapedConfigPath}";
+const storePath = "${escapedStorePath}";
 const state = { selected: null, firstId: null };
 const byId = (id) => document.getElementById(id);
 const text = (tag, value, className = "") => { const node = document.createElement(tag); node.textContent = value == null ? "" : String(value); if (className) node.className = className; return node; };
@@ -644,6 +648,13 @@ function guardDrawer(gc) {
   d.append(kv);
   return d;
 }
+function shellQuote(value) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9_./:@=-]+$/.test(text) ? text : "'" + text.replace(/'/g, "'\\\\''") + "'";
+}
+function trustedApplyCommand(proposalId) {
+  return "synapsor-runner apply " + shellQuote(proposalId) + " --config " + shellQuote(configPath) + " --store " + shellQuote(storePath);
+}
 async function loadSummary() {
   const payload = await api("/api/summary");
   const root = byId("summary"); root.replaceChildren(text("h2", "Setup summary"));
@@ -674,7 +685,7 @@ async function loadProposals() {
   const payload = await api("/api/proposals");
   const root = byId("proposals"); root.replaceChildren(text("h2", "Proposals"));
   if (payload.proposals.length === 0) {
-    root.append(text("p", "No proposals in the local store yet. Run synapsor mcp serve and have an agent propose a change."));
+    root.append(text("p", "No proposals in the local store yet. Run synapsor-runner mcp serve and have an agent propose a change."));
     state.firstId = null;
     return;
   }
@@ -838,6 +849,24 @@ async function loadDetail(proposalId) {
     const reject = el("button", { class: "danger", text: "Reject", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/reject", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value || "rejected from local UI", confirm: "reject" }) }); await loadProposals(); await loadDetail(proposalId); } });
     actions.append(approve, reject);
     reviewPane.append(el("div", { class: "callout", text: "You are the approval authority here — the model cannot reach these controls." }), actor, reason, actions);
+  } else if (proposal.state === "approved" || proposal.state === "pending_worker") {
+    const command = trustedApplyCommand(proposalId);
+    const commandBox = el("div", { class: "mono", text: command, style: "display:block;margin-top:8px" });
+    const copied = el("span", { class: "status-line", text: "" });
+    const copy = el("button", { text: "Copy guarded apply command", onclick: async () => {
+      try {
+        await navigator.clipboard.writeText(command);
+        copied.textContent = "Copied. Run this from a trusted terminal with write credentials.";
+      } catch {
+        copied.textContent = "Copy this guarded apply command and run it from a trusted terminal with write credentials.";
+      }
+    } });
+    reviewPane.append(
+      el("div", { class: "callout", text: "Apply guarded writeback from a trusted terminal. This remains outside MCP, so the model still cannot commit." }),
+      commandBox,
+      el("div", { class: "actions" }, [copy]),
+      copied,
+    );
   }
 
   jsonPane.append(

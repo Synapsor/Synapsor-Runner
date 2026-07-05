@@ -1,5 +1,5 @@
 {
-  "command": "synapsor",
+  "command": "synapsor-runner",
   "args": [
     "mcp",
     "serve",

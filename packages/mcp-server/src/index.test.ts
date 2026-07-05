@@ -1,5 +1,18 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createMcpRuntime, createSynapsorMcpServer, McpRuntimeError, type RuntimeConfig } from "./index.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  createMcpRuntime,
+  createSynapsorMcpServer,
+  McpRuntimeError,
+  openaiToolNameAlias,
+  startHttpMcpServer,
+  startStreamableHttpMcpServer,
+  type RuntimeConfig,
+} from "./index.js";
 
 const config: RuntimeConfig = {
   version: 1,
@@ -90,6 +103,153 @@ describe("local Synapsor MCP runtime", () => {
       expect(() => createSynapsorMcpServer(runtime)).not.toThrow();
     } finally {
       runtime.close();
+    }
+  });
+
+  it("surfaces author-supplied tool, argument, and returns descriptions", () => {
+    const describedConfig = structuredClone(config);
+    const capability = describedConfig.capabilities?.[0];
+    if (!capability) throw new Error("capability fixture missing");
+    capability.description = "Inspect one invoice in the trusted tenant before proposing a waiver.";
+    capability.returns_hint = "Returns invoice status, late fee, waiver facts, and an audit evidence handle.";
+    const invoiceIdArg = capability.args.invoice_id;
+    if (!invoiceIdArg) throw new Error("invoice id arg fixture missing");
+    invoiceIdArg.description = "Invoice id, e.g. INV-3001.";
+    const runtime = createMcpRuntime(describedConfig, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const [tool] = runtime.listTools();
+      if (!tool) throw new Error("tool fixture missing");
+      expect(tool.description).toContain("Inspect one invoice in the trusted tenant");
+      expect(tool.description).toContain("Returns invoice status");
+      expect(tool.description).toContain("audit/replay handles");
+      expect(tool.input_schema.invoice_id).toMatchObject({
+        description: "Invoice id, e.g. INV-3001.",
+      });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("returns result envelope v2 for read success", async () => {
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: true,
+        action: "billing.inspect_invoice",
+        kind: "read",
+        proposal: null,
+        error: null,
+        source_database_changed: false,
+        _meta: {
+          tenant_id: "acme",
+          principal: "support_agent_17",
+          canonical_capability: "billing.inspect_invoice",
+        },
+      });
+      expect(typeof result.summary).toBe("string");
+      expect(result.data).toMatchObject({ id: "INV-3001", late_fee_cents: 5500 });
+      expect(result.evidence).toMatchObject({
+        note: expect.stringContaining("you do not need to act"),
+      });
+      expect(result).not.toHaveProperty("status");
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("returns result envelope v2 for proposal success", async () => {
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        reason: "approved support waiver",
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        action: "billing.propose_late_fee_waiver",
+        kind: "proposal",
+        data: null,
+        error: null,
+        source_database_changed: false,
+        proposal: {
+          state: "review_required",
+          target: "invoices:INV-3001",
+          approval_required: true,
+          writeback: {
+            mode: "direct_update",
+            applied: false,
+          },
+        },
+        _meta: {
+          tenant_id: "acme",
+          canonical_capability: "billing.propose_late_fee_waiver",
+        },
+      });
+      expect(result.proposal).toMatchObject({
+        diff: {
+          late_fee_cents: { before: 5500, proposed: 0 },
+        },
+      });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("returns safe result envelope v2 errors without raw infra strings", async () => {
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, {
+      readRow: async () => {
+        throw new Error("connect ECONNREFUSED 127.0.0.1:5433");
+      },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: false,
+        action: "billing.inspect_invoice",
+        kind: "read",
+        data: null,
+        proposal: null,
+        error: {
+          code: "TEMPORARILY_UNAVAILABLE",
+          retryable: true,
+        },
+        source_database_changed: false,
+        _meta: {
+          canonical_capability: "billing.inspect_invoice",
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain("ECONNREFUSED");
+      expect(JSON.stringify(result)).not.toContain("127.0.0.1");
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("returns a safe unavailable envelope when the local store disappears while active", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-mcp-store-missing-"));
+    const storePath = path.join(tempDir, "local.db");
+    const runtime = createMcpRuntime({ ...config, result_format: 2, storage: { sqlite_path: storePath } }, {
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      expect(fs.existsSync(storePath)).toBe(true);
+      fs.unlinkSync(storePath);
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: false,
+        action: "billing.inspect_invoice",
+        error: {
+          code: "TEMPORARILY_UNAVAILABLE",
+          retryable: true,
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(result)).not.toContain(storePath);
+      expect(() => runtime.readResource("synapsor://evidence/ev_missing")).toThrow(/local Synapsor store is temporarily unavailable/i);
+    } finally {
+      runtime.close();
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
@@ -376,4 +536,329 @@ describe("local Synapsor MCP runtime", () => {
       runtime.close();
     }
   });
+
+  it("refuses unsafe HTTP MCP auth configurations", async () => {
+    await expect(startHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: {},
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_AUTH_TOKEN_MISSING" });
+
+    await expect(startHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      host: "0.0.0.0",
+      port: 0,
+      env: {},
+      devNoAuth: true,
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_DEV_NO_AUTH_UNSAFE_HOST" });
+
+    await expect(startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: {},
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_AUTH_TOKEN_MISSING" });
+
+    await expect(startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      host: "0.0.0.0",
+      port: 0,
+      env: {},
+      devNoAuth: true,
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_DEV_NO_AUTH_UNSAFE_HOST" });
+  });
+
+  it("serves authenticated HTTP MCP tools, calls, and resources without exposing secrets", async () => {
+    const token = "test-http-token";
+    const databaseUrl = "postgresql://reader:secret@db.example/app";
+    const server = await startHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: token,
+        APP_POSTGRES_READ_URL: databaseUrl,
+      },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      const health = await fetch(`http://127.0.0.1:${server.port}/healthz`);
+      expect(health.status).toBe(200);
+      const healthPayload = await health.json() as Record<string, unknown>;
+      expect(healthPayload).toMatchObject({
+        ok: true,
+        transport: "http",
+        tools: 2,
+        mode: "review",
+      });
+      expect(JSON.stringify(healthPayload)).not.toContain(token);
+      expect(JSON.stringify(healthPayload)).not.toContain(databaseUrl);
+
+      const unauthorized = await httpRpc(server.port, undefined, "tools/list", {});
+      expect(unauthorized.status).toBe(401);
+      const wrongToken = await httpRpc(server.port, "wrong-token", "tools/list", {});
+      expect(wrongToken.status).toBe(401);
+
+      const listed = await httpRpc(server.port, token, "tools/list", {});
+      expect(listed.status).toBe(200);
+      const listedPayload = await listed.json() as { result: { tools: Array<{ name: string; description?: string; inputSchema?: unknown; annotations?: Record<string, unknown>; _meta?: Record<string, unknown> }> } };
+      expect(listedPayload.result.tools.map((tool) => tool.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_late_fee_waiver",
+      ]);
+      const serializedTools = JSON.stringify(listedPayload);
+      const modelFacingToolShape = JSON.stringify(listedPayload.result.tools.map((tool) => ({
+        name: tool.name,
+        inputSchema: tool.inputSchema,
+        description: tool.description,
+      })));
+      expect(modelFacingToolShape).not.toMatch(/execute_sql|raw_sql|approve|commit|writeback|database_url|write_credentials/i);
+      expect(serializedTools).not.toContain(token);
+      expect(serializedTools).not.toContain(databaseUrl);
+      expect(listedPayload.result.tools.every((tool) => tool.annotations?.raw_sql_exposed === false)).toBe(true);
+      expect(listedPayload.result.tools.every((tool) => tool._meta?.["synapsor.database_credentials_exposed"] === false)).toBe(true);
+
+      const called = await httpRpc(server.port, token, "tools/call", {
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-3001" },
+      });
+      expect(called.status).toBe(200);
+      const calledPayload = await called.json() as {
+        result: {
+          structuredContent: {
+            status: string;
+            source_database_mutated: boolean;
+            evidence_resource: string;
+            trusted_context: { tenant_id: string; principal: string };
+          };
+        };
+      };
+      expect(calledPayload.result.structuredContent).toMatchObject({
+        status: "ok",
+        source_database_mutated: false,
+        trusted_context: { tenant_id: "acme", principal: "support_agent_17" },
+      });
+
+      const evidence = await httpRpc(server.port, token, "resources/read", {
+        uri: calledPayload.result.structuredContent.evidence_resource,
+      });
+      expect(evidence.status).toBe(200);
+      const evidencePayload = await evidence.json() as { result: { contents: Array<{ text: string }> } };
+      expect(evidencePayload.result.contents[0]?.text).toContain("INV-3001");
+
+      const override = await httpRpc(server.port, token, "tools/call", {
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-3001", tenant_id: "otherco" },
+      });
+      expect(override.status).toBe(200);
+      const overrideText = await override.text();
+      expect(overrideText).toContain("MODEL_CANNOT_OVERRIDE_BINDING");
+      expect(overrideText).not.toContain(token);
+      expect(overrideText).not.toContain(databaseUrl);
+      expect(overrideText).not.toMatch(/postgresql:\/\/reader/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves spec-compatible Streamable HTTP MCP sessions with the official client transport", async () => {
+    const token = "test-streamable-http-token";
+    const databaseUrl = "postgresql://reader:secret@db.example/app";
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: token,
+        APP_POSTGRES_READ_URL: databaseUrl,
+      },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    });
+    const client = new Client({ name: "synapsor-runner-test", version: "0.0.0" });
+    try {
+      const health = await fetch(`http://127.0.0.1:${server.port}/healthz`);
+      expect(health.status).toBe(200);
+      await expect(health.json()).resolves.toMatchObject({
+        ok: true,
+        transport: "streamable-http",
+        tools: 2,
+        mode: "review",
+      });
+
+      await client.connect(transport);
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_late_fee_waiver",
+      ]);
+      const serializedTools = JSON.stringify(listed.tools);
+      const modelFacingToolShape = JSON.stringify(listed.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      })));
+      expect(modelFacingToolShape).not.toMatch(/execute_sql|raw_sql|approve|commit|writeback|database_url|write_credentials/i);
+      expect(listed.tools.every((tool) => tool._meta?.["synapsor.raw_sql_exposed"] === false)).toBe(true);
+      expect(listed.tools.every((tool) => tool._meta?.["synapsor.approval_tool"] === false)).toBe(true);
+      expect(serializedTools).not.toContain(token);
+      expect(serializedTools).not.toContain(databaseUrl);
+      expect(transport.sessionId).toMatch(/\S+/);
+
+      const result = await client.callTool({
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-3001" },
+      });
+      const structuredContent = result.structuredContent as {
+        status: string;
+        source_database_mutated: boolean;
+        evidence_resource: string;
+        trusted_context: { tenant_id: string; principal: string };
+      };
+      expect(structuredContent).toMatchObject({
+        status: "ok",
+        source_database_mutated: false,
+        trusted_context: { tenant_id: "acme", principal: "support_agent_17" },
+      });
+
+      const evidence = await client.readResource({ uri: structuredContent.evidence_resource });
+      const firstEvidenceContent = evidence.contents[0];
+      expect(firstEvidenceContent && "text" in firstEvidenceContent ? firstEvidenceContent.text : "").toContain("INV-3001");
+      expect(JSON.stringify(result)).not.toContain(token);
+      expect(JSON.stringify(result)).not.toContain(databaseUrl);
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("can expose OpenAI-safe Streamable HTTP tool aliases while preserving canonical names", async () => {
+    expect(openaiToolNameAlias("billing.inspect_invoice")).toBe("billing__inspect_invoice");
+    const token = "test-openai-alias-token";
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      toolNameStyle: "openai",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: token,
+      },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    });
+    const client = new Client({ name: "synapsor-runner-openai-alias-test", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual([
+        "billing__inspect_invoice",
+        "billing__propose_late_fee_waiver",
+      ]);
+      expect(listed.tools.every((tool) => /^[A-Za-z0-9_-]{1,64}$/.test(tool.name))).toBe(true);
+      expect(listed.tools[0]?._meta?.["synapsor.canonical_tool_name"]).toBe("billing.inspect_invoice");
+      expect(listed.tools[0]?._meta?.["synapsor.tool_name_style"]).toBe("openai");
+
+      const result = await client.callTool({
+        name: "billing__inspect_invoice",
+        arguments: { invoice_id: "INV-3001" },
+      });
+      expect(result.structuredContent).toMatchObject({
+        status: "ok",
+        source_database_mutated: false,
+        action: "billing.inspect_invoice",
+      });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("can expose canonical and OpenAI-safe aliases together", async () => {
+    const token = "test-both-alias-token";
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      toolNameStyle: "both",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: token,
+      },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    });
+    const client = new Client({ name: "synapsor-runner-both-alias-test", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing__inspect_invoice",
+        "billing.propose_late_fee_waiver",
+        "billing__propose_late_fee_waiver",
+      ]);
+
+      const canonical = await client.callTool({
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-3001" },
+      });
+      const alias = await client.callTool({
+        name: "billing__inspect_invoice",
+        arguments: { invoice_id: "INV-3001" },
+      });
+      expect(canonical.structuredContent).toMatchObject({ action: "billing.inspect_invoice" });
+      expect(alias.structuredContent).toMatchObject({ action: "billing.inspect_invoice" });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
 });
+
+function httpRpc(
+  port: number,
+  token: string | undefined,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+}

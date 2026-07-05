@@ -1,12 +1,12 @@
 # Dependency License Inventory
 
-Generated during the ELv2 migration with:
+Generated from the current lockfile/install with:
 
 ```bash
 corepack pnpm licenses list --json
 ```
 
-Summary from the current lockfile/install:
+Summary from the current dependency set:
 
 | License | Package entries |
 | --- | ---: |
@@ -25,11 +25,11 @@ Apache-2.0 dependency entries reported by pnpm:
 
 This file is an inventory summary, not a replacement for dependency license
 review. Third-party dependency licenses and notices are not changed by the
-first-party Synapsor Runner ELv2 migration.
+first-party Synapsor Runner Apache-2.0 license.
 
 Before public release:
 
 - regenerate this inventory from a clean install;
-- review dependency notices with counsel or the release owner;
+- review dependency notices with the release owner or qualified counsel;
 - keep third-party notices separate from the first-party Synapsor Runner
   license.

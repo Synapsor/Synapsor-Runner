@@ -1116,6 +1116,9 @@ Complete limits: [docs/limitations.md](docs/limitations.md).
 
 Security boundary: [docs/security-boundary.md](docs/security-boundary.md).
 
+Single-node production-candidate runbook:
+[docs/production.md](docs/production.md).
+
 Release notes and stable-tag policy:
 [docs/release-notes.md](docs/release-notes.md).
 

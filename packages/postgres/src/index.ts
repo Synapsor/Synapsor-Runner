@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { Pool, type PoolClient } from "pg";
+import { Pool } from "pg";
 import type { WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
 import type { ApplyAdapter, RunnerConfig } from "@synapsor-runner/worker-core";
 
@@ -12,6 +12,10 @@ export const postgresReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_wri
   created_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz
 )`;
+
+export type PostgresApplyClient = {
+  query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
+};
 
 export function quotePostgresIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
@@ -68,22 +72,47 @@ function resultHash(job: WritebackJob, status: string, version?: unknown): strin
   return `sha256:${crypto.createHash("sha256").update(JSON.stringify({ job_id: job.job_id, status, version })).digest("hex")}`;
 }
 
-function versionValuesMatch(actual: unknown, expected: unknown): boolean {
-  if (actual instanceof Date) {
-    const expectedDate = new Date(String(expected));
-    return !Number.isNaN(expectedDate.getTime()) && actual.getTime() === expectedDate.getTime();
-  }
-  if (typeof actual === "string" && typeof expected === "string") {
-    const actualDate = new Date(actual);
-    const expectedDate = new Date(expected);
-    if (!Number.isNaN(actualDate.getTime()) && !Number.isNaN(expectedDate.getTime())) {
-      return actualDate.getTime() === expectedDate.getTime();
+export function normalizeVersionValue(value: unknown): string {
+  if (value instanceof Date) return normalizeVersionValue(value.toISOString());
+  const text = String(value ?? "").trim();
+  const timestamp = text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i);
+  if (timestamp) {
+    const fraction = (timestamp[3] ?? "").padEnd(6, "0").slice(0, 6);
+    const offset = timestamp[4];
+    if (offset && offset.toUpperCase() !== "Z") {
+      const dateParts = timestamp[1]!.split("-");
+      const timeParts = timestamp[2]!.split(":");
+      const year = Number(dateParts[0]);
+      const month = Number(dateParts[1]);
+      const day = Number(dateParts[2]);
+      const hour = Number(timeParts[0]);
+      const minute = Number(timeParts[1]);
+      const second = Number(timeParts[2]);
+      const utc = new Date(Date.UTC(year, month - 1, day, hour, minute, second) - offsetMinutes(offset) * 60_000);
+      return `${utc.getUTCFullYear()}-${pad2(utc.getUTCMonth() + 1)}-${pad2(utc.getUTCDate())} ${pad2(utc.getUTCHours())}:${pad2(utc.getUTCMinutes())}:${pad2(utc.getUTCSeconds())}.${fraction}`;
     }
+    return `${timestamp[1]} ${timestamp[2]}.${fraction}`;
   }
-  return String(actual) === String(expected);
+  return text;
 }
 
-async function withTransaction<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
+function offsetMinutes(offset: string): number {
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const compact = offset.slice(1).replace(":", "");
+  const hours = Number(compact.slice(0, 2));
+  const minutes = Number(compact.slice(2, 4) || "0");
+  return sign * (hours * 60 + minutes);
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+export function versionValuesMatch(actual: unknown, expected: unknown): boolean {
+  return normalizeVersionValue(actual) === normalizeVersionValue(expected);
+}
+
+async function withTransaction<T>(client: PostgresApplyClient, fn: () => Promise<T>): Promise<T> {
   await client.query("BEGIN");
   try {
     const result = await fn();
@@ -114,55 +143,7 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
   const pool = new Pool({ connectionString: config.databaseUrl });
   const client = await pool.connect();
   try {
-    return await withTransaction(client, async () => {
-      await client.query(postgresReceiptMigration);
-      const receipt = await client.query(
-        "SELECT status, result_hash FROM synapsor_writeback_receipts WHERE idempotency_key = $1 FOR UPDATE",
-        [job.idempotency_key]
-      );
-      if (receipt.rowCount && receipt.rows[0]?.status === "applied") {
-        return {
-          protocol_version: "1.0",
-          job_id: job.job_id,
-          runner_id: config.runnerId,
-          status: "applied",
-          affected_rows: 0,
-          result_hash: receipt.rows[0]?.result_hash || resultHash(job, "idempotent"),
-          completed_at: new Date().toISOString()
-        };
-      }
-      const row = await client.query(
-        `SELECT * FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}
-WHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $1
-  AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2
-FOR UPDATE`,
-        [job.target.primary_key.value, job.target.tenant_guard.value]
-      );
-      if (!row.rowCount) {
-        await recordReceipt(client, job, "conflict", resultHash(job, "ROW_NOT_FOUND"));
-        return conflict(job, config, "ROW_NOT_FOUND");
-      }
-      if (job.conflict_guard.kind === "version_column" && !versionValuesMatch(row.rows[0]?.[job.conflict_guard.column], job.conflict_guard.expected_value)) {
-        await recordReceipt(client, job, "conflict", resultHash(job, "VERSION_CONFLICT", row.rows[0]?.[job.conflict_guard.column]));
-        return conflict(job, config, "VERSION_CONFLICT");
-      }
-      const update = buildPostgresUpdate(job);
-      const applied = await client.query(update.sql, update.values);
-      if (applied.rowCount !== 1) {
-        throw new Error(applied.rowCount === 0 ? "VERSION_CONFLICT" : "MULTI_ROW_WRITE_BLOCKED");
-      }
-      const hash = resultHash(job, "applied", job.conflict_guard.kind === "version_column" ? job.conflict_guard.expected_value : undefined);
-      await recordReceipt(client, job, "applied", hash);
-      return {
-        protocol_version: "1.0",
-        job_id: job.job_id,
-        runner_id: config.runnerId,
-        status: "applied",
-        affected_rows: 1,
-        result_hash: hash,
-        completed_at: new Date().toISOString()
-      };
-    });
+    return await applyPostgresJobWithClient(job, config, client);
   } catch (error) {
     const message = error instanceof Error ? error.message : "TRANSACTION_FAILED";
     return failed(job, config, message.includes("MULTI_ROW") ? "MULTI_ROW_WRITE_BLOCKED" : message.includes("VERSION") ? "VERSION_CONFLICT" : "TRANSACTION_FAILED");
@@ -172,18 +153,101 @@ FOR UPDATE`,
   }
 }
 
-async function recordReceipt(client: PoolClient, job: WritebackJob, status: string, hash: string): Promise<void> {
-  await client.query(
-    `INSERT INTO synapsor_writeback_receipts (idempotency_key, job_id, proposal_id, status, result_hash, completed_at)
-VALUES ($1, $2, $3, $4, $5, now())
-ON CONFLICT (idempotency_key)
-DO UPDATE SET status = EXCLUDED.status, result_hash = EXCLUDED.result_hash, completed_at = EXCLUDED.completed_at`,
-    [job.idempotency_key, job.job_id, job.proposal_id, status, hash]
-  );
+export async function applyPostgresJobWithClient(job: WritebackJob, config: RunnerConfig, client: PostgresApplyClient): Promise<WritebackResult> {
+  return await withTransaction(client, async () => {
+    await client.query(postgresReceiptMigration);
+    const existing = await claimReceipt(client, job, config);
+    if (existing) return existing;
+
+    const conflictProjection = job.conflict_guard.kind === "version_column"
+      ? `, ${quotePostgresIdentifier(job.conflict_guard.column)}::text AS "__synapsor_conflict_value"`
+      : "";
+    const row = await client.query(
+      `SELECT *${conflictProjection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}
+WHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $1
+  AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2
+FOR UPDATE`,
+      [job.target.primary_key.value, job.target.tenant_guard.value]
+    );
+    if (!row.rowCount) {
+      const hash = resultHash(job, "ROW_NOT_FOUND");
+      await recordReceipt(client, job, "conflict", hash);
+      return conflict(job, config, "ROW_NOT_FOUND", hash);
+    }
+    const currentVersion = row.rows[0]?.__synapsor_conflict_value ?? row.rows[0]?.[job.conflict_guard.kind === "version_column" ? job.conflict_guard.column : ""];
+    if (job.conflict_guard.kind === "version_column" && !versionValuesMatch(currentVersion, job.conflict_guard.expected_value)) {
+      const hash = resultHash(job, "VERSION_CONFLICT", currentVersion);
+      await recordReceipt(client, job, "conflict", hash);
+      return conflict(job, config, "VERSION_CONFLICT", hash);
+    }
+    const update = buildPostgresUpdate(job);
+    const applied = await client.query(update.sql, update.values);
+    if (applied.rowCount !== 1) {
+      throw new Error(applied.rowCount === 0 ? "VERSION_CONFLICT" : "MULTI_ROW_WRITE_BLOCKED");
+    }
+    const hash = resultHash(job, "applied", job.conflict_guard.kind === "version_column" ? job.conflict_guard.expected_value : undefined);
+    await recordReceipt(client, job, "applied", hash);
+    return {
+      protocol_version: "1.0",
+      job_id: job.job_id,
+      runner_id: config.runnerId,
+      status: "applied",
+      affected_rows: 1,
+      result_hash: hash,
+      completed_at: new Date().toISOString()
+    };
+  });
 }
 
-function conflict(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult {
-  return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "conflict", affected_rows: 0, error_code: code, completed_at: new Date().toISOString() };
+async function claimReceipt(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig): Promise<WritebackResult | undefined> {
+  const claimed = await client.query(
+    `INSERT INTO synapsor_writeback_receipts (idempotency_key, job_id, proposal_id, status, result_hash)
+VALUES ($1, $2, $3, 'in_progress', NULL)
+ON CONFLICT (idempotency_key) DO NOTHING
+RETURNING status, result_hash`,
+    [job.idempotency_key, job.job_id, job.proposal_id]
+  );
+  if (claimed.rowCount === 1) return undefined;
+
+  const receipt = await client.query(
+    "SELECT status, result_hash FROM synapsor_writeback_receipts WHERE idempotency_key = $1 FOR UPDATE",
+    [job.idempotency_key]
+  );
+  const row = receipt.rows[0];
+  if (!row) return failed(job, config, "IDEMPOTENCY_RECEIPT_UNAVAILABLE");
+  return resultFromExistingReceipt(job, config, row.status, row.result_hash);
+}
+
+function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, status: unknown, hash: unknown): WritebackResult {
+  const result_hash = typeof hash === "string" && hash ? hash : resultHash(job, "idempotent");
+  if (status === "applied" || status === "already_applied") {
+    return {
+      protocol_version: "1.0",
+      job_id: job.job_id,
+      runner_id: config.runnerId,
+      status: "already_applied",
+      affected_rows: 0,
+      result_hash,
+      completed_at: new Date().toISOString()
+    };
+  }
+  if (status === "conflict") return conflict(job, config, "IDEMPOTENT_CONFLICT", result_hash);
+  if (status === "failed") return failed(job, config, "IDEMPOTENT_FAILED");
+  return failed(job, config, "IDEMPOTENCY_RECEIPT_IN_PROGRESS");
+}
+
+async function recordReceipt(client: PostgresApplyClient, job: WritebackJob, status: string, hash: string): Promise<void> {
+  const result = await client.query(
+    `UPDATE synapsor_writeback_receipts
+SET status = $2, result_hash = $3, completed_at = now()
+WHERE idempotency_key = $1`,
+    [job.idempotency_key, status, hash]
+  );
+  if (result.rowCount !== 1) throw new Error("IDEMPOTENCY_RECEIPT_UNAVAILABLE");
+}
+
+function conflict(job: WritebackJob, config: RunnerConfig, code: string, result_hash?: string): WritebackResult {
+  return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "conflict", affected_rows: 0, error_code: code, result_hash, completed_at: new Date().toISOString() };
 }
 
 function failed(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult {
@@ -192,7 +256,7 @@ function failed(job: WritebackJob, config: RunnerConfig, code: string): Writebac
 
 export const postgresAdapter: ApplyAdapter = {
   async doctor(config) {
-    if (!config.databaseUrl) return { ok: false, details: { error: "SYNAPSOR_DATABASE_URL required" } };
+    if (!config.databaseUrl) return { ok: false, details: { error: "database URL required; local config apply reads source.write_url_env, legacy workers use SYNAPSOR_DATABASE_URL" } };
     const pool = new Pool({ connectionString: config.databaseUrl });
     const client = await pool.connect();
     try {

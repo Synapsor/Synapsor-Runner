@@ -29,6 +29,35 @@ corepack pnpm test:mcp-local
 
 The script starts a disposable Postgres container, launches the local stdio MCP server through the official MCP client transport, calls the read/proposal tools, approves locally through the CLI, generates a versioned `synapsor.writeback-job.v1` job, applies it through the guarded Postgres adapter, retries idempotently, then proves stale-row conflict.
 
+## Late-Fee Waiver Proposal
+
+`billing.propose_late_fee_waiver` demonstrates the core write-safety loop:
+the model proposes a waiver, the invoice row stays unchanged, a reviewer
+approves outside MCP, and guarded writeback applies only if the tenant and
+`updated_at` conflict guard still match.
+
+Expected output includes:
+
+```text
+Source DB changed:
+no
+
+Guarded writeback applied.
+* proposal approved: yes
+* primary key matched: yes
+* tenant guard matched: yes
+* allowed columns only: yes
+* conflict guard passed: yes
+```
+
+Safety guarantee: the model never receives SQL, write credentials, approval
+tools, commit tools, tenant authority, arbitrary table names, or arbitrary
+column names.
+
+Current limitation: this is local single-row review-mode writeback. It is not
+a Synapsor Cloud workflow, branch, settlement policy, or production approval
+system.
+
 ## Manual setup
 
 ```bash
@@ -39,7 +68,7 @@ export BILLING_POSTGRES_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_billing_agent"
 
-npx -y -p @synapsor/runner@alpha synapsor mcp serve \
+npx -y -p @synapsor/runner synapsor-runner mcp serve \
   --config examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./tmp/mcp-postgres-billing/local.db
 ```

@@ -10,11 +10,26 @@ import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { createMcpRuntime, serveStdio, type RuntimeCapabilityConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
-import { mysqlAdapter } from "@synapsor-runner/mysql";
-import { postgresAdapter } from "@synapsor-runner/postgres";
-import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ExecutionReceiptV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { createMcpRuntime, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
+import { postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
+import {
+  ProposalStore,
+  type EvidenceSearchFilters,
+  type EventSearchFilters,
+  type LocalProposalState,
+  type ProposalEvent,
+  type ProposalReplayRecord,
+  type ProposalSearchFilters,
+  type QueryAuditSearchFilters,
+  type ReceiptSearchFilters,
+  type StoredEvidenceBundle,
+  type StoredProposal,
+  type StoredWritebackReceipt,
+  type StorePruneResult,
+  type StoreStats,
+} from "@synapsor-runner/proposal-store";
+import { parseWritebackJob, protocolVersions, type ChangeSetV1, type ExecutionReceiptV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import {
   generateRunnerConfigFromSpec,
   inspectDatabase,
@@ -32,12 +47,15 @@ import {
   formatMcpAuditReport,
   loadConfig,
   startPolling,
+  type McpAuditReport,
   type RunnerConfig,
 } from "@synapsor-runner/worker-core";
 import { startLocalUiServer } from "./local-ui.js";
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
+type RunnerSourceConfig = NonNullable<RuntimeConfig["sources"]>[string];
+type RunnerCapabilityConfig = NonNullable<RuntimeConfig["capabilities"]>[number];
 
 const dangerousDatabaseMcpAuditExample = {
   tools: [
@@ -129,6 +147,213 @@ const dangerousDatabaseMcpAuditExample = {
 };
 const defaultConfigPath = "synapsor.runner.json";
 const defaultStorePath = "./.synapsor/local.db";
+const quickDemoStorePath = "./.synapsor/quick-demo.db";
+const generatedSmokeInputPath = "./.synapsor/smoke-input.json";
+const handlerSecurityWarning = [
+  "IMPORTANT: your app handler owns the final business write.",
+  "Runner creates the proposal and calls your handler only after approval, but your handler must still enforce:",
+  "- tenant/scope check;",
+  "- expected-version or conflict guard;",
+  "- idempotency key;",
+  "- allowed business action;",
+  "- transaction/rollback;",
+  "- safe error receipt.",
+  "",
+  "If you skip those checks, you can reintroduce cross-tenant writes, lost updates, or duplicate writes.",
+  "Use the generated template/helper pattern and keep handler credentials out of MCP.",
+].join("\n");
+const handlerTemplateDefinitions = {
+  "node-fastify": {
+    aliases: ["node", "fastify"],
+    fileName: "synapsor-writeback-handler.mjs",
+    description: "HTTP handler template for a Node/Fastify application service.",
+    content: `import Fastify from "fastify";
+
+const port = Number(process.env.PORT || 8787);
+const expectedToken = process.env.SYNAPSOR_APP_WRITEBACK_TOKEN || "dev-handler-token";
+
+const app = Fastify({ logger: true });
+
+app.post("/synapsor/writeback", async (request, reply) => {
+  const auth = request.headers.authorization || "";
+  if (auth !== \`Bearer \${expectedToken}\`) {
+    return reply.code(401).send({ status: "failed", safe_error_code: "UNAUTHORIZED" });
+  }
+
+  const body = request.body || {};
+  const changeSet = body.change_set || {};
+
+  if (!body.proposal_id || !body.idempotency_key || !changeSet.scope?.tenant_id) {
+    return reply.code(400).send({ status: "failed", safe_error_code: "BAD_WRITEBACK_REQUEST" });
+  }
+
+  if (body.dry_run) {
+    return {
+      status: "applied",
+      rows_affected: 0,
+      source_database_mutated: false,
+      details: { dry_run: true },
+    };
+  }
+
+  /*
+   * IMPORTANT: your app handler owns the final business write.
+   * Runner creates the proposal and calls your handler only after approval,
+   * but your handler must still enforce tenant/scope, expected-version or
+   * conflict guard, idempotency key, allowed business action,
+   * transaction/rollback, and safe error receipt.
+   *
+   * If you skip those checks, you can reintroduce cross-tenant writes,
+   * lost updates, or duplicate writes. Keep handler credentials out of MCP.
+   *
+   * Put your app-owned transaction here.
+   *
+   * Examples:
+   * - insert a refund_review row;
+   * - insert an account_credit row;
+   * - open a support_ticket row;
+   * - update multiple related rows in one app transaction.
+   *
+   * Re-check tenant/principal authorization, idempotency, row/version guards,
+   * and business policy before mutating application state.
+   */
+
+  return {
+    status: "applied",
+    rows_affected: 1,
+    previous_version: String(changeSet.guards?.expected_version?.value || ""),
+    new_version: new Date().toISOString(),
+    source_database_mutated: true,
+  };
+});
+
+app.listen({ host: "127.0.0.1", port });
+`,
+  },
+  "python-fastapi": {
+    aliases: ["python", "fastapi"],
+    fileName: "synapsor_writeback_handler.py",
+    description: "HTTP handler template for a Python/FastAPI application service.",
+    content: `import os
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, Header, HTTPException
+
+app = FastAPI()
+expected_token = os.getenv("SYNAPSOR_APP_WRITEBACK_TOKEN", "dev-handler-token")
+
+
+@app.post("/synapsor/writeback")
+async def synapsor_writeback(body: dict, authorization: str | None = Header(default=None)):
+    if authorization != f"Bearer {expected_token}":
+        raise HTTPException(status_code=401, detail={"status": "failed", "safe_error_code": "UNAUTHORIZED"})
+
+    change_set = body.get("change_set") or {}
+    scope = change_set.get("scope") or {}
+    if not body.get("proposal_id") or not body.get("idempotency_key") or not scope.get("tenant_id"):
+        raise HTTPException(status_code=400, detail={"status": "failed", "safe_error_code": "BAD_WRITEBACK_REQUEST"})
+
+    if body.get("dry_run"):
+        return {
+            "status": "applied",
+            "rows_affected": 0,
+            "source_database_mutated": False,
+            "details": {"dry_run": True},
+        }
+
+    # Put your app-owned transaction here.
+    #
+    # IMPORTANT: your app handler owns the final business write.
+    # Runner creates the proposal and calls your handler only after approval,
+    # but your handler must still enforce tenant/scope, expected-version or
+    # conflict guard, idempotency key, allowed business action,
+    # transaction/rollback, and safe error receipt.
+    #
+    # If you skip those checks, you can reintroduce cross-tenant writes,
+    # lost updates, or duplicate writes. Keep handler credentials out of MCP.
+    #
+    # Examples:
+    # - insert a refund_review row;
+    # - insert an account_credit row;
+    # - open a support_ticket row;
+    # - update multiple related rows in one app transaction.
+    #
+    # Re-check tenant/principal authorization, idempotency, row/version guards,
+    # and business policy before mutating application state.
+
+    expected_version = ((change_set.get("guards") or {}).get("expected_version") or {}).get("value", "")
+    return {
+        "status": "applied",
+        "rows_affected": 1,
+        "previous_version": str(expected_version),
+        "new_version": datetime.now(timezone.utc).isoformat(),
+        "source_database_mutated": True,
+    }
+`,
+  },
+  command: {
+    aliases: ["script", "local-command"],
+    fileName: "synapsor-command-handler.mjs",
+    description: "Local command handler template for scripts or job runners.",
+    content: `#!/usr/bin/env node
+
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+
+const request = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+const changeSet = request.change_set || {};
+
+if (!request.proposal_id || !request.idempotency_key || !changeSet.scope?.tenant_id) {
+  process.stdout.write(JSON.stringify({
+    status: "failed",
+    safe_error_code: "BAD_WRITEBACK_REQUEST",
+    source_database_mutated: false,
+  }));
+  process.exit(0);
+}
+
+if (request.dry_run) {
+  process.stdout.write(JSON.stringify({
+    status: "applied",
+    rows_affected: 0,
+    source_database_mutated: false,
+    details: { dry_run: true },
+  }));
+  process.exit(0);
+}
+
+/*
+ * IMPORTANT: your app handler owns the final business write.
+ * Runner creates the proposal and calls your handler only after approval,
+ * but your handler must still enforce tenant/scope, expected-version or
+ * conflict guard, idempotency key, allowed business action,
+ * transaction/rollback, and safe error receipt.
+ *
+ * If you skip those checks, you can reintroduce cross-tenant writes,
+ * lost updates, or duplicate writes. Keep handler credentials out of MCP.
+ *
+ * Put your app-owned command transaction here.
+ *
+ * Examples:
+ * - call an internal service;
+ * - enqueue a review job;
+ * - run an app script that uses your normal ORM.
+ *
+ * Re-check tenant/principal authorization, idempotency, row/version guards,
+ * and business policy before mutating application state.
+ */
+
+process.stdout.write(JSON.stringify({
+  status: "applied",
+  rows_affected: 1,
+  previous_version: String(changeSet.guards?.expected_version?.value || ""),
+  new_version: new Date().toISOString(),
+  source_database_mutated: true,
+}));
+`,
+  },
+} as const;
+type HandlerTemplateName = keyof typeof handlerTemplateDefinitions;
 const referenceDemoDir = "examples/reference-support-billing-app";
 const referenceDemoConfigPath = `${referenceDemoDir}/synapsor.runner.json`;
 const referenceDemoContainer = "synapsor_runner_reference_support_billing";
@@ -152,6 +377,10 @@ export async function main(argv: string[]): Promise<number> {
     usage([]);
     return 0;
   }
+  if (!isKnownTopLevelCommand(command)) {
+    process.stderr.write(`Unknown command: ${cliCommandName()} ${command}\n\nTry:\n${cliCommandName()} --help\n`);
+    return 2;
+  }
   if (isHelpRequest(rest)) {
     usage([command, ...rest.filter((arg) => arg !== "--help" && arg !== "-h")]);
     return 0;
@@ -168,29 +397,44 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "apply") return apply(rest);
   if (command === "propose") return propose(rest);
   if (command === "audit") return audit(rest);
-  if (command === "start") return start();
+  if (command === "start") return start(rest);
+  if (command === "up") return up(rest);
   if (command === "runner") return runnerCommand(rest);
   if (command === "cloud") return cloud(rest);
   if (command === "mcp") return mcp(rest);
+  if (command === "smoke") return smoke(rest);
   if (command === "tools") return tools(rest);
+  if (command === "writeback") return writeback(rest);
+  if (command === "handler") return handler(rest);
   if (command === "onboard") return onboard(rest);
   if (command === "demo") return demo(rest);
   if (command === "recipes") return recipes(rest);
   if (command === "benchmark") return benchmark(rest);
   if (command === "proposals") return proposals(rest);
   if (command === "replay") return replay(rest);
+  if (command === "evidence") return evidence(rest);
+  if (command === "query-audit") return queryAudit(rest);
+  if (command === "receipts") return receipts(rest);
+  if (command === "activity") return activity(rest);
+  if (command === "events") return events(rest);
+  if (command === "store") return storeCommand(rest);
   if (command === "shadow") return shadow(rest);
   if (command === "ui") return ui(rest);
-  usage([]);
+  process.stderr.write(`Unknown command: ${cliCommandName()} ${command}\n\nTry:\n${cliCommandName()} --help\n`);
   return 2;
 }
 
 async function init(args: string[]): Promise<number> {
+  const answersPath = optionalArg(args, "--answers");
+  if (answersPath) {
+    return initFromAnswers(args, answersPath);
+  }
   const specPath = optionalArg(args, "--spec");
   if (specPath) {
     return initFromSpec(args, specPath);
   }
-  if (args.includes("--wizard") || (process.stdin.isTTY && process.stdout.isTTY && !args.includes("--starter"))) {
+  const scripted = isScriptedOnboardingArgs(args);
+  if (args.includes("--wizard") || (process.stdin.isTTY && process.stdout.isTTY && !args.includes("--starter") && !scripted)) {
     return runInitWizard(args);
   }
   const inspectionJson = optionalArg(args, "--inspection-json");
@@ -249,14 +493,17 @@ export async function runInitWizard(
     ask?: WizardAsk;
     env?: NodeJS.ProcessEnv;
     inspection?: SchemaInspection;
+    readRow?: DbRowReader;
     stdout?: Pick<NodeJS.WriteStream, "write">;
   } = {},
 ): Promise<number> {
   const ask = options.ask ?? askTtyQuestion;
   const stdout = options.stdout ?? process.stdout;
   stdout.write("Synapsor Runner guided init\n");
-  stdout.write("Use a staging or disposable Postgres/MySQL database first. The wizard stores environment-variable names, not credentials.\n\n");
+  stdout.write("Use a staging or disposable Postgres/MySQL database first. The wizard stores environment-variable names, not credentials.\n");
+  stdout.write("Flow: inspect database -> create trusted context -> create capability -> expose MCP tool.\n\n");
 
+  stdout.write("Step 1: Inspect database metadata\n");
   const engineInput = await askChoice(ask, "Engine", optionalArg(args, "--engine") ?? "auto", ["postgres", "mysql", "auto"]);
   const databaseInput = databaseInputFromArgs(args);
   if (databaseInput.inlineUrl) {
@@ -279,25 +526,31 @@ export async function runInitWizard(
   for (const table of tables.slice(0, 20)) {
     stdout.write(`  - ${table.schema}.${table.name} (${table.type}, pk=${table.primary_key.join(",") || "none"}, tenant=${table.suggestions.tenant_columns.join(",") || "none"})\n`);
   }
-  const tableName = await askDefault(ask, "Table/view for this capability", optionalArg(args, "--table") ?? tables[0]?.name ?? "");
+  stdout.write("\nStep 2: Create trusted context\n");
+  stdout.write("Choose the source object and trusted scope. Tenant and principal values come from your backend/session, not from the model.\n");
+  const tableName = await askDefault(ask, "Source table/view for this context", optionalArg(args, "--table") ?? tables[0]?.name ?? "");
   const table = findInspectionTable(inspection, tableName, schema);
   if (!table) throw new Error(`table not found in inspection: ${schema}.${tableName}`);
   const columns = table.columns.map((column) => column.name);
 
   const primaryKey = await askColumn(ask, "Primary-key column", optionalArg(args, "--primary-key") ?? table.primary_key[0] ?? inferPrimaryKeyCandidate(table), columns);
   const suggestedTenant = optionalArg(args, "--tenant-key") ?? table.suggestions.tenant_columns[0];
-  const tenantAnswer = await askDefault(ask, "Tenant/scope column. Leave blank only for a reviewed single-tenant dev source", suggestedTenant ?? "");
+  const tenantAnswer = await askDefault(ask, "Trusted tenant/scope column", suggestedTenant ?? "");
   const singleTenantDev = !tenantAnswer && (await askDefault(ask, "No tenant column selected. Type yes to mark this as a single-tenant dev source", "no")).toLowerCase() === "yes";
   if (!tenantAnswer && !singleTenantDev) throw new Error("tenant/scope column is required unless single-tenant dev source is explicitly confirmed");
   if (tenantAnswer && !columns.includes(tenantAnswer)) throw new Error(`tenant column ${tenantAnswer} does not exist on ${table.schema}.${table.name}`);
+  const tenantEnv = await askEnvName(ask, "Trusted tenant env var", optionalArg(args, "--tenant-env") ?? "SYNAPSOR_TENANT_ID");
+  const principalEnv = await askEnvName(ask, "Trusted principal env var", optionalArg(args, "--principal-env") ?? "SYNAPSOR_PRINCIPAL");
 
-  const mode = await askChoice(ask, "Mode", optionalArg(args, "--mode") ?? "read_only", ["read_only", "shadow", "review"]);
+  stdout.write("\nStep 3: Create capability\n");
+  stdout.write("Name the semantic tool the model can call. Table, key, visible fields, and mode define what that capability can do.\n");
+  const mode = await askChoice(ask, "Capability mode", optionalArg(args, "--mode") ?? "read_only", ["read_only", "shadow", "review"]);
   const conflictAnswer = mode === "read_only"
     ? optionalArg(args, "--conflict-column") ?? ""
     : await askDefault(ask, "Conflict/version column", optionalArg(args, "--conflict-column") ?? table.suggestions.conflict_columns[0] ?? "");
   if (conflictAnswer && !columns.includes(conflictAnswer)) throw new Error(`conflict column ${conflictAnswer} does not exist on ${table.schema}.${table.name}`);
   const defaultVisible = table.suggestions.default_visible_columns.join(",");
-  let visibleColumns = parseColumnList(await askDefault(ask, "Read-visible columns", optionalArg(args, "--visible-columns") ?? defaultVisible));
+  let visibleColumns = parseColumnList(await askDefault(ask, "Capability read-visible columns", optionalArg(args, "--visible-columns") ?? defaultVisible));
   ensureColumnsExist(visibleColumns, columns, "visible");
 
   if (mode !== "read_only" && !conflictAnswer) {
@@ -367,17 +620,95 @@ export async function runInitWizard(
     }
   }
 
-  const namespace = await askDefault(ask, "Capability namespace", optionalArg(args, "--namespace") ?? recipeSpec?.namespace ?? "source");
-  const objectName = await askDefault(ask, "Business object name", optionalArg(args, "--object-name") ?? recipeSpec?.object_name ?? safeObjectName(table.name));
+  const inferredObjectName = recipeSpec?.object_name ?? safeObjectName(table.name);
+  const namespace = await askDefault(ask, "Capability namespace", optionalArg(args, "--namespace") ?? recipeSpec?.namespace ?? inferCapabilityNamespace(table.name));
+  const objectName = await askDefault(ask, "Business object name", optionalArg(args, "--object-name") ?? inferredObjectName);
   const lookupArg = await askDefault(ask, "Model-visible object id argument", optionalArg(args, "--lookup-arg") ?? recipeSpec?.lookup_arg ?? `${objectName}_id`);
-  const tenantEnv = await askEnvName(ask, "Trusted tenant env var", optionalArg(args, "--tenant-env") ?? "SYNAPSOR_TENANT_ID");
-  const principalEnv = await askEnvName(ask, "Trusted principal env var", optionalArg(args, "--principal-env") ?? "SYNAPSOR_PRINCIPAL");
-  const writeUrlEnv = mode === "review"
-    ? await askEnvName(ask, "Write URL env var for trusted apply path", optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL")
-    : optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL";
+  const defaultInspectToolName = recipeSpec?.inspect_tool_name ?? `${namespace}.inspect_${objectName}`;
+  const inspectToolName = await askDefault(
+    ask,
+    "Read capability name",
+    optionalArg(args, "--read-tool") ?? optionalArg(args, "--inspect-tool-name") ?? defaultInspectToolName,
+  );
+  const defaultProposalToolName = recipeSpec?.proposal_tool_name ?? `${namespace}.propose_${objectName}_update`;
+  const proposalToolName = mode === "read_only" ? undefined : await askDefault(
+    ask,
+    "Proposal capability name",
+    optionalArg(args, "--proposal-tool") ?? optionalArg(args, "--proposal-tool-name") ?? defaultProposalToolName,
+  );
+  const smokeObjectId = await askDefault(ask, "Optional real object id for a first smoke call", optionalArg(args, "--smoke-id") ?? "");
+  const objectLabel = objectName.replace(/_/g, " ");
+  const inspectDescription = await askDefault(
+    ask,
+    "Read capability description",
+    optionalArg(args, "--inspect-description") ?? `Inspect one ${objectLabel} in trusted tenant scope before answering or proposing a change.`,
+  );
+  const inspectReturnsHint = await askDefault(
+    ask,
+    "Read capability returns hint",
+    optionalArg(args, "--inspect-returns-hint") ?? `Returns reviewed ${objectLabel} fields, evidence handle, query audit, and source_database_changed:false.`,
+  );
+  const proposalDescription = mode === "read_only" ? undefined : await askDefault(
+    ask,
+    "Proposal capability description",
+    optionalArg(args, "--proposal-description") ?? `Create a review-required proposal to update one ${objectLabel}. The source database remains unchanged until approval and writeback.`,
+  );
+  const proposalReturnsHint = mode === "read_only" ? undefined : await askDefault(
+    ask,
+    "Proposal capability returns hint",
+    optionalArg(args, "--proposal-returns-hint") ?? "Returns a proposal id, exact before/after diff, evidence handle, approval status, and source_database_changed:false.",
+  );
+  const resultFormatAnswer = await askChoice(ask, "MCP result envelope", optionalArg(args, "--result-format") ? normalizeResultFormatAnswer(optionalArg(args, "--result-format") as string) : "v2", ["v2", "v1", "default"]);
+  const resultFormat = resultFormatAnswer === "v1" ? 1 : resultFormatAnswer === "v2" ? 2 : undefined;
+  let writeUrlEnv: string | undefined = optionalArg(args, "--write-url-env");
+  let writeback: OnboardingSelectionSpec["writeback"] | undefined;
+  let generatedHandlerTemplate: { name: HandlerTemplateName; output: string } | undefined;
+  if (mode === "review") {
+    const writebackPath = await askChoice(
+      ask,
+      "Writeback path",
+      optionalArg(args, "--writeback") ?? "sql_update",
+      ["sql_update", "http_handler", "command_handler"],
+    );
+    if (writebackPath === "sql_update") {
+      writeUrlEnv = await askEnvName(ask, "Write URL env var for trusted direct SQL apply", writeUrlEnv ?? "SYNAPSOR_DATABASE_WRITE_URL");
+      writeback = { executor: "sql_update" };
+    } else if (writebackPath === "http_handler") {
+      const urlEnv = await askEnvName(ask, "App-owned HTTP handler URL env var", optionalArg(args, "--handler-url-env") ?? "SYNAPSOR_APP_WRITEBACK_URL");
+      const tokenEnv = await askOptionalEnvName(ask, "Optional HTTP handler bearer-token env var", optionalArg(args, "--handler-token-env") ?? "");
+      const signingSecretEnv = await askOptionalEnvName(ask, "Optional HTTP handler HMAC signing-secret env var", optionalArg(args, "--handler-signing-secret-env") ?? "");
+      writeback = {
+        executor: "http_handler",
+        executor_name: optionalArg(args, "--executor-name"),
+        handler_url_env: urlEnv,
+        ...(tokenEnv ? { handler_token_env: tokenEnv } : {}),
+        ...(signingSecretEnv ? { handler_signing_secret_env: signingSecretEnv } : {}),
+        timeout_ms: positiveIntegerOption(args, "--handler-timeout-ms"),
+      };
+      const writeTemplate = await askChoice(ask, "Write starter app-owned handler template", args.includes("--skip-handler-template") ? "no" : "yes", ["yes", "no"]);
+      if (writeTemplate === "yes") {
+        const template = await askChoice(ask, "Handler template", optionalArg(args, "--handler-template") ?? "node-fastify", ["node-fastify", "python-fastapi"]) as HandlerTemplateName;
+        const output = await askDefault(ask, "Handler template output", optionalArg(args, "--handler-output") ?? optionalArg(args, "--handler-template-output") ?? handlerTemplateDefinitions[template].fileName);
+        generatedHandlerTemplate = { name: template, output };
+      }
+    } else {
+      const commandEnv = await askEnvName(ask, "App-owned command handler env var", optionalArg(args, "--handler-command-env") ?? "SYNAPSOR_APP_WRITEBACK_COMMAND");
+      writeback = {
+        executor: "command_handler",
+        executor_name: optionalArg(args, "--executor-name"),
+        handler_command_env: commandEnv,
+        timeout_ms: positiveIntegerOption(args, "--handler-timeout-ms"),
+      };
+      const writeTemplate = await askChoice(ask, "Write starter app-owned handler template", args.includes("--skip-handler-template") ? "no" : "yes", ["yes", "no"]);
+      if (writeTemplate === "yes") {
+        const output = await askDefault(ask, "Handler template output", optionalArg(args, "--handler-output") ?? optionalArg(args, "--handler-template-output") ?? handlerTemplateDefinitions.command.fileName);
+        generatedHandlerTemplate = { name: "command", output };
+      }
+    }
+  }
   const approvalRole = mode === "read_only" ? "local_reviewer" : await askDefault(ask, "Required approval role", optionalArg(args, "--approval-role") ?? recipeSpec?.approval?.required_role ?? "local_reviewer");
 
-  const spec: OnboardingSelectionSpec = {
+  let spec: OnboardingSelectionSpec = {
     version: 1,
     engine: inspection.engine,
     mode: mode as "read_only" | "shadow" | "review",
@@ -392,9 +723,14 @@ export async function runInitWizard(
     conflict_column: conflictAnswer || undefined,
     namespace,
     object_name: objectName,
-    inspect_tool_name: recipeSpec?.inspect_tool_name,
-    proposal_tool_name: recipeSpec?.proposal_tool_name,
+    inspect_tool_name: inspectToolName,
+    proposal_tool_name: proposalToolName,
+    inspect_description: inspectDescription,
+    inspect_returns_hint: inspectReturnsHint,
+    proposal_description: proposalDescription,
+    proposal_returns_hint: proposalReturnsHint,
     lookup_arg: lookupArg,
+    result_format: resultFormat as 1 | 2 | undefined,
     visible_columns: visibleColumns,
     allowed_columns: allowedColumns,
     patch,
@@ -408,19 +744,105 @@ export async function runInitWizard(
     approval: {
       required_role: approvalRole,
     },
+    writeback,
   };
-  const generated = generateRunnerConfigFromSpec(spec);
-  const tools = (generated.config.capabilities as Array<{ name: string; kind: string }>).map((capability) => `${capability.name} (${capability.kind})`);
+  let generated = generateRunnerConfigFromSpec(spec);
   stdout.write("\nPreview:\n");
-  stdout.write(`  source: ${inspection.engine} ${table.schema}.${table.name}\n`);
-  stdout.write(`  mode: ${mode}\n`);
-  stdout.write(`  exposed tools: ${tools.join(", ")}\n`);
-  stdout.write("  not exposed: execute_sql, approval tools, commit tools, database URLs, write credentials, model-controlled tenant authority\n");
+  printWizardContractPreview(stdout, { spec, generated, engine: inspection.engine, table });
+  if (generatedHandlerTemplate) {
+    stdout.write(`  handler template: ${generatedHandlerTemplate.output}\n`);
+    stdout.write(`${handlerSecurityWarning}\n`);
+  }
+  const editPreview = await askDefault(ask, "Edit visible fields or capability names before writing? Type yes to edit", "no");
+  if (editPreview.toLowerCase() === "yes") {
+    const updatedVisible = parseColumnList(await askDefault(
+      ask,
+      "Final visible columns",
+      spec.visible_columns?.join(",") ?? visibleColumns.join(","),
+    ));
+    ensureColumnsExist(updatedVisible, columns, "visible");
+    const currentReadTool = spec.inspect_tool_name ?? (generated.config.capabilities as Array<{ name: string; kind: string }>).find((capability) => capability.kind === "read")?.name ?? inspectToolName;
+    const updatedReadTool = await askDefault(ask, "Final read capability name", currentReadTool);
+    const currentProposalTool = spec.proposal_tool_name ?? (generated.config.capabilities as Array<{ name: string; kind: string }>).find((capability) => capability.kind === "proposal")?.name ?? proposalToolName ?? "";
+    const updatedProposalTool = spec.mode === "read_only" ? undefined : await askDefault(ask, "Final proposal capability name", currentProposalTool);
+    spec = {
+      ...spec,
+      visible_columns: updatedVisible,
+      inspect_tool_name: updatedReadTool,
+      proposal_tool_name: updatedProposalTool,
+    };
+    generated = generateRunnerConfigFromSpec(spec);
+    stdout.write("\nUpdated preview:\n");
+    printWizardContractPreview(stdout, { spec, generated, engine: inspection.engine, table });
+  }
+  const generatedCapabilities = generated.config.capabilities as Array<{ name: string; kind: string }>;
+  const smokeToolName = generatedCapabilities[0]?.name ?? "<inspect_tool>";
   const confirmed = await askDefault(ask, "Write generated config and MCP snippets? Type yes to continue", "no");
   if (confirmed.toLowerCase() !== "yes") throw new Error("guided init canceled before writing files");
-  await writeGeneratedOnboardingFiles(outputArg(args) ?? "synapsor.runner.json", generated, args.includes("--force"));
-  stdout.write(`Next: run \`${cliCommandName()} doctor --config synapsor.runner.json\`, then \`${cliCommandName()} mcp serve --config synapsor.runner.json --store ./.synapsor/local.db\`.\n`);
+  const outputPath = outputArg(args) ?? "synapsor.runner.json";
+  await writeGeneratedOnboardingFiles(outputPath, generated, args.includes("--force"), { printNext: false });
+  if (generatedHandlerTemplate) {
+    await writeHandlerTemplateFile(generatedHandlerTemplate.name, generatedHandlerTemplate.output, args.includes("--force"));
+    stdout.write(`created ${generatedHandlerTemplate.output}\n`);
+  }
+  if (smokeObjectId) {
+    await writeGeneratedSmokeInputFile(lookupArg, smokeObjectId, args.includes("--force"));
+    stdout.write(`created ${generatedSmokeInputPath}\n`);
+    const smoke = await maybeRunGeneratedSmokeCall({
+      config: generated.config as RuntimeConfig,
+      env: options.env ?? process.env,
+      input: { [lookupArg]: smokeObjectId },
+      readUrlEnv: configDatabaseUrlEnv,
+      tenantEnv,
+      principalEnv,
+      readRow: options.readRow,
+      storePath: defaultStorePath,
+      toolName: smokeToolName,
+    });
+    stdout.write(smoke);
+  }
+  stdout.write("Next:\n");
+  stdout.write(`  1. Set trusted env vars from .env.example, then run: ${cliCommandName()} doctor --config ${outputPath}\n`);
+  if (smokeObjectId) {
+    stdout.write(`  2. Smoke-call the read capability: ${cliCommandName()} smoke call ${smokeToolName} --input ${generatedSmokeInputPath} --config ${outputPath} --store ${defaultStorePath}\n`);
+  } else {
+    stdout.write(`  2. Smoke-call a real row: ${cliCommandName()} smoke call ${smokeToolName} --json '{"${lookupArg}":"<real_id>"}' --config ${outputPath} --store ${defaultStorePath}\n`);
+  }
+  stdout.write(`  3. Serve MCP tools: ${cliCommandName()} mcp serve --config ${outputPath} --store ${defaultStorePath}\n`);
+  stdout.write(`  OpenAI Agents SDK: use ${cliCommandName()} mcp serve-streamable-http --config ${outputPath} --store ${defaultStorePath} --alias-mode openai\n`);
   return 0;
+}
+
+function printWizardContractPreview(
+  stdout: Pick<NodeJS.WriteStream, "write">,
+  input: {
+    spec: OnboardingSelectionSpec;
+    generated: GeneratedOnboardingFiles;
+    engine: InspectEngine;
+    table: TableInfo;
+  },
+): void {
+  const capabilities = input.generated.config.capabilities as Array<{ name: string; kind: string }>;
+  const tools = capabilities.map((capability) => `${capability.name} (${capability.kind})`);
+  const readCapability = capabilities.find((capability) => capability.kind === "read")?.name ?? input.spec.inspect_tool_name ?? "<read_tool>";
+  const proposalCapability = capabilities.find((capability) => capability.kind === "proposal")?.name ?? input.spec.proposal_tool_name;
+  const visibleColumns = input.spec.visible_columns ?? [];
+  const tenantEnv = input.spec.trusted_context?.tenant_id_env ?? "SYNAPSOR_TENANT_ID";
+  const principalEnv = input.spec.trusted_context?.principal_env ?? "SYNAPSOR_PRINCIPAL";
+  const visiblePreview = visibleColumns.length <= 12
+    ? visibleColumns.join(", ")
+    : `${visibleColumns.slice(0, 12).join(", ")} (+${visibleColumns.length - 12} more)`;
+  stdout.write(`  trusted context: tenant from ${tenantEnv}${input.spec.single_tenant_dev ? " (single-tenant dev source)" : input.spec.tenant_key ? ` via ${input.spec.tenant_key}` : ""}; principal from ${principalEnv}\n`);
+  stdout.write(`  source: ${input.engine} ${input.table.schema}.${input.table.name}\n`);
+  stdout.write(`  primary key: ${input.spec.primary_key}${input.spec.conflict_column ? `; conflict guard: ${input.spec.conflict_column}` : ""}\n`);
+  stdout.write(`  visible fields: ${visiblePreview || "none"}\n`);
+  stdout.write(`  mode: ${input.spec.mode}\n`);
+  stdout.write(`  result envelope: ${input.spec.result_format ? `v${input.spec.result_format}` : "default"}\n`);
+  stdout.write(`  writeback path: ${input.spec.writeback?.executor ?? (input.spec.mode === "review" ? "sql_update" : "none")}\n`);
+  stdout.write(`  read capability: ${readCapability}\n`);
+  if (proposalCapability) stdout.write(`  proposal capability: ${proposalCapability}\n`);
+  stdout.write(`  exposed tools: ${tools.join(", ")}\n`);
+  stdout.write("  not exposed: execute_sql, approval tools, commit tools, database URLs, write credentials, model-controlled tenant authority\n");
 }
 
 async function initFromSpec(args: string[], specPath: string): Promise<number> {
@@ -431,8 +853,135 @@ async function initFromSpec(args: string[], specPath: string): Promise<number> {
   const force = args.includes("--force");
   const spec = JSON.parse(await fs.readFile(specPath, "utf8")) as OnboardingSelectionSpec;
   const generated = generateRunnerConfigFromSpec(spec);
+  if (args.includes("--dry-run")) {
+    process.stdout.write(`${JSON.stringify(generated.config, null, 2)}\n`);
+    return 0;
+  }
   await writeGeneratedOnboardingFiles(output, generated, force);
   return 0;
+}
+
+async function initFromAnswers(args: string[], answersPath: string): Promise<number> {
+  const output = outputArg(args) ?? "synapsor.runner.json";
+  const force = args.includes("--force");
+  const raw = JSON.parse(await fs.readFile(answersPath, "utf8"));
+  const spec = answersToSelectionSpec(raw);
+  const generated = generateRunnerConfigFromSpec(spec);
+  if (args.includes("--dry-run")) {
+    process.stdout.write(`${JSON.stringify(generated.config, null, 2)}\n`);
+    return 0;
+  }
+  await writeGeneratedOnboardingFiles(output, generated, force);
+  await maybeWriteHandlerTemplateForArgs(args, spec.writeback);
+  return 0;
+}
+
+function isScriptedOnboardingArgs(args: string[]): boolean {
+  return args.includes("--yes") ||
+    args.includes("--non-interactive") ||
+    args.includes("--dry-run") ||
+    Boolean(optionalArg(args, "--answers")) ||
+    Boolean(optionalArg(args, "--inspection-json")) ||
+    Boolean(optionalArg(args, "--table"));
+}
+
+function answersToSelectionSpec(raw: unknown): OnboardingSelectionSpec {
+  if (!isRecord(raw)) throw new Error("--answers file must contain a JSON object");
+  const mode = stringValue(raw.mode) ?? "review";
+  if (!["read_only", "shadow", "review"].includes(mode)) throw new Error("answers.mode must be read_only, shadow, or review");
+  const engine = stringValue(raw.engine) ?? "postgres";
+  if (engine !== "postgres" && engine !== "mysql") throw new Error("answers.engine must be postgres or mysql");
+  const table = requiredAnswerString(raw.table, "table");
+  const objectName = stringValue(raw.object_name) ?? safeObjectName(table);
+  const namespace = stringValue(raw.namespace) ?? inferCapabilityNamespace(table);
+  const writebackRaw = stringValue(raw.writeback) ?? "sql_update";
+  if (!["sql_update", "http_handler", "command_handler"].includes(writebackRaw)) throw new Error("answers.writeback must be sql_update, http_handler, or command_handler");
+  const writeback = writebackRaw === "sql_update"
+    ? { executor: "sql_update" as const }
+    : writebackRaw === "http_handler"
+      ? {
+          executor: "http_handler" as const,
+          handler_url_env: stringValue(raw.handler_url_env) ?? "SYNAPSOR_APP_WRITEBACK_URL",
+          ...(stringValue(raw.handler_token_env) ? { handler_token_env: stringValue(raw.handler_token_env) } : {}),
+          ...(stringValue(raw.handler_signing_secret_env) ? { handler_signing_secret_env: stringValue(raw.handler_signing_secret_env) } : {}),
+        }
+      : {
+          executor: "command_handler" as const,
+          handler_command_env: stringValue(raw.handler_command_env) ?? "SYNAPSOR_APP_WRITEBACK_COMMAND",
+        };
+  const patch = parsePatchBindings(arrayOrStringList(raw.patch), "--answers.patch");
+  const allowedColumns = arrayOrStringList(raw.allowed_columns);
+  return {
+    version: 1,
+    engine,
+    mode: mode as "read_only" | "shadow" | "review",
+    source_name: stringValue(raw.source_name),
+    read_url_env: stringValue(raw.read_url_env) ?? stringValue(raw.database_url_env) ?? "DATABASE_URL",
+    write_url_env: writeback.executor === "sql_update" ? stringValue(raw.write_url_env) ?? "SYNAPSOR_DATABASE_WRITE_URL" : stringValue(raw.write_url_env),
+    schema: requiredAnswerString(raw.schema, "schema"),
+    table,
+    primary_key: requiredAnswerString(raw.primary_key, "primary_key"),
+    tenant_key: stringValue(raw.tenant_column) ?? stringValue(raw.tenant_key),
+    single_tenant_dev: raw.single_tenant_dev === true,
+    conflict_column: stringValue(raw.conflict_column),
+    namespace,
+    object_name: objectName,
+    inspect_tool_name: stringValue(raw.read_tool) ?? stringValue(raw.inspect_tool_name),
+    proposal_tool_name: stringValue(raw.proposal_tool) ?? stringValue(raw.proposal_tool_name),
+    lookup_arg: stringValue(raw.id_arg) ?? stringValue(raw.lookup_arg),
+    inspect_description: stringValue(raw.read_description) ?? stringValue(raw.inspect_description),
+    inspect_returns_hint: stringValue(raw.read_returns_hint) ?? stringValue(raw.inspect_returns_hint),
+    proposal_description: stringValue(raw.proposal_description),
+    proposal_returns_hint: stringValue(raw.proposal_returns_hint),
+    result_format: resultFormatFromAnswerValue(raw.result_format),
+    visible_columns: arrayOrStringList(raw.visible_columns),
+    allowed_columns: allowedColumns.length > 0 ? allowedColumns : undefined,
+    patch,
+    numeric_bounds: parseNumericBoundsInput(arrayOrStringList(raw.patch_bounds ?? raw.numeric_bounds).join(",")),
+    transition_guards: parseTransitionGuardsInput(arrayOrStringList(raw.status_guards ?? raw.transition_guards).join(",")),
+    trusted_context: {
+      tenant_id_env: stringValue(raw.tenant_env) ?? "SYNAPSOR_TENANT_ID",
+      principal_env: stringValue(raw.principal_env) ?? "SYNAPSOR_PRINCIPAL",
+    },
+    approval: {
+      required_role: stringValue(raw.approval_role) ?? "local_reviewer",
+    },
+    writeback,
+  };
+}
+
+async function maybeWriteHandlerTemplateForArgs(args: string[], writeback: OnboardingSelectionSpec["writeback"]): Promise<void> {
+  if (!writeback || writeback.executor === "sql_update" || args.includes("--no-emit-handler") || args.includes("--skip-handler-template")) return;
+  if (!args.includes("--emit-handler") && !optionalArg(args, "--handler-template") && !optionalArg(args, "--handler-output") && !optionalArg(args, "--handler-template-output")) return;
+  const defaultTemplate: HandlerTemplateName = writeback.executor === "command_handler" ? "command" : "node-fastify";
+  const template = resolveHandlerTemplateName(optionalArg(args, "--handler-template") ?? defaultTemplate);
+  const output = optionalArg(args, "--handler-output") ?? optionalArg(args, "--handler-template-output") ?? handlerTemplateDefinitions[template].fileName;
+  await writeHandlerTemplateFile(template, output, args.includes("--force"));
+  process.stdout.write(`created ${output}\n`);
+  process.stdout.write(`${handlerSecurityWarning}\n`);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function requiredAnswerString(value: unknown, field: string): string {
+  const result = stringValue(value);
+  if (!result) throw new Error(`--answers missing ${field}`);
+  return result;
+}
+
+function arrayOrStringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function resultFormatFromAnswerValue(value: unknown): 1 | 2 | undefined {
+  if (value === undefined || value === null || value === "" || value === "default") return undefined;
+  if (value === 1 || value === "1" || value === "v1") return 1;
+  if (value === 2 || value === "2" || value === "v2") return 2;
+  throw new Error("result_format must be default, v1, v2, 1, or 2");
 }
 
 async function initFromInspection(args: string[], inspection: SchemaInspection, databaseUrlEnv: string): Promise<number> {
@@ -457,7 +1006,7 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
   if (table.primary_key.length === 0 && primaryKey) {
     process.stderr.write(`warning: no database primary-key constraint detected for ${table.schema}.${table.name}; using candidate column ${primaryKey}. Verify uniqueness before enabling writeback.\n`);
   }
-  const tenantKey = optionalArg(args, "--tenant-key") ?? table.suggestions.tenant_columns[0];
+  const tenantKey = optionalArg(args, "--tenant-column") ?? optionalArg(args, "--tenant-key") ?? table.suggestions.tenant_columns[0];
   const singleTenantDev = args.includes("--single-tenant-dev");
   if (!tenantKey && !singleTenantDev) {
     throw new Error(`--tenant-key is required for ${table.schema}.${table.name}, or pass --single-tenant-dev for a reviewed single-tenant dev source.`);
@@ -477,22 +1026,33 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
   const numericBounds = parseNumericBoundsFlags(args);
   const transitionGuards = parseTransitionGuardFlags(args);
   const allowedColumns = listArg(args, "--allowed-columns") ?? Object.keys(patch);
+  const writeback = writebackSpecFromArgs(args);
+  const sqlWriteback = (writeback?.executor ?? "sql_update") === "sql_update";
+  const objectName = optionalArg(args, "--object-name") ?? safeObjectName(table.name);
+  const namespace = optionalArg(args, "--namespace") ?? inferCapabilityNamespace(table.name);
   const spec: OnboardingSelectionSpec = {
     version: 1,
     engine: inspection.engine,
     mode: mode as "read_only" | "shadow" | "review",
     source_name: optionalArg(args, "--source-name"),
     read_url_env: databaseUrlEnv,
-    write_url_env: optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL",
+    write_url_env: sqlWriteback ? optionalArg(args, "--write-url-env") ?? "SYNAPSOR_DATABASE_WRITE_URL" : optionalArg(args, "--write-url-env"),
     schema: table.schema,
     table: table.name,
     primary_key: primaryKey,
     tenant_key: tenantKey,
     single_tenant_dev: singleTenantDev,
     conflict_column: conflictColumn,
-    namespace: optionalArg(args, "--namespace") ?? "source",
-    object_name: optionalArg(args, "--object-name"),
-    lookup_arg: optionalArg(args, "--lookup-arg"),
+    namespace,
+    object_name: objectName,
+    inspect_tool_name: optionalArg(args, "--read-tool") ?? optionalArg(args, "--inspect-tool-name"),
+    proposal_tool_name: optionalArg(args, "--proposal-tool") ?? optionalArg(args, "--proposal-tool-name"),
+    lookup_arg: optionalArg(args, "--id-arg") ?? optionalArg(args, "--lookup-arg"),
+    inspect_description: optionalArg(args, "--read-description") ?? optionalArg(args, "--inspect-description"),
+    inspect_returns_hint: optionalArg(args, "--read-returns-hint") ?? optionalArg(args, "--inspect-returns-hint"),
+    proposal_description: optionalArg(args, "--proposal-description"),
+    proposal_returns_hint: optionalArg(args, "--proposal-returns-hint"),
+    result_format: resultFormatOption(args),
     visible_columns: visibleColumns,
     allowed_columns: allowedColumns,
     patch,
@@ -505,15 +1065,26 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
     approval: {
       required_role: optionalArg(args, "--approval-role") ?? "local_reviewer",
     },
+    writeback,
   };
   const generated = generateRunnerConfigFromSpec(spec);
+  if (args.includes("--dry-run")) {
+    process.stdout.write(`${JSON.stringify(generated.config, null, 2)}\n`);
+    return 0;
+  }
   await writeGeneratedOnboardingFiles(outputArg(args) ?? "synapsor.runner.json", generated, args.includes("--force"));
+  await maybeWriteHandlerTemplateForArgs(args, writeback);
   process.stdout.write(`selected ${table.schema}.${table.name} from ${inspection.engine} inspection\n`);
   process.stdout.write(`exposed tools: ${(generated.config.capabilities as Array<{ name: string }>).map((capability) => capability.name).join(", ")}\n`);
   return 0;
 }
 
-async function writeGeneratedOnboardingFiles(output: string, generated: GeneratedOnboardingFiles, force: boolean): Promise<void> {
+async function writeGeneratedOnboardingFiles(
+  output: string,
+  generated: GeneratedOnboardingFiles,
+  force: boolean,
+  options: { printNext?: boolean } = {},
+): Promise<void> {
   await writeFileGuarded(output, `${JSON.stringify(generated.config, null, 2)}\n`, force);
   await writeFileGuarded(".env.example", generated.envExample, force);
   await fs.mkdir(path.resolve(".synapsor/mcp"), { recursive: true });
@@ -524,7 +1095,57 @@ async function writeGeneratedOnboardingFiles(output: string, generated: Generate
   process.stdout.write(`created ${output}\n`);
   process.stdout.write("created .env.example\n");
   process.stdout.write("created MCP client snippets under .synapsor/mcp\n");
-  process.stdout.write(`Next: set the referenced environment variables, run \`${cliCommandName()} config validate\`, then run \`${cliCommandName()} mcp serve\`.\n`);
+  if (options.printNext !== false) {
+    process.stdout.write(`Next: set the referenced environment variables, run \`${cliCommandName()} config validate\`, then run \`${cliCommandName()} mcp serve\`.\n`);
+  }
+}
+
+async function writeGeneratedSmokeInputFile(lookupArg: string, objectId: string, force: boolean): Promise<void> {
+  await fs.mkdir(path.dirname(path.resolve(generatedSmokeInputPath)), { recursive: true });
+  await writeFileGuarded(generatedSmokeInputPath, `${JSON.stringify({ [lookupArg]: objectId }, null, 2)}\n`, force);
+}
+
+async function maybeRunGeneratedSmokeCall(input: {
+  config: RuntimeConfig;
+  env: NodeJS.ProcessEnv;
+  input: Record<string, unknown>;
+  readUrlEnv: string;
+  tenantEnv: string;
+  principalEnv: string;
+  readRow?: DbRowReader;
+  storePath: string;
+  toolName: string;
+}): Promise<string> {
+  const required = uniqueStrings([input.readUrlEnv, input.tenantEnv, input.principalEnv])
+    .filter((envName) => !input.env[envName]);
+  if (required.length > 0) {
+    return [
+      "Smoke call not run yet.",
+      `Missing trusted/runtime env vars: ${required.join(", ")}`,
+      "Set them from .env.example, then run the printed smoke command.",
+      "",
+    ].join("\n");
+  }
+  const store = new ProposalStore(input.storePath);
+  const runtime = createMcpRuntime(input.config, { store, env: input.env, readRow: input.readRow });
+  try {
+    const result = await runtime.callTool(input.toolName, input.input);
+    return [
+      "Smoke call ran successfully.",
+      "",
+      formatSmokeCallResult(input.toolName, input.input, result, input.storePath),
+    ].join("\n");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return [
+      "Smoke call attempted but did not pass.",
+      `Reason: ${message}`,
+      "The generated config was written. Fix the trusted env values or object id, then rerun the printed smoke command.",
+      "",
+    ].join("\n");
+  } finally {
+    runtime.close();
+  }
 }
 
 async function askTtyQuestion(question: string, defaultValue?: string): Promise<string> {
@@ -554,11 +1175,51 @@ async function askEnvName(ask: WizardAsk, question: string, defaultValue: string
   return answer;
 }
 
+async function askOptionalEnvName(ask: WizardAsk, question: string, defaultValue: string): Promise<string | undefined> {
+  const answer = await askDefault(ask, question, defaultValue);
+  if (!answer) return undefined;
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(answer)) throw new Error(`${question} must be an environment-variable name`);
+  return answer;
+}
+
 async function askColumn(ask: WizardAsk, question: string, defaultValue: string | undefined, columns: string[]): Promise<string> {
   const answer = await askDefault(ask, question, defaultValue);
   if (!answer) throw new Error(`${question} is required`);
   if (!columns.includes(answer)) throw new Error(`${question} ${answer} does not exist in selected table/view`);
   return answer;
+}
+
+function positiveIntegerOption(args: string[], name: string): number | undefined {
+  const raw = optionalArg(args, name);
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+  return value;
+}
+
+function writebackSpecFromArgs(args: string[]): OnboardingSelectionSpec["writeback"] | undefined {
+  const raw = optionalArg(args, "--writeback");
+  if (!raw) return undefined;
+  if (!["sql_update", "http_handler", "command_handler"].includes(raw)) {
+    throw new Error("--writeback must be sql_update, http_handler, or command_handler");
+  }
+  if (raw === "sql_update") return { executor: "sql_update" };
+  if (raw === "http_handler") {
+    return {
+      executor: "http_handler",
+      executor_name: optionalArg(args, "--executor-name"),
+      handler_url_env: optionalArg(args, "--handler-url-env") ?? "SYNAPSOR_APP_WRITEBACK_URL",
+      ...(optionalArg(args, "--handler-token-env") ? { handler_token_env: optionalArg(args, "--handler-token-env") } : {}),
+      ...(optionalArg(args, "--handler-signing-secret-env") ? { handler_signing_secret_env: optionalArg(args, "--handler-signing-secret-env") } : {}),
+      timeout_ms: positiveIntegerOption(args, "--handler-timeout-ms"),
+    };
+  }
+  return {
+    executor: "command_handler",
+    executor_name: optionalArg(args, "--executor-name"),
+    handler_command_env: optionalArg(args, "--handler-command-env") ?? "SYNAPSOR_APP_WRITEBACK_COMMAND",
+    timeout_ms: positiveIntegerOption(args, "--handler-timeout-ms"),
+  };
 }
 
 function parseColumnList(value: string): string[] {
@@ -667,6 +1328,89 @@ function safeObjectName(tableName: string): string {
   return /^[A-Za-z_]/.test(base) ? base : `record_${base}`;
 }
 
+function inferCapabilityNamespace(tableName: string): string {
+  const objectName = safeObjectName(tableName);
+  const [firstPart] = objectName.split("_").filter(Boolean);
+  return firstPart ?? objectName;
+}
+
+function requiredWritebackEngine(args: string[]): "postgres" | "mysql" {
+  const value = optionalArg(args, "--engine") ?? firstPositional(args);
+  if (value === "postgres" || value === "mysql") return value;
+  throw new Error("writeback command requires --engine postgres or --engine mysql");
+}
+
+function formatPostgresReceiptMigration(schema?: string): string {
+  if (!schema) {
+    return [
+      "-- Synapsor Runner direct SQL writeback receipt table.",
+      "-- Run this as a database owner, or grant CREATE on the target schema to the trusted writer.",
+      `${postgresReceiptMigration};`,
+      "",
+    ].join("\n");
+  }
+  const quotedSchema = quoteSqlIdentifier(schema, "postgres");
+  const qualified = `${quotedSchema}.synapsor_writeback_receipts`;
+  return [
+    "-- Synapsor Runner direct SQL writeback receipt table.",
+    "-- If you use a dedicated schema, ensure the writer connection search_path includes it.",
+    `CREATE SCHEMA IF NOT EXISTS ${quotedSchema};`,
+    `${postgresReceiptMigration.replace("synapsor_writeback_receipts", qualified)};`,
+    "",
+    "-- Example writer URL option for this schema:",
+    `-- postgresql://writer:...@host/db?options=-csearch_path%3D${encodeURIComponent(`${schema},public`)}`,
+    "",
+  ].join("\n");
+}
+
+function formatMysqlReceiptMigration(database?: string): string {
+  return [
+    "-- Synapsor Runner direct SQL writeback receipt table.",
+    "-- Run this in the database/schema used by the trusted writer connection.",
+    ...(database ? [`USE ${quoteSqlIdentifier(database, "mysql")};`] : []),
+    `${mysqlReceiptMigration};`,
+    "",
+  ].join("\n");
+}
+
+function formatPostgresReceiptGrants(schema: string, writerRole: string): string {
+  const quotedSchema = quoteSqlIdentifier(schema, "postgres");
+  const quotedRole = writerRole === "<writer_role>" ? writerRole : quoteSqlIdentifier(writerRole, "postgres");
+  const table = `${quotedSchema}.synapsor_writeback_receipts`;
+  return [
+    "-- Least-privilege grants for a pre-created Synapsor Runner receipt table.",
+    `GRANT USAGE ON SCHEMA ${quotedSchema} TO ${quotedRole};`,
+    `GRANT SELECT, INSERT, UPDATE ON TABLE ${table} TO ${quotedRole};`,
+    "",
+    "-- If you want Runner to create the receipt table itself, also grant CREATE on the schema:",
+    `-- GRANT CREATE ON SCHEMA ${quotedSchema} TO ${quotedRole};`,
+    "",
+    "-- If the schema is not public, make sure the writer connection search_path includes it.",
+    `-- ALTER ROLE ${quotedRole} SET search_path = ${schema}, public;`,
+    "",
+  ].join("\n");
+}
+
+function formatMysqlReceiptGrants(database: string, writerRole: string): string {
+  const quotedDatabase = database === "<database_name>" ? "`<database_name>`" : quoteSqlIdentifier(database, "mysql");
+  const account = writerRole === "<writer_role>" ? "'<writer_user>'@'%'" : writerRole;
+  return [
+    "-- Least-privilege grants for a pre-created Synapsor Runner receipt table.",
+    `GRANT SELECT, INSERT, UPDATE ON ${quotedDatabase}.synapsor_writeback_receipts TO ${account};`,
+    "",
+    "-- If you want Runner to create the receipt table itself, also grant CREATE on the database:",
+    `-- GRANT CREATE ON ${quotedDatabase}.* TO ${account};`,
+    "",
+  ].join("\n");
+}
+
+function quoteSqlIdentifier(identifier: string, engine: "postgres" | "mysql"): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`unsafe ${engine} identifier: ${identifier}`);
+  }
+  return engine === "postgres" ? `"${identifier}"` : `\`${identifier}\``;
+}
+
 function findInspectionTable(inspection: SchemaInspection, tableName: string, schemaName?: string): TableInfo | undefined {
   const candidates = inspection.tables.filter((table) => {
     if (schemaName && table.schema !== schemaName) return false;
@@ -704,6 +1448,7 @@ function repeatedArgs(args: string[], flag: string): string[] {
 
 function parsePatchFlags(args: string[]): NonNullable<OnboardingSelectionSpec["patch"]> {
   const patch: NonNullable<OnboardingSelectionSpec["patch"]> = {};
+  Object.assign(patch, parsePatchBindings(repeatedArgs(args, "--patch"), "--patch"));
   for (const binding of repeatedArgs(args, "--patch-fixed")) {
     const [column, ...rest] = binding.split("=");
     const value = rest.join("=");
@@ -719,8 +1464,28 @@ function parsePatchFlags(args: string[]): NonNullable<OnboardingSelectionSpec["p
   return patch;
 }
 
+function parsePatchBindings(bindings: string[], label: string): NonNullable<OnboardingSelectionSpec["patch"]> {
+  const patch: NonNullable<OnboardingSelectionSpec["patch"]> = {};
+  for (const rawBinding of bindings.flatMap((binding) => binding.split(",")).map((item) => item.trim()).filter(Boolean)) {
+    const [column, ...rest] = rawBinding.split("=");
+    const expression = rest.join("=");
+    if (!column || !expression) throw new Error(`${label} must use column=fixed:value or column=arg:name`);
+    const [kind, ...valueParts] = expression.split(":");
+    const value = valueParts.join(":");
+    if (!valueParts.length || !value) throw new Error(`${label} must use column=fixed:value or column=arg:name`);
+    if (kind === "fixed") {
+      patch[column] = { fixed: parseFixedPatchValue(value) };
+    } else if (kind === "arg") {
+      patch[column] = { from_arg: value };
+    } else {
+      throw new Error(`${label} patch kind for ${column} must be fixed or arg`);
+    }
+  }
+  return patch;
+}
+
 function parseNumericBoundsFlags(args: string[]): OnboardingSelectionSpec["numeric_bounds"] {
-  return parseNumericBoundsInput(repeatedArgs(args, "--numeric-bound").join(","));
+  return parseNumericBoundsInput([...repeatedArgs(args, "--numeric-bound"), ...repeatedArgs(args, "--patch-bounds")].join(","));
 }
 
 function parseNumericBoundsInput(input: string): OnboardingSelectionSpec["numeric_bounds"] {
@@ -757,7 +1522,7 @@ function formatNumericBounds(bounds: OnboardingSelectionSpec["numeric_bounds"]):
 }
 
 function parseTransitionGuardFlags(args: string[]): OnboardingSelectionSpec["transition_guards"] {
-  return parseTransitionGuardsInput(repeatedArgs(args, "--transition-guard").join(","));
+  return parseTransitionGuardsInput([...repeatedArgs(args, "--transition-guard"), ...repeatedArgs(args, "--status-guards")].join(","));
 }
 
 function parseTransitionGuardsInput(input: string): OnboardingSelectionSpec["transition_guards"] {
@@ -846,7 +1611,7 @@ function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlE
   }
   lines.push("");
   lines.push("Next:");
-  lines.push(`  ${cliCommandName()} init --wizard --from-env ${databaseUrlEnv}`);
+  lines.push(`  ${cliCommandName()} onboard db --from-env ${databaseUrlEnv}`);
   lines.push(`  ${cliCommandName()} tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db`);
   return `${lines.join("\n")}\n`;
 }
@@ -947,6 +1712,56 @@ function envPresenceCheck(envName: string, message: string): DoctorCheck {
     level: process.env[envName] ? "pass" : "fail",
     message: process.env[envName] ? `${envName} is set.` : message,
   };
+}
+
+async function httpHandlerReachabilityCheck(executorName: string, rawUrl: string, timeoutMs: number): Promise<DoctorCheck> {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return {
+        name: `executor:${executorName}:handler-reachability`,
+        ok: false,
+        level: "fail",
+        message: "HTTP handler URL must use http or https.",
+      };
+    }
+  } catch {
+    return {
+      name: `executor:${executorName}:handler-reachability`,
+      ok: false,
+      level: "fail",
+      message: "HTTP handler URL env value is not a valid URL.",
+    };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, Math.min(timeoutMs || 3000, 10_000)));
+  try {
+    const response = await fetch(rawUrl, {
+      method: "OPTIONS",
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+    return {
+      name: `executor:${executorName}:handler-reachability`,
+      ok: true,
+      level: "pass",
+      message: `HTTP handler endpoint responded with HTTP ${response.status}; network path is reachable. This is not an apply/writeback probe.`,
+    };
+  } catch (error) {
+    return {
+      name: `executor:${executorName}:handler-reachability`,
+      ok: false,
+      level: "fail",
+      message: `HTTP handler endpoint did not respond to the reachability probe (${safeReachabilityError(error)}).`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function safeReachabilityError(error: unknown): string {
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) return "timeout";
+  return "connection failed";
 }
 
 async function inspectConfiguredSource(input: {
@@ -1063,6 +1878,51 @@ function formatLocalDoctorReport(report: LocalDoctorReport): string {
   return `${lines.join("\n")}\n`;
 }
 
+function formatLocalDoctorMarkdown(report: LocalDoctorReport): string {
+  const store = report.store_stats;
+  const boundaryOk = report.checks.find((check) => check.name === "mcp-tool-boundary")?.ok === true;
+  const lines = [
+    "# Synapsor Runner Doctor Report",
+    "",
+    `- Runner package: @synapsor/runner`,
+    `- Node version: ${process.versions.node}`,
+    `- Config: ${report.config_path}`,
+    `- Mode: ${report.mode}`,
+    `- Status: ${report.ok ? "ok" : "needs attention"}`,
+    "",
+    "## Semantic Tools",
+    "",
+    ...(report.tools.length ? report.tools.map((tool) => `- ${tool}`) : ["- none listed"]),
+    "",
+    "## Safety Boundary",
+    "",
+    `- Raw SQL / commit tools exposed: ${boundaryOk ? "no obvious forbidden tools detected" : "needs review"}`,
+    "- Database URLs, passwords, bearer tokens, and private keys are intentionally not included in this report.",
+    "",
+    "## Local Store",
+    "",
+    `- Path: ${store?.path ?? "not configured"}`,
+    `- Exists: ${store?.exists ? "yes" : "no"}`,
+    ...(store?.exists
+      ? [
+        `- Proposals: ${store.proposals ?? 0}`,
+        `- Evidence bundles: ${store.evidence ?? 0}`,
+        `- Query audit records: ${store.query_audit ?? 0}`,
+        `- Receipts: ${store.receipts ?? 0}`,
+      ]
+      : []),
+    "",
+    "## Checks",
+    "",
+    ...report.checks.map((check) => `- ${check.level.toUpperCase()} ${check.name}: ${check.message}`),
+    "",
+    "## Redaction Note",
+    "",
+    "This report is redacted by design. Do not attach raw database URLs, passwords, API keys, bearer tokens, private keys, cookies, or customer data when sharing diagnostics.",
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
 type DoctorCheck = {
   name: string;
   ok: boolean;
@@ -1076,6 +1936,14 @@ type LocalDoctorReport = {
   config_path: string;
   checks: DoctorCheck[];
   tools: string[];
+  store_stats?: {
+    path: string;
+    exists: boolean;
+    proposals?: number;
+    evidence?: number;
+    query_audit?: number;
+    receipts?: number;
+  };
 };
 
 type CapabilityRecipe = {
@@ -1251,7 +2119,7 @@ async function firstRunDoctor(args: string[]): Promise<number> {
   const configExists = await fileExists(configPath);
   checks.push(configExists
     ? pass("config", `Runner config exists at ${configPath}.`, "MCP serve/smoke need a reviewed config.", "No action needed.")
-    : warn("config", `Runner config not found at ${configPath}.`, "Own-database MCP setup needs a generated config.", `Run ${cliCommandName()} demo first, or run ${cliCommandName()} init --wizard --from-env DATABASE_URL.`));
+    : warn("config", `Runner config not found at ${configPath}.`, "Own-database MCP setup needs a generated config.", `Run ${cliCommandName()} demo first, or run ${cliCommandName()} onboard db --from-env DATABASE_URL.`));
 
   if (configExists) {
     const parsedConfig = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
@@ -1441,6 +2309,8 @@ function formatFirstRunDoctor(report: { ok: boolean; checks: FirstRunCheck[] }):
 async function localDoctor(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
   const allowSharedCredential = args.includes("--allow-shared-credential");
+  const checkHandlers = args.includes("--check-handlers");
+  const checkWriteback = args.includes("--check-writeback") || args.includes("--check-db");
   const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
   const checks: DoctorCheck[] = [];
   const validation = validateRunnerCapabilityConfig(parsed);
@@ -1487,6 +2357,24 @@ async function localDoctor(args: string[]): Promise<number> {
         } else {
           checks.push({ name: `source:${sourceName}:write-url-env`, ok: false, level: "fail", message: "SQL writeback proposal capabilities require write_url_env for trusted writeback." });
         }
+        const writeUrl = source.write_url_env ? process.env[source.write_url_env] : undefined;
+        if (checkWriteback && writeUrl) {
+          checks.push(...await directSqlWritebackDoctorChecks(parsed, sourceName, source, writeUrl));
+        } else if (checkWriteback) {
+          checks.push({
+            name: `source:${sourceName}:writeback-probe`,
+            ok: false,
+            level: "fail",
+            message: "Direct SQL writeback probe skipped because the writer env var is missing.",
+          });
+        } else {
+          checks.push({
+            name: `source:${sourceName}:writeback-probe`,
+            ok: true,
+            level: "warn",
+            message: `Direct SQL writeback was not probed. Rerun doctor with --check-writeback to verify writer connectivity, receipt-table permissions, and rollback-only target-table access.`,
+          });
+        }
       }
     }
     await inspectConfiguredSource({ config: parsed, sourceName, source, checks });
@@ -1496,10 +2384,34 @@ async function localDoctor(args: string[]): Promise<number> {
     if (!isRecord(executor)) continue;
     if (executor.type === "http_handler") {
       const urlEnv = String(executor.url_env ?? "");
-      if (urlEnv) checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`));
+      if (urlEnv) {
+        checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`));
+        const handlerUrl = process.env[urlEnv];
+        if (checkHandlers && handlerUrl) {
+          checks.push(await httpHandlerReachabilityCheck(executorName, handlerUrl, Number(executor.timeout_ms ?? 3000)));
+        } else if (!checkHandlers) {
+          checks.push({
+            name: `executor:${executorName}:handler-reachability`,
+            ok: true,
+            level: "warn",
+            message: `Handler reachability was not probed for ${executorName}. Rerun doctor with --check-handlers to verify the network path without applying a proposal.`,
+          });
+        }
+      }
       const auth = isRecord(executor.auth) ? executor.auth : undefined;
       const tokenEnv = typeof auth?.token_env === "string" ? auth.token_env : undefined;
       if (tokenEnv) checks.push(envPresenceCheck(tokenEnv, `${tokenEnv} is required for http_handler executor ${executorName} bearer auth.`));
+      const signingSecretEnv = typeof executor.signing_secret_env === "string" ? executor.signing_secret_env : undefined;
+      if (signingSecretEnv) {
+        checks.push(envPresenceCheck(signingSecretEnv, `${signingSecretEnv} is required to sign http_handler requests for executor ${executorName}.`));
+      } else {
+        checks.push({
+          name: `executor:${executorName}:handler-signing`,
+          ok: true,
+          level: "warn",
+          message: `No signing_secret_env is configured for http_handler executor ${executorName}. HMAC signing is recommended unless the handler is loopback-only and protected by another trusted boundary.`,
+        });
+      }
     }
     if (executor.type === "command_handler") {
       const commandEnv = String(executor.command_env ?? "");
@@ -1522,13 +2434,222 @@ async function localDoctor(args: string[]): Promise<number> {
     config_path: configPath,
     checks,
     tools,
+    store_stats: await localDoctorStoreStats(optionalArg(args, "--store") ?? parsed.storage?.sqlite_path),
   };
-  if (args.includes("--json")) {
+  if (args.includes("--report")) {
+    const output = outputArg(args) ?? "synapsor-doctor.md";
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, formatLocalDoctorMarkdown(report), "utf8");
+    process.stdout.write(`wrote redacted doctor report: ${output}\n`);
+  } else if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
     process.stdout.write(formatLocalDoctorReport(report));
   }
   return report.ok ? 0 : 1;
+}
+
+async function directSqlWritebackDoctorChecks(
+  config: RuntimeConfig,
+  sourceName: string,
+  source: RunnerSourceConfig,
+  writeUrl: string,
+): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  try {
+    const result = await adapters[source.engine].doctor({
+      controlPlaneUrl: "local",
+      runnerToken: "local",
+      runnerId: "doctor",
+      sourceId: sourceName,
+      databaseUrl: writeUrl,
+      engine: source.engine,
+      pollIntervalMs: 0,
+      logLevel: "error",
+      dryRun: true,
+      stateDir: "./state",
+    } satisfies RunnerConfig);
+    checks.push({
+      name: `source:${sourceName}:receipt-table-probe`,
+      ok: result.ok,
+      level: result.ok ? "pass" : "fail",
+      message: result.ok
+        ? "Writer credential can reach the database and the receipt-table rollback probe succeeded."
+        : `Writer receipt-table probe failed (${safeDatabaseProbeError(result.details)}). ${receiptTableGuidance(source.engine)}`,
+    });
+  } catch (error) {
+    checks.push({
+      name: `source:${sourceName}:receipt-table-probe`,
+      ok: false,
+      level: "fail",
+      message: `Writer receipt-table probe failed (${safeDatabaseProbeError(error)}). ${receiptTableGuidance(source.engine)}`,
+    });
+  }
+
+  for (const capability of directSqlProposalCapabilities(config, sourceName)) {
+    try {
+      await rollbackOnlyTargetProbe(source.engine, writeUrl, capability);
+      checks.push({
+        name: `capability:${capability.name}:writeback-target-probe`,
+        ok: true,
+        level: "pass",
+        message: `Rollback-only writer probe reached ${capability.target.schema}.${capability.target.table} and verified configured write columns without mutating business rows.`,
+      });
+    } catch (error) {
+      checks.push({
+        name: `capability:${capability.name}:writeback-target-probe`,
+        ok: false,
+        level: "fail",
+        message: `Rollback-only writer probe failed for configured target ${capability.target.schema}.${capability.target.table} (${safeDatabaseProbeError(error)}). Verify writer SELECT/UPDATE on the target table and configured columns.`,
+      });
+    }
+  }
+  return checks;
+}
+
+function directSqlProposalCapabilities(config: RuntimeConfig, sourceName: string): RunnerCapabilityConfig[] {
+  return (config.capabilities ?? []).filter((capability) => {
+    if (capability.kind !== "proposal" || capability.source !== sourceName) return false;
+    return (capability.executor ?? "sql_update") === "sql_update";
+  });
+}
+
+async function rollbackOnlyTargetProbe(engine: "postgres" | "mysql", databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
+  if (engine === "postgres") {
+    await rollbackOnlyPostgresTargetProbe(databaseUrl, capability);
+    return;
+  }
+  await rollbackOnlyMysqlTargetProbe(databaseUrl, capability);
+}
+
+async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
+  const pg = await dynamicImportModule<{ Pool: new (options: { connectionString: string }) => { connect(): Promise<PostgresProbeClient>; end(): Promise<void> } }>("pg");
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    try {
+      const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
+      const columns = proposalProbeColumns(capability).map(quotePostgresIdentifier).join(", ");
+      await client.query(`SELECT ${columns} FROM ${table} WHERE false FOR UPDATE`);
+      for (const column of proposalUpdateProbeColumns(capability)) {
+        const quoted = quotePostgresIdentifier(column);
+        await client.query(`UPDATE ${table} SET ${quoted} = ${quoted} WHERE false`);
+      }
+      await client.query("ROLLBACK");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function rollbackOnlyMysqlTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
+  const mysql = await dynamicImportModule<{ createConnection(options: { uri: string; dateStrings: boolean }): Promise<MysqlProbeConnection> }>("mysql2/promise");
+  const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true });
+  try {
+    await connection.beginTransaction();
+    try {
+      const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
+      const columns = proposalProbeColumns(capability).map(quoteMysqlIdentifier).join(", ");
+      await connection.query(`SELECT ${columns} FROM ${table} WHERE 1 = 0 FOR UPDATE`);
+      for (const column of proposalUpdateProbeColumns(capability)) {
+        const quoted = quoteMysqlIdentifier(column);
+        await connection.query(`UPDATE ${table} SET ${quoted} = ${quoted} WHERE 1 = 0`);
+      }
+      await connection.rollback();
+    } catch (error) {
+      await connection.rollback().catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await connection.end();
+  }
+}
+
+async function dynamicImportModule<T>(specifier: string): Promise<T> {
+  const importer = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<T>;
+  return importer(specifier);
+}
+
+type PostgresProbeClient = {
+  query(sql: string, values?: unknown[]): Promise<unknown>;
+  release(): void;
+};
+
+type MysqlProbeConnection = {
+  query(sql: string, values?: unknown[]): Promise<unknown>;
+  beginTransaction(): Promise<void>;
+  rollback(): Promise<void>;
+  end(): Promise<void>;
+};
+
+function proposalProbeColumns(capability: RunnerCapabilityConfig): string[] {
+  const columns = new Set<string>();
+  columns.add(capability.target.primary_key);
+  if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
+  if (capability.conflict_guard?.column) columns.add(capability.conflict_guard.column);
+  for (const column of capability.visible_columns ?? []) columns.add(column);
+  for (const column of proposalUpdateProbeColumns(capability)) columns.add(column);
+  return [...columns];
+}
+
+function proposalUpdateProbeColumns(capability: RunnerCapabilityConfig): string[] {
+  const columns = new Set<string>();
+  for (const column of capability.allowed_columns ?? []) columns.add(column);
+  for (const column of Object.keys(capability.patch ?? {})) columns.add(column);
+  return [...columns];
+}
+
+function quotePostgresIdentifier(value: string): string {
+  return `"${value.replace(/"/g, "\"\"")}"`;
+}
+
+function quoteMysqlIdentifier(value: string): string {
+  return `\`${value.replace(/`/g, "``")}\``;
+}
+
+function safeDatabaseProbeError(error: unknown): string {
+  const raw = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : JSON.stringify(error ?? {});
+  const message = raw.toLowerCase();
+  if (/permission|denied|not authorized|insufficient|42501|er_tableaccess_denied|er_dbaccess_denied/.test(message)) return "permission denied";
+  if (/authentication|password|28p01|access denied for user|invalid authorization/.test(message)) return "authentication failed";
+  if (/timeout|timed out|etimedout/.test(message)) return "timeout";
+  if (/econnrefused|enotfound|eai_again|network|connection terminated|connection failed/.test(message)) return "connection failed";
+  if (/does not exist|unknown database|no such table|undefined_table|er_no_such_table|42p01/.test(message)) return "configured object not found";
+  return "database probe failed";
+}
+
+function receiptTableGuidance(engine: "postgres" | "mysql"): string {
+  if (engine === "postgres") {
+    return `Pre-create the receipt table with "${cliCommandName()} writeback migration --engine postgres --schema synapsor" and grant it with "${cliCommandName()} writeback grants --engine postgres --schema synapsor --writer-role <writer_role>", or use an app-owned handler executor.`;
+  }
+  return `Pre-create the receipt table with "${cliCommandName()} writeback migration --engine mysql --schema <database_name>" and grant it with "${cliCommandName()} writeback grants --engine mysql --schema <database_name> --writer-role \\"'<writer>'@'%'\\"", or use an app-owned handler executor.`;
+}
+
+async function localDoctorStoreStats(storePath?: string): Promise<LocalDoctorReport["store_stats"]> {
+  if (!storePath || storePath === ":memory:") return { path: storePath ?? "not configured", exists: storePath === ":memory:" };
+  if (!await fileExists(storePath)) return { path: storePath, exists: false };
+  const store = new ProposalStore(storePath);
+  try {
+    return {
+      path: storePath,
+      exists: true,
+      proposals: store.listProposals({ limit: 1_000_000 }).length,
+      evidence: store.listEvidenceBundles({ limit: 1_000_000 }).length,
+      query_audit: store.listQueryAudit({ limit: 1_000_000 }).length,
+      receipts: store.listReceipts({ limit: 1_000_000 }).length,
+    };
+  } finally {
+    store.close();
+  }
 }
 
 async function validate(args: string[]): Promise<number> {
@@ -1554,12 +2675,15 @@ async function apply(args: string[]): Promise<number> {
     }
     await verifyLocalWritebackAuthority(job, configPath, storePath);
   }
+  const databaseUrl = configPath
+    ? await resolveSqlWriteDatabaseUrl(job, configPath, process.env)
+    : process.env.SYNAPSOR_DATABASE_URL || "";
   const config: RunnerConfig = {
     controlPlaneUrl: process.env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
     runnerToken: process.env.SYNAPSOR_RUNNER_TOKEN || "local-dry-run-token",
     runnerId: process.env.SYNAPSOR_RUNNER_ID || "local-runner",
     sourceId: process.env.SYNAPSOR_SOURCE_ID || job.source_id,
-    databaseUrl: process.env.SYNAPSOR_DATABASE_URL || "",
+    databaseUrl,
     engine: job.engine,
     pollIntervalMs: Number(process.env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
     logLevel: (process.env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
@@ -1611,18 +2735,18 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
         lease_seconds: Number(optionalArg(args, "--lease-seconds") ?? "300"),
       });
       const result = await applySqlJob(job, configPath, storePath, dryRun, envWithDemoDefaults(config, configPath));
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));
       return result.status === "failed" ? 1 : 0;
     }
     const executor = executorConfig(config, executorName);
     if (executor.type === "http_handler") {
       const result = await applyHttpHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, env: envWithDemoDefaults(config, configPath) });
-      process.stdout.write(`${JSON.stringify(redactConfig(result), null, 2)}\n`);
+      process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
       return result.status === "failed" ? 1 : 0;
     }
     if (executor.type === "command_handler") {
       const result = await applyCommandHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, env: envWithDemoDefaults(config, configPath) });
-      process.stdout.write(`${JSON.stringify(redactConfig(result), null, 2)}\n`);
+      process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
       return result.status === "failed" ? 1 : 0;
     }
     throw new Error(`unsupported executor type for ${executorName}`);
@@ -1634,12 +2758,13 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
 async function applySqlJob(job: unknown, configPath: string, storePath: string | undefined, dryRun: boolean, env: NodeJS.ProcessEnv = process.env): Promise<WritebackResult> {
   const parsedJob = parseWritebackJob(job);
   await verifyLocalWritebackAuthority(parsedJob, configPath, storePath);
+  const databaseUrl = await resolveSqlWriteDatabaseUrl(parsedJob, configPath, env);
   const config: RunnerConfig = {
     controlPlaneUrl: env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
     runnerToken: env.SYNAPSOR_RUNNER_TOKEN || "local-dry-run-token",
     runnerId: env.SYNAPSOR_RUNNER_ID || "local-runner",
     sourceId: env.SYNAPSOR_SOURCE_ID || parsedJob.source_id,
-    databaseUrl: env.SYNAPSOR_DATABASE_URL || "",
+    databaseUrl,
     engine: parsedJob.engine,
     pollIntervalMs: Number(env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
     logLevel: (env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
@@ -1658,11 +2783,20 @@ async function applySqlJob(job: unknown, configPath: string, storePath: string |
   return result;
 }
 
+export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const source = config.sources?.[job.source_id];
+  const writeUrlEnv = source?.write_url_env;
+  if (writeUrlEnv && env[writeUrlEnv]) return env[writeUrlEnv] ?? "";
+  return env.SYNAPSOR_DATABASE_URL || "";
+}
+
 type HttpHandlerExecutor = {
   type: "http_handler";
   url_env: string;
   method?: "POST" | "PUT" | "PATCH";
   auth?: { type: "bearer_env"; token_env: string };
+  signing_secret_env?: string;
   timeout_ms?: number;
 };
 
@@ -1711,6 +2845,10 @@ function executorConfig(config: RuntimeConfig, executorName: string): LocalExecu
   throw new Error(`executor ${executorName} has unsupported type`);
 }
 
+function signHandlerRequestBody(body: string, secret: string): string {
+  return `sha256=${crypto.createHmac("sha256", secret).update(body).digest("hex")}`;
+}
+
 async function applyHttpHandlerProposal(input: {
   store: ProposalStore;
   proposalId: string;
@@ -1744,6 +2882,21 @@ async function applyHttpHandlerProposal(input: {
     if (!token) throw new Error(`${input.executor.auth.token_env} is not set`);
     headers.authorization = `Bearer ${token}`;
   }
+  const issuedAt = new Date().toISOString();
+  const requestBody = JSON.stringify({
+    protocol_version: "1.0",
+    ...prepared.request,
+    issued_at: issuedAt,
+    executor: input.executorName,
+    dry_run: input.dryRun,
+  });
+  headers["x-synapsor-issued-at"] = issuedAt;
+  headers["x-synapsor-proposal-id"] = prepared.proposal.proposal_id;
+  if (input.executor.signing_secret_env) {
+    const signingSecret = input.env[input.executor.signing_secret_env];
+    if (!signingSecret) throw new Error(`${input.executor.signing_secret_env} is not set`);
+    headers["x-synapsor-signature"] = signHandlerRequestBody(requestBody, signingSecret);
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1, input.executor.timeout_ms ?? 5000));
   let receipt: ExecutionReceiptV1;
@@ -1751,7 +2904,7 @@ async function applyHttpHandlerProposal(input: {
     const response = await fetch(url, {
       method: input.executor.method ?? "POST",
       headers,
-      body: JSON.stringify({ ...prepared.request, executor: input.executorName, dry_run: input.dryRun }),
+      body: requestBody,
       signal: controller.signal,
     });
     const text = await response.text();
@@ -1961,6 +3114,129 @@ function hashReceipt(input: unknown): `sha256:${string}` {
   return `sha256:${crypto.createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
 }
 
+function formatApplyResult(job: WritebackJob, result: WritebackResult, dryRun: boolean, storePath: string): string {
+  const status = writebackResultStatus(result);
+  const affectedRows = writebackAffectedRows(result);
+  const errorCode = writebackErrorCode(result);
+  const receiptHash = writebackReceiptHash(result);
+  const conflictGuardPassed = status === "conflict" && errorCode === "VERSION_CONFLICT" ? "no" : status === "applied" ? "yes" : "not completed";
+  const title = status === "conflict"
+    ? "Guarded writeback returned conflict."
+    : status === "failed"
+      ? "Guarded writeback failed."
+      : dryRun
+        ? "Guarded writeback dry run passed."
+        : affectedRows === 0
+          ? "Guarded writeback already applied."
+          : "Guarded writeback applied.";
+  const lines = [
+    title,
+    "",
+    "Checks:",
+    "* proposal approved: yes",
+    `* primary key matched: ${status === "conflict" && errorCode === "ROW_NOT_FOUND" ? "no" : status === "failed" ? "not completed" : "yes"}`,
+    `* tenant guard matched: ${status === "conflict" && errorCode === "ROW_NOT_FOUND" ? "no" : status === "failed" ? "not completed" : "yes"}`,
+    "* allowed columns only: yes",
+    `* conflict guard passed: ${conflictGuardPassed}`,
+    `* affected rows: ${affectedRows}`,
+    `* idempotency key: ${job.idempotency_key}`,
+    "",
+  ];
+  if (status === "conflict") {
+    lines.push(
+      errorCode === "VERSION_CONFLICT" ? "The row changed after the agent saw it." : "The target row was not available under the primary-key and tenant guard.",
+      "",
+      "Result:",
+      "conflict",
+      "",
+      "Source DB changed by Synapsor:",
+      "no",
+      "",
+      "Why:",
+      errorCode === "VERSION_CONFLICT" ? "conflict/version guard did not match" : errorCode || "guarded writeback returned conflict",
+      "",
+    );
+  }
+  if (status === "failed") {
+    lines.push("Error:", errorCode || "writeback failed", "");
+  }
+  lines.push(
+    "Receipt:",
+    receiptHash || "(stored locally)",
+    "",
+    "Replay:",
+    `${cliCommandName()} replay ${job.proposal_id} --store ${storePath}`,
+    "",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function formatHandlerApplyResult(receipt: ExecutionReceiptV1, proposalId: string, storePath: string): string {
+  const title = receipt.status === "conflict"
+    ? "App-owned writeback returned conflict."
+    : receipt.status === "failed"
+      ? "App-owned writeback failed."
+      : receipt.status === "already_applied"
+        ? "App-owned writeback already applied."
+        : "App-owned writeback applied.";
+  const lines = [
+    title,
+    "",
+    "Checks:",
+    "* proposal approved: yes",
+    "* execution authority: app-owned handler outside MCP",
+    `* source database changed by handler: ${receipt.source_database_mutated ? "yes" : "no"}`,
+    `* affected rows: ${receipt.rows_affected}`,
+    `* idempotency key: ${receipt.idempotency_key}`,
+    "",
+  ];
+  if (receipt.status === "conflict") {
+    lines.push(
+      "Result:",
+      "conflict",
+      "",
+      "Why:",
+      receipt.safe_error_code || "handler returned conflict",
+      "",
+    );
+  }
+  if (receipt.status === "failed") {
+    lines.push("Error:", receipt.safe_error_code || "handler writeback failed", "");
+  }
+  lines.push(
+    "Receipt:",
+    receipt.receipt_hash,
+    "",
+    "Replay:",
+    `${cliCommandName()} replay ${proposalId} --store ${storePath}`,
+    "",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function writebackResultStatus(result: WritebackResult): string {
+  return String((result as { status?: unknown }).status ?? "unknown");
+}
+
+function writebackAffectedRows(result: WritebackResult): number {
+  const value = (result as { affected_rows?: unknown; rows_affected?: unknown }).affected_rows
+    ?? (result as { affected_rows?: unknown; rows_affected?: unknown }).rows_affected
+    ?? 0;
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function writebackErrorCode(result: WritebackResult): string | undefined {
+  const value = (result as { error_code?: unknown; safe_error_code?: unknown }).error_code
+    ?? (result as { error_code?: unknown; safe_error_code?: unknown }).safe_error_code;
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function writebackReceiptHash(result: WritebackResult): string | undefined {
+  const value = (result as { result_hash?: unknown; receipt_hash?: unknown }).result_hash
+    ?? (result as { result_hash?: unknown; receipt_hash?: unknown }).receipt_hash;
+  return typeof value === "string" && value ? value : undefined;
+}
+
 function parseOptionalJson(text: string): unknown {
   if (!text.trim()) return {};
   try {
@@ -2076,7 +3352,13 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
   return Object.keys(job.patch).every((column) => reviewedAllowed.has(column));
 }
 
-async function start(): Promise<number> {
+async function start(args: string[] = []): Promise<number> {
+  if (args.length > 0) {
+    if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
+      return onboard(["db", ...args]);
+    }
+    throw new Error(`start accepts own-database onboarding flags such as --from-env DATABASE_URL, or no flags for the legacy polling worker. Unknown start arguments: ${args.join(" ")}`);
+  }
   const config = loadConfig();
   const controller = new AbortController();
   process.on("SIGINT", () => controller.abort());
@@ -2085,9 +3367,232 @@ async function start(): Promise<number> {
   return 0;
 }
 
+async function up(args: string[] = []): Promise<number> {
+  const allowed = new Set([
+    "--config",
+    "--store",
+    "--transport",
+    "--serve",
+    "--with-handler",
+    "--host",
+    "--port",
+    "--auth-token-env",
+    "--alias-mode",
+    "--tool-name-style",
+    "--openai-tool-aliases",
+    "--result-format",
+    "--handler-check",
+    "--open-ui",
+    "--print-next",
+    "--dry-run",
+    "--dev-no-auth",
+    "--cors-origin",
+    "--allow-concurrent-store",
+  ]);
+  assertKnownOptions(args, allowed, "up");
+  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
+  const config = await readRuntimeConfig(configPath);
+  const storePath = optionalArg(args, "--store") ?? config.storage?.sqlite_path ?? defaultStorePath;
+  const serveRequested = args.includes("--serve");
+  const transport = optionalArg(args, "--transport") ?? (serveRequested ? "streamable-http" : "stdio");
+  if (transport !== "stdio" && transport !== "streamable-http") {
+    throw new Error("--transport must be stdio or streamable-http");
+  }
+  if (serveRequested && transport === "stdio") {
+    throw new Error("up --serve starts the Streamable HTTP MCP server. Omit --transport or use --transport streamable-http; for stdio, use mcp client-config so the client launches Runner.");
+  }
+  const port = Number(optionalArg(args, "--port") ?? "8766");
+  if (transport === "streamable-http" && (!Number.isInteger(port) || port <= 0 || port > 65535)) {
+    throw new Error("--port must be an integer from 1 to 65535");
+  }
+  const aliasMode = toolNameStyleOption(args);
+  const resultFormat = resultFormatOption(args);
+  const validation = validateRunnerCapabilityConfig(config);
+  if (!validation.ok) {
+    throw new Error(`cannot bring Runner up with invalid config: ${validation.errors.map((error) => `${error.path} ${error.code}`).join("; ")}`);
+  }
+  if (storePath !== ":memory:") {
+    await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
+  }
+  await assertNoActiveStoreLease(storePath, args.includes("--allow-concurrent-store"), "review-mode up");
+
+  const boundary = await inspectMcpToolBoundary([
+    "--config", configPath,
+    "--store", storePath,
+    "--alias-mode", aliasMode,
+  ]);
+  process.stdout.write(formatReviewModeUp({
+    aliasMode,
+    authTokenEnv: optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+    boundary,
+    config,
+    configPath,
+    dryRun: args.includes("--dry-run"),
+    host: optionalArg(args, "--host") ?? "127.0.0.1",
+    openUi: args.includes("--open-ui"),
+    port,
+    resultFormat,
+    serveRequested,
+    storePath,
+    transport,
+  }));
+
+  if (args.includes("--with-handler") || args.includes("--handler-check")) {
+    process.stdout.write("\nHandler check:\n");
+    const doctorCode = await doctor(["--config", configPath, "--store", storePath, "--check-handlers"]);
+    if (doctorCode !== 0) return doctorCode;
+  }
+
+  if (args.includes("--dry-run") || !serveRequested) return boundary.ok ? 0 : 1;
+  if (!boundary.ok) return 1;
+
+  const serveArgs = [
+    "--config", configPath,
+    "--store", storePath,
+    "--host", optionalArg(args, "--host") ?? "127.0.0.1",
+    "--port", String(port),
+    "--auth-token-env", optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+    "--alias-mode", aliasMode,
+    ...(resultFormat ? ["--result-format", String(resultFormat)] : []),
+    ...(args.includes("--dev-no-auth") ? ["--dev-no-auth"] : []),
+    ...(optionalArg(args, "--cors-origin") ? ["--cors-origin", optionalArg(args, "--cors-origin") as string] : []),
+    ...(args.includes("--allow-concurrent-store") ? ["--allow-concurrent-store"] : []),
+  ];
+  return mcpServeStreamableHttp(serveArgs);
+}
+
+function formatReviewModeUp(input: {
+  aliasMode: ToolNameStyle;
+  authTokenEnv: string;
+  boundary: Awaited<ReturnType<typeof inspectMcpToolBoundary>>;
+  config: RuntimeConfig;
+  configPath: string;
+  dryRun: boolean;
+  host: string;
+  openUi: boolean;
+  port: number;
+  resultFormat?: ResultFormat;
+  serveRequested: boolean;
+  storePath: string;
+  transport: string;
+}): string {
+  const lines = [
+    "Synapsor Runner review-mode up",
+    "",
+    `Config: ${input.configPath}`,
+    `Store: ${input.storePath}`,
+    `Mode: ${input.config.mode}`,
+    `Transport: ${input.transport}`,
+    `Serve now: ${input.serveRequested ? "yes" : "no"}`,
+    `Alias mode: ${input.aliasMode}`,
+    `Result format: ${input.resultFormat ? `v${input.resultFormat}` : configResultFormat(input.config)}`,
+    `Dry run: ${input.dryRun ? "yes" : "no"}`,
+    "",
+    "Model-facing tools:",
+    ...formatUpToolLines(input.boundary),
+    "",
+    "Writeback paths:",
+    ...formatUpWritebackLines(input.config),
+  ];
+  const handlerLines = formatUpHandlerLines(input.config);
+  if (handlerLines.length > 0) {
+    lines.push("", "App-owned handler requirements:", ...handlerLines, "", handlerSecurityWarning);
+  }
+  lines.push("", "Server guidance:");
+  if (input.transport === "stdio") {
+    lines.push(
+      "  stdio mode is launched by an MCP client. This command does not hold a protocol session open.",
+      `  Print client config: ${cliCommandName()} mcp client-config --client claude-desktop --config ${input.configPath} --store ${input.storePath}`,
+      `  Serve command used by clients: ${cliCommandName()} mcp serve --config ${input.configPath} --store ${input.storePath} --alias-mode ${input.aliasMode}`,
+    );
+  } else {
+    lines.push(
+      `  Streamable HTTP endpoint: http://${input.host}:${input.port}/mcp`,
+      `  Auth token env: ${input.authTokenEnv} (${process.env[input.authTokenEnv] ? "set" : "missing"})`,
+      input.serveRequested
+        ? input.dryRun
+          ? "  Status: dry run only; server not started."
+          : "  Status: starting after this checklist."
+        : `  Start command: ${cliCommandName()} up --serve --config ${input.configPath} --store ${input.storePath} --port ${input.port} --auth-token-env ${input.authTokenEnv} --alias-mode ${input.aliasMode}`,
+    );
+  }
+  if (input.openUi) {
+    lines.push("", "Local review UI:", `  ${cliCommandName()} ui --open --tour --config ${input.configPath} --store ${input.storePath}`);
+  }
+  lines.push("", "Next commands:", ...formatUpNextCommands(input.config, input.configPath, input.storePath), "");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatUpToolLines(boundary: Awaited<ReturnType<typeof inspectMcpToolBoundary>>): string[] {
+  if (boundary.exposures.length === 0) return ["  - (none)"];
+  return boundary.exposures.map((item) => item.isAlias
+    ? `  - ${item.exposedName} -> ${item.canonicalName}`
+    : `  - ${item.exposedName}`);
+}
+
+function formatUpWritebackLines(config: RuntimeConfig): string[] {
+  const proposals = (config.capabilities ?? []).filter((capability) => capability.kind === "proposal");
+  if (proposals.length === 0) return ["  - no proposal capabilities; this config is read-only from Runner's perspective"];
+  return proposals.map((capability) => {
+    const executorName = capability.executor ?? "sql_update";
+    if (executorName === "sql_update") {
+      const source = config.sources?.[capability.source];
+      const envName = source?.write_url_env ?? "SYNAPSOR_DATABASE_URL";
+      return `  - ${capability.name}: direct guarded one-row UPDATE via ${envName} (${process.env[envName] ? "set" : "missing"})`;
+    }
+    const executor = config.executors?.[executorName] as Record<string, unknown> | undefined;
+    return `  - ${capability.name}: app-owned ${String(executor?.type ?? "executor")} ${executorName}`;
+  });
+}
+
+function formatUpHandlerLines(config: RuntimeConfig): string[] {
+  const lines: string[] = [];
+  for (const [name, executor] of Object.entries(config.executors ?? {})) {
+    if (!isRecord(executor)) continue;
+    if (executor.type === "http_handler") {
+      const urlEnv = typeof executor.url_env === "string" ? executor.url_env : "";
+      const auth = isRecord(executor.auth) ? executor.auth : undefined;
+      const tokenEnv = typeof auth?.token_env === "string" ? auth.token_env : undefined;
+      const signingSecretEnv = typeof executor.signing_secret_env === "string" ? executor.signing_secret_env : undefined;
+      lines.push(`  - ${name}: http_handler`);
+      if (urlEnv) lines.push(`    url env: ${urlEnv} (${process.env[urlEnv] ? "set" : "missing"})`);
+      if (tokenEnv) lines.push(`    bearer token env: ${tokenEnv} (${process.env[tokenEnv] ? "set" : "missing"})`);
+      if (signingSecretEnv) lines.push(`    signing secret env: ${signingSecretEnv} (${process.env[signingSecretEnv] ? "set" : "missing"})`);
+      if (!signingSecretEnv) lines.push("    signing secret env: not configured (recommended unless loopback-only)");
+    } else if (executor.type === "command_handler") {
+      const commandEnv = typeof executor.command_env === "string" ? executor.command_env : "";
+      lines.push(`  - ${name}: command_handler`);
+      if (commandEnv) lines.push(`    command env: ${commandEnv} (${process.env[commandEnv] ? "set" : "missing"})`);
+    }
+  }
+  return lines;
+}
+
+function configResultFormat(config: RuntimeConfig): string {
+  return config.result_format === 2 ? "v2" : config.result_format === 1 ? "v1" : "default";
+}
+
+function formatUpNextCommands(config: RuntimeConfig, configPath: string, storePath: string): string[] {
+  const firstTool = (config.capabilities ?? [])[0]?.name ?? "<capability>";
+  const hasHandlers = Object.keys(config.executors ?? {}).length > 0;
+  return [
+    `  - Preview tools: ${cliCommandName()} tools preview --config ${configPath} --store ${storePath}`,
+    `  - Smoke call: ${cliCommandName()} smoke call ${firstTool} --sample --config ${configPath} --store ${storePath}`,
+    `  - List proposals: ${cliCommandName()} proposals list --store ${storePath}`,
+    `  - Show proposal: ${cliCommandName()} proposals show latest --store ${storePath}`,
+    `  - Approve proposal: ${cliCommandName()} proposals approve latest --yes --store ${storePath}`,
+    `  - Apply approved proposal: ${cliCommandName()} apply latest --config ${configPath} --store ${storePath}`,
+    `  - Replay: ${cliCommandName()} replay show latest --store ${storePath}`,
+    `  - Tail events: ${cliCommandName()} events tail --store ${storePath}`,
+    `  - Direct writeback doctor: ${cliCommandName()} doctor --config ${configPath} --check-writeback`,
+    ...(hasHandlers ? [`  - Handler doctor: ${cliCommandName()} doctor --config ${configPath} --check-handlers`] : []),
+  ];
+}
+
 async function runnerCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
-  if (subcommand === "start") return start();
+  if (subcommand === "start") return start(rest);
+  if (subcommand === "up") return up(rest);
   if (subcommand === "doctor") return doctor(rest);
   usage();
   return 2;
@@ -2137,7 +3642,7 @@ async function cloudConnect(args: string[]): Promise<number> {
     return 1;
   }
   const runnerId = String(parsed.cloud.runner_id || process.env.SYNAPSOR_RUNNER_ID || "synapsor_runner_local").trim();
-  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0-alpha.3").trim();
+  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0").trim();
   const engines = normalizeEngines(parsed.cloud.engines);
   const capabilities = normalizeCapabilities(parsed.cloud.capabilities);
   const client = new ControlPlaneClient({
@@ -2185,8 +3690,11 @@ async function cloudConnect(args: string[]): Promise<number> {
 async function mcp(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "serve") return mcpServe(rest);
+  if (subcommand === "serve-http") return mcpServeHttp(rest);
+  if (subcommand === "serve-streamable-http") return mcpServeStreamableHttp(rest);
   if (subcommand === "audit") return mcpAudit(rest);
   if (subcommand === "config") return mcpConfig(rest);
+  if (subcommand === "client-config") return mcpConfigure(rest);
   if (subcommand === "configure") return mcpConfigure(rest);
   if (subcommand === "smoke") return mcpSmoke(rest);
   usage(["mcp"]);
@@ -2196,8 +3704,166 @@ async function mcp(args: string[]): Promise<number> {
 async function tools(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "preview") return toolsPreview(rest);
+  if (subcommand === "list") return toolsPreview(rest);
   usage(["tools"]);
   return 2;
+}
+
+async function smoke(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "call") return smokeCall(rest);
+  if (subcommand === "boundary") return mcpSmoke(rest);
+  usage(["smoke"]);
+  return 2;
+}
+
+async function writeback(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "doctor") return writebackDoctor(rest);
+  if (subcommand === "migration") return writebackMigration(rest);
+  if (subcommand === "grants") return writebackGrants(rest);
+  usage(["writeback"]);
+  return 2;
+}
+
+async function handler(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "template") return handlerTemplate(rest);
+  usage(["handler"]);
+  return 2;
+}
+
+async function handlerTemplate(args: string[]): Promise<number> {
+  const allowed = new Set(["--list", "--output", "--out", "--stdout", "--force"]);
+  assertKnownOptions(args, allowed, "handler template");
+  if (args.includes("--list")) {
+    process.stdout.write(formatHandlerTemplateList());
+    return 0;
+  }
+  const requested = positional(args, 0);
+  if (!requested) throw new Error("handler template requires <node-fastify|python-fastapi|command>, or use --list");
+  const name = resolveHandlerTemplateName(requested);
+  const definition = handlerTemplateDefinitions[name];
+  const content = definition.content;
+  if (args.includes("--stdout")) {
+    process.stdout.write(content);
+    return 0;
+  }
+  const output = outputArg(args) ?? definition.fileName;
+  await writeHandlerTemplateFile(name, output, args.includes("--force"));
+  process.stdout.write(`created ${output}\n`);
+  process.stdout.write(`${handlerSecurityWarning}\n`);
+  return 0;
+}
+
+async function writeHandlerTemplateFile(name: HandlerTemplateName, output: string, force: boolean): Promise<void> {
+  const definition = handlerTemplateDefinitions[name];
+  await writeFileGuarded(output, definition.content, force);
+  if (name === "command" || output.endsWith(".mjs") || output.endsWith(".js")) {
+    await fs.chmod(path.resolve(output), 0o755).catch(() => undefined);
+  }
+}
+
+function formatHandlerTemplateList(): string {
+  return [
+    "Synapsor app-owned writeback handler templates",
+    "",
+    ...Object.entries(handlerTemplateDefinitions).map(([name, definition]) => `- ${name}: ${definition.description}`),
+    "",
+    handlerSecurityWarning,
+    "",
+    "Examples:",
+    `  ${cliCommandName()} handler template node-fastify --output ./synapsor-writeback-handler.mjs`,
+    `  ${cliCommandName()} handler template python-fastapi --output ./synapsor_writeback_handler.py`,
+    `  ${cliCommandName()} handler template command --output ./synapsor-command-handler.mjs`,
+    "",
+  ].join("\n");
+}
+
+function resolveHandlerTemplateName(value: string): HandlerTemplateName {
+  const normalized = value.trim().toLowerCase();
+  for (const [name, definition] of Object.entries(handlerTemplateDefinitions) as Array<[HandlerTemplateName, typeof handlerTemplateDefinitions[HandlerTemplateName]]>) {
+    if (normalized === name || (definition.aliases as readonly string[]).includes(normalized)) return name;
+  }
+  throw new Error(`unknown handler template: ${value}. Use ${cliCommandName()} handler template --list`);
+}
+
+async function writebackDoctor(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
+  const config = await readRuntimeConfig(configPath);
+  const checkDb = args.includes("--check-db");
+  const sqlSources = Object.entries(config.sources ?? {})
+    .filter(([sourceName]) => sourceNeedsSqlWriteback(config, sourceName));
+  const lines = [
+    "Synapsor writeback doctor",
+    `Config: ${configPath}`,
+    "",
+  ];
+  if (sqlSources.length === 0) {
+    lines.push("No direct SQL writeback sources found.", "Rich writes can use app-owned http_handler or command_handler executors without Runner creating receipt tables.", "");
+    process.stdout.write(lines.join("\n"));
+    return 0;
+  }
+  let ok = true;
+  for (const [sourceName, source] of sqlSources) {
+    const writeEnv = source.write_url_env;
+    const writeUrl = writeEnv ? process.env[writeEnv] : undefined;
+    lines.push(`Source: ${sourceName}`);
+    lines.push(`  engine: ${source.engine}`);
+    lines.push(`  writer env: ${writeEnv ?? "(missing write_url_env)"}`);
+    lines.push(`  env status: ${writeUrl ? "set" : "missing"}`);
+    lines.push("  receipt table: synapsor_writeback_receipts");
+    if (!writeEnv || !writeUrl) ok = false;
+    if (checkDb && writeUrl) {
+      const result = await adapters[source.engine].doctor({
+        controlPlaneUrl: "local",
+        runnerToken: "local",
+        runnerId: "writeback-doctor",
+        sourceId: sourceName,
+        databaseUrl: writeUrl,
+        engine: source.engine,
+        pollIntervalMs: 0,
+        logLevel: "error",
+        dryRun: true,
+        stateDir: "./state",
+      } satisfies RunnerConfig);
+      lines.push(`  db check: ${result.ok ? "ok" : "failed"}`);
+      lines.push(`  details: ${JSON.stringify(redactConfig(result.details ?? {}))}`);
+      if (!result.ok) ok = false;
+    } else if (checkDb) {
+      lines.push("  db check: skipped because writer env is missing");
+    }
+    lines.push("");
+  }
+  lines.push("Next:");
+  lines.push(`  ${cliCommandName()} writeback migration --engine postgres`);
+  lines.push(`  ${cliCommandName()} writeback grants --engine postgres --writer-role <writer_role>`);
+  lines.push("");
+  process.stdout.write(lines.join("\n"));
+  return ok ? 0 : 1;
+}
+
+async function writebackMigration(args: string[]): Promise<number> {
+  const engine = requiredWritebackEngine(args);
+  const schema = optionalArg(args, "--schema");
+  if (engine === "postgres") {
+    process.stdout.write(formatPostgresReceiptMigration(schema));
+    return 0;
+  }
+  process.stdout.write(formatMysqlReceiptMigration(schema));
+  return 0;
+}
+
+async function writebackGrants(args: string[]): Promise<number> {
+  const engine = requiredWritebackEngine(args);
+  const writerRole = optionalArg(args, "--writer-role") ?? "<writer_role>";
+  const schema = optionalArg(args, "--schema") ?? (engine === "postgres" ? "public" : "<database_name>");
+  if (engine === "postgres") {
+    process.stdout.write(formatPostgresReceiptGrants(schema, writerRole));
+    return 0;
+  }
+  process.stdout.write(formatMysqlReceiptGrants(schema, writerRole));
+  return 0;
 }
 
 async function onboard(args: string[]): Promise<number> {
@@ -2210,8 +3876,10 @@ async function onboard(args: string[]): Promise<number> {
   process.stdout.write("You will inspect metadata, choose one table/view, confirm safety rules, and generate semantic MCP tools without writing JSON by hand.\n\n");
   const outputPath = outputArg(rest) ?? "synapsor.runner.json";
   const storePath = optionalArg(rest, "--store") ?? "./.synapsor/local.db";
-  const result = await runInitWizard(["--wizard", ...rest]);
+  const scripted = isScriptedOnboardingArgs(rest);
+  const result = scripted ? await init(["--non-interactive", ...rest]) : await runInitWizard(["--wizard", ...rest]);
   if (result !== 0) return result;
+  if (rest.includes("--dry-run")) return 0;
   process.stdout.write("\nValidation:\n");
   const configCode = await configValidate(["--config", outputPath]);
   const smokeCode = await mcpSmoke(["--config", outputPath, "--store", storePath]);
@@ -2222,24 +3890,108 @@ async function onboard(args: string[]): Promise<number> {
   }
   process.stdout.write("\nNext commands:\n");
   process.stdout.write(`1. Serve MCP:\n   ${cliCommandName()} mcp serve --config ${outputPath} --store ${storePath}\n`);
-  process.stdout.write(`2. Open local UI:\n   ${cliCommandName()} ui --tour --config ${outputPath} --store ${storePath}\n`);
+  process.stdout.write(`2. Open local UI:\n   ${cliCommandName()} ui --open --tour --config ${outputPath} --store ${storePath}\n`);
   process.stdout.write("3. Approve/apply only after setting a trusted write credential and reviewing the proposal.\n");
   return configCode === 0 && smokeCode === 0 ? 0 : 1;
 }
 
 async function demo(args: string[]): Promise<number> {
   const [subcommand] = args;
+  if (subcommand === "inspect") return demoInspect(args.slice(1));
   if (subcommand && !subcommand.startsWith("-") && subcommand !== "reference-support-billing") {
     usage(["demo"]);
     return 2;
   }
-  if (args.includes("--quick")) return quickDemo();
+  if (args.includes("--quick")) return quickDemo(args);
   return prepareReferenceDemo(args);
 }
 
-async function quickDemo(): Promise<number> {
-  process.stdout.write([
-    "Synapsor Runner quick demo (fixture-only)",
+async function quickDemo(args: string[]): Promise<number> {
+  const allowed = new Set(["--quick", "--guided", "--no-interactive", "--details", "--json"]);
+  assertKnownOptions(args, allowed, "demo --quick");
+  const seeded = await seedQuickDemoStore(quickDemoStorePath);
+  const summary = quickDemoSummary(seeded);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return 0;
+  }
+  if (args.includes("--details")) {
+    process.stdout.write(formatQuickDemoDetails(seeded));
+    return 0;
+  }
+  const canPauseForInput = Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !process.env.VITEST);
+  const forceConcise = args.includes("--no-interactive");
+  const forceGuided = args.includes("--guided") && !forceConcise;
+  const shouldGuide = forceGuided || (canPauseForInput && !forceConcise);
+  if (shouldGuide) {
+    await runGuidedQuickDemo(seeded, { pause: canPauseForInput });
+    return 0;
+  }
+  process.stdout.write(formatQuickDemoConcise(seeded));
+  return 0;
+}
+
+async function demoInspect(args: string[]): Promise<number> {
+  const allowed = new Set(["--npx", "--json"]);
+  assertKnownOptions(args, allowed, "demo inspect");
+  const seeded = await seedQuickDemoStore(quickDemoStorePath);
+  const commands = quickDemoInspectCommands(args.includes("--npx"));
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ ...quickDemoSummary(seeded), commands }, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write(formatQuickDemoInspect(commands));
+  return 0;
+}
+
+function quickDemoSummary(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): Record<string, unknown> {
+  return {
+    mode: "fixture_only",
+    store: quickDemoStorePath,
+    proposal_id: seeded.proposal_id,
+    evidence_bundle_id: seeded.evidence_bundle_id,
+    replay_id: seeded.replay_id,
+    model_tool: "billing.propose_late_fee_waiver",
+    business_object: "invoice:INV-3001",
+    proposed_change: { late_fee_cents: { before: 5500, after: 0 } },
+    source_database_changed: false,
+    approval: "required outside MCP",
+  };
+}
+
+function formatQuickDemoConcise(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): string {
+  void seeded;
+  return [
+    "Synapsor quick demo complete.",
+    "",
+    "The model asked to waive a late fee:",
+    "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")",
+    "",
+    "Result:",
+    "* proposal created",
+    "* source DB changed: no",
+    "* approval required outside MCP",
+    "* evidence + replay saved locally",
+    "",
+    "Local ledger:",
+    quickDemoStorePath,
+    "",
+    "Next:",
+    `${cliCommandName()} demo inspect`,
+    "",
+  ].join("\n");
+}
+
+function formatQuickDemoDetails(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): string {
+  return [
+    "Synapsor Runner quick demo is ready.",
+    "",
+    "This is a fixture-only first look. It does not start Docker, connect a database,",
+    "or require an MCP client. It writes an inspectable local ledger fixture to:",
+    quickDemoStorePath,
+    "",
+    "If you ran this through one-off npx and did not install the package, prefix",
+    "follow-up commands with: npx -y -p @synapsor/runner synapsor-runner",
     "",
     "Raw MCP shape:",
     "execute_sql(sql: string)",
@@ -2250,7 +4002,7 @@ async function quickDemo(): Promise<number> {
     "billing.propose_late_fee_waiver(invoice_id, reason)",
     "",
     "Agent requested:",
-    "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")",
+    "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\", reason=\"approved support waiver\")",
     "",
     "Trusted context:",
     "tenant_id = acme",
@@ -2266,32 +4018,623 @@ async function quickDemo(): Promise<number> {
     "required outside MCP",
     "",
     "Replay:",
-    "available after approval/apply",
+    `${seeded.replay_id} captures the local proposal, evidence handle, query audit, and events.`,
+    `Proposal id: ${seeded.proposal_id}`,
+    `Evidence id: ${seeded.evidence_bundle_id}`,
     "",
-    "Next:",
+    "What this proves:",
+    "* The model gets a business tool, not raw SQL.",
+    "* The model created a proposal, not a write.",
+    "* Source DB changed: no.",
+    "* You can inspect evidence and replay locally.",
+    "",
+    "Try:",
+    `1. ${cliCommandName()} proposals show latest --store ${quickDemoStorePath}`,
+    `2. ${cliCommandName()} activity search --object invoice:INV-3001 --store ${quickDemoStorePath}`,
+    `3. ${cliCommandName()} replay show latest --store ${quickDemoStorePath}`,
+    "",
+    "For full reviewer detail:",
+    `${cliCommandName()} replay show latest --details --store ${quickDemoStorePath}`,
+    "",
+    "For real guarded writeback against disposable Postgres:",
     `${cliCommandName()} demo`,
-    `${cliCommandName()} audit --example dangerous-db-mcp`,
+    "",
+  ].join("\n");
+}
+
+async function runGuidedQuickDemo(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }, options: { pause: boolean }): Promise<void> {
+  const screens = quickDemoGuidedScreens(seeded);
+  for (const [index, screen] of screens.entries()) {
+    printStep(screen.title, screen.body, index + 1, screens.length);
+    if (index < screens.length - 1) {
+      await waitForEnter("Press Enter to continue...", options);
+    }
+  }
+}
+
+function quickDemoGuidedScreens(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): Array<{ title: string; body: string[] }> {
+  return [
+    {
+      title: "Synapsor Runner quick demo",
+      body: [
+        "This teaches the Synapsor safety model without Docker, a database, or an MCP client.",
+        "",
+        "It also creates a local fixture ledger you can inspect.",
+      ],
+    },
+    {
+      title: "The risky default",
+      body: [
+        "Many database MCP demos expose this:",
+        "",
+        "execute_sql(sql: string)",
+        "",
+        "That means the model can receive database authority directly.",
+      ],
+    },
+    {
+      title: "The Synapsor boundary",
+      body: [
+        "Synapsor gives the model business tools instead:",
+        "",
+        "billing.inspect_invoice(invoice_id)",
+        "billing.propose_late_fee_waiver(invoice_id, reason)",
+        "",
+        "The model can ask for a business change.",
+        "It cannot commit the write.",
+      ],
+    },
+    {
+      title: "What the agent requested",
+      body: [
+        "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")",
+        "",
+        "Proposed change:",
+        "late_fee_cents: 5500 -> 0",
+        "",
+        "Source DB changed:",
+        "no",
+      ],
+    },
+    {
+      title: "What Synapsor saved",
+      body: [
+        "Synapsor saved:",
+        "",
+        "- proposal: what the model requested",
+        "- evidence: what data supported it",
+        "- query audit: what was read",
+        "- replay: what happened later",
+        "",
+        `Proposal: ${seeded.proposal_id}`,
+        `Evidence: ${seeded.evidence_bundle_id}`,
+        `Replay: ${seeded.replay_id}`,
+        "",
+        "Local ledger:",
+        quickDemoStorePath,
+      ],
+    },
+    {
+      title: "Inspect it",
+      body: [
+        "Run this next:",
+        "",
+        "npx -y -p @synapsor/runner synapsor-runner demo inspect",
+        "",
+        "demo inspect shows the proposal, evidence, activity search, and replay commands.",
+        "",
+        "If installed globally, use:",
+        "synapsor-runner demo inspect",
+      ],
+    },
+    {
+      title: "Next paths",
+      body: [
+        "Full disposable Postgres demo:",
+        `${cliCommandName()} demo`,
+        "",
+        "Audit risky MCP database tools:",
+        `${cliCommandName()} audit --example dangerous-db-mcp`,
+        "",
+        "Use your own staging DB:",
+        "export DATABASE_URL=\"postgres://...\"",
+        `${cliCommandName()} onboard db --from-env DATABASE_URL`,
+        "",
+        "Done. You just saw Synapsor's core boundary: business tools for the model, approval/writeback outside the model, and replay for inspection.",
+      ],
+    },
+  ];
+}
+
+function printStep(title: string, body: string[], index: number, total: number): void {
+  const divider = "------------------------------------------------------------";
+  process.stdout.write([
+    "",
+    divider,
+    `Step ${index}/${total}: ${title}`,
+    divider,
+    "",
+    ...body,
     "",
   ].join("\n"));
-  return 0;
+}
+
+async function waitForEnter(message: string, options: { pause: boolean }): Promise<void> {
+  if (!options.pause) {
+    process.stdout.write(`${message}\n`);
+    return;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    await rl.question(`${message} `);
+  } finally {
+    rl.close();
+  }
+}
+
+function quickDemoInspectCommands(useNpx: boolean): Array<{ label: string; command: string; description: string }> {
+  const cmd = useNpx ? "npx -y -p @synapsor/runner synapsor-runner" : cliCommandName();
+  return [
+    {
+      label: "Proposal summary",
+      description: "See what the model asked to change.",
+      command: `${cmd} proposals show latest --store ${quickDemoStorePath}`,
+    },
+    {
+      label: "Evidence",
+      description: "Inspect rows and evidence items captured for the proposal.",
+      command: `${cmd} evidence show ev_quick_INV_3001 --store ${quickDemoStorePath}`,
+    },
+    {
+      label: "Activity search",
+      description: "Find the local ledger records for invoice INV-3001.",
+      command: `${cmd} activity search --object invoice:INV-3001 --store ${quickDemoStorePath}`,
+    },
+    {
+      label: "Replay",
+      description: "Replay the local proposal/evidence/audit story.",
+      command: `${cmd} replay show latest --store ${quickDemoStorePath}`,
+    },
+    {
+      label: "Approve outside MCP",
+      description: "Approve the proposal through the local operator boundary.",
+      command: `${cmd} proposals approve latest --yes --store ${quickDemoStorePath}`,
+    },
+    {
+      label: "Full Docker-backed demo",
+      description: "Run the disposable Postgres-backed proof.",
+      command: `${cmd} demo`,
+    },
+    {
+      label: "Audit risky MCP database tools",
+      description: "Review common dangerous MCP tool shapes.",
+      command: `${cmd} audit --example dangerous-db-mcp`,
+    },
+  ];
+}
+
+function formatQuickDemoInspect(commands: Array<{ label: string; command: string; description: string }>): string {
+  return [
+    "Quick demo inspection",
+    "",
+    "Local ledger:",
+    quickDemoStorePath,
+    "",
+    ...commands.flatMap((item, index) => [
+      `${index + 1}. ${item.label}`,
+      `   ${item.description}`,
+      `   ${item.command}`,
+      "",
+    ]),
+  ].join("\n");
+}
+
+async function seedQuickDemoStore(storePath: string): Promise<{ proposal_id: string; evidence_bundle_id: string; replay_id: string }> {
+  const resolved = path.resolve(storePath);
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.rm(resolved, { force: true });
+  const store = new ProposalStore(resolved);
+  try {
+    const changeSet = quickDemoChangeSet();
+    const proposal = store.createProposal(changeSet);
+    store.recordEvidenceBundle({
+      evidence_bundle_id: changeSet.evidence.bundle_id,
+      proposal_id: proposal.proposal_id,
+      tenant_id: changeSet.scope.tenant_id,
+      payload: {
+        capability: changeSet.action,
+        proposal_id: proposal.proposal_id,
+        source_id: changeSet.source.source_id,
+        target: `${changeSet.source.schema}.${changeSet.source.table}`,
+        principal: changeSet.principal.id,
+        tenant_id: changeSet.scope.tenant_id,
+        business_object: changeSet.scope.business_object,
+        object_id: changeSet.scope.object_id,
+        query_fingerprint: changeSet.evidence.query_fingerprint,
+        source_database_changed: false,
+      },
+      items: [
+        {
+          kind: "external_row",
+          source_id: changeSet.source.source_id,
+          table: `${changeSet.source.schema}.${changeSet.source.table}`,
+          primary_key: changeSet.source.primary_key,
+          tenant: changeSet.guards.tenant,
+          visible_row: changeSet.before,
+        },
+        {
+          kind: "proposal_diff",
+          before: changeSet.before,
+          patch: changeSet.patch,
+          after: changeSet.after,
+        },
+      ],
+    });
+    store.recordQueryAudit({
+      proposal_id: proposal.proposal_id,
+      evidence_bundle_id: changeSet.evidence.bundle_id,
+      source_id: changeSet.source.source_id,
+      query_fingerprint: changeSet.evidence.query_fingerprint,
+      table_name: `${changeSet.source.schema}.${changeSet.source.table}`,
+      row_count: 1,
+      payload: {
+        capability: changeSet.action,
+        tenant_bound: true,
+        statement_template: "SELECT id, tenant_id, updated_at, late_fee_cents FROM invoices WHERE id = ? AND tenant_id = ? LIMIT 1",
+        parameters_redacted: true,
+      },
+    });
+    store.replay(proposal.proposal_id);
+    return {
+      proposal_id: proposal.proposal_id,
+      evidence_bundle_id: changeSet.evidence.bundle_id,
+      replay_id: `replay_${proposal.proposal_id}`,
+    };
+  } finally {
+    store.close();
+  }
+}
+
+function quickDemoChangeSet(): ChangeSetV1 {
+  const base = {
+    schema_version: protocolVersions.changeSet,
+    proposal_id: "wrp_quick_INV_3001",
+    proposal_version: 1,
+    action: "billing.propose_late_fee_waiver",
+    mode: "review_required",
+    principal: {
+      id: "support.agent",
+      source: "trusted_session",
+    },
+    scope: {
+      tenant_id: "acme",
+      business_object: "invoice",
+      object_id: "INV-3001",
+    },
+    source: {
+      kind: "external_postgres",
+      source_id: "app_postgres",
+      schema: "public",
+      table: "invoices",
+      primary_key: {
+        column: "id",
+        value: "INV-3001",
+      },
+    },
+    before: {
+      id: "INV-3001",
+      tenant_id: "acme",
+      updated_at: "2026-06-23T09:00:00Z",
+      late_fee_cents: 5500,
+    },
+    patch: {
+      late_fee_cents: 0,
+    },
+    after: {
+      id: "INV-3001",
+      tenant_id: "acme",
+      updated_at: "2026-06-23T09:00:00Z",
+      late_fee_cents: 0,
+    },
+    guards: {
+      tenant: {
+        column: "tenant_id",
+        value: "acme",
+      },
+      allowed_columns: ["late_fee_cents"],
+      expected_version: {
+        column: "updated_at",
+        value: "2026-06-23T09:00:00Z",
+      },
+    },
+    evidence: {
+      bundle_id: "ev_quick_INV_3001",
+      query_fingerprint: "sha256:quick-demo-invoice-read",
+      items: [
+        {
+          kind: "external_row",
+          source_id: "app_postgres",
+          table: "public.invoices",
+          primary_key: { column: "id", value: "INV-3001" },
+        },
+      ],
+    },
+    approval: {
+      status: "pending",
+      required_role: "local_operator",
+    },
+    writeback: {
+      status: "not_applied",
+      mode: "trusted_worker_required",
+    },
+    source_database_mutated: false,
+    integrity: {
+      proposal_hash: "sha256:placeholder",
+    },
+    created_at: "2026-06-23T09:00:00Z",
+  } satisfies Omit<ChangeSetV1, "integrity"> & { integrity: { proposal_hash: `sha256:${string}` } };
+  return {
+    ...base,
+    integrity: {
+      proposal_hash: hashReceipt({ ...base, integrity: undefined }),
+    },
+  };
 }
 
 async function mcpServe(args: string[]): Promise<number> {
+  const transport = optionalArg(args, "--transport") ?? "stdio";
+  if (transport === "streamable-http") return mcpServeStreamableHttp(args);
+  if (transport === "http" || transport === "json-rpc-http" || transport === "jsonrpc-http") return mcpServeHttp(args);
+  if (transport !== "stdio") throw new Error("--transport must be stdio, streamable-http, or http");
   const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
   const readOnly = args.includes("--read-only");
   const config = readOnly
     ? { ...await readRuntimeConfig(configPath ?? defaultConfigPath), mode: "read_only" as const }
     : undefined;
-  await serveStdio({
-    configPath,
-    storePath: optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE,
-    config,
+  const toolNameStyle = toolNameStyleOption(args);
+  const resultFormat = resultFormatOption(args);
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const releaseLease = await writeStoreLease(storePath, "mcp", "stdio", args.includes("--allow-concurrent-store"));
+  try {
+    await serveStdio({
+      configPath,
+      storePath,
+      config,
+      toolNameStyle,
+      resultFormat,
+    });
+    return 0;
+  } finally {
+    await releaseLease();
+  }
+}
+
+async function mcpServeHttp(args: string[]): Promise<number> {
+  process.stderr.write([
+    "Warning: mcp serve-http is a legacy JSON-RPC bridge, not spec MCP Streamable HTTP.",
+    `For OpenAI Agents SDK or standard HTTP MCP clients, use: ${cliCommandName()} mcp serve --transport streamable-http`,
+    "",
+  ].join("\n"));
+  const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
+  const readOnly = args.includes("--read-only");
+  const config = readOnly
+    ? { ...await readRuntimeConfig(configPath ?? defaultConfigPath), mode: "read_only" as const }
+    : undefined;
+  const host = optionalArg(args, "--host") ?? "127.0.0.1";
+  const port = Number(optionalArg(args, "--port") ?? "8765");
+  const resultFormat = resultFormatOption(args);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("--port must be an integer from 1 to 65535");
+  }
+  if (host === "0.0.0.0") {
+    process.stderr.write("Warning: binding Synapsor Runner HTTP MCP to 0.0.0.0 exposes model-facing tools on the network. Use TLS, private networking, authentication, and rate limits.\n");
+  }
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const releaseLease = await writeStoreLease(storePath, "mcp", "legacy-jsonrpc", args.includes("--allow-concurrent-store"));
+  let server: Awaited<ReturnType<typeof startHttpMcpServer>>;
+  try {
+    server = await startHttpMcpServer({
+      configPath,
+      config,
+      storePath,
+      host,
+      port,
+      authTokenEnv: optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      devNoAuth: args.includes("--dev-no-auth"),
+      corsOrigin: optionalArg(args, "--cors-origin"),
+      resultFormat,
+    });
+  } catch (error) {
+    await releaseLease();
+    throw error;
+  }
+  process.stderr.write("Press Ctrl+C to stop.\n");
+  await new Promise<void>((resolve) => {
+    const stop = async () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      await server.close();
+      await releaseLease();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
   });
   return 0;
 }
 
+async function mcpServeStreamableHttp(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
+  const readOnly = args.includes("--read-only");
+  const config = readOnly
+    ? { ...await readRuntimeConfig(configPath ?? defaultConfigPath), mode: "read_only" as const }
+    : undefined;
+  const toolNameStyle = toolNameStyleOption(args);
+  const resultFormat = resultFormatOption(args);
+  const host = optionalArg(args, "--host") ?? "127.0.0.1";
+  const port = Number(optionalArg(args, "--port") ?? "8766");
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("--port must be an integer from 1 to 65535");
+  }
+  if (host === "0.0.0.0") {
+    process.stderr.write("Warning: binding Synapsor Runner Streamable HTTP MCP to 0.0.0.0 exposes model-facing tools on the network. Use TLS, private networking, authentication, and rate limits.\n");
+  }
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const releaseLease = await writeStoreLease(storePath, "mcp", "streamable-http", args.includes("--allow-concurrent-store"));
+  let server: Awaited<ReturnType<typeof startStreamableHttpMcpServer>>;
+  try {
+    server = await startStreamableHttpMcpServer({
+      configPath,
+      config,
+      storePath,
+      host,
+      port,
+      toolNameStyle,
+      authTokenEnv: optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      devNoAuth: args.includes("--dev-no-auth"),
+      corsOrigin: optionalArg(args, "--cors-origin"),
+      resultFormat,
+    });
+  } catch (error) {
+    await releaseLease();
+    throw error;
+  }
+  process.stderr.write("Press Ctrl+C to stop.\n");
+  await new Promise<void>((resolve) => {
+    const stop = async () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      await server.close();
+      await releaseLease();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  return 0;
+}
+
+type StoreLease = {
+  pid: number;
+  mode: string;
+  transport: string;
+  store_path: string;
+  started_at: string;
+};
+
+async function writeStoreLease(storePath: string | undefined, mode: string, transport: string, allowConcurrent: boolean): Promise<() => Promise<void>> {
+  const resolved = resolveStorePathForLease(storePath);
+  if (!resolved) return async () => undefined;
+  await assertNoActiveStoreLease(resolved, allowConcurrent, "serve");
+  const leasePath = storeLeasePath(resolved);
+  const lease: StoreLease = {
+    pid: process.pid,
+    mode,
+    transport,
+    store_path: resolved,
+    started_at: new Date().toISOString(),
+  };
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.writeFile(leasePath, `${JSON.stringify(lease, null, 2)}\n`, "utf8");
+  return async () => {
+    const current = await readStoreLease(resolved);
+    if (current?.pid === process.pid && current.transport === transport) {
+      await fs.rm(leasePath, { force: true });
+    }
+  };
+}
+
+async function assertNoActiveStoreLease(storePath: string | undefined, force: boolean, operation: string): Promise<void> {
+  const resolved = resolveStorePathForLease(storePath);
+  if (!resolved) return;
+  const lease = await readStoreLease(resolved);
+  if (!lease) return;
+  if (!pidIsActive(lease.pid)) {
+    await fs.rm(storeLeasePath(resolved), { force: true });
+    return;
+  }
+  const message = `Local store appears active for ${lease.mode}/${lease.transport} (pid ${lease.pid}, started ${lease.started_at}). Refusing ${operation}. Stop the server or rerun with --allow-concurrent-store/--force if you have verified it is safe.`;
+  if (!force) throw new Error(message);
+  process.stderr.write(`Warning: ${message}\n`);
+}
+
+function resolveStorePathForLease(storePath: string | undefined): string | undefined {
+  const value = storePath ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  if (value === ":memory:") return undefined;
+  return path.resolve(value);
+}
+
+function storeLeasePath(resolvedStorePath: string): string {
+  return `${resolvedStorePath}.lease.json`;
+}
+
+async function readStoreLease(storePath: string | undefined): Promise<StoreLease | undefined> {
+  const resolved = resolveStorePathForLease(storePath);
+  if (!resolved) return undefined;
+  try {
+    const parsed = JSON.parse(await fs.readFile(storeLeasePath(resolved), "utf8")) as Partial<StoreLease>;
+    if (typeof parsed.pid !== "number" || typeof parsed.mode !== "string" || typeof parsed.transport !== "string" || typeof parsed.started_at !== "string") {
+      return undefined;
+    }
+    return {
+      pid: parsed.pid,
+      mode: parsed.mode,
+      transport: parsed.transport,
+      store_path: typeof parsed.store_path === "string" ? parsed.store_path : resolved,
+      started_at: parsed.started_at,
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    return undefined;
+  }
+}
+
+function pidIsActive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function toolNameStyleOption(args: string[]): ToolNameStyle {
+  const requestedStyle = optionalArg(args, "--tool-name-style");
+  const requestedAliasMode = optionalArg(args, "--alias-mode");
+  if (requestedStyle && requestedAliasMode && requestedStyle !== requestedAliasMode) {
+    throw new Error("--tool-name-style and --alias-mode must match when both are provided");
+  }
+  const requested = requestedAliasMode ?? requestedStyle;
+  if (args.includes("--openai-tool-aliases")) {
+    if (requested && requested !== "openai") throw new Error("--openai-tool-aliases cannot be combined with a non-openai alias mode");
+    return "openai";
+  }
+  if (!requested) return "canonical";
+  if (requested === "canonical" || requested === "openai" || requested === "both") return requested;
+  throw new Error("--alias-mode must be canonical, openai, or both");
+}
+
+function resultFormatOption(args: string[]): ResultFormat | undefined {
+  const requested = optionalArg(args, "--result-format");
+  if (!requested) return undefined;
+  if (requested === "1" || requested === "v1") return 1;
+  if (requested === "2" || requested === "v2") return 2;
+  throw new Error("--result-format must be v1, 1, v2, or 2");
+}
+
+function normalizeResultFormatAnswer(value: string): "default" | "v1" | "v2" {
+  if (value === "1" || value === "v1") return "v1";
+  if (value === "2" || value === "v2") return "v2";
+  if (value === "default") return "default";
+  throw new Error("--result-format must be default, v1, 1, v2, or 2");
+}
+
 async function mcpAudit(args: string[]): Promise<number> {
-  const json = args.includes("--json");
+  const format = optionalArg(args, "--format") ?? (args.includes("--json") ? "json" : "text");
+  if (!["text", "json", "markdown"].includes(format)) {
+    throw new Error("audit --format must be text, json, or markdown");
+  }
   const example = optionalArg(args, "--example");
   const target = example ? `example:${example}` : firstPositional(args);
   if (!target) {
@@ -2300,7 +4643,9 @@ async function mcpAudit(args: string[]): Promise<number> {
   const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "5000");
   const payload = example ? builtInMcpAuditExample(example) : await readMcpAuditTarget(target, args, timeoutMs);
   const report = auditMcpManifest(payload, { target });
-  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatMcpAuditReport(report));
+  if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  else if (format === "markdown") process.stdout.write(formatMcpAuditMarkdown(report));
+  else process.stdout.write(formatMcpAuditReport(report));
   return 0;
 }
 
@@ -2368,13 +4713,13 @@ function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<s
   const input: Record<string, unknown> = {};
   for (const [name, spec] of Object.entries(capability.args)) {
     if (name === capability.lookup.id_from_arg) input[name] = sampleIdForCapability(capability, name);
-    else if (/reason/i.test(name)) input[name] = "approved support waiver";
+    else if (/reason/i.test(name)) input[name] = sampleReasonForCapability(capability);
     else if (/resolution/i.test(name)) input[name] = "Resolved after reviewing policy evidence.";
+    else if (spec.enum?.length) input[name] = spec.enum[0];
     else if (/status/i.test(name)) input[name] = "pending_review";
     else if (/amount|cents|fee|credit|balance/i.test(name)) input[name] = typeof spec.maximum === "number" ? Math.min(spec.maximum, 1000) : 0;
     else if (spec.type === "number") input[name] = spec.minimum ?? 1;
     else if (spec.type === "boolean") input[name] = true;
-    else if (spec.enum?.length) input[name] = spec.enum[0];
     else input[name] = `sample_${name}`;
   }
   const missing = Object.entries(capability.args)
@@ -2389,11 +4734,20 @@ function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<s
 
 function sampleIdForCapability(capability: RuntimeCapabilityConfig, argName: string): string {
   const text = `${capability.name} ${capability.target.table} ${argName}`.toLowerCase();
+  const arg = argName.toLowerCase();
   if (/invoice|billing/.test(text)) return "INV-3001";
+  if (/account|customer/.test(arg) || /accounts|customers/.test(text)) return "cust_acme_1";
   if (/ticket|support/.test(text)) return "T-1042";
-  if (/order/.test(text)) return "ord_1001";
-  if (/account|customer/.test(text)) return "cust_acme_1";
+  if (/order/.test(text)) return "O-1001";
   return "sample_1";
+}
+
+function sampleReasonForCapability(capability: RuntimeCapabilityConfig): string {
+  const text = `${capability.name} ${capability.target.table}`.toLowerCase();
+  if (/order|status_change/.test(text)) return "payment cleared and ready for the next status";
+  if (/credit|customer|account/.test(text)) return "support goodwill credit";
+  if (/late_fee|waiver|billing|invoice/.test(text)) return "approved support waiver";
+  return "reviewed and approved by support";
 }
 
 function formatProposeResult(capabilityName: string, result: Record<string, unknown>, storePath: string): string {
@@ -2426,20 +4780,32 @@ function formatProposeResult(capabilityName: string, result: Record<string, unkn
 }
 
 async function mcpConfigure(args: string[]): Promise<number> {
-  const client = optionalArg(args, "--client");
-  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude-desktop|cursor|vscode");
+  const client = normalizeMcpClientName(optionalArg(args, "--client"));
+  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude|claude-desktop|cursor|vscode|openai-agents");
   const useAbsolutePaths = args.includes("--absolute-paths");
   const rawConfigPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
   const rawStorePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
   const configPath = useAbsolutePaths ? path.resolve(rawConfigPath) : rawConfigPath;
   const storePath = useAbsolutePaths ? path.resolve(rawStorePath) : rawStorePath;
+  const transport = mcpClientConfigTransport(args, client);
+  const aliasMode = mcpClientConfigAliasMode(args, client);
+  const includeInstructions = args.includes("--include-instructions");
+  const host = optionalArg(args, "--host") ?? "127.0.0.1";
+  const port = Number(optionalArg(args, "--port") ?? "8766");
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("--port must be an integer from 1 to 65535");
+  }
+  const authTokenEnv = optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   if (!await fileExists(rawConfigPath)) {
     process.stderr.write(`Warning: config path does not exist yet: ${rawConfigPath}\n`);
   }
-  if (!path.isAbsolute(configPath) || !path.isAbsolute(storePath)) {
+  if (transport === "stdio" && (!path.isAbsolute(configPath) || !path.isAbsolute(storePath))) {
     process.stderr.write("Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.\n");
   }
-  const snippet = mcpClientSnippet(client, configPath, storePath);
+  const snippet = mcpClientSnippet(client, configPath, storePath, { transport, aliasMode, host, port, authTokenEnv });
+  if (includeInstructions) {
+    snippet.agent_instructions = mcpAgentInstructions(client, aliasMode);
+  }
   if (args.includes("--write")) {
     const destination = optionalArg(args, "--destination");
     if (!destination) throw new Error("mcp configure --write requires --destination <path>");
@@ -2455,20 +4821,141 @@ async function mcpConfigure(args: string[]): Promise<number> {
 async function mcpConfig(args: string[]): Promise<number> {
   const [client, ...rest] = args;
   if (!client || client.startsWith("--")) return mcpConfigure(["--client", "claude-desktop", ...args]);
-  return mcpConfigure(["--client", client, ...rest]);
+  return mcpConfigure(["--client", normalizeMcpClientName(client) ?? client, ...rest]);
 }
 
-function mcpClientSnippet(client: string, configPath: string, storePath: string): Record<string, unknown> {
-  const command = "synapsor";
-  const args = ["mcp", "serve", "--config", configPath, "--store", storePath];
+function normalizeMcpClientName(client: string | undefined): string | undefined {
+  if (client === "claude") return "claude-desktop";
+  return client;
+}
+
+type McpClientSnippetOptions = {
+  transport: "stdio" | "streamable-http";
+  aliasMode: ToolNameStyle;
+  host: string;
+  port: number;
+  authTokenEnv: string;
+};
+
+function mcpClientConfigTransport(args: string[], client: string): "stdio" | "streamable-http" {
+  const requested = optionalArg(args, "--transport") ?? (client === "openai-agents" ? "streamable-http" : "stdio");
+  if (requested === "stdio" || requested === "streamable-http") return requested;
+  if (requested === "http" || requested === "json-rpc-http" || requested === "jsonrpc-http") {
+    throw new Error("mcp config uses stdio or streamable-http. The lightweight JSON-RPC HTTP bridge is not a standard MCP client transport.");
+  }
+  throw new Error("--transport must be stdio or streamable-http");
+}
+
+function mcpClientConfigAliasMode(args: string[], client: string): ToolNameStyle {
+  const requested = optionalArg(args, "--alias-mode");
+  const aliasMode = requested ?? (args.includes("--openai-tool-aliases") ? "openai" : client === "openai-agents" ? "openai" : "canonical");
+  if (aliasMode === "canonical" || aliasMode === "openai" || aliasMode === "both") return aliasMode;
+  throw new Error("--alias-mode must be canonical, openai, or both");
+}
+
+function serveArgsForClient(configPath: string, storePath: string, options: McpClientSnippetOptions): string[] {
+  const args = options.transport === "streamable-http"
+    ? [
+      "mcp",
+      "serve-streamable-http",
+      "--config",
+      configPath,
+      "--store",
+      storePath,
+      "--host",
+      options.host,
+      "--port",
+      String(options.port),
+      "--auth-token-env",
+      options.authTokenEnv,
+    ]
+    : ["mcp", "serve", "--config", configPath, "--store", storePath];
+  if (options.aliasMode !== "canonical") args.push("--alias-mode", options.aliasMode);
+  return args;
+}
+
+function mcpClientSnippet(client: string, configPath: string, storePath: string, options: McpClientSnippetOptions): Record<string, unknown> {
+  const command = cliCommandName();
+  const args = serveArgsForClient(configPath, storePath, options);
   if (client === "generic" || client === "generic-stdio") return { command, args };
   if (client === "claude-desktop" || client === "cursor") {
+    if (options.transport !== "stdio") throw new Error(`${client} config output currently supports stdio. Use --transport stdio.`);
     return { mcpServers: { synapsor: { command, args } } };
   }
   if (client === "vscode") {
+    if (options.transport !== "stdio") throw new Error("vscode config output currently supports stdio. Use --transport stdio.");
     return { servers: { synapsor: { type: "stdio", command, args } } };
   }
+  if (client === "openai-agents") {
+    if (options.transport !== "streamable-http") throw new Error("openai-agents config output uses Streamable HTTP. Use --transport streamable-http.");
+    const url = `http://${options.host}:${options.port}/mcp`;
+    return {
+      transport: "streamable-http",
+      start_server: {
+        command,
+        args,
+        env: {
+          [options.authTokenEnv]: "<set-a-random-local-token>",
+        },
+      },
+      openai_agents_sdk: {
+        package: "openai-agents",
+        url,
+        headers_from_env: {
+          Authorization: `Bearer $${options.authTokenEnv}`,
+        },
+        python: [
+          "import os",
+          "from agents.mcp import MCPServerStreamableHttp",
+          "",
+          "synapsor_mcp = MCPServerStreamableHttp(",
+          `    params={`,
+          `        "url": "${url}",`,
+          `        "headers": {"Authorization": f"Bearer {os.environ['${options.authTokenEnv}']}"},`,
+          "    }",
+          ")",
+        ].join("\n"),
+      },
+      tool_names: {
+        canonical: "billing.inspect_invoice",
+        model_visible_with_alias_mode_openai: "billing__inspect_invoice",
+        alias_mode: options.aliasMode,
+      },
+      notes: [
+        "Start the local Streamable HTTP MCP server before creating the OpenAI Agents SDK server.",
+        "OpenAI-facing configs should use --alias-mode openai because OpenAI function names cannot contain dots.",
+        "Runner maps aliases back to canonical Synapsor capability names and includes the canonical name in MCP tool metadata.",
+        "This config contains no database URLs, write credentials, API keys, or bearer token values.",
+      ],
+    };
+  }
   throw new Error(`unsupported MCP client: ${client}`);
+}
+
+function mcpAgentInstructions(client: string, aliasMode: ToolNameStyle): Record<string, unknown> {
+  const toolNameNote = aliasMode === "openai"
+    ? "OpenAI-facing tool names may use aliases such as billing__inspect_invoice. Treat the canonical Synapsor capability name in tool metadata/results as the audit name."
+    : "Use the model-visible Synapsor tool names exactly as listed by the MCP client.";
+  return {
+    target_client: client,
+    alias_mode: aliasMode,
+    recommended_system_prompt: [
+      "Use Synapsor Runner tools in a propose-first pattern.",
+      "Inspect relevant records, policy rows, and other evidence before proposing a change.",
+      "Do not claim a database change was committed unless a result says source_database_changed: true.",
+      "Proposal tools create reviewable proposals only; they do not commit writes.",
+      "You cannot approve, apply, commit, or write back through model-facing MCP tools.",
+      "On VERSION_CONFLICT, re-inspect the record before proposing again.",
+      "Evidence handles are audit/replay handles; you do not need to call them during the turn.",
+      toolNameNote,
+    ].join(" "),
+    checklist: [
+      "Inspect evidence before proposing.",
+      "Use trusted session scope; never ask the user/model for tenant or principal values.",
+      "Report proposal ids and source_database_changed exactly from the tool result.",
+      "If ok is false, follow error.code. On TEMPORARILY_UNAVAILABLE, retry later. On NOT_FOUND_IN_TENANT, do not infer cross-tenant existence.",
+    ],
+  };
 }
 
 async function mcpSmoke(args: string[]): Promise<number> {
@@ -2481,6 +4968,35 @@ async function mcpSmoke(args: string[]): Promise<number> {
   return boundary.ok ? 0 : 1;
 }
 
+async function smokeCall(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? defaultStorePath;
+  const config = await readRuntimeConfig(configPath);
+  const env = envWithDemoDefaults(config, configPath);
+  const store = new ProposalStore(storePath);
+  const runtime = createMcpRuntime(config, { store, env });
+  try {
+    const tools = runtime.listTools();
+    const requestedTool = firstPositional(args);
+    const toolName = requestedTool ?? (tools.length === 1 ? tools[0]?.name : undefined);
+    if (!toolName) {
+      throw new Error(`smoke call needs <capability-name> because ${tools.length} tools are exposed: ${tools.map((tool) => tool.name).join(", ") || "none"}`);
+    }
+    const capability = (config.capabilities ?? []).find((item) => item.name === toolName);
+    if (!capability && config.mode !== "cloud") throw new Error(`capability not found in ${configPath}: ${toolName}`);
+    const input = capability ? await smokeToolInput(args, capability) : await smokeInputFromArgs(args);
+    const result = await runtime.callTool(toolName, input);
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ ok: true, tool: toolName, input, result, store_path: storePath }, null, 2)}\n`);
+    } else {
+      process.stdout.write(formatSmokeCallResult(toolName, input, result, storePath));
+    }
+    return 0;
+  } finally {
+    runtime.close();
+  }
+}
+
 async function toolsPreview(args: string[]): Promise<number> {
   const boundary = await inspectMcpToolBoundary(args);
   if (args.includes("--json")) {
@@ -2488,7 +5004,9 @@ async function toolsPreview(args: string[]): Promise<number> {
       ok: boundary.ok,
       config_path: boundary.configPath,
       store_path: boundary.storePath,
+      alias_mode: boundary.aliasMode,
       exposed_to_mcp: boundary.names,
+      alias_mappings: boundary.exposures,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
       checks: boundary.checks,
     }, null, 2)}\n`);
@@ -2502,19 +5020,25 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   ok: boolean;
   configPath: string;
   storePath: string;
+  aliasMode: ToolNameStyle;
   names: string[];
+  exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
   const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
   const storePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
+  const aliasMode = args.includes("--aliases") && !optionalArg(args, "--alias-mode") && !optionalArg(args, "--tool-name-style")
+    ? "both"
+    : toolNameStyleOption(args);
   if (!await fileExists(configPath)) {
-    throw new Error(`MCP tool preview could not find ${configPath}.\n\nWhy it matters:\nThe MCP server needs a reviewed config before it can expose semantic tools.\n\nFix:\nRun ${cliCommandName()} init --wizard --from-env DATABASE_URL, or pass --config <path>.`);
+    throw new Error(`MCP tool preview could not find ${configPath}.\n\nWhy it matters:\nThe MCP server needs a reviewed config before it can expose semantic tools.\n\nFix:\nRun ${cliCommandName()} onboard db --from-env DATABASE_URL, or pass --config <path>.`);
   }
   const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
   const runtime = createMcpRuntime(parsed, { storePath });
   try {
     const tools = runtime.listTools();
-    const names = tools.map((tool) => tool.name);
+    const exposures = toolNameExposures(tools.map((tool) => tool.name), aliasMode);
+    const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
     const checks = [
       { name: "semantic tools present", ok: names.length > 0, detail: names.join(", ") || "none" },
@@ -2525,7 +5049,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, names, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, checks };
   } finally {
     runtime.close();
   }
@@ -2547,16 +5071,22 @@ function formatToolsPreview(input: {
   ok: boolean;
   configPath: string;
   storePath: string;
+  aliasMode: ToolNameStyle;
   names: string[];
+  exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
+  const exposedLines = input.exposures.length > 0
+    ? input.exposures.map((item) => item.isAlias ? `  - ${item.exposedName} -> ${item.canonicalName}` : `  - ${item.exposedName}`)
+    : ["  - (none)"];
   const lines = [
     `Synapsor tools preview: ${input.ok ? "ok" : "failed"}`,
     `Config: ${input.configPath}`,
     `Store: ${input.storePath}`,
+    `Alias mode: ${input.aliasMode}`,
     "",
     "Exposed to MCP:",
-    ...(input.names.length > 0 ? input.names.map((name) => `  - ${name}`) : ["  - (none)"]),
+    ...exposedLines,
     "",
     "Not exposed to MCP:",
     ...defaultBlockedToolSurface().map((name) => `  - ${name}`),
@@ -2592,6 +5122,71 @@ function formatMcpSmoke(input: {
   for (const check of input.checks) {
     lines.push(`${check.ok ? "PASS" : "FAIL"} ${check.name}`);
     lines.push(`  ${check.detail}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+async function smokeToolInput(args: string[], capability: RuntimeCapabilityConfig): Promise<Record<string, unknown>> {
+  if (!args.includes("--sample") && !optionalArg(args, "--input") && !optionalArg(args, "--json")) {
+    return sampleInputForCapability(capability);
+  }
+  return await smokeInputFromArgs(args, capability);
+}
+
+async function smokeInputFromArgs(args: string[], capability?: RuntimeCapabilityConfig): Promise<Record<string, unknown>> {
+  const jsonInput = optionalArg(args, "--json");
+  const inputPath = optionalArg(args, "--input");
+  const sample = args.includes("--sample");
+  const selected = [Boolean(jsonInput), Boolean(inputPath), sample].filter(Boolean).length;
+  if (selected > 1) throw new Error("smoke call accepts only one of --sample, --input, or --json");
+  if (jsonInput) {
+    const parsed = JSON.parse(jsonInput);
+    if (!isRecord(parsed)) throw new Error("smoke call --json must be a JSON object");
+    return parsed;
+  }
+  if (inputPath) {
+    const parsed = JSON.parse(await fs.readFile(inputPath, "utf8"));
+    if (!isRecord(parsed)) throw new Error("smoke call --input must point to a JSON object");
+    return parsed;
+  }
+  if (sample && capability) return sampleInputForCapability(capability);
+  if (sample) return {};
+  return {};
+}
+
+function formatSmokeCallResult(toolName: string, input: Record<string, unknown>, result: Record<string, unknown>, storePath: string): string {
+  const evidenceId = stringField(result, "evidence_bundle_id");
+  const proposalId = stringField(result, "proposal_id");
+  const replayResource = stringField(result, "replay_resource");
+  const sourceChanged = result.source_database_changed === true || result.source_database_mutated === true;
+  const lines = [
+    "Synapsor smoke call: ok",
+    "",
+    "Tool:",
+    toolName,
+    "",
+    "Input:",
+    JSON.stringify(input, null, 2),
+    "",
+    "Source DB changed:",
+    sourceChanged ? "yes" : "no",
+    "",
+    "Evidence:",
+    evidenceId || "(not returned)",
+    "",
+  ];
+  if (proposalId) {
+    lines.push("Proposal:", proposalId, "", "Replay:", replayResource || `synapsor://replay/replay_${proposalId}`, "");
+  }
+  lines.push("Next:");
+  if (evidenceId) lines.push(`  ${cliCommandName()} evidence show ${evidenceId} --store ${storePath}`);
+  if (proposalId) {
+    lines.push(`  ${cliCommandName()} proposals show ${proposalId} --store ${storePath}`);
+    lines.push(`  ${cliCommandName()} proposals approve ${proposalId} --store ${storePath}`);
+    lines.push(`  ${cliCommandName()} apply ${proposalId} --store ${storePath}`);
+    lines.push(`  ${cliCommandName()} replay show --proposal ${proposalId} --store ${storePath}`);
+  } else if (evidenceId) {
+    lines.push(`  ${cliCommandName()} query-audit list --evidence ${evidenceId} --store ${storePath}`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -3089,10 +5684,62 @@ async function proposals(args: string[]): Promise<number> {
 
 async function replay(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "list") return replayList(rest);
   if (subcommand && !["show", "export"].includes(subcommand)) return replayShow(args);
   if (subcommand === "show") return replayShow(rest);
   if (subcommand === "export") return replayExport(rest);
   usage(["replay"]);
+  return 2;
+}
+
+async function evidence(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "show") return evidenceShow(rest);
+  if (subcommand === "list") return evidenceList(rest);
+  if (subcommand === "export") return evidenceExport(rest);
+  usage(["evidence"]);
+  return 2;
+}
+
+async function queryAudit(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "list") return queryAuditList(rest);
+  if (subcommand === "show") return queryAuditShow(rest);
+  if (subcommand === "export") return queryAuditExport(rest);
+  usage(["query-audit"]);
+  return 2;
+}
+
+async function receipts(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "list") return receiptsList(rest);
+  if (subcommand === "show") return receiptsShow(rest);
+  usage(["receipts"]);
+  return 2;
+}
+
+async function activity(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "search") return activitySearch(rest);
+  usage(["activity"]);
+  return 2;
+}
+
+async function events(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "tail") return eventsTail(rest);
+  if (subcommand === "webhook" || subcommand === "push") return eventsWebhook(rest);
+  usage(["events"]);
+  return 2;
+}
+
+async function storeCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "stats") return storeStats(rest);
+  if (subcommand === "vacuum") return storeVacuum(rest);
+  if (subcommand === "prune") return storePrune(rest);
+  if (subcommand === "reset") return storeReset(rest);
+  usage(["store"]);
   return 2;
 }
 
@@ -3117,6 +5764,10 @@ async function ui(args: string[]): Promise<number> {
     tour: args.includes("--tour"),
   });
   process.stdout.write(`Synapsor Runner local UI: ${server.url}\n`);
+  if (args.includes("--open")) {
+    openBrowser(server.url);
+    process.stdout.write("Opening the local review UI in your browser when a desktop opener is available.\n");
+  }
   process.stdout.write("Approval and rejection actions require the per-run local session plus CSRF token. Press Ctrl+C to stop.\n");
   await new Promise<void>((resolve) => {
     const stop = async () => {
@@ -3129,6 +5780,14 @@ async function ui(args: string[]): Promise<number> {
     process.once("SIGTERM", stop);
   });
   return 0;
+}
+
+function openBrowser(url: string): void {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const child = spawn(command, args, { detached: true, stdio: "ignore" });
+  child.on("error", () => undefined);
+  child.unref();
 }
 
 async function shadowList(args: string[]): Promise<number> {
@@ -3216,10 +5875,11 @@ async function shadowReport(args: string[]): Promise<number> {
 }
 
 async function proposalsList(args: string[]): Promise<number> {
+  assertKnownOptions(args, proposalListAllowedOptions, "proposals list");
   const store = await openLocalStore(args);
   try {
-    const state = optionalArg(args, "--state") as LocalProposalState | undefined;
-    const rows = store.listProposals(state);
+    const filters = proposalFiltersFromArgs(args);
+    const rows = store.listProposals(filters);
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify({ proposals: rows }, null, 2)}\n`);
       return 0;
@@ -3238,6 +5898,7 @@ async function proposalsList(args: string[]): Promise<number> {
 }
 
 async function proposalsShow(args: string[]): Promise<number> {
+  assertKnownOptions(args, showAllowedOptions, "proposals show");
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals show requires <proposal_id>");
   const store = await openLocalStore(args);
@@ -3245,14 +5906,16 @@ async function proposalsShow(args: string[]): Promise<number> {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
     const proposal = store.getProposal(resolvedProposalId);
     if (!proposal) throw new Error(`proposal not found: ${resolvedProposalId}`);
-    const payload = { proposal, events: store.events(resolvedProposalId), receipts: store.receipts(resolvedProposalId) };
+    const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
+    const payload = { proposal, events: store.events(resolvedProposalId), receipts: store.receipts(resolvedProposalId), evidence };
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    } else if (showDetails(args)) {
+      process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
+      process.stdout.write(formatProposalEventDetail(payload.events));
+      if (args.includes("--debug")) process.stdout.write(formatProposalDebug(proposal, optionalArg(args, "--store")));
     } else {
-      process.stdout.write(formatProposalDetail(proposal));
-      for (const event of payload.events) {
-        process.stdout.write(`event ${event.event_id}: ${event.kind} by ${event.actor} at ${event.created_at}\n`);
-      }
+      process.stdout.write(formatProposalFirstLook(proposal, evidence?.items.length, proposalId, storeOptionSuffix(args)));
     }
     return 0;
   } finally {
@@ -3268,7 +5931,8 @@ async function proposalsApprove(args: string[]): Promise<number> {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
     const proposal = requireLocalProposal(store, resolvedProposalId);
     if (!args.includes("--json")) {
-      process.stdout.write(formatProposalDetail(proposal));
+      const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
+      process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
     await confirmDangerousAction(args, `Approve proposal ${resolvedProposalId} for guarded writeback?`);
     const updated = store.approveProposal(resolvedProposalId, {
@@ -3294,7 +5958,8 @@ async function proposalsReject(args: string[]): Promise<number> {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
     const proposal = requireLocalProposal(store, resolvedProposalId);
     if (!args.includes("--json")) {
-      process.stdout.write(formatProposalDetail(proposal));
+      const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
+      process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
     await confirmDangerousAction(args, `Reject proposal ${resolvedProposalId}?`);
     const updated = store.rejectProposal(resolvedProposalId, {
@@ -3336,22 +6001,181 @@ async function proposalsWritebackJob(args: string[]): Promise<number> {
   }
 }
 
-async function replayShow(args: string[]): Promise<number> {
-  const proposalId = positional(args, 0);
-  if (!proposalId) throw new Error("replay show requires <proposal_id>");
+async function evidenceList(args: string[]): Promise<number> {
+  assertKnownOptions(args, evidenceListAllowedOptions, "evidence list");
   const store = await openLocalStore(args);
   try {
-    const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
+    const rows = store.listEvidenceBundles(evidenceFiltersFromArgs(args));
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ evidence: rows }, null, 2)}\n`);
+    } else if (rows.length === 0) {
+      process.stdout.write("No evidence bundles found.\n");
+    } else {
+      for (const bundle of rows) process.stdout.write(formatEvidenceSummary(bundle));
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function evidenceShow(args: string[]): Promise<number> {
+  assertKnownOptions(args, showAllowedOptions, "evidence show");
+  const evidenceId = positional(args, 0);
+  if (!evidenceId) throw new Error("evidence show requires <evidence_bundle_id>");
+  const store = await openLocalStore(args);
+  try {
+    const evidence = store.getEvidenceBundle(evidenceId);
+    if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
+    else if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence));
+    else process.stdout.write(formatEvidenceFirstLook(evidence, storeOptionSuffix(args)));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function evidenceExport(args: string[]): Promise<number> {
+  assertKnownOptions(args, exportAllowedOptions, "evidence export");
+  const evidenceId = positional(args, 0) ?? optionalArg(args, "--evidence");
+  if (!evidenceId) throw new Error("evidence export requires <evidence_bundle_id>");
+  const output = outputArg(args);
+  if (!output) throw new Error("evidence export requires --output <path>");
+  const format = exportFormat(args);
+  const store = await openLocalStore(args);
+  try {
+    const evidence = store.getEvidenceBundle(evidenceId);
+    if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
+    const text = format === "json" ? `${JSON.stringify(evidence, null, 2)}\n` : formatEvidenceMarkdown(evidence);
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, text, "utf8");
+    process.stdout.write(`exported ${evidence.evidence_bundle_id} to ${output}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function queryAuditList(args: string[]): Promise<number> {
+  assertKnownOptions(args, queryAuditListAllowedOptions, "query-audit list");
+  const store = await openLocalStore(args);
+  try {
+    const rows = store.listQueryAudit(queryAuditFiltersFromArgs(args));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ query_audit: rows }, null, 2)}\n`);
+    else if (rows.length === 0) process.stdout.write("No query audit records found.\n");
+    else for (const row of rows) process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args)));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function queryAuditShow(args: string[]): Promise<number> {
+  assertKnownOptions(args, showAllowedOptions, "query-audit show");
+  const auditId = Number(positional(args, 0));
+  if (!Number.isInteger(auditId) || auditId <= 0) throw new Error("query-audit show requires <audit_id>");
+  const store = await openLocalStore(args);
+  try {
+    const row = store.getQueryAudit(auditId);
+    if (!row) throw new Error(`query audit record not found: ${auditId}`);
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
+    else process.stdout.write(showDetails(args) ? formatQueryAuditDetail(row) : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function queryAuditExport(args: string[]): Promise<number> {
+  assertKnownOptions(args, exportAllowedOptions, "query-audit export");
+  const auditId = Number(positional(args, 0) ?? optionalArg(args, "--audit"));
+  if (!Number.isInteger(auditId) || auditId <= 0) throw new Error("query-audit export requires <audit_id>");
+  const output = outputArg(args);
+  if (!output) throw new Error("query-audit export requires --output <path>");
+  const format = exportFormat(args, ["json"]);
+  const store = await openLocalStore(args);
+  try {
+    const row = store.getQueryAudit(auditId);
+    if (!row) throw new Error(`query audit record not found: ${auditId}`);
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, `${JSON.stringify(row, null, 2)}\n`, "utf8");
+    process.stdout.write(`exported query audit ${auditId} to ${output}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function receiptsList(args: string[]): Promise<number> {
+  assertKnownOptions(args, receiptListAllowedOptions, "receipts list");
+  const store = await openLocalStore(args);
+  try {
+    const rows = store.listReceipts(receiptFiltersFromArgs(args));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ receipts: rows }, null, 2)}\n`);
+    else if (rows.length === 0) process.stdout.write("No writeback receipts found.\n");
+    else for (const receipt of rows) process.stdout.write(formatReceiptSummary(receipt));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function receiptsShow(args: string[]): Promise<number> {
+  assertKnownOptions(args, showAllowedOptions, "receipts show");
+  const receiptId = Number(positional(args, 0));
+  if (!Number.isInteger(receiptId) || receiptId <= 0) throw new Error("receipts show requires <receipt_id>");
+  const store = await openLocalStore(args);
+  try {
+    const receipt = store.getReceipt(receiptId);
+    if (!receipt) throw new Error(`writeback receipt not found: ${receiptId}`);
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
+    else process.stdout.write(showDetails(args) ? formatReceiptDetail(receipt) : formatReceiptFirstLook(receipt, storeOptionSuffix(args)));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function replayList(args: string[]): Promise<number> {
+  assertKnownOptions(args, replayListAllowedOptions, "replay list");
+  const store = await openLocalStore(args);
+  try {
+    const filters = proposalFiltersFromReplayArgs(args, store);
+    const proposals = store.listProposals(filters);
+    const rows = proposals.map((proposal) => ({
+      replay_id: `replay_${proposal.proposal_id}`,
+      proposal_id: proposal.proposal_id,
+      created_at: proposal.created_at,
+      state: proposal.state,
+      tenant_id: proposal.tenant_id,
+      principal: proposal.principal ?? proposal.change_set.principal.id,
+      capability: proposal.action,
+      business_object: proposal.business_object,
+      object_id: proposal.object_id,
+    }));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ replays: rows }, null, 2)}\n`);
+    else if (rows.length === 0) process.stdout.write("No replay records found.\n");
+    else for (const row of rows) process.stdout.write(formatReplaySummary(row));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function replayShow(args: string[]): Promise<number> {
+  assertKnownOptions(args, replayShowAllowedOptions, "replay show");
+  const store = await openLocalStore(args);
+  try {
+    const resolvedProposalId = resolveReplayProposalId(args, store);
     const replayRecord = store.replay(resolvedProposalId);
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify(replayRecord, null, 2)}\n`);
+    } else if (showDetails(args)) {
+      process.stdout.write(formatReplayDetail(replayRecord));
+      if (args.includes("--debug")) process.stdout.write(formatReplayDebug(replayRecord, optionalArg(args, "--store")));
     } else {
-      process.stdout.write(`Replay ${replayRecord.replay_id}\n`);
-      process.stdout.write(formatProposalDetail(replayRecord.proposal));
-      process.stdout.write(`events: ${replayRecord.events.length}\n`);
-      process.stdout.write(`receipts: ${replayRecord.receipts.length}\n`);
-      process.stdout.write(`evidence bundles: ${replayRecord.evidence.length}\n`);
-      process.stdout.write(`query audit records: ${replayRecord.query_audit.length}\n`);
+      process.stdout.write(formatReplayFirstLook(replayRecord, storeOptionSuffix(args)));
     }
     return 0;
   } finally {
@@ -3360,16 +6184,17 @@ async function replayShow(args: string[]): Promise<number> {
 }
 
 async function replayExport(args: string[]): Promise<number> {
-  const proposalId = positional(args, 0);
-  if (!proposalId) throw new Error("replay export requires <proposal_id>");
+  assertKnownOptions(args, replayExportAllowedOptions, "replay export");
   const output = outputArg(args);
   if (!output) throw new Error("replay export requires --output <path>");
+  const format = exportFormat(args);
   const store = await openLocalStore(args);
   try {
-    const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
+    const resolvedProposalId = resolveReplayProposalId(args, store);
     const replayRecord = store.replay(resolvedProposalId);
+    const text = format === "json" ? `${JSON.stringify(replayRecord, null, 2)}\n` : formatReplayMarkdown(replayRecord);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
-    await fs.writeFile(output, `${JSON.stringify(replayRecord, null, 2)}\n`, "utf8");
+    await fs.writeFile(output, text, "utf8");
     process.stdout.write(`exported ${replayRecord.replay_id} to ${output}\n`);
     return 0;
   } finally {
@@ -3377,9 +6202,643 @@ async function replayExport(args: string[]): Promise<number> {
   }
 }
 
+async function activitySearch(args: string[]): Promise<number> {
+  assertKnownOptions(args, activitySearchAllowedOptions, "activity search");
+  const store = await openLocalStore(args);
+  try {
+    const proposalFilters = proposalFiltersFromActivityArgs(args, store);
+    const evidenceFilters = evidenceFiltersFromActivityArgs(args, store);
+    const queryAuditFilters = queryAuditFiltersFromActivityArgs(args, store);
+    const receiptFilters = receiptFiltersFromActivityArgs(args, store);
+    const proposals = store.listProposals(proposalFilters);
+    const evidenceRows = store.listEvidenceBundles(evidenceFilters);
+    const queryAuditRows = store.listQueryAudit(queryAuditFilters);
+    const receiptsRows = store.listReceipts(receiptFilters);
+    const proposalIds = new Set(proposals.map((proposal) => proposal.proposal_id));
+    const evidenceIds = new Set(evidenceRows.map((evidence) => evidence.evidence_bundle_id));
+    const results: Record<string, unknown>[] = proposals.map((proposal) => activityFromProposal(proposal));
+    for (const evidence of evidenceRows) {
+      if (evidence.proposal_id && proposalIds.has(evidence.proposal_id)) continue;
+      results.push(activityFromEvidence(evidence));
+    }
+    for (const audit of queryAuditRows) {
+      const proposalId = stringField(audit, "proposal_id");
+      const evidenceId = stringField(audit, "evidence_bundle_id");
+      if (proposalId && proposalIds.has(proposalId)) continue;
+      if (evidenceId && evidenceIds.has(evidenceId)) continue;
+      results.push(activityFromQueryAudit(audit));
+    }
+    for (const receipt of receiptsRows) {
+      if (proposalIds.has(receipt.proposal_id)) continue;
+      results.push(activityFromReceipt(receipt));
+    }
+    const sorted = results
+      .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
+      .slice(0, limitFromArgs(args));
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ interactions: sorted }, null, 2)}\n`);
+    } else if (sorted.length === 0) {
+      process.stdout.write("No local interactions found.\n");
+    } else {
+      process.stdout.write(`Found ${sorted.length} local interaction${sorted.length === 1 ? "" : "s"}\n\n`);
+      sorted.forEach((item, index) => process.stdout.write(formatActivityItem(item, index + 1, showDetails(args))));
+      process.stdout.write(formatActivityNext(sorted, storeOptionSuffix(args)));
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function eventsTail(args: string[]): Promise<number> {
+  assertKnownOptions(args, eventTailAllowedOptions, "events tail");
+  const follow = args.includes("--follow");
+  if (follow && args.includes("--json")) throw new Error("events tail --follow does not support --json yet");
+  const storePath = optionalArg(args, "--store");
+  const intervalMs = Number(optionalArg(args, "--interval-ms") ?? "1000");
+  if (!Number.isFinite(intervalMs) || intervalMs < 250) throw new Error("--interval-ms must be at least 250");
+  const filters = eventFiltersFromArgs(args);
+  const printOnce = async (seen?: Set<number>): Promise<number> => {
+    const store = await openLocalStore(["--store", storePath ?? "./.synapsor/local.db"]);
+    try {
+      const rows = store.listEvents(filters)
+        .sort((left, right) => left.event_id - right.event_id)
+        .filter((event) => !seen?.has(event.event_id));
+      if (seen) rows.forEach((event) => seen.add(event.event_id));
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify({ events: rows }, null, 2)}\n`);
+      } else if (rows.length === 0 && !follow) {
+        process.stdout.write("No local events found.\n");
+      } else {
+        for (const event of rows) process.stdout.write(formatEventLine(event, showDetails(args)));
+      }
+      return rows.length;
+    } finally {
+      store.close();
+    }
+  };
+
+  if (!follow) {
+    await printOnce();
+    return 0;
+  }
+
+  const seen = new Set<number>();
+  await printOnce(seen);
+  await new Promise<void>((resolve) => {
+    const timer = setInterval(() => {
+      void printOnce(seen).catch((error) => {
+        process.stderr.write(`events tail error: ${safeErrorMessage(error)}\n`);
+      });
+    }, intervalMs);
+    const stop = () => {
+      clearInterval(timer);
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  return 0;
+}
+
+async function eventsWebhook(args: string[]): Promise<number> {
+  assertKnownOptions(args, eventWebhookAllowedOptions, "events webhook");
+  const url = optionalArg(args, "--url") ?? envValue(optionalArg(args, "--url-env"));
+  if (!url) throw new Error("events webhook requires --url <https://...> or --url-env <ENV>");
+  const endpoint = new URL(url);
+  if (!["http:", "https:"].includes(endpoint.protocol)) throw new Error("events webhook URL must use http or https");
+
+  const follow = args.includes("--follow");
+  const dryRun = args.includes("--dry-run");
+  const jsonOutput = args.includes("--json");
+  if (follow && jsonOutput) throw new Error("events webhook --follow does not support --json");
+  const storePath = optionalArg(args, "--store");
+  const intervalMs = Number(optionalArg(args, "--interval-ms") ?? "1000");
+  const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "5000");
+  const sinceEventId = optionalPositiveIntegerArg(args, "--since-event-id");
+  if (!Number.isFinite(intervalMs) || intervalMs < 250) throw new Error("--interval-ms must be at least 250");
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 250) throw new Error("--timeout-ms must be at least 250");
+  const token = envValue(optionalArg(args, "--auth-token-env"));
+  const filters = eventFiltersFromArgs(args);
+  const seen = new Set<number>();
+
+  const pushOnce = async (): Promise<{ delivered: number; payloads: Record<string, unknown>[] }> => {
+    const store = await openLocalStore(["--store", storePath ?? "./.synapsor/local.db"]);
+    try {
+      const rows = store.listEvents(filters)
+        .filter((event) => sinceEventId === undefined || event.event_id > sinceEventId)
+        .sort((left, right) => left.event_id - right.event_id)
+        .filter((event) => !seen.has(event.event_id));
+      rows.forEach((event) => seen.add(event.event_id));
+      let delivered = 0;
+      const payloads: Record<string, unknown>[] = [];
+      for (const event of rows) {
+        const payload = localEventWebhookPayload(event, store.path);
+        payloads.push(payload);
+        if (dryRun) {
+          if (!jsonOutput) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+        } else {
+          await postLocalEventWebhook(endpoint, payload, { token, timeoutMs });
+          if (!jsonOutput) process.stdout.write(`pushed event ${event.event_id} ${event.kind} for ${event.proposal_id} to ${redactWebhookUrl(endpoint)}\n`);
+        }
+        delivered += 1;
+      }
+      if (rows.length === 0 && !follow && !jsonOutput) process.stdout.write(dryRun ? "No local events matched for dry-run.\n" : "No local events matched.\n");
+      return { delivered, payloads };
+    } finally {
+      store.close();
+    }
+  };
+
+  const first = await pushOnce();
+  if (jsonOutput && !follow) {
+    process.stdout.write(`${JSON.stringify({ ok: true, dry_run: dryRun, delivered: first.delivered, webhook: redactWebhookUrl(endpoint), events: first.payloads }, null, 2)}\n`);
+  }
+  if (!follow) return 0;
+
+  await new Promise<void>((resolve) => {
+    const timer = setInterval(() => {
+      void pushOnce().catch((error) => {
+        process.stderr.write(`events webhook error: ${safeErrorMessage(error)}\n`);
+      });
+    }, intervalMs);
+    const stop = () => {
+      clearInterval(timer);
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  return 0;
+}
+
+async function storeStats(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeStatsAllowedOptions, "store stats");
+  const store = await openLocalStore(args);
+  try {
+    const stats = store.stats();
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(stats, null, 2)}\n`);
+    else process.stdout.write(formatStoreStats(stats));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function storeVacuum(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeVacuumAllowedOptions, "store vacuum");
+  const store = await openLocalStore(args);
+  try {
+    const before = store.stats();
+    store.vacuum();
+    const after = store.stats();
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ before, after }, null, 2)}\n`);
+    else process.stdout.write(`vacuumed local store ${before.path}\napprox bytes: ${before.approx_bytes} -> ${after.approx_bytes}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function storePrune(args: string[]): Promise<number> {
+  assertKnownOptions(args, storePruneAllowedOptions, "store prune");
+  const olderThan = optionalArg(args, "--older-than");
+  if (!olderThan) throw new Error("store prune requires --older-than <duration>, for example --older-than 30d");
+  if (args.includes("--yes") && args.includes("--dry-run")) throw new Error("store prune accepts either --dry-run or --yes, not both");
+  const cutoff = cutoffFromOlderThan(olderThan);
+  const dryRun = !args.includes("--yes");
+  if (!dryRun) await assertNoActiveStoreLease(optionalArg(args, "--store"), args.includes("--force"), "store prune");
+  const store = await openLocalStore(args);
+  try {
+    const result = store.pruneBefore(cutoff, { dryRun });
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else process.stdout.write(formatStorePrune(result));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function storeReset(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeResetAllowedOptions, "store reset");
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  if (storePath === ":memory:") throw new Error("store reset does not apply to :memory: stores");
+  if (!args.includes("--yes")) {
+    throw new Error("store reset is destructive for the local ledger. Rerun with --yes after backing up anything you need.");
+  }
+  await assertNoActiveStoreLease(storePath, args.includes("--force"), "store reset");
+  const resolved = path.resolve(storePath);
+  const candidates = [resolved, `${resolved}-wal`, `${resolved}-shm`, storeLeasePath(resolved)];
+  const removed: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      await fs.rm(candidate, { force: true });
+      removed.push(candidate);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  const result = {
+    ok: true,
+    store: resolved,
+    removed,
+    source_database_changed: false,
+  };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  else process.stdout.write(formatStoreReset(result));
+  return 0;
+}
+
+const commonReadOptions = new Set(["--store", "--json", "--details", "--debug"]);
+const showAllowedOptions = new Set([...commonReadOptions]);
+const exportAllowedOptions = new Set([...commonReadOptions, "--output", "--out", "--format", "--evidence", "--audit"]);
+const proposalListAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--tenant",
+  "--principal",
+  "--capability",
+  "--action",
+  "--object",
+  "--object-type",
+  "--object-id",
+  "--status",
+  "--state",
+  "--source",
+  "--table",
+  "--from",
+  "--to",
+  "--limit",
+]);
+const evidenceListAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--tenant",
+  "--principal",
+  "--capability",
+  "--proposal",
+  "--object",
+  "--object-type",
+  "--object-id",
+  "--source",
+  "--table",
+  "--query-fingerprint",
+  "--from",
+  "--to",
+  "--limit",
+]);
+const queryAuditListAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--tenant",
+  "--proposal",
+  "--evidence",
+  "--source",
+  "--table",
+  "--primary-key",
+  "--query-fingerprint",
+  "--from",
+  "--to",
+  "--limit",
+]);
+const receiptListAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--proposal",
+  "--writeback-job",
+  "--idempotency-key",
+  "--status",
+  "--from",
+  "--to",
+  "--limit",
+]);
+const eventTailAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--proposal",
+  "--kind",
+  "--actor",
+  "--from",
+  "--to",
+  "--limit",
+  "--follow",
+  "--interval-ms",
+]);
+const eventWebhookAllowedOptions = new Set([
+  ...eventTailAllowedOptions,
+  "--url",
+  "--url-env",
+  "--auth-token-env",
+  "--timeout-ms",
+  "--since-event-id",
+  "--dry-run",
+]);
+const replayShowAllowedOptions = new Set([...commonReadOptions, "--proposal", "--replay", "--evidence"]);
+const replayExportAllowedOptions = new Set([...replayShowAllowedOptions, "--output", "--out", "--format"]);
+const replayListAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--tenant",
+  "--principal",
+  "--capability",
+  "--proposal",
+  "--evidence",
+  "--receipt",
+  "--object",
+  "--object-type",
+  "--object-id",
+  "--status",
+  "--state",
+  "--from",
+  "--to",
+  "--limit",
+]);
+const activitySearchAllowedOptions = new Set([
+  ...commonReadOptions,
+  "--tenant",
+  "--principal",
+  "--capability",
+  "--object",
+  "--object-type",
+  "--object-id",
+  "--proposal",
+  "--evidence",
+  "--replay",
+  "--receipt",
+  "--source",
+  "--table",
+  "--query-fingerprint",
+  "--status",
+  "--state",
+  "--from",
+  "--to",
+  "--limit",
+]);
+const storeStatsAllowedOptions = new Set([...commonReadOptions]);
+const storeVacuumAllowedOptions = new Set([...commonReadOptions]);
+const storePruneAllowedOptions = new Set([...commonReadOptions, "--older-than", "--dry-run", "--yes", "--force"]);
+const storeResetAllowedOptions = new Set([...commonReadOptions, "--yes", "--force"]);
+
+function assertKnownOptions(args: string[], allowed: Set<string>, commandName: string): void {
+  for (const arg of args) {
+    if (!arg.startsWith("--")) continue;
+    const option = arg.includes("=") ? arg.slice(0, arg.indexOf("=")) : arg;
+    if (option === "--help" || option === "-h") continue;
+    if (!allowed.has(option)) throw new Error(`Unknown option for ${commandName}: ${option}`);
+  }
+}
+
+function proposalFiltersFromArgs(args: string[]): ProposalSearchFilters {
+  const object = objectFilterFromArgs(args);
+  return {
+    proposal: optionalArg(args, "--proposal"),
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    action: optionalArg(args, "--action"),
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    status: optionalArg(args, "--status") as LocalProposalState | undefined,
+    state: optionalArg(args, "--state") as LocalProposalState | undefined,
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
+  const object = objectFilterFromArgs(args);
+  return {
+    evidence: optionalArg(args, "--evidence"),
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    proposal: optionalArg(args, "--proposal"),
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
+    queryFingerprint: optionalArg(args, "--query-fingerprint"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function queryAuditFiltersFromArgs(args: string[]): QueryAuditSearchFilters {
+  const object = objectFilterFromArgs(args);
+  return {
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    proposal: optionalArg(args, "--proposal"),
+    evidence: optionalArg(args, "--evidence"),
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    primaryKey: optionalArg(args, "--primary-key"),
+    queryFingerprint: optionalArg(args, "--query-fingerprint"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function receiptFiltersFromArgs(args: string[]): ReceiptSearchFilters {
+  return {
+    receipt: optionalArg(args, "--receipt"),
+    proposal: optionalArg(args, "--proposal"),
+    writebackJob: optionalArg(args, "--writeback-job"),
+    idempotencyKey: optionalArg(args, "--idempotency-key"),
+    status: optionalArg(args, "--status"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function proposalFiltersFromReplayArgs(args: string[], store: ProposalStore): ProposalSearchFilters {
+  return proposalFiltersFromActivityArgs(args, store);
+}
+
+function proposalFiltersFromActivityArgs(args: string[], store?: ProposalStore): ProposalSearchFilters {
+  const object = objectFilterFromArgs(args);
+  const linkedProposal = linkedProposalFilter(args, store);
+  return {
+    proposal: optionalArg(args, "--proposal") ?? linkedProposal,
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    action: optionalArg(args, "--capability"),
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    status: optionalArg(args, "--status") as LocalProposalState | undefined,
+    state: optionalArg(args, "--state") as LocalProposalState | undefined,
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function evidenceFiltersFromActivityArgs(args: string[], store?: ProposalStore): EvidenceSearchFilters {
+  const object = objectFilterFromArgs(args);
+  const linkedProposal = linkedProposalFilter(args, store, { includeEvidence: false });
+  return {
+    evidence: optionalArg(args, "--evidence"),
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    proposal: optionalArg(args, "--proposal") ?? linkedProposal,
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
+    queryFingerprint: optionalArg(args, "--query-fingerprint"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function queryAuditFiltersFromActivityArgs(args: string[], store?: ProposalStore): QueryAuditSearchFilters {
+  const object = objectFilterFromArgs(args);
+  const linkedProposal = linkedProposalFilter(args, store, { includeEvidence: false });
+  return {
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    proposal: optionalArg(args, "--proposal") ?? linkedProposal,
+    evidence: optionalArg(args, "--evidence"),
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    queryFingerprint: optionalArg(args, "--query-fingerprint"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function receiptFiltersFromActivityArgs(args: string[], store?: ProposalStore): ReceiptSearchFilters {
+  const linkedProposal = linkedProposalFilter(args, store, { includeReceipt: false });
+  return {
+    receipt: optionalArg(args, "--receipt"),
+    proposal: optionalArg(args, "--proposal") ?? linkedProposal,
+    status: optionalArg(args, "--status") ?? optionalArg(args, "--state"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function eventFiltersFromArgs(args: string[]): EventSearchFilters {
+  return {
+    proposal: optionalArg(args, "--proposal"),
+    kind: optionalArg(args, "--kind"),
+    actor: optionalArg(args, "--actor"),
+    from: optionalArg(args, "--from"),
+    to: optionalArg(args, "--to"),
+    limit: limitFromArgs(args),
+  };
+}
+
+function optionalPositiveIntegerArg(args: string[], flag: string): number | undefined {
+  const value = optionalArg(args, flag);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${flag} must be a non-negative integer`);
+  return parsed;
+}
+
+function envValue(name: string | undefined): string | undefined {
+  if (!name) return undefined;
+  return process.env[name];
+}
+
+function linkedProposalFilter(
+  args: string[],
+  store?: ProposalStore,
+  options: { includeEvidence?: boolean; includeReceipt?: boolean } = {},
+): string | undefined {
+  const noLinkedProposal = "__synapsor_no_linked_proposal__";
+  const replay = optionalArg(args, "--replay");
+  if (replay) return proposalIdFromReplayId(replay);
+  if (!store) return undefined;
+  if (options.includeEvidence !== false) {
+    const evidence = optionalArg(args, "--evidence");
+    if (evidence) return store.proposalIdForEvidence(evidence) ?? noLinkedProposal;
+  }
+  if (options.includeReceipt !== false) {
+    const receiptValue = optionalArg(args, "--receipt");
+    if (receiptValue) {
+      const receiptId = Number(receiptValue);
+      if (!Number.isInteger(receiptId) || receiptId <= 0) throw new Error("--receipt must be a positive receipt id");
+      return store.getReceipt(receiptId)?.proposal_id ?? noLinkedProposal;
+    }
+  }
+  return undefined;
+}
+
+function objectFilterFromArgs(args: string[]): { type?: string; id?: string } {
+  const value = optionalArg(args, "--object");
+  if (!value) return {};
+  const separator = value.indexOf(":");
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new Error("--object must use type:id, for example invoice:INV-3001");
+  }
+  return { type: value.slice(0, separator), id: value.slice(separator + 1) };
+}
+
+function limitFromArgs(args: string[]): number {
+  const value = optionalArg(args, "--limit");
+  if (!value) return 20;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("--limit must be a positive integer");
+  return Math.min(parsed, 200);
+}
+
+function exportFormat(args: string[], supported = ["json", "markdown"]): "json" | "markdown" {
+  const format = optionalArg(args, "--format") ?? "json";
+  if (!supported.includes(format)) {
+    throw new Error(`unsupported export format: ${format}. Supported formats: ${supported.join(", ")}`);
+  }
+  return format as "json" | "markdown";
+}
+
+function resolveReplayProposalId(args: string[], store: ProposalStore): string {
+  const explicitProposal = optionalArg(args, "--proposal");
+  if (explicitProposal) return resolveProposalIdFromStore(explicitProposal, store);
+  const explicitReplay = optionalArg(args, "--replay");
+  if (explicitReplay) return proposalIdFromReplayId(explicitReplay);
+  const explicitEvidence = optionalArg(args, "--evidence");
+  if (explicitEvidence) {
+    const proposalId = store.proposalIdForEvidence(explicitEvidence);
+    if (!proposalId) throw new Error(`evidence bundle ${explicitEvidence} is not linked to a replayable proposal`);
+    return proposalId;
+  }
+  const value = positional(args, 0);
+  if (!value) throw new Error("replay show requires <proposal_id>, --proposal <proposal_id>, --replay <replay_id>, or --evidence <evidence_bundle_id>");
+  if (value === "latest") return resolveProposalIdFromStore(value, store);
+  if (value.startsWith("replay_")) return proposalIdFromReplayId(value);
+  if (value.startsWith("ev_")) throw new Error(`Use --evidence ${value} to replay from an evidence bundle.`);
+  return resolveProposalIdFromStore(value, store);
+}
+
+function proposalIdFromReplayId(replayId: string): string {
+  if (!replayId.startsWith("replay_")) throw new Error(`invalid replay id: ${replayId}`);
+  const proposalId = replayId.slice("replay_".length);
+  if (!proposalId) throw new Error(`invalid replay id: ${replayId}`);
+  return proposalId;
+}
+
 async function openLocalStore(args: string[]): Promise<ProposalStore> {
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
   if (storePath !== ":memory:") {
+    if (!await fileExists(storePath)) throw missingLocalStoreError(storePath);
     await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
   }
   return new ProposalStore(storePath);
@@ -3429,6 +6888,7 @@ function requireLocalProposal(store: ProposalStore, proposalId: string): StoredP
 
 async function resolveProposalId(proposalId: string, storePath: string): Promise<string> {
   if (proposalId !== "latest") return proposalId;
+  if (storePath !== ":memory:" && !await fileExists(storePath)) throw missingLocalStoreError(storePath);
   const store = new ProposalStore(storePath);
   try {
     return resolveProposalIdFromStore(proposalId, store);
@@ -3442,6 +6902,16 @@ function resolveProposalIdFromStore(proposalId: string, store: ProposalStore): s
   const latest = store.listProposals()[0];
   if (!latest) throw new Error("no proposals found in the local store");
   return latest.proposal_id;
+}
+
+function missingLocalStoreError(storePath: string): Error {
+  return new Error([
+    `No local Synapsor proposal store was found at ${storePath}.`,
+    "Run:",
+    `${cliCommandName()} demo`,
+    "or pass:",
+    "--store /path/to/local.db",
+  ].join("\n"));
 }
 
 async function readRuntimeConfig(configPath: string): Promise<RuntimeConfig> {
@@ -3513,7 +6983,7 @@ async function prepareReferenceDemo(args: string[]): Promise<number> {
     `${cliCommandName()} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db`,
     "",
     "Open UI:",
-    `${cliCommandName()} ui --tour`,
+    `${cliCommandName()} ui --open --tour`,
     "",
   ].join("\n"));
   return 0;
@@ -3579,7 +7049,7 @@ function databaseInputFromArgs(args: string[]): {
   if (inlineUrl && !isDatabaseUrl(inlineUrl)) {
     throw new Error("--from must be a postgres://, postgresql://, or mysql:// URL.");
   }
-  const fromEnv = optionalArg(args, "--from-env") ?? optionalArg(args, "--database-url-env");
+  const fromEnv = optionalArg(args, "--from-env") ?? optionalArg(args, "--url-env") ?? optionalArg(args, "--database-url-env");
   const configDatabaseUrlEnv = fromEnv ?? "SYNAPSOR_DATABASE_READ_URL";
   if (inlineUrl) {
     return {
@@ -3612,25 +7082,39 @@ function firstPositional(args: string[]): string | undefined {
     "--allowed-columns",
     "--approval-role",
     "--actor",
+    "--action",
+    "--auth-token-env",
+    "--audit",
     "--bearer-env",
+    "--capability",
     "--config",
     "--conflict-column",
+    "--cors-origin",
     "--database-url-env",
     "--destination",
     "--engine",
+    "--evidence",
     "--example",
+    "--format",
     "--from",
     "--from-env",
+    "--url-env",
     "--host",
+    "--idempotency-key",
     "--input",
     "--job",
     "--lease-seconds",
+    "--limit",
     "--lookup-arg",
     "--mode",
     "--mcp-config",
     "--namespace",
     "--numeric-bound",
+    "--object",
+    "--object-id",
+    "--object-type",
     "--object-name",
+    "--older-than",
     "--output",
     "--out",
     "--patch-fixed",
@@ -3638,22 +7122,35 @@ function firstPositional(args: string[]): string | undefined {
     "--port",
     "--primary-key",
     "--principal-env",
+    "--proposal",
     "--project",
+    "--query-fingerprint",
     "--reason",
     "--recipe",
+    "--receipt",
+    "--read-tool",
+    "--inspect-tool-name",
+    "--proposal-tool",
+    "--proposal-tool-name",
+    "--replay",
     "--runner",
     "--schema",
     "--source-name",
+    "--source",
     "--state",
+    "--status",
     "--stdio",
     "--store",
     "--table",
+    "--tenant",
     "--tenant-env",
     "--tenant-key",
     "--timeout-ms",
+    "--to",
     "--transition-guard",
     "--url",
     "--visible-columns",
+    "--writeback-job",
     "--write-url-env",
   ]);
   for (let index = 0; index < args.length; index += 1) {
@@ -3734,26 +7231,62 @@ function parseJsonRpcResponse(stdout: string, id: number): unknown | undefined {
 
 function formatProposalSummary(proposal: StoredProposal): string {
   return [
-    `${proposal.proposal_id}  ${proposal.state}  ${proposal.action}`,
+    `${proposal.created_at}  ${proposal.proposal_id}  ${proposal.state}  ${proposal.action}`,
+    `  object: ${proposal.business_object}:${proposal.object_id}`,
     `  target: ${proposal.source_kind}:${proposal.source_id}/${proposal.source_schema}.${proposal.source_table}/${proposal.object_id}`,
     `  tenant: ${proposal.tenant_id}  source changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
   ].join("\n") + "\n";
 }
 
-function formatProposalDetail(proposal: StoredProposal): string {
+function formatProposalFirstLook(proposal: StoredProposal, storedEvidenceItemCount: number | undefined, proposalRef: string, storeSuffix: string): string {
+  const evidenceItems = storedEvidenceItemCount ?? proposal.change_set.evidence.items?.length ?? 0;
+  return [
+    `Proposal ${proposal.proposal_id}`,
+    `Status: ${humanStatus(proposal.state)}`,
+    "",
+    "Agent requested:",
+    proposal.action,
+    "",
+    "Business object:",
+    `${proposal.business_object} ${proposal.object_id}`,
+    "",
+    "Proposed change:",
+    ...formatChangeLines(proposal).map((line) => line.replace(/^  /, "")),
+    "",
+    "Source DB changed:",
+    proposal.source_database_mutated ? "yes" : "no",
+    "",
+    "Approval:",
+    approvalBoundary(proposal),
+    "",
+    "Evidence:",
+    `${proposal.change_set.evidence.bundle_id}${evidenceItems > 0 ? ` (${plural(evidenceItems, "item")})` : ""}`,
+    "",
+    "Next:",
+    ...proposalNextCommands(proposal, proposalRef, storeSuffix).map((command) => `${command}`),
+    "",
+    "More detail:",
+    `${cliCommandName()} proposals show ${proposalRef} --details${storeSuffix}`,
+    "",
+  ].join("\n");
+}
+
+function formatProposalDetail(proposal: StoredProposal, storedEvidenceItemCount?: number): string {
   const changeSet = proposal.change_set;
   const conflictGuard = changeSet.guards.expected_version;
-  const evidenceItems = changeSet.evidence.items?.length ?? 0;
+  const evidenceItems = storedEvidenceItemCount ?? changeSet.evidence.items?.length ?? 0;
   const approvalStatus = currentApprovalStatus(proposal);
   const writebackStatus = currentWritebackStatus(proposal);
   return [
-    `proposal: ${proposal.proposal_id}`,
-    `state: ${proposal.state}`,
-    `action: ${proposal.action}`,
+    `Proposal details: ${proposal.proposal_id}`,
+    "",
+    "Review details:",
     `principal: ${changeSet.principal.id} (${changeSet.principal.source})`,
     `tenant: ${proposal.tenant_id}`,
     `target: ${proposal.source_kind}:${proposal.source_id}/${proposal.source_schema}.${proposal.source_table}/${proposal.object_id}`,
     `primary key: ${changeSet.source.primary_key.column}=${formatScalar(changeSet.source.primary_key.value)}`,
+    `status: ${proposal.state}`,
+    `action: ${proposal.action}`,
     `approval: ${approvalStatus}${changeSet.approval.required_role ? ` required role ${changeSet.approval.required_role}` : ""}`,
     `proposal hash: ${proposal.proposal_hash}`,
     `proposal version: ${proposal.proposal_version}`,
@@ -3762,13 +7295,692 @@ function formatProposalDetail(proposal: StoredProposal): string {
     `evidence: ${changeSet.evidence.bundle_id}  query ${changeSet.evidence.query_fingerprint}  items ${evidenceItems}`,
     `writeback: ${writebackStatus} via ${changeSet.writeback.mode}`,
     `source database changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
-    "diff:",
-    ...Object.keys(changeSet.patch).map((column) => {
-      const before = changeSet.before[column as keyof typeof changeSet.before];
-      const proposed = changeSet.after[column as keyof typeof changeSet.after];
-      return `  ${column}: ${JSON.stringify(before)} -> ${JSON.stringify(proposed)}`;
-    }),
+    "",
+    "Diff:",
+    ...formatChangeLines(proposal),
   ].join("\n") + "\n";
+}
+
+function formatProposalEventDetail(events: ProposalEvent[]): string {
+  if (events.length === 0) return "Events:\n  none\n";
+  return [
+    "Events:",
+    ...events.map((event) => `  event ${event.event_id}: ${event.kind} by ${event.actor} at ${event.created_at}`),
+  ].join("\n") + "\n";
+}
+
+function formatProposalDebug(proposal: StoredProposal, storePath: string | undefined): string {
+  return [
+    "Debug:",
+    `store: ${storePath ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db"}`,
+    `interaction id: ${proposal.interaction_id ?? "none"}`,
+    `tool call id: ${proposal.tool_call_id ?? "none"}`,
+    `source kind: ${proposal.source_kind}`,
+    `writeback mode: ${proposal.change_set.writeback.mode}`,
+    "",
+  ].join("\n");
+}
+
+function formatEvidenceSummary(evidence: StoredEvidenceBundle): string {
+  return [
+    `${evidence.created_at}  ${evidence.evidence_bundle_id}`,
+    `  tenant: ${evidence.tenant_id}  capability: ${evidence.capability ?? "unknown"}  proposal: ${evidence.proposal_id ?? "none"}`,
+    `  source: ${evidence.source_id ?? "unknown"}/${evidence.source_table ?? "unknown"}  object: ${evidence.business_object ?? "object"}:${evidence.object_id ?? "unknown"}`,
+  ].join("\n") + "\n";
+}
+
+function formatEvidenceFirstLook(evidence: StoredEvidenceBundle, storeSuffix: string): string {
+  const object = evidence.business_object && evidence.object_id ? `${evidence.business_object} ${evidence.object_id}` : "not linked";
+  const lines = [
+    `Evidence ${evidence.evidence_bundle_id}`,
+    "",
+    "Used for:",
+    evidence.capability ?? "unknown capability",
+    object,
+    "",
+    "Captured:",
+    plural(evidence.items.length, "evidence item"),
+    plural(evidence.query_audit.length, "query audit record"),
+    "",
+    "Source:",
+    `${evidence.source_id ?? "unknown"} / ${evidence.source_table ?? "unknown"}`,
+    "",
+    "Rows:",
+    ...evidence.items.flatMap((item, index) => formatEvidenceItem(item, index + 1)),
+    "",
+    "Next:",
+    `  ${cliCommandName()} query-audit list --evidence ${evidence.evidence_bundle_id}${storeSuffix}`,
+    ...(evidence.proposal_id ? [`  ${cliCommandName()} replay show --proposal ${evidence.proposal_id}${storeSuffix}`] : []),
+    "",
+    "More detail:",
+    `  ${cliCommandName()} evidence show ${evidence.evidence_bundle_id} --details${storeSuffix}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function formatEvidenceDetail(evidence: StoredEvidenceBundle): string {
+  const audit = evidence.query_audit[0];
+  const lines = [
+    `Evidence bundle: ${evidence.evidence_bundle_id}`,
+    `Tenant: ${evidence.tenant_id}`,
+    `Proposal: ${evidence.proposal_id ?? "none"}`,
+    `Principal: ${evidence.principal ?? "unknown"}`,
+    `Capability: ${evidence.capability ?? "unknown"}`,
+    `Source: ${evidence.source_id ?? "unknown"}`,
+    `Table: ${evidence.source_table ?? "unknown"}`,
+    `Query fingerprint: ${evidence.query_fingerprint ?? stringField(audit, "query_fingerprint") ?? "unknown"}`,
+    `Rows captured: ${evidence.items.length}`,
+    `Created at: ${evidence.created_at}`,
+    "Projection: captured visible fields only; credentials and secret-looking values are rejected before persistence.",
+    "",
+    "Items:",
+    ...evidence.items.flatMap((item, index) => formatEvidenceItem(item, index + 1)),
+    "",
+    "Related:",
+    ...(evidence.proposal_id ? [`  ${cliCommandName()} proposals show ${evidence.proposal_id}`, `  ${cliCommandName()} replay show --proposal ${evidence.proposal_id}`] : []),
+    `  ${cliCommandName()} query-audit list --evidence ${evidence.evidence_bundle_id}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function formatEvidenceItem(item: Record<string, unknown>, index: number): string[] {
+  const payload = isRecord(item.item) ? item.item : item;
+  const visibleRow = isRecord(payload.visible_row) ? payload.visible_row : payload;
+  const title = stringField(payload, "kind") ?? "item";
+  const primaryKey = isRecord(payload.primary_key) ? payload.primary_key : undefined;
+  const heading = primaryKey
+    ? `* ${title} ${formatScalar(primaryKey.value)}`
+    : `* ${title} ${index}`;
+  const rows = Object.entries(visibleRow)
+    .filter(([key]) => !["kind", "source_id", "table", "primary_key", "tenant"].includes(key))
+    .flatMap(([key, value]) => formatEvidenceFieldLines(key, value))
+    .slice(0, 12);
+  return [heading, ...(rows.length ? rows : ["  (no scalar preview fields)"])];
+}
+
+function formatEvidenceFieldLines(key: string, value: unknown): string[] {
+  if (isRecord(value)) {
+    const nested = Object.entries(value)
+      .filter(([, nestedValue]) => nestedValue === null || ["string", "number", "boolean"].includes(typeof nestedValue))
+      .slice(0, 6)
+      .map(([nestedKey, nestedValue]) => `  ${key}.${nestedKey}: ${formatScalar(nestedValue)}`);
+    return nested.length ? nested : [`  ${key}: [object]`];
+  }
+  return [`  ${key}: ${formatScalar(value)}`];
+}
+
+function formatEvidenceMarkdown(evidence: StoredEvidenceBundle): string {
+  return [
+    `# Evidence ${evidence.evidence_bundle_id}`,
+    "",
+    `- Tenant: ${evidence.tenant_id}`,
+    `- Proposal: ${evidence.proposal_id ?? "none"}`,
+    `- Principal: ${evidence.principal ?? "unknown"}`,
+    `- Capability: ${evidence.capability ?? "unknown"}`,
+    `- Source: ${evidence.source_id ?? "unknown"}`,
+    `- Table: ${evidence.source_table ?? "unknown"}`,
+    `- Query fingerprint: ${evidence.query_fingerprint ?? "unknown"}`,
+    `- Created at: ${evidence.created_at}`,
+    "",
+    "## Captured Items",
+    "",
+    "```json",
+    JSON.stringify(evidence.items, null, 2),
+    "```",
+    "",
+    "## Query Audit",
+    "",
+    "```json",
+    JSON.stringify(evidence.query_audit, null, 2),
+    "```",
+  ].join("\n") + "\n";
+}
+
+function formatQueryAuditSummary(row: Record<string, unknown>, details = false, storeSuffix = ""): string {
+  const lines = [
+    `${row.created_at}  audit ${row.audit_id}`,
+    `  source: ${row.source_id}/${row.table_name}  rows: ${row.row_count}`,
+    `  proposal: ${row.proposal_id ?? "none"}  evidence: ${row.evidence_bundle_id ?? "none"}`,
+    ...(details ? [`  query fingerprint: ${row.query_fingerprint}`] : []),
+    `  detail: ${cliCommandName()} query-audit show ${row.audit_id}${details ? "" : " --details"}${storeSuffix}`,
+  ];
+  return lines.join("\n") + "\n";
+}
+
+function formatQueryAuditFirstLook(row: Record<string, unknown>, storeSuffix: string): string {
+  return [
+    `Query audit ${row.audit_id}`,
+    "",
+    "Read:",
+    `${row.source_id}/${row.table_name}`,
+    "",
+    "Rows returned:",
+    String(row.row_count ?? "unknown"),
+    "",
+    "Linked records:",
+    `proposal: ${row.proposal_id ?? "none"}`,
+    `evidence: ${row.evidence_bundle_id ?? "none"}`,
+    "",
+    "More detail:",
+    `${cliCommandName()} query-audit show ${row.audit_id} --details${storeSuffix}`,
+    "",
+  ].join("\n");
+}
+
+function formatQueryAuditDetail(row: Record<string, unknown>): string {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return [
+    `Query audit: ${row.audit_id}`,
+    `Created at: ${row.created_at}`,
+    `Source: ${row.source_id}`,
+    `Table: ${row.table_name}`,
+    `Rows: ${row.row_count}`,
+    `Query fingerprint: ${row.query_fingerprint}`,
+    `Proposal: ${row.proposal_id ?? "none"}`,
+    `Evidence: ${row.evidence_bundle_id ?? "none"}`,
+    `Tenant: ${row.tenant_id ?? "unknown"}`,
+    `Capability: ${row.capability ?? payload.capability ?? "unknown"}`,
+    `Parameters redacted: ${payload.parameters_redacted === true ? "yes" : "unknown"}`,
+    "",
+    "Payload:",
+    JSON.stringify(payload, null, 2),
+  ].join("\n") + "\n";
+}
+
+function formatReceiptSummary(receipt: StoredWritebackReceipt): string {
+  return [
+    `${receipt.created_at}  receipt ${receipt.receipt_id}  ${receipt.status}`,
+    `  proposal: ${receipt.proposal_id}  job: ${receipt.writeback_job_id}`,
+    `  idempotency: ${receipt.idempotency_key}  source changed: ${receipt.source_database_mutated ? "yes" : "no"}`,
+  ].join("\n") + "\n";
+}
+
+function formatReceiptFirstLook(receipt: StoredWritebackReceipt, storeSuffix: string): string {
+  const checks = receipt.status === "applied"
+    ? ["primary key matched", "tenant guard matched", "allowed columns only", "conflict guard passed"]
+    : receipt.status === "conflict"
+      ? ["primary key matched", "tenant guard matched", "conflict guard blocked stale write"]
+      : ["guarded writeback did not apply"];
+  return [
+    `Receipt ${formatReceiptId(receipt.receipt_id)}`,
+    `Status: ${humanStatus(receipt.status)}`,
+    "",
+    "Proposal:",
+    receipt.proposal_id,
+    "",
+    "Writeback:",
+    "guarded single-row update",
+    "",
+    "Checks:",
+    ...checks.map((check) => `${check}`),
+    `affected rows: ${receipt.receipt.rows_affected}`,
+    "",
+    "Source DB changed:",
+    receipt.source_database_mutated ? "yes" : "no",
+    "",
+    "Next:",
+    `${cliCommandName()} replay show --proposal ${receipt.proposal_id}${storeSuffix}`,
+    "",
+    "More detail:",
+    `${cliCommandName()} receipts show ${receipt.receipt_id} --details${storeSuffix}`,
+    "",
+  ].join("\n");
+}
+
+function formatReceiptDetail(receipt: StoredWritebackReceipt): string {
+  return [
+    `Receipt: ${receipt.receipt_id}`,
+    `Proposal: ${receipt.proposal_id}`,
+    `Writeback job: ${receipt.writeback_job_id}`,
+    `Runner: ${receipt.runner_id}`,
+    `Status: ${receipt.status}`,
+    `Idempotency key: ${receipt.idempotency_key}`,
+    `Source database mutated: ${receipt.source_database_mutated ? "yes" : "no"}`,
+    `Rows affected: ${receipt.receipt.rows_affected}`,
+    `Safe error: ${receipt.receipt.safe_error_code ?? "none"}`,
+    `Receipt hash: ${receipt.receipt.receipt_hash}`,
+    `Created at: ${receipt.created_at}`,
+    "",
+    "Related:",
+    `  ${cliCommandName()} replay show --proposal ${receipt.proposal_id}`,
+  ].join("\n") + "\n";
+}
+
+function formatReplaySummary(row: Record<string, unknown>): string {
+  return [
+    `${row.created_at}  ${row.replay_id}`,
+    `  proposal: ${row.proposal_id}  status: ${row.state}`,
+    `  tenant: ${row.tenant_id}  capability: ${row.capability}  object: ${row.business_object}:${row.object_id}`,
+  ].join("\n") + "\n";
+}
+
+function formatReplayFirstLook(replay: ProposalReplayRecord, storeSuffix: string): string {
+  const proposal = replay.proposal;
+  const evidenceItems = replay.evidence.reduce((count, item) => {
+    const evidence = item as { items?: unknown };
+    return count + (Array.isArray(evidence.items) ? evidence.items.length : 0);
+  }, 0);
+  const latestReceipt = replay.receipts.at(-1);
+  const writebackStatus = latestReceipt ? humanStatus(latestReceipt.status) : humanStatus(currentWritebackStatus(proposal));
+  const approvalLine = proposal.state === "pending_review"
+    ? "Approval is still pending"
+    : `Proposal is ${humanStatus(proposal.state)}`;
+  return [
+    `Replay ${replay.replay_id}`,
+    "",
+    "What happened:",
+    `1. Agent called ${proposal.action}`,
+    `2. Runner read ${proposal.business_object} ${proposal.object_id} under tenant ${proposal.tenant_id}`,
+    `3. Runner created evidence bundle ${proposal.change_set.evidence.bundle_id}`,
+    "4. Runner created a proposal",
+    `5. Source DB changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
+    `6. ${approvalLine}`,
+    "",
+    "Proposed change:",
+    ...formatChangeLines(proposal).map((line) => line.replace(/^  /, "")),
+    "",
+    "Evidence:",
+    plural(replay.query_audit.length, "query audit record"),
+    plural(evidenceItems, "evidence item"),
+    "",
+    "Writeback:",
+    writebackStatus,
+    ...(latestReceipt ? [`source DB changed after writeback: ${latestReceipt.source_database_mutated ? "yes" : "no"}`] : []),
+    "",
+    "Next:",
+    `  ${cliCommandName()} evidence show ${proposal.change_set.evidence.bundle_id}${storeSuffix}`,
+    ...(proposal.state === "pending_review" ? [`  ${cliCommandName()} proposals approve ${proposal.proposal_id} --yes${storeSuffix}`] : []),
+    "",
+    "More detail:",
+    `  ${cliCommandName()} replay show --proposal ${proposal.proposal_id} --details${storeSuffix}`,
+    "",
+  ].join("\n");
+}
+
+function formatReplayDetail(replay: ProposalReplayRecord): string {
+  const evidenceItems = replay.evidence.reduce((count, item) => {
+    const evidence = item as { items?: unknown };
+    return count + (Array.isArray(evidence.items) ? evidence.items.length : 0);
+  }, 0);
+  return [
+    `Replay details ${replay.replay_id}`,
+    formatProposalDetail(replay.proposal, evidenceItems).trimEnd(),
+    `events: ${replay.events.length}`,
+    ...replay.events.map((event) => `  ${event.kind} by ${event.actor} at ${event.created_at}`),
+    `receipts: ${replay.receipts.length}`,
+    ...replay.receipts.map((receipt) => `  receipt ${receipt.receipt_id}: ${receipt.status} job ${receipt.writeback_job_id}`),
+    `evidence bundles: ${replay.evidence.length}`,
+    ...replay.evidence.map((evidence) => `  ${(evidence as { evidence_bundle_id?: string }).evidence_bundle_id ?? "unknown"}`),
+    `query audit records: ${replay.query_audit.length}`,
+    ...replay.query_audit.map((record) => `  audit ${(record as { audit_id?: unknown }).audit_id}: ${(record as { source_id?: unknown }).source_id}/${(record as { table_name?: unknown }).table_name} rows ${(record as { row_count?: unknown }).row_count}`),
+  ].join("\n") + "\n";
+}
+
+function formatReplayDebug(replay: ProposalReplayRecord, storePath: string | undefined): string {
+  return [
+    "Debug:",
+    `store: ${storePath ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db"}`,
+    `generated at: ${replay.generated_at}`,
+    `event ids: ${replay.events.map((event) => event.event_id).join(", ") || "none"}`,
+    `receipt ids: ${replay.receipts.map((receipt) => receipt.receipt_id).join(", ") || "none"}`,
+    "",
+  ].join("\n");
+}
+
+function formatReplayMarkdown(replay: ProposalReplayRecord): string {
+  const proposal = replay.proposal;
+  const principal = proposal.change_set.principal.id;
+  const approvalEvents = replay.events.filter((event) => /approved|rejected|canceled/i.test(event.kind));
+  const evidenceLines = replay.evidence.length > 0
+    ? replay.evidence.flatMap((evidence) => {
+      const record = evidence as {
+        evidence_bundle_id?: string;
+        payload?: Record<string, unknown>;
+        items?: unknown[];
+        query_audit?: unknown[];
+      };
+      const payload = isRecord(record.payload) ? record.payload : {};
+      const sourceId = stringField(payload, "source_id") ?? proposal.source_id;
+      const table = stringField(payload, "target") ?? `${proposal.source_schema}.${proposal.source_table}`;
+      const queryFingerprint = stringField(payload, "query_fingerprint") ?? proposal.change_set.evidence.query_fingerprint;
+      return [
+        `- evidence: ${record.evidence_bundle_id ?? proposal.change_set.evidence.bundle_id}`,
+        `  - source: ${sourceId}.${table}`,
+        `  - query fingerprint: ${queryFingerprint}`,
+        `  - rows captured: ${Array.isArray(record.items) ? record.items.length : 0}`,
+      ];
+    })
+    : [`- evidence: ${proposal.change_set.evidence.bundle_id}`, `  - source: ${proposal.source_id}.${proposal.source_schema}.${proposal.source_table}`, `  - query fingerprint: ${proposal.change_set.evidence.query_fingerprint}`, "  - rows captured: 0"];
+  const receiptLines = replay.receipts.length > 0
+    ? replay.receipts.flatMap((receipt) => [
+      `- receipt: ${receipt.receipt_id}`,
+      `  - status: ${receipt.status}`,
+      `  - affected rows: ${receipt.receipt.rows_affected}`,
+      `  - idempotency key: ${receipt.idempotency_key}`,
+      `  - source database mutated: ${receipt.source_database_mutated ? "yes" : "no"}`,
+      ...(receipt.receipt.safe_error_code ? [`  - safe error: ${receipt.receipt.safe_error_code}`] : []),
+    ])
+    : ["- no writeback receipt recorded yet"];
+  return [
+    "# Synapsor Replay",
+    "",
+    `Proposal: ${proposal.proposal_id}`,
+    `Capability: ${proposal.action}`,
+    `Tenant: ${proposal.tenant_id}`,
+    `Object: ${proposal.business_object}:${proposal.object_id}`,
+    `Status: ${proposal.state}`,
+    "",
+    "## What The Agent Requested",
+    "",
+    `The model-facing capability requested \`${proposal.action}\` for ${proposal.business_object}:${proposal.object_id}.`,
+    "The source database was not mutated when the proposal was created.",
+    "",
+    "## Trusted Context",
+    "",
+    `tenant_id = ${proposal.tenant_id}`,
+    `principal = ${principal}`,
+    `principal_source = ${proposal.change_set.principal.source}`,
+    "",
+    "## Evidence",
+    "",
+    ...evidenceLines,
+    "",
+    "## Proposed Diff",
+    "",
+    ...Object.keys(proposal.change_set.patch).map((column) => `- ${column}: ${JSON.stringify(proposal.change_set.before[column as keyof typeof proposal.change_set.before])} -> ${JSON.stringify(proposal.change_set.after[column as keyof typeof proposal.change_set.after])}`),
+    "",
+    "## Approval",
+    "",
+    ...(approvalEvents.length > 0
+      ? approvalEvents.map((event) => `- ${event.kind} by ${event.actor} at ${event.created_at}`)
+      : [`- ${proposal.change_set.approval.status}${proposal.change_set.approval.required_role ? `; required role: ${proposal.change_set.approval.required_role}` : ""}`]),
+    "",
+    "## Guarded Writeback",
+    "",
+    ...receiptLines,
+    "",
+    "## Query Audit",
+    "",
+    ...replay.query_audit.map((record) => `- audit ${(record as { audit_id?: unknown }).audit_id}: ${(record as { source_id?: unknown }).source_id}/${(record as { table_name?: unknown }).table_name} rows ${(record as { row_count?: unknown }).row_count} fingerprint ${(record as { query_fingerprint?: unknown }).query_fingerprint}`),
+    "",
+    "## Replay Note",
+    "",
+    "This is local captured interaction replay, not external database time travel. It reconstructs what the runner recorded: trusted context, evidence handles, proposal diff, approval events, query audit, and writeback receipts.",
+  ].join("\n") + "\n";
+}
+
+function activityFromProposal(proposal: StoredProposal): Record<string, unknown> {
+  return {
+    kind: "proposal",
+    created_at: proposal.created_at,
+    capability: proposal.action,
+    tenant: proposal.tenant_id,
+    principal: proposal.principal ?? proposal.change_set.principal.id,
+    object: `${proposal.business_object}:${proposal.object_id}`,
+    proposal: proposal.proposal_id,
+    evidence: proposal.change_set.evidence.bundle_id,
+    status: proposal.state,
+    replay: `replay_${proposal.proposal_id}`,
+    source: proposal.source_id,
+    table: `${proposal.source_schema}.${proposal.source_table}`,
+  };
+}
+
+function activityFromEvidence(evidence: StoredEvidenceBundle): Record<string, unknown> {
+  return {
+    kind: "evidence",
+    created_at: evidence.created_at,
+    capability: evidence.capability,
+    tenant: evidence.tenant_id,
+    principal: evidence.principal,
+    object: evidence.business_object && evidence.object_id ? `${evidence.business_object}:${evidence.object_id}` : undefined,
+    proposal: evidence.proposal_id,
+    evidence: evidence.evidence_bundle_id,
+    status: "evidence_recorded",
+    source: evidence.source_id,
+    table: evidence.source_table,
+  };
+}
+
+function activityFromQueryAudit(audit: Record<string, unknown>): Record<string, unknown> {
+  const businessObject = stringField(audit, "business_object");
+  const objectId = stringField(audit, "object_id") ?? stringField(audit, "primary_key_value");
+  return {
+    kind: "query-audit",
+    created_at: stringField(audit, "created_at"),
+    capability: stringField(audit, "capability"),
+    tenant: stringField(audit, "tenant_id"),
+    principal: stringField(audit, "principal"),
+    object: businessObject && objectId ? `${businessObject}:${objectId}` : undefined,
+    proposal: stringField(audit, "proposal_id"),
+    evidence: stringField(audit, "evidence_bundle_id"),
+    status: "query_audited",
+    source: stringField(audit, "source_id"),
+    table: stringField(audit, "table_name"),
+    query_audit: stringField(audit, "audit_id"),
+    query_fingerprint: stringField(audit, "query_fingerprint"),
+  };
+}
+
+function activityFromReceipt(receipt: StoredWritebackReceipt): Record<string, unknown> {
+  return {
+    kind: "receipt",
+    created_at: receipt.created_at,
+    proposal: receipt.proposal_id,
+    receipt: receipt.receipt_id,
+    status: receipt.status,
+    replay: `replay_${receipt.proposal_id}`,
+    source_database_mutated: receipt.source_database_mutated,
+  };
+}
+
+function formatActivityItem(item: Record<string, unknown>, index: number, details = false): string {
+  const lines = [
+    `${index}. ${item.created_at}`,
+    `   kind: ${item.kind}`,
+    ...(item.capability ? [`   capability: ${item.capability}`] : []),
+    ...(item.tenant ? [`   tenant: ${item.tenant}`] : []),
+    ...(item.object ? [`   object: ${item.object}`] : []),
+    ...(item.proposal ? [`   proposal: ${item.proposal}`] : []),
+    ...(item.evidence ? [`   evidence: ${item.evidence}`] : []),
+    ...(item.query_audit ? [`   query audit: ${item.query_audit}`] : []),
+    ...(details && item.query_fingerprint ? [`   query fingerprint: ${item.query_fingerprint}`] : []),
+    ...(item.receipt ? [`   receipt: ${item.receipt}`] : []),
+    ...(item.status ? [`   status: ${humanStatus(String(item.status))}`] : []),
+    ...(item.replay ? [`   replay: ${item.replay}`] : []),
+    "",
+  ];
+  return lines.join("\n");
+}
+
+function formatActivityNext(items: Record<string, unknown>[], storeSuffix: string): string {
+  const first = items[0];
+  if (!first) return "";
+  const proposal = stringField(first, "proposal");
+  const replayId = stringField(first, "replay");
+  const evidence = stringField(first, "evidence");
+  const lines = ["Next:"];
+  if (proposal) {
+    lines.push(`${cliCommandName()} proposals show ${proposal}${storeSuffix}`);
+    lines.push(`${cliCommandName()} replay show --proposal ${proposal}${storeSuffix}`);
+  } else if (replayId) {
+    lines.push(`${cliCommandName()} replay show --replay ${replayId}${storeSuffix}`);
+  } else if (evidence) {
+    lines.push(`${cliCommandName()} evidence show ${evidence}${storeSuffix}`);
+  } else {
+    lines.push(`${cliCommandName()} activity search --details${storeSuffix}`);
+  }
+  lines.push("");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatEventLine(event: ProposalEvent, details = false): string {
+  const lines = [
+    `${event.created_at}  ${event.kind}`,
+    `  proposal: ${event.proposal_id}`,
+    `  actor: ${event.actor}`,
+  ];
+  if (details && Object.keys(event.payload).length > 0) {
+    lines.push(`  payload: ${JSON.stringify(event.payload)}`);
+  }
+  lines.push("");
+  return `${lines.join("\n")}\n`;
+}
+
+function localEventWebhookPayload(event: ProposalEvent, storePath: string): Record<string, unknown> {
+  return {
+    schema_version: "synapsor.local-event-webhook.v1",
+    delivered_at: new Date().toISOString(),
+    source: {
+      kind: "local_store",
+      store_path: storePath,
+    },
+    event,
+  };
+}
+
+async function postLocalEventWebhook(
+  endpoint: URL,
+  payload: Record<string, unknown>,
+  options: { token?: string; timeoutMs: number },
+): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+  try {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "application/json",
+      "user-agent": "synapsor-runner-events-webhook",
+    };
+    if (options.token) headers.authorization = `Bearer ${options.token}`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`webhook returned HTTP ${response.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function redactWebhookUrl(endpoint: URL): string {
+  const copy = new URL(endpoint.toString());
+  copy.username = "";
+  copy.password = "";
+  copy.search = "";
+  return copy.toString();
+}
+
+function safeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function formatStoreStats(stats: StoreStats): string {
+  return [
+    `Local store: ${stats.path}`,
+    `Approx size: ${stats.approx_bytes} bytes`,
+    `Proposals: ${stats.proposals}`,
+    `Evidence bundles: ${stats.evidence_bundles}`,
+    `Evidence items: ${stats.evidence_items}`,
+    `Query audit records: ${stats.query_audit}`,
+    `Writeback receipts: ${stats.writeback_receipts}`,
+    `Writeback jobs: ${stats.writeback_jobs}`,
+    `Idempotency receipts: ${stats.idempotency_receipts}`,
+    `Replay records: ${stats.replay_records}`,
+    `Approvals: ${stats.approvals}`,
+    `Proposal events: ${stats.proposal_events}`,
+    `Shadow human actions: ${stats.shadow_human_actions}`,
+  ].join("\n") + "\n";
+}
+
+function formatStorePrune(result: StorePruneResult): string {
+  const lines = [
+    `Local store prune ${result.dry_run ? "dry run" : "complete"}`,
+    `Cutoff: ${result.cutoff}`,
+    "",
+    "Rows:",
+    ...Object.entries(result.deleted).map(([table, count]) => `  ${table}: ${count}`),
+  ];
+  if (result.dry_run) {
+    lines.push("", "No rows were deleted. Rerun with --yes to apply this prune.");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatStoreReset(result: { store: string; removed: string[]; source_database_changed: boolean }): string {
+  const lines = [
+    "Local store reset complete",
+    `Store: ${result.store}`,
+    `Source database changed: ${result.source_database_changed ? "yes" : "no"}`,
+    "",
+    "Removed:",
+    ...(result.removed.length ? result.removed.map((entry) => `  - ${entry}`) : ["  - no local store files were present"]),
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function cutoffFromOlderThan(value: string): string {
+  const match = value.match(/^(\d+)([smhd])$/i);
+  if (!match) throw new Error("--older-than must use a duration such as 30d, 12h, 90m, or 0d");
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? "d").toLowerCase();
+  const multiplier = unit === "s" ? 1000 : unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : 86_400_000;
+  return new Date(Date.now() - amount * multiplier).toISOString();
+}
+
+function formatMcpAuditMarkdown(report: McpAuditReport): string {
+  const lines = [
+    "# Synapsor MCP Database Risk Review",
+    "",
+    `- Target: ${report.target}`,
+    `- Generated at: ${report.generated_at}`,
+    `- Tools inspected: ${report.summary.tools_inspected}`,
+    `- Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
+    `- Total findings: ${report.summary.total_findings}`,
+    "",
+    `> ${report.disclaimer}`,
+    "",
+  ];
+  if (report.findings.length === 0) {
+    lines.push("No obvious database-commit risks were detected in the static manifest.", "");
+    lines.push("This does not prove the MCP server or its tools are secure.", "");
+  } else {
+    lines.push("## Findings", "");
+    for (const finding of report.findings) {
+      lines.push(`### ${finding.severity}: ${finding.code}${finding.tool ? ` (${finding.tool})` : ""}`);
+      lines.push("");
+      lines.push(finding.message);
+      lines.push("");
+      if (finding.evidence.length > 0) {
+        lines.push("Evidence:");
+        for (const evidence of finding.evidence) lines.push(`- ${evidence}`);
+        lines.push("");
+      }
+      lines.push(`Recommendation: ${finding.recommendation}`);
+      lines.push("");
+    }
+  }
+  lines.push("## Safer Shape", "");
+  lines.push("- expose semantic inspect/propose tools instead of raw SQL;");
+  lines.push("- bind tenant/principal from trusted context;");
+  lines.push("- keep approval outside MCP;");
+  lines.push("- apply approved changes through guarded writeback;");
+  lines.push("- keep replay/evidence handles for later review.");
+  lines.push("");
+  return `${lines.join("\n")}\n`;
+}
+
+function stringField(record: unknown, key: string): string | undefined {
+  if (!isRecord(record)) return undefined;
+  const value = record[key];
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return undefined;
 }
 
 function currentApprovalStatus(proposal: StoredProposal): string {
@@ -3784,6 +7996,68 @@ function currentWritebackStatus(proposal: StoredProposal): string {
   if (proposal.state === "conflict") return "conflict";
   if (proposal.state === "failed") return "failed";
   return proposal.change_set.writeback.status;
+}
+
+function showDetails(args: string[]): boolean {
+  return args.includes("--details") || args.includes("--debug");
+}
+
+function storeOptionSuffix(args: string[]): string {
+  const storePath = optionalArg(args, "--store");
+  return storePath ? ` --store ${storePath}` : "";
+}
+
+function humanStatus(value: string): string {
+  const normalized = value.replace(/_/g, " ");
+  if (normalized === "pending review") return "pending review";
+  if (normalized === "not applied") return "not applied";
+  return normalized;
+}
+
+function plural(count: number, label: string): string {
+  return `${count} ${label}${count === 1 ? "" : "s"}`;
+}
+
+function formatReceiptId(receiptId: number): string {
+  return `rct_${String(receiptId).padStart(6, "0")}`;
+}
+
+function approvalBoundary(proposal: StoredProposal): string {
+  if (proposal.state === "pending_review") return "required outside MCP";
+  if (proposal.state === "approved" || proposal.state === "pending_worker") return "approved outside MCP; waiting for trusted worker";
+  if (proposal.state === "applied") return "approved outside MCP; writeback applied";
+  if (proposal.state === "conflict") return "approved outside MCP; writeback blocked by conflict guard";
+  if (proposal.state === "failed") return "approved outside MCP; writeback failed safely";
+  if (proposal.state === "rejected") return "rejected outside MCP";
+  return humanStatus(proposal.state);
+}
+
+function proposalNextCommands(proposal: StoredProposal, proposalRef: string, storeSuffix: string): string[] {
+  if (proposal.state === "pending_review") {
+    return [
+      `${cliCommandName()} proposals approve ${proposalRef} --yes${storeSuffix}`,
+      `${cliCommandName()} replay show ${proposalRef === "latest" ? "latest" : `--proposal ${proposal.proposal_id}`}${storeSuffix}`,
+    ];
+  }
+  if (proposal.state === "approved" || proposal.state === "pending_worker") {
+    return [
+      `${cliCommandName()} replay show --proposal ${proposal.proposal_id}${storeSuffix}`,
+    ];
+  }
+  return [
+    `${cliCommandName()} replay show --proposal ${proposal.proposal_id}${storeSuffix}`,
+  ];
+}
+
+function formatChangeLines(proposal: StoredProposal): string[] {
+  const changeSet = proposal.change_set;
+  const columns = Object.keys(changeSet.patch);
+  if (columns.length === 0) return ["  (no changed columns)"];
+  return columns.map((column) => {
+    const before = changeSet.before[column as keyof typeof changeSet.before];
+    const proposed = changeSet.after[column as keyof typeof changeSet.after];
+    return `  ${column}: ${formatScalar(before)} -> ${formatScalar(proposed)}`;
+  });
 }
 
 function formatShadowComparison(comparison: {
@@ -3918,7 +8192,7 @@ function starterCloudConfig(): Record<string, unknown> {
       base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
       runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
       runner_id: "synapsor_runner_local",
-      runner_version: "0.1.0-alpha.3",
+      runner_version: "0.1.0",
       project_id: "token_scope",
       adapter_id: "mcp.your_adapter",
       source_id: "src_replace_me",
@@ -3945,15 +8219,51 @@ function isHelpRequest(args: string[]): boolean {
   return args.includes("--help") || args.includes("-h");
 }
 
+function isKnownTopLevelCommand(command: string): boolean {
+  return new Set([
+    "help",
+    "init",
+    "inspect",
+    "config",
+    "doctor",
+    "validate",
+    "apply",
+    "propose",
+    "audit",
+    "start",
+    "up",
+    "runner",
+    "cloud",
+    "mcp",
+    "smoke",
+    "tools",
+    "writeback",
+    "handler",
+    "onboard",
+    "demo",
+    "recipes",
+    "benchmark",
+    "proposals",
+    "replay",
+    "evidence",
+    "query-audit",
+    "receipts",
+    "activity",
+    "events",
+    "store",
+    "shadow",
+    "ui",
+  ]).has(command);
+}
+
 function cliCommandName(): string {
   if (process.env.SYNAPSOR_RUNNER_COMMAND_NAME) return process.env.SYNAPSOR_RUNNER_COMMAND_NAME;
-  const invoked = path.basename(process.argv[1] ?? "");
-  return invoked === "synapsor-runner" ? "synapsor-runner" : "synapsor";
+  return "synapsor-runner";
 }
 
 function usage(args: string[] = []): void {
   const [command, subcommand] = args;
-  const key = command === "mcp" && subcommand ? `mcp ${subcommand}` : command ?? "";
+  const key = (command === "mcp" || command === "handler") && subcommand ? `${command} ${subcommand}` : command ?? "";
   const cmd = cliCommandName();
   const help: Record<string, string> = {
     "": `Synapsor Runner
@@ -3965,62 +8275,248 @@ Usage:
 
 Commands:
   inspect      Inspect a Postgres/MySQL schema
+  start        Start guided own-database setup, or no-arg legacy worker polling
+  up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
   mcp          Serve safe semantic tools over MCP
+  onboard      One-command own-database setup
+  smoke        Test generated tool calls before wiring an MCP client
+  tools        List model-facing MCP tools and aliases
+  writeback    Print direct SQL writeback receipt DDL, grants, and checks
+  handler      Create app-owned writeback handler templates
   propose      Create a local evidence-backed proposal
   audit        Review MCP/database tool risk
   proposals   Review, approve, or reject proposals
+  evidence    Inspect local evidence bundles
+  query-audit Inspect local query audit records
+  receipts    Inspect guarded writeback receipts
+  activity    Search local evidence/replay ledger
+  events      Tail or push local proposal/writeback lifecycle events
+  store       Inspect and maintain the local SQLite ledger
   apply        Apply an approved proposal with guarded writeback
   replay       Show what happened
   demo         Start the local commit-safety demo
   ui           Open the local review UI
 
 Examples:
+  ${cmd} start --from-env DATABASE_URL
+  ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
+  ${cmd} onboard db --from-env DATABASE_URL
   ${cmd} inspect --from-env DATABASE_URL
   ${cmd} init --wizard --from-env DATABASE_URL
+  ${cmd} smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} handler template node-fastify --output ./synapsor-writeback-handler.mjs
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} propose billing.propose_late_fee_waiver --sample
   ${cmd} audit ./synapsor.runner.json
 `,
+    up: `Usage:
+  ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio|streamable-http]
+  ${cmd} up --serve --config ./synapsor.runner.json --store ./.synapsor/local.db --port 8766 --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+  ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --handler-check --dry-run
+
+Validate the local Runner config and store, summarize model-facing tools,
+explain direct SQL versus app-owned executor writeback, and print the next
+smoke/approve/apply/replay commands.
+
+With --transport stdio, \`${cmd} up\` prints MCP client wiring because stdio is
+launched by the client. \`${cmd} up --serve\` starts the standard Streamable HTTP
+MCP server after the checklist. Use --with-handler to run the handler doctor
+before serving app-owned writeback configs.
+
+Options:
+  --serve
+  --alias-mode canonical|openai|both
+  --result-format v1|v2
+  --handler-check
+  --with-handler
+  --open-ui
+  --dry-run
+`,
+    start: `Usage:
+  ${cmd} start --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
+  ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
+  ${cmd} start
+
+With --from-env, run the guided own-database setup: inspect schema, choose one
+object, create trusted context, generate semantic MCP tools, run/print a smoke
+call, and print MCP/UI next steps.
+
+With no flags, start the legacy cloud-linked writeback polling worker from the
+worker environment config. Prefer \`${cmd} runner start\` for that worker path
+so it is not confused with first-run onboarding.
+`,
     inspect: `Usage:
   ${cmd} inspect --from-env DATABASE_URL [--engine auto|postgres|mysql] [--schema public] [--json]
+  ${cmd} inspect --engine postgres --url-env DATABASE_URL
   ${cmd} inspect "<postgres-or-mysql-url>" [--engine auto|postgres|mysql] [--schema public] [--json]
 
 Inspect schema metadata without mutating the database or printing credentials.
 `,
     init: `Usage:
   ${cmd} init --wizard --from-env DATABASE_URL [--mode read_only|review|shadow] [--out synapsor.runner.json]
-  ${cmd} init --inspection-json schema.json --table invoices --mode review --patch-from-arg waiver_reason=reason
+  ${cmd} init --engine postgres --url-env DATABASE_URL --mode review --table public.invoices
+  ${cmd} init --inspection-json schema.json --table invoices --mode review --patch late_fee_cents=fixed:0,waiver_reason=arg:reason
+  ${cmd} init --answers answers.json --yes
+  ${cmd} init --inspection-json schema.json --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
 
 Generate a reviewed Synapsor Runner contract. Defaults to read-only in the wizard.
-`,
+Review mode writeback choices: sql_update, http_handler, command_handler.
+If --namespace is omitted, init derives one from the table name instead of using source.*.
+Use --read-tool and --proposal-tool to override the exact model-facing capability names.
+The guided wizard shows a final preview and lets you revise visible fields or capability names before writing files.
+Use --yes/--non-interactive plus explicit flags, or --answers, for script/agent-friendly setup without prompts.
+	`,
     mcp: `Usage:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp serve --transport streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+  ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+  ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp audit --example dangerous-db-mcp
   ${cmd} mcp audit ./tools-list.json
 
+Use stdio for local MCP clients that launch the runner. Use Streamable HTTP for standard HTTP MCP clients. Use serve-http only when you explicitly want the lightweight JSON-RPC bridge.
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
 `,
-    "mcp serve": `Usage:
-  ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db [--read-only] [--local]
+    tools: `Usage:
+  ${cmd} tools list --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
 
-Start the stdio MCP server. Startup logs stay off stdout so the MCP protocol remains clean.
+List the model-facing MCP tools generated from a reviewed Runner config.
+Use --aliases to show canonical Synapsor names and OpenAI-safe aliases.
+This command never prints database URLs or write credentials.
+`,
+    "mcp serve": `Usage:
+  ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio] [--read-only] [--local] [--alias-mode canonical|openai|both] [--result-format v1|v2]
+  ${cmd} mcp serve --transport streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN [--result-format v2]
+
+Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
+Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names. Use --alias-mode both to expose canonical and alias names.
+Use --result-format v2 to return one stable ok/summary/data/proposal/error envelope from every tool call.
+`,
+    "mcp serve-streamable-http": `Usage:
+  export SYNAPSOR_RUNNER_HTTP_TOKEN=...
+  ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8766] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--alias-mode canonical|openai|both] [--result-format v1|v2]
+
+Start the spec-compatible MCP Streamable HTTP endpoint for clients and SDKs that support HTTP MCP.
+Bearer auth is required by default.
+
+Alpha scope:
+  - Supports MCP initialize/session behavior through the official MCP Streamable HTTP transport.
+  - Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names.
+  - Use --alias-mode both to expose canonical names and aliases.
+  - Use --result-format v2 for the stable ok/summary/data/proposal/error envelope.
+  - OpenAI aliases expose names such as billing__inspect_invoice while preserving the canonical Synapsor name in _meta.
+  - Use /mcp for the MCP endpoint and /healthz for service health.
+  - Sessions are in-memory. Restarting the runner clears active HTTP MCP sessions.
+
+Security:
+  - Defaults to 127.0.0.1:8766.
+  - Refuses to start if the auth token env var is missing.
+  - Use --dev-no-auth only for localhost development.
+  - If binding to 0.0.0.0, use TLS, private networking, authentication, and rate limits.
+  - Optional CORS: --cors-origin http://localhost:3000
+`,
+    "mcp serve-http": `Usage:
+  export SYNAPSOR_RUNNER_HTTP_TOKEN=...
+  ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8765] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--result-format v1|v2]
+
+Start the lightweight HTTP JSON-RPC bridge for app/server deployments that want simple POST calls.
+Bearer auth is required by default.
+
+Alpha scope: supports POST /mcp methods tools/list, tools/call, and resources/read.
+It does not implement MCP Streamable HTTP initialize/session behavior. Use ${cmd} mcp serve-streamable-http for standard HTTP MCP clients.
+
+Security:
+  - Defaults to 127.0.0.1:8765.
+  - Refuses to start if the auth token env var is missing.
+  - Use --dev-no-auth only for localhost development.
+  - If binding to 0.0.0.0, use TLS, private networking, authentication, and rate limits.
+  - Optional CORS: --cors-origin http://localhost:3000
 `,
     "mcp config": `Usage:
-  ${cmd} mcp config [claude-desktop|cursor|generic|vscode] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp config [claude-desktop|cursor|generic|vscode|openai-agents] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Print MCP client configuration that references the local runner command, not database URLs. Defaults to claude-desktop.
+OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
+`,
+    "mcp client-config": `Usage:
+  ${cmd} mcp client-config --client claude-desktop [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client cursor [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+
+Print MCP client configuration that references the local runner command, not database URLs.
+OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
+Use --include-instructions to include the recommended propose-first agent prompt.
+`,
+    smoke: `Usage:
+  ${cmd} smoke call [capability-name] [--sample] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} smoke call [capability-name] --json '{"record_id":"..."}'
+  ${cmd} smoke boundary [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+
+Call a generated semantic tool locally before wiring Claude, Cursor, or another MCP client. The call uses the same runtime as MCP, records evidence/query audit/proposals in the local store, and does not expose raw SQL or write credentials.
+`,
+    writeback: `Usage:
+  ${cmd} writeback doctor --config ./synapsor.runner.json [--check-db]
+  ${cmd} writeback migration --engine postgres [--schema synapsor]
+  ${cmd} writeback migration --engine mysql [--schema appdb]
+  ${cmd} writeback grants --engine postgres --writer-role app_writer [--schema synapsor]
+  ${cmd} writeback grants --engine mysql --writer-role "'app_writer'@'%'" [--schema appdb]
+
+Print and verify the receipt-table setup required by direct SQL writeback. Rich writes should prefer app-owned http_handler or command_handler executors.
+`,
+    handler: `Usage:
+  ${cmd} handler template --list
+  ${cmd} handler template node-fastify [--output ./synapsor-writeback-handler.mjs] [--force]
+  ${cmd} handler template python-fastapi [--output ./synapsor_writeback_handler.py] [--force]
+  ${cmd} handler template command [--output ./synapsor-command-handler.mjs] [--force]
+
+Write starter app-owned writeback handlers for approved proposals. Use these when rich writes should run through your application service instead of Runner-managed SQL.
+`,
+    "handler template": `Usage:
+  ${cmd} handler template --list
+  ${cmd} handler template node-fastify [--output ./synapsor-writeback-handler.mjs] [--force]
+  ${cmd} handler template python-fastapi [--output ./synapsor_writeback_handler.py] [--force]
+  ${cmd} handler template command [--output ./synapsor-command-handler.mjs] [--force]
+  ${cmd} handler template node-fastify --stdout
+
+Templates:
+  node-fastify    HTTP handler for a Node/Fastify application service
+  python-fastapi  HTTP handler for a Python/FastAPI application service
+  command         Local command handler for scripts or job runners
+
+The template receives an approved proposal writeback request and must return an applied/conflict/failed receipt. Re-check tenant, principal, idempotency, row/version guards, and business policy before mutating state.
+`,
+    onboard: `Usage:
+  ${cmd} onboard db --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
+  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
+  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes
+  ${cmd} onboard db --answers answers.json --yes
+
+Guided own-database setup: inspect schema, choose one object, create trusted context, choose read-only/shadow/review writeback mode, generate semantic tools, validate config, run a tool-boundary smoke check, and print the MCP/UI next steps.
+Use --yes/--non-interactive with explicit flags, or --answers, when CI or an LLM agent must run without prompts.
 `,
     propose: `Usage:
   ${cmd} propose <capability-name> --sample [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} propose <capability-name> --input ./input.json
   ${cmd} propose <capability-name> --json '{"invoice_id":"INV-3001","reason":"support-approved waiver"}'
 
+Examples after running ${cmd} demo:
+  ${cmd} propose billing.propose_late_fee_waiver --sample
+  ${cmd} propose support.propose_plan_credit --sample
+  ${cmd} propose orders.propose_status_change --sample
+
 Create the same evidence-backed proposal the MCP tool would create. The source database is not mutated.
 `,
     audit: `Usage:
   ${cmd} audit --example dangerous-db-mcp
+  ${cmd} audit --example dangerous-db-mcp --format json
+  ${cmd} audit --example dangerous-db-mcp --format markdown
   ${cmd} audit ./synapsor.runner.json
   ${cmd} audit --mcp-config ./claude_desktop_config.json
   ${cmd} audit --stdio "node ./server.js"
@@ -4028,38 +8524,121 @@ Create the same evidence-backed proposal the MCP tool would create. The source d
 
 Static MCP/database risk review only. This is not a security guarantee.
 `,
-    proposals: `Usage:
-  ${cmd} proposals list [--store ./.synapsor/local.db]
-  ${cmd} proposals show latest
-  ${cmd} proposals approve latest --yes
-  ${cmd} proposals reject latest --reason "..."
+    doctor: `Usage:
+  ${cmd} doctor --config synapsor.runner.json
+  ${cmd} doctor --config synapsor.runner.json --json
+  ${cmd} doctor --config synapsor.runner.json --check-handlers
+  ${cmd} doctor --config synapsor.runner.json --check-writeback
+  ${cmd} doctor --config synapsor.runner.json --report --redact --output synapsor-doctor.md
+  ${cmd} doctor --first-run
 
-Review decisions happen outside the model-facing MCP tool surface.
+Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, direct SQL writeback readiness, and local store stats. Reports are redacted; do not paste secrets into issues.
+Use --check-writeback only after reviewing receipt-table DDL/grants; it connects with the trusted writer and can create the receipt table if the writer has permission.
+`,
+    proposals: `Usage:
+	  ${cmd} proposals list [--tenant acme] [--capability billing.propose_late_fee_waiver] [--object invoice:INV-3001] [--status applied]
+	  ${cmd} proposals show latest
+	  ${cmd} proposals show latest --details
+	  ${cmd} proposals approve latest --yes
+	  ${cmd} proposals reject latest --reason "..."
+
+	Review decisions happen outside the model-facing MCP tool surface. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
+	`,
+    evidence: `Usage:
+	  ${cmd} evidence list [--tenant acme] [--capability billing.inspect_invoice] [--object invoice:INV-3001]
+	  ${cmd} evidence show ev_...
+	  ${cmd} evidence show ev_... --details
+	  ${cmd} evidence export ev_... --format json --output evidence.json
+  ${cmd} evidence export ev_... --format markdown --output evidence.md
+
+Inspect captured local evidence bundles and query-audit links without rerunning external DB reads.
+`,
+    "query-audit": `Usage:
+	  ${cmd} query-audit list [--evidence ev_...] [--source app_postgres] [--table invoices]
+	  ${cmd} query-audit show <audit_id>
+	  ${cmd} query-audit show <audit_id> --details
+	  ${cmd} query-audit export <audit_id> --format json --output audit.json
+
+Inspect local query fingerprints, table names, row counts, and redacted-parameter metadata.
+`,
+    receipts: `Usage:
+	  ${cmd} receipts list [--proposal wrp_...] [--status applied]
+	  ${cmd} receipts show <receipt_id>
+	  ${cmd} receipts show <receipt_id> --details
+
+	Inspect guarded writeback receipts recorded by the trusted runner path. Use --details for idempotency keys, receipt hashes, and runner metadata.
 `,
     apply: `Usage:
   ${cmd} apply latest [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} apply --job job.json --config ./synapsor.runner.json --store ./.synapsor/local.db
 
 Apply an approved proposal through guarded writeback. Requires a trusted write credential.
+
+With --config, the writer connection comes from source.write_url_env, such as
+SYNAPSOR_DATABASE_WRITE_URL. SYNAPSOR_DATABASE_URL is only the legacy fallback
+for direct worker/apply flows without a local config.
+
+Direct SQL writeback creates or writes synapsor_writeback_receipts for
+idempotency and replay, so the trusted writer needs permission for that table
+or an administrator must pre-create and grant it.
 `,
     replay: `Usage:
-  ${cmd} replay latest [--store ./.synapsor/local.db]
-  ${cmd} replay show latest
-  ${cmd} replay export latest --output replay.json
+  ${cmd} replay list [--tenant acme] [--object invoice:INV-3001]
+	  ${cmd} replay show latest
+	  ${cmd} replay show latest --details
+	  ${cmd} replay show --proposal wrp_...
+  ${cmd} replay show --replay replay_wrp_...
+  ${cmd} replay show --evidence ev_...
+  ${cmd} replay export --proposal wrp_... --format json --output replay.json
+  ${cmd} replay export --proposal wrp_... --format markdown --output replay.md
 
-Show evidence, proposal events, receipts, and replay state without rerunning side effects.
+	Show evidence, proposal events, receipts, and replay state without rerunning side effects. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
+`,
+    activity: `Usage:
+	  ${cmd} activity search --tenant acme --object invoice:INV-3001
+	  ${cmd} activity search --tenant acme --object invoice:INV-3001 --details
+	  ${cmd} activity search --capability billing.propose_late_fee_waiver --from 2026-06-01 --to 2026-06-23
+
+Search the local SQLite evidence/replay ledger across proposals, evidence, query audit, receipts, and replay records.
+`,
+    events: `Usage:
+  ${cmd} events tail --store ./.synapsor/local.db
+	  ${cmd} events tail --proposal wrp_...
+	  ${cmd} events tail --kind writeback_applied
+	  ${cmd} events tail --follow --interval-ms 1000
+  ${cmd} events webhook --url http://127.0.0.1:8788/synapsor/events --kind proposal_created
+  ${cmd} events webhook --url-env SYNAPSOR_EVENT_WEBHOOK_URL --auth-token-env SYNAPSOR_EVENT_WEBHOOK_TOKEN --follow
+  ${cmd} events webhook --url http://127.0.0.1:8788/synapsor/events --dry-run
+
+Show or push local proposal/writeback lifecycle events such as proposal_created, proposal_approved, writeback_applied, writeback_conflict, and writeback_failed. Webhook delivery POSTs one local event envelope per event and never exposes database credentials.
+	`,
+    store: `Usage:
+  ${cmd} store stats --store ./.synapsor/local.db
+  ${cmd} store vacuum --store ./.synapsor/local.db
+  ${cmd} store prune --store ./.synapsor/local.db --older-than 30d --dry-run
+  ${cmd} store prune --store ./.synapsor/local.db --older-than 30d --yes
+  ${cmd} store prune --store ./.synapsor/local.db --older-than 30d --yes --force
+  ${cmd} store reset --store ./.synapsor/local.db --yes
+
+Local store maintenance only. Prune defaults to dry-run and reset requires --yes. These commands never touch your source Postgres/MySQL database. Destructive operations refuse while an active server lease exists unless --force is provided.
 `,
 	    demo: `Usage:
 	  ${cmd} demo [--force]
 	  ${cmd} demo --quick
+	  ${cmd} demo --quick --guided
+	  ${cmd} demo --quick --no-interactive
+	  ${cmd} demo --quick --details
+	  ${cmd} demo inspect
+	  ${cmd} demo inspect --npx
 
 	Start a disposable local Postgres demo and write ./synapsor.runner.json for the first-run flow.
-	Use --quick for a fixture-only 15-second explanation with no Docker startup.
+	Use --quick for a fixture-only guided walkthrough and local ledger seed with no Docker startup. Use demo inspect to print follow-up commands for the quick-demo fixture.
 	`,
     ui: `Usage:
-  ${cmd} ui [--tour] [--config synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} ui [--open] [--tour] [--config synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Open the localhost review UI for proposals, diffs, evidence, receipts, and replay.
+Use --open to launch the URL in your browser when a desktop opener is available.
 `,
   };
   process.stdout.write(help[key] ?? help[command ?? ""] ?? help[""] ?? "");

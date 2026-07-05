@@ -18,23 +18,26 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "cloud", "strict"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "cloud", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
   "engine",
   "read_url_env",
   "write_url_env",
+  "read_only",
   "statement_timeout_ms",
   "ssl",
 ]);
 const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values"]);
 const CONTEXT_KEYS = TRUSTED_CONTEXT_KEYS;
-const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "timeout_ms", "command_env"]);
+const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "signing_secret_env", "timeout_ms", "command_env"]);
 const EXECUTOR_AUTH_KEYS = new Set(["type", "token_env"]);
 const CAPABILITY_KEYS = new Set([
   "name",
   "kind",
+  "description",
+  "returns_hint",
   "source",
   "context",
   "executor",
@@ -54,7 +57,7 @@ const CAPABILITY_KEYS = new Set([
 ]);
 const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "single_tenant_dev"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
-const ARG_KEYS = new Set(["type", "required", "max_length", "minimum", "maximum", "enum"]);
+const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum"]);
 const PATCH_BINDING_KEYS = new Set(["fixed", "from_arg"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
@@ -130,6 +133,9 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   if (input.version !== 1) {
     errors.push({ path: "$.version", code: "UNSUPPORTED_CONFIG_VERSION", message: "Runner config version must be 1." });
   }
+  if (input.result_format !== undefined && input.result_format !== 1 && input.result_format !== 2) {
+    errors.push({ path: "$.result_format", code: "INVALID_RESULT_FORMAT", message: "result_format must be 1 or 2." });
+  }
   if (!isRunnerMode(input.mode)) {
     errors.push({ path: "$.mode", code: "INVALID_MODE", message: "mode must be read_only, shadow, review, or cloud." });
   }
@@ -140,6 +146,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings);
   validateExecutors(input.executors, input.mode, strict, errors);
   validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings);
+  validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
@@ -207,14 +214,44 @@ function validateSources(
     if (source.statement_timeout_ms !== undefined && !isPositiveInteger(source.statement_timeout_ms)) {
       errors.push({ path: `${path}.statement_timeout_ms`, code: "INVALID_TIMEOUT", message: "statement_timeout_ms must be a positive integer." });
     }
-    if (source.write_url_env === undefined) {
-      warnings.push({
-        path: `${path}.write_url_env`,
-        code: "WRITEBACK_DISABLED",
-        message: "No write_url_env is configured; review-mode proposal execution cannot apply external DB changes.",
-      });
+    if (source.read_only !== undefined && typeof source.read_only !== "boolean") {
+      errors.push({ path: `${path}.read_only`, code: "INVALID_SOURCE_READ_ONLY", message: "read_only must be true or false when provided." });
     }
   }
+}
+
+function validateWritebackReadiness(
+  sources: unknown,
+  capabilities: unknown,
+  mode: unknown,
+  errors: ConfigIssue[],
+  warnings: ConfigIssue[],
+): void {
+  if (mode !== "review" || !isRecord(sources) || !Array.isArray(capabilities)) return;
+  capabilities.forEach((capability, index) => {
+    if (!isRecord(capability) || capability.kind !== "proposal") return;
+    const sourceName = isNonEmptyString(capability.source) ? capability.source : undefined;
+    const source = sourceName ? sources[sourceName] : undefined;
+    if (!sourceName || !isRecord(source)) return;
+    const executor = isNonEmptyString(capability.executor) ? capability.executor : "sql_update";
+    const directSql = executor === "sql_update";
+    if (!directSql) return;
+    if (source.read_only === true) {
+      errors.push({
+        path: `$.capabilities[${index}].executor`,
+        code: "READ_ONLY_SOURCE_DIRECT_WRITEBACK",
+        message: `Proposal capability ${String(capability.name ?? index)} uses direct SQL writeback, but source ${sourceName} is marked read_only.`,
+      });
+      return;
+    }
+    if (source.write_url_env === undefined) {
+      warnings.push({
+        path: `$.sources.${sourceName}.write_url_env`,
+        code: "WRITEBACK_DISABLED",
+        message: "No write_url_env is configured; direct SQL review-mode proposal execution cannot apply external DB changes.",
+      });
+    }
+  });
 }
 
 function validateCloud(value: unknown, mode: unknown, strict: boolean, errors: ConfigIssue[]): void {
@@ -413,6 +450,9 @@ function validateExecutors(value: unknown, mode: unknown, strict: boolean, error
         errors.push({ path: `${path}.method`, code: "INVALID_HANDLER_METHOD", message: "http_handler.method must be POST, PUT, or PATCH." });
       }
       validateExecutorAuth(executor.auth, `${path}.auth`, strict, errors);
+      if (executor.signing_secret_env !== undefined && !isEnvName(executor.signing_secret_env)) {
+        errors.push({ path: `${path}.signing_secret_env`, code: "HANDLER_SIGNING_SECRET_ENV_INVALID", message: "http_handler.signing_secret_env must name an environment variable containing the HMAC signing secret." });
+      }
       if (executor.timeout_ms !== undefined && !isPositiveInteger(executor.timeout_ms)) {
         errors.push({ path: `${path}.timeout_ms`, code: "INVALID_HANDLER_TIMEOUT", message: "http_handler.timeout_ms must be a positive integer." });
       }
@@ -488,6 +528,12 @@ function validateCapability(
   }
   if (!isCapabilityKind(value.kind)) {
     errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read or proposal." });
+  }
+  if (value.description !== undefined && !isNonEmptyString(value.description)) {
+    errors.push({ path: `${path}.description`, code: "INVALID_CAPABILITY_DESCRIPTION", message: "description must be a non-empty string when provided." });
+  }
+  if (value.returns_hint !== undefined && !isNonEmptyString(value.returns_hint)) {
+    errors.push({ path: `${path}.returns_hint`, code: "INVALID_RETURNS_HINT", message: "returns_hint must be a non-empty string when provided." });
   }
   if (!isNonEmptyString(value.source) || !sourceNames.has(value.source)) {
     errors.push({ path: `${path}.source`, code: "UNKNOWN_SOURCE", message: "Capability source must reference a configured source." });
@@ -570,6 +616,9 @@ function validateArgs(value: unknown, path: string, strict: boolean, errors: Con
     if (strict) checkUnknownKeys(arg, ARG_KEYS, argPath, errors);
     if (!["string", "number", "boolean"].includes(String(arg.type))) {
       errors.push({ path: `${argPath}.type`, code: "INVALID_ARG_TYPE", message: "Argument type must be string, number, or boolean." });
+    }
+    if (arg.description !== undefined && !isNonEmptyString(arg.description)) {
+      errors.push({ path: `${argPath}.description`, code: "INVALID_ARG_DESCRIPTION", message: "Argument description must be a non-empty string when provided." });
     }
     if (arg.max_length !== undefined && !isPositiveInteger(arg.max_length)) {
       errors.push({ path: `${argPath}.max_length`, code: "INVALID_MAX_LENGTH", message: "max_length must be a positive integer." });

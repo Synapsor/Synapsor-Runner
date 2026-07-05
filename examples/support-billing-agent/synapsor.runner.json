@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./tmp/support-billing-agent/local.db"
+  },
+  "sources": {
+    "app_postgres": {
+      "engine": "postgres",
+      "read_url_env": "REFERENCE_POSTGRES_READ_URL",
+      "write_url_env": "REFERENCE_POSTGRES_WRITE_URL",
+      "statement_timeout_ms": 3000
+    }
+  },
+  "trusted_context": {
+    "provider": "environment",
+    "values": {
+      "tenant_id_env": "SYNAPSOR_TENANT_ID",
+      "principal_env": "SYNAPSOR_PRINCIPAL"
+    }
+  },
+  "contexts": {
+    "local_operator": {
+      "provider": "environment",
+      "values": {
+        "tenant_id_env": "SYNAPSOR_TENANT_ID",
+        "principal_env": "SYNAPSOR_PRINCIPAL"
+      }
+    }
+  },
+  "capabilities": [
+    {
+      "name": "support.inspect_ticket",
+      "kind": "read",
+      "source": "app_postgres",
+      "context": "local_operator",
+      "target": {
+        "schema": "public",
+        "table": "support_tickets",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "ticket_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "ticket_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "subject",
+        "status",
+        "resolution_note",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "support.propose_plan_credit",
+      "kind": "proposal",
+      "source": "app_postgres",
+      "context": "local_operator",
+      "target": {
+        "schema": "public",
+        "table": "customers",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "customer_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "credit_cents": {
+          "type": "number",
+          "required": true,
+          "minimum": 0,
+          "maximum": 5000
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "customer_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "name",
+        "plan",
+        "plan_credit_cents",
+        "credit_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "plan_credit_cents": {
+          "from_arg": "credit_cents"
+        },
+        "credit_reason": {
+          "from_arg": "reason"
+        }
+      },
+      "allowed_columns": [
+        "plan_credit_cents",
+        "credit_reason"
+      ],
+      "numeric_bounds": {
+        "plan_credit_cents": {
+          "minimum": 0,
+          "maximum": 5000
+        }
+      },
+      "conflict_guard": {
+        "column": "updated_at"
+      },
+      "approval": {
+        "mode": "human",
+        "required_role": "support_lead"
+      }
+    },
+    {
+      "name": "billing.inspect_invoice",
+      "kind": "read",
+      "source": "app_postgres",
+      "context": "local_operator",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "balance_cents",
+        "late_fee_cents",
+        "waiver_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "kind": "proposal",
+      "source": "app_postgres",
+      "context": "local_operator",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "balance_cents",
+        "late_fee_cents",
+        "waiver_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "late_fee_cents": {
+          "fixed": 0
+        },
+        "waiver_reason": {
+          "from_arg": "reason"
+        }
+      },
+      "allowed_columns": [
+        "late_fee_cents",
+        "waiver_reason"
+      ],
+      "numeric_bounds": {
+        "late_fee_cents": {
+          "minimum": 0,
+          "maximum": 10000
+        }
+      },
+      "conflict_guard": {
+        "column": "updated_at"
+      },
+      "approval": {
+        "mode": "human",
+        "required_role": "billing_lead"
+      }
+    }
+  ]
+}

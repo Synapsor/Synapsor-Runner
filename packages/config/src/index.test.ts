@@ -158,6 +158,7 @@ describe("runner capability config validation", () => {
   it("accepts app/API handler executors without inline handler secrets", () => {
     const config = mutableConfig();
     delete config.sources.app_postgres.write_url_env;
+    config.sources.app_postgres.read_only = true;
     config.executors = {
       billing_api: {
         type: "http_handler",
@@ -167,18 +168,36 @@ describe("runner capability config validation", () => {
           type: "bearer_env",
           token_env: "SYNAPSOR_BILLING_HANDLER_TOKEN",
         },
+        signing_secret_env: "SYNAPSOR_BILLING_HANDLER_SIGNING_SECRET",
         timeout_ms: 5000,
       },
     };
     config.capabilities[1].executor = "billing_api";
     const result = validateRunnerCapabilityConfig(config);
     expect(result.ok).toBe(true);
+    expect(result.warnings.map((warning) => warning.code)).not.toContain("WRITEBACK_DISABLED");
     expect(JSON.stringify(config)).not.toMatch(/handler-secret|https:\/\/internal-with-token|postgres(?:ql)?:\/\/|mysql:\/\//i);
 
     config.capabilities[1].executor = "missing_executor";
     const rejected = validateRunnerCapabilityConfig(config);
     expect(rejected.ok).toBe(false);
     expect(rejected.errors.map((error) => error.code)).toContain("UNKNOWN_EXECUTOR");
+  });
+
+  it("warns when direct SQL review proposals have no writer env", () => {
+    const config = mutableConfig();
+    delete config.sources.app_postgres.write_url_env;
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(true);
+    expect(result.warnings.map((warning) => warning.code)).toContain("WRITEBACK_DISABLED");
+  });
+
+  it("rejects direct SQL writeback when a source is marked read-only", () => {
+    const config = mutableConfig();
+    config.sources.app_postgres.read_only = true;
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("READ_ONLY_SOURCE_DIRECT_WRITEBACK");
   });
 
   it("rejects invalid proposal guard templates", () => {
@@ -227,7 +246,7 @@ describe("runner capability config validation", () => {
         base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
         runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
         runner_id: "synapsor_runner_local",
-        runner_version: "0.1.0-alpha.3",
+        runner_version: "0.1.0",
         project_id: "token_scope",
         adapter_id: "mcp.billing",
         source_id: "src_pg_acme",

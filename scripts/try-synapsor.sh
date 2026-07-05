@@ -142,15 +142,14 @@ say
 say "Next:"
 say
 say "1. Open proposal UI:"
-say "   synapsor ui --tour --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db"
+say "   synapsor-runner ui --open --tour --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db"
 say
 say "2. Run the reference app:"
 say "   corepack pnpm demo:reference"
 say
 say "3. Generate MCP client config:"
-say "   synapsor mcp config --absolute-paths --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db"
+say "   synapsor-runner mcp config --absolute-paths --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db"
 say
 say "4. Use your own staging Postgres/MySQL:"
 say "   export DATABASE_URL='<postgres-or-mysql-read-url>'"
-say "   synapsor inspect --from-env DATABASE_URL"
-say "   synapsor init --wizard --from-env DATABASE_URL"
+say "   synapsor-runner start --from-env DATABASE_URL"

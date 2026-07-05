@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapsor.ai/schemas/synapsor.app-handler-receipt.v1.json",
+  "title": "Synapsor App-Owned Writeback Handler Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "rows_affected", "source_database_mutated"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["applied", "already_applied", "conflict", "failed"]
+    },
+    "rows_affected": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_database_mutated": {
+      "type": "boolean"
+    },
+    "previous_version": {
+      "$ref": "#/$defs/scalar"
+    },
+    "new_version": {
+      "$ref": "#/$defs/scalar"
+    },
+    "safe_error_code": {
+      "type": ["string", "null"]
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "scalar": {
+      "type": ["string", "number", "boolean", "null"]
+    }
+  }
+}

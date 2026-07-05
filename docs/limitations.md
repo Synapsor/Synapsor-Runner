@@ -25,6 +25,8 @@ Synapsor Runner is intentionally narrow in the current alpha.
 - Capability recipes that generate reviewed starter configs.
 - Shadow-mode proposal-vs-human-action comparison.
 - Static MCP database risk review.
+- Local indexed search for proposals, evidence bundles, query audit, writeback
+  receipts, and proposal replay.
 
 ## Runtime Contract
 
@@ -60,6 +62,24 @@ truth for the model-facing tools.
 External Postgres/MySQL databases are not branched or merged by Synapsor Runner.
 
 The proposal, evidence, replay, and approval state live in Synapsor Runner locally or in Synapsor Cloud. The external source database changes only when a trusted runner applies an approved writeback job.
+
+Local replay means replay of records captured by the runner:
+
+- trusted context values used by the capability;
+- captured/projected source-row excerpts;
+- query audit fingerprints and redacted parameter metadata;
+- proposal before/proposed diffs;
+- approval/rejection events;
+- guarded writeback jobs;
+- applied/conflict/failed receipts.
+
+It does not mean external Postgres/MySQL time travel. Runner cannot reconstruct
+arbitrary historical rows that were never captured as evidence, and it does not
+provide `AS OF` queries over an external source.
+
+Local search is single-node SQLite search over the local runner store. It is
+useful for local/dev/staging usage. It is not a hosted central evidence ledger,
+not cross-runner aggregation, not RBAC/SSO, and not compliance retention.
 
 Use this wording:
 

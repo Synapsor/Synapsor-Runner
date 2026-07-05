@@ -1,11 +1,10 @@
 {
   "name": "@synapsor/runner",
-  "version": "0.1.0-alpha.3",
-  "description": "Commit-safe MCP runner for Postgres and MySQL agents",
+  "version": "0.1.1",
+  "description": "Stop giving AI agents execute_sql; expose reviewed Postgres/MySQL MCP actions with proposals, approval, writeback, and replay.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "synapsor": "dist/cli.js",
     "synapsor-runner": "dist/cli.js"
   },
   "files": [
@@ -17,12 +16,38 @@
     "dist/runner.mjs",
     "docs/**/*.md",
     "examples/dangerous-mcp-tools.json",
+    "examples/app-owned-writeback/**",
+    "examples/claude-desktop-postgres/**",
+    "examples/cursor-postgres/**",
+    "examples/mcp-postgres-billing-app-handler/**",
+    "examples/mysql-refund-agent/**",
+    "examples/openai-agents-http/**",
+    "examples/openai-agents-stdio/**",
+    "examples/raw-sql-vs-synapsor/**",
     "examples/reference-support-billing-app/**",
+    "examples/support-billing-agent/**",
+    "fixtures/**",
+    "schemas/**",
     "recipes/**/*.json",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "NOTICE",
     "TRADEMARKS.md"
+  ],
+  "keywords": [
+    "mcp",
+    "postgres",
+    "mysql",
+    "ai-agents",
+    "sql-safety",
+    "database-safety",
+    "openai-agents",
+    "claude",
+    "cursor",
+    "writeback",
+    "replay",
+    "model-context-protocol"
   ],
   "engines": {
     "node": ">=22.5.0"
@@ -51,7 +76,6 @@
     "url": "https://synapsor.ai/contact"
   },
   "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "access": "public"
   }
 }

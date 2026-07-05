@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DbRowReader } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { main, runInitWizard } from "./cli.js";
+import { main, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v1",
@@ -50,18 +52,33 @@ describe("runner cli", () => {
     vi.restoreAllMocks();
   });
 
-  it("prints product help for the public synapsor command surface", async () => {
+  it("prints product help for the public synapsor-runner command surface", async () => {
     const commands = [
       ["--help"],
+      ["start", "--help"],
+      ["up", "--help"],
       ["inspect", "--help"],
       ["init", "--help"],
       ["init", "--wizard", "--help"],
       ["mcp", "--help"],
       ["mcp", "serve", "--help"],
+      ["mcp", "serve-streamable-http", "--help"],
+      ["mcp", "serve-http", "--help"],
       ["mcp", "config", "--help"],
+      ["onboard", "--help"],
+      ["smoke", "--help"],
+      ["smoke", "call", "--help"],
+      ["writeback", "--help"],
+      ["handler", "--help"],
+      ["handler", "template", "--help"],
       ["propose", "--help"],
       ["audit", "--help"],
       ["proposals", "--help"],
+      ["evidence", "--help"],
+      ["query-audit", "--help"],
+      ["receipts", "--help"],
+      ["activity", "--help"],
+      ["events", "--help"],
       ["apply", "--help"],
       ["replay", "--help"],
       ["demo", "--help"],
@@ -81,26 +98,352 @@ describe("runner cli", () => {
 
     await expect(main(["--help"])).resolves.toBe(0);
     expect(output.join("")).toContain("inspect");
+    expect(output.join("")).toContain("start");
+    expect(output.join("")).toContain("up");
     expect(output.join("")).toContain("propose");
     expect(output.join("")).toContain("audit");
+    expect(output.join("")).toContain("smoke");
+    expect(output.join("")).toContain("writeback");
+    expect(output.join("")).toContain("handler");
+
+    const errors: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      errors.push(String(chunk));
+      return true;
+    });
+    await expect(main(["unknown-command"])).resolves.toBe(2);
+    expect(errors.join("")).toContain("Unknown command: synapsor-runner unknown-command");
   });
 
-  it("prints the 15-second quick demo without requiring Docker", async () => {
+  it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-quick-demo-"));
+    const oldCwd = process.cwd();
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
       return true;
     });
 
-    await expect(main(["demo", "--quick"])).resolves.toBe(0);
-    const text = output.join("");
-    expect(text).toContain("Raw MCP shape");
-    expect(text).toContain("execute_sql(sql: string)");
-    expect(text).toContain("Synapsor shape");
-    expect(text).toContain("billing.propose_late_fee_waiver");
-    expect(text).toContain("Source DB changed:");
-    expect(text).toContain("no");
-    expect(text).toContain("synapsor audit --example dangerous-db-mcp");
+    try {
+      process.chdir(tempDir);
+      await expect(main(["demo", "--quick", "--no-interactive"])).resolves.toBe(0);
+      const text = output.join("");
+      expect(text).toContain("Synapsor quick demo complete.");
+      expect(text).toContain("billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")");
+      expect(text).toContain("* proposal created");
+      expect(text).toContain("* source DB changed: no");
+      expect(text).toContain("* approval required outside MCP");
+      expect(text).toContain("* evidence + replay saved locally");
+      expect(text).toContain("./.synapsor/quick-demo.db");
+      expect(text).toContain("synapsor-runner demo inspect");
+      expect(text).not.toContain("Raw MCP shape");
+      expect(text).not.toContain("synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db");
+      await fs.access(path.join(tempDir, ".synapsor/quick-demo.db"));
+
+      output.length = 0;
+      await expect(main(["demo", "--quick"])).resolves.toBe(0);
+      expect(output.join("")).toContain("Synapsor quick demo complete.");
+      expect(output.join("")).not.toContain("Press Enter to continue...");
+
+      output.length = 0;
+      await expect(main(["activity", "search", "--object", "invoice:INV-3001", "--store", "./.synapsor/quick-demo.db"])).resolves.toBe(0);
+      expect(output.join("")).toContain("billing.propose_late_fee_waiver");
+      expect(output.join("")).toContain("wrp_quick_INV_3001");
+
+      output.length = 0;
+      await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join("")).proposals).toBe(1);
+
+      output.length = 0;
+      await expect(main(["events", "tail", "--store", "./.synapsor/quick-demo.db"])).resolves.toBe(0);
+      expect(output.join("")).toContain("proposal_created");
+      expect(output.join("")).toContain("wrp_quick_INV_3001");
+
+      output.length = 0;
+      await expect(main(["events", "tail", "--kind", "evidence_recorded", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join("")).events[0].kind).toBe("evidence_recorded");
+
+      output.length = 0;
+      await expect(main(["events", "webhook", "--url", "https://hooks.example.test/synapsor", "--kind", "proposal_created", "--store", "./.synapsor/quick-demo.db", "--dry-run"])).resolves.toBe(0);
+      expect(output.join("")).toContain("synapsor.local-event-webhook.v1");
+      expect(output.join("")).toContain("proposal_created");
+      expect(output.join("")).toContain("wrp_quick_INV_3001");
+
+      const oldWebhookToken = process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN;
+      process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN = "evt_secret_token";
+      const webhookRequests: Array<{ url: string; auth?: string; body: Record<string, unknown> }> = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const headers = init?.headers as Record<string, string> | undefined;
+        webhookRequests.push({
+          url: String(input),
+          auth: String(headers?.authorization ?? ""),
+          body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+      output.length = 0;
+      try {
+        await expect(main([
+          "events",
+          "push",
+          "--url",
+          "https://hooks.example.test/synapsor?secret=hidden",
+          "--auth-token-env",
+          "SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN",
+          "--kind",
+          "proposal_created",
+          "--store",
+          "./.synapsor/quick-demo.db",
+        ])).resolves.toBe(0);
+      } finally {
+        if (oldWebhookToken === undefined) delete process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN;
+        else process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN = oldWebhookToken;
+      }
+      expect(webhookRequests).toHaveLength(1);
+      expect(webhookRequests[0]?.auth).toBe("Bearer evt_secret_token");
+      expect(webhookRequests[0]?.body).toMatchObject({
+        schema_version: "synapsor.local-event-webhook.v1",
+        event: { kind: "proposal_created", proposal_id: "wrp_quick_INV_3001" },
+      });
+      expect(output.join("")).toContain("pushed event");
+      expect(output.join("")).toContain("https://hooks.example.test/synapsor");
+      expect(output.join("")).not.toContain("hidden");
+      expect(output.join("")).not.toContain("evt_secret_token");
+
+      output.length = 0;
+      await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--dry-run", "--json"])).resolves.toBe(0);
+      const dryRun = JSON.parse(output.join(""));
+      expect(dryRun.dry_run).toBe(true);
+      expect(dryRun.deleted.proposals).toBe(1);
+
+      output.length = 0;
+      await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join("")).proposals).toBe(1);
+
+      await fs.writeFile(
+        path.join(tempDir, ".synapsor/quick-demo.db.lease.json"),
+        JSON.stringify({
+          pid: process.pid,
+          mode: "mcp",
+          transport: "streamable-http",
+          store_path: path.join(tempDir, ".synapsor/quick-demo.db"),
+          started_at: new Date().toISOString(),
+        }),
+        "utf8",
+      );
+      output.length = 0;
+      await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--yes"])).rejects.toThrow(/Local store appears active/);
+
+      output.length = 0;
+      await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--yes", "--force"])).resolves.toBe(0);
+      expect(output.join("")).toContain("Local store prune complete");
+      output.length = 0;
+      await expect(main(["store", "vacuum", "--store", "./.synapsor/quick-demo.db"])).resolves.toBe(0);
+      expect(output.join("")).toContain("vacuumed local store");
+      output.length = 0;
+      await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join("")).proposals).toBe(0);
+    } finally {
+      process.chdir(oldCwd);
+    }
+  }, 15000);
+
+  it("refuses concurrent MCP server modes on an active local store lease", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-store-concurrent-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: storePath },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.inspect_invoice",
+          kind: "read",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at"],
+          evidence: "required",
+          max_rows: 1,
+        },
+      ],
+    }), "utf8");
+    await fs.writeFile(`${storePath}.lease.json`, JSON.stringify({
+      pid: process.pid,
+      mode: "mcp",
+      transport: "stdio",
+      store_path: storePath,
+      started_at: new Date().toISOString(),
+    }), "utf8");
+
+    await expect(main([
+      "mcp",
+      "serve-streamable-http",
+      "--config",
+      configPath,
+      "--store",
+      storePath,
+      "--dev-no-auth",
+    ])).rejects.toThrow(/Local store appears active.*Refusing serve/);
+
+    await expect(main([
+      "mcp",
+      "serve-http",
+      "--config",
+      configPath,
+      "--store",
+      storePath,
+      "--dev-no-auth",
+    ])).rejects.toThrow(/Local store appears active.*Refusing serve/);
+  });
+
+  it("resets the local store only after confirmation and lease checks", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-store-reset-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      process.chdir(tempDir);
+      await expect(main(["demo", "--quick", "--no-interactive"])).resolves.toBe(0);
+      const storePath = path.join(tempDir, ".synapsor/quick-demo.db");
+      await fs.access(storePath);
+
+      await expect(main(["store", "reset", "--store", "./.synapsor/quick-demo.db"])).rejects.toThrow(/--yes/);
+
+      await fs.writeFile(`${storePath}.lease.json`, JSON.stringify({
+        pid: process.pid,
+        mode: "mcp",
+        transport: "streamable-http",
+        store_path: storePath,
+        started_at: new Date().toISOString(),
+      }), "utf8");
+      await expect(main(["store", "reset", "--store", "./.synapsor/quick-demo.db", "--yes"])).rejects.toThrow(/Local store appears active/);
+
+      output.length = 0;
+      await expect(main(["store", "reset", "--store", "./.synapsor/quick-demo.db", "--yes", "--force"])).resolves.toBe(0);
+      expect(output.join("")).toContain("Local store reset complete");
+      expect(output.join("")).toContain("Source database changed: no");
+      await expect(fs.access(storePath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(`${storePath}.lease.json`)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
+  it("prints detailed and guided quick demo variants", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-quick-demo-detail-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      process.chdir(tempDir);
+      await expect(main(["demo", "--quick", "--details"])).resolves.toBe(0);
+      let text = output.join("");
+      expect(text).toContain("Raw MCP shape:");
+      expect(text).toContain("execute_sql(sql: string)");
+      expect(text).toContain("Synapsor shape:");
+      expect(text).toContain("Trusted context:");
+      expect(text).toContain("Replay:");
+      expect(text).toContain("wrp_quick_INV_3001");
+      expect(text).toContain("ev_quick_INV_3001");
+      expect(text).toContain("synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db");
+
+      output.length = 0;
+      await expect(main(["demo", "--quick", "--json"])).resolves.toBe(0);
+      const json = JSON.parse(output.join(""));
+      expect(json.mode).toBe("fixture_only");
+      expect(json.source_database_changed).toBe(false);
+      expect(json.proposal_id).toBe("wrp_quick_INV_3001");
+
+      output.length = 0;
+      await expect(main(["demo", "--quick", "--guided"])).resolves.toBe(0);
+      text = output.join("");
+      expect(text).toContain("------------------------------------------------------------");
+      expect(text).toContain("Step 1/7: Synapsor Runner quick demo");
+      expect(text).toContain("Step 2/7: The risky default");
+      expect(text).toContain("Step 7/7: Next paths");
+      expect(text).toContain("This teaches the Synapsor safety model without Docker, a database, or an MCP client.");
+      expect(text).toContain("It also creates a local fixture ledger you can inspect.");
+      expect(text).toContain("- proposal: what the model requested");
+      expect(text).toContain("- evidence: what data supported it");
+      expect(text).toContain("- query audit: what was read");
+      expect(text).toContain("- replay: what happened later");
+      expect(text).toContain("Run this next:");
+      expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner demo inspect");
+      expect(text).toContain("synapsor-runner demo inspect");
+      expect(text).toContain("demo inspect shows the proposal, evidence, activity search, and replay commands.");
+      expect(text).toContain("If installed globally, use:");
+      expect(text).toContain("export DATABASE_URL=\"postgres://...\"");
+      expect(text).toContain("Press Enter to continue...");
+      expect(text).toContain("It cannot commit the write.");
+      expect(text).toContain("Done. You just saw Synapsor's core boundary: business tools for the model, approval/writeback outside the model, and replay for inspection.");
+    } finally {
+      process.chdir(oldCwd);
+    }
+  }, 15_000);
+
+  it("prints quick demo inspection menus with local and npx commands", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-demo-inspect-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      process.chdir(tempDir);
+      await expect(main(["demo", "inspect"])).resolves.toBe(0);
+      let text = output.join("");
+      expect(text).toContain("Quick demo inspection");
+      expect(text).toContain("1. Proposal summary");
+      expect(text).toContain("synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db");
+      expect(text).toContain("synapsor-runner evidence show ev_quick_INV_3001 --store ./.synapsor/quick-demo.db");
+      expect(text).toContain("synapsor-runner activity search --object invoice:INV-3001 --store ./.synapsor/quick-demo.db");
+      expect(text).toContain("synapsor-runner replay show latest --store ./.synapsor/quick-demo.db");
+      await fs.access(path.join(tempDir, ".synapsor/quick-demo.db"));
+
+      output.length = 0;
+      await expect(main(["demo", "inspect", "--npx"])).resolves.toBe(0);
+      text = output.join("");
+      expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner proposals show latest");
+      expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp");
+    } finally {
+      process.chdir(oldCwd);
+    }
   });
 
   it("audits the built-in dangerous MCP database tool example without a checkout file", async () => {
@@ -118,6 +461,15 @@ describe("runner cli", () => {
     expect(text).toContain("MODEL_CALLABLE_COMMIT_OR_APPROVAL");
     expect(text).toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");
     expect(text).toContain("MODEL_CONTROLLED_TRUST_SCOPE");
+
+    output.length = 0;
+    await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).target).toBe("example:dangerous-db-mcp");
+
+    output.length = 0;
+    await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "markdown"])).resolves.toBe(0);
+    expect(output.join("")).toContain("# Synapsor MCP Database Risk Review");
+    expect(output.join("")).toContain("## Safer Shape");
   });
 
   it("initializes a safe local runner config and refuses accidental overwrite", async () => {
@@ -235,20 +587,23 @@ describe("runner cli", () => {
         "SYNAPSOR_DATABASE_READ_URL",
         "--table",
         "invoices",
+        "--tenant-column",
+        "tenant_id",
         "--namespace",
         "billing",
         "--object-name",
         "invoice",
+        "--id-arg",
+        "invoice_id",
         "--mode",
         "review",
-        "--patch-fixed",
-        "late_fee_cents=0",
-        "--patch-from-arg",
-        "waiver_reason=reason",
-        "--numeric-bound",
+        "--patch",
+        "late_fee_cents=fixed:0,waiver_reason=arg:reason",
+        "--patch-bounds",
         "late_fee_cents=0:5500",
       ])).resolves.toBe(0);
       const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.result_format).toBe(2);
       expect(config.sources.local_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
       expect(config.sources.local_postgres.write_url_env).toBe("SYNAPSOR_DATABASE_WRITE_URL");
       expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
@@ -269,6 +624,164 @@ describe("runner cli", () => {
     }
   });
 
+  it("uses table-derived capability names by default and supports explicit tool-name overrides", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-names-"));
+    const oldCwd = process.cwd();
+    const inspectionPath = path.join(tempDir, "schema-inspection.json");
+    await fs.writeFile(inspectionPath, JSON.stringify({
+      engine: "postgres",
+      server_version: "PostgreSQL 16 fixture",
+      current_user: "synapsor_reader",
+      inspected_at: "2026-06-21T00:00:00Z",
+      schemas: ["public"],
+      warnings: [],
+      tables: [{
+        schema: "public",
+        name: "support_tickets",
+        type: "table",
+        writable: true,
+        columns: [
+          { name: "id", data_type: "text", nullable: false, generated: false, ordinal_position: 1, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+          { name: "tenant_id", data_type: "text", nullable: false, generated: false, ordinal_position: 2, suggestions: { tenant: true, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+          { name: "resolution_note", data_type: "text", nullable: true, generated: false, ordinal_position: 3, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+          { name: "updated_at", data_type: "timestamp", nullable: false, generated: false, ordinal_position: 4, suggestions: { tenant: false, conflict: true, sensitive: false, immutable: false, large_or_binary: false } },
+        ],
+        primary_key: ["id"],
+        unique_constraints: [],
+        foreign_keys: [],
+        indexes: [],
+        suggestions: {
+          tenant_columns: ["tenant_id"],
+          conflict_columns: ["updated_at"],
+          sensitive_columns: [],
+          default_visible_columns: ["id", "tenant_id", "resolution_note", "updated_at"],
+        },
+      }],
+    }), "utf8");
+
+    try {
+      process.chdir(tempDir);
+      await expect(main([
+        "init",
+        "--inspection-json",
+        inspectionPath,
+        "--from-env",
+        "DATABASE_URL",
+        "--table",
+        "support_tickets",
+        "--mode",
+        "review",
+        "--patch",
+        "resolution_note=arg:note",
+      ])).resolves.toBe(0);
+      let config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "support.inspect_support_ticket",
+        "support.propose_support_ticket_update",
+      ]);
+
+      await expect(main([
+        "init",
+        "--inspection-json",
+        inspectionPath,
+        "--from-env",
+        "DATABASE_URL",
+        "--table",
+        "support_tickets",
+        "--mode",
+        "review",
+        "--patch",
+        "resolution_note=arg:note",
+        "--read-tool",
+        "helpdesk.read_ticket",
+        "--proposal-tool",
+        "helpdesk.propose_ticket_note",
+        "--output",
+        "renamed.runner.json",
+        "--force",
+      ])).resolves.toBe(0);
+      config = JSON.parse(await fs.readFile(path.join(tempDir, "renamed.runner.json"), "utf8"));
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "helpdesk.read_ticket",
+        "helpdesk.propose_ticket_note",
+      ]);
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
+  it("onboards from an answers file without prompts and emits a handler scaffold", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-onboard-answers-"));
+    const oldCwd = process.cwd();
+    const answersPath = path.join(tempDir, "answers.json");
+    await fs.writeFile(answersPath, JSON.stringify({
+      engine: "postgres",
+      read_url_env: "DATABASE_URL",
+      schema: "public",
+      table: "invoices",
+      primary_key: "id",
+      tenant_column: "tenant_id",
+      conflict_column: "updated_at",
+      visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+      mode: "review",
+      namespace: "billing",
+      object_name: "invoice",
+      id_arg: "invoice_id",
+      patch: ["late_fee_cents=fixed:0", "waiver_reason=arg:reason"],
+      patch_bounds: ["late_fee_cents=0:5500"],
+      writeback: "http_handler",
+      handler_url_env: "APP_WRITEBACK_URL",
+      handler_signing_secret_env: "APP_WRITEBACK_SIGNING_SECRET",
+      approval_role: "billing_lead",
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      process.chdir(tempDir);
+      await expect(main([
+        "onboard",
+        "db",
+        "--answers",
+        answersPath,
+        "--yes",
+        "--emit-handler",
+        "--handler-template",
+        "python-fastapi",
+        "--handler-output",
+        "./billing_writeback_handler.py",
+      ])).resolves.toBe(0);
+      const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.mode).toBe("review");
+      expect(config.result_format).toBe(2);
+      expect(config.sources.local_postgres.read_url_env).toBe("DATABASE_URL");
+      expect(config.sources.local_postgres.read_only).toBe(true);
+      expect(config.sources.local_postgres.write_url_env).toBeUndefined();
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_invoice_update",
+      ]);
+      expect(config.capabilities[1].executor).toBe("billing_http_handler");
+      expect(config.capabilities[1].patch).toEqual({
+        late_fee_cents: { fixed: 0 },
+        waiver_reason: { from_arg: "reason" },
+      });
+      expect(config.capabilities[1].numeric_bounds).toEqual({
+        late_fee_cents: { minimum: 0, maximum: 5500 },
+      });
+      const handler = await fs.readFile(path.join(tempDir, "billing_writeback_handler.py"), "utf8");
+      expect(handler).toContain("IMPORTANT: your app handler owns the final business write.");
+      expect(output.join("")).toContain("config valid: synapsor.runner.json");
+      expect(output.join("")).not.toContain("WRITEBACK_DISABLED");
+      expect(output.join("")).toContain("created ./billing_writeback_handler.py");
+      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|handler-secret-token|hmac-secret-value/i);
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
   it("runs guided init through injectable prompts without hand-authoring full config", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-wizard-"));
     const oldCwd = process.cwd();
@@ -280,6 +793,8 @@ describe("runner cli", () => {
       "", // table default invoices
       "", // primary key default id
       "", // tenant default tenant_id
+      "", // tenant env default
+      "", // principal env default
       "review",
       "", // conflict default updated_at
       "", // visible columns default inspected safe columns
@@ -290,10 +805,167 @@ describe("runner cli", () => {
       "billing",
       "invoice",
       "invoice_id",
-      "", // tenant env default
-      "", // principal env default
+      "", // read capability name default
+      "", // proposal capability name default
+      "INV-3001",
+      "", // read capability description default
+      "", // read returns hint default
+      "", // proposal capability description default
+      "", // proposal returns hint default
+      "v2",
+      "", // writeback path default sql_update
       "", // write URL env default
       "billing_lead",
+      "yes", // edit final preview
+      "id,tenant_id,late_fee_cents,updated_at",
+      "billing.read_invoice_for_agent",
+      "billing.propose_waiver_review",
+      "yes",
+    ];
+    const ask = vi.fn(async () => answers.shift() ?? "");
+    const readRow: DbRowReader = vi.fn(async () => ({
+      row: {
+        id: "INV-3001",
+        tenant_id: "acme",
+        late_fee_cents: 5500,
+        waiver_reason: null,
+        updated_at: "2026-06-21T00:00:00Z",
+      },
+      rowCount: 1,
+    }));
+    try {
+      process.chdir(tempDir);
+      await expect(runInitWizard(["--force"], {
+        ask,
+        env: {
+          SYNAPSOR_DATABASE_READ_URL: "postgresql://fixture.invalid/app",
+          SYNAPSOR_TENANT_ID: "acme",
+          SYNAPSOR_PRINCIPAL: "local_tester",
+        },
+        readRow,
+        stdout: { write: (chunk: string | Uint8Array) => { output.push(String(chunk)); return true; } },
+        inspection: {
+          engine: "postgres",
+          server_version: "PostgreSQL 16 fixture",
+          current_user: "synapsor_reader",
+          inspected_at: "2026-06-21T00:00:00Z",
+          schemas: ["public"],
+          warnings: [],
+          tables: [
+            {
+              schema: "public",
+              name: "invoices",
+              type: "table",
+              writable: true,
+              columns: [
+                { name: "id", data_type: "text", nullable: false, generated: false, ordinal_position: 1, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+                { name: "tenant_id", data_type: "text", nullable: false, generated: false, ordinal_position: 2, suggestions: { tenant: true, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+                { name: "late_fee_cents", data_type: "integer", nullable: false, generated: false, ordinal_position: 3, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+                { name: "waiver_reason", data_type: "text", nullable: true, generated: false, ordinal_position: 4, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+                { name: "updated_at", data_type: "timestamp", nullable: false, generated: false, ordinal_position: 5, suggestions: { tenant: false, conflict: true, sensitive: false, immutable: false, large_or_binary: false } },
+              ],
+              primary_key: ["id"],
+              unique_constraints: [],
+              foreign_keys: [],
+              indexes: [],
+              suggestions: {
+                tenant_columns: ["tenant_id"],
+                conflict_columns: ["updated_at"],
+                sensitive_columns: [],
+                default_visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+              },
+            },
+          ],
+        },
+      })).resolves.toBe(0);
+      const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
+      expect(config.mode).toBe("review");
+      expect(config.result_format).toBe(2);
+      expect(config.sources.local_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
+      expect(config.sources.local_postgres.write_url_env).toBe("SYNAPSOR_DATABASE_WRITE_URL");
+      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
+        "billing.read_invoice_for_agent",
+        "billing.propose_waiver_review",
+      ]);
+      expect(config.capabilities[0].visible_columns).toEqual(["id", "tenant_id", "updated_at", "late_fee_cents"]);
+      expect(config.capabilities[1].approval.required_role).toBe("billing_lead");
+      expect(config.capabilities[0].description).toContain("Inspect one invoice");
+      expect(config.capabilities[0].returns_hint).toContain("evidence handle");
+      expect(config.capabilities[0].args.invoice_id.description).toContain("Invoice id");
+      expect(config.capabilities[1].description).toContain("Create a review-required proposal");
+      expect(config.capabilities[1].returns_hint).toContain("proposal id");
+      expect(config.capabilities[1].patch).toEqual({
+        late_fee_cents: { fixed: 0 },
+        waiver_reason: { from_arg: "reason" },
+      });
+      expect(config.capabilities[1].numeric_bounds).toEqual({
+        late_fee_cents: { minimum: 0, maximum: 5500 },
+      });
+      expect(JSON.parse(await fs.readFile(path.join(tempDir, ".synapsor/smoke-input.json"), "utf8"))).toEqual({ invoice_id: "INV-3001" });
+      expect(output.join("")).toContain("Flow: inspect database -> create trusted context -> create capability -> expose MCP tool.");
+      expect(output.join("")).toContain("Step 2: Create trusted context");
+      expect(output.join("")).toContain("Step 3: Create capability");
+      expect(output.join("")).toContain("result envelope: v2");
+      expect(output.join("")).toContain("read capability: billing.inspect_invoice");
+      expect(output.join("")).toContain("proposal capability: billing.propose_invoice_update");
+      expect(output.join("")).toContain("Updated preview:");
+      expect(output.join("")).toContain("visible fields: id, tenant_id, late_fee_cents, updated_at");
+      expect(output.join("")).toContain("read capability: billing.read_invoice_for_agent");
+      expect(output.join("")).toContain("proposal capability: billing.propose_waiver_review");
+      expect(output.join("")).toContain("OpenAI Agents SDK:");
+      expect(output.join("")).toContain("Smoke call ran successfully.");
+      expect(output.join("")).toContain("Synapsor smoke call: ok");
+      expect(output.join("")).toContain("smoke call billing.read_invoice_for_agent --input ./.synapsor/smoke-input.json");
+      expect(output.join("")).toContain("trusted context: tenant from SYNAPSOR_TENANT_ID via tenant_id; principal from SYNAPSOR_PRINCIPAL");
+      expect(output.join("")).toContain("not exposed: execute_sql");
+      expect(readRow).toHaveBeenCalled();
+      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|handler-secret-token|hmac-secret-value/i);
+      expect(ask).toHaveBeenCalled();
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
+  it("runs guided init with app-owned HTTP handler writeback", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-wizard-handler-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    const answers = [
+      "", // engine default auto
+      "", // read URL env default
+      "", // schema default public
+      "", // table default invoices
+      "", // primary key default id
+      "", // tenant default tenant_id
+      "", // tenant env default
+      "", // principal env default
+      "review",
+      "", // conflict default updated_at
+      "", // visible columns default inspected safe columns
+      "manual",
+      "late_fee_cents=fixed:0,waiver_reason=arg:reason",
+      "late_fee_cents=0:5500",
+      "",
+      "billing",
+      "invoice",
+      "invoice_id",
+      "", // read capability name default
+      "", // proposal capability name default
+      "INV-3001",
+      "", // read capability description default
+      "", // read returns hint default
+      "", // proposal capability description default
+      "", // proposal returns hint default
+      "", // result envelope default
+      "http_handler",
+      "BILLING_WRITEBACK_URL",
+      "BILLING_WRITEBACK_TOKEN",
+      "BILLING_WRITEBACK_SIGNING_SECRET",
+      "yes", // write starter handler template
+      "", // node-fastify default
+      "", // default handler template output
+      "billing_lead",
+      "no", // accept preview
       "yes",
     ];
     const ask = vi.fn(async () => answers.shift() ?? "");
@@ -337,24 +1009,31 @@ describe("runner cli", () => {
         },
       })).resolves.toBe(0);
       const config = JSON.parse(await fs.readFile(path.join(tempDir, "synapsor.runner.json"), "utf8"));
-      expect(config.mode).toBe("review");
-      expect(config.sources.local_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
-      expect(config.sources.local_postgres.write_url_env).toBe("SYNAPSOR_DATABASE_WRITE_URL");
-      expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
-        "billing.inspect_invoice",
-        "billing.propose_invoice_update",
-      ]);
+      expect(config.sources.local_postgres.write_url_env).toBeUndefined();
+      expect(config.sources.local_postgres.read_only).toBe(true);
+      expect(config.executors).toMatchObject({
+        billing_http_handler: {
+          type: "http_handler",
+          url_env: "BILLING_WRITEBACK_URL",
+          method: "POST",
+          auth: { type: "bearer_env", token_env: "BILLING_WRITEBACK_TOKEN" },
+          signing_secret_env: "BILLING_WRITEBACK_SIGNING_SECRET",
+          timeout_ms: 5000,
+        },
+      });
+      expect(config.capabilities[1].executor).toBe("billing_http_handler");
       expect(config.capabilities[1].approval.required_role).toBe("billing_lead");
-      expect(config.capabilities[1].patch).toEqual({
-        late_fee_cents: { fixed: 0 },
-        waiver_reason: { from_arg: "reason" },
-      });
-      expect(config.capabilities[1].numeric_bounds).toEqual({
-        late_fee_cents: { minimum: 0, maximum: 5500 },
-      });
-      expect(output.join("")).toContain("not exposed: execute_sql");
-      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
-      expect(ask).toHaveBeenCalled();
+      const envExample = await fs.readFile(path.join(tempDir, ".env.example"), "utf8");
+      expect(envExample).toContain('BILLING_WRITEBACK_URL="http://127.0.0.1:8787/synapsor/writeback"');
+      expect(envExample).toContain('BILLING_WRITEBACK_TOKEN="<handler-bearer-token>"');
+      expect(envExample).toContain('BILLING_WRITEBACK_SIGNING_SECRET="<handler-hmac-signing-secret>"');
+      const handlerTemplate = await fs.readFile(path.join(tempDir, "synapsor-writeback-handler.mjs"), "utf8");
+      expect(handlerTemplate).toContain("IMPORTANT: your app handler owns the final business write.");
+      expect(handlerTemplate).toContain("cross-tenant writes");
+      expect(output.join("")).toContain("writeback path: http_handler");
+      expect(output.join("")).toContain("handler template: synapsor-writeback-handler.mjs");
+      expect(output.join("")).toContain("IMPORTANT: your app handler owns the final business write.");
+      expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|handler-secret-token|hmac-secret-value/i);
     } finally {
       process.chdir(oldCwd);
     }
@@ -371,6 +1050,8 @@ describe("runner cli", () => {
       "", // table default invoices
       "", // primary key default id
       "", // tenant default tenant_id
+      "", // tenant env default
+      "", // principal env default
       "review",
       "", // conflict default updated_at
       "", // visible columns default inspected safe columns
@@ -388,10 +1069,18 @@ describe("runner cli", () => {
       "", // namespace from recipe
       "", // object name from recipe
       "", // lookup arg from recipe
-      "", // tenant env default
-      "", // principal env default
+      "", // read capability name from recipe
+      "", // proposal capability name from recipe
+      "", // optional smoke object id
+      "", // read capability description default
+      "", // read returns hint default
+      "", // proposal capability description default
+      "", // proposal returns hint default
+      "", // result envelope default
+      "", // writeback path default sql_update
       "", // write URL env default
       "", // approval role from recipe
+      "no", // accept preview
       "yes",
     ];
     const ask = vi.fn(async () => answers.shift() ?? "");
@@ -444,8 +1133,12 @@ describe("runner cli", () => {
       expect(config.capabilities[1].numeric_bounds).toEqual({
         late_fee_cents: { minimum: 0, maximum: 10000 },
       });
+      expect(output.join("")).toContain("Step 2: Create trusted context");
+      expect(output.join("")).toContain("Step 3: Create capability");
       expect(output.join("")).toContain("Available recipes");
       expect(output.join("")).toContain("Mapping recipe billing.late_fee_waiver");
+      expect(output.join("")).toContain("read capability: billing.inspect_invoice");
+      expect(output.join("")).toContain("proposal capability: billing.propose_late_fee_waiver");
       expect(JSON.stringify(config)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
     } finally {
       process.chdir(oldCwd);
@@ -654,10 +1347,70 @@ describe("runner cli", () => {
       expect(report.tools).toEqual(["billing.inspect_invoice"]);
       expect(report.checks.some((check: { name: string; level: string }) => check.name === "env:APP_POSTGRES_READ_URL" && check.level === "fail")).toBe(true);
       expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret/i);
+
+      output.length = 0;
+      const reportPath = path.join(tempDir, "synapsor-doctor.md");
+      await expect(main(["doctor", "--config", configPath, "--report", "--redact", "--output", reportPath])).resolves.toBe(1);
+      const markdown = await fs.readFile(reportPath, "utf8");
+      expect(markdown).toContain("# Synapsor Runner Doctor Report");
+      expect(markdown).toContain("## Safety Boundary");
+      expect(markdown).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret/i);
     } finally {
       if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
       if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
       if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+    }
+  });
+
+  it("doctors HTTP handler signing and explicit reachability without leaking endpoint values", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-handler-doctor-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
+    const oldUrl = process.env.SYNAPSOR_TEST_HANDLER_URL;
+    const oldToken = process.env.SYNAPSOR_TEST_HANDLER_TOKEN;
+    const oldSigningSecret = process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET;
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    const oldRead = process.env.APP_POSTGRES_READ_URL;
+    process.env.SYNAPSOR_TEST_HANDLER_URL = "http://127.0.0.1:9/writeback?token=do-not-print";
+    process.env.SYNAPSOR_TEST_HANDLER_TOKEN = "handler-secret-token";
+    process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = "handler-signing-secret";
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    process.env.SYNAPSOR_PRINCIPAL = "local_operator";
+    delete process.env.APP_POSTGRES_READ_URL;
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["doctor", "--config", configPath, "--json", "--check-handlers"])).resolves.toBe(1);
+      const text = output.join("");
+      const report = JSON.parse(text);
+      expect(report.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "env:SYNAPSOR_TEST_HANDLER_SIGNING_SECRET", level: "pass" }),
+        expect.objectContaining({ name: "executor:billing_api:handler-reachability", level: "fail" }),
+      ]));
+      expect(text).not.toContain("handler-secret-token");
+      expect(text).not.toContain("handler-signing-secret");
+      expect(text).not.toContain("do-not-print");
+
+      const unsignedConfig = httpHandlerConfig();
+      delete (unsignedConfig.executors as any).billing_api.signing_secret_env;
+      await fs.writeFile(configPath, JSON.stringify(unsignedConfig), "utf8");
+      output.length = 0;
+      await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+      const unsignedReport = JSON.parse(output.join(""));
+      expect(unsignedReport.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "executor:billing_api:handler-signing", level: "warn" }),
+      ]));
+    } finally {
+      if (oldUrl === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_URL; else process.env.SYNAPSOR_TEST_HANDLER_URL = oldUrl;
+      if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
+      if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+      if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
     }
   });
 
@@ -674,7 +1427,7 @@ describe("runner cli", () => {
       await fs.writeFile("package.json", JSON.stringify({ name: "doctor-fixture" }), "utf8");
       await fs.mkdir(".synapsor/mcp", { recursive: true });
       await fs.writeFile(".synapsor/mcp/generic-stdio.json", JSON.stringify({
-        command: "synapsor",
+        command: "synapsor-runner",
         args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
       }), "utf8");
       await fs.writeFile("synapsor.runner.json", JSON.stringify({
@@ -823,12 +1576,92 @@ describe("runner cli", () => {
     }
   });
 
+  it("probes direct SQL writeback safely when requested by doctor", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-doctor-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.propose_invoice_update",
+          kind: "proposal",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+            reason: { type: "string", required: true, max_length: 500 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at", "waiver_reason"],
+          evidence: "required",
+          max_rows: 1,
+          patch: { waiver_reason: { from_arg: "reason" } },
+          allowed_columns: ["waiver_reason"],
+          conflict_guard: { column: "updated_at" },
+        },
+      ],
+    }), "utf8");
+    const oldRead = process.env.APP_POSTGRES_READ_URL;
+    const oldWrite = process.env.APP_POSTGRES_WRITE_URL;
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    delete process.env.APP_POSTGRES_READ_URL;
+    process.env.APP_POSTGRES_WRITE_URL = "postgresql://writer:writer-secret@127.0.0.1:9/app";
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    process.env.SYNAPSOR_PRINCIPAL = "local_operator";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["doctor", "--config", configPath, "--json", "--check-writeback"])).resolves.toBe(1);
+      const text = output.join("");
+      const report = JSON.parse(text);
+      expect(report.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "source:app_postgres:receipt-table-probe", level: "fail" }),
+        expect.objectContaining({ name: "capability:billing.propose_invoice_update:writeback-target-probe", level: "fail" }),
+      ]));
+      expect(text).toContain("writeback migration --engine postgres --schema synapsor");
+      expect(text).toContain("writeback grants --engine postgres --schema synapsor");
+      expect(text).not.toContain("writer-secret");
+      expect(text).not.toContain("postgresql://");
+      expect(text).not.toContain("127.0.0.1:9");
+    } finally {
+      if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
+      if (oldWrite === undefined) delete process.env.APP_POSTGRES_WRITE_URL; else process.env.APP_POSTGRES_WRITE_URL = oldWrite;
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+    }
+  });
+
   it("cross-checks writeback jobs against reviewed local config before apply", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-authority-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
     const jobPath = path.join(tempDir, "job.json");
     const baseJob = {
-      protocol_version: "1.0",
+      protocol_version: "1.0" as const,
       job_id: "wbj_local",
       proposal_id: "wrp_local",
       approval_id: "sha256:proposal",
@@ -995,6 +1828,59 @@ describe("runner cli", () => {
     await fs.writeFile(jobPath, JSON.stringify({ ...baseJob, approval_id: "sha256:tampered" }), "utf8");
     await expect(main(["apply", "--job", jobPath, "--config", configPath, "--dry-run", "--store", storePath]))
       .rejects.toThrow(/digest does not match local proposal/i);
+  });
+
+  it("resolves direct SQL writeback credentials from source write_url_env before legacy fallback", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-write-url-env-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const job = {
+      protocol_version: "1.0" as const,
+      job_id: "wbj_write_env",
+      proposal_id: "wrp_write_env",
+      approval_id: "sha256:proposal",
+      source_id: "app_postgres",
+      engine: "postgres" as const,
+      target: {
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id", value: "INV-1" },
+        tenant_guard: { column: "tenant_id", value: "acme" },
+      },
+      allowed_columns: ["late_fee_cents"],
+      patch: { late_fee_cents: 0 },
+      conflict_guard: { kind: "version_column" as const, column: "updated_at", expected_value: "2026-06-20T12:00:00Z" },
+      idempotency_key: "idem_write_env",
+      lease_expires_at: new Date(Date.now() + 60_000).toISOString(),
+      attempt_count: 1,
+    };
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [],
+    }), "utf8");
+
+    const env = {
+      APP_POSTGRES_WRITE_URL: "postgresql://writer:correct@example/app",
+      SYNAPSOR_DATABASE_URL: "postgresql://legacy:wrong@example/app",
+    } as NodeJS.ProcessEnv;
+
+    await expect(resolveSqlWriteDatabaseUrl(job, configPath, env)).resolves.toBe("postgresql://writer:correct@example/app");
+    delete env.APP_POSTGRES_WRITE_URL;
+    await expect(resolveSqlWriteDatabaseUrl(job, configPath, env)).resolves.toBe("postgresql://legacy:wrong@example/app");
   });
 
   it("reports missing cloud connection environment without printing secrets", async () => {
@@ -1177,7 +2063,7 @@ describe("runner cli", () => {
     }
   });
 
-  it("runs top-level synapsor audit through the MCP database risk review", async () => {
+  it("runs top-level synapsor-runner audit through the MCP database risk review", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-audit-config-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
     await fs.writeFile(configPath, JSON.stringify({
@@ -1268,7 +2154,7 @@ describe("runner cli", () => {
       "mcp",
       "configure",
       "--client",
-      "claude-desktop",
+      "claude",
       "--config",
       "./synapsor.runner.json",
       "--store",
@@ -1277,7 +2163,7 @@ describe("runner cli", () => {
 
     const snippet = JSON.parse(output.join(""));
     expect(snippet.mcpServers.synapsor).toEqual({
-      command: "synapsor",
+      command: "synapsor-runner",
       args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
     });
     expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
@@ -1302,7 +2188,7 @@ describe("runner cli", () => {
 
     const snippet = JSON.parse(output.join(""));
     expect(snippet.mcpServers.synapsor).toEqual({
-      command: "synapsor",
+      command: "synapsor-runner",
       args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
     });
     expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
@@ -1326,10 +2212,67 @@ describe("runner cli", () => {
 
     const snippet = JSON.parse(output.join(""));
     expect(snippet.mcpServers.synapsor).toEqual({
-      command: "synapsor",
+      command: "synapsor-runner",
       args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
     });
     expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
+  });
+
+  it("prints OpenAI Agents SDK Streamable HTTP config with built-in aliases", async () => {
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "mcp",
+      "client-config",
+      "--client",
+      "openai-agents",
+      "--config",
+      "./synapsor.runner.json",
+      "--store",
+      "./.synapsor/local.db",
+      "--port",
+      "8766",
+      "--include-instructions",
+    ])).resolves.toBe(0);
+
+    const snippet = JSON.parse(output.join(""));
+    expect(snippet.transport).toBe("streamable-http");
+    expect(snippet.start_server).toMatchObject({
+      command: "synapsor-runner",
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: "<set-a-random-local-token>" },
+    });
+    expect(snippet.start_server.args).toEqual(expect.arrayContaining([
+      "serve-streamable-http",
+      "--alias-mode",
+      "openai",
+    ]));
+    expect(snippet.openai_agents_sdk.python).toContain("MCPServerStreamableHttp");
+    expect(snippet.openai_agents_sdk.url).toBe("http://127.0.0.1:8766/mcp");
+    expect(snippet.tool_names.model_visible_with_alias_mode_openai).toBe("billing__inspect_invoice");
+    expect(snippet.agent_instructions.recommended_system_prompt).toContain("propose-first pattern");
+    expect(snippet.agent_instructions.recommended_system_prompt).toContain("source_database_changed: true");
+    expect(snippet.agent_instructions.recommended_system_prompt).toContain("On VERSION_CONFLICT");
+    expect(snippet.agent_instructions.recommended_system_prompt).toContain("Evidence handles are audit/replay handles");
+    expect(snippet.agent_instructions.recommended_system_prompt).toContain("billing__inspect_invoice");
+    expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret_[A-Za-z0-9]|sk-/i);
+
+    output.length = 0;
+    await expect(main([
+      "mcp",
+      "config",
+      "openai-agents",
+      "--transport",
+      "streamable-http",
+      "--config",
+      "./synapsor.runner.json",
+      "--store",
+      "./.synapsor/local.db",
+    ])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).start_server.args).toContain("--alias-mode");
   });
 
   it("supports absolute MCP client snippets and smokes the configured tool boundary", async () => {
@@ -1410,11 +2353,317 @@ describe("runner cli", () => {
     ]));
 
     output.length = 0;
+    await expect(main(["smoke", "boundary", "--config", configPath, "--store", storePath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).tools).toEqual(["clinic.inspect_appointment"]);
+
+    output.length = 0;
     await expect(main(["tools", "preview", "--config", configPath, "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("Exposed to MCP:");
     expect(output.join("")).toContain("clinic.inspect_appointment");
+    expect(output.join("")).toContain("Alias mode: canonical");
     expect(output.join("")).toContain("Not exposed to MCP:");
     expect(output.join("")).toContain("execute_sql / raw query tools");
+
+    output.length = 0;
+    await expect(main(["tools", "preview", "--config", configPath, "--store", storePath, "--alias-mode", "openai"])).resolves.toBe(0);
+    expect(output.join("")).toContain("Alias mode: openai");
+    expect(output.join("")).toContain("clinic__inspect_appointment -> clinic.inspect_appointment");
+
+    output.length = 0;
+    await expect(main(["tools", "preview", "--config", configPath, "--store", storePath, "--aliases", "--json"])).resolves.toBe(0);
+    const preview = JSON.parse(output.join(""));
+    expect(preview.alias_mode).toBe("both");
+    expect(preview.exposed_to_mcp).toEqual(["clinic.inspect_appointment", "clinic__inspect_appointment"]);
+    expect(preview.alias_mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        canonicalName: "clinic.inspect_appointment",
+        exposedName: "clinic__inspect_appointment",
+        isAlias: true,
+      }),
+    ]));
+
+    output.length = 0;
+    await expect(main(["tools", "list", "--config", configPath, "--store", storePath, "--aliases", "--json"])).resolves.toBe(0);
+    const listed = JSON.parse(output.join(""));
+    expect(listed.alias_mode).toBe("both");
+    expect(listed.exposed_to_mcp).toEqual(["clinic.inspect_appointment", "clinic__inspect_appointment"]);
+  });
+
+  it("prints review-mode up guidance without leaking secrets", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-up-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
+    const oldUrl = process.env.SYNAPSOR_TEST_HANDLER_URL;
+    const oldToken = process.env.SYNAPSOR_TEST_HANDLER_TOKEN;
+    const oldSigningSecret = process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET;
+    process.env.SYNAPSOR_TEST_HANDLER_URL = "https://handler.internal/writeback?token=do-not-print";
+    process.env.SYNAPSOR_TEST_HANDLER_TOKEN = "handler-secret-token";
+    process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = "handler-signing-secret";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      await expect(main([
+        "up",
+        "--config",
+        configPath,
+        "--store",
+        storePath,
+        "--transport",
+        "stdio",
+        "--alias-mode",
+        "openai",
+        "--open-ui",
+        "--dry-run",
+      ])).resolves.toBe(0);
+      const text = output.join("");
+      expect(text).toContain("Synapsor Runner review-mode up");
+      expect(text).toContain("Transport: stdio");
+      expect(text).toContain("Serve now: no");
+      expect(text).toContain("Model-facing tools:");
+      expect(text).toContain("billing__waive_late_fee -> billing.waive_late_fee");
+      expect(text).toContain("Writeback paths:");
+      expect(text).toContain("app-owned http_handler billing_api");
+      expect(text).toContain("App-owned handler requirements:");
+      expect(text).toContain("url env: SYNAPSOR_TEST_HANDLER_URL (set)");
+      expect(text).toContain("bearer token env: SYNAPSOR_TEST_HANDLER_TOKEN (set)");
+      expect(text).toContain("signing secret env: SYNAPSOR_TEST_HANDLER_SIGNING_SECRET (set)");
+      expect(text).toContain("IMPORTANT: your app handler owns the final business write.");
+      expect(text).toContain("cross-tenant writes, lost updates, or duplicate writes");
+      expect(text).toContain("Server guidance:");
+      expect(text).toContain("stdio mode is launched by an MCP client");
+      expect(text).toContain("Local review UI:");
+      expect(text).toContain("Next commands:");
+      expect(text).toContain("doctor --config");
+      expect(text).toContain("--check-handlers");
+      expect(text).not.toContain("handler-secret-token");
+      expect(text).not.toContain("handler-signing-secret");
+      expect(text).not.toContain("handler.internal");
+      expect(text).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\//i);
+    } finally {
+      if (oldUrl === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_URL; else process.env.SYNAPSOR_TEST_HANDLER_URL = oldUrl;
+      if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
+      if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
+    }
+  });
+
+  it("keeps up guidance-only unless --serve is requested", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-up-streamable-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "up",
+      "--config",
+      configPath,
+      "--store",
+      storePath,
+      "--transport",
+      "streamable-http",
+      "--dry-run",
+    ])).resolves.toBe(0);
+    let text = output.join("");
+    expect(text).toContain("Transport: streamable-http");
+    expect(text).toContain("Serve now: no");
+    expect(text).toContain("Start command:");
+    expect(text).toContain("up --serve --config");
+
+    output.length = 0;
+    await expect(main([
+      "up",
+      "--serve",
+      "--config",
+      configPath,
+      "--store",
+      storePath,
+      "--dry-run",
+    ])).resolves.toBe(0);
+    text = output.join("");
+    expect(text).toContain("Transport: streamable-http");
+    expect(text).toContain("Serve now: yes");
+    expect(text).toContain("Status: dry run only; server not started.");
+  });
+
+  it("rejects up --serve with stdio because stdio is launched by the MCP client", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-up-stdio-serve-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
+
+    await expect(main([
+      "up",
+      "--serve",
+      "--transport",
+      "stdio",
+      "--config",
+      configPath,
+    ])).rejects.toThrow(/up --serve starts the Streamable HTTP MCP server/);
+  });
+
+  it("refuses review-mode up when the local store has an active server lease", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-up-lease-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
+    await fs.writeFile(`${storePath}.lease.json`, JSON.stringify({
+      pid: process.pid,
+      mode: "mcp",
+      transport: "streamable-http",
+      store_path: storePath,
+      started_at: "2026-06-30T00:00:00Z",
+    }), "utf8");
+
+    await expect(main(["up", "--config", configPath, "--store", storePath, "--dry-run"]))
+      .rejects.toThrow(/Local store appears active[\s\S]*--allow-concurrent-store/);
+  });
+
+  it("reclaims stale review-mode up leases whose pid is no longer active", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-up-stale-lease-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    const leasePath = `${storePath}.lease.json`;
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
+    await fs.writeFile(leasePath, JSON.stringify({
+      pid: 999999999,
+      mode: "mcp",
+      transport: "streamable-http",
+      store_path: storePath,
+      started_at: "2026-06-30T00:00:00Z",
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["up", "--config", configPath, "--store", storePath, "--dry-run"]))
+      .resolves.toBe(0);
+    await expect(fs.stat(leasePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(output.join("")).toContain("Synapsor Runner review-mode up");
+  });
+
+  it("prints writeback receipt table migration, grants, and doctor guidance", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-help-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "billing.propose_invoice_update",
+          kind: "proposal",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+            reason: { type: "string", required: true, max_length: 500 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at", "late_fee_cents", "waiver_reason"],
+          evidence: "required",
+          max_rows: 1,
+          patch: { late_fee_cents: { fixed: 0 }, waiver_reason: { from_arg: "reason" } },
+          allowed_columns: ["late_fee_cents", "waiver_reason"],
+          conflict_guard: { column: "updated_at" },
+        },
+      ],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["writeback", "migration", "--engine", "postgres", "--schema", "synapsor"])).resolves.toBe(0);
+    expect(output.join("")).toContain("CREATE SCHEMA IF NOT EXISTS \"synapsor\"");
+    expect(output.join("")).toContain("synapsor_writeback_receipts");
+    expect(output.join("")).toContain("search_path");
+
+    output.length = 0;
+    await expect(main(["writeback", "grants", "--engine", "postgres", "--schema", "synapsor", "--writer-role", "app_writer"])).resolves.toBe(0);
+    expect(output.join("")).toContain("GRANT USAGE ON SCHEMA \"synapsor\" TO \"app_writer\"");
+    expect(output.join("")).toContain("GRANT SELECT, INSERT, UPDATE ON TABLE \"synapsor\".synapsor_writeback_receipts TO \"app_writer\"");
+
+    output.length = 0;
+    await expect(main(["writeback", "doctor", "--config", configPath])).resolves.toBe(1);
+    expect(output.join("")).toContain("writer env: APP_POSTGRES_WRITE_URL");
+    expect(output.join("")).toContain("env status: missing");
+    expect(output.join("")).toContain("writeback migration");
+  });
+
+  it("creates app-owned writeback handler templates without package-relative paths", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-handler-template-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      process.chdir(tempDir);
+      await expect(main(["handler", "template", "--list"])).resolves.toBe(0);
+      expect(output.join("")).toContain("node-fastify");
+      expect(output.join("")).toContain("python-fastapi");
+      expect(output.join("")).toContain("IMPORTANT: your app handler owns the final business write.");
+      output.length = 0;
+
+      await expect(main(["handler", "template", "node-fastify"])).resolves.toBe(0);
+      const nodeTemplate = await fs.readFile(path.join(tempDir, "synapsor-writeback-handler.mjs"), "utf8");
+      expect(nodeTemplate).toContain("Fastify");
+      expect(nodeTemplate).toContain("app-owned transaction");
+      expect(nodeTemplate).toContain("IMPORTANT: your app handler owns the final business write.");
+      expect(nodeTemplate).toContain("lost updates");
+      expect(output.join("")).toContain("created synapsor-writeback-handler.mjs");
+      expect(output.join("")).toContain("transaction/rollback");
+
+      await expect(main(["handler", "template", "node-fastify"])).rejects.toThrow(/already exists/i);
+
+      output.length = 0;
+      await expect(main(["handler", "template", "python-fastapi", "--stdout"])).resolves.toBe(0);
+      expect(output.join("")).toContain("FastAPI");
+      expect(output.join("")).toContain("source_database_mutated");
+      expect(output.join("")).toContain("duplicate writes");
+
+      await expect(main(["handler", "template", "command", "--output", "handlers/apply.mjs"])).resolves.toBe(0);
+      const commandTemplate = await fs.readFile(path.join(tempDir, "handlers/apply.mjs"), "utf8");
+      expect(commandTemplate).toContain("#!/usr/bin/env node");
+      expect(commandTemplate).toContain("idempotency");
+      expect(commandTemplate).toContain("IMPORTANT: your app handler owns the final business write.");
+    } finally {
+      process.chdir(oldCwd);
+    }
   });
 
   it("lists, shows, and initializes capability recipes without secrets", async () => {
@@ -1516,7 +2765,7 @@ describe("runner cli", () => {
     const written = JSON.parse(await fs.readFile(destination, "utf8"));
     expect(written.mcpServers.existing.command).toBe("node");
     expect(written.mcpServers.synapsor).toEqual({
-      command: "synapsor",
+      command: "synapsor-runner",
       args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
     });
     const backups = (await fs.readdir(tempDir)).filter((name) => name.startsWith("cursor.json.bak."));
@@ -1530,6 +2779,38 @@ describe("runner cli", () => {
     const storePath = path.join(tempDir, "local.db");
     const store = new ProposalStore(storePath);
     store.createProposal(changeSet);
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_cli",
+      proposal_id: "wrp_cli",
+      tenant_id: "acme",
+      payload: {
+        capability: "billing.waive_late_fee",
+        source_id: "src_pg_acme",
+        target: "public.invoices",
+        principal: { id: "support_agent_17" },
+        query_fingerprint: "sha256:evidence",
+      },
+      items: [{
+        kind: "external_row",
+        source_id: "src_pg_acme",
+        table: "public.invoices",
+        primary_key: { column: "id", value: "INV-CLI" },
+        visible_row: { id: "INV-CLI", tenant_id: "acme", late_fee_cents: 5500, updated_at: "2026-06-20T14:31:08Z" },
+      }],
+    });
+    store.recordQueryAudit({
+      proposal_id: "wrp_cli",
+      evidence_bundle_id: "ev_cli",
+      source_id: "src_pg_acme",
+      query_fingerprint: "sha256:evidence",
+      table_name: "public.invoices",
+      row_count: 1,
+      payload: {
+        capability: "billing.waive_late_fee",
+        statement_template: "SELECT id, tenant_id, late_fee_cents FROM public.invoices WHERE id = ? AND tenant_id = ? LIMIT 1",
+        parameters_redacted: true,
+      },
+    });
     store.close();
 
     const output: string[] = [];
@@ -1540,17 +2821,48 @@ describe("runner cli", () => {
 
     await expect(main(["proposals", "list", "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("wrp_cli");
+    output.length = 0;
+    await expect(main(["proposals", "list", "--store", storePath, "--tenant", "acme", "--capability", "billing.waive_late_fee", "--object", "invoice:INV-CLI", "--status", "pending_review"])).resolves.toBe(0);
+    expect(output.join("")).toContain("wrp_cli");
+    output.length = 0;
+    await expect(main(["proposals", "list", "--store", storePath, "--tenant", "otherco"])).resolves.toBe(0);
+    expect(output.join("")).toContain("No proposals found.");
+    await expect(main(["proposals", "list", "--store", storePath, "--unsupported"])).rejects.toThrow(/Unknown option/);
 
     output.length = 0;
     await expect(main(["proposals", "show", "latest", "--store", storePath])).resolves.toBe(0);
-    expect(output.join("")).toContain("source database changed: no");
-    expect(output.join("")).toContain("late_fee_cents");
-    expect(output.join("")).toContain("principal: support_agent_17 (trusted_session)");
-    expect(output.join("")).toContain("approval: pending required role support_lead");
-    expect(output.join("")).toContain("allowed columns: late_fee_cents, waiver_reason");
-    expect(output.join("")).toContain("conflict guard: updated_at=2026-06-20T14:31:08Z");
-    expect(output.join("")).toContain("evidence: ev_cli  query sha256:evidence");
-    expect(output.join("")).toContain("writeback: not_applied via trusted_worker_required");
+    let text = output.join("");
+    expect(text).toContain("Proposal wrp_cli");
+    expect(text).toContain("Status: pending review");
+    expect(text).toContain("Source DB changed:\nno");
+    expect(text).toContain("Approval:\nrequired outside MCP");
+    expect(text).toContain("late_fee_cents: 5500 -> 0");
+    expect(text).toContain("More detail:");
+    expect(text).not.toContain("proposal hash");
+    expect(text).not.toContain("proposal version");
+    expect(text).not.toContain("conflict guard");
+    expect(text).not.toContain("query sha256:evidence");
+    expect(text).not.toContain("target: external_postgres:src_pg_acme/public.invoices/INV-CLI");
+    expect(text).not.toContain("2026-06-20T14:31:09Z");
+
+    output.length = 0;
+    await expect(main(["proposals", "show", "latest", "--details", "--store", storePath])).resolves.toBe(0);
+    text = output.join("");
+    expect(text).toContain("Review details:");
+    expect(text).toContain("principal: support_agent_17 (trusted_session)");
+    expect(text).toContain("proposal hash: sha256:proposal");
+    expect(text).toContain("proposal version: 1");
+    expect(text).toContain("allowed columns: late_fee_cents, waiver_reason");
+    expect(text).toContain("conflict guard: updated_at=2026-06-20T14:31:08Z");
+    expect(text).toContain("evidence: ev_cli  query sha256:evidence");
+    expect(text).toContain("Events:");
+    expect(text).toContain("proposal_created");
+
+    output.length = 0;
+    await expect(main(["proposals", "show", "latest", "--json", "--store", storePath])).resolves.toBe(0);
+    const proposalJson = JSON.parse(output.join(""));
+    expect(proposalJson.proposal.proposal_hash).toBe("sha256:proposal");
+    expect(proposalJson.proposal.change_set.guards.expected_version.column).toBe("updated_at");
 
     output.length = 0;
     await expect(main(["proposals", "approve", "latest", "--store", storePath, "--actor", "support_lead_1", "--yes"])).resolves.toBe(0);
@@ -1578,7 +2890,7 @@ describe("runner cli", () => {
       },
       capabilities: [
         {
-          name: "billing.propose_late_fee_waiver",
+          name: "billing.waive_late_fee",
           kind: "proposal",
           source: "src_pg_acme",
           target: {
@@ -1622,11 +2934,41 @@ describe("runner cli", () => {
 
     output.length = 0;
     await expect(main(["replay", "latest", "--store", storePath])).resolves.toBe(0);
-    expect(output.join("")).toContain("replay_wrp_cli");
+    text = output.join("");
+    expect(text).toContain("Replay replay_wrp_cli");
+    expect(text).toContain("What happened:");
+    expect(text).toContain("Source DB changed: no");
+    expect(text).toContain("Proposed change:");
+    expect(text).toContain("late_fee_cents: 5500 -> 0");
+    expect(text).toContain("1 query audit record");
+    expect(text).toContain("1 evidence item");
+    expect(text).toContain("Next:");
+    expect(text).not.toContain("proposal hash");
+    expect(text).not.toContain("conflict guard");
+    expect(text).not.toContain("sha256:evidence");
+    output.length = 0;
+    await expect(main(["replay", "show", "--replay", "replay_wrp_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Replay replay_wrp_cli");
+    output.length = 0;
+    await expect(main(["replay", "show", "--evidence", "ev_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Replay replay_wrp_cli");
+    output.length = 0;
+    await expect(main(["replay", "show", "latest", "--details", "--store", storePath])).resolves.toBe(0);
+    text = output.join("");
+    expect(text).toContain("Replay details replay_wrp_cli");
+    expect(text).toContain("proposal hash: sha256:proposal");
+    expect(text).toContain("conflict guard: updated_at=2026-06-20T14:31:08Z");
+    expect(text).toContain("proposal_created");
+    expect(text).toContain("writeback_applied");
+    output.length = 0;
+    await expect(main(["replay", "show", "latest", "--json", "--store", storePath])).resolves.toBe(0);
+    const replayJson = JSON.parse(output.join(""));
+    expect(replayJson.proposal.proposal_hash).toBe("sha256:proposal");
+    expect(replayJson.query_audit[0].query_fingerprint).toBe("sha256:evidence");
 
     output.length = 0;
     const replayPath = path.join(tempDir, "replay.json");
-    await expect(main(["replay", "export", "latest", "--store", storePath, "--output", replayPath])).resolves.toBe(0);
+    await expect(main(["replay", "export", "--proposal", "wrp_cli", "--format", "json", "--store", storePath, "--output", replayPath])).resolves.toBe(0);
     const replay = JSON.parse(await fs.readFile(replayPath, "utf8"));
     expect(replay.replay_id).toBe("replay_wrp_cli");
     expect(replay.events.map((event: { kind: string }) => event.kind)).toContain("proposal_approved");
@@ -1639,6 +2981,253 @@ describe("runner cli", () => {
       rows_affected: 0,
       source_database_mutated: false,
     });
+    const replayMarkdownPath = path.join(tempDir, "replay.md");
+    await expect(main(["replay", "export", "--replay", "replay_wrp_cli", "--format", "markdown", "--store", storePath, "--output", replayMarkdownPath])).resolves.toBe(0);
+    const replayMarkdown = await fs.readFile(replayMarkdownPath, "utf8");
+    expect(replayMarkdown).toContain("# Synapsor Replay");
+    expect(replayMarkdown).toContain("## Trusted Context");
+    expect(replayMarkdown).toContain("## Guarded Writeback");
+    expect(replayMarkdown).toContain("This is local captured interaction replay, not external database time travel.");
+    output.length = 0;
+    await expect(main(["replay", "list", "--evidence", "ev_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("replay_wrp_cli");
+    output.length = 0;
+    await expect(main(["replay", "list", "--receipt", "1", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("replay_wrp_cli");
+
+    output.length = 0;
+    await expect(main(["evidence", "show", "ev_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Evidence ev_cli");
+    expect(output.join("")).toContain("Captured:");
+    expect(output.join("")).toContain("1 evidence item");
+    expect(output.join("")).toContain("1 query audit record");
+    expect(output.join("")).toContain("Next:");
+    output.length = 0;
+    await expect(main(["evidence", "show", "ev_cli", "--details", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Evidence bundle: ev_cli");
+    expect(output.join("")).toContain("Rows captured: 1");
+    expect(output.join("")).toContain("Query fingerprint: sha256:evidence");
+    output.length = 0;
+    await expect(main(["evidence", "list", "--tenant", "acme", "--capability", "billing.waive_late_fee", "--object", "invoice:INV-CLI", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("ev_cli");
+    const evidenceJsonPath = path.join(tempDir, "evidence.json");
+    await expect(main(["evidence", "export", "ev_cli", "--format", "json", "--output", evidenceJsonPath, "--store", storePath])).resolves.toBe(0);
+    expect(JSON.parse(await fs.readFile(evidenceJsonPath, "utf8")).evidence_bundle_id).toBe("ev_cli");
+    const evidenceMarkdownPath = path.join(tempDir, "evidence.md");
+    await expect(main(["evidence", "export", "ev_cli", "--format", "markdown", "--output", evidenceMarkdownPath, "--store", storePath])).resolves.toBe(0);
+    expect(await fs.readFile(evidenceMarkdownPath, "utf8")).toContain("# Evidence ev_cli");
+
+    output.length = 0;
+    await expect(main(["query-audit", "list", "--evidence", "ev_cli", "--source", "src_pg_acme", "--table", "invoices", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("audit 1");
+    output.length = 0;
+    await expect(main(["query-audit", "show", "1", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Query audit 1");
+    expect(output.join("")).toContain("Rows returned:");
+    expect(output.join("")).toContain("More detail:");
+    output.length = 0;
+    await expect(main(["query-audit", "show", "1", "--details", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Parameters redacted: yes");
+
+    output.length = 0;
+    await expect(main(["receipts", "list", "--proposal", "wrp_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("receipt 1");
+    output.length = 0;
+    await expect(main(["receipts", "show", "1", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Receipt rct_000001");
+    expect(output.join("")).toContain("Status: applied");
+    expect(output.join("")).toContain("More detail:");
+    output.length = 0;
+    await expect(main(["receipts", "show", "1", "--details", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Receipt: 1");
+    expect(output.join("")).toContain("Idempotency key:");
+
+    output.length = 0;
+    await expect(main(["activity", "search", "--tenant", "acme", "--object", "invoice:INV-CLI", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Found 1 local interaction");
+    expect(output.join("")).toContain("proposal: wrp_cli");
+    expect(output.join("")).toContain("Next:");
+    output.length = 0;
+    await expect(main(["activity", "search", "--evidence", "ev_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("proposal: wrp_cli");
+    output.length = 0;
+    await expect(main(["activity", "search", "--replay", "replay_wrp_cli", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("proposal: wrp_cli");
+    output.length = 0;
+    await expect(main(["activity", "search", "--receipt", "1", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("proposal: wrp_cli");
+  });
+
+  it("inspects read-only evidence and query audit without a proposal", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-read-evidence-"));
+    const storePath = path.join(tempDir, "local.db");
+    const store = new ProposalStore(storePath);
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_read_only",
+      tenant_id: "acme",
+      payload: {
+        capability: "billing.inspect_invoice",
+        source_id: "src_pg_acme",
+        target: "public.invoices",
+        principal: { id: "support_agent_17" },
+        query_fingerprint: "sha256:read-only",
+      },
+      items: [{
+        kind: "external_row",
+        source_id: "src_pg_acme",
+        table: "public.invoices",
+        primary_key: { column: "id", value: "INV-READ" },
+        visible_row: { id: "INV-READ", tenant_id: "acme", balance_cents: 25500 },
+      }],
+    });
+    store.recordQueryAudit({
+      evidence_bundle_id: "ev_read_only",
+      source_id: "src_pg_acme",
+      query_fingerprint: "sha256:read-only",
+      table_name: "public.invoices",
+      row_count: 1,
+      payload: {
+        capability: "billing.inspect_invoice",
+        statement_template: "SELECT id, tenant_id, balance_cents FROM public.invoices WHERE id = ? AND tenant_id = ? LIMIT 1",
+        parameters_redacted: true,
+      },
+    });
+    store.recordQueryAudit({
+      source_id: "src_pg_acme",
+      query_fingerprint: "sha256:audit-only",
+      table_name: "public.invoices",
+      row_count: 2,
+      payload: {
+        tenant_id: "acme",
+        principal: "support_agent_17",
+        capability: "billing.inspect_invoice",
+        business_object: "invoice",
+        object_id: "INV-AUDIT",
+        primary_key_value: "INV-AUDIT",
+        statement_template: "SELECT id, tenant_id FROM public.invoices WHERE tenant_id = ? LIMIT 2",
+        parameters_redacted: true,
+      },
+    });
+    store.close();
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["evidence", "show", "ev_read_only", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Evidence ev_read_only");
+    expect(output.join("")).toContain("billing.inspect_invoice");
+    expect(output.join("")).toContain("1 evidence item");
+    expect(output.join("")).toContain("1 query audit record");
+
+    output.length = 0;
+    await expect(main(["evidence", "list", "--tenant", "acme", "--capability", "billing.inspect_invoice", "--source", "src_pg_acme", "--table", "invoices", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("ev_read_only");
+
+    output.length = 0;
+    await expect(main(["query-audit", "list", "--evidence", "ev_read_only", "--source", "src_pg_acme", "--table", "invoices", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("audit 1");
+
+    output.length = 0;
+    await expect(main(["activity", "search", "--tenant", "acme", "--capability", "billing.inspect_invoice", "--source", "src_pg_acme", "--table", "invoices", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Found 2 local interactions");
+    expect(output.join("")).toContain("kind: evidence");
+    expect(output.join("")).toContain("evidence: ev_read_only");
+    expect(output.join("")).toContain("kind: query-audit");
+    expect(output.join("")).toContain("query audit: 2");
+    output.length = 0;
+    await expect(main(["activity", "search", "--evidence", "ev_read_only", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Found 1 local interaction");
+    expect(output.join("")).toContain("kind: evidence");
+    expect(output.join("")).toContain("evidence: ev_read_only");
+    output.length = 0;
+    await expect(main(["activity", "search", "--query-fingerprint", "sha256:audit-only", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Found 1 local interaction");
+    expect(output.join("")).toContain("kind: query-audit");
+    expect(output.join("")).toContain("query audit: 2");
+  });
+
+  it("prints a reviewer-friendly apply summary for proposal apply", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-apply-summary-"));
+    const storePath = path.join(tempDir, "local.db");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const store = new ProposalStore(storePath);
+    store.createProposal(changeSet);
+    store.approveProposal("wrp_cli", { approver: "support_lead_1", proposal_hash: "sha256:proposal", proposal_version: 1 });
+    store.close();
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: storePath },
+      sources: {
+        src_pg_acme: {
+          engine: "postgres",
+          read_url_env: "SYNAPSOR_DATABASE_READ_URL",
+          write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "static_dev",
+        values: { tenant_id: "acme", principal: "support_agent_17" },
+      },
+      capabilities: [
+        {
+          name: "billing.waive_late_fee",
+          kind: "proposal",
+          source: "src_pg_acme",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true, max_length: 128 },
+            reason: { type: "string", required: true, max_length: 500 },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+          evidence: "required",
+          max_rows: 1,
+          patch: {
+            late_fee_cents: { fixed: 0 },
+            waiver_reason: { from_arg: "reason" },
+          },
+          allowed_columns: ["late_fee_cents", "waiver_reason"],
+          conflict_guard: { column: "updated_at" },
+          approval: { mode: "human", required_role: "support_lead" },
+        },
+      ],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["apply", "latest", "--dry-run", "--store", storePath, "--config", configPath])).resolves.toBe(0);
+    const text = output.join("");
+    expect(text).toContain("Guarded writeback dry run passed.");
+    expect(text).toContain("* proposal approved: yes");
+    expect(text).toContain("* primary key matched: yes");
+    expect(text).toContain("* tenant guard matched: yes");
+    expect(text).toContain("* allowed columns only: yes");
+    expect(text).toContain("* conflict guard passed: yes");
+    expect(text).toContain("* affected rows: 0");
+    expect(text).toContain("* idempotency key: wrp_cli:INV-CLI");
+    expect(text).toContain("Receipt:");
+    expect(text).toContain("Replay:");
+    expect(text).toContain("synapsor-runner replay wrp_cli");
+  });
+
+  it("explains how to create or pass a local store when latest cannot resolve", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-missing-store-"));
+    const missingStorePath = path.join(tempDir, ".synapsor", "local.db");
+
+    await expect(main(["proposals", "show", "latest", "--store", missingStorePath]))
+      .rejects.toThrow(/No local Synapsor proposal store was found[\s\S]*synapsor-runner demo[\s\S]*--store \/path\/to\/local\.db/);
   });
 
   it("applies approved proposals through an HTTP handler executor and handles safe duplicate retries", async () => {
@@ -1652,8 +3241,10 @@ describe("runner cli", () => {
     store.close();
     const oldUrl = process.env.SYNAPSOR_TEST_HANDLER_URL;
     const oldToken = process.env.SYNAPSOR_TEST_HANDLER_TOKEN;
+    const oldSigningSecret = process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET;
     process.env.SYNAPSOR_TEST_HANDLER_URL = "https://handler.internal/writeback";
     process.env.SYNAPSOR_TEST_HANDLER_TOKEN = "handler-secret-token";
+    process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = "handler-signing-secret";
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
@@ -1668,7 +3259,7 @@ describe("runner cli", () => {
     }), { status: 200, headers: { "content-type": "application/json" } }));
 
     try {
-      await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", storePath, "--runner", "runner_http"])).resolves.toBe(0);
+      await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", storePath, "--runner", "runner_http", "--json"])).resolves.toBe(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, init] = fetchMock.mock.calls[0]!;
       expect(url).toBe("https://handler.internal/writeback");
@@ -1676,20 +3267,26 @@ describe("runner cli", () => {
       expect((init as RequestInit).headers).toMatchObject({
         authorization: "Bearer handler-secret-token",
         "idempotency-key": "wrp_cli:INV-CLI",
+        "x-synapsor-proposal-id": "wrp_cli",
       });
+      const headers = (init as RequestInit).headers as Record<string, string>;
+      expect(headers["x-synapsor-issued-at"]).toEqual(expect.any(String));
       const request = JSON.parse(String((init as RequestInit).body));
       expect(request).toMatchObject({
+        protocol_version: "1.0",
         schema_version: "synapsor.handler-writeback.v1",
         proposal_id: "wrp_cli",
         idempotency_key: "wrp_cli:INV-CLI",
+        issued_at: headers["x-synapsor-issued-at"],
         patch: { late_fee_cents: 0, waiver_reason: "customer requested review" },
       });
+      expect(headers["x-synapsor-signature"]).toBe(`sha256=${crypto.createHmac("sha256", "handler-signing-secret").update(String((init as RequestInit).body)).digest("hex")}`);
       expect(request).not.toHaveProperty("sql");
       expect(output.join("")).not.toContain("handler-secret-token");
       expect(output.join("")).not.toContain("handler.internal");
 
       output.length = 0;
-      await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", storePath, "--runner", "runner_http"])).resolves.toBe(0);
+      await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", storePath, "--runner", "runner_http", "--json"])).resolves.toBe(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(JSON.parse(output.join("")).status).toBe("already_applied");
 
@@ -1706,6 +3303,7 @@ describe("runner cli", () => {
     } finally {
       if (oldUrl === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_URL; else process.env.SYNAPSOR_TEST_HANDLER_URL = oldUrl;
       if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
+      if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
     }
   });
 
@@ -1719,8 +3317,10 @@ describe("runner cli", () => {
     store.close();
     const oldUrl = process.env.SYNAPSOR_TEST_HANDLER_URL;
     const oldToken = process.env.SYNAPSOR_TEST_HANDLER_TOKEN;
+    const oldSigningSecret = process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET;
     process.env.SYNAPSOR_TEST_HANDLER_URL = "https://handler.internal/writeback";
     process.env.SYNAPSOR_TEST_HANDLER_TOKEN = "handler-secret-token";
+    process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = "handler-signing-secret";
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ status: "applied" }), { status: 200 }));
     try {
       await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", storePath]))
@@ -1729,6 +3329,7 @@ describe("runner cli", () => {
     } finally {
       if (oldUrl === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_URL; else process.env.SYNAPSOR_TEST_HANDLER_URL = oldUrl;
       if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
+      if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
     }
   });
 
@@ -1738,8 +3339,10 @@ describe("runner cli", () => {
     await fs.writeFile(configPath, JSON.stringify(httpHandlerConfig()), "utf8");
     const oldUrl = process.env.SYNAPSOR_TEST_HANDLER_URL;
     const oldToken = process.env.SYNAPSOR_TEST_HANDLER_TOKEN;
+    const oldSigningSecret = process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET;
     process.env.SYNAPSOR_TEST_HANDLER_URL = "https://handler.internal/writeback";
     process.env.SYNAPSOR_TEST_HANDLER_TOKEN = "handler-secret-token";
+    process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = "handler-signing-secret";
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
@@ -1753,7 +3356,7 @@ describe("runner cli", () => {
       httpStore.approveProposal("wrp_cli", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
       httpStore.close();
       fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ message: "nope" }), { status: 503 }));
-      await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", httpStorePath])).resolves.toBe(1);
+      await expect(main(["apply", "--proposal", "wrp_cli", "--config", configPath, "--store", httpStorePath, "--json"])).resolves.toBe(1);
       expect(JSON.parse(output.join(""))).toMatchObject({ status: "failed", safe_error_code: "HANDLER_HTTP_503" });
       const failedStore = new ProposalStore(httpStorePath);
       expect(failedStore.replay("wrp_cli").receipts[0]!.receipt.safe_error_code).toBe("HANDLER_HTTP_503");
@@ -1766,11 +3369,12 @@ describe("runner cli", () => {
       timeoutStore.approveProposal("wrp_cli_timeout", { approver: "support_lead", proposal_hash: "sha256:proposal-timeout", proposal_version: 1 });
       timeoutStore.close();
       fetchMock.mockRejectedValueOnce(Object.assign(new Error("aborted"), { name: "AbortError" }));
-      await expect(main(["apply", "--proposal", "wrp_cli_timeout", "--config", configPath, "--store", timeoutStorePath])).resolves.toBe(1);
+      await expect(main(["apply", "--proposal", "wrp_cli_timeout", "--config", configPath, "--store", timeoutStorePath, "--json"])).resolves.toBe(1);
       expect(JSON.parse(output.join(""))).toMatchObject({ status: "failed", safe_error_code: "HANDLER_TIMEOUT" });
     } finally {
       if (oldUrl === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_URL; else process.env.SYNAPSOR_TEST_HANDLER_URL = oldUrl;
       if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
+      if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
     }
   });
 
@@ -1893,6 +3497,7 @@ function httpHandlerConfig(): Record<string, unknown> {
           type: "bearer_env",
           token_env: "SYNAPSOR_TEST_HANDLER_TOKEN",
         },
+        signing_secret_env: "SYNAPSOR_TEST_HANDLER_SIGNING_SECRET",
         timeout_ms: 100,
       },
     },

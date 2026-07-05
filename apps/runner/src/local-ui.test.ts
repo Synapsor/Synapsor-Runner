@@ -147,6 +147,9 @@ describe("local UI", () => {
       expect(html).toContain("Source database changed:");
       expect(html).toContain("Approval boundary");
       expect(html).toContain("Replay saved what happened");
+      expect(html).toContain("Apply guarded writeback from a trusted terminal");
+      expect(html).toContain("Copy guarded apply command");
+      expect(html).toContain("synapsor-runner apply ");
       expect(html).toContain("View raw JSON");
       expect(html).toContain("csrf-token");
       expect(html).not.toContain("ui-token");

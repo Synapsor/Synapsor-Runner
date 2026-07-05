@@ -352,7 +352,7 @@ async function exerciseGeneratedOnboarding(scenario) {
     const applied = parseCliJson(runner(scenario, ["apply", "--job", paths.firstJob, "--config", paths.config, "--store", paths.store]));
     assert(applied.status === "applied" && applied.affected_rows === 1, "Expected guarded apply", applied);
     const retry = parseCliJson(runner(scenario, ["apply", "--job", paths.firstJob, "--config", paths.config, "--store", paths.store]));
-    assert(retry.status === "applied" && retry.affected_rows === 0, "Expected idempotent retry", retry);
+    assert((retry.status === "applied" || retry.status === "already_applied") && retry.affected_rows === 0, "Expected idempotent retry", retry);
     runner(scenario, ["replay", "export", firstProposalId, "--store", paths.store, "--output", paths.appliedReplay]);
     assertNoSecrets([paths.appliedReplay], scenario);
 

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapsor.ai/schemas/synapsor.app-handler-request.v1.json",
+  "title": "Synapsor App-Owned Writeback Handler Request v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["proposal_id", "idempotency_key", "change_set"],
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "schema_version": {
+      "type": "string",
+      "enum": ["synapsor.handler-writeback.v1"]
+    },
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^sha256=[a-fA-F0-9]{64}$"
+    },
+    "change_set": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["action", "scope", "target", "patch", "guards"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tenant_id", "object_id"],
+          "properties": {
+            "tenant_id": { "type": ["string", "number", "boolean"] },
+            "object_id": { "type": ["string", "number", "boolean"] }
+          }
+        },
+        "principal": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "id": { "type": "string" }
+          }
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "table", "primary_key"],
+          "properties": {
+            "schema": { "$ref": "#/$defs/identifier" },
+            "table": { "$ref": "#/$defs/identifier" },
+            "primary_key": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["column", "value"],
+              "properties": {
+                "column": { "$ref": "#/$defs/identifier" },
+                "value": { "$ref": "#/$defs/scalar" }
+              }
+            }
+          }
+        },
+        "patch": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/scalar" },
+          "propertyNames": { "$ref": "#/$defs/identifier" }
+        },
+        "guards": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["tenant", "expected_version"],
+          "properties": {
+            "tenant": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["column", "value"],
+              "properties": {
+                "column": { "$ref": "#/$defs/identifier" },
+                "value": { "$ref": "#/$defs/scalar" }
+              }
+            },
+            "expected_version": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["column", "value"],
+              "properties": {
+                "column": { "$ref": "#/$defs/identifier" },
+                "value": { "$ref": "#/$defs/scalar" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "scalar": {
+      "type": ["string", "number", "boolean", "null"]
+    }
+  }
+}

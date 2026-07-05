@@ -1,0 +1,415 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapsor.ai/schemas/synapsor.runner.schema.json",
+  "title": "Synapsor Runner config",
+  "description": "Configuration for local Synapsor Runner MCP capabilities over Postgres/MySQL.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "mode", "sources", "trusted_context", "capabilities"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["read_only", "shadow", "review", "cloud"]
+    },
+    "result_format": {
+      "description": "Set to 2 to return one stable ok/summary/data/proposal/error envelope from MCP tool calls.",
+      "type": "integer",
+      "enum": [1, 2],
+      "default": 1
+    },
+    "strict": {
+      "type": "boolean",
+      "default": true
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sqlite_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "trusted_context": {
+      "$ref": "#/$defs/trusted_context"
+    },
+    "contexts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/trusted_context"
+      }
+    },
+    "executors": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/executor"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    },
+    "cloud": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "env_name": {
+      "type": "string",
+      "pattern": "^[A-Z_][A-Z0-9_]*$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "qualified_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+    },
+    "scalar": {
+      "type": ["string", "number", "boolean", "null"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "read_url_env"],
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": ["postgres", "mysql"]
+        },
+        "read_url_env": {
+          "$ref": "#/$defs/env_name"
+        },
+        "write_url_env": {
+          "$ref": "#/$defs/env_name"
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "statement_timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ssl": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "trusted_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["static_dev", "environment", "http_claims", "cloud_session"]
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "tenant_id": {
+              "type": "string"
+            },
+            "principal": {
+              "type": "string"
+            },
+            "tenant_id_env": {
+              "$ref": "#/$defs/env_name"
+            },
+            "principal_env": {
+              "$ref": "#/$defs/env_name"
+            }
+          }
+        }
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["sql_update", "http_handler", "command_handler"]
+        },
+        "url_env": {
+          "$ref": "#/$defs/env_name"
+        },
+        "method": {
+          "type": "string",
+          "enum": ["POST", "PUT", "PATCH"]
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "bearer_env"
+            },
+            "token_env": {
+              "$ref": "#/$defs/env_name"
+            }
+          }
+        },
+        "signing_secret_env": {
+          "$ref": "#/$defs/env_name"
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_env": {
+          "$ref": "#/$defs/env_name"
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "source", "target", "args", "lookup", "visible_columns"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/qualified_name"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["read", "proposal"]
+        },
+        "description": {
+          "description": "Model-facing text shown in MCP tools/list. Describe when to use the tool.",
+          "type": "string",
+          "minLength": 1
+        },
+        "returns_hint": {
+          "description": "Model-facing hint about what the tool returns.",
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "args": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/arg"
+          }
+        },
+        "lookup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id_from_arg"],
+          "properties": {
+            "id_from_arg": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "visible_columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "max_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "patch": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/patch_binding"
+          }
+        },
+        "allowed_columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "numeric_bounds": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/numeric_bound"
+          }
+        },
+        "transition_guards": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/transition_guard"
+          }
+        },
+        "conflict_guard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "$ref": "#/$defs/identifier"
+            },
+            "weak_guard_ack": {
+              "type": "boolean"
+            }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string"
+            },
+            "required_role": {
+              "type": "string"
+            }
+          }
+        },
+        "single_tenant_dev_ack": {
+          "type": "boolean"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "table", "primary_key"],
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/identifier"
+        },
+        "table": {
+          "$ref": "#/$defs/identifier"
+        },
+        "primary_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tenant_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "single_tenant_dev": {
+          "type": "boolean"
+        }
+      }
+    },
+    "arg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "number", "boolean"]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/scalar"
+          }
+        }
+      }
+    },
+    "patch_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": ["fixed"]
+        },
+        {
+          "required": ["from_arg"]
+        }
+      ],
+      "properties": {
+        "fixed": {
+          "$ref": "#/$defs/scalar"
+        },
+        "from_arg": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "numeric_bound": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        }
+      }
+    },
+    "transition_guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed"],
+      "properties": {
+        "from_column": {
+          "$ref": "#/$defs/identifier"
+        },
+        "allowed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

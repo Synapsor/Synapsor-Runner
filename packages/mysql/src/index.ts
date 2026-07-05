@@ -13,6 +13,13 @@ export const mysqlReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeb
   completed_at timestamp NULL
 )`;
 
+export type MysqlApplyConnection = {
+  beginTransaction(): Promise<void>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+  query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]>;
+};
+
 export function quoteMysqlIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
     throw new Error(`unsafe mysql identifier: ${identifier}`);
@@ -65,18 +72,44 @@ function resultHash(job: WritebackJob, status: string, version?: unknown): strin
   return `sha256:${crypto.createHash("sha256").update(JSON.stringify({ job_id: job.job_id, status, version })).digest("hex")}`;
 }
 
-function versionValuesMatch(actual: unknown, expected: unknown): boolean {
-  const normalizeTimestamp = (value: unknown): string => String(value ?? "")
-    .replace("T", " ")
-    .replace(/\.\d{3}Z$/, "")
-    .replace(/Z$/, "")
-    .slice(0, 19);
-  const actualNormalized = normalizeTimestamp(actual);
-  const expectedNormalized = normalizeTimestamp(expected);
-  if (actualNormalized && expectedNormalized && actualNormalized === expectedNormalized) {
-    return true;
+export function normalizeVersionValue(value: unknown): string {
+  if (value instanceof Date) return normalizeVersionValue(value.toISOString());
+  const text = String(value ?? "").trim();
+  const timestamp = text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i);
+  if (timestamp) {
+    const fraction = (timestamp[3] ?? "").padEnd(6, "0").slice(0, 6);
+    const offset = timestamp[4];
+    if (offset && offset.toUpperCase() !== "Z") {
+      const dateParts = timestamp[1]!.split("-");
+      const timeParts = timestamp[2]!.split(":");
+      const year = Number(dateParts[0]);
+      const month = Number(dateParts[1]);
+      const day = Number(dateParts[2]);
+      const hour = Number(timeParts[0]);
+      const minute = Number(timeParts[1]);
+      const second = Number(timeParts[2]);
+      const utc = new Date(Date.UTC(year, month - 1, day, hour, minute, second) - offsetMinutes(offset) * 60_000);
+      return `${utc.getUTCFullYear()}-${pad2(utc.getUTCMonth() + 1)}-${pad2(utc.getUTCDate())} ${pad2(utc.getUTCHours())}:${pad2(utc.getUTCMinutes())}:${pad2(utc.getUTCSeconds())}.${fraction}`;
+    }
+    return `${timestamp[1]} ${timestamp[2]}.${fraction}`;
   }
-  return String(actual) === String(expected);
+  return text;
+}
+
+function offsetMinutes(offset: string): number {
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const compact = offset.slice(1).replace(":", "");
+  const hours = Number(compact.slice(0, 2));
+  const minutes = Number(compact.slice(2, 4) || "0");
+  return sign * (hours * 60 + minutes);
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+export function versionValuesMatch(actual: unknown, expected: unknown): boolean {
+  return normalizeVersionValue(actual) === normalizeVersionValue(expected);
 }
 
 export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Promise<WritebackResult> {
@@ -87,15 +120,23 @@ export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Pr
   if (!config.databaseUrl) return failed(job, config, "DATABASE_UNAVAILABLE");
   const connection = await mysql.createConnection({ uri: config.databaseUrl, dateStrings: true });
   try {
-    await connection.beginTransaction();
+    return await applyMysqlJobWithConnection(job, config, connection);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "TRANSACTION_FAILED";
+    return failed(job, config, message.includes("MULTI_ROW") ? "MULTI_ROW_WRITE_BLOCKED" : message.includes("VERSION") ? "VERSION_CONFLICT" : "TRANSACTION_FAILED");
+  } finally {
+    await connection.end();
+  }
+}
+
+export async function applyMysqlJobWithConnection(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
+  await connection.beginTransaction();
+  try {
     await connection.query(mysqlReceiptMigration);
-    const [receiptRows] = await connection.query<mysql.RowDataPacket[]>(
-      "SELECT status, result_hash FROM synapsor_writeback_receipts WHERE idempotency_key = ? FOR UPDATE",
-      [job.idempotency_key]
-    );
-    if (receiptRows[0]?.status === "applied") {
+    const existing = await claimReceipt(connection, job, config);
+    if (existing) {
       await connection.commit();
-      return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "applied", affected_rows: 0, result_hash: receiptRows[0].result_hash, completed_at: new Date().toISOString() };
+      return existing;
     }
     const [rows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT * FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}
@@ -105,14 +146,16 @@ FOR UPDATE`,
       [job.target.primary_key.value, job.target.tenant_guard.value]
     );
     if (!rows[0]) {
-      await recordReceipt(connection, job, "conflict", resultHash(job, "ROW_NOT_FOUND"));
+      const hash = resultHash(job, "ROW_NOT_FOUND");
+      await recordReceipt(connection, job, "conflict", hash);
       await connection.commit();
-      return conflict(job, config, "ROW_NOT_FOUND");
+      return conflict(job, config, "ROW_NOT_FOUND", hash);
     }
     if (job.conflict_guard.kind === "version_column" && !versionValuesMatch(rows[0][job.conflict_guard.column], job.conflict_guard.expected_value)) {
-      await recordReceipt(connection, job, "conflict", resultHash(job, "VERSION_CONFLICT", rows[0][job.conflict_guard.column]));
+      const hash = resultHash(job, "VERSION_CONFLICT", rows[0][job.conflict_guard.column]);
+      await recordReceipt(connection, job, "conflict", hash);
       await connection.commit();
-      return conflict(job, config, "VERSION_CONFLICT");
+      return conflict(job, config, "VERSION_CONFLICT", hash);
     }
     const update = buildMysqlUpdate(job);
     const [result] = await connection.query<mysql.ResultSetHeader>(update.sql, update.values);
@@ -123,24 +166,48 @@ FOR UPDATE`,
     return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "applied", affected_rows: 1, result_hash: hash, completed_at: new Date().toISOString() };
   } catch (error) {
     await connection.rollback().catch(() => undefined);
-    const message = error instanceof Error ? error.message : "TRANSACTION_FAILED";
-    return failed(job, config, message.includes("MULTI_ROW") ? "MULTI_ROW_WRITE_BLOCKED" : message.includes("VERSION") ? "VERSION_CONFLICT" : "TRANSACTION_FAILED");
-  } finally {
-    await connection.end();
+    throw error;
   }
 }
 
-async function recordReceipt(connection: mysql.Connection, job: WritebackJob, status: string, hash: string): Promise<void> {
-  await connection.query(
-    `INSERT INTO synapsor_writeback_receipts (idempotency_key, job_id, proposal_id, status, result_hash, completed_at)
-VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-ON DUPLICATE KEY UPDATE status = VALUES(status), result_hash = VALUES(result_hash), completed_at = VALUES(completed_at)`,
-    [job.idempotency_key, job.job_id, job.proposal_id, status, hash]
+async function claimReceipt(connection: MysqlApplyConnection, job: WritebackJob, config: RunnerConfig): Promise<WritebackResult | undefined> {
+  const [claim] = await connection.query<mysql.ResultSetHeader>(
+    `INSERT IGNORE INTO synapsor_writeback_receipts (idempotency_key, job_id, proposal_id, status, result_hash)
+VALUES (?, ?, ?, 'in_progress', NULL)`,
+    [job.idempotency_key, job.job_id, job.proposal_id]
   );
+  if (claim.affectedRows === 1) return undefined;
+  const [receiptRows] = await connection.query<mysql.RowDataPacket[]>(
+    "SELECT status, result_hash FROM synapsor_writeback_receipts WHERE idempotency_key = ? FOR UPDATE",
+    [job.idempotency_key]
+  );
+  const row = receiptRows[0];
+  if (!row) return failed(job, config, "IDEMPOTENCY_RECEIPT_UNAVAILABLE");
+  return resultFromExistingReceipt(job, config, row.status, row.result_hash);
 }
 
-function conflict(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult {
-  return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "conflict", affected_rows: 0, error_code: code, completed_at: new Date().toISOString() };
+function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, status: unknown, hash: unknown): WritebackResult {
+  const result_hash = typeof hash === "string" && hash ? hash : resultHash(job, "idempotent");
+  if (status === "applied" || status === "already_applied") {
+    return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "already_applied", affected_rows: 0, result_hash, completed_at: new Date().toISOString() };
+  }
+  if (status === "conflict") return conflict(job, config, "IDEMPOTENT_CONFLICT", result_hash);
+  if (status === "failed") return failed(job, config, "IDEMPOTENT_FAILED");
+  return failed(job, config, "IDEMPOTENCY_RECEIPT_IN_PROGRESS");
+}
+
+async function recordReceipt(connection: MysqlApplyConnection, job: WritebackJob, status: string, hash: string): Promise<void> {
+  const [result] = await connection.query<mysql.ResultSetHeader>(
+    `UPDATE synapsor_writeback_receipts
+SET status = ?, result_hash = ?, completed_at = CURRENT_TIMESTAMP
+WHERE idempotency_key = ?`,
+    [status, hash, job.idempotency_key]
+  );
+  if (result.affectedRows !== 1) throw new Error("IDEMPOTENCY_RECEIPT_UNAVAILABLE");
+}
+
+function conflict(job: WritebackJob, config: RunnerConfig, code: string, result_hash?: string): WritebackResult {
+  return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "conflict", affected_rows: 0, error_code: code, result_hash, completed_at: new Date().toISOString() };
 }
 
 function failed(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult {
@@ -149,7 +216,7 @@ function failed(job: WritebackJob, config: RunnerConfig, code: string): Writebac
 
 export const mysqlAdapter: ApplyAdapter = {
   async doctor(config) {
-    if (!config.databaseUrl) return { ok: false, details: { error: "SYNAPSOR_DATABASE_URL required" } };
+    if (!config.databaseUrl) return { ok: false, details: { error: "database URL required; local config apply reads source.write_url_env, legacy workers use SYNAPSOR_DATABASE_URL" } };
     const connection = await mysql.createConnection({ uri: config.databaseUrl, dateStrings: true });
     try {
       const [rows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version");

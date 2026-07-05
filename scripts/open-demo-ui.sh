@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SYNAPSOR_BIN="${SYNAPSOR_BIN:-$ROOT/bin/synapsor}"
+SYNAPSOR_BIN="${SYNAPSOR_BIN:-$ROOT/bin/synapsor-runner}"
 CONFIG="./examples/reference-support-billing-app/synapsor.runner.json"
 STORE="./tmp/reference-support-billing/local.db"
 
@@ -37,4 +37,4 @@ fi
 echo "Opening Synapsor Runner review UI."
 echo "Press Ctrl+C here when you are done."
 echo
-"$SYNAPSOR_BIN" ui --tour --config "$CONFIG" --store "$STORE"
+"$SYNAPSOR_BIN" ui --open --tour --config "$CONFIG" --store "$STORE"

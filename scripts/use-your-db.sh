@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SYNAPSOR_BIN="${SYNAPSOR_BIN:-$ROOT/bin/synapsor}"
+SYNAPSOR_BIN="${SYNAPSOR_BIN:-$ROOT/bin/synapsor-runner}"
 ENV_NAME="DATABASE_URL"
 ENGINE="auto"
 MODE=""
@@ -192,6 +192,6 @@ printf '\nStep 3: preview the MCP tool boundary\n'
 
 printf '\nNext:\n'
 printf '  Serve MCP:\n'
-printf '    synapsor mcp serve --config %s --store %s\n' "$CONFIG" "$STORE"
+printf '    synapsor-runner mcp serve --config %s --store %s\n' "$CONFIG" "$STORE"
 printf '  Open local review UI:\n'
-printf '    synapsor ui --tour --config %s --store %s\n' "$CONFIG" "$STORE"
+printf '    synapsor-runner ui --open --tour --config %s --store %s\n' "$CONFIG" "$STORE"

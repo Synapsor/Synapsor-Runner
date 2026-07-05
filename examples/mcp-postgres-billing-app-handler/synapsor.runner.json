@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./tmp/billing-app-handler/local.db"
+  },
+  "sources": {
+    "billing_postgres": {
+      "engine": "postgres",
+      "read_url_env": "BILLING_APP_READ_URL",
+      "write_url_env": "BILLING_APP_WRITE_URL",
+      "statement_timeout_ms": 3000
+    }
+  },
+  "trusted_context": {
+    "provider": "environment",
+    "values": {
+      "tenant_id_env": "SYNAPSOR_TENANT_ID",
+      "principal_env": "SYNAPSOR_PRINCIPAL"
+    }
+  },
+  "contexts": {
+    "local_operator": {
+      "provider": "environment",
+      "values": {
+        "tenant_id_env": "SYNAPSOR_TENANT_ID",
+        "principal_env": "SYNAPSOR_PRINCIPAL"
+      }
+    }
+  },
+  "executors": {
+    "billing_app_handler": {
+      "type": "http_handler",
+      "url_env": "BILLING_APP_HANDLER_URL",
+      "method": "POST",
+      "auth": {
+        "type": "bearer_env",
+        "token_env": "BILLING_APP_HANDLER_TOKEN"
+      },
+      "signing_secret_env": "BILLING_APP_HANDLER_SIGNING_SECRET",
+      "timeout_ms": 5000
+    }
+  },
+  "capabilities": [
+    {
+      "name": "billing.inspect_invoice",
+      "kind": "read",
+      "source": "billing_postgres",
+      "context": "local_operator",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "balance_cents",
+        "late_fee_cents",
+        "waiver_reason",
+        "credit_requested_cents",
+        "credit_reason",
+        "credited_cents",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "kind": "proposal",
+      "source": "billing_postgres",
+      "context": "local_operator",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 },
+        "reason": { "type": "string", "required": true, "max_length": 500 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "balance_cents",
+        "late_fee_cents",
+        "waiver_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "late_fee_cents": { "fixed": 0 },
+        "waiver_reason": { "from_arg": "reason" }
+      },
+      "allowed_columns": ["late_fee_cents", "waiver_reason"],
+      "numeric_bounds": {
+        "late_fee_cents": { "minimum": 0, "maximum": 10000 }
+      },
+      "conflict_guard": { "column": "updated_at" },
+      "approval": { "mode": "human", "required_role": "billing_lead" }
+    },
+    {
+      "name": "billing.propose_account_credit",
+      "kind": "proposal",
+      "source": "billing_postgres",
+      "context": "local_operator",
+      "executor": "billing_app_handler",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 },
+        "amount_cents": { "type": "number", "required": true, "minimum": 1, "maximum": 10000 },
+        "reason": { "type": "string", "required": true, "max_length": 500 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "balance_cents",
+        "credited_cents",
+        "credit_requested_cents",
+        "credit_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "credit_requested_cents": { "from_arg": "amount_cents" },
+        "credit_reason": { "from_arg": "reason" }
+      },
+      "allowed_columns": ["credit_requested_cents", "credit_reason"],
+      "numeric_bounds": {
+        "credit_requested_cents": { "minimum": 1, "maximum": 10000 }
+      },
+      "conflict_guard": { "column": "updated_at" },
+      "approval": { "mode": "human", "required_role": "billing_lead" }
+    }
+  ]
+}

@@ -96,6 +96,66 @@ describe("schema inspector helpers", () => {
     expect(JSON.stringify(generated.config)).not.toMatch(/billing|support|orders|late_fee|invoice/i);
   });
 
+  it("generates app-owned handler writeback config without a writer database URL", () => {
+    const generated = generateRunnerConfigFromSpec({
+      version: 1,
+      engine: "postgres",
+      mode: "review",
+      read_url_env: "APP_DATABASE_READ_URL",
+      schema: "public",
+      table: "refund_reviews",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      conflict_column: "updated_at",
+      namespace: "ops",
+      object_name: "refund_review",
+      visible_columns: ["id", "tenant_id", "status", "decision_note", "updated_at"],
+      allowed_columns: ["status", "decision_note"],
+      patch: {
+        status: { from_arg: "next_status" },
+        decision_note: { from_arg: "reason" },
+      },
+      writeback: {
+        executor: "http_handler",
+        executor_name: "ops_refund_api",
+        handler_url_env: "REFUND_WRITEBACK_URL",
+        handler_token_env: "REFUND_WRITEBACK_TOKEN",
+        handler_signing_secret_env: "REFUND_WRITEBACK_SIGNING_SECRET",
+        timeout_ms: 2500,
+      },
+    });
+
+    expect(generated.config).toMatchObject({
+      mode: "review",
+      result_format: 2,
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_DATABASE_READ_URL",
+          read_only: true,
+        },
+      },
+      executors: {
+        ops_refund_api: {
+          type: "http_handler",
+          url_env: "REFUND_WRITEBACK_URL",
+          method: "POST",
+          auth: { type: "bearer_env", token_env: "REFUND_WRITEBACK_TOKEN" },
+          signing_secret_env: "REFUND_WRITEBACK_SIGNING_SECRET",
+          timeout_ms: 2500,
+        },
+      },
+    });
+    expect((generated.config.sources as any).local_postgres.write_url_env).toBeUndefined();
+    expect((generated.config.sources as any).local_postgres.read_only).toBe(true);
+    const proposal = (generated.config.capabilities as any[])[1];
+    expect(proposal.executor).toBe("ops_refund_api");
+    expect(generated.envExample).toContain('REFUND_WRITEBACK_URL="http://127.0.0.1:8787/synapsor/writeback"');
+    expect(generated.envExample).toContain('REFUND_WRITEBACK_TOKEN="<handler-bearer-token>"');
+    expect(generated.envExample).toContain('REFUND_WRITEBACK_SIGNING_SECRET="<handler-hmac-signing-secret>"');
+    expect(JSON.stringify(generated)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|handler-secret-token|hmac-secret-value/i);
+  });
+
   it("rejects unsafe identifiers and missing tenant scope", () => {
     expect(() => generateRunnerConfigFromSpec({
       engine: "postgres",

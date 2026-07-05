@@ -2,23 +2,47 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import net from "node:net";
 import { Client } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js";
 import { StdioClientTransport } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const exampleDir = path.join(root, "examples", "reference-support-billing-app");
-const configPath = path.join(exampleDir, "synapsor.runner.json");
-const tmpDir = path.join(root, "tmp", "reference-support-billing");
+const exampleDir = process.env.SYNAPSOR_REFERENCE_EXAMPLE_DIR
+  ? path.resolve(root, process.env.SYNAPSOR_REFERENCE_EXAMPLE_DIR)
+  : path.join(root, "examples", "reference-support-billing-app");
+const configPath = process.env.SYNAPSOR_REFERENCE_CONFIG_PATH
+  ? path.resolve(root, process.env.SYNAPSOR_REFERENCE_CONFIG_PATH)
+  : path.join(exampleDir, "synapsor.runner.json");
+const tmpDir = process.env.SYNAPSOR_REFERENCE_TMP_DIR
+  ? path.resolve(root, process.env.SYNAPSOR_REFERENCE_TMP_DIR)
+  : path.join(root, "tmp", "reference-support-billing");
 const storePath = path.join(tmpDir, "local.db");
-const container = "synapsor_runner_reference_support_billing";
-const dbName = "synapsor_reference_support_billing";
+const container = process.env.SYNAPSOR_REFERENCE_CONTAINER || "synapsor_runner_reference_support_billing";
+const dbName = process.env.SYNAPSOR_REFERENCE_DB || "synapsor_reference_support_billing";
+const dbPort = process.env.SYNAPSOR_REFERENCE_PORT || "55435";
+const readUrl = `postgresql://synapsor_reader:synapsor_reader_password@localhost:${dbPort}/${dbName}`;
+const writeUrl = `postgresql://synapsor_writer:synapsor_writer_password@localhost:${dbPort}/${dbName}`;
+const expectedTools = (process.env.SYNAPSOR_REFERENCE_EXPECTED_TOOLS || [
+  "support.inspect_ticket",
+  "support.propose_ticket_resolution",
+  "support.inspect_customer_account",
+  "support.propose_plan_credit",
+  "billing.inspect_invoice",
+  "billing.propose_late_fee_waiver",
+  "orders.inspect_order",
+  "orders.propose_status_change",
+].join(","))
+  .split(",")
+  .map((tool) => tool.trim())
+  .filter(Boolean);
+const requireExactTools = process.env.SYNAPSOR_REFERENCE_EXACT_TOOLS === "1";
 const env = {
-  REFERENCE_POSTGRES_READ_URL: "postgresql://synapsor_reader:synapsor_reader_password@localhost:55435/synapsor_reference_support_billing",
-  REFERENCE_POSTGRES_WRITE_URL: "postgresql://synapsor_writer:synapsor_writer_password@localhost:55435/synapsor_reference_support_billing",
+  REFERENCE_POSTGRES_READ_URL: readUrl,
+  REFERENCE_POSTGRES_WRITE_URL: writeUrl,
   SYNAPSOR_TENANT_ID: "acme",
   SYNAPSOR_PRINCIPAL: "reference_operator",
   SYNAPSOR_ENGINE: "postgres",
-  SYNAPSOR_DATABASE_URL: "postgresql://synapsor_writer:synapsor_writer_password@localhost:55435/synapsor_reference_support_billing",
+  SYNAPSOR_DATABASE_URL: writeUrl,
   SYNAPSOR_RUNNER_ID: "reference_support_billing_runner",
   SYNAPSOR_SOURCE_ID: "app_postgres",
   SYNAPSOR_CONTROL_PLANE_URL: "http://127.0.0.1:0",
@@ -62,13 +86,32 @@ async function waitForDatabase() {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const result = run("docker", ["exec", container, "pg_isready", "-U", "synapsor_admin", "-d", dbName], { capture: true, allowFailure: true });
     if (result.status === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return;
+      const hostReady = await canConnectToHostPort(Number(dbPort));
+      if (hostReady) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return;
+      }
+      last = `container is ready, but localhost:${dbPort} is not accepting connections yet`;
     }
     last = result.stderr || result.stdout || `exit ${result.status}`;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(`reference database did not become ready: ${last}`);
+}
+
+async function canConnectToHostPort(port) {
+  return await new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const done = (ready) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(ready);
+    };
+    socket.setTimeout(500);
+    socket.on("connect", () => done(true));
+    socket.on("timeout", () => done(false));
+    socket.on("error", () => done(false));
+  });
 }
 
 async function withMcpClient(callback) {
@@ -125,8 +168,11 @@ try {
   await withMcpClient(async (client) => {
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
-    for (const expected of ["support.inspect_ticket", "support.propose_ticket_resolution", "billing.inspect_invoice", "billing.propose_late_fee_waiver"]) {
+    for (const expected of expectedTools) {
       assert(names.includes(expected), `${expected} missing`, names);
+    }
+    if (requireExactTools) {
+      assert(names.length === expectedTools.length && names.every((name) => expectedTools.includes(name)), "unexpected model-facing tool exposed", names);
     }
     assert(!names.some((name) => /execute_sql|run_query|approve|commit/i.test(name)), "unsafe or approval/commit tool exposed", names);
 
@@ -134,8 +180,33 @@ try {
     assert(inspected.status === "ok", "inspect failed", inspected);
     assert(inspected.trusted_context?.tenant_id === "acme", "trusted tenant missing", inspected);
 
-    const support = structured(await client.callTool({ name: "support.inspect_ticket", arguments: { ticket_id: "T-1042" } }));
-    assert(support.status === "ok", "support inspect failed", support);
+    if (names.includes("support.inspect_ticket")) {
+      const support = structured(await client.callTool({ name: "support.inspect_ticket", arguments: { ticket_id: "T-1042" } }));
+      assert(support.status === "ok", "support inspect failed", support);
+    }
+
+    if (names.includes("support.propose_plan_credit")) {
+      const supportCredit = structured(await client.callTool({
+        name: "support.propose_plan_credit",
+        arguments: { customer_id: "cust_acme_1", credit_cents: 1000, reason: "support goodwill credit" },
+      }));
+      assert(supportCredit.status === "review_required", "support credit proposal did not require review", supportCredit);
+      assert(supportCredit.source_database_mutated === false, "support credit proposal mutated source", supportCredit);
+    }
+
+    if (names.includes("orders.inspect_order")) {
+      const order = structured(await client.callTool({ name: "orders.inspect_order", arguments: { order_id: "O-1001" } }));
+      assert(order.status === "ok", "order inspect failed", order);
+    }
+
+    if (names.includes("orders.propose_status_change")) {
+      const orderStatus = structured(await client.callTool({
+        name: "orders.propose_status_change",
+        arguments: { order_id: "O-1001", status: "ready_to_ship", reason: "payment cleared" },
+      }));
+      assert(orderStatus.status === "review_required", "order status proposal did not require review", orderStatus);
+      assert(orderStatus.source_database_mutated === false, "order status proposal mutated source", orderStatus);
+    }
 
     const spoofed = structured(await client.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-9001", tenant_id: "otherco" } }));
     assert(spoofed.ok === false, "tenant spoof should not return other tenant row", spoofed);
@@ -152,6 +223,12 @@ try {
   });
 
   assert(sql("SELECT late_fee_cents || '|' || COALESCE(waiver_reason, '') FROM public.invoices WHERE id = 'INV-3001'") === "5500|", "source changed before approval");
+  if (expectedTools.includes("support.propose_plan_credit")) {
+    assert(sql("SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'cust_acme_1'") === "0|", "support credit source changed before approval");
+  }
+  if (expectedTools.includes("orders.propose_status_change")) {
+    assert(sql("SELECT status || '|' || COALESCE(status_change_reason, '') FROM public.orders WHERE id = 'O-1001'") === "paid|", "order source changed before approval");
+  }
 
   runner(["proposals", "approve", firstProposalId, "--store", storePath, "--actor", "local_reviewer", "--yes"]);
   const jobPath = path.join(tmpDir, "success-job.json");
@@ -159,7 +236,7 @@ try {
   const applied = parseCliJson(runner(["apply", "--job", jobPath, "--config", configPath, "--store", storePath]));
   assert(applied.status === "applied" && applied.affected_rows === 1, "expected applied writeback", applied);
   const retry = parseCliJson(runner(["apply", "--job", jobPath, "--config", configPath, "--store", storePath]));
-  assert(retry.status === "applied" && retry.affected_rows === 0, "expected idempotent retry", retry);
+  assert((retry.status === "applied" || retry.status === "already_applied") && retry.affected_rows === 0, "expected idempotent retry", retry);
   const replayPath = path.join(tmpDir, "success-replay.json");
   runner(["replay", "export", firstProposalId, "--store", storePath, "--output", replayPath]);
   const replay = JSON.parse(fs.readFileSync(replayPath, "utf8"));

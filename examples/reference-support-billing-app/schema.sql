@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS public.customers (
   name text NOT NULL,
   email text,
   plan text NOT NULL,
+  plan_credit_cents integer NOT NULL DEFAULT 0,
+  credit_reason text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -36,6 +38,15 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.orders (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES public.tenants(id),
+  customer_id text NOT NULL REFERENCES public.customers(id),
+  status text NOT NULL,
+  status_change_reason text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'synapsor_reader') THEN
@@ -50,6 +61,8 @@ $$;
 GRANT CONNECT ON DATABASE synapsor_reference_support_billing TO synapsor_reader, synapsor_writer;
 GRANT USAGE ON SCHEMA public TO synapsor_reader, synapsor_writer;
 GRANT CREATE ON SCHEMA public TO synapsor_writer;
-GRANT SELECT ON public.tenants, public.customers, public.support_tickets, public.invoices TO synapsor_reader, synapsor_writer;
+GRANT SELECT ON public.tenants, public.customers, public.support_tickets, public.invoices, public.orders TO synapsor_reader, synapsor_writer;
+GRANT UPDATE (plan_credit_cents, credit_reason, updated_at) ON public.customers TO synapsor_writer;
 GRANT UPDATE (status, resolution_note, updated_at) ON public.support_tickets TO synapsor_writer;
 GRANT UPDATE (late_fee_cents, waiver_reason, updated_at) ON public.invoices TO synapsor_writer;
+GRANT UPDATE (status, status_change_reason, updated_at) ON public.orders TO synapsor_writer;

@@ -6,10 +6,13 @@ The primary local proof path is still the one-command Docker demo:
 ./scripts/demo-docker.sh
 ```
 
-Use this page after that demo passes and you want to attach a local MCP client. The tested integration contract here is stdio. Client-specific UIs change, so the checked-in examples verify config shape and `tools/list`, not every client screen.
+Use this page after that demo passes and you want to attach a local MCP client
+or SDK. The simplest local-client contract is stdio. Standard HTTP MCP is
+available through Streamable HTTP when your agent connects to a long-running
+Runner service.
 
 Command examples use the published alpha package through `npx`. From a source
-checkout, use `./bin/synapsor ...` only when you intentionally want the local
+checkout, use `./bin/synapsor-runner ...` only when you intentionally want the local
 source wrapper.
 
 Checked examples live in:
@@ -24,12 +27,67 @@ Validate them with:
 corepack pnpm test:mcp-client-configs
 ```
 
+## Stdio Vs HTTP MCP
+
+| Mode | Use when | Command |
+| --- | --- | --- |
+| stdio | Claude Desktop, Cursor, VS Code, or another local MCP client can launch Synapsor Runner | `synapsor-runner mcp serve` |
+| Streamable HTTP MCP | Your app/server, Python agent, Node service, or container uses a standard HTTP MCP client | `synapsor-runner mcp serve-streamable-http` |
+| JSON-RPC bridge | Your app wants a small explicit wrapper around `tools/list`, `tools/call`, and `resources/read` | `synapsor-runner mcp serve-http` |
+
+Stdio keeps the MCP protocol on process stdin/stdout and is the simplest local
+developer path. Streamable HTTP implements MCP initialize/session behavior over
+an authenticated `/mcp` endpoint. The JSON-RPC bridge is intentionally smaller
+and does not implement MCP initialize/session behavior.
+
+HTTP requires bearer auth by default:
+
+```bash
+export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+
+npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+```
+
+OpenAI Agents SDK rejects dotted function/tool names such as
+`billing.inspect_invoice`. For OpenAI-facing transports, ask Runner to expose
+OpenAI-safe aliases while keeping canonical Synapsor capability names in MCP
+metadata:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
+  --alias-mode openai
+```
+
+The model sees names such as `billing__inspect_invoice`; `_meta` includes
+`synapsor.canonical_tool_name = billing.inspect_invoice`, and Runner routes the
+alias back to the canonical capability. Use `--alias-mode both` only when a
+migration needs canonical dotted names and OpenAI-safe aliases exposed at the
+same time.
+
+Preview the exact alias mapping before wiring a client:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner tools preview \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --alias-mode openai
+```
+
+Use private networking/TLS before exposing HTTP MCP beyond localhost. Details:
+[HTTP MCP](http-mcp.md).
+
 ## Generate A Client Snippet
 
 Print a snippet without modifying any client files:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor mcp config claude-desktop \
+npx -y -p @synapsor/runner synapsor-runner mcp config claude-desktop \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -42,18 +100,29 @@ generic
 claude-desktop
 cursor
 vscode
+openai-agents
+```
+
+For OpenAI Agents SDK, generate the Streamable HTTP start command and Python
+snippet:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner mcp client-config \
+  --client openai-agents \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
 ```
 
 The older form is still supported:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner synapsor-runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Write is opt-in and requires an explicit destination:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor mcp configure \
+npx -y -p @synapsor/runner synapsor-runner mcp configure \
   --client cursor \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -72,23 +141,36 @@ database URLs or passwords into the client config.
 From the runner repository:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 For the alpha package, keep the package tag explicit in client configuration.
+
+For standard app/server HTTP MCP mode:
+
+```bash
+export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+
+npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+  --config ./examples/mcp-postgres-billing/synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+```
+
+For the smaller JSON-RPC bridge, use `synapsor-runner mcp serve-http` instead.
 
 ## Generic stdio Client
 
 ```json
 {
   "mcpServers": {
-    "synapsor": {
+    "synapsor-runner": {
       "command": "npx",
       "args": [
         "-y",
         "-p",
-        "@synapsor/runner@alpha",
-        "synapsor",
+        "@synapsor/runner",
+        "synapsor-runner",
         "mcp",
         "serve",
         "--config",
@@ -122,6 +204,39 @@ approve_proposal
 commit_proposal
 ```
 
+## Sanity Check The Agent Connection
+
+After installing the MCP client snippet, restart the client and run a deliberately
+small tool-call test.
+
+First confirm what Runner exposes:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner tools preview \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+Then ask the MCP client:
+
+```text
+Use the Synapsor Runner MCP tool to inspect invoice INV-3001.
+Do not answer from memory.
+Return the tool name called, the evidence handle, and whether raw SQL was available.
+```
+
+Expected result:
+
+- the client calls a tool such as `billing.inspect_invoice`;
+- the response includes an evidence handle or local ledger reference;
+- the model reports that raw SQL, write credentials, approval tools, and commit
+  tools were not available.
+
+If the answer is generic prose or unrelated task planning with no tool call and
+no evidence handle, Synapsor Runner is not connected to that agent session yet.
+Check the MCP config path, restart the client, set trusted context env vars, and
+run `tools/list` or `synapsor-runner tools preview` again.
+
 ## Claude Desktop / Cursor / VS Code
 
 Use the matching checked-in example as the starting point:
@@ -148,8 +263,8 @@ Before documenting a client UI as officially tested, verify:
 ## Troubleshooting
 
 - Server not listed: check the command path, working directory, and config path.
-- Tool schema mismatch: run `synapsor audit <exported-tools.json>`.
+- Tool schema mismatch: run `synapsor-runner audit <exported-tools.json>`.
 - Missing trusted context: set `SYNAPSOR_TENANT_ID` and `SYNAPSOR_PRINCIPAL`, or use the environment variables configured in `trusted_context.values`.
 - Database unavailable: verify the read credential and host access.
-- Proposal waiting review: approve outside the model with `synapsor proposals approve`.
+- Proposal waiting review: approve outside the model with `synapsor-runner proposals approve`.
 - Stale-row conflict: inspect replay; the source row changed after the proposal was created, so the guarded worker refused to commit.

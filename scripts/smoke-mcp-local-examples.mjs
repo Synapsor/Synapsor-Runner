@@ -369,7 +369,7 @@ async function exerciseMcpScenario(scenario) {
     assert(applied.status === "applied" && applied.affected_rows === 1, "Expected guarded apply", applied);
     console.log("ACCEPT guarded writeback applied");
     const retry = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--config", scenario.configPath, "--store", scenario.storePath]));
-    assert(retry.status === "applied" && retry.affected_rows === 0, "Expected idempotent retry", retry);
+    assert((retry.status === "applied" || retry.status === "already_applied") && retry.affected_rows === 0, "Expected idempotent retry", retry);
     const appliedReplayPath = path.join(scenario.tmpDir, "applied-replay.json");
     runner(scenario, ["replay", "export", firstProposalId, "--store", scenario.storePath, "--output", appliedReplayPath]);
     const appliedReplay = JSON.parse(fs.readFileSync(appliedReplayPath, "utf8"));

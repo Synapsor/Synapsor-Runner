@@ -10,6 +10,7 @@
     { "path": "./packages/worker-core" },
     { "path": "./packages/postgres" },
     { "path": "./packages/mysql" },
+    { "path": "./packages/handler" },
     { "path": "./apps/runner" }
   ]
 }

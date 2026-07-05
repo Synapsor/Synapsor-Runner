@@ -1,0 +1,22 @@
+---
+description: Synapsor Runner repo safety and workflow rules
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Synapsor Runner Cursor Rules
+
+Read `AGENTS.md` first. It is the source of truth for repo behavior, safety
+boundaries, test commands, and non-interactive onboarding.
+
+Key rules:
+
+- Do not expose `execute_sql`, raw SQL, approval, commit, apply, or writeback
+  tools to the model-facing MCP surface.
+- Do not weaken tenant, primary-key, allowed-column, expected-version,
+  affected-row, idempotency, receipt, replay, or store-lease semantics without
+  tests.
+- Use `./bin/synapsor-runner ...` for local source changes and public
+  `npx -y -p @synapsor/runner synapsor-runner ...` in user-facing docs.
+- Run `./scripts/verify-release-gate.sh` before release changes.

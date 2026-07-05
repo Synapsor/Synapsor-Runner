@@ -16,7 +16,7 @@ fi
 
 echo "Synapsor Runner reference app"
 echo
-echo "This starts a disposable support/billing Postgres app, exposes semantic MCP tools,"
+echo "This starts a disposable support/billing/orders Postgres app, exposes semantic MCP tools,"
 echo "creates a proposal, proves the source DB is unchanged, approves outside MCP,"
 echo "applies guarded writeback, exports replay, and proves stale-row conflict."
 echo "Full log: $LOG_FILE"
@@ -38,4 +38,4 @@ echo "* stale-row conflict"
 echo "* replay export"
 echo
 echo "Next:"
-echo "synapsor ui --tour --config ./examples/reference-support-billing-app/synapsor.runner.json --store ./tmp/reference-support-billing/local.db"
+echo "synapsor-runner ui --open --tour --config ./examples/reference-support-billing-app/synapsor.runner.json --store ./tmp/reference-support-billing/local.db"

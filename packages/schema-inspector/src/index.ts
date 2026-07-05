@@ -95,7 +95,12 @@ export type OnboardingSelectionSpec = {
   object_name?: string;
   inspect_tool_name?: string;
   proposal_tool_name?: string;
+  inspect_description?: string;
+  proposal_description?: string;
+  inspect_returns_hint?: string;
+  proposal_returns_hint?: string;
   lookup_arg?: string;
+  result_format?: 1 | 2;
   visible_columns: string[];
   allowed_columns?: string[];
   patch?: Record<string, { fixed?: string | number | boolean | null; from_arg?: string }>;
@@ -109,6 +114,15 @@ export type OnboardingSelectionSpec = {
   approval?: {
     required_role?: string;
   };
+  writeback?: {
+    executor?: "sql_update" | "http_handler" | "command_handler";
+    executor_name?: string;
+    handler_url_env?: string;
+    handler_token_env?: string;
+    handler_signing_secret_env?: string;
+    handler_command_env?: string;
+    timeout_ms?: number;
+  };
 };
 
 export type GeneratedOnboardingFiles = {
@@ -120,6 +134,7 @@ export type GeneratedOnboardingFiles = {
 const TENANT_COLUMNS = new Set(["tenant_id", "account_id", "organization_id", "org_id", "workspace_id", "customer_id"]);
 const CONFLICT_COLUMNS = new Set(["updated_at", "modified_at", "row_version", "version", "lock_version", "etag"]);
 const IMMUTABLE_COLUMNS = new Set(["id", "uuid", "created_at", "created_by"]);
+const DEFAULT_RESULT_FORMAT = 2;
 const SENSITIVE_PATTERNS = [
   /password/i,
   /password_hash/i,
@@ -173,22 +188,26 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
   const mode = spec.mode ?? "shadow";
   const sourceName = spec.source_name ?? (spec.engine === "postgres" ? "local_postgres" : "local_mysql");
   const readUrlEnv = spec.read_url_env ?? spec.database_url_env ?? "SYNAPSOR_DATABASE_READ_URL";
-  const writeUrlEnv = spec.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL";
+  const writeback = normalizedWriteback(spec);
+  const writeUrlEnv = writeback.executor === "sql_update" ? spec.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL" : undefined;
   const tenantEnv = spec.trusted_context?.tenant_id_env ?? "SYNAPSOR_TENANT_ID";
   const principalEnv = spec.trusted_context?.principal_env ?? "SYNAPSOR_PRINCIPAL";
   const objectName = spec.object_name ?? singularize(safeName(spec.table));
   const lookupArg = spec.lookup_arg ?? `${objectName}_id`;
   const inspectToolName = spec.inspect_tool_name ?? `${spec.namespace}.inspect_${objectName}`;
   const proposalToolName = spec.proposal_tool_name ?? `${spec.namespace}.propose_${objectName}_update`;
+  const objectLabel = objectName.replace(/_/g, " ");
   const visibleColumns = unique([spec.primary_key, spec.tenant_key, spec.conflict_column, ...spec.visible_columns].filter((value): value is string => Boolean(value)));
   const readCapability = {
     name: inspectToolName,
     kind: "read",
+    description: spec.inspect_description ?? `Inspect one ${objectLabel} in trusted tenant scope before answering or proposing a change.`,
+    returns_hint: spec.inspect_returns_hint ?? `Returns reviewed ${objectLabel} fields, evidence handle, query audit, and source_database_changed:false.`,
     source: sourceName,
     context: "local_operator",
     target: target(spec),
     args: {
-      [lookupArg]: { type: "string", required: true, max_length: 128 },
+      [lookupArg]: { type: "string", required: true, max_length: 128, description: `${capitalize(objectLabel)} id from the user request or trusted app context.` },
     },
     lookup: { id_from_arg: lookupArg },
     visible_columns: visibleColumns,
@@ -201,8 +220,11 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
     capabilities.push({
       name: proposalToolName,
       kind: "proposal",
+      description: spec.proposal_description ?? `Create a review-required proposal to update one ${objectLabel}. The source database remains unchanged until approval and writeback.`,
+      returns_hint: spec.proposal_returns_hint ?? "Returns a proposal id, exact before/after diff, evidence handle, approval status, and source_database_changed:false.",
       source: sourceName,
       context: "local_operator",
+      ...(writeback.executor !== "sql_update" ? { executor: writeback.executorName } : {}),
       target: target(spec),
       args: {
         [lookupArg]: { type: "string", required: true, max_length: 128 },
@@ -224,12 +246,14 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
   const config: Record<string, unknown> = {
     version: 1,
     mode,
+    result_format: spec.result_format ?? DEFAULT_RESULT_FORMAT,
     storage: { sqlite_path: "./.synapsor/local.db" },
     sources: {
       [sourceName]: {
         engine: spec.engine,
         read_url_env: readUrlEnv,
-        ...(mode === "review" ? { write_url_env: writeUrlEnv } : {}),
+        ...(mode === "review" && writeUrlEnv ? { write_url_env: writeUrlEnv } : {}),
+        ...(mode === "review" && writeback.executor !== "sql_update" && !writeUrlEnv ? { read_only: true } : {}),
         statement_timeout_ms: spec.statement_timeout_ms ?? 3000,
       },
     },
@@ -249,12 +273,21 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
         },
       },
     },
+    ...(mode === "review" && writeback.executor !== "sql_update" ? { executors: writeback.executors } : {}),
     capabilities,
   };
 
   return {
     config,
-    envExample: envExample({ readUrlEnv, writeUrlEnv, tenantEnv, principalEnv, mode, engine: spec.engine }),
+    envExample: envExample({
+      readUrlEnv,
+      writeUrlEnv,
+      tenantEnv,
+      principalEnv,
+      mode,
+      engine: spec.engine,
+      extraEnv: writeback.extraEnv,
+    }),
     mcpSnippets: mcpSnippets(),
   };
 }
@@ -614,6 +647,60 @@ function target(spec: OnboardingSelectionSpec): Record<string, unknown> {
   };
 }
 
+function normalizedWriteback(spec: OnboardingSelectionSpec): {
+  executor: "sql_update" | "http_handler" | "command_handler";
+  executorName?: string;
+  executors?: Record<string, unknown>;
+  extraEnv: Array<{ name: string; value: string; comment?: string }>;
+} {
+  const executor = spec.writeback?.executor ?? "sql_update";
+  if (executor === "sql_update") {
+    return { executor, extraEnv: [] };
+  }
+
+  const executorName = spec.writeback?.executor_name ?? `${safeName(spec.namespace)}_${executor === "http_handler" ? "http_handler" : "command_handler"}`;
+  if (executor === "http_handler") {
+    const urlEnv = spec.writeback?.handler_url_env ?? "SYNAPSOR_APP_WRITEBACK_URL";
+    const tokenEnv = spec.writeback?.handler_token_env;
+    const signingSecretEnv = spec.writeback?.handler_signing_secret_env;
+    return {
+      executor,
+      executorName,
+      executors: {
+        [executorName]: {
+          type: "http_handler",
+          url_env: urlEnv,
+          method: "POST",
+          ...(tokenEnv ? { auth: { type: "bearer_env", token_env: tokenEnv } } : {}),
+          ...(signingSecretEnv ? { signing_secret_env: signingSecretEnv } : {}),
+          timeout_ms: spec.writeback?.timeout_ms ?? 5000,
+        },
+      },
+      extraEnv: [
+        { name: urlEnv, value: "http://127.0.0.1:8787/synapsor/writeback", comment: "App-owned writeback handler endpoint." },
+        ...(tokenEnv ? [{ name: tokenEnv, value: "<handler-bearer-token>", comment: "Optional handler bearer token." }] : []),
+        ...(signingSecretEnv ? [{ name: signingSecretEnv, value: "<handler-hmac-signing-secret>", comment: "Optional HMAC signing secret for Runner-to-handler requests." }] : []),
+      ],
+    };
+  }
+
+  const commandEnv = spec.writeback?.handler_command_env ?? "SYNAPSOR_APP_WRITEBACK_COMMAND";
+  return {
+    executor,
+    executorName,
+    executors: {
+      [executorName]: {
+        type: "command_handler",
+        command_env: commandEnv,
+        timeout_ms: spec.writeback?.timeout_ms ?? 5000,
+      },
+    },
+    extraEnv: [
+      { name: commandEnv, value: "node ./examples/app-owned-writeback/command-handler.mjs", comment: "Command receives the structured handler proposal JSON on stdin." },
+    ],
+  };
+}
+
 function inferPatchArgs(
   patch: NonNullable<OnboardingSelectionSpec["patch"]>,
   explicit: OnboardingSelectionSpec["patch_args"],
@@ -644,11 +731,12 @@ function inferPatchArgs(
 
 function envExample(input: {
   readUrlEnv: string;
-  writeUrlEnv: string;
+  writeUrlEnv?: string;
   tenantEnv: string;
   principalEnv: string;
   mode: string;
   engine: SourceEngine;
+  extraEnv?: Array<{ name: string; value: string; comment?: string }>;
 }): string {
   const readExample = input.engine === "postgres" ? "<postgres-read-url>" : "<mysql-read-url>";
   const writeExample = input.engine === "postgres" ? "<postgres-write-url>" : "<mysql-write-url>";
@@ -656,7 +744,11 @@ function envExample(input: {
     "# Synapsor Runner local environment.",
     "# Replace examples locally. Do not commit real credentials.",
     `${input.readUrlEnv}="${readExample}"`,
-    ...(input.mode === "review" ? [`${input.writeUrlEnv}="${writeExample}"`] : []),
+    ...(input.mode === "review" && input.writeUrlEnv ? [`${input.writeUrlEnv}="${writeExample}"`] : []),
+    ...(input.extraEnv ?? []).flatMap((item) => [
+      ...(item.comment ? [`# ${item.comment}`] : []),
+      `${item.name}="${item.value}"`,
+    ]),
     `${input.tenantEnv}="acme"`,
     `${input.principalEnv}="local_operator"`,
     "",
@@ -664,7 +756,7 @@ function envExample(input: {
 }
 
 function mcpSnippets(): Record<string, unknown> {
-  const command = "synapsor";
+  const command = "synapsor-runner";
   const args = ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"];
   return {
     "generic-stdio.json": { command, args },
@@ -678,6 +770,16 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
   if (spec.version !== undefined && spec.version !== 1) throw new Error("onboarding selection version must be 1.");
   if (spec.engine !== "postgres" && spec.engine !== "mysql") throw new Error("selection engine must be postgres or mysql.");
   if (!["read_only", "shadow", "review", undefined].includes(spec.mode)) throw new Error("selection mode must be read_only, shadow, or review.");
+  if (spec.result_format !== undefined && spec.result_format !== 1 && spec.result_format !== 2) throw new Error("selection result_format must be 1 or 2.");
+  if (spec.writeback?.executor && !["sql_update", "http_handler", "command_handler"].includes(spec.writeback.executor)) {
+    throw new Error("selection writeback.executor must be sql_update, http_handler, or command_handler.");
+  }
+  if (spec.mode !== "review" && spec.writeback?.executor && spec.writeback.executor !== "sql_update") {
+    throw new Error("app-owned writeback executors are only valid in review mode.");
+  }
+  if (spec.writeback?.timeout_ms !== undefined && (!Number.isInteger(spec.writeback.timeout_ms) || spec.writeback.timeout_ms <= 0)) {
+    throw new Error("selection writeback.timeout_ms must be a positive integer.");
+  }
   for (const [label, value] of Object.entries({
     schema: spec.schema,
     table: spec.table,
@@ -723,6 +825,7 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
     spec.tenant_key,
     spec.conflict_column,
     spec.lookup_arg,
+    spec.writeback?.executor_name,
     ...(spec.visible_columns ?? []),
     ...(spec.allowed_columns ?? []),
     ...Object.keys(spec.numeric_bounds ?? {}),
@@ -735,6 +838,10 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
     spec.read_url_env,
     spec.database_url_env,
     spec.write_url_env,
+    spec.writeback?.handler_url_env,
+    spec.writeback?.handler_token_env,
+    spec.writeback?.handler_signing_secret_env,
+    spec.writeback?.handler_command_env,
     spec.trusted_context?.tenant_id_env,
     spec.trusted_context?.principal_env,
   ].filter(Boolean)) {
@@ -773,6 +880,11 @@ function singularize(value: string): string {
 
 function safeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "record";
+}
+
+function capitalize(value: string): string {
+  if (!value) return value;
+  return `${value[0]?.toUpperCase() ?? ""}${value.slice(1)}`;
 }
 
 function assertSafeIdentifier(identifier: string): void {

@@ -32,7 +32,7 @@ const toolName = requireEnv("SYNAPSOR_MCP_TOOL_NAME");
 const toolInput = parseJsonEnv("SYNAPSOR_MCP_TOOL_INPUT_JSON");
 const session = parseJsonEnv("SYNAPSOR_MCP_SESSION_JSON", {});
 const runnerId = process.env.SYNAPSOR_RUNNER_ID || "synapsor-hosted-cloud-e2e";
-const runnerVersion = process.env.SYNAPSOR_RUNNER_VERSION || "0.1.0-alpha.0";
+const runnerVersion = process.env.SYNAPSOR_RUNNER_VERSION || "0.1.0-alpha.7";
 const engine = (process.env.SYNAPSOR_ENGINE || "postgres").toLowerCase();
 const applyJob = flag("SYNAPSOR_HOSTED_E2E_APPLY_JOB");
 

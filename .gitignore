@@ -7,9 +7,16 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+__pycache__/
+*.py[cod]
 tmp/
 state/
+.synapsor/
+**/.synapsor/
+apps/runner/CHANGELOG.md
 apps/runner/TRADEMARKS.md
 apps/runner/docs/
 apps/runner/examples/
+apps/runner/fixtures/
 apps/runner/recipes/
+apps/runner/schemas/

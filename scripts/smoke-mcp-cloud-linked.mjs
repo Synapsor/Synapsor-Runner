@@ -322,7 +322,7 @@ fs.writeFileSync(configPath, `${JSON.stringify({
     base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
     runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
     runner_id: "runner_cloud_smoke",
-    runner_version: "0.1.0-alpha.0",
+    runner_version: "0.1.0-alpha.7",
     project_id: "proj_cloud_smoke",
     adapter_id: "mcp.billing",
     source_id: "src_pg_cloud",
@@ -350,7 +350,7 @@ try {
   await cloudClient.register({
     schema_version: "synapsor.runner-registration.v1",
     runner_id: "runner_cloud_smoke",
-    runner_version: "0.1.0-alpha.0",
+    runner_version: "0.1.0-alpha.7",
     engines: ["postgres"],
     capabilities: ["adapter:read", "adapter:invoke", "writeback:claim", "writeback:complete"],
     scope: { project_id: "proj_cloud_smoke", source_ids: ["src_pg_cloud"] },
@@ -358,7 +358,7 @@ try {
   });
   await cloudClient.runnerHeartbeat({
     runner_id: "runner_cloud_smoke",
-    runner_version: "0.1.0-alpha.0",
+    runner_version: "0.1.0-alpha.7",
     engines: ["postgres"],
     source_ids: ["src_pg_cloud"],
     status: "online",

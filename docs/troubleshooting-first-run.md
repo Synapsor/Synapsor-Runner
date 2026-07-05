@@ -3,13 +3,13 @@
 Run the friendly doctor first:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor doctor --first-run
+npx -y -p @synapsor/runner synapsor-runner doctor --first-run
 ```
 
 Use JSON for automation:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor doctor --first-run --json
+npx -y -p @synapsor/runner synapsor-runner doctor --first-run --json
 ```
 
 ## Docker Missing
@@ -128,13 +128,13 @@ Own-database MCP setup needs a reviewed config before serving tools.
 Fix:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor init --from-env DATABASE_URL --mode review --wizard
+npx -y -p @synapsor/runner synapsor-runner init --from-env DATABASE_URL --mode review --wizard
 ```
 
 Or pass an example config:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor tools preview --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner synapsor-runner tools preview --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 ## SQLite Store Missing
@@ -180,7 +180,7 @@ Fix:
 
 ```bash
 export SYNAPSOR_DATABASE_READ_URL="<read-only-url>"
-npx -y -p @synapsor/runner@alpha synapsor doctor --config synapsor.runner.json
+npx -y -p @synapsor/runner synapsor-runner doctor --config synapsor.runner.json
 ```
 
 ## Read/Write Credential Split Failed
@@ -216,7 +216,7 @@ Fix:
 Regenerate the snippet:
 
 ```bash
-npx -y -p @synapsor/runner@alpha synapsor mcp config claude-desktop \
+npx -y -p @synapsor/runner synapsor-runner mcp config claude-desktop \
   --absolute-paths \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db

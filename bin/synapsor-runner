@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export NODE_NO_WARNINGS="${NODE_NO_WARNINGS:-1}"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Synapsor Runner requires Node >= 22.5.0. Install Node or use the Docker demo from a source checkout." >&2
+  exit 1
+fi
+
+if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 5) ? 0 : 1);" >/dev/null 2>&1; then
+  echo "Synapsor Runner requires Node >= 22.5.0 because the local ledger uses Node's node:sqlite runtime." >&2
+  echo "Current Node: $(node -p 'process.versions.node' 2>/dev/null || echo unknown). Upgrade Node or use the Docker demo from a source checkout." >&2
+  exit 1
+fi
+
+if [[ -f "$ROOT/apps/runner/src/cli.ts" && -x "$ROOT/node_modules/.bin/tsx" ]]; then
+  exec "$ROOT/node_modules/.bin/tsx" "$ROOT/apps/runner/src/cli.ts" "$@"
+fi
+
+exec node "$ROOT/apps/runner/dist/cli.js" "$@"

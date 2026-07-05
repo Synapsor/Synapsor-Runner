@@ -1,56 +1,112 @@
 # Synapsor Runner Docs
 
-Start with the practical paths, not the internals.
+Start with the README. Use this index when you need the task-specific next
+step. The order is intentional: run something first, wire your database second,
+then read the concepts once the safety boundary is visible.
 
-## Try The Local Trust Loop
+## 01 Quickstart
 
-```bash
-./scripts/try-synapsor.sh
-```
+- [README](../README.md): wedge, no-DB quick demo, five-line model, and the
+  shortest own-database path.
+- [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
+  failures, redacted diagnostics, and fixes.
 
-This runs disposable Postgres/MySQL fixtures and proves the core loop:
+## 02 Why Raw SQL Is Dangerous
 
-```text
-MCP tool call
--> trusted context
--> scoped read
--> evidence
--> proposal diff
--> approval outside MCP
--> guarded commit or stale-row conflict
--> receipt/replay
-```
+- [Security Boundary](security-boundary.md): what the model can and cannot see.
+- [MCP Audit](mcp-audit.md): static review for risky database MCP tools such as
+  `execute_sql`, broad query tools, model-controlled tenant filters, or
+  model-facing approval/commit tools.
 
-Read: [First 10 Minutes](first-10-minutes.md).
+## 03 Run The Demo
 
-## Use Your Own Staging Postgres/MySQL
+- `examples/support-billing-agent/`: flagship support/billing agent demo with
+  `make demo`, expected output, and the raw-SQL-vs-Synapsor contrast.
+- `examples/raw-sql-vs-synapsor/`: no-database fear/fix demo.
+- `examples/reference-support-billing-app/`: shared fixture used by the
+  flagship demo and package smoke tests.
 
-```bash
-export DATABASE_URL="<postgres-or-mysql-read-url>"
-./scripts/use-your-db.sh
-```
+## 04 Connect Your DB
 
-This inspects your schema, opens the guided setup, generates
-`synapsor.runner.json`, previews the semantic MCP tools, and prints the
-`mcp serve` and local UI commands.
+- [Connect Your Own Database](getting-started-own-database.md): inspect a
+  staging Postgres/MySQL database, generate `synapsor.runner.json`, preview
+  semantic tools, and serve them over MCP.
+- [Use Your Own Database](use-your-own-database.md): short entry point that
+  links to the canonical own-database guide.
+- [Doctor](doctor.md): redacted setup checks, handler probes, direct SQL
+  writeback probes, and receipt-table guidance.
 
-For disposable dev RDS databases with local CA issues:
+## 05 Generate Capabilities
 
-```bash
-./scripts/use-your-db.sh --allow-insecure-ssl
-```
+- [Capability Authoring](capability-authoring.md): define read/proposal
+  capabilities, model-facing descriptions, result envelopes, trusted context,
+  and writeback guards.
+- [Recipes](recipes.md): starter business-capability templates.
+- [JSON Schema](../schemas/synapsor.runner.schema.json): editor validation for
+  `synapsor.runner.json`.
 
-Use certificate verification with the database CA bundle for real staging or
-production-like databases.
+## 06 Serve MCP
 
-Read: [Connect Your Own Database](getting-started-own-database.md).
+- [MCP Client Setup](mcp-client-setup.md): connect Claude, Cursor, VS Code, or
+  another stdio MCP client.
+- `examples/claude-desktop-postgres/`: copy-paste Claude Desktop config for the
+  Postgres billing fixture.
+- `examples/cursor-postgres/`: copy-paste Cursor config for the Postgres
+  billing fixture.
+- [HTTP MCP](http-mcp.md): run Synapsor Runner as an authenticated HTTP MCP
+  service for app/server agents.
+- [OpenAI Agents SDK](openai-agents-sdk.md): use Streamable HTTP MCP with
+  OpenAI-safe tool aliases.
 
-## Important References
+## 07 Propose, Approve, Apply
 
-- [Schema Inspection](schema-inspection.md)
-- [MCP Client Setup](mcp-client-setup.md)
-- [Capability Config](capability-config.md)
-- [Local UI](local-ui.md)
-- [Writeback Executors](writeback-executors.md)
-- [Security Boundary](security-boundary.md)
-- [Current Scope And Limitations](limitations.md)
+- [Local Mode](local-mode.md): local store, proposals, approval, replay, and
+  writeback flow.
+- [Writeback Executors](writeback-executors.md): app-owned writeback handlers
+  for approved proposals.
+- [App-Owned Executors](app-owned-executors.md): short entry point for rich
+  business transactions handled by your app.
+- [Handler Helper](handler-helper.md): TypeScript helper for safe app-owned
+  rich-write handlers.
+
+## 08 Replay And Audit
+
+- [Result Envelope v2](result-envelope-v2.md): stable
+  `ok`/`summary`/`data`/`proposal`/`error` MCP tool results.
+- [Store Lifecycle](store-lifecycle.md): active-store leases, prune safety,
+  deleted-store behavior, and concurrent server guardrails.
+- `synapsor-runner activity search`, `evidence`, `query-audit`, `receipts`,
+  `events tail`, and `events webhook`: local evidence, audit, receipt, replay,
+  and lifecycle inspection.
+- `examples/mysql-refund-agent/`: MySQL order/refund review example using the
+  same proposal, approval, guarded writeback, and replay loop.
+
+## 09 App-Owned Handlers
+
+- [Writeback Executors](writeback-executors.md): call direction, endpoint
+  contract, receipt shape, and the requirement to re-check tenant/scope,
+  expected version, idempotency, and allowed action inside your handler.
+- [Handler Helper](handler-helper.md): helper API and examples.
+
+## 10 Concepts
+
+- [Current Scope](current-scope.md): compact v0.1 scope summary.
+- [Current Limitations](limitations.md): intentional safety limits.
+- [Production-Candidate Guide](production.md): single-node OSS deployment
+  scope, database roles, receipt grants, local ledger backup, restart behavior,
+  Docker/systemd shapes, TLS, and release-gate expectations.
+- [Cloud Mode](cloud-mode.md): what stays local and what Cloud-linked mode adds.
+- [Release Notes](release-notes.md): release history and behavior changes.
+- [Release Policy](release-policy.md): stable gates and publish verification.
+- [Licensing](licensing.md): Apache-2.0 scope, trademark boundary, and what is
+  not included in this runner repo.
+- [Dependency License Inventory](dependency-license-inventory.md): current
+  dependency license summary for release review.
+- RFC source context:
+  [001 result envelope](rfcs/001-result-envelope-v2.md),
+  [002 handler helper](rfcs/002-app-owned-handler-helper.md),
+  [003 integrator teardown](rfcs/003-integrator-feedback-teardown.md).
+
+The public docs intentionally stay task-first. Historical implementation
+reports, release checklists, and internal planning notes are not part of the
+getting-started path.

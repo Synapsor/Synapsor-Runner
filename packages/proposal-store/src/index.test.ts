@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ProposalStore, ProposalStoreError } from "./index.js";
 
@@ -189,6 +192,82 @@ describe("proposal store", () => {
     }
   });
 
+  it("preserves proposal, evidence, pending writeback, receipt, and replay across restarts", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-restart-"));
+    const storePath = path.join(tempDir, "local.db");
+    const restartedReceipt = { ...appliedReceipt, writeback_job_id: "wbj_wrp_123" };
+    let store = new ProposalStore(storePath);
+    try {
+      store.createProposal(changeSet);
+      store.recordEvidenceBundle({
+        evidence_bundle_id: "ev_456",
+        proposal_id: "wrp_123",
+        tenant_id: "acme",
+        payload: {
+          capability: "billing.waive_late_fee",
+          source_id: "src_pg_acme",
+          query_fingerprint: "sha256:evidence",
+        },
+        items: [{ row: "invoices/INV-3001", visible_row: { id: "INV-3001", late_fee_cents: 5500 } }],
+      });
+      store.recordQueryAudit({
+        proposal_id: "wrp_123",
+        evidence_bundle_id: "ev_456",
+        source_id: "src_pg_acme",
+        query_fingerprint: "sha256:evidence",
+        table_name: "public.invoices",
+        row_count: 1,
+        payload: { parameters_redacted: true, primary_key: "INV-3001" },
+      });
+      store.approveProposal("wrp_123", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+    } finally {
+      store.close();
+    }
+
+    store = new ProposalStore(storePath);
+    try {
+      expect(store.getProposal("wrp_123")?.state).toBe("approved");
+      const job = store.createWritebackJobFromProposal("wrp_123", {
+        project_id: "acme-support",
+        runner_id: "runner_123",
+        lease_id: "lease_restart",
+      });
+      expect(job.writeback_job_id).toBe("wbj_wrp_123");
+      expect(store.getProposal("wrp_123")?.state).toBe("pending_worker");
+      const replay = store.replay("wrp_123");
+      expect(replay.evidence).toHaveLength(1);
+      expect(replay.query_audit).toHaveLength(1);
+      expect(replay.receipts).toHaveLength(0);
+    } finally {
+      store.close();
+    }
+
+    store = new ProposalStore(storePath);
+    try {
+      expect(store.getProposal("wrp_123")?.state).toBe("pending_worker");
+      store.recordExecutionReceipt(restartedReceipt);
+      expect(store.getProposal("wrp_123")?.state).toBe("applied");
+    } finally {
+      store.close();
+    }
+
+    store = new ProposalStore(storePath);
+    try {
+      expect(store.listReceipts({ proposal: "wrp_123", status: "applied" })).toHaveLength(1);
+      expect(store.replay("wrp_123").receipts).toHaveLength(1);
+      store.recordExecutionReceipt(restartedReceipt);
+      expect(store.listReceipts({ proposal: "wrp_123", status: "applied" })).toHaveLength(1);
+      expect(store.stats().idempotency_receipts).toBe(1);
+    } finally {
+      store.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("creates a public writeback job from an approved immutable proposal", () => {
     const store = new ProposalStore();
     try {
@@ -280,6 +359,147 @@ describe("proposal store", () => {
       store.close();
     }
   });
+
+  it("indexes and searches local evidence, audit, receipts, and replay metadata", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-search-"));
+    const storePath = path.join(tempDir, "local.db");
+    let store = new ProposalStore(storePath);
+    try {
+      store.createProposal(changeSet);
+      store.recordEvidenceBundle({
+        evidence_bundle_id: "ev_456",
+        proposal_id: "wrp_123",
+        tenant_id: "acme",
+        payload: {
+          capability: "billing.waive_late_fee",
+          source_id: "src_pg_acme",
+          target: "public.invoices",
+          principal: { id: "support_agent_17" },
+          query_fingerprint: "sha256:evidence",
+        },
+        items: [{
+          kind: "external_row",
+          source_id: "src_pg_acme",
+          table: "public.invoices",
+          primary_key: { column: "id", value: "INV-3001" },
+          visible_row: {
+            id: "INV-3001",
+            tenant_id: "acme",
+            late_fee_cents: 5500,
+            updated_at: "2026-06-20T14:31:08Z",
+          },
+        }],
+      });
+      store.recordQueryAudit({
+        proposal_id: "wrp_123",
+        evidence_bundle_id: "ev_456",
+        source_id: "src_pg_acme",
+        query_fingerprint: "sha256:evidence",
+        table_name: "public.invoices",
+        row_count: 1,
+        payload: {
+          capability: "billing.waive_late_fee",
+          statement_template: "SELECT id FROM public.invoices WHERE id = ? AND tenant_id = ? LIMIT 1",
+          parameters_redacted: true,
+        },
+      });
+      store.approveProposal("wrp_123", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      store.markPendingWorker("wrp_123", "sha256:proposal", 1);
+      store.recordWritebackJob(writebackJob);
+      store.recordExecutionReceipt(appliedReceipt);
+
+      expect(store.listProposals({
+        tenant: "acme",
+        principal: "support_agent_17",
+        capability: "billing.waive_late_fee",
+        objectType: "invoice",
+        objectId: "INV-3001",
+        source: "src_pg_acme",
+        table: "invoices",
+        status: "applied",
+        limit: 20,
+      }).map((proposal) => proposal.proposal_id)).toEqual(["wrp_123"]);
+      expect(store.listProposals({ tenant: "otherco" })).toHaveLength(0);
+
+      const evidence = store.listEvidenceBundles({
+        tenant: "acme",
+        principal: "support_agent_17",
+        capability: "billing.waive_late_fee",
+        proposal: "wrp_123",
+        objectType: "invoice",
+        objectId: "INV-3001",
+        source: "src_pg_acme",
+        table: "invoices",
+        queryFingerprint: "sha256:evidence",
+      });
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]).toMatchObject({
+        evidence_bundle_id: "ev_456",
+        source_table: "public.invoices",
+        object_id: "INV-3001",
+      });
+
+      const queryAudit = store.listQueryAudit({
+        tenant: "acme",
+        proposal: "wrp_123",
+        evidence: "ev_456",
+        source: "src_pg_acme",
+        table: "invoices",
+        primaryKey: "INV-3001",
+        queryFingerprint: "sha256:evidence",
+      });
+      expect(queryAudit).toHaveLength(1);
+      expect(queryAudit[0]).toMatchObject({
+        audit_id: 1,
+        evidence_bundle_id: "ev_456",
+        primary_key_value: "INV-3001",
+      });
+      expect(store.getQueryAudit(1)).toMatchObject({ table_name: "public.invoices" });
+
+      const receipts = store.listReceipts({
+        proposal: "wrp_123",
+        writebackJob: "wbj_123",
+        idempotencyKey: "wrp_123:INV-3001",
+        status: "applied",
+      });
+      expect(receipts).toHaveLength(1);
+      const receipt = receipts[0];
+      expect(receipt).toBeDefined();
+      expect(receipt?.receipt_id).toBe(1);
+      expect(store.getReceipt(1)?.idempotency_key).toBe("wrp_123:INV-3001");
+
+      expect(store.getReplayByReplayId("replay_wrp_123").proposal.proposal_id).toBe("wrp_123");
+      expect(store.proposalIdForEvidence("ev_456")).toBe("wrp_123");
+
+      const proposalIndexes = indexNames(store, "proposals");
+      expect(proposalIndexes).toContain("idx_proposals_tenant_created");
+      expect(proposalIndexes).toContain("idx_proposals_object_created");
+      const evidenceIndexes = indexNames(store, "evidence_bundles");
+      expect(evidenceIndexes).toContain("idx_evidence_bundles_tenant_created");
+      expect(evidenceIndexes).toContain("idx_evidence_bundles_object_created");
+      const auditIndexes = indexNames(store, "query_audit");
+      expect(auditIndexes).toContain("idx_query_audit_evidence_id");
+      expect(auditIndexes).toContain("idx_query_audit_primary_key_created");
+      const receiptIndexes = indexNames(store, "writeback_receipts");
+      expect(receiptIndexes).toContain("idx_writeback_receipts_idempotency_key");
+
+      store.migrate();
+    } finally {
+      store.close();
+    }
+
+    store = new ProposalStore(storePath);
+    try {
+      expect(store.listEvidenceBundles({ tenant: "acme" }).map((bundle) => bundle.evidence_bundle_id)).toEqual(["ev_456"]);
+      expect(store.listReceipts({ status: "applied" }).map((receipt) => receipt.receipt_id)).toEqual([1]);
+    } finally {
+      store.close();
+    }
+  });
 });
 
 function expectSecretRejection(fn: () => unknown): void {
@@ -290,4 +510,15 @@ function expectSecretRejection(fn: () => unknown): void {
     expect(error).toBeInstanceOf(ProposalStoreError);
     expect((error as ProposalStoreError).code).toBe("SECRET_MATERIAL_REJECTED");
   }
+}
+
+function indexNames(store: ProposalStore, table: string): string[] {
+  return store.db
+    .prepare(`PRAGMA index_list(${table})`)
+    .all()
+    .map((row) => {
+      if (row && typeof row === "object" && "name" in row) return String(row.name);
+      return "";
+    })
+    .filter(Boolean);
 }

@@ -45,6 +45,7 @@
         "tenant_id",
         "customer_name",
         "status",
+        "status_change_reason",
         "refund_review_status",
         "refund_note",
         "updated_at"
@@ -82,6 +83,7 @@
         "tenant_id",
         "customer_name",
         "status",
+        "status_change_reason",
         "refund_review_status",
         "refund_note",
         "updated_at"
@@ -100,6 +102,73 @@
         "refund_review_status",
         "refund_note"
       ],
+      "conflict_guard": {
+        "column": "updated_at"
+      },
+      "approval": {
+        "mode": "human",
+        "required_role": "orders_lead"
+      }
+    },
+    {
+      "name": "orders.propose_status_change",
+      "kind": "proposal",
+      "source": "app_mysql_orders",
+      "target": {
+        "schema": "synapsor_runner_mcp_orders",
+        "table": "orders",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "order_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "enum": ["shipped", "canceled"]
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "order_id"
+      },
+      "visible_columns": [
+        "id",
+        "tenant_id",
+        "customer_name",
+        "status",
+        "status_change_reason",
+        "updated_at"
+      ],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "status": {
+          "from_arg": "status"
+        },
+        "status_change_reason": {
+          "from_arg": "reason"
+        }
+      },
+      "allowed_columns": [
+        "status",
+        "status_change_reason"
+      ],
+      "transition_guards": {
+        "status": {
+          "allowed": {
+            "paid": ["shipped", "canceled"]
+          }
+        }
+      },
       "conflict_guard": {
         "column": "updated_at"
       },

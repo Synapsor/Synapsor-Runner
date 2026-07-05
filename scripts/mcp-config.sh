@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SYNAPSOR_BIN="${SYNAPSOR_BIN:-$ROOT/bin/synapsor}"
+SYNAPSOR_BIN="${SYNAPSOR_BIN:-$ROOT/bin/synapsor-runner}"
 CLIENT="${1:-claude-desktop}"
 CONFIG="./examples/reference-support-billing-app/synapsor.runner.json"
 STORE="./tmp/reference-support-billing/local.db"

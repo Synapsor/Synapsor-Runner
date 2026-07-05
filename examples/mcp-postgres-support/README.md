@@ -17,6 +17,31 @@ corepack pnpm test:mcp-local
 
 The shared smoke script starts this disposable Postgres fixture, calls the MCP tools through stdio, verifies evidence/resource handles, approves the proposal with the CLI, applies it through guarded writeback, retries idempotently, and proves stale-row conflict.
 
+## Ticket Resolution Proposal
+
+`support.propose_ticket_resolution` demonstrates a bounded support update.
+The model can propose the reviewed status and resolution-note fields, but it
+cannot approve or commit the change.
+
+Expected output includes:
+
+```text
+Source DB changed:
+no
+
+Guarded writeback applied.
+* tenant guard matched: yes
+* allowed columns only: yes
+* conflict guard passed: yes
+```
+
+Safety guarantee: the proposal records trusted tenant/principal context,
+evidence, before/after diff, local approval, guarded writeback receipt, and
+replay. Stale rows return `conflict`.
+
+Current limitation: this is local single-row review-mode writeback. It does not
+provide hosted RBAC, branches, auto-merge, or production support queues.
+
 ## Manual setup
 
 ```bash
@@ -27,7 +52,7 @@ export SUPPORT_POSTGRES_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_support_agent"
 
-npx -y -p @synapsor/runner@alpha synapsor mcp serve \
+npx -y -p @synapsor/runner synapsor-runner mcp serve \
   --config examples/mcp-postgres-support/synapsor.runner.json \
   --store ./tmp/mcp-postgres-support/local.db
 ```

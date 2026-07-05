@@ -12,9 +12,7 @@ Apache-2.0 does not grant trademark rights. The Synapsor name, Synapsor Runner
 name, logos, hosted Cloud service, and proprietary Synapsor platform features
 remain separate. See `../TRADEMARKS.md`.
 
-This license change applies only to `synapsor-runner`.
-
-It does not open source:
+This license applies only to `synapsor-runner`. It does not open source:
 
 - Synapsor Cloud;
 - the hosted control plane;
@@ -34,5 +32,5 @@ Synapsor Cloud is a separate hosted commercial service. Use Cloud when your team
 needs shared approvals, RBAC, hosted evidence/replay search, runner fleet
 status, leases, retention, audit visibility, enterprise controls, and support.
 
-Before public release, license and trademark text must be reviewed by qualified
-counsel.
+Before public release, license and trademark text should be reviewed by the
+release owner or qualified counsel.

@@ -11,8 +11,14 @@ permissions.
 
 Database permissions protect the connection. Synapsor Runner shapes the
 model-facing interface: reviewed semantic capabilities, trusted context
-binding, evidence, audit, replay, and proposal-first writes instead of
-model-facing commit authority.
+binding, evidence handles, query audit, local inspection, and proposal-first
+writes instead of model-facing commit authority.
+
+If all you need is restricted reads, database permissions are a good start.
+Use Synapsor Runner when you also want the agent-facing layer: semantic tools,
+trusted context, evidence handles, query audit, local inspection, and
+proposal-first writes. Proposal workflows add full replay across evidence,
+approval, writeback receipts, and events.
 
 The model-facing MCP server exposes reviewed semantic tools such as
 `billing.inspect_invoice` and `billing.propose_late_fee_waiver`.
@@ -59,6 +65,13 @@ outside the model-facing MCP server and verifies:
 
 If any authority check cannot be verified, the write fails closed.
 
+For direct SQL writeback, the writer connection is the env var named by the
+source `write_url_env` in `synapsor.runner.json`. Direct SQL writeback also
+creates or writes `synapsor_writeback_receipts` for idempotency and replay, so
+the writer needs permission for that receipt table or an administrator must
+pre-create and grant it. If your database policy forbids Runner-managed receipt
+tables, use an app-owned `http_handler` or `command_handler` executor instead.
+
 When a capability uses an `http_handler` or `command_handler` executor, the
 same approval boundary applies. The runner sends a structured proposal/job
 payload to the configured handler after approval. Handler URLs, commands, bearer
@@ -70,7 +83,7 @@ database identifiers such as `../private`, `id/../../tenant_id`, or
 `status; DROP TABLE tickets` before adapter execution. Local CLI file paths
 remain explicit user-provided paths; they are not model-facing authority.
 
-Local review can happen through the CLI or `synapsor ui`. The UI is a localhost
+Local review can happen through the CLI or `synapsor-runner ui`. The UI is a localhost
 review surface with a per-run session token and CSRF protection for
 approve/reject actions. It does not expose raw SQL, database URLs, write
 credentials, approval tools, commit tools, or controls that widen reviewed
