@@ -3,6 +3,8 @@
   "references": [
     { "path": "./packages/config" },
     { "path": "./packages/protocol" },
+    { "path": "./packages/spec" },
+    { "path": "./packages/dsl" },
     { "path": "./packages/proposal-store" },
     { "path": "./packages/schema-inspector" },
     { "path": "./packages/mcp-server" },

@@ -4,6 +4,17 @@
 
 No unreleased changes yet.
 
+## 0.1.2
+
+### Contract Compatibility
+
+- Documents the canonical `synapsor.contract.json` path for contracts produced
+  by the DSL, Cloud, or the C++ exporter.
+- Adds OSS-side conformance notes for C++/Cloud export snapshots that validate
+  with `@synapsor/spec` and load in Runner.
+- Keeps `@synapsor/runner` publishable after `0.1.1` by reserving the next
+  stable patch version for this contract round-trip readiness pass.
+
 ## 0.1.1
 
 ### Launch Readiness

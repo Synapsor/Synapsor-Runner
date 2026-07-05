@@ -1,18 +1,22 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   createMcpRuntime,
   createSynapsorMcpServer,
+  loadRuntimeConfigFromFile,
   McpRuntimeError,
   openaiToolNameAlias,
   startHttpMcpServer,
   startStreamableHttpMcpServer,
   type RuntimeConfig,
 } from "./index.js";
+
+const testDir = path.dirname(fileURLToPath(import.meta.url));
 
 const config: RuntimeConfig = {
   version: 1,
@@ -90,6 +94,76 @@ const fixtureRow = {
 };
 
 describe("local Synapsor MCP runtime", () => {
+  it("loads semantic tools from canonical contract references", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-contract-runtime-"));
+    const sourceContract = path.resolve(testDir, "../../spec/examples/guarded-writeback.contract.json");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.copyFileSync(sourceContract, contractPath);
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      result_format: 2,
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          statement_timeout_ms: 3000,
+        },
+      },
+    }, null, 2));
+    const loaded = loadRuntimeConfigFromFile(configPath);
+    const runtime = createMcpRuntime(loaded, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      expect(loaded.capabilities?.map((capability) => capability.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_late_fee_waiver",
+      ]);
+      expect(runtime.listTools().map((tool) => tool.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_late_fee_waiver",
+      ]);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("loads conformance contract fixtures into runner tools", () => {
+    const conformanceRoot = path.resolve(testDir, "../../spec/fixtures/conformance");
+    for (const fixtureName of fs.readdirSync(conformanceRoot)) {
+      const sourceContract = path.join(conformanceRoot, fixtureName, "contract.json");
+      if (!fs.existsSync(sourceContract)) continue;
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `synapsor-conformance-${fixtureName}-`));
+      fs.copyFileSync(sourceContract, path.join(tempDir, "synapsor.contract.json"));
+      const configPath = path.join(tempDir, "synapsor.runner.json");
+      fs.writeFileSync(configPath, JSON.stringify({
+        version: 1,
+        mode: "review",
+        storage: { sqlite_path: ":memory:" },
+        contracts: ["./synapsor.contract.json"],
+        sources: {
+          local_postgres: {
+            engine: "postgres",
+            read_url_env: "APP_POSTGRES_READ_URL",
+            write_url_env: "APP_POSTGRES_WRITE_URL",
+            statement_timeout_ms: 3000,
+          },
+        },
+      }, null, 2));
+      const loaded = loadRuntimeConfigFromFile(configPath);
+      const runtime = createMcpRuntime(loaded, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+      try {
+        expect(runtime.listTools().length, fixtureName).toBeGreaterThan(0);
+        expect(runtime.listTools().some((tool) => /execute_sql|run_query|approve|commit/i.test(tool.name)), fixtureName).toBe(false);
+      } finally {
+        runtime.close();
+      }
+    }
+  });
+
   it("lists semantic tools without raw SQL or approval tools", () => {
     const runtime = createMcpRuntime(config, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
     try {

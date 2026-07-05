@@ -1,0 +1,37 @@
+{
+  "name": "@synapsor/spec",
+  "version": "0.1.0",
+  "description": "Canonical Synapsor contract schemas, types, validation, and conformance fixtures.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "synapsor-spec": "dist/cli.js"
+  },
+  "files": [
+    "dist/**",
+    "schemas/**",
+    "examples/**",
+    "fixtures/**",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "synapsor",
+    "ai-agents",
+    "mcp",
+    "database-safety",
+    "contracts"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

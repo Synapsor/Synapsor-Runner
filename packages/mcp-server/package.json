@@ -15,6 +15,7 @@
     "@synapsor-runner/control-plane-client": "workspace:*",
     "@synapsor-runner/proposal-store": "workspace:*",
     "@synapsor-runner/protocol": "workspace:*",
+    "@synapsor/spec": "workspace:*",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0",
     "zod": "^3.25.0"

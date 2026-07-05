@@ -1,0 +1,94 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "read only customer analytics",
+    "description": "Expose scoped customer reads without model-facing SQL.",
+    "version": "0.1.0"
+  },
+  "resources": [
+    {
+      "name": "analytics_customers",
+      "engine": "mysql",
+      "schema": "app",
+      "table": "customers",
+      "type": "view",
+      "primary_key": "id",
+      "tenant_key": "tenant_id",
+      "conflict_key": "updated_at"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "tenant_session",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "session",
+          "key": "tenant_id",
+          "required": true
+        },
+        {
+          "name": "principal",
+          "source": "session",
+          "key": "principal",
+          "required": true
+        }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "analytics.inspect_customer",
+      "kind": "read",
+      "context": "tenant_session",
+      "source": "analytics_mysql",
+      "subject": {
+        "resource": "analytics_customers"
+      },
+      "args": {
+        "customer_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "customer_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "name",
+        "plan",
+        "created_at",
+        "updated_at"
+      ],
+      "kept_out_fields": [
+        "email",
+        "phone",
+        "billing_notes"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1
+    }
+  ],
+  "workflows": [
+    {
+      "name": "analytics.customer_lookup",
+      "context": "tenant_session",
+      "allowed_capabilities": [
+        "analytics.inspect_customer"
+      ],
+      "required_evidence": true,
+      "replay": {
+        "checkpoint": "every_step"
+      }
+    }
+  ]
+}

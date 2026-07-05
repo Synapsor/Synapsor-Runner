@@ -14,6 +14,7 @@ import {
 } from "@synapsor-runner/control-plane-client";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { protocolVersions, type ChangeSetV1 } from "@synapsor-runner/protocol";
+import { normalizeContract, type AgentContextSpec, type CapabilitySpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { Pool } from "pg";
 import { z } from "zod";
@@ -91,6 +92,7 @@ export type RuntimeConfig = {
   version: 1;
   mode: RunnerMode;
   result_format?: ResultFormat;
+  contracts?: string[];
   storage?: { sqlite_path?: string };
   sources?: Record<string, RuntimeSourceConfig>;
   trusted_context?: {
@@ -258,11 +260,108 @@ export function loadRuntimeConfigFromFile(
 ): RuntimeConfig {
   const resolved = path.resolve(configPath);
   const parsed = JSON.parse(fs.readFileSync(resolved, "utf8"));
-  assertValidRunnerCapabilityConfig(parsed);
-  return parsed as RuntimeConfig;
+  const config = resolveRuntimeConfig(parsed as RuntimeConfig, path.dirname(resolved));
+  assertValidRunnerCapabilityConfig(config);
+  return config;
+}
+
+export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cwd()): RuntimeConfig {
+  if (!Array.isArray(config.contracts) || config.contracts.length === 0) return config;
+  const resolved: RuntimeConfig = {
+    ...config,
+    contexts: { ...(config.contexts ?? {}) },
+    capabilities: [...(config.capabilities ?? [])],
+  };
+  for (const contractPath of config.contracts) {
+    const fullPath = path.resolve(baseDir, contractPath);
+    const contract = normalizeContract(JSON.parse(fs.readFileSync(fullPath, "utf8")));
+    mergeContractIntoRuntimeConfig(resolved, contract);
+  }
+  delete resolved.contracts;
+  return resolved;
+}
+
+function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: SynapsorContract): void {
+  const resources = new Map((contract.resources ?? []).map((resource) => [resource.name, resource]));
+  for (const context of contract.contexts) {
+    if (!config.contexts) config.contexts = {};
+    config.contexts[context.name] ??= runtimeContextFromSpec(context);
+  }
+  if (!config.trusted_context && contract.contexts.length === 1) {
+    const [context] = contract.contexts;
+    if (context) config.trusted_context = runtimeContextFromSpec(context);
+  }
+  if (!config.capabilities) config.capabilities = [];
+  for (const capability of contract.capabilities) {
+    config.capabilities.push(runtimeCapabilityFromSpec(capability, resources, config));
+  }
+}
+
+function runtimeContextFromSpec(context: AgentContextSpec): NonNullable<RuntimeConfig["contexts"]>[string] {
+  const tenantBinding = context.bindings.find((binding) => binding.name === context.tenant_binding) ?? context.bindings.find((binding) => binding.name === "tenant_id");
+  const principalBinding = context.bindings.find((binding) => binding.name === context.principal_binding) ?? context.bindings.find((binding) => binding.name === "principal");
+  const provider = context.bindings.some((binding) => binding.source === "environment") ? "environment"
+    : context.bindings.some((binding) => binding.source === "cloud_session") ? "cloud_session"
+      : context.bindings.some((binding) => binding.source === "http_claim") ? "http_claims"
+        : context.bindings.some((binding) => binding.source === "static_dev") ? "static_dev"
+          : "environment";
+  return {
+    provider,
+    values: {
+      ...(tenantBinding ? { tenant_id_env: tenantBinding.key, tenant_id_key: tenantBinding.key } : {}),
+      ...(principalBinding ? { principal_env: principalBinding.key, principal_key: principalBinding.key } : {}),
+    },
+  };
+}
+
+function runtimeCapabilityFromSpec(
+  capability: CapabilitySpec,
+  resources: Map<string, ResourceSpec>,
+  config: RuntimeConfig,
+): RuntimeCapabilityConfig {
+  const subjectResource = capability.subject.resource ? resources.get(capability.subject.resource) : undefined;
+  const source = resolveCapabilitySource(capability, config);
+  const target = {
+    schema: subjectResource?.schema ?? capability.subject.schema ?? "",
+    table: subjectResource?.table ?? capability.subject.table ?? "",
+    primary_key: subjectResource?.primary_key ?? capability.subject.primary_key ?? "",
+    tenant_key: subjectResource?.tenant_key ?? capability.subject.tenant_key,
+    single_tenant_dev: subjectResource?.single_tenant_dev ?? capability.subject.single_tenant_dev,
+  };
+  const runtime: RuntimeCapabilityConfig = {
+    name: capability.name,
+    kind: capability.kind === "proposal" ? "proposal" : "read",
+    ...(capability.description ? { description: capability.description } : {}),
+    source,
+    context: capability.context,
+    target,
+    args: capability.args,
+    lookup: capability.lookup ?? { id_from_arg: Object.keys(capability.args)[0] ?? "id" },
+    visible_columns: capability.visible_fields,
+    evidence: capability.evidence?.required === false ? "optional" : "required",
+    ...(capability.max_rows ? { max_rows: capability.max_rows } : {}),
+  };
+  if (capability.kind === "proposal" && capability.proposal) {
+    runtime.patch = capability.proposal.patch;
+    runtime.allowed_columns = capability.proposal.allowed_fields;
+    runtime.conflict_guard = capability.proposal.conflict_guard;
+    runtime.approval = capability.proposal.approval;
+    if (capability.proposal.writeback?.mode && capability.proposal.writeback.mode !== "direct_sql" && capability.proposal.writeback.executor) {
+      runtime.executor = capability.proposal.writeback.executor;
+    }
+  }
+  return runtime;
+}
+
+function resolveCapabilitySource(capability: CapabilitySpec, config: RuntimeConfig): string {
+  if (capability.source) return capability.source;
+  const sourceNames = Object.keys(config.sources ?? {});
+  if (sourceNames.length === 1 && sourceNames[0]) return sourceNames[0];
+  throw new Error(`contract capability ${capability.name} must set source when runner config has ${sourceNames.length} sources`);
 }
 
 export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptions = {}): McpRuntime {
+  config = resolveRuntimeConfig(config);
   assertValidRunnerCapabilityConfig(config);
   const env = options.env ?? process.env;
   const storePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";

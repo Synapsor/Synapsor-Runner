@@ -1,0 +1,11 @@
+{
+  "visible": {
+    "id": "INV-3001",
+    "tenant_id": "acme",
+    "late_fee_cents": 5500
+  },
+  "redacted_fields": [
+    "card_token",
+    "internal_risk_score"
+  ]
+}

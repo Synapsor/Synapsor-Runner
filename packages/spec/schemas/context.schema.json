@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/context.schema.json",
+  "title": "Synapsor Agent Context",
+  "$ref": "synapsor-contract.schema.json#/$defs/context"
+}

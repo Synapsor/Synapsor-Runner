@@ -35,9 +35,15 @@ importers:
       '@synapsor-runner/worker-core':
         specifier: workspace:*
         version: link:packages/worker-core
+      '@synapsor/dsl':
+        specifier: workspace:*
+        version: link:packages/dsl
       '@synapsor/handler':
         specifier: workspace:*
         version: link:packages/handler
+      '@synapsor/spec':
+        specifier: workspace:*
+        version: link:packages/spec
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.21
@@ -98,6 +104,19 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)
 
+  packages/dsl:
+    dependencies:
+      '@synapsor/spec':
+        specifier: workspace:^
+        version: link:../spec
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)
+
   packages/handler:
     dependencies:
       pg:
@@ -137,6 +156,9 @@ importers:
       '@synapsor-runner/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@synapsor/spec':
+        specifier: workspace:*
+        version: link:../spec
       mysql2:
         specifier: ^3.11.0
         version: 3.22.5(@types/node@22.19.21)
@@ -242,6 +264,8 @@ importers:
       vitest:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)
+
+  packages/spec: {}
 
   packages/worker-core:
     dependencies:

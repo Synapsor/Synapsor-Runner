@@ -1,0 +1,66 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "contexts": [
+    {
+      "name": "local_operator",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID"
+        }
+      ],
+      "tenant_binding": "tenant_id"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "kind": "proposal",
+      "context": "local_operator",
+      "subject": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id",
+        "conflict_key": "updated_at"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string"
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "late_fee_cents",
+        "updated_at"
+      ],
+      "proposal": {
+        "action": "billing.waive_late_fee",
+        "allowed_fields": [
+          "late_fee_cents"
+        ],
+        "patch": {
+          "late_fee_cents": {
+            "fixed": 0
+          }
+        },
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "approval": {
+          "mode": "human",
+          "required_role": "billing_lead"
+        },
+        "writeback": {
+          "mode": "direct_sql"
+        }
+      }
+    }
+  ]
+}

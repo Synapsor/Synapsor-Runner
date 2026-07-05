@@ -151,6 +151,34 @@ synapsor-runner smoke call --config ./synapsor.runner.json --store ./.synapsor/l
 synapsor-runner up --serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
+If you already have a canonical `synapsor.contract.json` from the DSL, Cloud,
+or the C++ exporter, keep it as the source of truth and reference it from local
+runner wiring:
+
+```json
+{
+  "version": 1,
+  "mode": "review",
+  "contracts": ["./synapsor.contract.json"],
+  "sources": {
+    "local_postgres": {
+      "engine": "postgres",
+      "read_url_env": "DATABASE_URL"
+    }
+  },
+  "storage": {
+    "sqlite_path": "./.synapsor/local.db"
+  }
+}
+```
+
+Preview the model-facing tool surface before connecting an MCP client:
+
+```bash
+synapsor-runner contract validate ./synapsor.contract.json
+synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
 ## What Runner Does
 
 When an agent uses Runner:
@@ -233,6 +261,10 @@ changes.
 
 Authoring reference:
 
+- [Migrating To `@synapsor/spec`](docs/migrating-to-synapsor-spec.md):
+  split portable contract semantics from local runner wiring.
+- [Conformance Fixtures](docs/conformance.md): how the shared fixture suite
+  keeps Runner and Cloud/C++ contract semantics from drifting.
 - [Capability Authoring](docs/capability-authoring.md): read/proposal tools,
   model-facing descriptions, result envelope v2, trusted context, and writeback
   guards.

@@ -1,0 +1,13 @@
+{
+  "id": "rpl_read_INV_3001",
+  "events": [
+    {
+      "type": "capability_invoked",
+      "capability": "billing.inspect_invoice"
+    },
+    {
+      "type": "evidence_created",
+      "handle": "ev_read_INV_3001"
+    }
+  ]
+}

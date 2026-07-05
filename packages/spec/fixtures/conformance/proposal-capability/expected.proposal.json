@@ -1,0 +1,25 @@
+{
+  "id": "wrp_INV_3001_late_fee_waiver",
+  "capability": "billing.propose_late_fee_waiver",
+  "subject": {
+    "type": "invoice",
+    "id": "INV-3001",
+    "tenant_id": "acme"
+  },
+  "status": "pending",
+  "diff": {
+    "before": {
+      "late_fee_cents": 5500,
+      "waiver_reason": null
+    },
+    "patch": {
+      "late_fee_cents": 0,
+      "waiver_reason": "duplicate billing issue"
+    },
+    "after": {
+      "late_fee_cents": 0,
+      "waiver_reason": "duplicate billing issue"
+    }
+  },
+  "evidence_handle": "ev_prop_INV_3001"
+}

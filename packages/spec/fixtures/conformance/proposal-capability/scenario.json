@@ -1,0 +1,21 @@
+{
+  "trusted_context": {
+    "tenant_id": "acme",
+    "principal": "dev_test_user"
+  },
+  "invoke": {
+    "capability": "billing.propose_late_fee_waiver",
+    "args": {
+      "invoice_id": "INV-3001",
+      "waiver_reason": "duplicate billing issue"
+    }
+  },
+  "source_row": {
+    "id": "INV-3001",
+    "tenant_id": "acme",
+    "late_fee_cents": 5500,
+    "waiver_reason": null,
+    "updated_at": "2026-06-20T14:31:08Z",
+    "card_token": "tok_should_not_leak"
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "support refund request",
+    "description": "Support workflow with read evidence and a review-required refund proposal.",
+    "version": "0.1.0"
+  },
+  "resources": [
+    {
+      "name": "support_orders",
+      "engine": "postgres",
+      "schema": "public",
+      "table": "orders",
+      "type": "table",
+      "primary_key": "id",
+      "tenant_key": "tenant_id",
+      "conflict_key": "updated_at"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "support_agent_context",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "session",
+          "key": "tenant_id",
+          "required": true
+        },
+        {
+          "name": "principal",
+          "source": "session",
+          "key": "principal",
+          "required": true
+        }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "support.inspect_order",
+      "kind": "read",
+      "context": "support_agent_context",
+      "source": "support_postgres",
+      "subject": {
+        "resource": "support_orders"
+      },
+      "args": {
+        "order_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "order_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "amount_cents",
+        "updated_at"
+      ],
+      "kept_out_fields": [
+        "payment_token",
+        "internal_fraud_score"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1
+    },
+    {
+      "name": "support.propose_refund_review",
+      "kind": "proposal",
+      "context": "support_agent_context",
+      "source": "support_postgres",
+      "subject": {
+        "resource": "support_orders"
+      },
+      "args": {
+        "order_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "refund_note": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        }
+      },
+      "lookup": {
+        "id_from_arg": "order_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "amount_cents",
+        "refund_note",
+        "updated_at"
+      ],
+      "kept_out_fields": [
+        "payment_token",
+        "internal_fraud_score"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1,
+      "proposal": {
+        "action": "support.mark_refund_for_review",
+        "allowed_fields": [
+          "status",
+          "refund_note"
+        ],
+        "patch": {
+          "status": {
+            "fixed": "refund_review"
+          },
+          "refund_note": {
+            "from_arg": "refund_note"
+          }
+        },
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "approval": {
+          "mode": "human",
+          "required_role": "support_lead"
+        },
+        "writeback": {
+          "mode": "direct_sql"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "support.refund_request",
+      "context": "support_agent_context",
+      "allowed_capabilities": [
+        "support.inspect_order",
+        "support.propose_refund_review"
+      ],
+      "required_evidence": true,
+      "approval": {
+        "required": true,
+        "role": "support_lead"
+      },
+      "settlement": {
+        "mode": "manual"
+      },
+      "replay": {
+        "checkpoint": "proposal_only"
+      }
+    }
+  ]
+}

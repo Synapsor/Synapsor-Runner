@@ -9,6 +9,8 @@
     { "path": "../../packages/protocol" },
     { "path": "../../packages/proposal-store" },
     { "path": "../../packages/control-plane-client" },
+    { "path": "../../packages/spec" },
+    { "path": "../../packages/dsl" },
     { "path": "../../packages/mcp-server" },
     { "path": "../../packages/worker-core" },
     { "path": "../../packages/postgres" },

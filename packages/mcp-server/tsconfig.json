@@ -9,7 +9,8 @@
     { "path": "../config" },
     { "path": "../control-plane-client" },
     { "path": "../proposal-store" },
-    { "path": "../protocol" }
+    { "path": "../protocol" },
+    { "path": "../spec" }
   ],
   "include": ["src/**/*.ts"]
 }

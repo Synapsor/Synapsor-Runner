@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +7,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DbRowReader } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { main, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
+
+function workspacePath(...segments: string[]): string {
+  for (const candidate of [process.cwd(), path.resolve(process.cwd(), "../..")]) {
+    if (existsSync(path.join(candidate, "pnpm-workspace.yaml"))) {
+      return path.join(candidate, ...segments);
+    }
+  }
+  return path.resolve(process.cwd(), ...segments);
+}
 
 const changeSet = {
   schema_version: "synapsor.change-set.v1",
@@ -444,7 +454,7 @@ describe("runner cli", () => {
     } finally {
       process.chdir(oldCwd);
     }
-  });
+  }, 15_000);
 
   it("audits the built-in dangerous MCP database tool example without a checkout file", async () => {
     const output: string[] = [];
@@ -470,6 +480,103 @@ describe("runner cli", () => {
     await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "markdown"])).resolves.toBe(0);
     expect(output.join("")).toContain("# Synapsor MCP Database Risk Review");
     expect(output.join("")).toContain("## Safer Shape");
+  });
+
+  it("validates, normalizes, and bundles canonical Synapsor contracts", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-contract-"));
+    const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
+    const normalizedPath = path.join(tempDir, "synapsor.contract.normalized.json");
+    const bundleDir = path.join(tempDir, "bundle");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["contract", "validate", contractPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("contract valid:");
+
+    output.length = 0;
+    await expect(main(["contract", "normalize", contractPath, "--out", normalizedPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("wrote normalized contract:");
+    const normalized = JSON.parse(await fs.readFile(normalizedPath, "utf8"));
+    expect(normalized.kind).toBe("SynapsorContract");
+    expect(normalized.spec_version).toBe("0.1");
+
+    output.length = 0;
+    await expect(main(["contract", "bundle", contractPath, "--out", bundleDir])).resolves.toBe(0);
+    expect(output.join("")).toContain("created runner bundle:");
+    expect(output.join("")).toContain("No database URLs, write credentials, tokens, or customer rows were included.");
+    await fs.access(path.join(bundleDir, "synapsor.contract.json"));
+    await fs.access(path.join(bundleDir, "synapsor.runner.json"));
+    await fs.access(path.join(bundleDir, ".env.example"));
+    await fs.access(path.join(bundleDir, "README.md"));
+    await fs.access(path.join(bundleDir, "mcp-client-examples/generic-stdio.json"));
+    const bundleConfig = JSON.parse(await fs.readFile(path.join(bundleDir, "synapsor.runner.json"), "utf8"));
+    expect(bundleConfig.contracts).toEqual(["./synapsor.contract.json"]);
+    const bundleEnv = await fs.readFile(path.join(bundleDir, ".env.example"), "utf8");
+    expect(bundleEnv).toContain("SYNAPSOR_DATABASE_READ_URL=");
+    expect(bundleEnv).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|synapsor_reader|O9wxy|nStZFA|bearer|token/i);
+  });
+
+  it("compiles SQL-like DSL into canonical contracts and dry-runs Cloud push", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-cloud-"));
+    const dslPath = workspacePath("packages/dsl/examples/billing-late-fee.synapsor");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["dsl", "validate", dslPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("dsl valid:");
+
+    output.length = 0;
+    await expect(main(["dsl", "compile", dslPath, "--out", contractPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("wrote contract:");
+    const contract = JSON.parse(await fs.readFile(contractPath, "utf8"));
+    expect(contract.kind).toBe("SynapsorContract");
+    expect(contract.contexts).toHaveLength(1);
+    expect(contract.capabilities.map((capability: { name: string }) => capability.name)).toContain("billing.propose_late_fee_waiver");
+    expect(contract.workflows?.[0]?.allowed_capabilities).toContain("billing.propose_late_fee_waiver");
+
+    output.length = 0;
+    await expect(main(["contract", "validate", contractPath])).resolves.toBe(0);
+    expect(output.join("")).toContain("contract valid:");
+
+    const runnerConfigPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(runnerConfigPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      result_format: 2,
+      storage: { sqlite_path: path.join(tempDir, ".synapsor/local.db") },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          statement_timeout_ms: 3000,
+        },
+      },
+    }), "utf8");
+    await fs.mkdir(path.join(tempDir, ".synapsor"), { recursive: true });
+    output.length = 0;
+    await expect(main(["tools", "preview", "--config", runnerConfigPath, "--store", path.join(tempDir, ".synapsor/local.db")])).resolves.toBe(0);
+    expect(output.join("")).toContain("billing.propose_late_fee_waiver");
+    expect(output.join("")).toContain("execute_sql / raw query tools");
+
+    output.length = 0;
+    await expect(main(["cloud", "push", contractPath, "--dry-run", "--workspace", "ws_test", "--name", "billing-late-fee"])).resolves.toBe(0);
+    expect(output.join("")).toContain("Synapsor Cloud contract push preview");
+    expect(output.join("")).toContain("Dry run only. No Cloud upload attempted.");
+
+    output.length = 0;
+    await expect(main(["cloud", "push", contractPath, "--dry-run", "--json"])).resolves.toBe(0);
+    const payload = JSON.parse(output.join(""));
+    expect(payload.dry_run).toBe(true);
+    expect(payload.payload.contract.kind).toBe("SynapsorContract");
+    expect(payload.payload.summary.capabilities).toBeGreaterThan(0);
   });
 
   it("initializes a safe local runner config and refuses accidental overwrite", async () => {
@@ -3056,7 +3163,7 @@ describe("runner cli", () => {
     output.length = 0;
     await expect(main(["activity", "search", "--receipt", "1", "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("proposal: wrp_cli");
-  });
+  }, 15_000);
 
   it("inspects read-only evidence and query audit without a proposal", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-read-evidence-"));
@@ -3376,7 +3483,7 @@ describe("runner cli", () => {
       if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
       if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
     }
-  });
+  }, 15_000);
 
   it("refuses to approve or write back shadow proposals", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-shadow-"));

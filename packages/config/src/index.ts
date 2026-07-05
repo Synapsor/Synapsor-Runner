@@ -18,7 +18,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "cloud", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "cloud", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
@@ -140,16 +140,34 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
     errors.push({ path: "$.mode", code: "INVALID_MODE", message: "mode must be read_only, shadow, review, or cloud." });
   }
   validateStorage(input.storage, strict, errors);
+  const hasContracts = validateContracts(input.contracts, errors);
   validateCloud(input.cloud, input.mode, strict, errors);
   validateSources(input.sources, input.mode, strict, errors, warnings);
   validateContexts(input.contexts, strict, errors, warnings);
-  validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings);
+  validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings, hasContracts);
   validateExecutors(input.executors, input.mode, strict, errors);
-  validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings);
+  validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
   validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateContracts(value: unknown, errors: ConfigIssue[]): boolean {
+  if (value === undefined) return false;
+  if (!Array.isArray(value) || value.length === 0) {
+    errors.push({ path: "$.contracts", code: "INVALID_CONTRACT_REFERENCES", message: "contracts must be a non-empty array of contract file paths." });
+    return false;
+  }
+  value.forEach((contractPath, index) => {
+    if (!isNonEmptyString(contractPath)) {
+      errors.push({ path: `$.contracts[${index}]`, code: "INVALID_CONTRACT_REFERENCE", message: "contract references must be non-empty file paths." });
+    }
+    if (typeof contractPath === "string" && /(postgres(?:ql)?:\/\/|mysql:\/\/|password|secret|token)/i.test(contractPath)) {
+      errors.push({ path: `$.contracts[${index}]`, code: "CONTRACT_REFERENCE_LOOKS_SECRET", message: "contracts must reference local contract files, not URLs or secrets." });
+    }
+  });
+  return errors.every((error) => !error.path.startsWith("$.contracts"));
 }
 
 export function assertValidRunnerCapabilityConfig(input: unknown): asserts input is JsonRecord {
@@ -378,8 +396,10 @@ function validateTrustedContext(
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
+  hasContracts = false,
 ): void {
   if (value === undefined) {
+    if (hasContracts) return;
     if (mode === "cloud") return;
     const allCapabilitiesHaveContext = Array.isArray(capabilities) &&
       capabilities.length > 0 &&
@@ -495,8 +515,10 @@ function validateCapabilities(
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
+  hasContracts = false,
 ): void {
   if (mode === "cloud" && value === undefined) return;
+  if (hasContracts && value === undefined) return;
   if (!Array.isArray(value) || value.length === 0) {
     errors.push({ path: "$.capabilities", code: "CAPABILITIES_REQUIRED", message: "At least one capability is required." });
     return;

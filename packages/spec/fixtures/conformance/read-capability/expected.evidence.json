@@ -1,0 +1,11 @@
+{
+  "handle": "ev_read_INV_3001",
+  "capability": "billing.inspect_invoice",
+  "query_fingerprint": "sha256:read-capability-fixture",
+  "items": [
+    {
+      "field": "late_fee_cents",
+      "value": 5500
+    }
+  ]
+}

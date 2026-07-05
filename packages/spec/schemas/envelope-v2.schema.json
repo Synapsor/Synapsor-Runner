@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/envelope-v2.schema.json",
+  "title": "Synapsor Result Envelope V2",
+  "type": "object",
+  "required": ["ok", "summary", "action", "kind", "source_database_changed", "_meta"],
+  "additionalProperties": true,
+  "properties": {
+    "ok": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "action": { "type": "string" },
+    "kind": { "enum": ["read", "proposal", "external_action", "answer_with_evidence"] },
+    "data": { "type": ["object", "null"] },
+    "proposal": { "type": ["object", "null"] },
+    "error": { "type": ["object", "null"] },
+    "evidence": { "type": ["object", "null"] },
+    "source_database_changed": { "type": "boolean" },
+    "_meta": { "type": "object" }
+  }
+}

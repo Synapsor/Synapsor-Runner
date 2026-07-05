@@ -1,0 +1,9 @@
+{
+  "source_row": {
+    "id": "INV-3001",
+    "tenant_id": "acme",
+    "late_fee_cents": 5500,
+    "card_token": "tok_should_not_leak",
+    "internal_risk_score": 91
+  }
+}

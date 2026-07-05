@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor-contract.schema.json",
+  "title": "Synapsor Contract",
+  "type": "object",
+  "required": ["spec_version", "kind", "contexts", "capabilities"],
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+  },
+  "properties": {
+    "spec_version": { "const": "0.1" },
+    "kind": { "const": "SynapsorContract" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/resource" }
+    },
+    "contexts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/context" }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/capability" }
+    },
+    "workflows": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/workflow" }
+    },
+    "policies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/policy" }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidenceRecord" }
+    },
+    "proposals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/proposalRecord" }
+    },
+    "receipts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/receipt" }
+    },
+    "replay": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/replay" }
+    },
+    "external_actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/externalAction" }
+    }
+  },
+  "$defs": {
+    "safeIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "qualifiedName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "qualifiedOrSafeName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)?$"
+    },
+    "scalar": {
+      "type": ["string", "number", "boolean", "null"]
+    },
+    "extensionAware": {
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      }
+    },
+    "resource": {
+      "type": "object",
+      "required": ["name", "engine", "schema", "table", "primary_key"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "engine": { "enum": ["postgres", "mysql", "synapsor"] },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "type": { "enum": ["table", "view", "external_source"] },
+        "primary_key": { "$ref": "#/$defs/safeIdentifier" },
+        "tenant_key": { "$ref": "#/$defs/safeIdentifier" },
+        "conflict_key": { "$ref": "#/$defs/safeIdentifier" },
+        "single_tenant_dev": { "type": "boolean" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "required": ["name", "source", "key"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/safeIdentifier" },
+        "source": { "enum": ["session", "environment", "cloud_session", "static_dev", "http_claim"] },
+        "key": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["name", "bindings"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "description": { "type": "string" },
+        "bindings": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/binding" } },
+        "tenant_binding": { "$ref": "#/$defs/safeIdentifier" },
+        "principal_binding": { "$ref": "#/$defs/safeIdentifier" }
+      }
+    },
+    "arg": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "type": { "enum": ["string", "number", "boolean"] },
+        "description": { "type": "string" },
+        "required": { "type": "boolean" },
+        "max_length": { "type": "integer", "minimum": 1 },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "enum": { "type": "array", "items": { "$ref": "#/$defs/scalar" } }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "resource": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "primary_key": { "$ref": "#/$defs/safeIdentifier" },
+        "tenant_key": { "$ref": "#/$defs/safeIdentifier" },
+        "conflict_key": { "$ref": "#/$defs/safeIdentifier" },
+        "single_tenant_dev": { "type": "boolean" }
+      }
+    },
+    "evidenceRequirement": {
+      "type": "object",
+      "required": ["required"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "required": { "type": "boolean" },
+        "sources": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "query_audit": { "type": "boolean" },
+        "handle_prefix": { "type": "string" }
+      }
+    },
+    "patchBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "fixed": { "$ref": "#/$defs/scalar" },
+        "from_arg": { "$ref": "#/$defs/safeIdentifier" }
+      }
+    },
+    "proposalAction": {
+      "type": "object",
+      "required": ["action", "allowed_fields", "patch"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "action": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "allowed_fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeIdentifier" } },
+        "patch": { "type": "object", "additionalProperties": { "$ref": "#/$defs/patchBinding" } },
+        "conflict_guard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "column": { "$ref": "#/$defs/safeIdentifier" },
+            "weak_guard_ack": { "type": "boolean" }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["human", "operator", "policy"] },
+            "required_role": { "type": "string" }
+          }
+        },
+        "writeback": {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["direct_sql", "app_handler", "cloud_worker", "none"] },
+            "executor": { "type": "string" },
+            "idempotency_key": { "type": "string" }
+          }
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["name", "kind", "context", "subject", "args", "visible_fields"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/qualifiedName" },
+        "description": { "type": "string" },
+        "kind": { "enum": ["read", "proposal", "external_action", "answer_with_evidence"] },
+        "context": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "source": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "subject": { "$ref": "#/$defs/subject" },
+        "args": { "type": "object", "additionalProperties": { "$ref": "#/$defs/arg" } },
+        "lookup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "id_from_arg": { "$ref": "#/$defs/safeIdentifier" } }
+        },
+        "visible_fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeIdentifier" } },
+        "kept_out_fields": { "type": "array", "items": { "$ref": "#/$defs/safeIdentifier" } },
+        "evidence": { "$ref": "#/$defs/evidenceRequirement" },
+        "max_rows": { "type": "integer", "minimum": 1 },
+        "proposal": { "$ref": "#/$defs/proposalAction" }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["name", "context", "allowed_capabilities"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/qualifiedName" },
+        "description": { "type": "string" },
+        "context": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "allowed_capabilities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/qualifiedName" } },
+        "required_evidence": { "type": "boolean" },
+        "approval": { "type": "object" },
+        "settlement": { "type": "object" },
+        "replay": { "type": "object" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "kind": { "enum": ["approval", "settlement", "scope", "custom"] },
+        "mode": { "enum": ["green", "yellow", "red", "manual", "block"] },
+        "rules": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "evidenceRecord": {
+      "type": "object",
+      "required": ["handle"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "handle": { "type": "string" },
+        "capability": { "$ref": "#/$defs/qualifiedName" },
+        "query_fingerprint": { "type": "string" },
+        "items": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "proposalRecord": {
+      "type": "object",
+      "required": ["id", "capability", "subject", "status"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "id": { "type": "string" },
+        "capability": { "$ref": "#/$defs/qualifiedName" },
+        "subject": { "type": "object" },
+        "status": { "enum": ["pending", "approved", "rejected", "canceled", "applied", "conflict", "failed"] },
+        "diff": { "type": "object" },
+        "evidence_handle": { "type": "string" }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "required": ["id", "proposal_id", "status", "source_database_mutated"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "id": { "type": "string" },
+        "proposal_id": { "type": "string" },
+        "status": { "enum": ["applied", "already_applied", "conflict", "failed", "canceled"] },
+        "idempotency_key": { "type": "string" },
+        "source_database_mutated": { "type": "boolean" },
+        "rows_affected": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "required": ["id", "events"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "id": { "type": "string" },
+        "proposal_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "events": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "externalAction": {
+      "type": "object",
+      "required": ["id", "action"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "$ref": "#/$defs/qualifiedOrSafeName" },
+        "handler": { "type": "string" },
+        "idempotency_key": { "type": "string" },
+        "receipt": { "type": "string" }
+      }
+    }
+  }
+}

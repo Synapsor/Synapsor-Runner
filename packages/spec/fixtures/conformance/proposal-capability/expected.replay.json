@@ -1,0 +1,14 @@
+{
+  "id": "rpl_prop_INV_3001",
+  "proposal_id": "wrp_INV_3001_late_fee_waiver",
+  "events": [
+    {
+      "type": "capability_invoked",
+      "capability": "billing.propose_late_fee_waiver"
+    },
+    {
+      "type": "proposal_created",
+      "proposal_id": "wrp_INV_3001_late_fee_waiver"
+    }
+  ]
+}

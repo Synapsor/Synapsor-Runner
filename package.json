@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "bin": {
@@ -52,7 +52,9 @@
     "@synapsor-runner/protocol": "workspace:*",
     "@synapsor-runner/schema-inspector": "workspace:*",
     "@synapsor-runner/worker-core": "workspace:*",
+    "@synapsor/dsl": "workspace:*",
     "@synapsor/handler": "workspace:*",
+    "@synapsor/spec": "workspace:*",
     "@types/node": "^22.10.0",
     "esbuild": "0.28.1",
     "tsx": "^4.20.0",

@@ -1,0 +1,114 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "support external action intent",
+    "description": "Create an app-owned action intent without model-facing commit authority.",
+    "version": "0.1.0"
+  },
+  "resources": [
+    {
+      "name": "support_tickets",
+      "engine": "postgres",
+      "schema": "public",
+      "table": "tickets",
+      "type": "table",
+      "primary_key": "id",
+      "tenant_key": "tenant_id",
+      "conflict_key": "updated_at"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "support_operator",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID",
+          "required": true
+        },
+        {
+          "name": "principal",
+          "source": "environment",
+          "key": "SYNAPSOR_PRINCIPAL",
+          "required": true
+        }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "support.propose_ticket_reply",
+      "kind": "proposal",
+      "context": "support_operator",
+      "source": "support_postgres",
+      "subject": {
+        "resource": "support_tickets"
+      },
+      "args": {
+        "ticket_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "reply_body": {
+          "type": "string",
+          "required": true,
+          "max_length": 2000
+        }
+      },
+      "lookup": {
+        "id_from_arg": "ticket_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "status",
+        "subject",
+        "updated_at"
+      ],
+      "kept_out_fields": [
+        "private_staff_notes"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1,
+      "proposal": {
+        "action": "support.create_ticket_reply",
+        "allowed_fields": [
+          "reply_body"
+        ],
+        "patch": {
+          "reply_body": {
+            "from_arg": "reply_body"
+          }
+        },
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "approval": {
+          "mode": "human",
+          "required_role": "support_lead"
+        },
+        "writeback": {
+          "mode": "app_handler",
+          "executor": "support_reply_handler"
+        }
+      }
+    }
+  ],
+  "external_actions": [
+    {
+      "id": "intent_ticket_reply",
+      "action": "support.create_ticket_reply",
+      "handler": "support_reply_handler",
+      "idempotency_key": "proposal_id"
+    }
+  ]
+}

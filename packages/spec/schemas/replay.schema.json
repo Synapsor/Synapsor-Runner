@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/replay.schema.json",
+  "title": "Synapsor Replay Record",
+  "$ref": "synapsor-contract.schema.json#/$defs/replay"
+}

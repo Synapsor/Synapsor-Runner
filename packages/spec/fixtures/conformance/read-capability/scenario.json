@@ -1,0 +1,19 @@
+{
+  "trusted_context": {
+    "tenant_id": "acme",
+    "principal": "dev_test_user"
+  },
+  "invoke": {
+    "capability": "billing.inspect_invoice",
+    "args": {
+      "invoice_id": "INV-3001"
+    }
+  },
+  "source_row": {
+    "id": "INV-3001",
+    "tenant_id": "acme",
+    "late_fee_cents": 5500,
+    "updated_at": "2026-06-20T14:31:08Z",
+    "card_token": "tok_should_not_leak"
+  }
+}

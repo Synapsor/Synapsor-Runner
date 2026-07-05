@@ -1,0 +1,9 @@
+{
+  "id": "wrp_INV_3001_late_fee_waiver",
+  "capability": "billing.propose_late_fee_waiver",
+  "subject": {
+    "id": "INV-3001",
+    "tenant_id": "acme"
+  },
+  "status": "approved"
+}

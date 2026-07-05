@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { createMcpRuntime, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
 import {
@@ -30,6 +31,7 @@ import {
   type StoreStats,
 } from "@synapsor-runner/proposal-store";
 import { parseWritebackJob, protocolVersions, type ChangeSetV1, type ExecutionReceiptV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   generateRunnerConfigFromSpec,
   inspectDatabase,
@@ -50,6 +52,7 @@ import {
   type McpAuditReport,
   type RunnerConfig,
 } from "@synapsor-runner/worker-core";
+import { compileAgentDsl, validateAgentDsl } from "@synapsor/dsl";
 import { startLocalUiServer } from "./local-ui.js";
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
@@ -392,6 +395,8 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "init") return init(rest);
   if (command === "inspect") return inspect(rest);
   if (command === "config") return configCommand(rest);
+  if (command === "contract") return contractCommand(rest);
+  if (command === "dsl") return dslCommand(rest);
   if (command === "doctor") return doctor(rest);
   if (command === "validate") return validate(rest);
   if (command === "apply") return apply(rest);
@@ -1625,6 +1630,175 @@ async function configCommand(args: string[]): Promise<number> {
   return 2;
 }
 
+async function contractCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "validate") return contractValidate(rest);
+  if (subcommand === "normalize") return contractNormalize(rest);
+  if (subcommand === "bundle") return contractBundle(rest);
+  usage(["contract"]);
+  return 2;
+}
+
+async function dslCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "validate") return dslValidate(rest);
+  if (subcommand === "compile") return dslCompile(rest);
+  usage(["dsl"]);
+  return 2;
+}
+
+async function dslValidate(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("dsl validate requires <contract.synapsor>");
+  const source = await fs.readFile(target, "utf8");
+  const result = validateAgentDsl(source);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (result.ok) {
+    process.stdout.write(`dsl valid: ${target}\n`);
+  } else {
+    process.stdout.write(`dsl invalid: ${target}\n`);
+    for (const error of result.errors) process.stdout.write(`error ${error.line}:${error.column} ${error.code}: ${error.message}\n`);
+  }
+  return result.ok ? 0 : 1;
+}
+
+async function dslCompile(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("dsl compile requires <contract.synapsor>");
+  const source = await fs.readFile(target, "utf8");
+  const contract = compileAgentDsl(source);
+  const output = outputArg(args);
+  const text = `${JSON.stringify(contract, null, 2)}\n`;
+  if (output) {
+    await fs.writeFile(output, text, "utf8");
+    process.stdout.write(`wrote contract: ${output}\n`);
+  } else {
+    process.stdout.write(text);
+  }
+  return 0;
+}
+
+async function contractValidate(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("contract validate requires <synapsor.contract.json>");
+  const parsed = JSON.parse(await fs.readFile(target, "utf8"));
+  const result = validateContract(parsed);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (result.ok) {
+    process.stdout.write(`contract valid: ${target}\n`);
+    for (const warning of result.warnings) process.stdout.write(`warning ${warning.path} ${warning.code}: ${warning.message}\n`);
+  } else {
+    process.stdout.write(`contract invalid: ${target}\n`);
+    for (const error of result.errors) process.stdout.write(`error ${error.path} ${error.code}: ${error.message}\n`);
+  }
+  return result.ok ? 0 : 1;
+}
+
+async function contractNormalize(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("contract normalize requires <synapsor.contract.json>");
+  const parsed = JSON.parse(await fs.readFile(target, "utf8"));
+  const normalized = normalizeContract(parsed);
+  const output = outputArg(args);
+  const text = `${JSON.stringify(normalized, null, 2)}\n`;
+  if (output) {
+    await fs.writeFile(output, text, "utf8");
+    process.stdout.write(`wrote normalized contract: ${output}\n`);
+  } else {
+    process.stdout.write(text);
+  }
+  return 0;
+}
+
+async function contractBundle(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("contract bundle requires <synapsor.contract.json>");
+  const outDir = outputArg(args) ?? "synapsor-runner-bundle";
+  const parsed = JSON.parse(await fs.readFile(target, "utf8"));
+  const contract = normalizeContract(parsed);
+  const firstCapability = contract.capabilities[0];
+  const firstSource = firstCapability?.source ?? "local_postgres";
+  const engine = inferContractBundleEngine(contract);
+  const readUrlEnv = engine === "mysql" ? "SYNAPSOR_DATABASE_READ_URL" : "SYNAPSOR_DATABASE_READ_URL";
+  const runnerConfig = {
+    version: 1,
+    mode: contract.capabilities.some((capability) => capability.kind === "proposal") ? "review" : "read_only",
+    result_format: 2,
+    storage: { sqlite_path: "./.synapsor/local.db" },
+    contracts: ["./synapsor.contract.json"],
+    sources: {
+      [firstSource]: {
+        engine,
+        read_url_env: readUrlEnv,
+        statement_timeout_ms: 3000,
+      },
+    },
+  };
+  await fs.mkdir(outDir, { recursive: true });
+  await fs.mkdir(path.join(outDir, "mcp-client-examples"), { recursive: true });
+  await fs.writeFile(path.join(outDir, "synapsor.contract.json"), `${JSON.stringify(contract, null, 2)}\n`, "utf8");
+  await fs.writeFile(path.join(outDir, "synapsor.runner.json"), `${JSON.stringify(runnerConfig, null, 2)}\n`, "utf8");
+  await fs.writeFile(path.join(outDir, ".env.example"), bundleEnvExample(contract, readUrlEnv, engine), "utf8");
+  await fs.writeFile(path.join(outDir, "README.md"), bundleReadme(contract), "utf8");
+  await fs.writeFile(path.join(outDir, "mcp-client-examples", "generic-stdio.json"), `${JSON.stringify({
+    command: cliCommandName(),
+    args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
+  }, null, 2)}\n`, "utf8");
+  process.stdout.write(`created runner bundle: ${outDir}\n`);
+  process.stdout.write("No database URLs, write credentials, tokens, or customer rows were included.\n");
+  return 0;
+}
+
+function inferContractBundleEngine(contract: SynapsorContract): "postgres" | "mysql" {
+  const engine = contract.resources?.find((resource) => resource.engine === "postgres" || resource.engine === "mysql")?.engine;
+  return engine === "mysql" ? "mysql" : "postgres";
+}
+
+function bundleEnvExample(contract: SynapsorContract, readUrlEnv: string, engine: "postgres" | "mysql"): string {
+  const context = contract.contexts[0];
+  const tenantBinding = context?.bindings.find((binding) => binding.name === context.tenant_binding) ?? context?.bindings.find((binding) => binding.name === "tenant_id");
+  const principalBinding = context?.bindings.find((binding) => binding.name === context.principal_binding) ?? context?.bindings.find((binding) => binding.name === "principal");
+  return [
+    "# Synapsor Runner bundle environment.",
+    "# Fill these locally. Do not commit real values.",
+    `# Set ${readUrlEnv} to your read-only ${engine === "mysql" ? "MySQL" : "Postgres"} URL.`,
+    `${readUrlEnv}=`,
+    `${tenantBinding?.key ?? "SYNAPSOR_TENANT_ID"}=acme`,
+    `${principalBinding?.key ?? "SYNAPSOR_PRINCIPAL"}=local_operator`,
+    "",
+  ].join("\n");
+}
+
+function bundleReadme(contract: SynapsorContract): string {
+  const contractName = contract.metadata?.name ?? "Synapsor contract";
+  return [
+    `# ${contractName} Runner Bundle`,
+    "",
+    "This bundle lets you run a Cloud/exported Synapsor contract locally with Synapsor Runner.",
+    "",
+    "It includes:",
+    "",
+    "- `synapsor.contract.json`: canonical Synapsor contract;",
+    "- `synapsor.runner.json`: local runtime wiring with env-var placeholders;",
+    "- `.env.example`: placeholder runtime values only;",
+    "- `mcp-client-examples/`: client snippets with command paths only.",
+    "",
+    "It does not include database passwords, write credentials, bearer tokens, or table rows.",
+    "",
+    "## Run Locally",
+    "",
+    "```bash",
+    "cp .env.example .env",
+    "# edit .env, then export the values in your shell",
+    `${cliCommandName()} contract validate ./synapsor.contract.json`,
+    `${cliCommandName()} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db`,
+    "```",
+    "",
+  ].join("\n");
+}
+
 async function configValidate(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
   const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -2653,6 +2827,23 @@ async function localDoctorStoreStats(storePath?: string): Promise<LocalDoctorRep
 }
 
 async function validate(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (target) {
+    const parsed = JSON.parse(await fs.readFile(target, "utf8"));
+    if (isSynapsorContractLike(parsed)) {
+      const result = validateContract(parsed);
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else if (result.ok) {
+        process.stdout.write(`contract valid: ${target}\n`);
+        for (const warning of result.warnings) process.stdout.write(`warning ${warning.path} ${warning.code}: ${warning.message}\n`);
+      } else {
+        process.stdout.write(`contract invalid: ${target}\n`);
+        for (const error of result.errors) process.stdout.write(`error ${error.path} ${error.code}: ${error.message}\n`);
+      }
+      return result.ok ? 0 : 1;
+    }
+  }
   const job = await readJob(args);
   parseWritebackJob(job);
   process.stdout.write("job valid\n");
@@ -3601,8 +3792,56 @@ async function runnerCommand(args: string[]): Promise<number> {
 async function cloud(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "connect") return cloudConnect(rest);
+  if (subcommand === "push") return cloudPush(rest);
   usage();
   return 2;
+}
+
+async function cloudPush(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("cloud push requires <synapsor.contract.json>");
+  const parsed = JSON.parse(await fs.readFile(target, "utf8"));
+  const contract = normalizeContract(parsed);
+  const payload = {
+    schema_version: "synapsor.cloud-contract-push.v0.1",
+    contract,
+    summary: contractSummary(contract),
+    workspace: optionalArg(args, "--workspace") ?? process.env.SYNAPSOR_WORKSPACE_ID,
+    name: optionalArg(args, "--name") ?? contract.metadata?.name,
+    pushed_at: new Date().toISOString(),
+  };
+  const dryRun = args.includes("--dry-run");
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ ok: dryRun, dry_run: dryRun, payload }, null, 2)}\n`);
+  } else {
+    process.stdout.write("Synapsor Cloud contract push preview\n");
+    process.stdout.write(`Contract: ${target}\n`);
+    process.stdout.write(`Contexts: ${payload.summary.contexts}\n`);
+    process.stdout.write(`Capabilities: ${payload.summary.capabilities}\n`);
+    process.stdout.write(`Workflows: ${payload.summary.workflows}\n`);
+    process.stdout.write(`Proposal capabilities: ${payload.summary.proposal_capabilities}\n`);
+    process.stdout.write(`Kept-out fields: ${payload.summary.kept_out_fields}\n`);
+  }
+  if (dryRun) {
+    if (!args.includes("--json")) process.stdout.write("Dry run only. No Cloud upload attempted.\n");
+    return 0;
+  }
+  const apiUrl = optionalArg(args, "--api-url") ?? process.env.SYNAPSOR_CLOUD_BASE_URL;
+  const token = optionalArg(args, "--token") ?? process.env.SYNAPSOR_CLOUD_TOKEN ?? process.env.SYNAPSOR_RUNNER_TOKEN;
+  if (!apiUrl || !token) {
+    throw new Error("cloud push upload requires --dry-run, or real --api-url plus --token/SYNAPSOR_CLOUD_TOKEN after the Cloud registry endpoint is available.");
+  }
+  throw new Error("cloud push upload is not wired to a Cloud registry endpoint yet. Use --dry-run for local validation; do not treat this as uploaded.");
+}
+
+function contractSummary(contract: SynapsorContract): Record<string, number> {
+  return {
+    contexts: contract.contexts.length,
+    capabilities: contract.capabilities.length,
+    workflows: contract.workflows?.length ?? 0,
+    proposal_capabilities: contract.capabilities.filter((capability) => capability.kind === "proposal").length,
+    kept_out_fields: contract.capabilities.reduce((count, capability) => count + (capability.kept_out_fields?.length ?? 0), 0),
+  };
 }
 
 async function cloudConnect(args: string[]): Promise<number> {
@@ -5033,7 +5272,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   if (!await fileExists(configPath)) {
     throw new Error(`MCP tool preview could not find ${configPath}.\n\nWhy it matters:\nThe MCP server needs a reviewed config before it can expose semantic tools.\n\nFix:\nRun ${cliCommandName()} onboard db --from-env DATABASE_URL, or pass --config <path>.`);
   }
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const parsed = await readRuntimeConfig(configPath);
   const runtime = createMcpRuntime(parsed, { storePath });
   try {
     const tools = runtime.listTools();
@@ -6915,8 +7154,12 @@ function missingLocalStoreError(storePath: string): Error {
 }
 
 async function readRuntimeConfig(configPath: string): Promise<RuntimeConfig> {
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
-  return parsed;
+  return loadRuntimeConfigFromFile(configPath);
+}
+
+function isSynapsorContractLike(value: unknown): boolean {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) &&
+    ((value as { kind?: unknown }).kind === "SynapsorContract" || (value as { spec_version?: unknown }).spec_version === "0.1");
 }
 
 function envWithDemoDefaults(config: RuntimeConfig, configPath: string): NodeJS.ProcessEnv {
@@ -8225,6 +8468,8 @@ function isKnownTopLevelCommand(command: string): boolean {
     "init",
     "inspect",
     "config",
+    "contract",
+    "dsl",
     "doctor",
     "validate",
     "apply",
@@ -8279,6 +8524,9 @@ Commands:
   up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
   mcp          Serve safe semantic tools over MCP
+  contract     Validate and normalize canonical Synapsor contract files
+  dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
+  cloud        Register runner metadata or dry-run contract push to Cloud
   onboard      One-command own-database setup
   smoke        Test generated tool calls before wiring an MCP client
   tools        List model-facing MCP tools and aliases
@@ -8304,12 +8552,40 @@ Examples:
   ${cmd} onboard db --from-env DATABASE_URL
   ${cmd} inspect --from-env DATABASE_URL
   ${cmd} init --wizard --from-env DATABASE_URL
+  ${cmd} contract validate ./synapsor.contract.json
+  ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
+  ${cmd} dsl compile ./contract.synapsor --out ./synapsor.contract.json
+  ${cmd} cloud push ./synapsor.contract.json --dry-run
   ${cmd} smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} handler template node-fastify --output ./synapsor-writeback-handler.mjs
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} propose billing.propose_late_fee_waiver --sample
   ${cmd} audit ./synapsor.runner.json
+`,
+    contract: `Usage:
+  ${cmd} contract validate ./synapsor.contract.json [--json]
+  ${cmd} contract normalize ./synapsor.contract.json [--out ./synapsor.contract.normalized.json]
+
+Validate or normalize canonical Synapsor contract files. Contracts describe
+contexts, capabilities, workflows, evidence, proposal, receipt, and replay
+semantics. Local database URLs, ports, and store paths stay in runner config.
+`,
+    dsl: `Usage:
+  ${cmd} dsl validate ./contract.synapsor [--json]
+  ${cmd} dsl compile ./contract.synapsor --out ./synapsor.contract.json
+
+Compile the preview SQL-like Synapsor authoring DSL into canonical
+@synapsor/spec JSON. Unsupported Cloud-only/generated clauses fail explicitly
+instead of being ignored.
+`,
+    cloud: `Usage:
+  ${cmd} cloud connect --config ./synapsor.cloud.json
+  ${cmd} cloud push ./synapsor.contract.json --dry-run [--workspace <id>] [--name <registry-name>]
+
+cloud push validates and normalizes the contract locally, then prints the
+payload summary. Upload is intentionally not reported as successful until a
+real Cloud registry endpoint is wired.
 `,
     up: `Usage:
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio|streamable-http]
