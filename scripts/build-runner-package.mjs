@@ -30,6 +30,12 @@ const workspaceAliasPlugin = {
   },
 };
 
+// Docker-backed demos build with the repo bind-mounted. On GitHub Actions that
+// can leave dist files owned by the container user, so remove old bundle files
+// before esbuild tries to overwrite them.
+await rm(outfile, { force: true });
+await rm(binfile, { force: true });
+
 await build({
   entryPoints: [entryPoint],
   outfile,

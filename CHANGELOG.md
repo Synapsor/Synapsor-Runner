@@ -4,6 +4,17 @@
 
 No unreleased changes yet.
 
+## 0.1.4
+
+### Public Repository Metadata
+
+- Points the packaged npm README and repository metadata at the public GitHub
+  repository: `https://github.com/Synapsor/Synapsor-Runner`.
+- Pins the CI badge to the `main` branch so Dependabot PR failures do not make
+  the public project front door look broken.
+- Adds Dependabot guardrails so semver-major dependency updates are deliberate
+  migrations instead of automatic public PR noise.
+
 ## 0.1.3
 
 ### Public npm DX
