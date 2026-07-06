@@ -8,6 +8,9 @@ No unreleased changes yet.
 
 ### Contract Compatibility
 
+- Publishes the canonical contract packages as `@synapsor/spec@0.1.0` and
+  `@synapsor/dsl@0.1.0`, with `@synapsor/runner@0.1.2` available on the `next`
+  npm tag for round-trip verification before promotion.
 - Documents the canonical `synapsor.contract.json` path for contracts produced
   by the DSL, Cloud, or the C++ exporter.
 - Adds OSS-side conformance notes for C++/Cloud export snapshots that validate
