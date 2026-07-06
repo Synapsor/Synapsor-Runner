@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/spec",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Canonical Synapsor contract schemas, types, validation, and conformance fixtures.",
   "license": "Apache-2.0",
   "type": "module",
@@ -33,5 +33,14 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Synapsor/Synapsor-Runner.git",
+    "directory": "packages/spec"
+  },
+  "homepage": "https://github.com/Synapsor/Synapsor-Runner/tree/main/packages/spec#readme",
+  "bugs": {
+    "url": "https://github.com/Synapsor/Synapsor-Runner/issues"
   }
 }

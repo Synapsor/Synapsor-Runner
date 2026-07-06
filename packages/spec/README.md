@@ -7,6 +7,12 @@ Cloud/C++. The contract describes trusted context, business resources,
 capabilities, workflows, policies, evidence, proposals, receipts, replay, and
 external action intents.
 
+Part of the Synapsor OSS toolchain:
+
+- [`@synapsor/runner`](https://www.npmjs.com/package/@synapsor/runner): local MCP runtime that serves validated contracts.
+- [`@synapsor/dsl`](https://www.npmjs.com/package/@synapsor/dsl): SQL-like authoring layer that compiles to this spec.
+- [Source and issues on GitHub](https://github.com/Synapsor/Synapsor-Runner).
+
 It does not contain local runtime wiring:
 
 - no database URLs;

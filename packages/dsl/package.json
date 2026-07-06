@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/dsl",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Preview SQL-like Synapsor authoring DSL compiler for canonical @synapsor/spec contracts.",
   "license": "Apache-2.0",
   "type": "module",
@@ -38,5 +38,14 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Synapsor/Synapsor-Runner.git",
+    "directory": "packages/dsl"
+  },
+  "homepage": "https://github.com/Synapsor/Synapsor-Runner/tree/main/packages/dsl#readme",
+  "bugs": {
+    "url": "https://github.com/Synapsor/Synapsor-Runner/issues"
   }
 }

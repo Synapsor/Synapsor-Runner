@@ -5,6 +5,41 @@
 The DSL is not the source of truth. It compiles to `@synapsor/spec` JSON, and
 the generated JSON is validated by `@synapsor/spec`.
 
+Part of the Synapsor OSS toolchain:
+
+- [`@synapsor/runner`](https://www.npmjs.com/package/@synapsor/runner): local MCP runtime that serves compiled contracts.
+- [`@synapsor/spec`](https://www.npmjs.com/package/@synapsor/spec): canonical contract schemas, types, and validation.
+- [Source and issues on GitHub](https://github.com/Synapsor/Synapsor-Runner).
+
+## Example
+
+```sql
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY billing.inspect_invoice
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP invoice_id BY id
+  ARG invoice_id STRING REQUIRED MAX 128
+  ALLOW READ id, tenant_id, status, late_fee_cents, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+END
+```
+
+A longer worked contract lives in
+[`examples/billing-late-fee.synapsor`](https://github.com/Synapsor/Synapsor-Runner/blob/main/packages/dsl/examples/billing-late-fee.synapsor),
+and the runner README walks the full compile → validate → bundle → serve flow.
+
 ## CLI
 
 ```bash
