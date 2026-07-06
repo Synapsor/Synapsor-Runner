@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@synapsor/runner.svg)](https://www.npmjs.com/package/@synapsor/runner)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ci](https://github.com/synapsor-ai/synapsor-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/synapsor-ai/synapsor-runner/actions/workflows/ci.yml)
+[![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml)
 
 Stop giving AI agents `execute_sql()`. Give them reviewed business actions.
 

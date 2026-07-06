@@ -70,7 +70,7 @@
   "homepage": "https://synapsor.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/synapsor-ai/synapsor-runner.git"
+    "url": "git+https://github.com/Synapsor/Synapsor-Runner.git"
   },
   "bugs": {
     "url": "https://synapsor.ai/contact"
