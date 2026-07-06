@@ -53,6 +53,7 @@ const CAPABILITY_KEYS = new Set([
   "transition_guards",
   "conflict_guard",
   "approval",
+  "writeback",
   "single_tenant_dev_ack",
 ]);
 const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "single_tenant_dev"]);
@@ -63,6 +64,8 @@ const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role"]);
+const WRITEBACK_KEYS = new Set(["mode", "executor"]);
+const WRITEBACK_MODES = new Set(["direct_sql", "app_handler", "cloud_worker", "none"]);
 
 const MODEL_CONTROLLED_TRUST_FIELDS = new Set([
   "tenant_id",
@@ -251,9 +254,7 @@ function validateWritebackReadiness(
     const sourceName = isNonEmptyString(capability.source) ? capability.source : undefined;
     const source = sourceName ? sources[sourceName] : undefined;
     if (!sourceName || !isRecord(source)) return;
-    const executor = isNonEmptyString(capability.executor) ? capability.executor : "sql_update";
-    const directSql = executor === "sql_update";
-    if (!directSql) return;
+    if (capabilityWritebackMode(capability) !== "direct_sql") return;
     if (source.read_only === true) {
       errors.push({
         path: `$.capabilities[${index}].executor`,
@@ -270,6 +271,14 @@ function validateWritebackReadiness(
       });
     }
   });
+}
+
+function capabilityWritebackMode(capability: JsonRecord): string {
+  if (isRecord(capability.writeback) && typeof capability.writeback.mode === "string" && WRITEBACK_MODES.has(capability.writeback.mode)) {
+    return capability.writeback.mode;
+  }
+  if (isNonEmptyString(capability.executor) && capability.executor !== "sql_update") return "app_handler";
+  return "direct_sql";
 }
 
 function validateCloud(value: unknown, mode: unknown, strict: boolean, errors: ConfigIssue[]): void {
@@ -526,7 +535,21 @@ function validateCapabilities(
   const sourceNames = isRecord(sources) ? new Set(Object.keys(sources)) : new Set<string>();
   const contextNames = isRecord(contexts) ? new Set(Object.keys(contexts)) : new Set<string>();
   const executorNames = isRecord(executors) ? new Set(Object.keys(executors)) : new Set<string>();
+  const capabilityNames = new Map<string, number>();
   value.forEach((capability, index) => validateCapability(capability, index, sourceNames, contextNames, executorNames, strict, errors, warnings));
+  value.forEach((capability, index) => {
+    if (!isRecord(capability) || !isQualifiedName(capability.name)) return;
+    const previous = capabilityNames.get(capability.name);
+    if (previous !== undefined) {
+      errors.push({
+        path: `$.capabilities[${index}].name`,
+        code: "DUPLICATE_CAPABILITY_NAME",
+        message: `Capability ${capability.name} is already defined at $.capabilities[${previous}]. Capability names must be unique.`,
+      });
+      return;
+    }
+    capabilityNames.set(capability.name, index);
+  });
 }
 
 function validateCapability(
@@ -570,6 +593,7 @@ function validateCapability(
       errors.push({ path: `${path}.executor`, code: "UNKNOWN_EXECUTOR", message: "Capability executor must be sql_update or reference a configured executor." });
     }
   }
+  validateCapabilityWriteback(value, path, executorNames, strict, errors);
   validateTarget(value.target, `${path}.target`, strict, errors, warnings);
   validateArgs(value.args, `${path}.args`, strict, errors);
   validateLookup(value.lookup, `${path}.lookup`, strict, errors);
@@ -579,6 +603,49 @@ function validateCapability(
   }
   if (value.kind === "proposal") {
     validateProposalCapability(value, path, strict, errors);
+  } else if (value.writeback !== undefined) {
+    errors.push({ path: `${path}.writeback`, code: "WRITEBACK_ONLY_FOR_PROPOSAL", message: "writeback is only valid on proposal capabilities." });
+  }
+}
+
+function validateCapabilityWriteback(
+  capability: JsonRecord,
+  path: string,
+  executorNames: Set<string>,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (capability.writeback === undefined) return;
+  if (!isRecord(capability.writeback)) {
+    errors.push({ path: `${path}.writeback`, code: "WRITEBACK_NOT_OBJECT", message: "writeback must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(capability.writeback, WRITEBACK_KEYS, `${path}.writeback`, errors);
+  if (!WRITEBACK_MODES.has(String(capability.writeback.mode))) {
+    errors.push({ path: `${path}.writeback.mode`, code: "INVALID_WRITEBACK_MODE", message: "writeback.mode must be direct_sql, app_handler, cloud_worker, or none." });
+    return;
+  }
+  const mode = String(capability.writeback.mode);
+  const executor = isNonEmptyString(capability.writeback.executor)
+    ? capability.writeback.executor
+    : isNonEmptyString(capability.executor) ? capability.executor : undefined;
+  if (mode === "direct_sql") {
+    if (executor !== undefined && executor !== "sql_update") {
+      errors.push({ path: `${path}.writeback.executor`, code: "WRITEBACK_EXECUTOR_MISMATCH", message: "direct_sql writeback cannot name an app-owned executor." });
+    }
+    return;
+  }
+  if (mode === "none") {
+    if (executor !== undefined) {
+      errors.push({ path: `${path}.writeback.executor`, code: "WRITEBACK_EXECUTOR_MISMATCH", message: "WRITEBACK NONE must not name an executor." });
+    }
+    return;
+  }
+  if (mode === "cloud_worker") return;
+  if (!executor || executor === "sql_update") {
+    errors.push({ path: `${path}.writeback.executor`, code: "WRITEBACK_EXECUTOR_REQUIRED", message: "app_handler writeback must name a configured executor." });
+  } else if (!executorNames.has(executor)) {
+    errors.push({ path: `${path}.writeback.executor`, code: "UNKNOWN_EXECUTOR", message: "app_handler writeback executor must reference a configured executor." });
   }
 }
 

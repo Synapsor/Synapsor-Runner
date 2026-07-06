@@ -300,6 +300,34 @@ Use an app-owned executor when an approved proposal needs richer business work:
 creating a credit row, inserting an outbox event, updating multiple app tables,
 or calling your own service.
 
+In DSL, keep the reviewed business contract portable and name the executor:
+
+```sql
+CREATE CAPABILITY billing.propose_plan_credit
+  CONTEXT trusted_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ARG invoice_id STRING REQUIRED
+  ARG amount_cents NUMBER REQUIRED
+  ARG reason STRING REQUIRED
+  LOOKUP invoice_id
+  VISIBLE id, tenant_id, customer_id, status, credit_requested_cents, credit_reason, updated_at
+  PROPOSE ACTION billing.grant_plan_credit
+  ALLOW WRITE credit_requested_cents, credit_reason
+  PATCH credit_requested_cents = ARG amount_cents
+  PATCH credit_reason = ARG reason
+  CONFLICT GUARD updated_at
+  APPROVAL ROLE billing_lead
+  WRITEBACK APP HANDLER EXECUTOR billing_handler
+END
+```
+
+`billing_handler` is contract content. Its URL, bearer-token env var, signing
+secret env var, and timeout stay in `synapsor.runner.json` so credentials never
+enter the portable contract:
+
 ```json
 "executors": {
   "billing_handler": {
@@ -316,7 +344,7 @@ or calling your own service.
 }
 ```
 
-Then reference it from a proposal capability:
+For legacy embedded JSON capabilities, reference the same executor directly:
 
 ```json
 {

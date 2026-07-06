@@ -23,6 +23,7 @@ export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
 export type ContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
 export type CapabilityKind = "read" | "proposal";
+export type RuntimeWritebackMode = "direct_sql" | "app_handler" | "cloud_worker" | "none";
 export type ToolNameStyle = "canonical" | "openai" | "both";
 export type ResultFormat = 1 | 2;
 export type ToolNameExposure = {
@@ -37,6 +38,7 @@ export type RuntimeSourceConfig = {
   engine: SourceEngine;
   read_url_env: string;
   write_url_env?: string;
+  read_only?: boolean;
   statement_timeout_ms?: number;
 };
 
@@ -86,6 +88,7 @@ export type RuntimeCapabilityConfig = {
   transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: { mode?: "human" | "policy" | string; required_role?: string };
+  writeback?: { mode: RuntimeWritebackMode; executor?: string };
 };
 
 export type RuntimeConfig = {
@@ -267,21 +270,33 @@ export function loadRuntimeConfigFromFile(
 
 export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cwd()): RuntimeConfig {
   if (!Array.isArray(config.contracts) || config.contracts.length === 0) return config;
+  const seenCapabilities = new Map<string, string>();
+  for (const [index, capability] of (config.capabilities ?? []).entries()) {
+    rememberCapabilityName(seenCapabilities, capability.name, `embedded capabilities[${index}]`);
+  }
   const resolved: RuntimeConfig = {
     ...config,
     contexts: { ...(config.contexts ?? {}) },
     capabilities: [...(config.capabilities ?? [])],
   };
-  for (const contractPath of config.contracts) {
+  for (const [contractIndex, contractPath] of config.contracts.entries()) {
     const fullPath = path.resolve(baseDir, contractPath);
     const contract = normalizeContract(JSON.parse(fs.readFileSync(fullPath, "utf8")));
-    mergeContractIntoRuntimeConfig(resolved, contract);
+    mergeContractIntoRuntimeConfig(resolved, contract, `contracts[${contractIndex}] ${contractPath}`, seenCapabilities);
   }
   delete resolved.contracts;
   return resolved;
 }
 
-function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: SynapsorContract): void {
+function rememberCapabilityName(seen: Map<string, string>, name: string, origin: string): void {
+  const previous = seen.get(name);
+  if (previous) {
+    throw new Error(`Duplicate capability ${name}: ${origin} conflicts with ${previous}. Capability names must be unique across embedded runner config and referenced contracts.`);
+  }
+  seen.set(name, origin);
+}
+
+function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: SynapsorContract, origin: string, seenCapabilities: Map<string, string>): void {
   const resources = new Map((contract.resources ?? []).map((resource) => [resource.name, resource]));
   for (const context of contract.contexts) {
     if (!config.contexts) config.contexts = {};
@@ -292,7 +307,8 @@ function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: Synapso
     if (context) config.trusted_context = runtimeContextFromSpec(context);
   }
   if (!config.capabilities) config.capabilities = [];
-  for (const capability of contract.capabilities) {
+  for (const [capabilityIndex, capability] of contract.capabilities.entries()) {
+    rememberCapabilityName(seenCapabilities, capability.name, `${origin} capabilities[${capabilityIndex}]`);
     config.capabilities.push(runtimeCapabilityFromSpec(capability, resources, config));
   }
 }
@@ -346,7 +362,11 @@ function runtimeCapabilityFromSpec(
     runtime.allowed_columns = capability.proposal.allowed_fields;
     runtime.conflict_guard = capability.proposal.conflict_guard;
     runtime.approval = capability.proposal.approval;
-    if (capability.proposal.writeback?.mode && capability.proposal.writeback.mode !== "direct_sql" && capability.proposal.writeback.executor) {
+    runtime.writeback = {
+      mode: capability.proposal.writeback?.mode ?? "direct_sql",
+      ...(capability.proposal.writeback?.executor ? { executor: capability.proposal.writeback.executor } : {}),
+    };
+    if (capability.proposal.writeback?.executor) {
       runtime.executor = capability.proposal.writeback.executor;
     }
   }
@@ -540,7 +560,7 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
     throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
   }
 
-  const authToken = devNoAuth ? undefined : env[authTokenEnv];
+  const authToken = devNoAuth ? undefined : envValue(env, authTokenEnv);
   if (!devNoAuth && !authToken) {
     throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. HTTP MCP requires bearer auth by default.`);
   }
@@ -610,7 +630,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
   }
 
-  const authToken = devNoAuth ? undefined : env[authTokenEnv];
+  const authToken = devNoAuth ? undefined : envValue(env, authTokenEnv);
   if (!devNoAuth && !authToken) {
     throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. Streamable HTTP MCP requires bearer auth by default.`);
   }
@@ -1094,8 +1114,8 @@ function listedLocalCapabilities(config: RuntimeConfig): RuntimeCapabilityConfig
 
 function createCloudClient(config: RuntimeConfig, env: NodeJS.ProcessEnv): ControlPlaneClient {
   const cloud = requireCloudConfig(config);
-  const baseUrl = env[cloud.base_url_env];
-  const runnerToken = env[cloud.runner_token_env];
+  const baseUrl = envValue(env, cloud.base_url_env);
+  const runnerToken = envValue(env, cloud.runner_token_env);
   if (!baseUrl) throw new McpRuntimeError("CLOUD_BASE_URL_MISSING", `${cloud.base_url_env} is not set.`);
   if (!runnerToken) throw new McpRuntimeError("CLOUD_RUNNER_TOKEN_MISSING", `${cloud.runner_token_env} is not set.`);
   return new ControlPlaneClient({
@@ -1200,6 +1220,9 @@ async function callConfiguredTool(input: {
 
   if (capability.kind === "proposal" && input.config.mode === "read_only") {
     throw new McpRuntimeError("PROPOSALS_DISABLED", "This runner is in read_only mode; proposal tools are disabled.");
+  }
+  if (capability.kind === "proposal" && input.config.mode === "review") {
+    assertProposalWritebackResolvable(input.config, capability);
   }
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
@@ -1391,7 +1414,11 @@ function resultEnvelopeFromLegacy(
     const targetType = typeof target?.type === "string" ? target.type : capability?.target.table ?? "object";
     const targetId = target?.id !== undefined ? String(target.id) : "unknown";
     const executor = writebackExecutorName(legacy.writeback);
-    const writebackMode = executor && executor !== "sql_update" && executor !== "trusted_worker_required" ? "app_handler" : "direct_update";
+    const writebackMode = executor === "read_only" || executor === "none"
+      ? "proposal_only"
+      : executor && executor !== "sql_update" && executor !== "trusted_worker_required"
+        ? "app_handler"
+        : "direct_update";
     return {
       ok: true,
       summary: `Created proposal ${proposalId} for ${targetType} ${targetId}. Source database changed: no.`,
@@ -1447,6 +1474,47 @@ function resultEnvelopeFromLegacy(
 function writebackExecutorName(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   return typeof value.executor === "string" ? value.executor : typeof value.mode === "string" ? value.mode : undefined;
+}
+
+export function capabilityWritebackMode(capability: RuntimeCapabilityConfig): RuntimeWritebackMode {
+  const mode = capability.writeback?.mode;
+  if (mode === "direct_sql" || mode === "app_handler" || mode === "cloud_worker" || mode === "none") return mode;
+  if (capability.executor && capability.executor !== "sql_update") return "app_handler";
+  return "direct_sql";
+}
+
+export function capabilityWritebackExecutor(capability: RuntimeCapabilityConfig): string | undefined {
+  return capability.writeback?.executor ?? capability.executor;
+}
+
+export function assertProposalWritebackResolvable(config: RuntimeConfig, capability: RuntimeCapabilityConfig): void {
+  if (capability.kind !== "proposal") return;
+  const mode = capabilityWritebackMode(capability);
+  if (mode === "none" || mode === "cloud_worker") return;
+  if (mode === "direct_sql") {
+    const source = config.sources?.[capability.source];
+    if (!source) {
+      throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares DIRECT SQL writeback but source ${capability.source} is not configured.`);
+    }
+    if (source.read_only === true) {
+      throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares DIRECT SQL writeback but source ${capability.source} is read-only.`);
+    }
+    if (!source.write_url_env) {
+      throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares DIRECT SQL writeback but source ${capability.source} has no write_url_env.`);
+    }
+    return;
+  }
+  const executorName = capabilityWritebackExecutor(capability);
+  if (!executorName || executorName === "sql_update") {
+    throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares HANDLER writeback but has no executor name.`);
+  }
+  const executor = config.executors?.[executorName];
+  if (!isRecord(executor)) {
+    throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares HANDLER writeback but executor ${executorName} is not configured.`);
+  }
+  if (executor.type !== "http_handler" && executor.type !== "command_handler") {
+    throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares HANDLER writeback but executor ${executorName} is not an app-owned handler.`);
+  }
 }
 
 function evidenceHandle(bundleId: string): ResultEnvelopeV2["evidence"] {
@@ -1536,6 +1604,15 @@ function buildChangeSet(input: {
   enforcePatchGuards(input.capability, before, patch);
   const after = { ...before, ...patch };
   const guard = expectedVersionGuard(input.capability, before);
+  const writebackMode = capabilityWritebackMode(input.capability);
+  const changeSetWritebackMode = writebackMode === "none" ? "read_only" : "trusted_worker_required";
+  const writebackExecutor = writebackMode === "none"
+    ? "none"
+    : writebackMode === "cloud_worker"
+      ? "cloud_worker"
+      : writebackMode === "direct_sql"
+        ? "sql_update"
+        : capabilityWritebackExecutor(input.capability);
   const proposalCore = {
     schema_version: protocolVersions.changeSet,
     proposal_id: stableId("wrp", {
@@ -1583,8 +1660,8 @@ function buildChangeSet(input: {
     },
     writeback: {
       status: "not_applied",
-      mode: "trusted_worker_required",
-      executor: input.capability.executor ?? "sql_update",
+      mode: changeSetWritebackMode,
+      executor: writebackExecutor,
     },
     source_database_mutated: false,
     created_at: new Date().toISOString(),
@@ -1618,7 +1695,7 @@ async function readCurrentRow(input: {
 }
 
 async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
-  const connectionString = input.env[input.source.read_url_env];
+  const connectionString = envValue(input.env, input.source.read_url_env);
   if (!connectionString) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const pool = new Pool({ connectionString });
   const client = await pool.connect();
@@ -1641,7 +1718,7 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
 }
 
 async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
-  const uri = input.env[input.source.read_url_env];
+  const uri = envValue(input.env, input.source.read_url_env);
   if (!uri) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const connection = await mysql.createConnection({ uri, dateStrings: true });
   try {
@@ -1703,8 +1780,8 @@ function resolveTrustedContext(config: RuntimeConfig, env: NodeJS.ProcessEnv, ca
   if (provider === "environment") {
     const tenantEnv = String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(values.principal_env ?? "SYNAPSOR_PRINCIPAL");
-    const tenant = env[tenantEnv];
-    const principal = env[principalEnv];
+    const tenant = envValue(env, tenantEnv);
+    const principal = envValue(env, principalEnv);
     if (!tenant || !principal) throw new McpRuntimeError("TRUSTED_BINDING_MISSING", `${tenantEnv} and ${principalEnv} must be set.`);
     return { tenant_id: tenant, principal, provenance: "environment" };
   }
@@ -1718,8 +1795,20 @@ function resolveTrustedContext(config: RuntimeConfig, env: NodeJS.ProcessEnv, ca
 }
 
 function valueFromEnvOrLiteral(envName: unknown, literal: unknown, env: NodeJS.ProcessEnv): string | undefined {
-  if (typeof envName === "string" && env[envName]) return env[envName];
-  return typeof literal === "string" && literal.length > 0 ? literal : undefined;
+  if (typeof envName === "string") {
+    const value = envValue(env, envName);
+    if (value) return value;
+  }
+  if (typeof literal !== "string") return undefined;
+  const value = literal.trim();
+  return value.length > 0 ? value : undefined;
+}
+
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name];
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function validateToolArgs(capability: RuntimeCapabilityConfig, args: Record<string, unknown>): void {

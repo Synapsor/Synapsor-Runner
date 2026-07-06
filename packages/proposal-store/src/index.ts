@@ -1,4 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import {
   parseChangeSet,
   parseExecutionReceipt,
@@ -237,6 +239,9 @@ export class ProposalStore {
 
   constructor(path = ":memory:") {
     this.path = path;
+    if (path !== ":memory:") {
+      mkdirSync(dirname(resolve(path)), { recursive: true });
+    }
     this.db = new DatabaseSync(path);
     this.migrate();
   }
@@ -969,6 +974,10 @@ export class ProposalStore {
     const changeSet = proposal.change_set;
     if (changeSet.writeback.mode !== "trusted_worker_required") {
       throw new ProposalStoreError("WRITEBACK_NOT_REQUIRED", `proposal ${proposalId} uses ${changeSet.writeback.mode}`);
+    }
+    const writebackExecutor = (changeSet.writeback as { executor?: unknown }).executor;
+    if (typeof writebackExecutor === "string" && writebackExecutor !== "sql_update" && writebackExecutor !== "trusted_worker_required") {
+      throw new ProposalStoreError("WRITEBACK_NOT_DIRECT_SQL", `proposal ${proposalId} uses app-owned or non-local writeback executor ${writebackExecutor}`);
     }
     if (changeSet.source.kind !== "external_postgres" && changeSet.source.kind !== "external_mysql") {
       throw new ProposalStoreError("WRITEBACK_TARGET_NOT_EXTERNAL", `proposal ${proposalId} targets ${changeSet.source.kind}`);

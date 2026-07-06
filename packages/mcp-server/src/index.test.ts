@@ -232,6 +232,37 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("trims trusted context env values at the binding layer", async () => {
+    const seen: Array<{ tenant: string; principal: string }> = [];
+    const runtime = createMcpRuntime(config, {
+      env: {
+        APP_POSTGRES_READ_URL: " postgresql://reader@example/app ",
+        SYNAPSOR_TENANT_ID: " acme ",
+        SYNAPSOR_PRINCIPAL: " support_agent_17 ",
+      } as NodeJS.ProcessEnv,
+      readRow: async (input) => {
+        seen.push({
+          tenant: input.context.tenant_id,
+          principal: input.context.principal,
+        });
+        return { row: fixtureRow, rowCount: 1 };
+      },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result.trusted_context).toMatchObject({
+        tenant_id: "acme",
+        principal: "support_agent_17",
+      });
+      expect(seen[0]).toMatchObject({
+        tenant: "acme",
+        principal: "support_agent_17",
+      });
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("returns result envelope v2 for proposal success", async () => {
     const runtime = createMcpRuntime({ ...config, result_format: 2 }, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
     try {

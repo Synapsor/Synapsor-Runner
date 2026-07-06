@@ -4,6 +4,23 @@
 
 No unreleased changes yet.
 
+## 0.1.7
+
+### Contract Writeback Resolution
+
+- Fixes contract-authored proposal capabilities loaded through `contracts: []`
+  so `apply` resolves the same reviewed capability catalog used by serve,
+  tools, propose, and doctor.
+- Rejects duplicate capability names across embedded runner config and
+  referenced contracts instead of silently shadowing a safety contract.
+- Preserves canonical contract writeback modes, including direct SQL,
+  app-owned handler, cloud-worker, and proposal-only/no-local-writeback
+  semantics.
+- Fails broken applyable writeback definitions at propose/doctor time before a
+  human approves a proposal.
+- Creates local store parent directories automatically and trims env-derived
+  URLs, tokens, and trusted context values before use.
+
 ## 0.1.5
 
 ### Contract Authoring Front Door

@@ -184,6 +184,44 @@ describe("runner capability config validation", () => {
     expect(rejected.errors.map((error) => error.code)).toContain("UNKNOWN_EXECUTOR");
   });
 
+  it("accepts canonical app_handler writeback metadata and rejects broken handler references", () => {
+    const config = mutableConfig();
+    delete config.sources.app_postgres.write_url_env;
+    config.sources.app_postgres.read_only = true;
+    config.executors = {
+      billing_api: {
+        type: "http_handler",
+        url_env: "SYNAPSOR_BILLING_HANDLER_URL",
+      },
+    };
+    config.capabilities[1].writeback = { mode: "app_handler", executor: "billing_api" };
+    const accepted = validateRunnerCapabilityConfig(config);
+    expect(accepted.ok).toBe(true);
+
+    config.capabilities[1].writeback = { mode: "app_handler", executor: "missing_executor" };
+    const rejected = validateRunnerCapabilityConfig(config);
+    expect(rejected.ok).toBe(false);
+    expect(rejected.errors.map((error) => error.code)).toContain("UNKNOWN_EXECUTOR");
+  });
+
+  it("keeps WRITEBACK NONE distinct from broken direct writeback", () => {
+    const config = mutableConfig();
+    delete config.sources.app_postgres.write_url_env;
+    config.sources.app_postgres.read_only = true;
+    config.capabilities[1].writeback = { mode: "none" };
+    const accepted = validateRunnerCapabilityConfig(config);
+    expect(accepted.ok).toBe(true);
+    expect(accepted.warnings.map((warning) => warning.code)).not.toContain("WRITEBACK_DISABLED");
+  });
+
+  it("rejects duplicate local capability names", () => {
+    const config = mutableConfig();
+    config.capabilities.push(structuredClone(config.capabilities[0]));
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("DUPLICATE_CAPABILITY_NAME");
+  });
+
   it("warns when direct SQL review proposals have no writer env", () => {
     const config = mutableConfig();
     delete config.sources.app_postgres.write_url_env;

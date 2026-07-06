@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import crypto from "node:crypto";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DbRowReader } from "@synapsor-runner/mcp-server";
+import { createMcpRuntime, loadRuntimeConfigFromFile, type DbRowReader } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { main, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
 
@@ -55,6 +56,100 @@ function shadowChangeSet() {
     mode: "shadow",
     integrity: { proposal_hash: "sha256:shadow" },
   };
+}
+
+const contractFixtureRow = {
+  id: "INV-3001",
+  tenant_id: "acme",
+  customer_id: "cus_3001",
+  status: "open",
+  balance_cents: 12000,
+  late_fee_cents: 5500,
+  waiver_reason: null,
+  updated_at: "2026-06-20T14:31:08Z",
+};
+
+async function writeContractApplyFixture(
+  tempDir: string,
+  options: {
+    writeback?: Record<string, unknown>;
+    source?: Record<string, unknown>;
+    executors?: Record<string, unknown>;
+    embeddedDuplicate?: boolean;
+  } = {},
+): Promise<{ configPath: string; storePath: string; contractPath: string }> {
+  const sourceContract = JSON.parse(await fs.readFile(workspacePath("packages/spec/examples/guarded-writeback.contract.json"), "utf8")) as Record<string, any>;
+  const proposal = sourceContract.capabilities.find((capability: Record<string, unknown>) => capability.name === "billing.propose_late_fee_waiver");
+  if (!proposal?.proposal) throw new Error("proposal capability fixture missing");
+  if (options.writeback) proposal.proposal.writeback = options.writeback;
+  const contractPath = path.join(tempDir, "synapsor.contract.json");
+  const configPath = path.join(tempDir, "synapsor.runner.json");
+  const storePath = path.join(tempDir, ".synapsor", "local.db");
+  await fs.writeFile(contractPath, `${JSON.stringify(sourceContract, null, 2)}\n`, "utf8");
+  const config: Record<string, unknown> = {
+    version: 1,
+    mode: "review",
+    storage: { sqlite_path: storePath },
+    contracts: ["./synapsor.contract.json"],
+    sources: {
+      local_postgres: {
+        engine: "postgres",
+        read_url_env: "APP_POSTGRES_READ_URL",
+        write_url_env: "APP_POSTGRES_WRITE_URL",
+        ...(options.source ?? {}),
+      },
+    },
+    ...(options.executors ? { executors: options.executors } : {}),
+  };
+  if (options.embeddedDuplicate) {
+    config.capabilities = [
+      {
+        name: "billing.inspect_invoice",
+        kind: "read",
+        source: "local_postgres",
+        target: { schema: "public", table: "invoices", primary_key: "id", tenant_key: "tenant_id" },
+        args: { invoice_id: { type: "string", required: true } },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "updated_at"],
+      },
+    ];
+  }
+  await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return { configPath, storePath, contractPath };
+}
+
+async function createApprovedContractProposal(input: {
+  configPath: string;
+  storePath: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<string> {
+  const store = new ProposalStore(input.storePath);
+  const config = loadRuntimeConfigFromFile(input.configPath);
+  const runtime = createMcpRuntime(config, {
+    store,
+    env: input.env ?? {
+      APP_POSTGRES_READ_URL: "postgresql://reader@example/app",
+      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_PRINCIPAL: "local_operator",
+    } as NodeJS.ProcessEnv,
+    readRow: async () => ({ row: contractFixtureRow, rowCount: 1 }),
+  });
+  try {
+    const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+      invoice_id: "INV-3001",
+      waiver_reason: "approved support waiver",
+    });
+    const proposalId = String(result.proposal_id);
+    store.approveProposal(proposalId, {
+      approver: "local_reviewer",
+      proposal_hash: String(result.proposal_hash),
+      proposal_version: Number(result.proposal_version),
+    });
+    return proposalId;
+  } finally {
+    runtime.close();
+    store.close();
+  }
 }
 
 describe("runner cli", () => {
@@ -1937,6 +2032,141 @@ describe("runner cli", () => {
       .rejects.toThrow(/digest does not match local proposal/i);
   });
 
+  it("applies a direct SQL proposal capability loaded only from a referenced contract", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-contract-direct-"));
+    const { configPath, storePath } = await writeContractApplyFixture(tempDir);
+    const proposalId = await createApprovedContractProposal({ configPath, storePath });
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["apply", proposalId, "--config", configPath, "--store", storePath, "--dry-run", "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).status).toBe("applied");
+
+    const store = new ProposalStore(storePath);
+    try {
+      expect(store.receipts(proposalId).length).toBe(1);
+      expect(store.replay(proposalId).receipts.length).toBe(1);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("routes a contract-authored APP HANDLER executor proposal through a live http_handler", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-contract-handler-"));
+    const { configPath, storePath } = await writeContractApplyFixture(tempDir, {
+      writeback: { mode: "app_handler", executor: "billing_handler" },
+      source: { write_url_env: undefined },
+      executors: {
+        billing_handler: {
+          type: "http_handler",
+          url_env: "BILLING_HANDLER_URL",
+          method: "POST",
+        },
+      },
+    });
+    const proposalId = await createApprovedContractProposal({ configPath, storePath });
+    const server = createServer((request, response) => {
+      request.resume();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        status: "applied",
+        rows_affected: 1,
+        source_database_mutated: true,
+      }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test handler did not bind to a port");
+    const oldHandlerUrl = process.env.BILLING_HANDLER_URL;
+    process.env.BILLING_HANDLER_URL = `http://127.0.0.1:${address.port}/synapsor/writeback`;
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["apply", "latest", "--config", configPath, "--store", storePath, "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join("")).status).toBe("applied");
+      const store = new ProposalStore(storePath);
+      try {
+        expect(store.receipts(proposalId)[0]?.writeback_job_id).toMatch(/^hwb_/);
+      } finally {
+        store.close();
+      }
+    } finally {
+      if (oldHandlerUrl === undefined) delete process.env.BILLING_HANDLER_URL; else process.env.BILLING_HANDLER_URL = oldHandlerUrl;
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("fails duplicate embedded and contract capability names before serving or applying", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-contract-duplicate-"));
+    const { configPath, storePath } = await writeContractApplyFixture(tempDir, { embeddedDuplicate: true });
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main(["config", "validate", "--config", configPath])).resolves.toBe(1);
+    expect(output.join("")).toMatch(/Duplicate capability billing\.inspect_invoice/i);
+    await expect(main(["tools", "list", "--config", configPath, "--store", storePath])).rejects.toThrow(/Duplicate capability billing\.inspect_invoice/i);
+    await expect(main(["mcp", "serve", "--config", configPath, "--store", storePath])).rejects.toThrow(/Duplicate capability billing\.inspect_invoice/i);
+    await expect(main(["propose", "billing.propose_late_fee_waiver", "--config", configPath, "--store", storePath, "--sample"])).rejects.toThrow(/Duplicate capability billing\.inspect_invoice/i);
+    await expect(main(["apply", "wrp_duplicate", "--config", configPath, "--store", storePath, "--dry-run"])).rejects.toThrow(/Duplicate capability billing\.inspect_invoice/i);
+  });
+
+  it("fails broken direct SQL writeback at doctor and propose time for contract capabilities", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-contract-broken-writeback-"));
+    const { configPath, storePath } = await writeContractApplyFixture(tempDir, {
+      source: { write_url_env: undefined },
+    });
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    process.env.SYNAPSOR_PRINCIPAL = "local_operator";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+      const report = JSON.parse(output.join(""));
+      expect(report.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: "capability:billing.propose_late_fee_waiver:writeback-resolution",
+          level: "fail",
+        }),
+      ]));
+      await expect(main(["propose", "billing.propose_late_fee_waiver", "--config", configPath, "--store", storePath, "--json", JSON.stringify({
+        invoice_id: "INV-3001",
+        waiver_reason: "approved support waiver",
+      })])).rejects.toThrow(/DIRECT SQL writeback.*no write_url_env/i);
+    } finally {
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+    }
+  });
+
+  it("allows proposal-only contract capabilities to propose but refuses local apply clearly", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-contract-proposal-only-"));
+    const { configPath, storePath } = await writeContractApplyFixture(tempDir, {
+      writeback: { mode: "none" },
+      source: { write_url_env: undefined },
+    });
+    const proposalId = await createApprovedContractProposal({ configPath, storePath });
+    await expect(main(["apply", proposalId, "--config", configPath, "--store", storePath, "--dry-run"])).rejects.toThrow(/not locally applyable/i);
+  });
+
   it("resolves direct SQL writeback credentials from source write_url_env before legacy fallback", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-write-url-env-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -1977,11 +2207,31 @@ describe("runner cli", () => {
           principal_env: "SYNAPSOR_PRINCIPAL",
         },
       },
-      capabilities: [],
+      capabilities: [
+        {
+          name: "billing.propose_invoice_update",
+          kind: "proposal",
+          source: "app_postgres",
+          target: {
+            schema: "public",
+            table: "invoices",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+          },
+          args: {
+            invoice_id: { type: "string", required: true },
+          },
+          lookup: { id_from_arg: "invoice_id" },
+          visible_columns: ["id", "tenant_id", "updated_at", "late_fee_cents"],
+          patch: { late_fee_cents: { fixed: 0 } },
+          allowed_columns: ["late_fee_cents"],
+          conflict_guard: { column: "updated_at" },
+        },
+      ],
     }), "utf8");
 
     const env = {
-      APP_POSTGRES_WRITE_URL: "postgresql://writer:correct@example/app",
+      APP_POSTGRES_WRITE_URL: " postgresql://writer:correct@example/app ",
       SYNAPSOR_DATABASE_URL: "postgresql://legacy:wrong@example/app",
     } as NodeJS.ProcessEnv;
 

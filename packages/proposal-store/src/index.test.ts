@@ -82,6 +82,18 @@ function shadowChangeSet() {
 }
 
 describe("proposal store", () => {
+  it("creates the parent directory for file-backed stores", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-parent-"));
+    const storePath = path.join(tempDir, ".synapsor", "nested", "local.db");
+    const store = new ProposalStore(storePath);
+    try {
+      expect(await fs.stat(storePath)).toBeTruthy();
+    } finally {
+      store.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("persists immutable proposals and append-only events", () => {
     const store = new ProposalStore();
     try {
@@ -301,6 +313,27 @@ describe("proposal store", () => {
         "proposal_pending_worker",
         "writeback_job_recorded"
       ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("does not create direct SQL writeback jobs for app-owned executor proposals", () => {
+    const store = new ProposalStore();
+    try {
+      const handlerChangeSet = structuredClone(changeSet) as typeof changeSet & { writeback: { status: string; mode: string; executor?: string } };
+      handlerChangeSet.writeback = {
+        status: "not_applied",
+        mode: "trusted_worker_required",
+        executor: "billing_handler",
+      };
+      store.createProposal(handlerChangeSet);
+      store.approveProposal("wrp_123", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      expect(() => store.createWritebackJobFromProposal("wrp_123")).toThrowError(/non-local writeback executor billing_handler/);
     } finally {
       store.close();
     }

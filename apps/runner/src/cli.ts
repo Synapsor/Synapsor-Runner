@@ -9,8 +9,8 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
-import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { createMcpRuntime, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
+import { assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
@@ -1122,7 +1122,7 @@ async function maybeRunGeneratedSmokeCall(input: {
   toolName: string;
 }): Promise<string> {
   const required = uniqueStrings([input.readUrlEnv, input.tenantEnv, input.principalEnv])
-    .filter((envName) => !input.env[envName]);
+    .filter((envName) => !envValue(input.env, envName));
   if (required.length > 0) {
     return [
       "Smoke call not run yet.",
@@ -1801,8 +1801,7 @@ function bundleReadme(contract: SynapsorContract): string {
 
 async function configValidate(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
-  const result = validateRunnerCapabilityConfig(parsed);
+  const result = await validateConfigFile(configPath);
   if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (result.ok) {
@@ -1817,6 +1816,31 @@ async function configValidate(args: string[]): Promise<number> {
     }
   }
   return result.ok ? 0 : 1;
+}
+
+async function validateConfigFile(configPath: string): Promise<ConfigValidationResult> {
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const raw = validateRunnerCapabilityConfig(parsed);
+  if (!raw.ok) return raw;
+  try {
+    const resolved = resolveRuntimeConfig(parsed, path.dirname(path.resolve(configPath)));
+    const resolvedValidation = validateRunnerCapabilityConfig(resolved);
+    return {
+      ok: resolvedValidation.ok,
+      errors: resolvedValidation.errors,
+      warnings: [...raw.warnings, ...resolvedValidation.warnings],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [{
+        path: "$.contracts",
+        code: "CONTRACT_RESOLUTION_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+      }],
+      warnings: raw.warnings,
+    };
+  }
 }
 
 async function configShow(args: string[]): Promise<number> {
@@ -1880,12 +1904,51 @@ function trustedContextsForDoctor(config: RuntimeConfig): Array<[string, Record<
 }
 
 function envPresenceCheck(envName: string, message: string): DoctorCheck {
+  const value = envValue(process.env, envName);
   return {
     name: `env:${envName}`,
-    ok: Boolean(process.env[envName]),
-    level: process.env[envName] ? "pass" : "fail",
-    message: process.env[envName] ? `${envName} is set.` : message,
+    ok: Boolean(value),
+    level: value ? "pass" : "fail",
+    message: value ? `${envName} is set.` : message,
   };
+}
+
+function proposalWritebackResolutionDoctorCheck(config: RuntimeConfig, capability: RunnerCapabilityConfig): DoctorCheck {
+  const mode = capabilityWritebackMode(capability);
+  if (mode === "none") {
+    return {
+      name: `capability:${capability.name}:writeback-resolution`,
+      ok: true,
+      level: "pass",
+      message: "Capability explicitly declares no local writeback; proposals are review records only.",
+    };
+  }
+  if (mode === "cloud_worker") {
+    return {
+      name: `capability:${capability.name}:writeback-resolution`,
+      ok: true,
+      level: "pass",
+      message: "Capability declares cloud-worker writeback; local apply is intentionally unavailable.",
+    };
+  }
+  try {
+    assertProposalWritebackResolvable(config, capability);
+    return {
+      name: `capability:${capability.name}:writeback-resolution`,
+      ok: true,
+      level: "pass",
+      message: mode === "direct_sql"
+        ? "Direct SQL writeback definition resolves to a source and writer env var name."
+        : `App-owned handler writeback resolves to executor ${capabilityWritebackExecutor(capability)}.`,
+    };
+  } catch (error) {
+    return {
+      name: `capability:${capability.name}:writeback-resolution`,
+      ok: false,
+      level: "fail",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function httpHandlerReachabilityCheck(executorName: string, rawUrl: string, timeoutMs: number): Promise<DoctorCheck> {
@@ -1944,7 +2007,7 @@ async function inspectConfiguredSource(input: {
   source: NonNullable<RuntimeConfig["sources"]>[string];
   checks: DoctorCheck[];
 }): Promise<void> {
-  if (!process.env[input.source.read_url_env]) return;
+  if (!envValue(process.env, input.source.read_url_env)) return;
   const capabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
   const schemas = Array.from(new Set(capabilities.map((capability) => capability.target.schema)));
   for (const schema of schemas.length ? schemas : [undefined]) {
@@ -2379,21 +2442,21 @@ function firstRunConfigEnvChecks(config: RuntimeConfig): FirstRunCheck[] {
       String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID"),
       String(values.principal_env ?? "SYNAPSOR_PRINCIPAL"),
     ]) {
-      checks.push(process.env[envName]
+      checks.push(envValue(process.env, envName)
         ? pass(`env-${envName}`, `${envName} is set for ${contextName}.`, "Trusted tenant/principal values must come from the launcher, not the model.", "No action needed.")
         : warn(`env-${envName}`, `${envName} is not set for ${contextName}.`, "Trusted tenant/principal values must come from the launcher, not the model.", `Set ${envName}, or use the generated .env.example as a template.`));
     }
   }
   for (const [sourceName, source] of Object.entries(config.sources ?? {})) {
-    checks.push(process.env[source.read_url_env]
+    checks.push(envValue(process.env, source.read_url_env)
       ? pass(`env-${source.read_url_env}`, `${source.read_url_env} is set for ${sourceName}.`, "Configured capabilities need a read credential env var to inspect/propose against your DB.", "No action needed.")
       : warn(`env-${source.read_url_env}`, `${source.read_url_env} is not set for ${sourceName}.`, "Configured capabilities need a read credential env var to inspect/propose against your DB.", `Set ${source.read_url_env} before running doctor, tools preview, or mcp serve against your own database.`));
     if (source.write_url_env) {
-      checks.push(process.env[source.write_url_env]
+      checks.push(envValue(process.env, source.write_url_env)
         ? pass(`env-${source.write_url_env}`, `${source.write_url_env} is set for ${sourceName}.`, "Trusted writeback needs a separate writer credential outside the MCP client.", "No action needed.")
         : warn(`env-${source.write_url_env}`, `${source.write_url_env} is not set for ${sourceName}.`, "Trusted writeback needs a separate writer credential outside the MCP client.", `Set ${source.write_url_env} only when you are ready to apply an approved writeback job.`));
-      const readValue = process.env[source.read_url_env];
-      const writeValue = process.env[source.write_url_env];
+      const readValue = envValue(process.env, source.read_url_env);
+      const writeValue = envValue(process.env, source.write_url_env);
       if (readValue && writeValue && readValue === writeValue) {
         checks.push(fail(`credential-split-${sourceName}`, `Read and write env vars resolve to the same credential for ${sourceName}.`, "Read/proposal authority and writeback authority must be separated.", "Use a read-only credential for MCP reads and a separate writer credential only for trusted apply."));
       }
@@ -2485,9 +2548,10 @@ async function localDoctor(args: string[]): Promise<number> {
   const allowSharedCredential = args.includes("--allow-shared-credential");
   const checkHandlers = args.includes("--check-handlers");
   const checkWriteback = args.includes("--check-writeback") || args.includes("--check-db");
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const rawConfig = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  let parsed = rawConfig;
   const checks: DoctorCheck[] = [];
-  const validation = validateRunnerCapabilityConfig(parsed);
+  const validation = await validateConfigFile(configPath);
   checks.push({
     name: "config-valid",
     ok: validation.ok,
@@ -2496,6 +2560,9 @@ async function localDoctor(args: string[]): Promise<number> {
   });
   for (const warning of validation.warnings) {
     checks.push({ name: `config-warning:${warning.code}`, ok: true, level: "warn", message: warning.message });
+  }
+  if (validation.ok) {
+    parsed = await readRuntimeConfig(configPath);
   }
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
@@ -2508,14 +2575,19 @@ async function localDoctor(args: string[]): Promise<number> {
   }
 
   const sources = parsed.sources ?? {};
+  if (parsed.mode === "review") {
+    for (const capability of (parsed.capabilities ?? []).filter((item) => item.kind === "proposal")) {
+      checks.push(proposalWritebackResolutionDoctorCheck(parsed, capability));
+    }
+  }
   for (const [sourceName, source] of Object.entries(sources)) {
     checks.push(envPresenceCheck(source.read_url_env, `${source.read_url_env} is required for ${sourceName} reads.`));
     if (parsed.mode === "review") {
       if (sourceNeedsSqlWriteback(parsed, sourceName)) {
         if (source.write_url_env) {
           checks.push(envPresenceCheck(source.write_url_env, `${source.write_url_env} is required for trusted writeback in review mode.`));
-          const readValue = process.env[source.read_url_env];
-          const writeValue = process.env[source.write_url_env];
+          const readValue = envValue(process.env, source.read_url_env);
+          const writeValue = envValue(process.env, source.write_url_env);
           if (readValue && writeValue && readValue === writeValue) {
             checks.push({
               name: `source:${sourceName}:credential-separation`,
@@ -2531,7 +2603,7 @@ async function localDoctor(args: string[]): Promise<number> {
         } else {
           checks.push({ name: `source:${sourceName}:write-url-env`, ok: false, level: "fail", message: "SQL writeback proposal capabilities require write_url_env for trusted writeback." });
         }
-        const writeUrl = source.write_url_env ? process.env[source.write_url_env] : undefined;
+        const writeUrl = source.write_url_env ? envValue(process.env, source.write_url_env) : undefined;
         if (checkWriteback && writeUrl) {
           checks.push(...await directSqlWritebackDoctorChecks(parsed, sourceName, source, writeUrl));
         } else if (checkWriteback) {
@@ -2560,7 +2632,7 @@ async function localDoctor(args: string[]): Promise<number> {
       const urlEnv = String(executor.url_env ?? "");
       if (urlEnv) {
         checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`));
-        const handlerUrl = process.env[urlEnv];
+        const handlerUrl = envValue(process.env, urlEnv);
         if (checkHandlers && handlerUrl) {
           checks.push(await httpHandlerReachabilityCheck(executorName, handlerUrl, Number(executor.timeout_ms ?? 3000)));
         } else if (!checkHandlers) {
@@ -2684,7 +2756,7 @@ async function directSqlWritebackDoctorChecks(
 function directSqlProposalCapabilities(config: RuntimeConfig, sourceName: string): RunnerCapabilityConfig[] {
   return (config.capabilities ?? []).filter((capability) => {
     if (capability.kind !== "proposal" || capability.source !== sourceName) return false;
-    return (capability.executor ?? "sql_update") === "sql_update";
+    return capabilityWritebackMode(capability) === "direct_sql";
   });
 }
 
@@ -2902,7 +2974,7 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const runnerId = optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner";
-  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const config = await readRuntimeConfig(configPath);
   const resolvedProposalId = await resolveProposalId(proposalId, storePath);
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
@@ -2919,6 +2991,9 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
     const proposal = requireLocalProposal(store, resolvedProposalId);
     const capability = findProposalCapability(config, proposal);
     const executorName = proposalExecutorName(proposal, capability);
+    if (executorName === "none" || executorName === "cloud_worker") {
+      throw new Error(`proposal ${resolvedProposalId} is not locally applyable; capability ${capability.name} declares ${executorName === "none" ? "no local writeback" : "cloud-worker writeback"}.`);
+    }
     if (executorName === "sql_update") {
       const job = store.createWritebackJobFromProposal(resolvedProposalId, {
         project_id: optionalArg(args, "--project") ?? "local",
@@ -2975,11 +3050,14 @@ async function applySqlJob(job: unknown, configPath: string, storePath: string |
 }
 
 export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const config = await readRuntimeConfig(configPath);
   const source = config.sources?.[job.source_id];
   const writeUrlEnv = source?.write_url_env;
-  if (writeUrlEnv && env[writeUrlEnv]) return env[writeUrlEnv] ?? "";
-  return env.SYNAPSOR_DATABASE_URL || "";
+  if (writeUrlEnv) {
+    const value = envValue(env, writeUrlEnv);
+    if (value) return value;
+  }
+  return envValue(env, "SYNAPSOR_DATABASE_URL") || "";
 }
 
 type HttpHandlerExecutor = {
@@ -3002,7 +3080,7 @@ type LocalExecutor = HttpHandlerExecutor | CommandHandlerExecutor | { type: "sql
 function sourceNeedsSqlWriteback(config: RuntimeConfig, sourceName: string): boolean {
   return (config.capabilities ?? []).some((capability) => {
     if (capability.kind !== "proposal" || capability.source !== sourceName) return false;
-    return (capability.executor ?? "sql_update") === "sql_update";
+    return capabilityWritebackMode(capability) === "direct_sql";
   });
 }
 
@@ -3023,8 +3101,12 @@ function findProposalCapability(config: RuntimeConfig, proposal: StoredProposal)
 }
 
 function proposalExecutorName(proposal: StoredProposal, capability: NonNullable<RuntimeConfig["capabilities"]>[number]): string {
+  const mode = capabilityWritebackMode(capability);
+  if (mode === "none") return "none";
+  if (mode === "cloud_worker") return "cloud_worker";
+  if (mode === "direct_sql") return "sql_update";
   const writeback = proposal.change_set.writeback as { executor?: unknown };
-  return capability.executor ?? (typeof writeback.executor === "string" ? writeback.executor : undefined) ?? "sql_update";
+  return capabilityWritebackExecutor(capability) ?? (typeof writeback.executor === "string" ? writeback.executor : undefined) ?? "sql_update";
 }
 
 function executorConfig(config: RuntimeConfig, executorName: string): LocalExecutor {
@@ -3061,7 +3143,7 @@ async function applyHttpHandlerProposal(input: {
     executor: input.executorName,
     request: prepared.request,
   });
-  const url = input.env[input.executor.url_env];
+  const url = envValue(input.env, input.executor.url_env);
   if (!url) throw new Error(`${input.executor.url_env} is not set`);
   const headers: Record<string, string> = {
     accept: "application/json",
@@ -3069,7 +3151,7 @@ async function applyHttpHandlerProposal(input: {
     "idempotency-key": prepared.request.idempotency_key,
   };
   if (input.executor.auth) {
-    const token = input.env[input.executor.auth.token_env];
+    const token = envValue(input.env, input.executor.auth.token_env);
     if (!token) throw new Error(`${input.executor.auth.token_env} is not set`);
     headers.authorization = `Bearer ${token}`;
   }
@@ -3084,7 +3166,7 @@ async function applyHttpHandlerProposal(input: {
   headers["x-synapsor-issued-at"] = issuedAt;
   headers["x-synapsor-proposal-id"] = prepared.proposal.proposal_id;
   if (input.executor.signing_secret_env) {
-    const signingSecret = input.env[input.executor.signing_secret_env];
+    const signingSecret = envValue(input.env, input.executor.signing_secret_env);
     if (!signingSecret) throw new Error(`${input.executor.signing_secret_env} is not set`);
     headers["x-synapsor-signature"] = signHandlerRequestBody(requestBody, signingSecret);
   }
@@ -3134,7 +3216,7 @@ async function applyCommandHandlerProposal(input: {
     executor: input.executorName,
     request: prepared.request,
   });
-  const commandText = input.env[input.executor.command_env];
+  const commandText = envValue(input.env, input.executor.command_env);
   if (!commandText) throw new Error(`${input.executor.command_env} is not set`);
   const [command, ...commandArgs] = splitCommand(commandText);
   if (!command) throw new Error(`${input.executor.command_env} did not contain a command`);
@@ -3479,7 +3561,7 @@ async function runCommandHandler(command: string, args: string[], request: Recor
 }
 
 async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: string, storePath?: string): Promise<void> {
-  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const config = await readRuntimeConfig(configPath);
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
     throw new Error(`cannot apply writeback with invalid local config: ${validation.errors.map((error) => error.code).join(", ")}`);
@@ -3497,7 +3579,7 @@ async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: stri
   if (Date.parse(String(job.lease_expires_at)) < Date.now()) {
     throw new Error("writeback job lease has expired");
   }
-  const proposalCapabilities = (config.capabilities ?? []).filter((capability) => capability.kind === "proposal" && capability.source === job.source_id);
+  const proposalCapabilities = (config.capabilities ?? []).filter((capability) => capability.kind === "proposal" && capability.source === job.source_id && capabilityWritebackMode(capability) === "direct_sql");
   const matching = proposalCapabilities.find((capability) => capabilityMatchesJob(capability, job));
   if (!matching) {
     throw new Error("writeback job does not match any reviewed proposal capability in local config");
@@ -3699,7 +3781,7 @@ function formatReviewModeUp(input: {
   } else {
     lines.push(
       `  Streamable HTTP endpoint: http://${input.host}:${input.port}/mcp`,
-      `  Auth token env: ${input.authTokenEnv} (${process.env[input.authTokenEnv] ? "set" : "missing"})`,
+      `  Auth token env: ${input.authTokenEnv} (${envValue(process.env, input.authTokenEnv) ? "set" : "missing"})`,
       input.serveRequested
         ? input.dryRun
           ? "  Status: dry run only; server not started."
@@ -3725,12 +3807,19 @@ function formatUpWritebackLines(config: RuntimeConfig): string[] {
   const proposals = (config.capabilities ?? []).filter((capability) => capability.kind === "proposal");
   if (proposals.length === 0) return ["  - no proposal capabilities; this config is read-only from Runner's perspective"];
   return proposals.map((capability) => {
-    const executorName = capability.executor ?? "sql_update";
-    if (executorName === "sql_update") {
+    const mode = capabilityWritebackMode(capability);
+    if (mode === "none") {
+      return `  - ${capability.name}: proposal-only; no local writeback`;
+    }
+    if (mode === "cloud_worker") {
+      return `  - ${capability.name}: cloud-worker writeback; local apply disabled`;
+    }
+    if (mode === "direct_sql") {
       const source = config.sources?.[capability.source];
       const envName = source?.write_url_env ?? "SYNAPSOR_DATABASE_URL";
-      return `  - ${capability.name}: direct guarded one-row UPDATE via ${envName} (${process.env[envName] ? "set" : "missing"})`;
+      return `  - ${capability.name}: direct guarded one-row UPDATE via ${envName} (${envValue(process.env, envName) ? "set" : "missing"})`;
     }
+    const executorName = capabilityWritebackExecutor(capability) ?? "missing_executor";
     const executor = config.executors?.[executorName] as Record<string, unknown> | undefined;
     return `  - ${capability.name}: app-owned ${String(executor?.type ?? "executor")} ${executorName}`;
   });
@@ -3746,14 +3835,14 @@ function formatUpHandlerLines(config: RuntimeConfig): string[] {
       const tokenEnv = typeof auth?.token_env === "string" ? auth.token_env : undefined;
       const signingSecretEnv = typeof executor.signing_secret_env === "string" ? executor.signing_secret_env : undefined;
       lines.push(`  - ${name}: http_handler`);
-      if (urlEnv) lines.push(`    url env: ${urlEnv} (${process.env[urlEnv] ? "set" : "missing"})`);
-      if (tokenEnv) lines.push(`    bearer token env: ${tokenEnv} (${process.env[tokenEnv] ? "set" : "missing"})`);
-      if (signingSecretEnv) lines.push(`    signing secret env: ${signingSecretEnv} (${process.env[signingSecretEnv] ? "set" : "missing"})`);
+      if (urlEnv) lines.push(`    url env: ${urlEnv} (${envValue(process.env, urlEnv) ? "set" : "missing"})`);
+      if (tokenEnv) lines.push(`    bearer token env: ${tokenEnv} (${envValue(process.env, tokenEnv) ? "set" : "missing"})`);
+      if (signingSecretEnv) lines.push(`    signing secret env: ${signingSecretEnv} (${envValue(process.env, signingSecretEnv) ? "set" : "missing"})`);
       if (!signingSecretEnv) lines.push("    signing secret env: not configured (recommended unless loopback-only)");
     } else if (executor.type === "command_handler") {
       const commandEnv = typeof executor.command_env === "string" ? executor.command_env : "";
       lines.push(`  - ${name}: command_handler`);
-      if (commandEnv) lines.push(`    command env: ${commandEnv} (${process.env[commandEnv] ? "set" : "missing"})`);
+      if (commandEnv) lines.push(`    command env: ${commandEnv} (${envValue(process.env, commandEnv) ? "set" : "missing"})`);
     }
   }
   return lines;
@@ -3864,8 +3953,8 @@ async function cloudConnect(args: string[]): Promise<number> {
   }
   const baseUrlEnv = parsed.cloud.base_url_env || "SYNAPSOR_CLOUD_BASE_URL";
   const tokenEnv = parsed.cloud.runner_token_env || "SYNAPSOR_RUNNER_TOKEN";
-  const baseUrl = process.env[baseUrlEnv];
-  const runnerToken = process.env[tokenEnv];
+  const baseUrl = envValue(process.env, baseUrlEnv);
+  const runnerToken = envValue(process.env, tokenEnv);
   const missing = [baseUrl ? "" : baseUrlEnv, runnerToken ? "" : tokenEnv].filter(Boolean);
   if (missing.length > 0) {
     process.stdout.write(`missing environment variables: ${missing.join(", ")}\n`);
@@ -4046,7 +4135,7 @@ async function writebackDoctor(args: string[]): Promise<number> {
   let ok = true;
   for (const [sourceName, source] of sqlSources) {
     const writeEnv = source.write_url_env;
-    const writeUrl = writeEnv ? process.env[writeEnv] : undefined;
+    const writeUrl = writeEnv ? envValue(process.env, writeEnv) : undefined;
     lines.push(`Source: ${sourceName}`);
     lines.push(`  engine: ${source.engine}`);
     lines.push(`  writer env: ${writeEnv ?? "(missing write_url_env)"}`);
@@ -5837,7 +5926,7 @@ function isRunnerConfigLike(value: unknown): boolean {
 
 async function fetchRemoteMcpTools(target: string, args: string[], timeoutMs: number): Promise<unknown> {
   const bearerEnv = optionalArg(args, "--bearer-env") ?? "SYNAPSOR_MCP_AUDIT_BEARER";
-  const bearer = process.env[bearerEnv];
+  const bearer = envValue(process.env, bearerEnv);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -6993,9 +7082,22 @@ function optionalPositiveIntegerArg(args: string[], flag: string): number | unde
   return parsed;
 }
 
-function envValue(name: string | undefined): string | undefined {
-  if (!name) return undefined;
-  return process.env[name];
+function envValue(name: string | undefined): string | undefined;
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined;
+function envValue(first: NodeJS.ProcessEnv | string | undefined, second?: string): string | undefined {
+  if (typeof first === "string" || first === undefined) {
+    if (!first) return undefined;
+    return trimmedEnvValue(process.env, first);
+  }
+  if (!second) return undefined;
+  return trimmedEnvValue(first, second);
+}
+
+function trimmedEnvValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name];
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function linkedProposalFilter(
