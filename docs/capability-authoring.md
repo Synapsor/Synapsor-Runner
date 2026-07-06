@@ -1,8 +1,107 @@
 # Capability Authoring
 
-Use `synapsor.runner.json` to define the database actions an MCP client can see.
-The model sees semantic capabilities such as `billing.inspect_invoice`, not raw
-SQL, table names, write credentials, approval tools, or commit tools.
+For new work, author portable contracts first. The contract is the reviewable
+source of truth for trusted context, resources, capabilities, evidence,
+proposal shape, and writeback intent.
+
+```text
+contract.synapsor -> synapsor.contract.json -> synapsor.runner.json
+```
+
+Use `synapsor.runner.json` for local wiring: database env var names, SQLite
+store path, MCP transport settings, and local development flags. The model sees
+semantic capabilities such as `billing.inspect_invoice`, not raw SQL, table
+names, write credentials, approval tools, or commit tools.
+
+## Contract/DSL Path
+
+Write a small DSL contract:
+
+```sql
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY billing.inspect_invoice
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP invoice_id BY id
+  ARG invoice_id STRING REQUIRED MAX 128
+  ALLOW READ id, tenant_id, status, late_fee_cents, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+END
+
+CREATE CAPABILITY billing.propose_late_fee_waiver
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP invoice_id BY id
+  ARG invoice_id STRING REQUIRED MAX 128
+  ARG reason TEXT REQUIRED MAX 500
+  ALLOW READ id, tenant_id, status, late_fee_cents, waiver_reason, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+  PROPOSE ACTION waive_late_fee
+  ALLOW WRITE late_fee_cents, waiver_reason
+  PATCH late_fee_cents = 0
+  PATCH waiver_reason = ARG reason
+  APPROVAL ROLE billing_lead
+  WRITEBACK DIRECT SQL
+END
+```
+
+Compile and validate:
+
+```bash
+synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-runner contract validate ./synapsor.contract.json
+synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
+synapsor-runner cloud push ./synapsor.contract.json --dry-run
+```
+
+Reference the generated contract from local runner wiring:
+
+```json
+{
+  "version": 1,
+  "mode": "review",
+  "contracts": ["./synapsor.contract.json"],
+  "storage": { "sqlite_path": "./.synapsor/local.db" },
+  "sources": {
+    "app_postgres": {
+      "engine": "postgres",
+      "read_url_env": "DATABASE_URL",
+      "write_url_env": "SYNAPSOR_DATABASE_WRITE_URL"
+    }
+  }
+}
+```
+
+Then preview or serve the MCP tools:
+
+```bash
+synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+## Direct Runner Config Path
+
+Directly embedding capabilities in `synapsor.runner.json` remains supported for
+local experiments, generated configs, migration, and compatibility with earlier
+Runner versions. Prefer contracts when you want definitions that can be
+validated, bundled, reviewed in Git, dry-run pushed to Cloud, or shared with
+Cloud/C++ import/export fixtures.
 
 For editor validation, use the JSON Schema:
 
@@ -10,7 +109,7 @@ For editor validation, use the JSON Schema:
 schemas/synapsor.runner.schema.json
 ```
 
-## Minimal Shape
+## Minimal Runner Config Shape
 
 ```json
 {

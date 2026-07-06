@@ -203,6 +203,88 @@ You install only `@synapsor/runner`. There is no separate handler package to
 install. A handler is your app's endpoint or script for rich approved writes;
 Runner includes templates and examples to help you build one.
 
+## Packages
+
+| Package | What it is |
+| --- | --- |
+| `@synapsor/runner` | The local runtime: CLI, MCP server, local store, evidence, proposals, approval, writeback, replay, and audit tools. |
+| `@synapsor/spec` | The canonical portable contract package for contexts, resources, capabilities, workflows, evidence, proposals, receipts, and replay. |
+| `@synapsor/dsl` | A SQL-like authoring layer that compiles `CREATE AGENT CONTEXT`, `CREATE CAPABILITY`, and `CREATE AGENT WORKFLOW` into `@synapsor/spec` JSON. |
+
+Use the runner when you want something to execute locally. Use the spec when
+you want a portable contract that Runner, Cloud, and the C++ engine can agree
+on. Use the DSL when you want to author that contract in a reviewable,
+database-style format.
+
+## Author Your Contract
+
+For new capabilities, prefer the portable contract path:
+
+```text
+contract.synapsor -> synapsor.contract.json -> synapsor.runner.json
+```
+
+Example DSL:
+
+```sql
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY billing.inspect_invoice
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP invoice_id BY id
+  ARG invoice_id STRING REQUIRED MAX 128
+  ALLOW READ id, tenant_id, status, late_fee_cents, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+END
+
+CREATE CAPABILITY billing.propose_late_fee_waiver
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP invoice_id BY id
+  ARG invoice_id STRING REQUIRED MAX 128
+  ARG reason TEXT REQUIRED MAX 500
+  ALLOW READ id, tenant_id, status, late_fee_cents, waiver_reason, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+  PROPOSE ACTION waive_late_fee
+  ALLOW WRITE late_fee_cents, waiver_reason
+  PATCH late_fee_cents = 0
+  PATCH waiver_reason = ARG reason
+  APPROVAL ROLE billing_lead
+  WRITEBACK DIRECT SQL
+END
+```
+
+Compile, validate, and serve it:
+
+```bash
+synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-runner contract validate ./synapsor.contract.json
+synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
+synapsor-runner cloud push ./synapsor.contract.json --dry-run
+synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+Your `synapsor.runner.json` supplies local wiring: database env var names,
+SQLite store path, MCP transport settings, and local debug options. The
+contract supplies the portable meaning: contexts, capabilities, evidence,
+proposal shape, and writeback intent.
+
 ## Who Does What
 
 You write the config: sources, trusted context, capabilities, visible fields,
@@ -1110,6 +1192,14 @@ The runner is useful by itself for local/staging safety. Synapsor Cloud is for
 teams, production governance, central audit, managed runners, enterprise
 controls, and proprietary Synapsor platform features.
 
+Portable contracts can be checked locally before Cloud import:
+
+```bash
+synapsor-runner contract validate ./synapsor.contract.json
+synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
+synapsor-runner cloud push ./synapsor.contract.json --dry-run
+```
+
 ## Current Limitations
 
 Supported in the current alpha:
@@ -1137,12 +1227,16 @@ Not supported:
 - stored procedures;
 - physical branching of external Postgres/MySQL;
 - full Synapsor workflow DAG execution;
-- `CREATE AGENT WORKFLOW`;
 - Synapsor SQL generation;
 - auto-merge or settlement-policy semantics;
 - model-callable approval or commit tools;
 - general prompt-injection prevention;
 - production SLA or compliance certification.
+
+Contract and DSL authoring can declare workflows and allowed capabilities with
+`CREATE AGENT WORKFLOW`. Runner 0.1 validates, bundles, and surfaces those
+contracts, but it does not execute full Synapsor Cloud workflow DAGs,
+auto-merge, settlement policies, or native branching.
 
 Complete limits: [docs/limitations.md](docs/limitations.md).
 
@@ -1227,6 +1321,8 @@ After a manual stable publish/promotion, verify `latest`:
 ## Repository Map
 
 - `apps/runner`: CLI entrypoint and local UI.
+- `packages/spec`: canonical portable contract schemas, normalization, CLI, and conformance fixtures.
+- `packages/dsl`: SQL-like contract authoring for contexts, capabilities, and workflow declarations.
 - `packages/mcp-server`: stdio/HTTP MCP server and configured tool runtime.
 - `packages/schema-inspector`: Postgres/MySQL metadata inspection and config generation.
 - `packages/proposal-store`: local SQLite evidence/proposal/replay store.

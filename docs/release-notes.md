@@ -10,6 +10,24 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 0.1.5
+
+### Contract Authoring Front Door
+
+- Introduces `@synapsor/spec` and `@synapsor/dsl` in the main Runner README so
+  developers can find the canonical contract and SQL-like authoring layers from
+  the repo and npm package front door.
+- Adds a copy-pasteable `CREATE AGENT CONTEXT` / `CREATE CAPABILITY` authoring
+  flow that compiles to `synapsor.contract.json`, validates, bundles, dry-run
+  pushes to Cloud, and serves through Runner local wiring.
+- Refreshes capability authoring docs to lead with the contract/DSL path while
+  preserving direct `synapsor.runner.json` embedded capability authoring for
+  local experiments and compatibility.
+- Clarifies that workflow declarations are supported in contracts/DSL, while
+  Runner 0.1 does not execute full Synapsor Cloud workflow DAGs, auto-merge,
+  settlement policies, or native branching.
+- Updates the repository map to include `packages/spec` and `packages/dsl`.
+
 ## 0.1.4
 
 ### Public Repository Metadata
