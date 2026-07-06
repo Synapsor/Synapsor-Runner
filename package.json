@@ -55,7 +55,7 @@
     "@synapsor/dsl": "workspace:*",
     "@synapsor/handler": "workspace:*",
     "@synapsor/spec": "workspace:*",
-    "@types/node": "^22.10.0",
+    "@types/node": "^26.1.0",
     "esbuild": "0.28.1",
     "tsx": "^4.20.0",
     "typescript": "^5.7.0",
