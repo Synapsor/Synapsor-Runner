@@ -277,8 +277,15 @@ synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
 synapsor-runner contract validate ./synapsor.contract.json
 synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
 synapsor-runner cloud push ./synapsor.contract.json --dry-run
+cd ./synapsor-runner-bundle
+cp .env.example .env  # fill in and export your read-only database values
 synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
+
+The `contract bundle` step generates `synapsor.runner.json` (with env-var
+placeholders) inside the bundle directory, which is why `mcp serve` runs from
+there. The server keeps stdout clean for MCP protocol frames and prints its
+ready line on stderr.
 
 Your `synapsor.runner.json` supplies local wiring: database env var names,
 SQLite store path, MCP transport settings, and local debug options. The

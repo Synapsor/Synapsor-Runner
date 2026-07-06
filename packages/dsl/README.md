@@ -19,6 +19,29 @@ synapsor-runner dsl validate ./contract.synapsor
 synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
 ```
 
+## Programmatic API
+
+```ts
+import { compileAgentDsl, parseAgentDsl, validateAgentDsl, formatAgentDsl, AgentDslError } from "@synapsor/dsl";
+import { assertValidContract, normalizeContract } from "@synapsor/spec";
+
+const source = `CREATE AGENT CONTEXT ...`;
+
+const result = validateAgentDsl(source); // { ok, errors, warnings } with line/column entries
+const ast = parseAgentDsl(source);       // AST with line/column spans
+
+try {
+  const contract = compileAgentDsl(source); // @synapsor/spec contract JSON
+  assertValidContract(normalizeContract(contract));
+} catch (error) {
+  if (error instanceof AgentDslError) {
+    console.error(`${error.message} at ${error.line}:${error.column}`);
+  }
+}
+```
+
+`formatAgentDsl(source)` returns a canonically formatted copy of the DSL text.
+
 ## Supported Preview Constructs
 
 - `CREATE AGENT CONTEXT`

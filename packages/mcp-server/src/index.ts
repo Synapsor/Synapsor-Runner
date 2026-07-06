@@ -512,6 +512,8 @@ export async function serveStdio(options: { configPath?: string; storePath?: str
   const server = createSynapsorMcpServer(runtime, { toolNameStyle: options.toolNameStyle });
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  // stdout is reserved for MCP protocol frames; human feedback goes to stderr.
+  process.stderr.write("synapsor-runner MCP stdio server ready. Waiting for an MCP client on stdio; logs stay on stderr.\n");
   await new Promise<void>((resolve) => {
     const previousOnClose = transport.onclose;
     const close = () => {
