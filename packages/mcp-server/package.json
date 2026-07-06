@@ -18,7 +18,7 @@
     "@synapsor/spec": "workspace:*",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0",
-    "zod": "^3.25.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",
