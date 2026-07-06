@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.7"
   },
   "keywords": [
     "synapsor",
