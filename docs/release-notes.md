@@ -10,6 +10,18 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 0.1.3
+
+### Public npm DX
+
+- Prepares the spec-ready Runner package for the normal untagged npm path so
+  developers can use `npx -y -p @synapsor/runner synapsor-runner ...` without
+  knowing about the temporary `next` release-candidate tag.
+- Keeps the same contract/spec functionality as `0.1.2`; this is a release
+  hygiene patch for public install and README/package-page verification.
+- `@synapsor/spec@0.1.0` and `@synapsor/dsl@0.1.0` remain the canonical
+  contract packages.
+
 ## 0.1.2
 
 ### Contract Compatibility
