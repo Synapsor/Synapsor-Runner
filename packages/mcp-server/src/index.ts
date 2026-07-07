@@ -348,6 +348,7 @@ function runtimeCapabilityFromSpec(
     name: capability.name,
     kind: capability.kind === "proposal" ? "proposal" : "read",
     ...(capability.description ? { description: capability.description } : {}),
+    ...(capability.returns_hint ? { returns_hint: capability.returns_hint } : {}),
     source,
     context: capability.context,
     target,
@@ -360,6 +361,8 @@ function runtimeCapabilityFromSpec(
   if (capability.kind === "proposal" && capability.proposal) {
     runtime.patch = capability.proposal.patch;
     runtime.allowed_columns = capability.proposal.allowed_fields;
+    runtime.numeric_bounds = capability.proposal.numeric_bounds;
+    runtime.transition_guards = capability.proposal.transition_guards;
     runtime.conflict_guard = capability.proposal.conflict_guard;
     runtime.approval = capability.proposal.approval;
     runtime.writeback = {

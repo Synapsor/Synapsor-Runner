@@ -52,7 +52,7 @@ import {
   type McpAuditReport,
   type RunnerConfig,
 } from "@synapsor-runner/worker-core";
-import { compileAgentDsl, validateAgentDsl } from "@synapsor/dsl";
+import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
 import { startLocalUiServer } from "./local-ui.js";
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
@@ -1651,23 +1651,32 @@ async function dslValidate(args: string[]): Promise<number> {
   const target = firstPositional(args);
   if (!target) throw new Error("dsl validate requires <contract.synapsor>");
   const source = await fs.readFile(target, "utf8");
+  const strict = args.includes("--strict");
   const result = validateAgentDsl(source);
   if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (result.ok) {
     process.stdout.write(`dsl valid: ${target}\n`);
+    for (const warning of result.warnings) process.stdout.write(`warning ${warning.line}:${warning.column} ${warning.code}: ${warning.message}\n`);
   } else {
     process.stdout.write(`dsl invalid: ${target}\n`);
     for (const error of result.errors) process.stdout.write(`error ${error.line}:${error.column} ${error.code}: ${error.message}\n`);
   }
-  return result.ok ? 0 : 1;
+  return result.ok && (!strict || result.warnings.length === 0) ? 0 : 1;
 }
 
 async function dslCompile(args: string[]): Promise<number> {
   const target = firstPositional(args);
   if (!target) throw new Error("dsl compile requires <contract.synapsor>");
   const source = await fs.readFile(target, "utf8");
-  const contract = compileAgentDsl(source);
+  const strict = args.includes("--strict");
+  const result = compileAgentDslWithWarnings(source);
+  if (strict && result.warnings.length > 0) {
+    process.stdout.write(`dsl warnings treated as errors: ${target}\n`);
+    for (const warning of result.warnings) process.stdout.write(`warning ${warning.line}:${warning.column} ${warning.code}: ${warning.message}\n`);
+    return 1;
+  }
+  const contract = result.contract;
   const output = outputArg(args);
   const text = `${JSON.stringify(contract, null, 2)}\n`;
   if (output) {
@@ -1676,6 +1685,7 @@ async function dslCompile(args: string[]): Promise<number> {
   } else {
     process.stdout.write(text);
   }
+  for (const warning of result.warnings) process.stderr.write(`warning ${warning.line}:${warning.column} ${warning.code}: ${warning.message}\n`);
   return 0;
 }
 
@@ -3891,18 +3901,32 @@ async function cloudPush(args: string[]): Promise<number> {
   if (!target) throw new Error("cloud push requires <synapsor.contract.json>");
   const parsed = JSON.parse(await fs.readFile(target, "utf8"));
   const contract = normalizeContract(parsed);
+  const workspace = (optionalArg(args, "--workspace") ?? optionalArg(args, "--project") ?? process.env.SYNAPSOR_WORKSPACE_ID ?? process.env.SYNAPSOR_PROJECT_ID ?? "").trim();
+  const name = (optionalArg(args, "--name") ?? contract.metadata?.name ?? "").trim();
+  const description = (optionalArg(args, "--description") ?? contract.metadata?.description ?? "").trim();
+  const idempotencyKey = optionalArg(args, "--idempotency-key");
   const payload = {
     schema_version: "synapsor.cloud-contract-push.v0.1",
     contract,
     summary: contractSummary(contract),
-    workspace: optionalArg(args, "--workspace") ?? process.env.SYNAPSOR_WORKSPACE_ID,
-    name: optionalArg(args, "--name") ?? contract.metadata?.name,
+    workspace,
+    name,
+    description,
+    source: "runner",
+    source_versions: {
+      "@synapsor/runner": process.env.npm_package_version ?? "unknown",
+    },
+    activate: args.includes("--activate"),
+    idempotency_key: idempotencyKey,
     pushed_at: new Date().toISOString(),
   };
   const dryRun = args.includes("--dry-run");
-  if (args.includes("--json")) {
+  const json = args.includes("--json");
+  if (dryRun && json) {
     process.stdout.write(`${JSON.stringify({ ok: dryRun, dry_run: dryRun, payload }, null, 2)}\n`);
-  } else {
+    return 0;
+  }
+  if (dryRun) {
     process.stdout.write("Synapsor Cloud contract push preview\n");
     process.stdout.write(`Contract: ${target}\n`);
     process.stdout.write(`Contexts: ${payload.summary.contexts}\n`);
@@ -3910,17 +3934,41 @@ async function cloudPush(args: string[]): Promise<number> {
     process.stdout.write(`Workflows: ${payload.summary.workflows}\n`);
     process.stdout.write(`Proposal capabilities: ${payload.summary.proposal_capabilities}\n`);
     process.stdout.write(`Kept-out fields: ${payload.summary.kept_out_fields}\n`);
-  }
-  if (dryRun) {
-    if (!args.includes("--json")) process.stdout.write("Dry run only. No Cloud upload attempted.\n");
+    process.stdout.write("Dry run only. No Cloud upload attempted.\n");
     return 0;
   }
-  const apiUrl = optionalArg(args, "--api-url") ?? process.env.SYNAPSOR_CLOUD_BASE_URL;
-  const token = optionalArg(args, "--token") ?? process.env.SYNAPSOR_CLOUD_TOKEN ?? process.env.SYNAPSOR_RUNNER_TOKEN;
-  if (!apiUrl || !token) {
-    throw new Error("cloud push upload requires --dry-run, or real --api-url plus --token/SYNAPSOR_CLOUD_TOKEN after the Cloud registry endpoint is available.");
+  const apiUrl = (optionalArg(args, "--api-url") ?? process.env.SYNAPSOR_CLOUD_BASE_URL ?? "").trim();
+  const token = (optionalArg(args, "--token") ?? process.env.SYNAPSOR_CLOUD_TOKEN ?? process.env.SYNAPSOR_RUNNER_TOKEN ?? "").trim();
+  if (!workspace) {
+    throw new Error("cloud push upload requires --workspace <project_id> or SYNAPSOR_WORKSPACE_ID/SYNAPSOR_PROJECT_ID.");
   }
-  throw new Error("cloud push upload is not wired to a Cloud registry endpoint yet. Use --dry-run for local validation; do not treat this as uploaded.");
+  if (!apiUrl || !token) {
+    throw new Error("cloud push upload requires --api-url plus --token/SYNAPSOR_CLOUD_TOKEN. Use --dry-run for local validation without a network call.");
+  }
+  const response = await postCloudContractPush({
+    apiUrl,
+    token,
+    workspace,
+    payload,
+    idempotencyKey,
+  });
+  if (json) {
+    process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
+    return 0;
+  }
+  const contractId = cloudStringField(response, "contract_id") || cloudStringField(response.contract, "contract_id");
+  const versionId = cloudStringField(response, "contract_version_id") || cloudStringField(response.version, "contract_version_id");
+  const digest = cloudStringField(response, "digest") || cloudStringField(response.version, "digest");
+  const status = cloudStringField(response, "status") || cloudStringField(response.version, "status") || "stored";
+  process.stdout.write("Synapsor Cloud contract push complete\n");
+  process.stdout.write(`Workspace: ${workspace}\n`);
+  if (contractId) process.stdout.write(`Contract id: ${contractId}\n`);
+  if (versionId) process.stdout.write(`Version id: ${versionId}\n`);
+  if (digest) process.stdout.write(`Digest: ${digest}\n`);
+  process.stdout.write(`Status: ${status}\n`);
+  const registryUrl = cloudStringField(response, "registry_url");
+  if (registryUrl) process.stdout.write(`Registry: ${registryUrl}\n`);
+  return 0;
 }
 
 function contractSummary(contract: SynapsorContract): Record<string, number> {
@@ -3931,6 +3979,92 @@ function contractSummary(contract: SynapsorContract): Record<string, number> {
     proposal_capabilities: contract.capabilities.filter((capability) => capability.kind === "proposal").length,
     kept_out_fields: contract.capabilities.reduce((count, capability) => count + (capability.kept_out_fields?.length ?? 0), 0),
   };
+}
+
+async function postCloudContractPush(input: {
+  apiUrl: string;
+  token: string;
+  workspace: string;
+  payload: Record<string, unknown>;
+  idempotencyKey?: string;
+}): Promise<Record<string, unknown>> {
+  let endpoint: URL;
+  try {
+    endpoint = new URL(`/v1/control/projects/${encodeURIComponent(input.workspace)}/agent-contracts`, input.apiUrl.endsWith("/") ? input.apiUrl : `${input.apiUrl}/`);
+  } catch {
+    throw new Error("cloud push upload failed: --api-url/SYNAPSOR_CLOUD_BASE_URL is not a valid URL.");
+  }
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    authorization: `Bearer ${input.token}`,
+    "content-type": "application/json",
+    "user-agent": "synapsor-runner-cloud-push",
+  };
+  if (input.idempotencyKey) headers["idempotency-key"] = input.idempotencyKey;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(input.payload),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const reason = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError") ? "request timed out" : "network request failed";
+    throw new Error(`cloud push upload failed: ${reason}. Check --api-url/SYNAPSOR_CLOUD_BASE_URL and network connectivity.`);
+  } finally {
+    clearTimeout(timeout);
+  }
+  const text = await response.text();
+  const body = parseCloudResponseJson(text);
+  if (!response.ok || body.ok === false) {
+    throw new Error(cloudPushErrorMessage(response.status, body));
+  }
+  return body;
+}
+
+function parseCloudResponseJson(text: string): Record<string, unknown> {
+  if (!text.trim()) return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return isRecord(parsed) ? parsed : { value: parsed };
+  } catch {
+    return { raw: text.slice(0, 500) };
+  }
+}
+
+function cloudPushErrorMessage(status: number, body: Record<string, unknown>): string {
+  const code = typeof body.error === "string" && body.error ? body.error : `http_${status}`;
+  const detail = cloudValidationDetail(body);
+  if (status === 401) return `cloud push upload failed: token is missing, invalid, or expired (${code}).`;
+  if (status === 403) return `cloud push upload failed: token does not have permission to write this workspace (${code}).`;
+  if (status === 404) return `cloud push upload failed: Cloud API URL or workspace was not found (${code}).`;
+  if (status === 409) return `cloud push upload failed: registry conflict (${code}).${detail}`;
+  if (status === 422) return `cloud push upload failed: Cloud rejected the contract (${code}).${detail}`;
+  if (status >= 500) return `cloud push upload failed: Cloud returned HTTP ${status} (${code}).`;
+  return `cloud push upload failed: Cloud returned HTTP ${status} (${code}).${detail}`;
+}
+
+function cloudValidationDetail(body: Record<string, unknown>): string {
+  const errors = Array.isArray(body.errors) ? body.errors : [];
+  if (!errors.length) {
+    const message = typeof body.message === "string" ? body.message : "";
+    return message ? ` ${message}` : "";
+  }
+  const rendered = errors.slice(0, 3).map((issue) => {
+    if (!isRecord(issue)) return String(issue);
+    const path = typeof issue.path === "string" ? issue.path : "$";
+    const code = typeof issue.code === "string" ? issue.code : "validation_error";
+    const message = typeof issue.message === "string" ? issue.message : "";
+    return `${path} ${code}${message ? `: ${message}` : ""}`;
+  }).join("; ");
+  return ` ${rendered}`;
+}
+
+function cloudStringField(value: unknown, key: string): string {
+  return isRecord(value) && typeof value[key] === "string" ? value[key] : "";
 }
 
 async function cloudConnect(args: string[]): Promise<number> {
@@ -7426,6 +7560,7 @@ function firstPositional(args: string[]): string | undefined {
   const flagsWithValues = new Set([
     "--allowed-columns",
     "--approval-role",
+    "--api-url",
     "--actor",
     "--action",
     "--auth-token-env",
@@ -7436,6 +7571,7 @@ function firstPositional(args: string[]): string | undefined {
     "--conflict-column",
     "--cors-origin",
     "--database-url-env",
+    "--description",
     "--destination",
     "--engine",
     "--evidence",
@@ -7491,10 +7627,12 @@ function firstPositional(args: string[]): string | undefined {
     "--tenant-env",
     "--tenant-key",
     "--timeout-ms",
+    "--token",
     "--to",
     "--transition-guard",
     "--url",
     "--visible-columns",
+    "--workspace",
     "--writeback-job",
     "--write-url-env",
   ]);

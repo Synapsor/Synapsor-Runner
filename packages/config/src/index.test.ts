@@ -230,6 +230,21 @@ describe("runner capability config validation", () => {
     expect(result.warnings.map((warning) => warning.code)).toContain("WRITEBACK_DISABLED");
   });
 
+  it("accepts pure-contract configs when capabilities is omitted or explicitly empty", () => {
+    const base = mutableConfig();
+    delete base.trusted_context;
+    delete base.capabilities;
+    base.contracts = ["./synapsor.contract.json"];
+    const omitted = validateRunnerCapabilityConfig(base);
+    expect(omitted.ok).toBe(true);
+    expect(omitted.errors).toEqual([]);
+
+    base.capabilities = [];
+    const explicitEmpty = validateRunnerCapabilityConfig(base);
+    expect(explicitEmpty.ok).toBe(true);
+    expect(explicitEmpty.errors).toEqual([]);
+  });
+
   it("rejects direct SQL writeback when a source is marked read-only", () => {
     const config = mutableConfig();
     config.sources.app_postgres.read_only = true;

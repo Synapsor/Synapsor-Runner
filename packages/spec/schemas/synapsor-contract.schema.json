@@ -205,6 +205,14 @@
         "action": { "$ref": "#/$defs/qualifiedOrSafeName" },
         "allowed_fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeIdentifier" } },
         "patch": { "type": "object", "additionalProperties": { "$ref": "#/$defs/patchBinding" } },
+        "numeric_bounds": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/numericBound" }
+        },
+        "transition_guards": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/transitionGuard" }
+        },
         "conflict_guard": {
           "type": "object",
           "additionalProperties": false,
@@ -233,6 +241,41 @@
         }
       }
     },
+    "numericBound": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" }
+      },
+      "anyOf": [
+        { "required": ["minimum"] },
+        { "required": ["maximum"] }
+      ]
+    },
+    "transitionGuard": {
+      "type": "object",
+      "required": ["allowed"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "from_column": { "$ref": "#/$defs/safeIdentifier" },
+        "allowed": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
     "capability": {
       "type": "object",
       "required": ["name", "kind", "context", "subject", "args", "visible_fields"],
@@ -243,6 +286,7 @@
       "properties": {
         "name": { "$ref": "#/$defs/qualifiedName" },
         "description": { "type": "string" },
+        "returns_hint": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["read", "proposal", "external_action", "answer_with_evidence"] },
         "context": { "$ref": "#/$defs/qualifiedOrSafeName" },
         "source": { "$ref": "#/$defs/qualifiedOrSafeName" },

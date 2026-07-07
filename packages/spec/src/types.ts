@@ -94,6 +94,8 @@ export type ProposalActionSpec = ExtensionFields & {
   action: string;
   allowed_fields: string[];
   patch: Record<string, PatchBindingSpec>;
+  numeric_bounds?: Record<string, { minimum?: number; maximum?: number }>;
+  transition_guards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: { mode?: "human" | "operator" | "policy"; required_role?: string };
   writeback?: {
@@ -106,6 +108,7 @@ export type ProposalActionSpec = ExtensionFields & {
 export type CapabilitySpec = ExtensionFields & {
   name: string;
   description?: string;
+  returns_hint?: string;
   kind: CapabilityKind;
   context: string;
   source?: string;

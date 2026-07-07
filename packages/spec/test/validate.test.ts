@@ -65,4 +65,34 @@ describe("@synapsor/spec validation", () => {
       expect(result.ok, fixture).toBe(true);
     }
   });
+
+  it("accepts and normalizes portable proposal safety fields", () => {
+    const normalized = normalizeContract(readJson("fixtures/conformance/numeric-bounds/contract.json"));
+    const capability = normalized.capabilities.find((item) => item.name === "support.propose_plan_credit");
+
+    expect(capability?.returns_hint).toContain("DB unchanged");
+    expect(capability?.args.amount_cents).toMatchObject({
+      description: "Credit amount in cents.",
+      minimum: 1,
+      maximum: 1000000,
+    });
+    expect(capability?.args.reason).toMatchObject({
+      description: "Business reason for the credit.",
+      max_length: 500,
+    });
+    expect(capability?.proposal?.numeric_bounds).toEqual({
+      credit_requested_cents: { minimum: 1, maximum: 2500 },
+    });
+  });
+
+  it("still rejects unknown core fields", () => {
+    const contract = readJson("fixtures/conformance/numeric-bounds/contract.json") as Record<string, unknown>;
+    const capabilities = contract.capabilities as Array<Record<string, unknown>>;
+    capabilities[0].unexpected_core_field = true;
+
+    const result = validateContract(contract);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("UNKNOWN_CORE_FIELD");
+  });
 });

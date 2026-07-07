@@ -1,0 +1,117 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "numeric bounds proposal conformance"
+  },
+  "resources": [
+    {
+      "name": "support_accounts",
+      "engine": "postgres",
+      "schema": "public",
+      "table": "accounts",
+      "primary_key": "id",
+      "tenant_key": "tenant_id",
+      "conflict_key": "updated_at"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "local_operator",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID"
+        },
+        {
+          "name": "principal",
+          "source": "environment",
+          "key": "SYNAPSOR_PRINCIPAL"
+        }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "support.propose_plan_credit",
+      "kind": "proposal",
+      "description": "Propose a support credit for a verified outage impact.",
+      "returns_hint": "Returns the proposal id and requested credit; DB unchanged.",
+      "context": "local_operator",
+      "source": "local_postgres",
+      "subject": {
+        "resource": "support_accounts"
+      },
+      "args": {
+        "account_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128,
+          "description": "Account id."
+        },
+        "amount_cents": {
+          "type": "number",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "Credit amount in cents."
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500,
+          "description": "Business reason for the credit."
+        }
+      },
+      "lookup": {
+        "id_from_arg": "account_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "credit_requested_cents",
+        "credit_reason",
+        "updated_at"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1,
+      "proposal": {
+        "action": "grant_plan_credit",
+        "allowed_fields": [
+          "credit_requested_cents",
+          "credit_reason"
+        ],
+        "patch": {
+          "credit_requested_cents": {
+            "from_arg": "amount_cents"
+          },
+          "credit_reason": {
+            "from_arg": "reason"
+          }
+        },
+        "numeric_bounds": {
+          "credit_requested_cents": {
+            "minimum": 1,
+            "maximum": 2500
+          }
+        },
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "approval": {
+          "mode": "human",
+          "required_role": "local_reviewer"
+        },
+        "writeback": {
+          "mode": "none"
+        }
+      }
+    }
+  ]
+}

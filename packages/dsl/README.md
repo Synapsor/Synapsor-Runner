@@ -22,6 +22,8 @@ CREATE AGENT CONTEXT local_operator
 END
 
 CREATE CAPABILITY billing.inspect_invoice
+  DESCRIPTION 'Inspect one invoice in the trusted tenant before proposing a waiver.'
+  RETURNS HINT 'Returns reviewed invoice fields plus evidence/query-audit handles.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -29,7 +31,7 @@ CREATE CAPABILITY billing.inspect_invoice
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
   ALLOW READ id, tenant_id, status, late_fee_cents, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
@@ -43,16 +45,19 @@ and the runner README walks the full compile → validate → bundle → serve f
 ## CLI
 
 ```bash
-synapsor-dsl validate ./contract.synapsor
-synapsor-dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-dsl validate ./contract.synapsor [--strict]
+synapsor-dsl compile ./contract.synapsor --out ./synapsor.contract.json [--strict]
 ```
 
 Runner also exposes:
 
 ```bash
-synapsor-runner dsl validate ./contract.synapsor
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-runner dsl validate ./contract.synapsor [--strict]
+synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json [--strict]
 ```
+
+`--strict` treats safety warnings as errors. Use it in CI for reviewed proposal
+contracts.
 
 ## Programmatic API
 
@@ -84,11 +89,16 @@ try {
 - `CREATE AGENT WORKFLOW`
 - `BIND ... FROM SESSION|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM`
 - `USING CONTEXT`
+- `DESCRIPTION`
+- `RETURNS HINT`
 - `ON schema.table`
 - `PRIMARY KEY`
 - `TENANT KEY`
 - `CONFLICT GUARD`
 - `ARG`
+- `ARG ... DESCRIPTION`
+- `ARG ... MIN ... MAX ...` for `NUMBER`
+- `ARG ... MAX LENGTH ...` for `STRING`/`TEXT`
 - `LOOKUP`
 - `ALLOW READ`
 - `KEEP OUT`
@@ -96,6 +106,8 @@ try {
 - `PROPOSE ACTION`
 - `ALLOW WRITE`
 - `PATCH`
+- `BOUND`
+- `TRANSITION`
 - `APPROVAL ROLE`
 - `WRITEBACK DIRECT SQL|APP HANDLER|CLOUD WORKER|NONE`
 - workflow `ALLOW CAPABILITY`

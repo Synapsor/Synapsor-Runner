@@ -674,6 +674,233 @@ describe("runner cli", () => {
     expect(payload.payload.summary.capabilities).toBeGreaterThan(0);
   });
 
+  it("uploads Cloud contract push to the configured control API", async () => {
+    const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    let seenRequest: { url?: string; authorization?: string; body?: Record<string, unknown> } = {};
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      request.on("end", () => {
+        seenRequest = {
+          url: request.url,
+          authorization: request.headers.authorization,
+          body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
+        };
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({
+          ok: true,
+          contract_id: "act_billing_late_fee",
+          contract_version_id: "act_billing_late_fee_v1",
+          workspace_id: "cloud_project",
+          digest: "sha256:abc123",
+          status: "draft",
+          summary: { contexts: 1, capabilities: 2, workflows: 1, proposal_capabilities: 1, kept_out_fields: 2, policies: 0 },
+          registry_url: "/workspace/agent-contracts/act_billing_late_fee",
+        }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
+      await expect(main([
+        "cloud",
+        "push",
+        contractPath,
+        "--api-url",
+        `http://127.0.0.1:${address.port}`,
+        "--token",
+        "secret-cloud-token",
+        "--workspace",
+        "cloud_project",
+        "--name",
+        "billing-late-fee",
+        "--json",
+      ])).resolves.toBe(0);
+      const response = JSON.parse(output.join(""));
+      expect(response.contract_id).toBe("act_billing_late_fee");
+      expect(seenRequest.url).toBe("/v1/control/projects/cloud_project/agent-contracts");
+      expect(seenRequest.authorization).toBe("Bearer secret-cloud-token");
+      expect(seenRequest.body?.schema_version).toBe("synapsor.cloud-contract-push.v0.1");
+      expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
+      expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
+      expect(output.join("")).not.toContain("secret-cloud-token");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("surfaces Cloud validation errors without leaking the token", async () => {
+    const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const server = createServer((_request, response) => {
+      response.statusCode = 422;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({
+        ok: false,
+        error: "agent_contract_validation_failed",
+        errors: [{ path: "$.capabilities[0].args.tenant_id", code: "MODEL_CONTROLLED_TRUST_ARG", message: "tenant_id cannot be model-facing" }],
+      }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
+      await expect(main([
+        "cloud",
+        "push",
+        contractPath,
+        "--api-url",
+        `http://127.0.0.1:${address.port}`,
+        "--token",
+        "do-not-print-this-token",
+        "--workspace",
+        "cloud_project",
+      ])).rejects.toThrow(/Cloud rejected the contract.*MODEL_CONTROLLED_TRUST_ARG/i);
+      expect(output.join("")).not.toContain("do-not-print-this-token");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("fails DSL compile strict mode when proposal safety warnings remain", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-strict-"));
+    const dslPath = path.join(tempDir, "contract.synapsor");
+    await fs.writeFile(dslPath, `
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  TENANT BINDING tenant_id
+END
+
+CREATE CAPABILITY support.propose_plan_credit
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.accounts
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  LOOKUP account_id BY id
+  ARG account_id STRING REQUIRED MAX LENGTH 128
+  ARG amount_cents NUMBER REQUIRED
+  ALLOW READ id, tenant_id, credit_requested_cents, updated_at
+  PROPOSE ACTION grant_plan_credit
+  ALLOW WRITE credit_requested_cents
+  PATCH credit_requested_cents = ARG amount_cents
+  WRITEBACK NONE
+END
+`, "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["dsl", "compile", dslPath, "--strict"])).resolves.toBe(1);
+    expect(output.join("")).toContain("dsl warnings treated as errors");
+    expect(output.join("")).toContain("NUMERIC_PATCH_BOUND_RECOMMENDED");
+  });
+
+  it("compiles DSL-authored numeric bounds into a contract enforced by runtime proposals", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-bounds-"));
+    const dslPath = path.join(tempDir, "contract.synapsor");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(dslPath, `
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY support.propose_plan_credit
+  DESCRIPTION 'Propose a support credit for a verified outage impact.'
+  RETURNS HINT 'Returns the proposal id and requested credit; DB unchanged.'
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.accounts
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP account_ref BY id
+  ARG account_ref STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Account object id.'
+  ARG amount_cents NUMBER REQUIRED MIN 1 MAX 1000000 DESCRIPTION 'Credit amount in cents.'
+  ARG reason TEXT REQUIRED MAX LENGTH 500 DESCRIPTION 'Business reason for the credit.'
+  ALLOW READ id, tenant_id, credit_requested_cents, credit_reason, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+  PROPOSE ACTION grant_plan_credit
+  ALLOW WRITE credit_requested_cents, credit_reason
+  PATCH credit_requested_cents = ARG amount_cents
+  PATCH credit_reason = ARG reason
+  BOUND credit_requested_cents 1..2500
+  APPROVAL ROLE local_reviewer
+  WRITEBACK NONE
+END
+`, "utf8");
+    await expect(main(["dsl", "compile", dslPath, "--out", contractPath, "--strict"])).resolves.toBe(0);
+    const contract = JSON.parse(await fs.readFile(contractPath, "utf8"));
+    expect(contract.capabilities[0].proposal.numeric_bounds).toEqual({
+      credit_requested_cents: { minimum: 1, maximum: 2500 },
+    });
+    await fs.writeFile(configPath, `${JSON.stringify({
+      version: 1,
+      mode: "review",
+      result_format: 2,
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./synapsor.contract.json"],
+      capabilities: [],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          statement_timeout_ms: 3000,
+        },
+      },
+    }, null, 2)}\n`, "utf8");
+    const config = loadRuntimeConfigFromFile(configPath);
+    const runtime = createMcpRuntime(config, {
+      env: {
+        SYNAPSOR_TENANT_ID: "acme",
+        SYNAPSOR_PRINCIPAL: "local_reviewer",
+      },
+      readRow: async () => ({
+        row: {
+          id: "acct_3001",
+          tenant_id: "acme",
+          credit_requested_cents: 0,
+          credit_reason: null,
+          updated_at: "2026-06-21T00:00:00Z",
+        },
+        rowCount: 1,
+      }),
+      resultFormat: 2,
+    });
+    try {
+      const result = await runtime.callTool("support.propose_plan_credit", {
+        account_ref: "acct_3001",
+        amount_cents: 999999,
+        reason: "outage credit",
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "POLICY_VIOLATION" },
+        source_database_changed: false,
+      });
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("initializes a safe local runner config and refuses accidental overwrite", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");

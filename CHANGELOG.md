@@ -2,7 +2,33 @@
 
 ## Unreleased
 
-No unreleased changes yet.
+### DSL / JSON Contract Parity
+
+- Adds portable spec fields for capability `returns_hint`, proposal
+  `numeric_bounds`, and proposal `transition_guards` so reviewed safety
+  metadata can live in canonical contracts instead of runner-private config.
+- Extends the DSL with `DESCRIPTION`, `RETURNS HINT`, arg descriptions,
+  numeric arg min/max, text `MAX LENGTH`, patch `BOUND`, and `TRANSITION`
+  clauses.
+- Adds DSL warnings and `--strict` mode so weak proposal contracts fail CI
+  instead of silently compiling.
+- Preserves compiled bounds through `contracts: []` into Runner propose-time
+  enforcement and accepts pure-contract configs with `capabilities: []`.
+- Adds `docs/dsl-json-parity.md` so developers can see which fields are
+  authored in DSL, validated in JSON, enforced by Runner, and accepted by
+  C++/Cloud.
+
+### Cloud Registry Push
+
+- Wires non-dry-run `synapsor-runner cloud push` to the Synapsor Cloud control
+  API. The CLI validates locally, posts normalized `@synapsor/spec` JSON, and
+  reports Cloud contract/version/digest details only after the server confirms
+  storage.
+- Keeps `--dry-run` network-free and updates error handling for invalid tokens,
+  missing workspace permissions, validation errors, conflicts, and network
+  failures without printing bearer tokens.
+- Documents the project-scoped Cloud registry path and backend runner-bundle
+  export foundation.
 
 ## 0.1.7
 

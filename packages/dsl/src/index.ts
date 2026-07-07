@@ -1,4 +1,4 @@
-import { assertValidContract, normalizeContract, type AgentContextSpec, type CapabilitySpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
+import { assertValidContract, normalizeContract, type AgentContextSpec, type ArgumentSpec, type CapabilitySpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
 
 export type AgentDslAst = {
   contexts: AgentDslContextAst[];
@@ -15,7 +15,10 @@ export type AgentDslContextAst = {
 
 export type AgentDslCapabilityAst = {
   name: string;
+  line?: number;
   kind: "read" | "proposal";
+  description?: string;
+  returnsHint?: string;
   context: string;
   source?: string;
   schema: string;
@@ -24,7 +27,7 @@ export type AgentDslCapabilityAst = {
   tenantKey?: string;
   conflictKey?: string;
   lookup?: { arg: string; column: string };
-  args: Record<string, { type: "string" | "number" | "boolean"; required?: boolean; max_length?: number }>;
+  args: Record<string, { type: "string" | "number" | "boolean"; required?: boolean; max_length?: number; minimum?: number; maximum?: number; description?: string; line?: number }>;
   visibleFields: string[];
   keptOutFields: string[];
   evidenceRequired?: boolean;
@@ -33,6 +36,8 @@ export type AgentDslCapabilityAst = {
     action: string;
     allowedFields: string[];
     patch: Record<string, { fixed?: string | number | boolean | null; from_arg?: string }>;
+    numericBounds?: Record<string, { minimum?: number; maximum?: number }>;
+    transitionGuards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
     approvalRole?: string;
     writebackMode?: "direct_sql" | "app_handler" | "cloud_worker" | "none";
     executor?: string;
@@ -52,6 +57,11 @@ export type ValidationResult = {
   ok: boolean;
   errors: Array<{ line: number; column: number; code: string; message: string }>;
   warnings: Array<{ line: number; column: number; code: string; message: string }>;
+};
+
+export type AgentDslCompileResult = {
+  contract: SynapsorContract;
+  warnings: ValidationResult["warnings"];
 };
 
 type Block = {
@@ -87,6 +97,10 @@ export function parseAgentDsl(source: string): AgentDslAst {
 }
 
 export function compileAgentDsl(source: string): SynapsorContract {
+  return compileAgentDslWithWarnings(source).contract;
+}
+
+export function compileAgentDslWithWarnings(source: string): AgentDslCompileResult {
   const ast = parseAgentDsl(source);
   const contexts: AgentContextSpec[] = ast.contexts.map((context) => ({
     name: context.name,
@@ -98,6 +112,8 @@ export function compileAgentDsl(source: string): SynapsorContract {
     const spec: CapabilitySpec = {
       name: capability.name,
       kind: capability.kind,
+      ...(capability.description ? { description: capability.description } : {}),
+      ...(capability.returnsHint ? { returns_hint: capability.returnsHint } : {}),
       context: capability.context,
       ...(capability.source ? { source: capability.source } : {}),
       subject: {
@@ -107,7 +123,7 @@ export function compileAgentDsl(source: string): SynapsorContract {
         ...(capability.tenantKey ? { tenant_key: capability.tenantKey } : {}),
         ...(capability.conflictKey ? { conflict_key: capability.conflictKey } : {}),
       },
-      args: capability.args,
+      args: specArgsFromDsl(capability.args),
       ...(capability.lookup ? { lookup: { id_from_arg: capability.lookup.arg } } : {}),
       visible_fields: capability.visibleFields,
       ...(capability.keptOutFields.length ? { kept_out_fields: capability.keptOutFields } : {}),
@@ -119,6 +135,8 @@ export function compileAgentDsl(source: string): SynapsorContract {
         action: capability.proposal.action,
         allowed_fields: capability.proposal.allowedFields,
         patch: capability.proposal.patch,
+        ...(capability.proposal.numericBounds ? { numeric_bounds: capability.proposal.numericBounds } : {}),
+        ...(capability.proposal.transitionGuards ? { transition_guards: capability.proposal.transitionGuards } : {}),
         conflict_guard: capability.conflictKey ? { column: capability.conflictKey } : { weak_guard_ack: true },
         approval: { mode: "human", required_role: capability.proposal.approvalRole ?? "local_reviewer" },
         writeback: {
@@ -145,13 +163,13 @@ export function compileAgentDsl(source: string): SynapsorContract {
     ...(workflows.length ? { workflows } : {}),
   };
   assertValidContract(contract);
-  return normalizeContract(contract);
+  return { contract: normalizeContract(contract), warnings: collectDslWarnings(ast) };
 }
 
 export function validateAgentDsl(source: string): ValidationResult {
   try {
-    compileAgentDsl(source);
-    return { ok: true, errors: [], warnings: [] };
+    const result = compileAgentDslWithWarnings(source);
+    return { ok: true, errors: [], warnings: result.warnings };
   } catch (error) {
     if (error instanceof AgentDslError) {
       return {
@@ -234,6 +252,7 @@ function parseContextBlock(block: Block): AgentDslContextAst {
 function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   const capability: AgentDslCapabilityAst = {
     name: block.name,
+    line: block.line,
     kind: "read",
     context: "",
     schema: "",
@@ -244,6 +263,16 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     keptOutFields: [],
   };
   for (const item of block.body) {
+    const description = item.text.match(/^DESCRIPTION\s+'(.*)'$/i);
+    if (description) {
+      capability.description = description[1] ?? "";
+      continue;
+    }
+    const returnsHint = item.text.match(/^RETURNS\s+HINT\s+'(.*)'$/i);
+    if (returnsHint) {
+      capability.returnsHint = returnsHint[1] ?? "";
+      continue;
+    }
     const context = item.text.match(/^USING\s+CONTEXT\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
     if (context?.[1]) {
       capability.context = context[1];
@@ -275,13 +304,9 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       capability.conflictKey = conflict[1];
       continue;
     }
-    const arg = item.text.match(/^ARG\s+([A-Za-z_][A-Za-z0-9_]*)\s+(STRING|TEXT|NUMBER|BOOLEAN|BOOL)(?:\s+REQUIRED)?(?:\s+MAX\s+(\d+))?$/i);
+    const arg = item.text.match(/^ARG\s+([A-Za-z_][A-Za-z0-9_]*)\s+(STRING|TEXT|NUMBER|BOOLEAN|BOOL)\b(.*)$/i);
     if (arg?.[1] && arg[2]) {
-      capability.args[arg[1]] = {
-        type: normalizeArgType(arg[2]),
-        ...(item.text.match(/\sREQUIRED(?:\s|$)/i) ? { required: true } : {}),
-        ...(arg[3] ? { max_length: Number(arg[3]) } : {}),
-      };
+      capability.args[arg[1]] = parseArgSpec(arg[1], arg[2], arg[3] ?? "", item.line);
       continue;
     }
     const lookup = item.text.match(/^LOOKUP\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
@@ -329,6 +354,29 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       if (!capability.proposal.allowedFields.includes(patch[1])) capability.proposal.allowedFields.push(patch[1]);
       continue;
     }
+    const bound = item.text.match(/^BOUND\s+([A-Za-z_][A-Za-z0-9_]*)\s+(-?\d+(?:\.\d+)?)?\s*\.\.\s*(-?\d+(?:\.\d+)?)?$/i);
+    if (bound?.[1]) {
+      ensureProposal(capability, item);
+      const minimum = bound[2] !== undefined ? Number(bound[2]) : undefined;
+      const maximum = bound[3] !== undefined ? Number(bound[3]) : undefined;
+      if (minimum === undefined && maximum === undefined) throw dslError(item.line, 1, "BOUND_RANGE_REQUIRED", "BOUND requires minimum, maximum, or both, such as 1..2500");
+      capability.proposal.numericBounds ??= {};
+      capability.proposal.numericBounds[bound[1]] = {
+        ...(minimum !== undefined ? { minimum } : {}),
+        ...(maximum !== undefined ? { maximum } : {}),
+      };
+      continue;
+    }
+    const transition = item.text.match(/^TRANSITION\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+FROM\s+([A-Za-z_][A-Za-z0-9_]*))?\s+ALLOW\s+(.+)$/i);
+    if (transition?.[1] && transition[3]) {
+      ensureProposal(capability, item);
+      capability.proposal.transitionGuards ??= {};
+      capability.proposal.transitionGuards[transition[1]] = {
+        ...(transition[2] ? { from_column: transition[2] } : {}),
+        allowed: parseTransitionAllowed(transition[3], item.line),
+      };
+      continue;
+    }
     const approval = item.text.match(/^APPROVAL\s+ROLE\s+([A-Za-z_][A-Za-z0-9_.-]*)$/i);
     if (approval?.[1]) {
       ensureProposal(capability, item);
@@ -352,6 +400,40 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   if (Object.keys(capability.args).length === 0) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
   if (capability.kind === "proposal" && (!capability.proposal || Object.keys(capability.proposal.patch).length === 0)) throw dslError(block.line, 1, "PROPOSAL_PATCH_REQUIRED", `${block.name} proposal requires at least one PATCH line`);
   return capability;
+}
+
+function specArgsFromDsl(args: AgentDslCapabilityAst["args"]): Record<string, ArgumentSpec> {
+  return Object.fromEntries(Object.entries(args).map(([name, arg]) => {
+    const { line: _line, ...spec } = arg;
+    return [name, spec];
+  }));
+}
+
+function collectDslWarnings(ast: AgentDslAst): ValidationResult["warnings"] {
+  const warnings: ValidationResult["warnings"] = [];
+  for (const capability of ast.capabilities) {
+    if (capability.kind !== "proposal" || !capability.proposal) continue;
+    const line = capability.line ?? 1;
+    if (!capability.description) {
+      warnings.push({ line, column: 1, code: "DESCRIPTION_RECOMMENDED", message: `${capability.name} is a proposal capability without DESCRIPTION.` });
+    }
+    if (!capability.returnsHint) {
+      warnings.push({ line, column: 1, code: "RETURNS_HINT_RECOMMENDED", message: `${capability.name} is a proposal capability without RETURNS HINT.` });
+    }
+    for (const [column, binding] of Object.entries(capability.proposal.patch)) {
+      if (!binding.from_arg) continue;
+      const arg = capability.args[binding.from_arg];
+      if (arg?.type === "number" && arg.minimum === undefined && arg.maximum === undefined && capability.proposal.numericBounds?.[column] === undefined) {
+        warnings.push({
+          line: arg.line ?? line,
+          column: 1,
+          code: "NUMERIC_PATCH_BOUND_RECOMMENDED",
+          message: `${capability.name} patches ${column} from numeric arg ${binding.from_arg} without ARG MIN/MAX or BOUND ${column}.`,
+        });
+      }
+    }
+  }
+  return warnings;
 }
 
 function parseWorkflowBlock(block: Block): AgentDslWorkflowAst {
@@ -403,6 +485,86 @@ function parsePatchBinding(raw: string): { fixed?: string | number | boolean | n
   const quoted = trimmed.match(/^'(.*)'$/);
   if (quoted) return { fixed: quoted[1] ?? "" };
   return { fixed: trimmed };
+}
+
+function parseArgSpec(
+  name: string,
+  rawType: string,
+  rawOptions: string,
+  line: number,
+): AgentDslCapabilityAst["args"][string] {
+  const type = normalizeArgType(rawType);
+  let rest = rawOptions.trim();
+  let description: string | undefined;
+  const descriptionMatch = rest.match(/\bDESCRIPTION\s+'([^']*)'/i);
+  if (descriptionMatch) {
+    description = descriptionMatch[1] ?? "";
+    rest = `${rest.slice(0, descriptionMatch.index)} ${rest.slice((descriptionMatch.index ?? 0) + descriptionMatch[0].length)}`.trim();
+  }
+  const required = /\bREQUIRED\b/i.test(rest);
+  rest = rest.replace(/\bREQUIRED\b/ig, " ").trim();
+
+  const maxLengthMatch = rest.match(/\bMAX\s+LENGTH\s+(\d+)\b/i);
+  const maxLength = maxLengthMatch?.[1] ? Number(maxLengthMatch[1]) : undefined;
+  if (maxLengthMatch) rest = `${rest.slice(0, maxLengthMatch.index)} ${rest.slice((maxLengthMatch.index ?? 0) + maxLengthMatch[0].length)}`.trim();
+
+  const minMatch = rest.match(/\bMIN\s+(-?\d+(?:\.\d+)?)\b/i);
+  const minimum = minMatch?.[1] ? Number(minMatch[1]) : undefined;
+  if (minMatch) rest = `${rest.slice(0, minMatch.index)} ${rest.slice((minMatch.index ?? 0) + minMatch[0].length)}`.trim();
+
+  const maxMatch = rest.match(/\bMAX\s+(-?\d+(?:\.\d+)?)\b/i);
+  const maximumOrLegacyLength = maxMatch?.[1] ? Number(maxMatch[1]) : undefined;
+  if (maxMatch) rest = `${rest.slice(0, maxMatch.index)} ${rest.slice((maxMatch.index ?? 0) + maxMatch[0].length)}`.trim();
+
+  if (rest.trim().length > 0) {
+    throw dslError(line, 1, "ARG_OPTIONS_UNSUPPORTED", `unsupported ARG options for ${name}: ${rest.trim()}`);
+  }
+  if (type !== "number" && minimum !== undefined) {
+    throw dslError(line, 1, "ARG_MIN_REQUIRES_NUMBER", `ARG ${name} uses MIN, but MIN is only valid for NUMBER args`);
+  }
+  if (type === "boolean" && (maxLength !== undefined || maximumOrLegacyLength !== undefined)) {
+    throw dslError(line, 1, "ARG_MAX_INVALID_FOR_BOOLEAN", `ARG ${name} cannot use MAX or MAX LENGTH because BOOLEAN has no numeric or length bound`);
+  }
+  if (type === "number" && maxLength !== undefined) {
+    throw dslError(line, 1, "ARG_MAX_LENGTH_REQUIRES_TEXT", `ARG ${name} uses MAX LENGTH, but MAX LENGTH is only valid for STRING/TEXT args`);
+  }
+
+  return {
+    type,
+    line,
+    ...(required ? { required: true } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(type === "number" && minimum !== undefined ? { minimum } : {}),
+    ...(type === "number" && maximumOrLegacyLength !== undefined ? { maximum: maximumOrLegacyLength } : {}),
+    ...(type !== "number" && maxLength !== undefined ? { max_length: maxLength } : {}),
+    ...(type !== "number" && maxLength === undefined && maximumOrLegacyLength !== undefined ? { max_length: maximumOrLegacyLength } : {}),
+  };
+}
+
+function parseTransitionAllowed(raw: string, line: number): Record<string, string[]> {
+  const allowed: Record<string, string[]> = {};
+  for (const item of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+    const match = item.match(/^(.+?)\s*->\s*(.+)$/);
+    if (!match?.[1] || !match[2]) {
+      throw dslError(line, 1, "TRANSITION_RULE_INVALID", `transition rule must use from -> to syntax: ${item}`);
+    }
+    const from = parseStateValue(match[1]);
+    const toValues = match[2].split("|").map(parseStateValue).filter(Boolean);
+    if (!from || toValues.length === 0) {
+      throw dslError(line, 1, "TRANSITION_RULE_INVALID", `transition rule must name non-empty states: ${item}`);
+    }
+    allowed[from] = toValues;
+  }
+  if (Object.keys(allowed).length === 0) {
+    throw dslError(line, 1, "TRANSITION_ALLOWED_REQUIRED", "TRANSITION requires at least one from -> to rule");
+  }
+  return allowed;
+}
+
+function parseStateValue(raw: string): string {
+  const trimmed = raw.trim();
+  const quoted = trimmed.match(/^'(.*)'$/);
+  return (quoted?.[1] ?? trimmed).trim();
 }
 
 function normalizeBindingSource(source: string): AgentDslContextAst["bindings"][number]["source"] {

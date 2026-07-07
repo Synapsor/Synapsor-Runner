@@ -10,6 +10,30 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## Unreleased
+
+### DSL / JSON Contract Parity
+
+- Adds portable spec fields for capability `returns_hint`, proposal
+  `numeric_bounds`, and proposal `transition_guards`.
+- Extends the DSL with `DESCRIPTION`, `RETURNS HINT`, arg descriptions,
+  numeric arg min/max, text `MAX LENGTH`, patch `BOUND`, and `TRANSITION`
+  clauses.
+- Adds DSL warnings and `--strict` mode so proposal capabilities cannot
+  silently lose reviewed safety metadata.
+- Preserves compiled bounds through `contracts: []` into Runner propose-time
+  enforcement and accepts pure-contract configs with `capabilities: []`.
+- Adds `docs/dsl-json-parity.md` as the field-by-field support matrix across
+  JSON spec, DSL, Runner, C++/Cloud, and Cloud push.
+
+### Cloud Registry Push
+
+- Wires non-dry-run `synapsor-runner cloud push` to the Cloud control API.
+- Keeps dry-run network-free and prints server-confirmed contract, version,
+  digest, and registry details for real uploads.
+- Adds clearer 401/403/404/409/422/network error messages without printing
+  bearer tokens.
+
 ## 0.1.5
 
 ### Contract Authoring Front Door

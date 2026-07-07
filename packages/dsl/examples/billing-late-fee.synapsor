@@ -6,6 +6,8 @@ CREATE AGENT CONTEXT local_operator
 END
 
 CREATE CAPABILITY billing.inspect_invoice
+  DESCRIPTION 'Inspect one invoice in the trusted tenant before proposing a waiver.'
+  RETURNS HINT 'Returns reviewed invoice fields plus evidence/query-audit handles.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -13,7 +15,7 @@ CREATE CAPABILITY billing.inspect_invoice
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
   ALLOW READ id, tenant_id, customer_id, status, late_fee_cents, waiver_reason, updated_at
   KEEP OUT card_token, internal_risk_score
   REQUIRE EVIDENCE
@@ -21,6 +23,8 @@ CREATE CAPABILITY billing.inspect_invoice
 END
 
 CREATE CAPABILITY billing.propose_late_fee_waiver
+  DESCRIPTION 'Propose waiving one invoice late fee after inspecting invoice and policy evidence.'
+  RETURNS HINT 'Returns a review-required proposal id, exact diff, evidence handle, and source_database_changed:false.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -28,8 +32,8 @@ CREATE CAPABILITY billing.propose_late_fee_waiver
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
-  ARG waiver_reason TEXT REQUIRED MAX 500
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
+  ARG waiver_reason TEXT REQUIRED MAX LENGTH 500 DESCRIPTION 'Business reason for the proposed waiver.'
   ALLOW READ id, tenant_id, customer_id, status, late_fee_cents, waiver_reason, updated_at
   KEEP OUT card_token, internal_risk_score
   REQUIRE EVIDENCE

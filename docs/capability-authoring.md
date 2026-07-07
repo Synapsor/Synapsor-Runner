@@ -26,6 +26,8 @@ CREATE AGENT CONTEXT local_operator
 END
 
 CREATE CAPABILITY billing.inspect_invoice
+  DESCRIPTION 'Inspect one invoice in the trusted tenant before proposing a waiver.'
+  RETURNS HINT 'Returns reviewed invoice fields plus evidence/query-audit handles.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -33,13 +35,15 @@ CREATE CAPABILITY billing.inspect_invoice
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
   ALLOW READ id, tenant_id, status, late_fee_cents, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
 END
 
 CREATE CAPABILITY billing.propose_late_fee_waiver
+  DESCRIPTION 'Propose waiving one invoice late fee after inspecting invoice and policy evidence.'
+  RETURNS HINT 'Returns a review-required proposal id, exact diff, evidence handle, and source_database_changed:false.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -47,8 +51,8 @@ CREATE CAPABILITY billing.propose_late_fee_waiver
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
-  ARG reason TEXT REQUIRED MAX 500
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
+  ARG reason TEXT REQUIRED MAX LENGTH 500 DESCRIPTION 'Business reason for the proposed waiver.'
   ALLOW READ id, tenant_id, status, late_fee_cents, waiver_reason, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
@@ -56,6 +60,7 @@ CREATE CAPABILITY billing.propose_late_fee_waiver
   ALLOW WRITE late_fee_cents, waiver_reason
   PATCH late_fee_cents = 0
   PATCH waiver_reason = ARG reason
+  BOUND late_fee_cents 0..10000
   APPROVAL ROLE billing_lead
   WRITEBACK DIRECT SQL
 END
@@ -64,10 +69,15 @@ END
 Compile and validate:
 
 ```bash
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
 synapsor-runner contract validate ./synapsor.contract.json
 synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
 synapsor-runner cloud push ./synapsor.contract.json --dry-run
+synapsor-runner cloud push ./synapsor.contract.json \
+  --api-url "$SYNAPSOR_CLOUD_BASE_URL" \
+  --token "$SYNAPSOR_CLOUD_TOKEN" \
+  --workspace "$SYNAPSOR_PROJECT_ID" \
+  --name billing-late-fee
 ```
 
 Reference the generated contract from local runner wiring:
@@ -94,6 +104,31 @@ Then preview or serve the MCP tools:
 synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
 synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
+
+`--strict` treats DSL safety warnings as errors. Use it in CI so proposal
+capabilities cannot accidentally lose descriptions, returns hints, or numeric
+patch bounds during review.
+
+## DSL / JSON Capability Parity
+
+The DSL compiles to canonical `@synapsor/spec` JSON. It must not silently weaken
+reviewed runner JSON capabilities. Current parity:
+
+| JSON field | DSL clause | Since | Notes |
+| --- | --- | --- | --- |
+| capability `description` | `DESCRIPTION '...'` | 0.1.8 | Recommended for every model-facing tool; strict mode warns when proposal capabilities omit it. |
+| capability `returns_hint` | `RETURNS HINT '...'` | 0.1.8 | Recommended for every model-facing tool; strict mode warns when proposal capabilities omit it. |
+| arg `description` | `ARG name TYPE ... DESCRIPTION '...'` | 0.1.8 | Used in MCP tool input schemas. |
+| arg `minimum` | `ARG amount NUMBER MIN 1` | 0.1.8 | NUMBER args only. |
+| arg `maximum` | `ARG amount NUMBER MAX 2500` | 0.1.8 | NUMBER args only. |
+| arg `max_length` | `ARG reason TEXT MAX LENGTH 500` | 0.1.8 | STRING/TEXT args only. Legacy `MAX 500` is still accepted for existing DSL files, but `MAX LENGTH` is the reviewed spelling. |
+| arg `enum` | Not expressible in DSL yet | 0.1 | Use embedded JSON or generated contract JSON when enum allowlists are required. |
+| proposal `numeric_bounds` | `BOUND column 1..2500`, `BOUND column ..2500`, or `BOUND column 1..` | 0.1.8 | Applies to patched numeric columns. Strict mode warns when a NUMBER arg is patched without arg min/max or a matching `BOUND`. |
+| proposal `transition_guards` | `TRANSITION status ALLOW pending -> approved\|rejected` or `TRANSITION status FROM current_status ALLOW open -> closed` | 0.1.8 | Values are state strings; use `|` for multiple target states. |
+| proposal `conflict_guard` | `CONFLICT GUARD updated_at` | 0.1 | If omitted, DSL emits an explicit weak-guard acknowledgement. Prefer a real row-version column. |
+| proposal `approval` | `APPROVAL ROLE billing_lead` | 0.1 | Local mode records the required role; enforcement is still outside the model-facing MCP tool. |
+| proposal `writeback` | `WRITEBACK DIRECT SQL`, `WRITEBACK APP HANDLER EXECUTOR name`, `WRITEBACK CLOUD WORKER`, `WRITEBACK NONE` | 0.1.7 | Handler URLs/tokens stay in `synapsor.runner.json`; contracts carry only the handler name. |
+| evidence options | `REQUIRE EVIDENCE` | 0.1 | Detailed evidence sources/handle prefixes are not expressible in DSL yet; use embedded JSON or generated contract JSON for those. |
 
 ## Direct Runner Config Path
 

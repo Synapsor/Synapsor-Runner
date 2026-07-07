@@ -139,7 +139,7 @@ You can also compile from the SQL-like authoring layer:
 
 ```bash
 synapsor-runner dsl validate ./contract.synapsor
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
 ```
 
 ## Bundle For Local Runner

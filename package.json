@@ -1,9 +1,13 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "0.1.7",
+  "version": "0.1.8",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "bin": {
     "synapsor-runner": "./bin/synapsor-runner"
   },

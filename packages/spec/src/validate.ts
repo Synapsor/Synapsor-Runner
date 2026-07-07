@@ -23,13 +23,15 @@ const METADATA_KEYS = new Set(["name", "description", "version", "tags"]);
 const RESOURCE_KEYS = new Set(["name", "engine", "schema", "table", "type", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
 const CONTEXT_KEYS = new Set(["name", "description", "bindings", "tenant_binding", "principal_binding"]);
 const BINDING_KEYS = new Set(["name", "source", "key", "required"]);
-const CAPABILITY_KEYS = new Set(["name", "description", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal"]);
+const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal"]);
 const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const EVIDENCE_KEYS = new Set(["required", "sources", "query_audit", "handle_prefix"]);
-const PROPOSAL_KEYS = new Set(["action", "allowed_fields", "patch", "conflict_guard", "approval", "writeback"]);
+const PROPOSAL_KEYS = new Set(["action", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "conflict_guard", "approval", "writeback"]);
 const PATCH_KEYS = new Set(["fixed", "from_arg"]);
+const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
+const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
@@ -198,6 +200,7 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     checkUnknownKeys(capability, CAPABILITY_KEYS, path, errors);
     if (!isQualifiedName(capability.name)) errors.push({ path: `${path}.name`, code: "INVALID_CAPABILITY_NAME", message: "capability name must be namespace.name." });
     else addUnique(names, capability.name, `${path}.name`, "DUPLICATE_CAPABILITY_NAME", errors);
+    if (capability.returns_hint !== undefined && !isNonEmptyString(capability.returns_hint)) errors.push({ path: `${path}.returns_hint`, code: "INVALID_RETURNS_HINT", message: "returns_hint must be a non-empty string." });
     if (!["read", "proposal", "external_action", "answer_with_evidence"].includes(String(capability.kind))) errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read, proposal, external_action, or answer_with_evidence." });
     if (!isNonEmptyString(capability.context) || !contextNames.has(capability.context)) errors.push({ path: `${path}.context`, code: "UNKNOWN_CONTEXT", message: "capability.context must reference a declared context." });
     validateSubject(capability.subject, `${path}.subject`, resourceNames, errors, warnings);
@@ -249,6 +252,13 @@ function validateArgs(value: unknown, path: string, errors: ValidationIssue[]): 
     }
     checkUnknownKeys(arg, ARG_KEYS, argPath, errors);
     if (!["string", "number", "boolean"].includes(String(arg.type))) errors.push({ path: `${argPath}.type`, code: "INVALID_ARG_TYPE", message: "arg type must be string, number, or boolean." });
+    if (arg.description !== undefined && !isNonEmptyString(arg.description)) errors.push({ path: `${argPath}.description`, code: "INVALID_ARG_DESCRIPTION", message: "arg description must be a non-empty string." });
+    if (arg.max_length !== undefined && (!Number.isInteger(arg.max_length) || Number(arg.max_length) <= 0)) errors.push({ path: `${argPath}.max_length`, code: "INVALID_MAX_LENGTH", message: "max_length must be a positive integer." });
+    if ((arg.minimum !== undefined || arg.maximum !== undefined) && arg.type !== "number") errors.push({ path: argPath, code: "NUMERIC_BOUNDS_REQUIRE_NUMBER", message: "minimum/maximum can only be used with number args." });
+    if (arg.minimum !== undefined && !isFiniteNumber(arg.minimum)) errors.push({ path: `${argPath}.minimum`, code: "INVALID_MINIMUM", message: "minimum must be a finite number." });
+    if (arg.maximum !== undefined && !isFiniteNumber(arg.maximum)) errors.push({ path: `${argPath}.maximum`, code: "INVALID_MAXIMUM", message: "maximum must be a finite number." });
+    if (isFiniteNumber(arg.minimum) && isFiniteNumber(arg.maximum) && Number(arg.minimum) > Number(arg.maximum)) errors.push({ path: argPath, code: "INVALID_ARG_NUMERIC_RANGE", message: "minimum must be less than or equal to maximum." });
+    if (arg.enum !== undefined && (!Array.isArray(arg.enum) || arg.enum.length === 0)) errors.push({ path: `${argPath}.enum`, code: "INVALID_ARG_ENUM", message: "enum must be a non-empty array when provided." });
   }
 }
 
@@ -296,6 +306,8 @@ function validateProposalAction(value: unknown, path: string, errors: Validation
       if (patch.fixed === undefined && !isSafeIdentifier(patch.from_arg)) errors.push({ path: patchPath, code: "PATCH_BINDING_REQUIRED", message: "patch binding must include fixed or from_arg." });
     }
   }
+  validateNumericBounds(value.numeric_bounds, value.patch, `${path}.numeric_bounds`, errors);
+  validateTransitionGuards(value.transition_guards, value.patch, `${path}.transition_guards`, errors);
   if (value.conflict_guard !== undefined) {
     if (!isRecord(value.conflict_guard)) errors.push({ path: `${path}.conflict_guard`, code: "CONFLICT_GUARD_NOT_OBJECT", message: "conflict_guard must be an object." });
     else {
@@ -308,6 +320,66 @@ function validateProposalAction(value: unknown, path: string, errors: Validation
   if (value.writeback !== undefined) {
     validateNestedObject(value.writeback, WRITEBACK_KEYS, `${path}.writeback`, errors);
     if (isRecord(value.writeback) && !["direct_sql", "app_handler", "cloud_worker", "none"].includes(String(value.writeback.mode))) errors.push({ path: `${path}.writeback.mode`, code: "INVALID_WRITEBACK_MODE", message: "writeback.mode must be direct_sql, app_handler, cloud_worker, or none." });
+  }
+}
+
+function validateNumericBounds(value: unknown, patch: unknown, path: string, errors: ValidationIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "NUMERIC_BOUNDS_NOT_OBJECT", message: "numeric_bounds must map patch fields to numeric bounds." });
+    return;
+  }
+  const patchFields = isRecord(patch) ? new Set(Object.keys(patch)) : new Set<string>();
+  for (const [field, bounds] of Object.entries(value)) {
+    const boundPath = `${path}.${field}`;
+    if (!isSafeIdentifier(field)) errors.push({ path: boundPath, code: "INVALID_NUMERIC_BOUND_FIELD", message: "numeric_bounds keys must be safe patch fields." });
+    if (!patchFields.has(field)) errors.push({ path: boundPath, code: "NUMERIC_BOUND_PATCH_FIELD_REQUIRED", message: "numeric_bounds can only constrain fields in proposal.patch." });
+    if (!isRecord(bounds)) {
+      errors.push({ path: boundPath, code: "NUMERIC_BOUND_NOT_OBJECT", message: "numeric bound must be an object." });
+      continue;
+    }
+    checkUnknownKeys(bounds, NUMERIC_BOUND_KEYS, boundPath, errors);
+    const hasMinimum = bounds.minimum !== undefined;
+    const hasMaximum = bounds.maximum !== undefined;
+    if (!hasMinimum && !hasMaximum) errors.push({ path: boundPath, code: "NUMERIC_BOUND_EMPTY", message: "numeric bound must define minimum, maximum, or both." });
+    if (hasMinimum && !isFiniteNumber(bounds.minimum)) errors.push({ path: `${boundPath}.minimum`, code: "INVALID_MINIMUM", message: "minimum must be a finite number." });
+    if (hasMaximum && !isFiniteNumber(bounds.maximum)) errors.push({ path: `${boundPath}.maximum`, code: "INVALID_MAXIMUM", message: "maximum must be a finite number." });
+    if (isFiniteNumber(bounds.minimum) && isFiniteNumber(bounds.maximum) && Number(bounds.minimum) > Number(bounds.maximum)) {
+      errors.push({ path: boundPath, code: "INVALID_NUMERIC_RANGE", message: "minimum must be less than or equal to maximum." });
+    }
+  }
+}
+
+function validateTransitionGuards(value: unknown, patch: unknown, path: string, errors: ValidationIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "TRANSITION_GUARDS_NOT_OBJECT", message: "transition_guards must map patch fields to allowed state transitions." });
+    return;
+  }
+  const patchFields = isRecord(patch) ? new Set(Object.keys(patch)) : new Set<string>();
+  for (const [field, guard] of Object.entries(value)) {
+    const guardPath = `${path}.${field}`;
+    if (!isSafeIdentifier(field)) errors.push({ path: guardPath, code: "INVALID_TRANSITION_GUARD_FIELD", message: "transition_guards keys must be safe patch fields." });
+    if (!patchFields.has(field)) errors.push({ path: guardPath, code: "TRANSITION_GUARD_PATCH_FIELD_REQUIRED", message: "transition_guards can only constrain fields in proposal.patch." });
+    if (!isRecord(guard)) {
+      errors.push({ path: guardPath, code: "TRANSITION_GUARD_NOT_OBJECT", message: "transition guard must be an object." });
+      continue;
+    }
+    checkUnknownKeys(guard, TRANSITION_GUARD_KEYS, guardPath, errors);
+    if (guard.from_column !== undefined && !isSafeIdentifier(guard.from_column)) {
+      errors.push({ path: `${guardPath}.from_column`, code: "INVALID_TRANSITION_FROM_COLUMN", message: "from_column must be a safe identifier." });
+    }
+    if (!isRecord(guard.allowed) || Object.keys(guard.allowed).length === 0) {
+      errors.push({ path: `${guardPath}.allowed`, code: "TRANSITION_ALLOWED_REQUIRED", message: "transition guard must define allowed transitions." });
+      continue;
+    }
+    for (const [from, toValues] of Object.entries(guard.allowed)) {
+      const allowedPath = `${guardPath}.allowed.${from}`;
+      if (!isNonEmptyString(from)) errors.push({ path: allowedPath, code: "TRANSITION_FROM_REQUIRED", message: "transition source state must be a non-empty string." });
+      if (!Array.isArray(toValues) || toValues.length === 0 || toValues.some((item) => !isNonEmptyString(item))) {
+        errors.push({ path: allowedPath, code: "TRANSITION_TO_VALUES_REQUIRED", message: "transition target states must be non-empty strings." });
+      }
+    }
   }
 }
 
@@ -491,4 +563,8 @@ function isQualifiedOrSafeName(value: unknown): value is string {
 
 function isPositiveInteger(value: unknown): boolean {
   return Number.isInteger(value) && Number(value) > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }

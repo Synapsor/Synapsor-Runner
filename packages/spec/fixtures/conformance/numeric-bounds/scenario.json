@@ -1,0 +1,21 @@
+{
+  "trusted_context": {
+    "tenant_id": "acme",
+    "principal": "dev_test_user"
+  },
+  "invoke": {
+    "capability": "support.propose_plan_credit",
+    "args": {
+      "account_id": "acct_3001",
+      "amount_cents": 999999,
+      "reason": "outage credit requested"
+    }
+  },
+  "source_row": {
+    "id": "acct_3001",
+    "tenant_id": "acme",
+    "credit_requested_cents": 0,
+    "credit_reason": null,
+    "updated_at": "2026-06-20T14:31:08Z"
+  }
+}

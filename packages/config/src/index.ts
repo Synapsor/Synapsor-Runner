@@ -528,6 +528,7 @@ function validateCapabilities(
 ): void {
   if (mode === "cloud" && value === undefined) return;
   if (hasContracts && value === undefined) return;
+  if (hasContracts && Array.isArray(value) && value.length === 0) return;
   if (!Array.isArray(value) || value.length === 0) {
     errors.push({ path: "$.capabilities", code: "CAPABILITIES_REQUIRED", message: "At least one capability is required." });
     return;

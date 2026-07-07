@@ -164,6 +164,94 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("enforces numeric bounds from contract-referenced proposal capabilities", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-numeric-bounds-"));
+    const sourceContract = path.resolve(testDir, "../../spec/fixtures/conformance/numeric-bounds/contract.json");
+    const scenario = JSON.parse(fs.readFileSync(path.resolve(testDir, "../../spec/fixtures/conformance/numeric-bounds/scenario.json"), "utf8"));
+    const expected = JSON.parse(fs.readFileSync(path.resolve(testDir, "../../spec/fixtures/conformance/numeric-bounds/expected.rejection.json"), "utf8"));
+    fs.copyFileSync(sourceContract, path.join(tempDir, "synapsor.contract.json"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      result_format: 2,
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./synapsor.contract.json"],
+      capabilities: [],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          statement_timeout_ms: 3000,
+        },
+      },
+    }, null, 2));
+    const loaded = loadRuntimeConfigFromFile(configPath);
+    const runtime = createMcpRuntime(loaded, {
+      env: {
+        SYNAPSOR_TENANT_ID: scenario.trusted_context.tenant_id,
+        SYNAPSOR_PRINCIPAL: scenario.trusted_context.principal,
+      },
+      readRow: async () => ({ row: scenario.source_row, rowCount: 1 }),
+      resultFormat: 2,
+    });
+    try {
+      const result = await runtime.callTool(scenario.invoke.capability, scenario.invoke.args);
+      expect(result).toMatchObject(expected);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("still rejects pure-contract configs when contracts are missing or empty", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-empty-contract-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./missing.contract.json"],
+      capabilities: [],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+    }, null, 2));
+    expect(() => loadRuntimeConfigFromFile(configPath)).toThrow(/missing\.contract\.json/);
+
+    fs.writeFileSync(path.join(tempDir, "empty.contract.json"), JSON.stringify({
+      spec_version: "0.1",
+      kind: "SynapsorContract",
+      contexts: [
+        {
+          name: "local_operator",
+          bindings: [{ name: "tenant_id", source: "environment", key: "SYNAPSOR_TENANT_ID" }],
+          tenant_binding: "tenant_id",
+        },
+      ],
+      capabilities: [],
+    }, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./empty.contract.json"],
+      capabilities: [],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+    }, null, 2));
+    expect(() => loadRuntimeConfigFromFile(configPath)).toThrow(/CAPABILITIES_REQUIRED|capabilities/i);
+  });
+
   it("lists semantic tools without raw SQL or approval tools", () => {
     const runtime = createMcpRuntime(config, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
     try {

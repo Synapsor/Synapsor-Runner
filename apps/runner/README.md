@@ -235,6 +235,8 @@ CREATE AGENT CONTEXT local_operator
 END
 
 CREATE CAPABILITY billing.inspect_invoice
+  DESCRIPTION 'Inspect one invoice in the trusted tenant before proposing a waiver.'
+  RETURNS HINT 'Returns reviewed invoice fields plus evidence/query-audit handles.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -242,13 +244,15 @@ CREATE CAPABILITY billing.inspect_invoice
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
   ALLOW READ id, tenant_id, status, late_fee_cents, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
 END
 
 CREATE CAPABILITY billing.propose_late_fee_waiver
+  DESCRIPTION 'Propose waiving one invoice late fee after inspecting invoice and policy evidence.'
+  RETURNS HINT 'Returns a review-required proposal id, exact diff, evidence handle, and source_database_changed:false.'
   USING CONTEXT local_operator
   SOURCE local_postgres
   ON public.invoices
@@ -256,8 +260,8 @@ CREATE CAPABILITY billing.propose_late_fee_waiver
   TENANT KEY tenant_id
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
-  ARG invoice_id STRING REQUIRED MAX 128
-  ARG reason TEXT REQUIRED MAX 500
+  ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
+  ARG reason TEXT REQUIRED MAX LENGTH 500 DESCRIPTION 'Business reason for the proposed waiver.'
   ALLOW READ id, tenant_id, status, late_fee_cents, waiver_reason, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
@@ -265,6 +269,7 @@ CREATE CAPABILITY billing.propose_late_fee_waiver
   ALLOW WRITE late_fee_cents, waiver_reason
   PATCH late_fee_cents = 0
   PATCH waiver_reason = ARG reason
+  BOUND late_fee_cents 0..10000
   APPROVAL ROLE billing_lead
   WRITEBACK DIRECT SQL
 END
@@ -273,19 +278,32 @@ END
 Compile, validate, and serve it:
 
 ```bash
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json
+synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
 synapsor-runner contract validate ./synapsor.contract.json
 synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
 synapsor-runner cloud push ./synapsor.contract.json --dry-run
+synapsor-runner cloud push ./synapsor.contract.json \
+  --api-url "$SYNAPSOR_CLOUD_BASE_URL" \
+  --token "$SYNAPSOR_CLOUD_TOKEN" \
+  --workspace "$SYNAPSOR_PROJECT_ID" \
+  --name billing-late-fee
 cd ./synapsor-runner-bundle
 cp .env.example .env  # fill in and export your read-only database values
 synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
+`--strict` treats DSL safety warnings as errors, so CI catches proposal
+capabilities that are missing descriptions, returns hints, or numeric patch
+bounds.
+
 The `contract bundle` step generates `synapsor.runner.json` (with env-var
 placeholders) inside the bundle directory, which is why `mcp serve` runs from
 there. The server keeps stdout clean for MCP protocol frames and prints its
 ready line on stderr.
+
+See [`docs/dsl-json-parity.md`](docs/dsl-json-parity.md) for the current
+field-by-field support matrix across JSON spec, DSL, runner enforcement,
+C++/Cloud compatibility, and Cloud push.
 
 Your `synapsor.runner.json` supplies local wiring: database env var names,
 SQLite store path, MCP transport settings, and local debug options. The
@@ -1205,6 +1223,11 @@ Portable contracts can be checked locally before Cloud import:
 synapsor-runner contract validate ./synapsor.contract.json
 synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
 synapsor-runner cloud push ./synapsor.contract.json --dry-run
+synapsor-runner cloud push ./synapsor.contract.json \
+  --api-url "$SYNAPSOR_CLOUD_BASE_URL" \
+  --token "$SYNAPSOR_CLOUD_TOKEN" \
+  --workspace "$SYNAPSOR_PROJECT_ID" \
+  --name billing-late-fee
 ```
 
 ## Current Limitations

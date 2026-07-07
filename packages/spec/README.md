@@ -67,9 +67,10 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - contexts and trusted/session bindings;
 - resources and subject identity;
 - read/proposal/external-action capabilities;
+- model-facing capability descriptions and returns hints;
 - visible and kept-out fields;
 - evidence/query-audit requirements;
-- proposal action shape and guarded writeback intent;
+- proposal action shape, numeric bounds, transition guards, and guarded writeback intent;
 - workflow allowed capabilities and replay requirements;
 - policy references and 0.1 policy metadata.
 
@@ -123,6 +124,23 @@ Allowed prefixes:
 
 Unknown unprefixed fields fail validation by design. That keeps Runner, Cloud,
 C++, and DSL semantics from drifting silently.
+
+## 0.1 Additive Fields
+
+The `0.1` line accepts additive optional core fields when they carry portable
+safety semantics shared by Runner and Cloud/C++.
+
+Current additive safety fields:
+
+- capability `returns_hint`: model-facing result guidance for a reviewed tool;
+- proposal `numeric_bounds`: reviewed minimum/maximum constraints for patched
+  numeric fields;
+- proposal `transition_guards`: reviewed allowed state transitions for patched
+  string fields.
+
+These are not `x-runner-*` extensions because they are part of the reviewed
+contract. A Cloud importer may choose when to enforce them, but it must not
+silently drop or reject them as unknown runner-only metadata.
 
 ## Stability
 
