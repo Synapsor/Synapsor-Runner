@@ -26,6 +26,17 @@ The fixture set is intentionally small in 0.1. It covers the runner-supported
 semantic surface first: trusted context, scoped reads, evidence handles,
 proposal boundaries, kept-out fields, manual approval, and replay envelopes.
 
+Additional 0.1 parity coverage currently lives in tests and verification
+scripts rather than separate `cloud-push/` or `dsl-json-parity/` conformance
+fixture directories:
+
+- `docs/dsl-json-parity.md`, DSL/spec tests, and the
+  `numeric-bounds-transition` C++ export fixture cover richer DSL/JSON parity
+  fields such as `returns_hint`, numeric bounds, and transition guards.
+- The main Synapsor repo script `scripts/verify_contract_cloud_push.sh`
+  verifies real Cloud push, retrieval, idempotent versioning, unauthorized
+  rejection, and runner-bundle download against a live local control-plane.
+
 ## Runner Usage
 
 Runner tests load every conformance `contract.json` and verify that the MCP

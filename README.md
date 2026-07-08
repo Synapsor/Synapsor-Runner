@@ -424,6 +424,18 @@ and proves the proposal-first write path:
 npx -y -p @synapsor/runner synapsor-runner demo
 ```
 
+For contributor/release verification from a checkout, the live apply smoke uses
+disposable Postgres/MySQL containers and the official MCP stdio client transport:
+
+```bash
+corepack pnpm test:live-apply
+```
+
+It verifies semantic tool listing, proposal diffs, source rows unchanged before
+approval, guarded writeback, idempotent retry, stale-row conflict, receipts, and
+replay. See [`docs/local-mode.md`](docs/local-mode.md#local-mcp-smoke) for
+prerequisites and expected output.
+
 After the demo prints its generated config and store path, run the happy path it
 prints. The shape is:
 

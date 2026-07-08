@@ -21,6 +21,7 @@
     "test:smoke": "./scripts/verify-release-gate.sh",
     "test:docker": "node scripts/smoke-local-examples.mjs",
     "test:mcp-local": "node scripts/smoke-mcp-local-examples.mjs",
+    "test:live-apply": "node scripts/smoke-mcp-local-examples.mjs",
     "test:mcp-cloud-linked": "tsc -b --pretty false && node scripts/smoke-mcp-cloud-linked.mjs",
     "test:onboarding-generated": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",
     "test:init-own-db": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",

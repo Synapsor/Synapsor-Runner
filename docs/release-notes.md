@@ -34,6 +34,12 @@ for the Synapsor Cloud CLI.
 - Adds clearer 401/403/404/409/422/network error messages without printing
   bearer tokens.
 
+### Release Verification
+
+- Adds `corepack pnpm test:live-apply` as the documented Docker-backed live
+  apply smoke for disposable Postgres/MySQL MCP examples, guarded writeback,
+  idempotent retry, stale-row conflict, receipts, and replay.
+
 ## 0.1.5
 
 ### Contract Authoring Front Door

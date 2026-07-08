@@ -30,6 +30,14 @@
 - Documents the project-scoped Cloud registry path and backend runner-bundle
   export foundation.
 
+### Release Verification
+
+- Adds `corepack pnpm test:live-apply` as the documented Docker-backed live
+  apply smoke. It aliases the existing MCP local examples proof and verifies
+  proposal diffs, approval outside MCP, guarded writeback, idempotent retry,
+  stale-row conflict, receipts, and replay against disposable Postgres/MySQL
+  databases.
+
 ## 0.1.7
 
 ### Contract Writeback Resolution

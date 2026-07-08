@@ -351,6 +351,28 @@ It launches the official MCP stdio client transport against `synapsor-runner mcp
 The business state changed after the agent saw it, so Synapsor refused to commit.
 ```
 
+The same live writeback smoke has a clearer release-check alias:
+
+```bash
+corepack pnpm test:live-apply
+```
+
+Prerequisites:
+
+- Docker daemon running;
+- local ports `55433`, `55434`, and `53307` available;
+- no Synapsor Cloud account, API key, hosted workspace, or production database.
+
+Expected output:
+
+- disposable Postgres billing, Postgres support, and MySQL orders containers start;
+- MCP `tools/list` exposes reviewed semantic tools, not raw SQL;
+- proposal calls create exact before/after diffs while source rows remain unchanged;
+- local approval happens outside MCP;
+- guarded writeback applies approved jobs and records receipts/replay;
+- idempotent retry returns the existing receipt;
+- a stale-row write is blocked as a conflict.
+
 ## Optional MCP client configs
 
 After the Docker demo passes, developers who want to attach an MCP client can use the checked-in stdio config shapes in:
