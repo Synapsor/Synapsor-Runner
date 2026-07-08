@@ -380,6 +380,10 @@ export async function main(argv: string[]): Promise<number> {
     usage([]);
     return 0;
   }
+  if (command === "--version" || command === "-v" || command === "version") {
+    process.stdout.write(`${await runnerPackageVersion()}\n`);
+    return 0;
+  }
   if (!isKnownTopLevelCommand(command)) {
     process.stderr.write(`Unknown command: ${cliCommandName()} ${command}\n\nTry:\n${cliCommandName()} --help\n`);
     return 2;
@@ -8744,6 +8748,18 @@ function isKnownTopLevelCommand(command: string): boolean {
 function cliCommandName(): string {
   if (process.env.SYNAPSOR_RUNNER_COMMAND_NAME) return process.env.SYNAPSOR_RUNNER_COMMAND_NAME;
   return "synapsor-runner";
+}
+
+async function runnerPackageVersion(): Promise<string> {
+  if (process.env.npm_package_version) return process.env.npm_package_version;
+  const packageUrl = new URL("../package.json", import.meta.url);
+  try {
+    const parsed = JSON.parse(await fs.readFile(packageUrl, "utf8")) as { version?: unknown };
+    if (typeof parsed.version === "string" && parsed.version.trim()) return parsed.version.trim();
+  } catch {
+    // Keep --version best-effort for unusual bundled launch paths.
+  }
+  return "unknown";
 }
 
 function usage(args: string[] = []): void {

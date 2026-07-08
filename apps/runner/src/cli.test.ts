@@ -220,6 +220,21 @@ describe("runner cli", () => {
     expect(errors.join("")).toContain("Unknown command: synapsor-runner unknown-command");
   });
 
+  it("prints the runner package version", async () => {
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["--version"])).resolves.toBe(0);
+    expect(output.join("").trim()).toBe("0.1.9");
+
+    output.length = 0;
+    await expect(main(["version"])).resolves.toBe(0);
+    expect(output.join("").trim()).toBe("0.1.9");
+  });
+
   it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-quick-demo-"));
     const oldCwd = process.cwd();

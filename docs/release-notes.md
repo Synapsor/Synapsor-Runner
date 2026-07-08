@@ -12,6 +12,15 @@ for the Synapsor Cloud CLI.
 
 ## Unreleased
 
+## 0.1.9
+
+### CLI Hygiene
+
+- Adds top-level `synapsor-runner --version`, `synapsor-runner -v`, and
+  `synapsor-runner version` output.
+
+## 0.1.8
+
 ### DSL / JSON Contract Parity
 
 - Adds portable spec fields for capability `returns_hint`, proposal

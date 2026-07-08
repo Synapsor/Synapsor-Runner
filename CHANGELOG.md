@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.9
+
+### CLI Hygiene
+
+- Adds top-level `synapsor-runner --version`, `synapsor-runner -v`, and
+  `synapsor-runner version` output so published package checks do not look like
+  an unknown command.
+
+## 0.1.8
+
 ### DSL / JSON Contract Parity
 
 - Adds portable spec fields for capability `returns_hint`, proposal
