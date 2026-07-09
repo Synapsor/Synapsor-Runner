@@ -187,6 +187,7 @@ describe("runner cli", () => {
       ["events", "--help"],
       ["apply", "--help"],
       ["replay", "--help"],
+      ["cloud", "push", "--help"],
       ["demo", "--help"],
       ["ui", "--help"],
     ];
@@ -211,6 +212,12 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("smoke");
     expect(output.join("")).toContain("writeback");
     expect(output.join("")).toContain("handler");
+
+    output.length = 0;
+    await expect(main(["cloud", "push", "--help"])).resolves.toBe(0);
+    expect(output.join("")).toContain("With --dry-run it makes no network request");
+    expect(output.join("")).toContain("uploads to the authenticated Cloud registry");
+    expect(output.join("")).not.toContain("until a real Cloud registry endpoint is wired");
 
     const errors: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {

@@ -18,6 +18,9 @@
   runner fleets, SAML/SCIM, hosted policy enforcement, or enterprise SLA.
 - Adds `SYNAPSOR_CLOUD_WORKSPACE` support and explicit Cloud push failure tests
   for authorization, validation, conflict, server, and network outcomes.
+- Corrects `cloud push --help` so it describes the implemented authenticated
+  upload path and the network-free dry-run instead of the removed pre-registry
+  limitation.
 
 ## 0.1.10
 

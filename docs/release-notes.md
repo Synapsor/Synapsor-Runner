@@ -30,6 +30,8 @@ is published until the manual release commands are run.
 - Clarifies that Cloud registry/versioning is beta-ready while managed runners,
   SAML/SCIM, hosted policy enforcement, legal hold, and enterprise SLA are not
   part of this release.
+- Corrects `cloud push --help` to describe the real authenticated registry
+  upload and network-free dry-run behavior.
 
 ## 0.1.10
 
