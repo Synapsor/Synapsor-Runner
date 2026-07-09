@@ -93,6 +93,39 @@ const fixtureRow = {
   updated_at: "2026-06-20T14:31:08Z",
 };
 
+function autoApprovalConfig(): RuntimeConfig {
+  const cloned = structuredClone(config);
+  const proposal = cloned.capabilities?.[1];
+  if (!proposal) throw new Error("proposal fixture missing");
+  proposal.args = {
+    invoice_id: { type: "string", required: true, max_length: 128 },
+    credit_cents: { type: "number", required: true, minimum: 1, maximum: 50000 },
+    reason: { type: "string", required: true, max_length: 500 },
+  };
+  proposal.patch = {
+    late_fee_cents: { from_arg: "credit_cents" },
+    waiver_reason: { from_arg: "reason" },
+  };
+  proposal.allowed_columns = ["late_fee_cents", "waiver_reason"];
+  proposal.numeric_bounds = {
+    late_fee_cents: { minimum: 0, maximum: 50000 },
+  };
+  proposal.approval = {
+    mode: "policy",
+    required_role: "support_lead",
+    policy: "billing_propose_late_fee_waiver_auto_approval",
+  };
+  cloned.policies = [
+    {
+      name: "billing_propose_late_fee_waiver_auto_approval",
+      kind: "approval",
+      mode: "green",
+      rules: [{ field: "late_fee_cents", max: 2500 }],
+    },
+  ];
+  return cloned;
+}
+
 describe("local Synapsor MCP runtime", () => {
   it("loads semantic tools from canonical contract references", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-contract-runtime-"));
@@ -201,6 +234,66 @@ describe("local Synapsor MCP runtime", () => {
       expect(result).toMatchObject(expected);
     } finally {
       runtime.close();
+    }
+  });
+
+  it("exercises the auto-approval conformance fixture scenarios", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-auto-approval-"));
+    const fixtureRoot = path.resolve(testDir, "../../spec/fixtures/conformance/auto-approval");
+    const scenario = JSON.parse(fs.readFileSync(path.join(fixtureRoot, "scenario.json"), "utf8"));
+    const expected = JSON.parse(fs.readFileSync(path.join(fixtureRoot, "expected.outcome.json"), "utf8"));
+    fs.copyFileSync(path.join(fixtureRoot, "contract.json"), path.join(tempDir, "synapsor.contract.json"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          statement_timeout_ms: 3000,
+        },
+      },
+    }, null, 2));
+
+    for (const item of scenario.cases) {
+      const loaded = loadRuntimeConfigFromFile(configPath);
+      const runtime = createMcpRuntime(loaded, {
+        env: {
+          SYNAPSOR_TENANT_ID: scenario.trusted_context.tenant_id,
+          SYNAPSOR_PRINCIPAL: scenario.trusted_context.principal,
+        },
+        readRow: async () => ({ row: item.source_row, rowCount: 1 }),
+      });
+      try {
+        const result = await runtime.callTool(item.invoke.capability, item.invoke.args);
+        const proposal = runtime.store.getProposal(String(result.proposal_id));
+        const expectedCase = expected[item.name];
+        expect({
+          ok: true,
+          proposal_status: proposal?.state,
+          approval: result.approval,
+          source_database_changed: result.source_database_changed,
+        }).toMatchObject({
+          ok: expectedCase.ok,
+          proposal_status: expectedCase.proposal_status,
+          approval: Object.fromEntries(Object.entries(expectedCase.approval).filter(([key]) => key !== "actor")),
+          source_database_changed: expectedCase.source_database_changed,
+        });
+        if (expectedCase.approval.actor) {
+          expect(runtime.store.events(String(result.proposal_id))).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+              kind: "proposal_approved",
+              actor: expectedCase.approval.actor,
+            }),
+          ]));
+        }
+      } finally {
+        runtime.close();
+      }
     }
   });
 
@@ -484,6 +577,109 @@ describe("local Synapsor MCP runtime", () => {
 
       const replay = runtime.readResource(String(result.replay_resource));
       expect(replay).toHaveProperty("replay_id", result.replay_resource?.toString().replace("synapsor://replay/", ""));
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("auto-approves proposals under the reviewed approval policy threshold", async () => {
+    const runtime = createMcpRuntime(autoApprovalConfig(), { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        reason: "documented outage credit",
+      });
+
+      expect(result).toMatchObject({
+        status: "approved",
+        approval: {
+          mode: "policy",
+          policy: "billing_propose_late_fee_waiver_auto_approval",
+        },
+        approval_required: false,
+        source_database_mutated: false,
+      });
+      const proposal = runtime.store.getProposal(String(result.proposal_id));
+      expect(proposal?.state).toBe("approved");
+      expect(runtime.store.events(String(result.proposal_id))).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "proposal_approved",
+          actor: "policy:billing_propose_late_fee_waiver_auto_approval",
+        }),
+      ]));
+      expect(() => runtime.store.approveProposal(String(result.proposal_id), {
+        approver: "support_lead",
+        proposal_hash: String(result.proposal_hash),
+        proposal_version: Number(result.proposal_version),
+      })).toThrow(/PROPOSAL_NOT_PENDING_REVIEW|is approved/);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("leaves proposals over the approval policy threshold pending review", async () => {
+    const runtime = createMcpRuntime(autoApprovalConfig(), { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2501,
+        reason: "larger credit needs review",
+      });
+
+      expect(result).toMatchObject({
+        status: "review_required",
+        approval: {
+          mode: "policy",
+          policy: "billing_propose_late_fee_waiver_auto_approval",
+        },
+        approval_required: true,
+      });
+      expect(runtime.store.getProposal(String(result.proposal_id))?.state).toBe("pending_review");
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("leaves policy proposals pending when any numeric patch field is uncovered", async () => {
+    const uncovered = autoApprovalConfig();
+    const proposal = uncovered.capabilities?.[1];
+    if (!proposal) throw new Error("proposal fixture missing");
+    proposal.args.extra_credit_cents = { type: "number", required: true, minimum: 0, maximum: 100 };
+    proposal.patch = {
+      ...proposal.patch,
+      extra_credit_cents: { from_arg: "extra_credit_cents" },
+    };
+    proposal.allowed_columns = [...(proposal.allowed_columns ?? []), "extra_credit_cents"];
+    const runtime = createMcpRuntime(uncovered, {
+      readRow: async () => ({ row: { ...fixtureRow, extra_credit_cents: 0 }, rowCount: 1 }),
+    });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        extra_credit_cents: 1,
+        reason: "contains an uncovered numeric patch",
+      });
+      expect(result.status).toBe("review_required");
+      expect(runtime.store.getProposal(String(result.proposal_id))?.state).toBe("pending_review");
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("respects the local disable_auto_approval override", async () => {
+    const disabled = autoApprovalConfig();
+    disabled.approvals = { disable_auto_approval: true };
+    const runtime = createMcpRuntime(disabled, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        reason: "operator disabled policy approval",
+      });
+      expect(result.status).toBe("review_required");
+      expect(runtime.store.events(String(result.proposal_id)).some((event) => event.actor.startsWith("policy:"))).toBe(false);
     } finally {
       runtime.close();
     }

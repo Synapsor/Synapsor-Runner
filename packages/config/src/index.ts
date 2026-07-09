@@ -18,8 +18,9 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "cloud", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "cloud", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path"]);
+const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
   "engine",
@@ -63,7 +64,9 @@ const PATCH_BINDING_KEYS = new Set(["fixed", "from_arg"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
-const APPROVAL_KEYS = new Set(["mode", "required_role"]);
+const APPROVAL_KEYS = new Set(["mode", "required_role", "policy"]);
+const POLICY_KEYS = new Set(["name", "kind", "mode", "rules"]);
+const APPROVAL_POLICY_RULE_KEYS = new Set(["field", "max"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor"]);
 const WRITEBACK_MODES = new Set(["direct_sql", "app_handler", "cloud_worker", "none"]);
 
@@ -143,17 +146,62 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
     errors.push({ path: "$.mode", code: "INVALID_MODE", message: "mode must be read_only, shadow, review, or cloud." });
   }
   validateStorage(input.storage, strict, errors);
+  validateApprovals(input.approvals, strict, errors);
   const hasContracts = validateContracts(input.contracts, errors);
   validateCloud(input.cloud, input.mode, strict, errors);
   validateSources(input.sources, input.mode, strict, errors, warnings);
   validateContexts(input.contexts, strict, errors, warnings);
   validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings, hasContracts);
   validateExecutors(input.executors, input.mode, strict, errors);
+  validatePolicies(input.policies, strict, errors);
   validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
+  validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
   validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateApprovalPolicyReferences(capabilities: unknown, policies: unknown, errors: ConfigIssue[]): void {
+  if (!Array.isArray(capabilities)) return;
+  const policyByName = new Map<string, JsonRecord>();
+  if (Array.isArray(policies)) {
+    policies.forEach((policy) => {
+      if (isRecord(policy) && typeof policy.name === "string") policyByName.set(policy.name, policy);
+    });
+  }
+  capabilities.forEach((capability, index) => {
+    if (!isRecord(capability) || capability.kind !== "proposal" || !isRecord(capability.approval)) return;
+    const approval = capability.approval;
+    const path = `$.capabilities[${index}].approval`;
+    if (approval.mode === "policy") {
+      if (!isNonEmptyString(approval.required_role)) {
+        errors.push({ path: `${path}.required_role`, code: "APPROVAL_POLICY_ROLE_REQUIRED", message: "policy approval still requires required_role for human fallback." });
+      }
+      if (!isSafeName(approval.policy)) {
+        errors.push({ path: `${path}.policy`, code: "APPROVAL_POLICY_REQUIRED", message: "approval.mode policy requires approval.policy." });
+        return;
+      }
+      const policy = policyByName.get(String(approval.policy));
+      if (!policy || policy.kind !== "approval") {
+        errors.push({ path: `${path}.policy`, code: "APPROVAL_POLICY_UNRESOLVED", message: "approval.policy must reference a top-level approval policy." });
+      }
+    } else if (approval.policy !== undefined) {
+      errors.push({ path: `${path}.policy`, code: "APPROVAL_POLICY_MODE_REQUIRED", message: "approval.policy can only be set when approval.mode is policy." });
+    }
+  });
+}
+
+function validateApprovals(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.approvals", code: "APPROVALS_NOT_OBJECT", message: "approvals must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, APPROVALS_KEYS, "$.approvals", errors);
+  if (value.disable_auto_approval !== undefined && typeof value.disable_auto_approval !== "boolean") {
+    errors.push({ path: "$.approvals.disable_auto_approval", code: "INVALID_DISABLE_AUTO_APPROVAL", message: "disable_auto_approval must be true or false." });
+  }
 }
 
 function validateContracts(value: unknown, errors: ConfigIssue[]): boolean {
@@ -498,6 +546,46 @@ function validateExecutors(value: unknown, mode: unknown, strict: boolean, error
       errors.push({ path, code: "EXECUTOR_INVALID_IN_READ_ONLY", message: "writeback executors are only meaningful outside read_only mode." });
     }
   }
+}
+
+function validatePolicies(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    errors.push({ path: "$.policies", code: "POLICIES_NOT_ARRAY", message: "policies must be an array." });
+    return;
+  }
+  const names = new Set<string>();
+  value.forEach((policy, index) => {
+    const path = `$.policies[${index}]`;
+    if (!isRecord(policy)) {
+      errors.push({ path, code: "POLICY_NOT_OBJECT", message: "policy must be an object." });
+      return;
+    }
+    if (strict) checkUnknownKeys(policy, POLICY_KEYS, path, errors);
+    if (!isSafeName(policy.name)) errors.push({ path: `${path}.name`, code: "INVALID_POLICY_NAME", message: "policy name must be a safe or qualified identifier." });
+    else if (names.has(String(policy.name))) errors.push({ path: `${path}.name`, code: "DUPLICATE_POLICY_NAME", message: `Duplicate policy name: ${String(policy.name)}` });
+    else names.add(String(policy.name));
+    if (!["approval", "settlement", "scope", "custom"].includes(String(policy.kind))) {
+      errors.push({ path: `${path}.kind`, code: "INVALID_POLICY_KIND", message: "policy.kind must be approval, settlement, scope, or custom." });
+    }
+    if (policy.rules !== undefined) {
+      if (!Array.isArray(policy.rules)) {
+        errors.push({ path: `${path}.rules`, code: "POLICY_RULES_NOT_ARRAY", message: "policy.rules must be an array." });
+      } else if (policy.kind === "approval") {
+        policy.rules.forEach((rule, ruleIndex) => validateApprovalPolicyRule(rule, `${path}.rules[${ruleIndex}]`, strict, errors));
+      }
+    }
+  });
+}
+
+function validateApprovalPolicyRule(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "APPROVAL_POLICY_RULE_NOT_OBJECT", message: "approval policy rules must be objects." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, APPROVAL_POLICY_RULE_KEYS, path, errors);
+  if (!isSafeIdentifier(value.field)) errors.push({ path: `${path}.field`, code: "INVALID_APPROVAL_POLICY_FIELD", message: "approval policy rule field must be a safe identifier." });
+  if (!Number.isInteger(value.max) || Number(value.max) < 0) errors.push({ path: `${path}.max`, code: "INVALID_APPROVAL_POLICY_MAX", message: "approval policy rule max must be a non-negative integer." });
 }
 
 function validateExecutorAuth(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {

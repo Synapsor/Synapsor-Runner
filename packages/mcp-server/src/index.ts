@@ -12,9 +12,9 @@ import {
   ControlPlaneClient,
   type AdapterToolCatalogEntry,
 } from "@synapsor-runner/control-plane-client";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { ProposalStore, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions, type ChangeSetV1 } from "@synapsor-runner/protocol";
-import { normalizeContract, type AgentContextSpec, type CapabilitySpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
+import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { Pool } from "pg";
 import { z } from "zod";
@@ -87,7 +87,7 @@ export type RuntimeCapabilityConfig = {
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
   transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
-  approval?: { mode?: "human" | "policy" | string; required_role?: string };
+  approval?: { mode?: "human" | "policy" | string; required_role?: string; policy?: string };
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
 };
 
@@ -96,6 +96,8 @@ export type RuntimeConfig = {
   mode: RunnerMode;
   result_format?: ResultFormat;
   contracts?: string[];
+  policies?: PolicySpec[];
+  approvals?: { disable_auto_approval?: boolean };
   storage?: { sqlite_path?: string };
   sources?: Record<string, RuntimeSourceConfig>;
   trusted_context?: {
@@ -271,18 +273,23 @@ export function loadRuntimeConfigFromFile(
 export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cwd()): RuntimeConfig {
   if (!Array.isArray(config.contracts) || config.contracts.length === 0) return config;
   const seenCapabilities = new Map<string, string>();
+  const seenPolicies = new Map<string, string>();
   for (const [index, capability] of (config.capabilities ?? []).entries()) {
     rememberCapabilityName(seenCapabilities, capability.name, `embedded capabilities[${index}]`);
+  }
+  for (const [index, policy] of (config.policies ?? []).entries()) {
+    rememberPolicyName(seenPolicies, policy.name, `embedded policies[${index}]`);
   }
   const resolved: RuntimeConfig = {
     ...config,
     contexts: { ...(config.contexts ?? {}) },
     capabilities: [...(config.capabilities ?? [])],
+    policies: [...(config.policies ?? [])],
   };
   for (const [contractIndex, contractPath] of config.contracts.entries()) {
     const fullPath = path.resolve(baseDir, contractPath);
     const contract = normalizeContract(JSON.parse(fs.readFileSync(fullPath, "utf8")));
-    mergeContractIntoRuntimeConfig(resolved, contract, `contracts[${contractIndex}] ${contractPath}`, seenCapabilities);
+    mergeContractIntoRuntimeConfig(resolved, contract, `contracts[${contractIndex}] ${contractPath}`, seenCapabilities, seenPolicies);
   }
   delete resolved.contracts;
   return resolved;
@@ -296,7 +303,15 @@ function rememberCapabilityName(seen: Map<string, string>, name: string, origin:
   seen.set(name, origin);
 }
 
-function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: SynapsorContract, origin: string, seenCapabilities: Map<string, string>): void {
+function rememberPolicyName(seen: Map<string, string>, name: string, origin: string): void {
+  const previous = seen.get(name);
+  if (previous) {
+    throw new Error(`Duplicate policy ${name}: ${origin} conflicts with ${previous}. Policy names must be unique across embedded runner config and referenced contracts.`);
+  }
+  seen.set(name, origin);
+}
+
+function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: SynapsorContract, origin: string, seenCapabilities: Map<string, string>, seenPolicies: Map<string, string>): void {
   const resources = new Map((contract.resources ?? []).map((resource) => [resource.name, resource]));
   for (const context of contract.contexts) {
     if (!config.contexts) config.contexts = {};
@@ -310,6 +325,13 @@ function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: Synapso
   for (const [capabilityIndex, capability] of contract.capabilities.entries()) {
     rememberCapabilityName(seenCapabilities, capability.name, `${origin} capabilities[${capabilityIndex}]`);
     config.capabilities.push(runtimeCapabilityFromSpec(capability, resources, config));
+  }
+  if (contract.policies?.length) {
+    if (!config.policies) config.policies = [];
+    for (const [policyIndex, policy] of contract.policies.entries()) {
+      rememberPolicyName(seenPolicies, policy.name, `${origin} policies[${policyIndex}]`);
+      config.policies.push(policy);
+    }
   }
 }
 
@@ -1226,6 +1248,7 @@ async function callConfiguredTool(input: {
   }
   if (capability.kind === "proposal" && input.config.mode === "review") {
     assertProposalWritebackResolvable(input.config, capability);
+    assertApprovalPolicyResolvable(input.config, capability);
   }
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
@@ -1324,6 +1347,13 @@ async function callConfiguredTool(input: {
     objectId,
   });
   const proposal = input.store.createProposal(changeSet);
+  const approvalResult = maybeAutoApproveProposal({
+    config: input.config,
+    capability,
+    store: input.store,
+    proposal,
+    patch: changeSet.patch,
+  });
   input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
     proposal_id: proposal.proposal_id,
@@ -1332,7 +1362,7 @@ async function callConfiguredTool(input: {
       capability: capability.name,
       proposal_id: proposal.proposal_id,
       source_database_changed: false,
-      approval_status: changeSet.approval.status,
+      approval_status: approvalResult.proposal.state === "approved" ? "approved" : changeSet.approval.status,
     },
     items: [
       {
@@ -1358,11 +1388,11 @@ async function callConfiguredTool(input: {
   });
 
   return {
-    status: input.config.mode === "shadow" ? "shadow_proposal_created" : "review_required",
+    status: input.config.mode === "shadow" ? "shadow_proposal_created" : approvalResult.proposal.state === "approved" ? "approved" : "review_required",
     action: capability.name,
-    proposal_id: proposal.proposal_id,
-    proposal_version: proposal.proposal_version,
-    proposal_hash: proposal.proposal_hash,
+    proposal_id: approvalResult.proposal.proposal_id,
+    proposal_version: approvalResult.proposal.proposal_version,
+    proposal_hash: approvalResult.proposal.proposal_hash,
     target: {
       type: capability.target.table,
       id: objectId,
@@ -1373,7 +1403,14 @@ async function callConfiguredTool(input: {
     evidence_resource: `synapsor://evidence/${evidenceBundleId}`,
     proposal_resource: `synapsor://proposals/${proposal.proposal_id}`,
     replay_resource: `synapsor://replay/replay_${proposal.proposal_id}`,
-    approval_required: true,
+    approval: approvalResult.approved
+      ? { mode: "policy", policy: approvalResult.policy }
+      : {
+        mode: capability.approval?.mode ?? "human",
+        ...(capability.approval?.policy ? { policy: capability.approval.policy } : {}),
+        ...(capability.approval?.required_role ? { required_role: capability.approval.required_role } : {}),
+      },
+    approval_required: approvalResult.proposal.state === "pending_review",
     writeback: changeSet.writeback,
     source_database_changed: false,
     source_database_mutated: false,
@@ -1416,6 +1453,9 @@ function resultEnvelopeFromLegacy(
     const proposalId = typeof legacy.proposal_id === "string" ? legacy.proposal_id : "wrp_unknown";
     const targetType = typeof target?.type === "string" ? target.type : capability?.target.table ?? "object";
     const targetId = target?.id !== undefined ? String(target.id) : "unknown";
+    const approval = isRecord(legacy.approval) ? legacy.approval : undefined;
+    const state = typeof legacy.status === "string" ? legacy.status : "review_required";
+    const approvalRequired = legacy.approval_required !== false;
     const executor = writebackExecutorName(legacy.writeback);
     const writebackMode = executor === "read_only" || executor === "none"
       ? "proposal_only"
@@ -1430,15 +1470,18 @@ function resultEnvelopeFromLegacy(
       data: null,
       proposal: {
         id: proposalId,
-        state: typeof legacy.status === "string" ? legacy.status : "review_required",
+        state,
         target: `${targetType}:${targetId}`,
         diff: isRecord(legacy.diff) ? legacy.diff : {},
-        approval_required: legacy.approval_required !== false,
+        approval_required: approvalRequired,
+        ...(approval ? { approval } : {}),
         writeback: {
           mode: writebackMode,
           applied: false,
         },
-        next: "A human must approve outside this model-facing tool surface; nothing is committed yet.",
+        next: approvalRequired
+          ? "A human must approve outside this model-facing tool surface; nothing is committed yet."
+          : "The proposal is approved outside the model-facing tool surface; trusted writeback/apply is still separate.",
       },
       error: null,
       evidence: evidenceBundleId ? evidenceHandle(evidenceBundleId) : null,
@@ -1518,6 +1561,82 @@ export function assertProposalWritebackResolvable(config: RuntimeConfig, capabil
   if (executor.type !== "http_handler" && executor.type !== "command_handler") {
     throw new McpRuntimeError("WRITEBACK_UNRESOLVED", `capability ${capability.name} declares HANDLER writeback but executor ${executorName} is not an app-owned handler.`);
   }
+}
+
+export function assertApprovalPolicyResolvable(config: RuntimeConfig, capability: RuntimeCapabilityConfig): void {
+  if (capability.kind !== "proposal" || capability.approval?.mode !== "policy") return;
+  const policyName = capability.approval.policy;
+  if (!policyName) {
+    throw new McpRuntimeError("APPROVAL_POLICY_UNRESOLVED", `capability ${capability.name} uses policy approval but does not name approval.policy.`);
+  }
+  const policy = approvalPolicyByName(config, policyName);
+  if (!policy) {
+    throw new McpRuntimeError("APPROVAL_POLICY_UNRESOLVED", `capability ${capability.name} references missing approval policy ${policyName}.`);
+  }
+}
+
+function maybeAutoApproveProposal(input: {
+  config: RuntimeConfig;
+  capability: RuntimeCapabilityConfig;
+  store: ProposalStore;
+  proposal: StoredProposal;
+  patch: Record<string, Scalar>;
+}): { proposal: StoredProposal; approved: boolean; policy?: string } {
+  if (input.config.mode !== "review") return { proposal: input.proposal, approved: false };
+  if (input.config.approvals?.disable_auto_approval === true) return { proposal: input.proposal, approved: false };
+  if (input.capability.approval?.mode !== "policy" || !input.capability.approval.policy) return { proposal: input.proposal, approved: false };
+  if (input.proposal.state === "approved") return { proposal: input.proposal, approved: true, policy: input.capability.approval.policy };
+  if (input.proposal.state !== "pending_review") return { proposal: input.proposal, approved: false };
+  const policyName = input.capability.approval.policy;
+  const policy = approvalPolicyByName(input.config, policyName);
+  if (!policy) throw new McpRuntimeError("APPROVAL_POLICY_UNRESOLVED", `capability ${input.capability.name} references missing approval policy ${policyName}.`);
+  const evaluation = evaluateApprovalPolicy(input.capability, policy, input.patch);
+  if (!evaluation.qualifies) return { proposal: input.proposal, approved: false, policy: policyName };
+
+  // Safety boundary: policy approval is contract-owned server behavior only.
+  // No MCP tool can choose a policy, approve a proposal, or apply the writeback.
+  const updated = input.store.approveProposal(input.proposal.proposal_id, {
+    approver: `policy:${policyName}`,
+    proposal_hash: input.proposal.proposal_hash,
+    proposal_version: input.proposal.proposal_version,
+    reason: `auto-approved by policy ${policyName}: ${evaluation.reason}`,
+  });
+  return { proposal: updated, approved: true, policy: policyName };
+}
+
+function approvalPolicyByName(config: RuntimeConfig, policyName: string): PolicySpec | undefined {
+  return (config.policies ?? []).find((policy) => policy.kind === "approval" && policy.name === policyName);
+}
+
+function evaluateApprovalPolicy(capability: RuntimeCapabilityConfig, policy: PolicySpec, patch: Record<string, Scalar>): { qualifies: boolean; reason: string } {
+  const ruleByField = new Map<string, number>();
+  for (const rule of policy.rules ?? []) {
+    const field = typeof rule.field === "string" ? rule.field : undefined;
+    const max = typeof rule.max === "number" && Number.isInteger(rule.max) ? rule.max : undefined;
+    if (field && max !== undefined) ruleByField.set(field, max);
+  }
+  const numericFields = Object.keys(patch).filter((field) => isNumericRuntimeProposalField(capability, field));
+  if (numericFields.length === 0) return { qualifies: false, reason: "no numeric patch fields covered by policy" };
+  const reasons: string[] = [];
+  for (const field of numericFields) {
+    const max = ruleByField.get(field);
+    const value = patch[field];
+    if (max === undefined) return { qualifies: false, reason: `${field} has no matching policy rule` };
+    if (typeof value !== "number" || !Number.isInteger(value)) return { qualifies: false, reason: `${field} is not an integer` };
+    if (value > max) return { qualifies: false, reason: `${field} ${value} > ${max}` };
+    reasons.push(`${field} ${value} <= ${max}`);
+  }
+  return { qualifies: true, reason: reasons.join(", ") };
+}
+
+function isNumericRuntimeProposalField(capability: RuntimeCapabilityConfig, field: string): boolean {
+  const proposal: ProposalActionSpec = {
+    action: capability.name,
+    allowed_fields: capability.allowed_columns ?? Object.keys(capability.patch ?? {}),
+    patch: capability.patch ?? {},
+    ...(capability.numeric_bounds ? { numeric_bounds: capability.numeric_bounds } : {}),
+  };
+  return isNumericProposalField(proposal, capability.args, field);
 }
 
 function evidenceHandle(bundleId: string): ResultEnvelopeV2["evidence"] {
@@ -1659,6 +1778,8 @@ function buildChangeSet(input: {
     },
     approval: {
       status: "pending",
+      ...(input.capability.approval?.mode ? { mode: input.capability.approval.mode } : {}),
+      ...(input.capability.approval?.policy ? { policy: input.capability.approval.policy } : {}),
       required_role: input.capability.approval?.required_role,
     },
     writeback: {

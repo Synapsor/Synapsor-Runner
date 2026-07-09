@@ -1,4 +1,4 @@
-import { assertValidContract, normalizeContract, type AgentContextSpec, type ArgumentSpec, type CapabilitySpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
+import { assertValidContract, normalizeContract, type AgentContextSpec, type ArgumentSpec, type CapabilitySpec, type PolicySpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
 
 export type AgentDslAst = {
   contexts: AgentDslContextAst[];
@@ -39,6 +39,7 @@ export type AgentDslCapabilityAst = {
     numericBounds?: Record<string, { minimum?: number; maximum?: number }>;
     transitionGuards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
     approvalRole?: string;
+    autoApprovalRules?: Array<{ field: string; max: number; line: number }>;
     writebackMode?: "direct_sql" | "app_handler" | "cloud_worker" | "none";
     executor?: string;
   };
@@ -108,6 +109,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
     ...(context.tenantBinding ? { tenant_binding: context.tenantBinding } : {}),
     ...(context.principalBinding ? { principal_binding: context.principalBinding } : {}),
   }));
+  const policies: PolicySpec[] = [];
   const capabilities: CapabilitySpec[] = ast.capabilities.map((capability) => {
     const spec: CapabilitySpec = {
       name: capability.name,
@@ -131,6 +133,15 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
       ...(capability.maxRows ? { max_rows: capability.maxRows } : {}),
     };
     if (capability.kind === "proposal" && capability.proposal) {
+      const autoApprovalPolicyName = capability.proposal.autoApprovalRules?.length ? autoApprovalPolicyNameForCapability(capability.name) : undefined;
+      if (autoApprovalPolicyName) {
+        policies.push({
+          name: autoApprovalPolicyName,
+          kind: "approval",
+          mode: "green",
+          rules: capability.proposal.autoApprovalRules?.map((rule) => ({ field: rule.field, max: rule.max })),
+        });
+      }
       spec.proposal = {
         action: capability.proposal.action,
         allowed_fields: capability.proposal.allowedFields,
@@ -138,7 +149,9 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
         ...(capability.proposal.numericBounds ? { numeric_bounds: capability.proposal.numericBounds } : {}),
         ...(capability.proposal.transitionGuards ? { transition_guards: capability.proposal.transitionGuards } : {}),
         conflict_guard: capability.conflictKey ? { column: capability.conflictKey } : { weak_guard_ack: true },
-        approval: { mode: "human", required_role: capability.proposal.approvalRole ?? "local_reviewer" },
+        approval: autoApprovalPolicyName
+          ? { mode: "policy", required_role: capability.proposal.approvalRole ?? "local_reviewer", policy: autoApprovalPolicyName }
+          : { mode: "human", required_role: capability.proposal.approvalRole ?? "local_reviewer" },
         writeback: {
           mode: capability.proposal.writebackMode ?? "direct_sql",
           ...(capability.proposal.executor ? { executor: capability.proposal.executor } : {}),
@@ -161,6 +174,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
     contexts,
     capabilities,
     ...(workflows.length ? { workflows } : {}),
+    ...(policies.length ? { policies } : {}),
   };
   assertValidContract(contract);
   return { contract: normalizeContract(contract), warnings: collectDslWarnings(ast) };
@@ -383,6 +397,12 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       capability.proposal.approvalRole = approval[1];
       continue;
     }
+    const autoApproval = item.text.match(/^AUTO\s+APPROVE\s+WHEN\s+(.+)$/i);
+    if (autoApproval?.[1]) {
+      ensureProposal(capability, item);
+      parseAutoApprovalClause(capability, autoApproval[1], item.line);
+      continue;
+    }
     const writeback = item.text.match(/^WRITEBACK\s+(DIRECT\s+SQL|APP\s+HANDLER|CLOUD\s+WORKER|NONE)(?:\s+EXECUTOR\s+([A-Za-z_][A-Za-z0-9_.-]*))?$/i);
     if (writeback?.[1]) {
       ensureProposal(capability, item);
@@ -434,6 +454,50 @@ function collectDslWarnings(ast: AgentDslAst): ValidationResult["warnings"] {
     }
   }
   return warnings;
+}
+
+function parseAutoApprovalClause(capability: AgentDslCapabilityAst & { proposal: NonNullable<AgentDslCapabilityAst["proposal"]> }, rawCondition: string, line: number): void {
+  if (!capability.proposal.approvalRole) {
+    throw dslError(line, 1, "AUTO_APPROVE_APPROVAL_ROLE_REQUIRED", "AUTO APPROVE WHEN requires an explicit APPROVAL ROLE before it");
+  }
+  const condition = rawCondition.trim();
+  const match = condition.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(<=)\s*(.+)$/);
+  if (!match?.[1] || !match[3]) {
+    throw dslError(line, 1, "AUTO_APPROVE_UNSUPPORTED", "AUTO APPROVE WHEN supports only: <field> <= <integer>");
+  }
+  const field = match[1];
+  const rawMax = match[3].trim();
+  if (!/^\d+$/.test(rawMax)) {
+    throw dslError(line, 1, "AUTO_APPROVE_MAX_INVALID", "AUTO APPROVE WHEN max must be a non-negative integer");
+  }
+  const max = Number(rawMax);
+  if (!Number.isSafeInteger(max)) {
+    throw dslError(line, 1, "AUTO_APPROVE_MAX_INVALID", "AUTO APPROVE WHEN max must be a safe non-negative integer");
+  }
+  if (!Object.prototype.hasOwnProperty.call(capability.proposal.patch, field)) {
+    throw dslError(line, 1, "AUTO_APPROVE_FIELD_NOT_PATCHED", `AUTO APPROVE WHEN field ${field} must be in the PATCH list`);
+  }
+  if (!isNumericDslProposalField(capability, field)) {
+    throw dslError(line, 1, "AUTO_APPROVE_FIELD_NOT_NUMERIC", `AUTO APPROVE WHEN field ${field} must be numeric by BOUND, NUMBER arg patch, or integer literal patch`);
+  }
+  const boundMax = capability.proposal.numericBounds?.[field]?.maximum;
+  if (boundMax !== undefined && max > boundMax) {
+    throw dslError(line, 1, "AUTO_APPROVE_MAX_EXCEEDS_BOUND", `AUTO APPROVE WHEN max for ${field} must be <= BOUND maximum ${boundMax}`);
+  }
+  capability.proposal.autoApprovalRules ??= [];
+  if (capability.proposal.autoApprovalRules.some((rule) => rule.field === field)) {
+    throw dslError(line, 1, "AUTO_APPROVE_DUPLICATE_FIELD", `AUTO APPROVE WHEN already defines a rule for ${field}`);
+  }
+  capability.proposal.autoApprovalRules.push({ field, max, line });
+}
+
+function isNumericDslProposalField(capability: AgentDslCapabilityAst & { proposal: NonNullable<AgentDslCapabilityAst["proposal"]> }, field: string): boolean {
+  if (capability.proposal.numericBounds?.[field] !== undefined) return true;
+  const patch = capability.proposal.patch[field];
+  if (!patch) return false;
+  if (typeof patch.fixed === "number" && Number.isInteger(patch.fixed)) return true;
+  if (patch.from_arg && capability.args[patch.from_arg]?.type === "number") return true;
+  return false;
 }
 
 function parseWorkflowBlock(block: Block): AgentDslWorkflowAst {
@@ -590,6 +654,10 @@ function normalizeWritebackMode(mode: string): "direct_sql" | "app_handler" | "c
   if (normalized === "APP_HANDLER") return "app_handler";
   if (normalized === "CLOUD_WORKER") return "cloud_worker";
   return "none";
+}
+
+function autoApprovalPolicyNameForCapability(name: string): string {
+  return `${name.replace(/[^A-Za-z0-9_]/g, "_")}_auto_approval`;
 }
 
 function parseList(value: string): string[] {

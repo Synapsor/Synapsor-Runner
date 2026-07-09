@@ -226,7 +226,8 @@
           "additionalProperties": false,
           "properties": {
             "mode": { "enum": ["human", "operator", "policy"] },
-            "required_role": { "type": "string" }
+            "required_role": { "type": "string" },
+            "policy": { "$ref": "#/$defs/qualifiedOrSafeName" }
           }
         },
         "writeback": {
@@ -329,11 +330,36 @@
       "patternProperties": {
         "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "approval" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/approvalPolicyRule" }
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "name": { "$ref": "#/$defs/qualifiedOrSafeName" },
         "kind": { "enum": ["approval", "settlement", "scope", "custom"] },
         "mode": { "enum": ["green", "yellow", "red", "manual", "block"] },
         "rules": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "approvalPolicyRule": {
+      "type": "object",
+      "required": ["field", "max"],
+      "additionalProperties": false,
+      "properties": {
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "max": { "type": "integer", "minimum": 0 }
       }
     },
     "evidenceRecord": {

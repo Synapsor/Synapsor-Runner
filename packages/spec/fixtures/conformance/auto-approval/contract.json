@@ -1,0 +1,131 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "auto approval proposal conformance"
+  },
+  "resources": [
+    {
+      "name": "support_customers",
+      "engine": "postgres",
+      "schema": "public",
+      "table": "customers",
+      "primary_key": "id",
+      "tenant_key": "tenant_id",
+      "conflict_key": "updated_at"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "support_agent_context",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID"
+        },
+        {
+          "name": "principal",
+          "source": "environment",
+          "key": "SYNAPSOR_PRINCIPAL"
+        }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "support.propose_plan_credit",
+      "kind": "proposal",
+      "description": "Propose a bounded plan credit for a support customer.",
+      "returns_hint": "Returns a proposal id and whether policy approval applied; DB unchanged.",
+      "context": "support_agent_context",
+      "source": "local_postgres",
+      "subject": {
+        "resource": "support_customers"
+      },
+      "args": {
+        "customer_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128,
+          "description": "Customer id."
+        },
+        "credit_cents": {
+          "type": "number",
+          "required": true,
+          "minimum": 1,
+          "maximum": 50000,
+          "description": "Requested credit in cents."
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "max_length": 500,
+          "description": "Business reason for the credit."
+        }
+      },
+      "lookup": {
+        "id_from_arg": "customer_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "plan_credit_cents",
+        "credit_reason",
+        "updated_at"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1,
+      "proposal": {
+        "action": "grant_plan_credit",
+        "allowed_fields": [
+          "plan_credit_cents",
+          "credit_reason"
+        ],
+        "patch": {
+          "plan_credit_cents": {
+            "from_arg": "credit_cents"
+          },
+          "credit_reason": {
+            "from_arg": "reason"
+          }
+        },
+        "numeric_bounds": {
+          "plan_credit_cents": {
+            "minimum": 1,
+            "maximum": 50000
+          }
+        },
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "approval": {
+          "mode": "policy",
+          "required_role": "support_reviewer",
+          "policy": "support_propose_plan_credit_auto_approval"
+        },
+        "writeback": {
+          "mode": "direct_sql"
+        }
+      }
+    }
+  ],
+  "policies": [
+    {
+      "name": "support_propose_plan_credit_auto_approval",
+      "kind": "approval",
+      "mode": "green",
+      "rules": [
+        {
+          "field": "plan_credit_cents",
+          "max": 2500
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./tmp/support-plan-credit/local.db"
+  },
+  "contracts": [
+    "./synapsor.contract.json"
+  ],
+  "sources": {
+    "local_postgres": {
+      "engine": "postgres",
+      "read_url_env": "PLAN_CREDIT_POSTGRES_READ_URL",
+      "write_url_env": "PLAN_CREDIT_POSTGRES_WRITE_URL",
+      "statement_timeout_ms": 3000
+    }
+  }
+}

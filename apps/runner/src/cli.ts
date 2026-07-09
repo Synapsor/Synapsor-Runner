@@ -10,7 +10,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
@@ -1965,6 +1965,33 @@ function proposalWritebackResolutionDoctorCheck(config: RuntimeConfig, capabilit
   }
 }
 
+function proposalApprovalPolicyResolutionDoctorCheck(config: RuntimeConfig, capability: RunnerCapabilityConfig): DoctorCheck {
+  if (capability.approval?.mode !== "policy") {
+    return {
+      name: `capability:${capability.name}:approval-policy-resolution`,
+      ok: true,
+      level: "pass",
+      message: "Capability does not use policy auto-approval.",
+    };
+  }
+  try {
+    assertApprovalPolicyResolvable(config, capability);
+    return {
+      name: `capability:${capability.name}:approval-policy-resolution`,
+      ok: true,
+      level: "pass",
+      message: `Approval policy ${capability.approval.policy} resolves from the reviewed contract/config.`,
+    };
+  } catch (error) {
+    return {
+      name: `capability:${capability.name}:approval-policy-resolution`,
+      ok: false,
+      level: "fail",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function httpHandlerReachabilityCheck(executorName: string, rawUrl: string, timeoutMs: number): Promise<DoctorCheck> {
   try {
     const url = new URL(rawUrl);
@@ -2592,6 +2619,7 @@ async function localDoctor(args: string[]): Promise<number> {
   if (parsed.mode === "review") {
     for (const capability of (parsed.capabilities ?? []).filter((item) => item.kind === "proposal")) {
       checks.push(proposalWritebackResolutionDoctorCheck(parsed, capability));
+      checks.push(proposalApprovalPolicyResolutionDoctorCheck(parsed, capability));
     }
   }
   for (const [sourceName, source] of Object.entries(sources)) {
@@ -3937,6 +3965,7 @@ async function cloudPush(args: string[]): Promise<number> {
     process.stdout.write(`Capabilities: ${payload.summary.capabilities}\n`);
     process.stdout.write(`Workflows: ${payload.summary.workflows}\n`);
     process.stdout.write(`Proposal capabilities: ${payload.summary.proposal_capabilities}\n`);
+    process.stdout.write(`Approval policies: ${payload.summary.approval_policies}\n`);
     process.stdout.write(`Kept-out fields: ${payload.summary.kept_out_fields}\n`);
     process.stdout.write("Dry run only. No Cloud upload attempted.\n");
     return 0;
@@ -3976,12 +4005,17 @@ async function cloudPush(args: string[]): Promise<number> {
 }
 
 function contractSummary(contract: SynapsorContract): Record<string, number> {
+  const keptOutFields = new Set<string>();
+  for (const capability of contract.capabilities) {
+    for (const field of capability.kept_out_fields ?? []) keptOutFields.add(field);
+  }
   return {
     contexts: contract.contexts.length,
     capabilities: contract.capabilities.length,
     workflows: contract.workflows?.length ?? 0,
     proposal_capabilities: contract.capabilities.filter((capability) => capability.kind === "proposal").length,
-    kept_out_fields: contract.capabilities.reduce((count, capability) => count + (capability.kept_out_fields?.length ?? 0), 0),
+    approval_policies: contract.policies?.filter((policy) => policy.kind === "approval").length ?? 0,
+    kept_out_fields: keptOutFields.size,
   };
 }
 
@@ -5220,8 +5254,11 @@ function formatProposeResult(capabilityName: string, result: Record<string, unkn
   const proposalId = String(result.proposal_id ?? "");
   const evidenceId = String(result.evidence_bundle_id ?? "");
   const sourceChanged = result.source_database_changed === true || result.source_database_mutated === true;
+  const status = String(result.status ?? "review_required");
+  const approval = isRecord(result.approval) ? result.approval : undefined;
+  const autoApproved = status === "approved" && approval?.mode === "policy";
   const lines = [
-    "Proposal created.",
+    autoApproved ? "Proposal created and policy-approved." : "Proposal created.",
     "",
     "Capability:",
     capabilityName,
@@ -5235,9 +5272,12 @@ function formatProposeResult(capabilityName: string, result: Record<string, unkn
     "Source DB changed:",
     sourceChanged ? "yes" : "no",
     "",
+    "Approval:",
+    autoApproved ? `approved by policy ${String(approval?.policy ?? "")}` : "required outside MCP",
+    "",
     "Review:",
     `${cliCommandName()} proposals show ${proposalId || "latest"} --store ${storePath}`,
-    `${cliCommandName()} proposals approve ${proposalId || "latest"} --store ${storePath}`,
+    ...(autoApproved ? [] : [`${cliCommandName()} proposals approve ${proposalId || "latest"} --store ${storePath}`]),
     `${cliCommandName()} apply ${proposalId || "latest"} --store ${storePath}`,
     `${cliCommandName()} replay ${proposalId || "latest"} --store ${storePath}`,
     "",
@@ -5471,6 +5511,7 @@ async function toolsPreview(args: string[]): Promise<number> {
       config_path: boundary.configPath,
       store_path: boundary.storePath,
       alias_mode: boundary.aliasMode,
+      auto_approval: boundary.autoApprovalDisabled ? "disabled" : "enabled",
       exposed_to_mcp: boundary.names,
       alias_mappings: boundary.exposures,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
@@ -5489,6 +5530,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   aliasMode: ToolNameStyle;
   names: string[];
   exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
+  autoApprovalDisabled: boolean;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
   const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
@@ -5503,6 +5545,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   const runtime = createMcpRuntime(parsed, { storePath });
   try {
     const tools = runtime.listTools();
+    const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
     const exposures = toolNameExposures(tools.map((tool) => tool.name), aliasMode);
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
@@ -5515,7 +5558,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, checks };
   } finally {
     runtime.close();
   }
@@ -5540,6 +5583,7 @@ function formatToolsPreview(input: {
   aliasMode: ToolNameStyle;
   names: string[];
   exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
+  autoApprovalDisabled: boolean;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
   const exposedLines = input.exposures.length > 0
@@ -5550,6 +5594,7 @@ function formatToolsPreview(input: {
     `Config: ${input.configPath}`,
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
+    `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
     "",
     "Exposed to MCP:",
     ...exposedLines,
@@ -8510,11 +8555,14 @@ function formatReceiptId(receiptId: number): string {
 }
 
 function approvalBoundary(proposal: StoredProposal): string {
+  const approval = proposal.change_set.approval as Record<string, unknown>;
+  const policy = typeof approval.policy === "string" ? approval.policy : undefined;
+  const policyActor = policy ? `policy:${policy}` : undefined;
   if (proposal.state === "pending_review") return "required outside MCP";
-  if (proposal.state === "approved" || proposal.state === "pending_worker") return "approved outside MCP; waiting for trusted worker";
-  if (proposal.state === "applied") return "approved outside MCP; writeback applied";
-  if (proposal.state === "conflict") return "approved outside MCP; writeback blocked by conflict guard";
-  if (proposal.state === "failed") return "approved outside MCP; writeback failed safely";
+  if (proposal.state === "approved" || proposal.state === "pending_worker") return `${policyActor ? `approved by ${policyActor}` : "approved outside MCP"}; waiting for trusted worker`;
+  if (proposal.state === "applied") return `${policyActor ? `approved by ${policyActor}` : "approved outside MCP"}; writeback applied`;
+  if (proposal.state === "conflict") return `${policyActor ? `approved by ${policyActor}` : "approved outside MCP"}; writeback blocked by conflict guard`;
+  if (proposal.state === "failed") return `${policyActor ? `approved by ${policyActor}` : "approved outside MCP"}; writeback failed safely`;
   if (proposal.state === "rejected") return "rejected outside MCP";
   return humanStatus(proposal.state);
 }

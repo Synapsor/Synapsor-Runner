@@ -1,5 +1,5 @@
 import { SPEC_VERSION } from "./version.js";
-import type { SynapsorContract, ValidationIssue, ValidationResult } from "./types.js";
+import type { CapabilitySpec, JsonScalar, ProposalActionSpec, SynapsorContract, ValidationIssue, ValidationResult } from "./types.js";
 import { SynapsorSpecValidationError } from "./errors.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -33,7 +33,7 @@ const PATCH_KEYS = new Set(["fixed", "from_arg"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
-const APPROVAL_KEYS = new Set(["mode", "required_role"]);
+const APPROVAL_KEYS = new Set(["mode", "required_role", "policy"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
 const WORKFLOW_KEYS = new Set(["name", "description", "context", "allowed_capabilities", "required_evidence", "approval", "settlement", "replay"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules"]);
@@ -82,9 +82,12 @@ export function validateContract(input: unknown): ValidationResult {
   validateMetadata(input.metadata, "$.metadata", errors);
   const resourceNames = validateResources(input.resources, errors, warnings);
   const contextNames = validateContexts(input.contexts, errors, warnings);
+  const capabilities = Array.isArray(input.capabilities) ? input.capabilities : [];
+  const policies = Array.isArray(input.policies) ? input.policies : [];
   const capabilityNames = validateCapabilities(input.capabilities, contextNames, resourceNames, errors, warnings);
   validateWorkflows(input.workflows, contextNames, capabilityNames, errors);
-  validatePolicies(input.policies, errors);
+  const policyByName = validatePolicies(input.policies, errors);
+  validateCapabilityApprovalPolicies(capabilities, policies, policyByName, errors);
   validateEvidenceRecords(input.evidence, errors);
   validateProposalRecords(input.proposals, capabilityNames, errors);
   validateReceiptRecords(input.receipts, errors);
@@ -410,9 +413,125 @@ function validateWorkflows(value: unknown, contextNames: Set<string>, capability
   });
 }
 
-function validatePolicies(value: unknown, errors: ValidationIssue[]): void {
-  if (value === undefined) return;
-  validateArrayRecords(value, "$.policies", POLICY_KEYS, "POLICY", errors);
+function validatePolicies(value: unknown, errors: ValidationIssue[]): Map<string, JsonRecord> {
+  const names = new Map<string, JsonRecord>();
+  if (value === undefined) return names;
+  if (!Array.isArray(value)) {
+    errors.push({ path: "$.policies", code: "POLICIES_NOT_ARRAY", message: "$.policies must be an array." });
+    return names;
+  }
+  value.forEach((policy, index) => {
+    const path = `$.policies[${index}]`;
+    if (!isRecord(policy)) {
+      errors.push({ path, code: "POLICY_NOT_OBJECT", message: "policy entry must be an object." });
+      return;
+    }
+    checkUnknownKeys(policy, POLICY_KEYS, path, errors);
+    if (!isQualifiedOrSafeName(policy.name)) errors.push({ path: `${path}.name`, code: "INVALID_POLICY_NAME", message: "policy name must be a safe identifier or qualified name." });
+    else {
+      if (names.has(String(policy.name))) errors.push({ path: `${path}.name`, code: "DUPLICATE_POLICY_NAME", message: `Duplicate name: ${String(policy.name)}` });
+      names.set(String(policy.name), policy);
+    }
+    if (!["approval", "settlement", "scope", "custom"].includes(String(policy.kind))) errors.push({ path: `${path}.kind`, code: "INVALID_POLICY_KIND", message: "policy.kind must be approval, settlement, scope, or custom." });
+    if (policy.mode !== undefined && !["green", "yellow", "red", "manual", "block"].includes(String(policy.mode))) errors.push({ path: `${path}.mode`, code: "INVALID_POLICY_MODE", message: "policy.mode must be green, yellow, red, manual, or block." });
+    if (policy.rules !== undefined) {
+      if (!Array.isArray(policy.rules)) {
+        errors.push({ path: `${path}.rules`, code: "POLICY_RULES_NOT_ARRAY", message: "policy.rules must be an array." });
+      } else if (policy.kind === "approval") {
+        policy.rules.forEach((rule, ruleIndex) => validateApprovalPolicyRuleShape(rule, `${path}.rules[${ruleIndex}]`, errors));
+      }
+    }
+  });
+  return names;
+}
+
+function validateApprovalPolicyRuleShape(rule: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(rule)) {
+    errors.push({ path, code: "APPROVAL_POLICY_RULE_NOT_OBJECT", message: "approval policy rules must be objects." });
+    return;
+  }
+  const keys = new Set(["field", "max"]);
+  checkUnknownKeys(rule, keys, path, errors);
+  if (!isSafeIdentifier(rule.field)) errors.push({ path: `${path}.field`, code: "INVALID_APPROVAL_POLICY_FIELD", message: "approval policy rule field must be a safe identifier." });
+  if (!Number.isInteger(rule.max) || Number(rule.max) < 0) errors.push({ path: `${path}.max`, code: "INVALID_APPROVAL_POLICY_MAX", message: "approval policy rule max must be a non-negative integer." });
+}
+
+function validateCapabilityApprovalPolicies(capabilities: unknown[], policies: unknown[], policyByName: Map<string, JsonRecord>, errors: ValidationIssue[]): void {
+  const policyIndexByName = new Map<string, number>();
+  policies.forEach((policy, index) => {
+    if (isRecord(policy) && typeof policy.name === "string") policyIndexByName.set(policy.name, index);
+  });
+  capabilities.forEach((capability, index) => {
+    if (!isRecord(capability) || !isRecord(capability.proposal)) return;
+    const proposal = capability.proposal as ProposalActionSpec;
+    const approval = proposal.approval;
+    if (!isRecord(approval)) return;
+    const path = `$.capabilities[${index}].proposal.approval`;
+    const mode = approval.mode;
+    const policyName = approval.policy;
+    if (mode === "policy") {
+      if (!isNonEmptyString(approval.required_role)) {
+        errors.push({ path: `${path}.required_role`, code: "APPROVAL_POLICY_ROLE_REQUIRED", message: "approval.mode policy still requires required_role for human fallback." });
+      }
+      if (!isQualifiedOrSafeName(policyName)) {
+        errors.push({ path: `${path}.policy`, code: "APPROVAL_POLICY_REQUIRED", message: "approval.mode policy requires approval.policy." });
+        return;
+      }
+      const policy = policyByName.get(policyName);
+      if (!policy) {
+        errors.push({ path: `${path}.policy`, code: "UNKNOWN_APPROVAL_POLICY", message: `approval.policy must reference an existing approval policy: ${policyName}` });
+        return;
+      }
+      if (policy.kind !== "approval") {
+        errors.push({ path: `${path}.policy`, code: "APPROVAL_POLICY_KIND_REQUIRED", message: "approval.policy must reference a policy with kind approval." });
+        return;
+      }
+      validateApprovalPolicyRulesAgainstCapability(policy, policyIndexByName.get(policyName) ?? 0, capability as CapabilitySpec, index, errors);
+    } else if (policyName !== undefined) {
+      errors.push({ path: `${path}.policy`, code: "APPROVAL_POLICY_MODE_REQUIRED", message: "approval.policy can only be set when approval.mode is policy." });
+    }
+  });
+}
+
+function validateApprovalPolicyRulesAgainstCapability(policy: JsonRecord, policyIndex: number, capability: CapabilitySpec, capabilityIndex: number, errors: ValidationIssue[]): void {
+  if (!Array.isArray(policy.rules)) return;
+  const proposal = capability.proposal;
+  if (!proposal) return;
+  policy.rules.forEach((rule, ruleIndex) => {
+    if (!isRecord(rule)) return;
+    const field = rule.field;
+    const max = rule.max;
+    const rulePath = `$.policies[${policyIndex}].rules[${ruleIndex}]`;
+    if (!isSafeIdentifier(field) || !Number.isInteger(max)) return;
+    if (!isNumericProposalField(proposal, capability.args, field)) {
+      errors.push({
+        path: `${rulePath}.field`,
+        code: "APPROVAL_POLICY_FIELD_NOT_NUMERIC",
+        message: `approval policy field ${field} must be numeric for capability ${capability.name}.`,
+      });
+    }
+    const bound = proposal.numeric_bounds?.[field];
+    if (bound?.maximum !== undefined && Number(max) > Number(bound.maximum)) {
+      errors.push({
+        path: `${rulePath}.max`,
+        code: "APPROVAL_POLICY_MAX_EXCEEDS_BOUND",
+        message: `approval policy max for ${field} must be <= numeric_bounds maximum on $.capabilities[${capabilityIndex}].proposal.numeric_bounds.${field}.maximum.`,
+      });
+    }
+  });
+}
+
+export function isNumericProposalField(proposal: ProposalActionSpec, args: CapabilitySpec["args"], field: string): boolean {
+  if (proposal.numeric_bounds?.[field] !== undefined) return true;
+  const patch = proposal.patch?.[field];
+  if (!patch) return false;
+  if (typeof patch.fixed === "number" && Number.isInteger(patch.fixed)) return true;
+  if (patch.from_arg && args[patch.from_arg]?.type === "number") return true;
+  return false;
+}
+
+export function isPolicyQualifyingInteger(value: JsonScalar): value is number {
+  return typeof value === "number" && Number.isInteger(value);
 }
 
 function validateEvidenceRecords(value: unknown, errors: ValidationIssue[]): void {
