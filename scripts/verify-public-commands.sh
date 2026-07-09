@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
+EXPECTED_VERSION="$(node -e "console.log(require('$ROOT/apps/runner/package.json').version)")"
+
+for version_args in "--version" "-v" "version" "synapsor-runner --version"; do
+  read -r -a args <<< "$version_args"
+  actual="$("$ROOT/bin/synapsor-runner" "${args[@]}")"
+  if [[ "$actual" != "$EXPECTED_VERSION" ]]; then
+    echo "version invocation '$version_args' returned '$actual', expected '$EXPECTED_VERSION'" >&2
+    exit 1
+  fi
+done
 
 "$ROOT/bin/synapsor-runner" --help >/dev/null
 "$ROOT/bin/synapsor-runner" audit --example dangerous-db-mcp >/dev/null

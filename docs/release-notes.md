@@ -12,9 +12,20 @@ for the Synapsor Cloud CLI.
 
 ## Unreleased
 
-Prepared package versions: `@synapsor/spec@0.1.4`,
-`@synapsor/dsl@0.1.4`, and `@synapsor/runner@0.1.11`. Nothing in this section
-is published until the manual release commands are run.
+Prepared package version: `@synapsor/runner@0.1.12`. The already-published
+`@synapsor/spec@0.1.4` and `@synapsor/dsl@0.1.4` do not change and must not be
+republished for this release.
+
+### Runner Version Invocation
+
+- Keeps `synapsor-runner --version`, `synapsor-runner -v`, and
+  `synapsor-runner version` stable if an npm/npx wrapper forwards a duplicated
+  executable token.
+- Uses Runner's bundled package metadata instead of the invoking project's
+  `npm_package_version` environment value.
+- Adds source-wrapper and installed-tarball verification for all three forms.
+
+## 0.1.11
 
 ### Cloud Adoption Loop
 

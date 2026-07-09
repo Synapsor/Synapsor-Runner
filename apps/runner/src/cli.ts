@@ -378,7 +378,7 @@ const referenceDemoEnv: Record<string, string> = {
 };
 
 export async function main(argv: string[]): Promise<number> {
-  const [command, ...rest] = argv;
+  const [command, ...rest] = normalizeCliArgv(argv);
   if (!command || command === "--help" || command === "-h") {
     usage([]);
     return 0;
@@ -434,6 +434,12 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "ui") return ui(rest);
   process.stderr.write(`Unknown command: ${cliCommandName()} ${command}\n\nTry:\n${cliCommandName()} --help\n`);
   return 2;
+}
+
+function normalizeCliArgv(argv: string[]): string[] {
+  const [first, ...rest] = argv;
+  if (first === "synapsor-runner" || first === "synapsor") return rest;
+  return argv;
 }
 
 async function init(args: string[]): Promise<number> {
@@ -8841,7 +8847,9 @@ function cliCommandName(): string {
 }
 
 async function runnerPackageVersion(): Promise<string> {
-  if (process.env.npm_package_version) return process.env.npm_package_version;
+  if (typeof runnerPackage.version === "string" && runnerPackage.version.trim()) {
+    return runnerPackage.version.trim();
+  }
   const packageUrl = new URL("../package.json", import.meta.url);
   try {
     const parsed = JSON.parse(await fs.readFile(packageUrl, "utf8")) as { version?: unknown };
