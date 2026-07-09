@@ -8930,8 +8930,9 @@ instead of being ignored.
   ${cmd} cloud push ./synapsor.contract.json --dry-run [--workspace <id>] [--name <registry-name>]
 
 cloud push validates and normalizes the contract locally, then prints the
-payload summary. Upload is intentionally not reported as successful until a
-real Cloud registry endpoint is wired.
+payload summary. With --dry-run it makes no network request. Without --dry-run
+it uploads to the authenticated Cloud registry and reports the stored contract,
+version, digest, and registry URL returned by the server.
 `,
     up: `Usage:
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio|streamable-http]
