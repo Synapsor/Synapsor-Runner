@@ -1,0 +1,15 @@
+Synapsor tools preview: ok
+
+Exposed to MCP:
+  - support.inspect_customer
+  - support.propose_plan_credit
+
+Not exposed to MCP:
+  - execute_sql / raw query tools
+  - approval tools
+  - commit/apply tools
+  - database URLs
+  - write credentials
+  - model-controlled tenant authority
+
+auto-approval: enabled

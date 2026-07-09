@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "0.1.10",
+  "version": "0.1.11",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -42,6 +42,7 @@
     "test:first-run": "./scripts/try-synapsor.sh",
     "own-db": "./scripts/use-your-db.sh",
     "verify:local-runner": "./scripts/verify-local-runner.sh",
+    "verify:adoption": "./scripts/verify_adoption_quickstart.sh",
     "verify:public-commands": "./scripts/verify-public-commands.sh",
     "verify:packed-runner": "./scripts/verify-packed-runner.sh",
     "verify:packed-own-db": "./scripts/verify-packed-own-db.sh",

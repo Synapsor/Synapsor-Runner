@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "synapsor-runner": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "-p",
+        "@synapsor/runner",
+        "synapsor-runner",
+        "mcp",
+        "serve",
+        "--config",
+        "<absolute-path-to-Synapsor-Runner>/examples/support-plan-credit/synapsor.runner.json",
+        "--store",
+        "<absolute-path-to-Synapsor-Runner>/tmp/support-plan-credit/local.db"
+      ]
+    }
+  }
+}

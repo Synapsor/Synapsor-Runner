@@ -83,8 +83,23 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - ports or local process settings.
 
 Runner config references contracts and provides local wiring. Cloud imports the
-same contracts and provides hosted registry, approval, replay, RBAC, retention,
-and managed runners.
+same contracts into a shared, versioned registry and can export placeholder-only
+Runner bundles. Hosted approval/evidence/replay behavior depends on the enabled
+Cloud pilot; managed runners, SAML/SCIM, and enterprise retention are not implied
+by contract compatibility.
+
+## Local To Cloud Loop
+
+```bash
+synapsor-spec validate ./synapsor.contract.json
+synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
+synapsor-runner cloud push ./synapsor.contract.json --dry-run
+```
+
+A real push stores the normalized contract as an immutable Cloud registry
+version with a server-computed digest. Downloading that version's Runner bundle
+returns the same contract plus local wiring placeholders; the contract never
+contains database credentials.
 
 ## Conformance Fixtures
 

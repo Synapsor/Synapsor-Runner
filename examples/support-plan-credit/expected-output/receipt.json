@@ -1,0 +1,13 @@
+{
+  "receipt_id": "rct_example_plan_credit",
+  "proposal_id": "wrp_example_low_risk_credit",
+  "status": "applied",
+  "rows_affected": 1,
+  "guards": {
+    "tenant": "passed",
+    "primary_key": "passed",
+    "allowed_columns": "passed",
+    "expected_version": "passed",
+    "idempotency": "passed"
+  }
+}

@@ -155,6 +155,7 @@ async function createApprovedContractProposal(input: {
 describe("runner cli", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("prints product help for the public synapsor-runner command surface", async () => {
@@ -228,11 +229,11 @@ describe("runner cli", () => {
     });
 
     await expect(main(["--version"])).resolves.toBe(0);
-    expect(output.join("").trim()).toBe("0.1.10");
+    expect(output.join("").trim()).toBe("0.1.11");
 
     output.length = 0;
     await expect(main(["version"])).resolves.toBe(0);
-    expect(output.join("").trim()).toBe("0.1.10");
+    expect(output.join("").trim()).toBe("0.1.11");
   });
 
   it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
@@ -621,11 +622,23 @@ describe("runner cli", () => {
     await fs.access(path.join(bundleDir, "synapsor.runner.json"));
     await fs.access(path.join(bundleDir, ".env.example"));
     await fs.access(path.join(bundleDir, "README.md"));
-    await fs.access(path.join(bundleDir, "mcp-client-examples/generic-stdio.json"));
+    for (const clientFile of [
+      "claude-desktop.json",
+      "cursor-project.mcp.json",
+      "cursor-global.mcp.json",
+      "openai-agents-stdio.ts",
+      "openai-agents-streamable-http.ts",
+      "generic-stdio.json",
+      "generic-streamable-http.json",
+    ]) {
+      await fs.access(path.join(bundleDir, "mcp-client-examples", clientFile));
+    }
+    expect(await fs.readFile(path.join(bundleDir, "mcp-client-examples", "openai-agents-stdio.ts"), "utf8")).toContain("--alias-mode openai");
     const bundleConfig = JSON.parse(await fs.readFile(path.join(bundleDir, "synapsor.runner.json"), "utf8"));
     expect(bundleConfig.contracts).toEqual(["./synapsor.contract.json"]);
     const bundleEnv = await fs.readFile(path.join(bundleDir, ".env.example"), "utf8");
     expect(bundleEnv).toContain("SYNAPSOR_DATABASE_READ_URL=");
+    expect(bundleEnv).toContain("SYNAPSOR_DATABASE_WRITE_URL=");
     expect(bundleEnv).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|synapsor_reader|O9wxy|nStZFA|bearer|token/i);
   });
 
@@ -634,6 +647,7 @@ describe("runner cli", () => {
     const dslPath = workspacePath("packages/dsl/examples/billing-late-fee.synapsor");
     const contractPath = path.join(tempDir, "synapsor.contract.json");
     const output: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
       return true;
@@ -689,6 +703,7 @@ describe("runner cli", () => {
     expect(payload.dry_run).toBe(true);
     expect(payload.payload.contract.kind).toBe("SynapsorContract");
     expect(payload.payload.summary.capabilities).toBeGreaterThan(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("uploads Cloud contract push to the configured control API", async () => {
@@ -747,6 +762,11 @@ describe("runner cli", () => {
       expect(seenRequest.body?.schema_version).toBe("synapsor.cloud-contract-push.v0.1");
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
+      expect(seenRequest.body?.source_versions).toEqual({
+        "@synapsor/spec": "0.1.4",
+        "@synapsor/dsl": "0.1.4",
+        "@synapsor/runner": "0.1.11",
+      });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -788,6 +808,73 @@ describe("runner cli", () => {
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
+  });
+
+  it.each([
+    [401, "invalid_token", /token is missing, invalid, or expired/i],
+    [403, "project_access_denied", /does not have permission to write this workspace/i],
+    [404, "project_not_found", /Cloud API URL or workspace was not found/i],
+    [409, "version_conflict", /registry conflict/i],
+    [500, "internal_error", /Cloud returned HTTP 500/i],
+  ])("explains Cloud push HTTP %s without leaking credentials", async (status, code, expected) => {
+    const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: false, error: code }), {
+      status,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(main([
+      "cloud", "push", contractPath,
+      "--api-url", "https://cloud.example.invalid",
+      "--token", "never-print-this-token",
+      "--workspace", "cloud_project",
+    ])).rejects.toThrow(expected);
+  });
+
+  it("reports Cloud push network failure without leaking credentials", async () => {
+    const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("socket included never-print-this-token"));
+
+    await expect(main([
+      "cloud", "push", contractPath,
+      "--api-url", "https://cloud.example.invalid",
+      "--token", "never-print-this-token",
+      "--workspace", "cloud_project",
+    ])).rejects.toThrow(/network request failed.*network connectivity/i);
+  });
+
+  it("rejects an invalid local contract before Cloud push performs a request", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-invalid-cloud-push-"));
+    const contractPath = path.join(tempDir, "invalid.contract.json");
+    await fs.writeFile(contractPath, JSON.stringify({ kind: "SynapsorContract", capabilities: [] }), "utf8");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(main([
+      "cloud", "push", contractPath,
+      "--api-url", "https://cloud.example.invalid",
+      "--token", "never-print-this-token",
+      "--workspace", "cloud_project",
+    ])).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts SYNAPSOR_CLOUD_WORKSPACE for Cloud push", async () => {
+    const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
+    vi.stubEnv("SYNAPSOR_CLOUD_WORKSPACE", "cloud_workspace_from_env");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      contract_id: "act_env",
+      contract_version_id: "act_env_v1",
+      digest: "sha256:env",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(main([
+      "cloud", "push", contractPath,
+      "--api-url", "https://cloud.example.invalid",
+      "--token", "test-token",
+      "--json",
+    ])).resolves.toBe(0);
+    expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[0].toString()).toContain("/projects/cloud_workspace_from_env/agent-contracts");
   });
 
   it("fails DSL compile strict mode when proposal safety warnings remain", async () => {

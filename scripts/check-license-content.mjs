@@ -45,7 +45,8 @@ for (const pkgFile of listPackageJsonFiles()) {
 }
 
 const readme = read("README.md");
-if (!/Open-source MCP safety layer/.test(readme)) {
+const readmeFirstScreen = readme.split("## The Five-Line Model", 1)[0];
+if (!/\bopen-source\b/i.test(readmeFirstScreen)) {
   fail("README first screen must describe the runner as open source.");
 }
 if (!readme.includes("Apache License 2.0 (`Apache-2.0`)")) {

@@ -54,6 +54,9 @@ import {
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
 import { startLocalUiServer } from "./local-ui.js";
+import runnerPackage from "../package.json" with { type: "json" };
+import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
+import specPackage from "../../../packages/spec/package.json" with { type: "json" };
 
 const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
@@ -1736,18 +1739,21 @@ async function contractBundle(args: string[]): Promise<number> {
   const firstSource = firstCapability?.source ?? "local_postgres";
   const engine = inferContractBundleEngine(contract);
   const readUrlEnv = engine === "mysql" ? "SYNAPSOR_DATABASE_READ_URL" : "SYNAPSOR_DATABASE_READ_URL";
+  const hasProposals = contract.capabilities.some((capability) => capability.kind === "proposal");
+  const sourceConfig: Record<string, unknown> = {
+    engine,
+    read_url_env: readUrlEnv,
+    statement_timeout_ms: 3000,
+  };
+  if (hasProposals) sourceConfig.write_url_env = "SYNAPSOR_DATABASE_WRITE_URL";
   const runnerConfig = {
     version: 1,
-    mode: contract.capabilities.some((capability) => capability.kind === "proposal") ? "review" : "read_only",
+    mode: hasProposals ? "review" : "read_only",
     result_format: 2,
     storage: { sqlite_path: "./.synapsor/local.db" },
     contracts: ["./synapsor.contract.json"],
     sources: {
-      [firstSource]: {
-        engine,
-        read_url_env: readUrlEnv,
-        statement_timeout_ms: 3000,
-      },
+      [firstSource]: sourceConfig,
     },
   };
   await fs.mkdir(outDir, { recursive: true });
@@ -1756,10 +1762,9 @@ async function contractBundle(args: string[]): Promise<number> {
   await fs.writeFile(path.join(outDir, "synapsor.runner.json"), `${JSON.stringify(runnerConfig, null, 2)}\n`, "utf8");
   await fs.writeFile(path.join(outDir, ".env.example"), bundleEnvExample(contract, readUrlEnv, engine), "utf8");
   await fs.writeFile(path.join(outDir, "README.md"), bundleReadme(contract), "utf8");
-  await fs.writeFile(path.join(outDir, "mcp-client-examples", "generic-stdio.json"), `${JSON.stringify({
-    command: cliCommandName(),
-    args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
-  }, null, 2)}\n`, "utf8");
+  for (const [name, content] of Object.entries(bundleMcpClientExamples())) {
+    await fs.writeFile(path.join(outDir, "mcp-client-examples", name), content, "utf8");
+  }
   process.stdout.write(`created runner bundle: ${outDir}\n`);
   process.stdout.write("No database URLs, write credentials, tokens, or customer rows were included.\n");
   return 0;
@@ -1779,6 +1784,7 @@ function bundleEnvExample(contract: SynapsorContract, readUrlEnv: string, engine
     "# Fill these locally. Do not commit real values.",
     `# Set ${readUrlEnv} to your read-only ${engine === "mysql" ? "MySQL" : "Postgres"} URL.`,
     `${readUrlEnv}=`,
+    ...(contract.capabilities.some((capability) => capability.kind === "proposal") ? ["# Optional: separate least-privilege write URL for guarded direct UPDATE writeback.", "SYNAPSOR_DATABASE_WRITE_URL="] : []),
     `${tenantBinding?.key ?? "SYNAPSOR_TENANT_ID"}=acme`,
     `${principalBinding?.key ?? "SYNAPSOR_PRINCIPAL"}=local_operator`,
     "",
@@ -1806,11 +1812,45 @@ function bundleReadme(contract: SynapsorContract): string {
     "```bash",
     "cp .env.example .env",
     "# edit .env, then export the values in your shell",
-    `${cliCommandName()} contract validate ./synapsor.contract.json`,
-    `${cliCommandName()} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db`,
+    "set -a && . ./.env && set +a",
+    "npx -y -p @synapsor/runner synapsor-runner contract validate ./synapsor.contract.json",
+    "npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json",
+    "npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db",
+    "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db",
+    "```",
+    "",
+    "Approval and apply remain outside the model-facing MCP catalog. Inspect local history with:",
+    "",
+    "```bash",
+    "npx -y -p @synapsor/runner synapsor-runner replay show latest --store ./.synapsor/local.db",
+    "npx -y -p @synapsor/runner synapsor-runner cloud push ./synapsor.contract.json --dry-run",
     "```",
     "",
   ].join("\n");
+}
+
+function bundleMcpClientExamples(): Record<string, string> {
+  const packageArgs = ["-y", "-p", "@synapsor/runner", "synapsor-runner"];
+  const stdioArgs = [...packageArgs, "mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"];
+  const server = { command: "npx", args: stdioArgs };
+  const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+  return {
+    "claude-desktop.json": json({ mcpServers: { "synapsor-runner": server } }),
+    "cursor-project.mcp.json": json({ mcpServers: { "synapsor-runner": { type: "stdio", ...server } } }),
+    "cursor-global.mcp.json": json({
+      mcpServers: {
+        "synapsor-runner": {
+          type: "stdio",
+          command: "npx",
+          args: [...packageArgs, "mcp", "serve", "--config", "<absolute-path-to-bundle>/synapsor.runner.json", "--store", "<absolute-path-to-bundle>/.synapsor/local.db"],
+        },
+      },
+    }),
+    "generic-stdio.json": json({ name: "synapsor-runner", transport: "stdio", ...server }),
+    "generic-streamable-http.json": json({ name: "synapsor-runner", transport: "streamable-http", url: "http://127.0.0.1:8766/mcp" }),
+    "openai-agents-stdio.ts": `import { Agent, MCPServerStdio, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStdio({\n  name: "Synapsor Runner",\n  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db --alias-mode openai",\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
+    "openai-agents-streamable-http.ts": `import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";\n\n// Start Runner separately with: synapsor-runner mcp serve --transport streamable-http --alias-mode openai --config ./synapsor.runner.json --store ./.synapsor/local.db\nconst synapsor = new MCPServerStreamableHttp({ name: "Synapsor Runner", url: "http://127.0.0.1:8766/mcp" });\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
+  };
 }
 
 async function configValidate(args: string[]): Promise<number> {
@@ -3933,7 +3973,7 @@ async function cloudPush(args: string[]): Promise<number> {
   if (!target) throw new Error("cloud push requires <synapsor.contract.json>");
   const parsed = JSON.parse(await fs.readFile(target, "utf8"));
   const contract = normalizeContract(parsed);
-  const workspace = (optionalArg(args, "--workspace") ?? optionalArg(args, "--project") ?? process.env.SYNAPSOR_WORKSPACE_ID ?? process.env.SYNAPSOR_PROJECT_ID ?? "").trim();
+  const workspace = (optionalArg(args, "--workspace") ?? optionalArg(args, "--project") ?? process.env.SYNAPSOR_CLOUD_WORKSPACE ?? process.env.SYNAPSOR_WORKSPACE_ID ?? process.env.SYNAPSOR_PROJECT_ID ?? "").trim();
   const name = (optionalArg(args, "--name") ?? contract.metadata?.name ?? "").trim();
   const description = (optionalArg(args, "--description") ?? contract.metadata?.description ?? "").trim();
   const idempotencyKey = optionalArg(args, "--idempotency-key");
@@ -3946,7 +3986,9 @@ async function cloudPush(args: string[]): Promise<number> {
     description,
     source: "runner",
     source_versions: {
-      "@synapsor/runner": process.env.npm_package_version ?? "unknown",
+      "@synapsor/spec": specPackage.version,
+      "@synapsor/dsl": dslPackage.version,
+      "@synapsor/runner": process.env.npm_package_version ?? runnerPackage.version,
     },
     activate: args.includes("--activate"),
     idempotency_key: idempotencyKey,
@@ -3973,7 +4015,7 @@ async function cloudPush(args: string[]): Promise<number> {
   const apiUrl = (optionalArg(args, "--api-url") ?? process.env.SYNAPSOR_CLOUD_BASE_URL ?? "").trim();
   const token = (optionalArg(args, "--token") ?? process.env.SYNAPSOR_CLOUD_TOKEN ?? process.env.SYNAPSOR_RUNNER_TOKEN ?? "").trim();
   if (!workspace) {
-    throw new Error("cloud push upload requires --workspace <project_id> or SYNAPSOR_WORKSPACE_ID/SYNAPSOR_PROJECT_ID.");
+    throw new Error("cloud push upload requires --workspace <project_id> or SYNAPSOR_CLOUD_WORKSPACE/SYNAPSOR_WORKSPACE_ID/SYNAPSOR_PROJECT_ID.");
   }
   if (!apiUrl || !token) {
     throw new Error("cloud push upload requires --api-url plus --token/SYNAPSOR_CLOUD_TOKEN. Use --dry-run for local validation without a network call.");

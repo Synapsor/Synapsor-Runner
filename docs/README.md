@@ -49,6 +49,8 @@ then read the concepts once the safety boundary is visible.
 
 - [MCP Client Setup](mcp-client-setup.md): connect Claude, Cursor, VS Code, or
   another stdio MCP client.
+- [MCP Client Configs](mcp-clients.md): complete Claude, Cursor, OpenAI Agents,
+  generic stdio, and Streamable HTTP templates.
 - `examples/claude-desktop-postgres/`: copy-paste Claude Desktop config for the
   Postgres billing fixture.
 - `examples/cursor-postgres/`: copy-paste Cursor config for the Postgres
@@ -96,6 +98,10 @@ then read the concepts once the safety boundary is visible.
   scope, database roles, receipt grants, local ledger backup, restart behavior,
   Docker/systemd shapes, TLS, and release-gate expectations.
 - [Cloud Mode](cloud-mode.md): what stays local and what Cloud-linked mode adds.
+- [Cloud Push](cloud-push.md): register a validated local contract in the
+  versioned Cloud registry.
+- [Runner Bundles](runner-bundles.md): download the same immutable contract and
+  its local MCP wiring from Cloud.
 - [Release Notes](release-notes.md): release history and behavior changes.
 - [Release Policy](release-policy.md): stable gates and publish verification.
 - [Licensing](licensing.md): Apache-2.0 scope, trademark boundary, and what is

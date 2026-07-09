@@ -12,6 +12,34 @@ for the Synapsor Cloud CLI.
 
 ## Unreleased
 
+Prepared package versions: `@synapsor/spec@0.1.4`,
+`@synapsor/dsl@0.1.4`, and `@synapsor/runner@0.1.11`. Nothing in this section
+is published until the manual release commands are run.
+
+### Cloud Adoption Loop
+
+- Adds complete Claude, Cursor, OpenAI Agents SDK, and generic MCP templates to
+  local and Cloud-generated Runner bundles.
+- Adds a flagship adoption verifier and a real local Cloud registry/version/ZIP
+  bundle round trip.
+- Expands the `support-plan-credit` walkthrough from no-database validation to
+  Docker-backed policy tiers, MCP setup, Cloud push, bundle download, replay,
+  cleanup, and troubleshooting.
+- Supports `SYNAPSOR_CLOUD_WORKSPACE` and verifies distinct 401/403/404/409/422,
+  server, and network errors without exposing tokens.
+- Clarifies that Cloud registry/versioning is beta-ready while managed runners,
+  SAML/SCIM, hosted policy enforcement, legal hold, and enterprise SLA are not
+  part of this release.
+
+## 0.1.10
+
+### Policy Auto-Approval
+
+- Adds portable approval-policy references and threshold rules.
+- Adds DSL `AUTO APPROVE WHEN field <= integer` and the three-tier
+  `support-plan-credit` example: policy approval, operator review, and bound
+  rejection.
+
 ## 0.1.9
 
 ### CLI Hygiene
