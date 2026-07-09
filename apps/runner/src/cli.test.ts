@@ -234,13 +234,22 @@ describe("runner cli", () => {
       output.push(String(chunk));
       return true;
     });
+    vi.stubEnv("npm_package_version", "1.0.0");
 
-    await expect(main(["--version"])).resolves.toBe(0);
-    expect(output.join("").trim()).toBe("0.1.11");
+    const invocations = [
+      ["--version"],
+      ["-v"],
+      ["version"],
+      ["synapsor-runner", "--version"],
+      ["synapsor-runner", "-v"],
+      ["synapsor-runner", "version"],
+    ];
 
-    output.length = 0;
-    await expect(main(["version"])).resolves.toBe(0);
-    expect(output.join("").trim()).toBe("0.1.11");
+    for (const invocation of invocations) {
+      output.length = 0;
+      await expect(main(invocation)).resolves.toBe(0);
+      expect(output.join("").trim()).toBe("0.1.12");
+    }
   });
 
   it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
@@ -772,7 +781,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "0.1.4",
         "@synapsor/dsl": "0.1.4",
-        "@synapsor/runner": "0.1.11",
+        "@synapsor/runner": "0.1.12",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {

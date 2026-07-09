@@ -2,10 +2,23 @@
 
 ## Unreleased
 
+### Runner Version Invocation
+
+- Stages `@synapsor/runner@0.1.12` without changing or republishing
+  `@synapsor/spec@0.1.4` or `@synapsor/dsl@0.1.4`.
+- Keeps `--version`, `-v`, and `version` stable when an npm/npx wrapper forwards
+  a duplicated `synapsor-runner` executable token.
+- Reads the Runner version from bundled package metadata instead of the
+  invoking project's ambient `npm_package_version` value.
+- Adds source-wrapper and installed-tarball checks for every supported version
+  form and the duplicated-token regression shape.
+
+## 0.1.11
+
 ### Cloud Adoption Loop
 
-- Stages `@synapsor/spec@0.1.4`, `@synapsor/dsl@0.1.4`, and
-  `@synapsor/runner@0.1.11` without publishing them.
+- Publishes `@synapsor/spec@0.1.4`, `@synapsor/dsl@0.1.4`, and
+  `@synapsor/runner@0.1.11`.
 - Adds a seven-file MCP client bundle for Claude Desktop, Cursor, OpenAI Agents
   SDK, and generic stdio/Streamable HTTP clients, including OpenAI-safe tool
   aliases.

@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT/apps/runner"
 TEMP_DIR="$(mktemp -d)"
 TARBALL=""
+EXPECTED_VERSION="$(node -e "console.log(require('$PACKAGE_DIR/package.json').version)")"
 
 cleanup() {
   rm -rf "$TEMP_DIR"
@@ -30,6 +31,15 @@ TARBALL="$PACKAGE_DIR/$PACK_FILE"
 cd "$TEMP_DIR"
 npm init -y >/dev/null
 npm install "$TARBALL" >/dev/null
+
+for version_args in "--version" "-v" "version" "synapsor-runner --version"; do
+  read -r -a args <<< "$version_args"
+  actual="$(npx synapsor-runner "${args[@]}")"
+  if [[ "$actual" != "$EXPECTED_VERSION" ]]; then
+    echo "packed version invocation '$version_args' returned '$actual', expected '$EXPECTED_VERSION'" >&2
+    exit 1
+  fi
+done
 
 npx synapsor-runner --help >/dev/null
 npx synapsor-runner demo --quick --no-interactive > quick.txt
