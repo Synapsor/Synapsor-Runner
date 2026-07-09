@@ -1,0 +1,22 @@
+{
+  "under-policy-threshold": {
+    "ok": true,
+    "proposal_status": "approved",
+    "approval": {
+      "mode": "policy",
+      "policy": "support_propose_plan_credit_auto_approval",
+      "actor": "policy:support_propose_plan_credit_auto_approval"
+    },
+    "source_database_changed": false
+  },
+  "over-policy-threshold": {
+    "ok": true,
+    "proposal_status": "pending_review",
+    "approval": {
+      "mode": "policy",
+      "policy": "support_propose_plan_credit_auto_approval",
+      "required_role": "support_reviewer"
+    },
+    "source_database_changed": false
+  }
+}

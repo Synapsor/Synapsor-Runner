@@ -19,7 +19,7 @@ Legend:
 | Context names | Supported | `CREATE AGENT CONTEXT` | Supported | Supported | Referenced by capabilities/workflows | Supported | Supported | Spec, DSL, runner, C++ fixtures |
 | Capability names | Supported | `CREATE CAPABILITY` | Supported | Supported | Exposed as semantic MCP tools | Supported | Supported | Raw SQL/approval/commit tools remain absent |
 | Workflow names | Supported | `CREATE AGENT WORKFLOW` | Supported | Loaded as declaration | Preview only; runner does not execute full DAGs | Supported as declaration | Supported | Do not claim workflow DAG execution |
-| Policy names | Supported | Policy references only in current DSL | Preserved where represented | Loaded | Limited/local | Supported/preserved or rejected clearly | Supported | Rich policy packs are Cloud/paid surface |
+| Policy names | Supported | Approval policy emitted by `AUTO APPROVE WHEN` | Preserved where represented | Loaded | Limited/local | Supported/preserved or rejected clearly | Supported | Rich policy packs are Cloud/paid surface |
 | Contract description | Supported in `metadata.description` | Via metadata/examples | Preserved | Preserved | Not behavior-affecting | Supported | Supported | Useful for registry display |
 | Context description | Supported | Preview/partial | Preserved when present | Preserved | Not behavior-affecting | Supported | Supported | Unknown fields fail unless extension-prefixed |
 | Capability description | Supported | `DESCRIPTION '...'` | Supported | Tool metadata | Model-facing description | Supported | Supported | CLI tests inspect generated metadata |
@@ -42,6 +42,7 @@ Legend:
 | Numeric proposal bounds | Supported | `BOUND field min..max` | Supported | Loaded | Out-of-bounds proposals rejected | Supported | Supported | Numeric-bounds rejection test |
 | Transition guards | Supported in JSON | `TRANSITION ...` preview | Preserved | Loaded | Enforced only where runner has enough current-row state | Supported/preserved | Supported | Metadata preservation test |
 | Approval requirement | Supported | `APPROVAL ROLE ...` | Supported | Loaded | Approval remains outside MCP | Supported | Supported | No model-facing approve tool |
+| Approval policy | Supported | `AUTO APPROVE WHEN field <= integer` after `APPROVAL ROLE` | Emits `approval.mode=policy`, `approval.policy`, and `policies[]` approval rules | Loaded | Runner may auto-approve; never auto-applies | Must preserve `approval.policy` and `policies[]` | Supported | Auto-approval conformance fixture |
 | Writeback direct SQL | Supported | `WRITEBACK DIRECT SQL` | Supported | Loaded | Guarded single-row update only | Supported | Supported | Live/direct apply smoke path |
 | Writeback handler | Supported | `WRITEBACK HANDLER name` | Supported where current DSL parser has landed | Loaded | Runner POSTs approved proposal to configured executor | Supported as contract intent | Supported | Handler URL/token stay in runner config, not contract |
 | Idempotency metadata | Supported where represented | Limited | Preserved if present | Loaded | Receipts/idempotency guard local writes | Supported/preserved | Supported | Do not store credentials |

@@ -92,6 +92,11 @@ Full disposable proof -> npx -y -p @synapsor/runner synapsor-runner demo
 Inspect MCP risk       -> npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp
 ```
 
+Flagship example: [`examples/support-plan-credit`](examples/support-plan-credit)
+shows the contract policy path end to end: `$25` auto-approved by policy,
+`$100` held for local review, and `$1000` rejected by the reviewed bound before
+any proposal row exists.
+
 ## Why Not Just Build This Yourself?
 
 You can build the outline in an afternoon:
@@ -425,16 +430,18 @@ npx -y -p @synapsor/runner synapsor-runner demo
 ```
 
 For contributor/release verification from a checkout, the live apply smoke uses
-disposable Postgres/MySQL containers and the official MCP stdio client transport:
+four disposable Postgres/MySQL scenarios and the official MCP stdio client
+transport:
 
 ```bash
 corepack pnpm test:live-apply
 ```
 
 It verifies semantic tool listing, proposal diffs, source rows unchanged before
-approval, guarded writeback, idempotent retry, stale-row conflict, receipts, and
-replay. See [`docs/local-mode.md`](docs/local-mode.md#local-mcp-smoke) for
-prerequisites and expected output.
+approval, guarded writeback, idempotent retry, stale-row conflict, receipts,
+replay, and the support-plan-credit policy tiers. See
+[`docs/local-mode.md`](docs/local-mode.md#local-mcp-smoke) for prerequisites and
+expected output.
 
 After the demo prints its generated config and store path, run the happy path it
 prints. The shape is:

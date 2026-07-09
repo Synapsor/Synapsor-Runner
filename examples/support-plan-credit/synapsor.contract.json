@@ -1,0 +1,198 @@
+{
+  "capabilities": [
+    {
+      "args": {
+        "customer_id": {
+          "description": "Customer id such as CUS-3001.",
+          "max_length": 128,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "context": "support_agent_context",
+      "description": "Inspect one support customer in the trusted tenant before proposing a plan credit.",
+      "evidence": {
+        "query_audit": true,
+        "required": true
+      },
+      "kept_out_fields": [
+        "card_token",
+        "raw_payment_method",
+        "internal_risk_score",
+        "private_notes"
+      ],
+      "kind": "read",
+      "lookup": {
+        "id_from_arg": "customer_id"
+      },
+      "max_rows": 1,
+      "name": "support.inspect_customer",
+      "returns_hint": "Returns reviewed customer fields plus evidence/query-audit handles.",
+      "source": "local_postgres",
+      "subject": {
+        "conflict_key": "updated_at",
+        "primary_key": "id",
+        "schema": "public",
+        "table": "customers",
+        "tenant_key": "tenant_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "plan",
+        "invoice_status",
+        "support_ticket_reason",
+        "plan_credit_cents",
+        "credit_reason",
+        "updated_at"
+      ]
+    },
+    {
+      "args": {
+        "credit_cents": {
+          "description": "Requested plan credit in cents.",
+          "minimum": 1,
+          "required": true,
+          "type": "number"
+        },
+        "customer_id": {
+          "description": "Customer id such as CUS-3001.",
+          "max_length": 128,
+          "required": true,
+          "type": "string"
+        },
+        "reason": {
+          "description": "Business reason tied to support evidence.",
+          "max_length": 500,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "context": "support_agent_context",
+      "description": "Propose a bounded support plan credit after inspecting customer and ticket evidence.",
+      "evidence": {
+        "query_audit": true,
+        "required": true
+      },
+      "kept_out_fields": [
+        "card_token",
+        "raw_payment_method",
+        "internal_risk_score",
+        "private_notes"
+      ],
+      "kind": "proposal",
+      "lookup": {
+        "id_from_arg": "customer_id"
+      },
+      "max_rows": 1,
+      "name": "support.propose_plan_credit",
+      "proposal": {
+        "action": "grant_plan_credit",
+        "allowed_fields": [
+          "plan_credit_cents",
+          "credit_reason"
+        ],
+        "approval": {
+          "mode": "policy",
+          "policy": "support_propose_plan_credit_auto_approval",
+          "required_role": "support_reviewer"
+        },
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "numeric_bounds": {
+          "plan_credit_cents": {
+            "maximum": 50000,
+            "minimum": 1
+          }
+        },
+        "patch": {
+          "credit_reason": {
+            "from_arg": "reason"
+          },
+          "plan_credit_cents": {
+            "from_arg": "credit_cents"
+          }
+        },
+        "writeback": {
+          "mode": "direct_sql"
+        }
+      },
+      "returns_hint": "Returns a proposal id, exact diff, evidence handle, and source_database_changed:false. Policy may approve small credits, but writeback is still separate.",
+      "source": "local_postgres",
+      "subject": {
+        "conflict_key": "updated_at",
+        "primary_key": "id",
+        "schema": "public",
+        "table": "customers",
+        "tenant_key": "tenant_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "customer_id",
+        "plan",
+        "invoice_status",
+        "support_ticket_reason",
+        "plan_credit_cents",
+        "credit_reason",
+        "updated_at"
+      ]
+    }
+  ],
+  "contexts": [
+    {
+      "bindings": [
+        {
+          "key": "SYNAPSOR_TENANT_ID",
+          "name": "tenant_id",
+          "required": true,
+          "source": "environment"
+        },
+        {
+          "key": "SYNAPSOR_PRINCIPAL",
+          "name": "principal",
+          "required": true,
+          "source": "environment"
+        }
+      ],
+      "name": "support_agent_context",
+      "principal_binding": "principal",
+      "tenant_binding": "tenant_id"
+    }
+  ],
+  "kind": "SynapsorContract",
+  "policies": [
+    {
+      "kind": "approval",
+      "mode": "green",
+      "name": "support_propose_plan_credit_auto_approval",
+      "rules": [
+        {
+          "field": "plan_credit_cents",
+          "max": 2500
+        }
+      ]
+    }
+  ],
+  "spec_version": "0.1",
+  "workflows": [
+    {
+      "allowed_capabilities": [
+        "support.inspect_customer",
+        "support.propose_plan_credit"
+      ],
+      "approval": {
+        "required": true,
+        "role": "support_reviewer"
+      },
+      "context": "support_agent_context",
+      "name": "support.plan_credit_request",
+      "replay": {
+        "checkpoint": "proposal_only"
+      },
+      "required_evidence": true
+    }
+  ]
+}

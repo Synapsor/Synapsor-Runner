@@ -345,7 +345,7 @@ For CI or direct verification, use:
 corepack pnpm test:mcp-local
 ```
 
-It launches the official MCP stdio client transport against `synapsor-runner mcp serve`, exercises the Postgres billing, Postgres support, and MySQL orders examples, checks that source rows are unchanged before approval, approves locally, generates versioned writeback jobs, applies them, retries idempotently, and then proves stale-row conflict:
+It launches the official MCP stdio client transport against `synapsor-runner mcp serve`, exercises the Postgres billing, Postgres support, MySQL orders, and support plan-credit examples, checks that source rows are unchanged before approval, approves locally, generates versioned writeback jobs, applies them, retries idempotently, and then proves stale-row conflict:
 
 ```text
 The business state changed after the agent saw it, so Synapsor refused to commit.
@@ -360,14 +360,15 @@ corepack pnpm test:live-apply
 Prerequisites:
 
 - Docker daemon running;
-- local ports `55433`, `55434`, and `53307` available;
+- local ports `55433`, `55434`, `55438`, and `53307` available;
 - no Synapsor Cloud account, API key, hosted workspace, or production database.
 
 Expected output:
 
-- disposable Postgres billing, Postgres support, and MySQL orders containers start;
+- disposable Postgres billing, Postgres support, support plan-credit, and MySQL orders containers start;
 - MCP `tools/list` exposes reviewed semantic tools, not raw SQL;
 - proposal calls create exact before/after diffs while source rows remain unchanged;
+- the support plan-credit scenario proves `$25` policy auto-approval, `$100` human approval, and `$1000` bound rejection;
 - local approval happens outside MCP;
 - guarded writeback applies approved jobs and records receipts/replay;
 - idempotent retry returns the existing receipt;

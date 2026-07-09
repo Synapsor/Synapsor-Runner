@@ -228,11 +228,11 @@ describe("runner cli", () => {
     });
 
     await expect(main(["--version"])).resolves.toBe(0);
-    expect(output.join("").trim()).toBe("0.1.9");
+    expect(output.join("").trim()).toBe("0.1.10");
 
     output.length = 0;
     await expect(main(["version"])).resolves.toBe(0);
-    expect(output.join("").trim()).toBe("0.1.9");
+    expect(output.join("").trim()).toBe("0.1.10");
   });
 
   it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
@@ -675,10 +675,12 @@ describe("runner cli", () => {
     await expect(main(["tools", "preview", "--config", runnerConfigPath, "--store", path.join(tempDir, ".synapsor/local.db")])).resolves.toBe(0);
     expect(output.join("")).toContain("billing.propose_late_fee_waiver");
     expect(output.join("")).toContain("execute_sql / raw query tools");
+    expect(output.join("")).toContain("auto-approval: enabled");
 
     output.length = 0;
     await expect(main(["cloud", "push", contractPath, "--dry-run", "--workspace", "ws_test", "--name", "billing-late-fee"])).resolves.toBe(0);
     expect(output.join("")).toContain("Synapsor Cloud contract push preview");
+    expect(output.join("")).toContain("Approval policies:");
     expect(output.join("")).toContain("Dry run only. No Cloud upload attempted.");
 
     output.length = 0;
@@ -2397,6 +2399,68 @@ END
       if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
       if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
     }
+  });
+
+  it("fails doctor when a proposal capability references an unresolved approval policy", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-policy-doctor-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: path.join(tempDir, "local.db") },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [
+        {
+          name: "support.propose_plan_credit",
+          kind: "proposal",
+          source: "local_postgres",
+          target: { schema: "public", table: "customers", primary_key: "id", tenant_key: "tenant_id" },
+          args: {
+            customer_id: { type: "string", required: true, max_length: 128 },
+            credit_cents: { type: "number", required: true, minimum: 1, maximum: 50000 },
+          },
+          lookup: { id_from_arg: "customer_id" },
+          visible_columns: ["id", "tenant_id", "plan_credit_cents", "updated_at"],
+          patch: { plan_credit_cents: { from_arg: "credit_cents" } },
+          allowed_columns: ["plan_credit_cents"],
+          numeric_bounds: { plan_credit_cents: { minimum: 1, maximum: 50000 } },
+          conflict_guard: { column: "updated_at" },
+          approval: {
+            mode: "policy",
+            required_role: "support_reviewer",
+            policy: "missing_policy",
+          },
+        },
+      ],
+      policies: [],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+    const report = JSON.parse(output.join(""));
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "capability:support.propose_plan_credit:approval-policy-resolution",
+        level: "fail",
+      }),
+    ]));
   });
 
   it("allows proposal-only contract capabilities to propose but refuses local apply clearly", async () => {

@@ -6,6 +6,7 @@ import { AgentDslError, compileAgentDsl, compileAgentDslWithWarnings, parseAgent
 import { validateContract } from "@synapsor/spec";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(packageRoot, "../..");
 
 describe("@synapsor/dsl", () => {
   it("parses context, read/proposal capabilities, and workflow", () => {
@@ -86,6 +87,80 @@ END
     expect(capability?.proposal?.writeback).toEqual({ executor: "billing_app_handler", mode: "app_handler" });
   });
 
+  it("compiles AUTO APPROVE WHEN into an approval policy", () => {
+    const contract = compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  WRITEBACK DIRECT SQL
+`));
+
+    const capability = contract.capabilities[0];
+    expect(capability?.proposal?.approval).toEqual({
+      mode: "policy",
+      required_role: "support_reviewer",
+      policy: "support_propose_plan_credit_auto_approval",
+    });
+    expect(contract.policies).toEqual([
+      {
+        name: "support_propose_plan_credit_auto_approval",
+        kind: "approval",
+        mode: "green",
+        rules: [{ field: "plan_credit_cents", max: 2500 }],
+      },
+    ]);
+    expect(validateContract(contract).errors).toEqual([]);
+  });
+
+  it("rejects AUTO APPROVE WHEN before APPROVAL ROLE", () => {
+    expect(() => compileAgentDsl(planCreditSource(`
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_APPROVAL_ROLE_REQUIRED/);
+  });
+
+  it("rejects unsupported AUTO APPROVE comparisons and non-integer values", () => {
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents < 2500
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_UNSUPPORTED/);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= -1
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_MAX_INVALID/);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 25.5
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_MAX_INVALID/);
+  });
+
+  it("rejects AUTO APPROVE WHEN fields that are missing, non-numeric, duplicated, or above bounds", () => {
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN missing_field <= 2500
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_FIELD_NOT_PATCHED/);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN credit_reason <= 2500
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_FIELD_NOT_NUMERIC/);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  AUTO APPROVE WHEN plan_credit_cents <= 1000
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_DUPLICATE_FIELD/);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 50001
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVE_MAX_EXCEEDS_BOUND/);
+  });
+
   it("warns instead of silently weakening proposal metadata", () => {
     const source = `
 CREATE AGENT CONTEXT local_operator
@@ -154,4 +229,48 @@ END
   it("throws AgentDslError for unsupported syntax", () => {
     expect(() => compileAgentDsl("CREATE AGENT WORKFLOW billing.flow\nAUTO MERGE\nEND\n")).toThrow(AgentDslError);
   });
+
+  it("keeps the support-plan-credit example JSON in sync with its DSL source", () => {
+    const source = fs.readFileSync(path.join(repoRoot, "examples/support-plan-credit/contract.synapsor"), "utf8");
+    const committed = JSON.parse(fs.readFileSync(path.join(repoRoot, "examples/support-plan-credit/synapsor.contract.json"), "utf8"));
+    const result = compileAgentDslWithWarnings(source);
+    expect(result.warnings).toEqual([]);
+    expect(result.contract).toEqual(committed);
+    expect(validateContract(result.contract).errors).toEqual([]);
+  });
 });
+
+function planCreditSource(proposalTail: string): string {
+  return `
+CREATE AGENT CONTEXT support_agent_context
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY support.propose_plan_credit
+  DESCRIPTION 'Propose a bounded plan credit.'
+  RETURNS HINT 'Returns proposal id; DB unchanged.'
+  USING CONTEXT support_agent_context
+  SOURCE local_postgres
+  ON public.customers
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP customer_id BY id
+  ARG customer_id STRING REQUIRED MAX LENGTH 128
+  ARG credit_cents NUMBER REQUIRED MIN 1 MAX 50000
+  ARG reason TEXT REQUIRED MAX LENGTH 500
+  ALLOW READ id, tenant_id, plan_credit_cents, credit_reason, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+  PROPOSE ACTION grant_plan_credit
+  ALLOW WRITE plan_credit_cents, credit_reason
+  PATCH plan_credit_cents = ARG credit_cents
+  PATCH credit_reason = ARG reason
+  BOUND plan_credit_cents 1..50000
+${proposalTail.trimEnd()}
+END
+`;
+}

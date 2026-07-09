@@ -1,0 +1,44 @@
+{
+  "trusted_context": {
+    "tenant_id": "acme",
+    "principal": "support_agent"
+  },
+  "cases": [
+    {
+      "name": "under-policy-threshold",
+      "invoke": {
+        "capability": "support.propose_plan_credit",
+        "args": {
+          "customer_id": "cus_3001",
+          "credit_cents": 2500,
+          "reason": "documented outage credit"
+        }
+      },
+      "source_row": {
+        "id": "cus_3001",
+        "tenant_id": "acme",
+        "plan_credit_cents": 0,
+        "credit_reason": null,
+        "updated_at": "2026-06-20T14:31:08Z"
+      }
+    },
+    {
+      "name": "over-policy-threshold",
+      "invoke": {
+        "capability": "support.propose_plan_credit",
+        "args": {
+          "customer_id": "cus_3001",
+          "credit_cents": 2501,
+          "reason": "requires reviewer discretion"
+        }
+      },
+      "source_row": {
+        "id": "cus_3001",
+        "tenant_id": "acme",
+        "plan_credit_cents": 0,
+        "credit_reason": null,
+        "updated_at": "2026-06-20T14:31:08Z"
+      }
+    }
+  ]
+}

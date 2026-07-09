@@ -95,4 +95,69 @@ describe("@synapsor/spec validation", () => {
     expect(result.ok).toBe(false);
     expect(result.errors.map((error) => error.code)).toContain("UNKNOWN_CORE_FIELD");
   });
+
+  it("accepts policy-based auto-approval contracts", () => {
+    const result = validateContract(readJson("fixtures/conformance/auto-approval/contract.json"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects policy approval without a matching approval policy", () => {
+    const contract = cloneAutoApprovalContract();
+    delete ((contract.capabilities as Array<any>)[0].proposal.approval as Record<string, unknown>).policy;
+
+    const missing = validateContract(contract);
+    expect(missing.ok).toBe(false);
+    expect(missing.errors.map((error) => error.code)).toContain("APPROVAL_POLICY_REQUIRED");
+
+    ((contract.capabilities as Array<any>)[0].proposal.approval as Record<string, unknown>).policy = "missing_policy";
+    const unknown = validateContract(contract);
+    expect(unknown.ok).toBe(false);
+    expect(unknown.errors.map((error) => error.code)).toContain("UNKNOWN_APPROVAL_POLICY");
+  });
+
+  it("rejects policy approval references to non-approval policies", () => {
+    const contract = cloneAutoApprovalContract();
+    ((contract.policies as Array<any>)[0] as Record<string, unknown>).kind = "settlement";
+
+    const result = validateContract(contract);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("APPROVAL_POLICY_KIND_REQUIRED");
+  });
+
+  it("rejects approval.policy unless approval.mode is policy", () => {
+    const contract = cloneAutoApprovalContract();
+    ((contract.capabilities as Array<any>)[0].proposal.approval as Record<string, unknown>).mode = "human";
+
+    const result = validateContract(contract);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("APPROVAL_POLICY_MODE_REQUIRED");
+  });
+
+  it("rejects approval policy rule fields that are not numeric proposal fields", () => {
+    const contract = cloneAutoApprovalContract();
+    ((contract.policies as Array<any>)[0].rules as Array<Record<string, unknown>>)[0].field = "credit_reason";
+
+    const result = validateContract(contract);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("APPROVAL_POLICY_FIELD_NOT_NUMERIC");
+  });
+
+  it("rejects approval policy max above numeric bounds", () => {
+    const contract = cloneAutoApprovalContract();
+    ((contract.policies as Array<any>)[0].rules as Array<Record<string, unknown>>)[0].max = 50001;
+
+    const result = validateContract(contract);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("APPROVAL_POLICY_MAX_EXCEEDS_BOUND");
+  });
 });
+
+function cloneAutoApprovalContract(): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(readJson("fixtures/conformance/auto-approval/contract.json"))) as Record<string, unknown>;
+}

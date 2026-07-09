@@ -121,6 +121,51 @@ const scenarios = [
     expectedFinal: "none|",
     disallowedColumn: "credit_card_note",
   },
+  {
+    key: "support-plan-credit",
+    label: "Postgres support plan credit",
+    engine: "postgres",
+    exampleDir: path.join(root, "examples", "support-plan-credit"),
+    configPath: path.join(root, "examples", "support-plan-credit", "synapsor.runner.json"),
+    tmpDir: path.join(tmpRoot, "support-plan-credit"),
+    storePath: path.join(tmpRoot, "support-plan-credit", "local.db"),
+    container: "synapsor_runner_plan_credit",
+    dbName: "synapsor_runner_plan_credit",
+    readUrl: postgresUrl(55438, "synapsor_runner_plan_credit", "synapsor_reader", "synapsor_reader_password"),
+    writeUrl: postgresUrl(55438, "synapsor_runner_plan_credit", "synapsor_writer", "synapsor_writer_password"),
+    env: {
+      PLAN_CREDIT_POSTGRES_READ_URL: postgresUrl(55438, "synapsor_runner_plan_credit", "synapsor_reader", "synapsor_reader_password"),
+      PLAN_CREDIT_POSTGRES_WRITE_URL: postgresUrl(55438, "synapsor_runner_plan_credit", "synapsor_writer", "synapsor_writer_password"),
+      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_PRINCIPAL: "local_support_agent",
+    },
+    sourceId: "local_postgres",
+    inspectTool: "support.inspect_customer",
+    proposalTool: "support.propose_plan_credit",
+    inspectArgs: { customer_id: "CUS-3001" },
+    spoofArgs: { customer_id: "CUS-9001", tenant_id: "otherco" },
+    proposalArgs: { customer_id: "CUS-3001", credit_cents: 10000, reason: "larger support credit needs review" },
+    staleProposalArgs: { customer_id: "CUS-3001", credit_cents: 10000, reason: "stale-row plan credit test" },
+    autoApprovedProposalArgs: { customer_id: "CUS-3001", credit_cents: 2500, reason: "SLA outage ticket SUP-481" },
+    reviewRequiredProposalArgs: { customer_id: "CUS-3001", credit_cents: 10000, reason: "larger support credit needs review" },
+    outOfBoundsProposalArgs: { customer_id: "CUS-3001", credit_cents: 100000, reason: "too large" },
+    diffColumn: "plan_credit_cents",
+    expectedBefore: 0,
+    expectedProposed: 10000,
+    autoApprovalPolicy: "support_propose_plan_credit_auto_approval",
+    autoApprovedExpectedProposed: 2500,
+    unchangedSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
+    expectedUnchanged: "0|",
+    resetSql: "UPDATE public.customers SET plan_credit_cents = 0, credit_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'CUS-3001'; DELETE FROM public.synapsor_writeback_receipts;",
+    staleMutateSql: "UPDATE public.customers SET updated_at = '2026-06-20T15:00:00Z' WHERE id = 'CUS-3001';",
+    finalSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
+    expectedFinal: "0|",
+    autoApprovedFinalSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
+    expectedAutoApprovedFinal: "2500|SLA outage ticket SUP-481",
+    reviewRequiredFinalSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
+    expectedReviewRequiredFinal: "10000|larger support credit needs review",
+    disallowedColumn: "private_notes",
+  },
 ];
 
 function run(command, args, options = {}) {
@@ -148,7 +193,7 @@ function runner(scenario, args, env = {}, options = {}) {
       SYNAPSOR_ENGINE: scenario.engine,
       SYNAPSOR_DATABASE_URL: scenario.writeUrl,
       SYNAPSOR_RUNNER_ID: `${scenario.key}_runner`,
-      SYNAPSOR_SOURCE_ID: scenario.engine === "mysql" ? "app_mysql_orders" : scenario.key.includes("support") ? "app_postgres_support" : "app_postgres",
+      SYNAPSOR_SOURCE_ID: scenario.sourceId ?? (scenario.engine === "mysql" ? "app_mysql_orders" : scenario.key.includes("support") ? "app_postgres_support" : "app_postgres"),
       SYNAPSOR_CONTROL_PLANE_URL: "http://127.0.0.1:0",
       SYNAPSOR_RUNNER_TOKEN: "syn_wbr_local_demo",
       ...env,
@@ -160,6 +205,23 @@ function parseCliJson(result) {
   const json = result.stdout.match(/\{[\s\S]*\}\s*$/)?.[0];
   if (!json) throw new Error(`Expected JSON output, got:\n${result.stdout}\n${result.stderr}`);
   return JSON.parse(json);
+}
+
+function resetLocalStore(scenario) {
+  for (const suffix of ["", "-wal", "-shm", ".lease.json"]) {
+    fs.rmSync(`${scenario.storePath}${suffix}`, { force: true });
+  }
+}
+
+function storeStats(scenario) {
+  if (!fs.existsSync(scenario.storePath)) {
+    return { proposals: 0, receipts: 0, evidence_bundles: 0, events: 0 };
+  }
+  return parseCliJson(runner(scenario, ["store", "stats", "--store", scenario.storePath, "--json"]));
+}
+
+function proposalJson(scenario, proposalId) {
+  return parseCliJson(runner(scenario, ["proposals", "show", proposalId, "--store", scenario.storePath, "--json"]));
 }
 
 function dockerSql(scenario, sql) {
@@ -300,6 +362,12 @@ async function exerciseMcpScenario(scenario) {
   try {
     await waitForDatabase(scenario);
 
+    if (scenario.autoApprovedProposalArgs) {
+      await exerciseSupportPlanCreditPolicyChecks(scenario);
+      dockerSql(scenario, scenario.resetSql);
+      resetLocalStore(scenario);
+    }
+
     console.log(`\n== ${scenario.label}: MCP stdio tools/list and tool calls ==`);
     let firstProposalId = "";
     await withMcpClient(scenario, async (client) => {
@@ -420,6 +488,103 @@ async function exerciseMcpScenario(scenario) {
     run("docker", ["compose", "down", "-v"], { cwd: scenario.exampleDir, allowFailure: true });
     fs.rmSync(scenario.tmpDir, { recursive: true, force: true });
   }
+}
+
+async function exerciseSupportPlanCreditPolicyChecks(scenario) {
+  console.log(`\n== ${scenario.label}: policy auto-approval tier ==`);
+  let mcpApprovedProposalId = "";
+  let mcpApprovedStatus = "";
+  await withMcpClient(scenario, async (client) => {
+    const proposed = structured(await client.callTool({
+      name: scenario.proposalTool,
+      arguments: scenario.autoApprovedProposalArgs,
+    }));
+    mcpApprovedStatus = String(proposed.status);
+    assert(proposed.status === "approved", "Small plan credit should be policy-approved", proposed);
+    assert(proposed.approval?.mode === "policy", "Policy approval mode missing", proposed);
+    assert(proposed.approval?.policy === scenario.autoApprovalPolicy, "Policy name missing from MCP response", proposed);
+    assert(proposed.approval_required === false, "Auto-approved proposal should not require a second approval", proposed);
+    assert(proposed.diff?.[scenario.diffColumn]?.before === scenario.expectedBefore, "Auto-approved diff before value wrong", proposed);
+    assert(proposed.diff?.[scenario.diffColumn]?.proposed === scenario.autoApprovedExpectedProposed, "Auto-approved diff proposed value wrong", proposed);
+    assert(proposed.source_database_mutated === false, "Auto-approval must not mutate source", proposed);
+    mcpApprovedProposalId = String(proposed.proposal_id);
+  });
+  const approved = proposalJson(scenario, mcpApprovedProposalId);
+  assert(approved.proposal?.state === "approved", "Policy-approved proposal state should be approved", approved);
+  assert(
+    approved.events?.some((event) => event.kind === "proposal_approved" && event.actor === `policy:${scenario.autoApprovalPolicy}`),
+    "Policy actor should be visible in the proposal audit events",
+    approved,
+  );
+  const applied = parseCliJson(runner(scenario, ["apply", mcpApprovedProposalId, "--config", scenario.configPath, "--store", scenario.storePath, "--json"]));
+  assert(applied.status === "applied" && applied.affected_rows === 1, "Auto-approved proposal should still apply through normal writeback", applied);
+  const afterApply = proposalJson(scenario, mcpApprovedProposalId);
+  assert(afterApply.receipts?.some((receipt) => receipt.status === "applied"), "Applied receipt missing for auto-approved proposal", afterApply);
+  const autoApprovedRow = dockerSql(scenario, scenario.autoApprovedFinalSql);
+  assert(autoApprovedRow === scenario.expectedAutoApprovedFinal, "Auto-approved writeback changed the wrong source row", autoApprovedRow);
+  console.log("ACCEPT small credit auto-approved by policy and applied only through explicit writeback");
+
+  dockerSql(scenario, scenario.resetSql);
+  resetLocalStore(scenario);
+  const cliResult = parseCliJson(runner(scenario, [
+    "propose",
+    scenario.proposalTool,
+    "--config",
+    scenario.configPath,
+    "--store",
+    scenario.storePath,
+    "--json",
+    JSON.stringify(scenario.autoApprovedProposalArgs),
+  ]));
+  assert(cliResult.status === mcpApprovedStatus, "CLI and MCP proposal outcomes diverged", { mcpApprovedStatus, cliResult });
+  assert(cliResult.approval?.mode === "policy", "CLI propose did not use the same policy approval", cliResult);
+  console.log("ACCEPT CLI propose and MCP propose share the same policy outcome");
+
+  dockerSql(scenario, scenario.resetSql);
+  resetLocalStore(scenario);
+  console.log(`== ${scenario.label}: human review tier ==`);
+  let reviewProposalId = "";
+  await withMcpClient(scenario, async (client) => {
+    const proposed = structured(await client.callTool({
+      name: scenario.proposalTool,
+      arguments: scenario.reviewRequiredProposalArgs,
+    }));
+    assert(proposed.status === "review_required", "Larger plan credit should require human review", proposed);
+    assert(proposed.approval?.mode === "policy", "Policy fallback metadata missing", proposed);
+    assert(proposed.source_database_mutated === false, "Review-required proposal must not mutate source", proposed);
+    reviewProposalId = String(proposed.proposal_id);
+  });
+  const unchanged = dockerSql(scenario, scenario.unchangedSql);
+  assert(unchanged === scenario.expectedUnchanged, "Review-required proposal changed source before approval", unchanged);
+  runner(scenario, ["proposals", "approve", reviewProposalId, "--store", scenario.storePath, "--actor", "local_reviewer", "--yes"]);
+  const reviewApplied = parseCliJson(runner(scenario, ["apply", reviewProposalId, "--config", scenario.configPath, "--store", scenario.storePath, "--json"]));
+  assert(reviewApplied.status === "applied" && reviewApplied.affected_rows === 1, "Human-approved plan credit did not apply", reviewApplied);
+  const reviewRow = dockerSql(scenario, scenario.reviewRequiredFinalSql);
+  assert(reviewRow === scenario.expectedReviewRequiredFinal, "Human-approved writeback changed the wrong source row", reviewRow);
+  console.log("ACCEPT larger credit stayed pending until local human approval");
+
+  dockerSql(scenario, scenario.resetSql);
+  resetLocalStore(scenario);
+  console.log(`== ${scenario.label}: hard bound rejection tier ==`);
+  const beforeStats = storeStats(scenario);
+  await withMcpClient(scenario, async (client) => {
+    const rejected = structured(await client.callTool({
+      name: scenario.proposalTool,
+      arguments: scenario.outOfBoundsProposalArgs,
+    }));
+    assert(rejected.ok === false, "Out-of-bounds credit should fail safely", rejected);
+    assert(
+      /BOUND|PATCH_ABOVE_MAXIMUM|at most 50000/i.test(`${rejected.code ?? ""} ${rejected.error ?? ""}`),
+      "Out-of-bounds rejection did not mention the reviewed bound",
+      rejected,
+    );
+  });
+  const afterStats = storeStats(scenario);
+  assert(afterStats.proposals === beforeStats.proposals, "Out-of-bounds credit created a proposal row", { beforeStats, afterStats });
+  console.log("ACCEPT $1000 credit rejected before proposal creation");
+
+  dockerSql(scenario, scenario.resetSql);
+  resetLocalStore(scenario);
 }
 
 for (const scenario of scenarios) {

@@ -136,7 +136,13 @@ Current additive safety fields:
 - proposal `numeric_bounds`: reviewed minimum/maximum constraints for patched
   numeric fields;
 - proposal `transition_guards`: reviewed allowed state transitions for patched
-  string fields.
+  string fields;
+- proposal approval `policy`: names a reviewed approval policy for
+  policy-based local approval;
+- approval policy rules: `{ "field": "...", "max": 2500 }` thresholds for
+  integer patched fields. A rule field is numeric when the proposal declares
+  `numeric_bounds` for it, patches it from a `NUMBER` arg, or patches it from
+  an integer literal.
 
 These are not `x-runner-*` extensions because they are part of the reviewed
 contract. A Cloud importer may choose when to enforce them, but it must not

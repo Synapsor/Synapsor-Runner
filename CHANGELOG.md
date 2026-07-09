@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Policy Auto-Approval
+
+- Stages `@synapsor/spec@0.1.3`, `@synapsor/dsl@0.1.3`, and
+  `@synapsor/runner@0.1.10` for policy-based local approval.
+- Adds portable proposal approval `policy` references and typed approval policy
+  rules to the canonical contract.
+- Adds DSL `AUTO APPROVE WHEN field <= integer` clauses that compile to
+  reviewed approval policies.
+- Adds a conformance fixture for policy auto-approval thresholds.
+
 ## 0.1.9
 
 ### CLI Hygiene

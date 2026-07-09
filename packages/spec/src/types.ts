@@ -97,7 +97,7 @@ export type ProposalActionSpec = ExtensionFields & {
   numeric_bounds?: Record<string, { minimum?: number; maximum?: number }>;
   transition_guards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
-  approval?: { mode?: "human" | "operator" | "policy"; required_role?: string };
+  approval?: { mode?: "human" | "operator" | "policy"; required_role?: string; policy?: string };
   writeback?: {
     mode: "direct_sql" | "app_handler" | "cloud_worker" | "none";
     executor?: string;

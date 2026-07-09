@@ -143,6 +143,7 @@ const releaseAssets = [
   ["examples/openai-agents-stdio", "examples/openai-agents-stdio"],
   ["examples/raw-sql-vs-synapsor", "examples/raw-sql-vs-synapsor"],
   ["examples/reference-support-billing-app", "examples/reference-support-billing-app"],
+  ["examples/support-plan-credit", "examples/support-plan-credit"],
   ["examples/support-billing-agent", "examples/support-billing-agent"],
   ["fixtures", "fixtures"],
   ["schemas", "schemas"],
