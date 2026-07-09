@@ -310,6 +310,16 @@ See [`docs/dsl-json-parity.md`](docs/dsl-json-parity.md) for the current
 field-by-field support matrix across JSON spec, DSL, runner enforcement,
 C++/Cloud compatibility, and Cloud push.
 
+After a real push, open **Contract registry** in Synapsor Cloud to inspect the
+immutable version, semantic capabilities, workflows, visible and kept-out
+fields, policy references, warnings, and registry audit events. Downloading a
+runner bundle returns the same normalized contract with placeholder local
+wiring and ready-to-copy MCP configs.
+
+- [Cloud push](docs/cloud-push.md)
+- [Runner bundles](docs/runner-bundles.md)
+- [MCP client configs](docs/mcp-clients.md)
+
 Your `synapsor.runner.json` supplies local wiring: database env var names,
 SQLite store path, MCP transport settings, and local debug options. The
 contract supplies the portable meaning: contexts, capabilities, evidence,

@@ -1,0 +1,13 @@
+{
+  "proposal_id": "wrp_example_low_risk_credit",
+  "events": [
+    "scoped_read",
+    "evidence_saved",
+    "proposal_created",
+    "policy_approved",
+    "guarded_writeback_applied",
+    "receipt_recorded"
+  ],
+  "source_database_changed_before_approval": false,
+  "final_status": "applied"
+}

@@ -17,10 +17,9 @@ This example shows three enforcement tiers on one support action:
 ```bash
 docker compose -f examples/support-plan-credit/docker-compose.yml up -d
 
-export PLAN_CREDIT_POSTGRES_READ_URL="postgresql://synapsor_reader:synapsor_reader_password@localhost:55438/synapsor_runner_plan_credit"
-export PLAN_CREDIT_POSTGRES_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_password@localhost:55438/synapsor_runner_plan_credit"
-export SYNAPSOR_TENANT_ID="acme"
-export SYNAPSOR_PRINCIPAL="local_support_agent"
+set -a
+. examples/support-plan-credit/.env.example
+set +a
 
 synapsor-runner tools preview \
   --config examples/support-plan-credit/synapsor.runner.json \
@@ -98,6 +97,13 @@ synapsor-runner apply latest --config examples/support-plan-credit/synapsor.runn
 The live smoke test mutates `updated_at` before apply and proves stale proposals
 return `VERSION_CONFLICT` without changing the source row.
 
+Run the complete Docker-backed scenario, including all three policy tiers and
+the stale-row conflict:
+
+```bash
+corepack pnpm test:live-apply
+```
+
 ## What The Agent Never Sees
 
 The contract keeps these fields out:
@@ -117,6 +123,33 @@ auto-approval: enabled
 
 No raw SQL, approval tools, commit tools, write credentials, or model-controlled
 tenant authority are exposed to MCP.
+
+Representative outputs are checked in under [`expected-output/`](expected-output/)
+so you can compare the tool boundary, proposal, receipt, replay, and Cloud push
+shape without guessing which state should change.
+
+## Connect An MCP Client
+
+Copy the matching template from [`mcp-client-examples/`](mcp-client-examples/):
+
+- Claude Desktop: `claude-desktop.json`
+- Cursor project/global: `cursor-project.mcp.json`, `cursor-global.mcp.json`
+- OpenAI Agents SDK: stdio and Streamable HTTP TypeScript examples
+- generic MCP: stdio and Streamable HTTP JSON examples
+
+For Streamable HTTP, run:
+
+```bash
+synapsor-runner mcp serve \
+  --transport streamable-http \
+  --host 127.0.0.1 \
+  --port 8766 \
+  --config examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+```
+
+The client receives `support.inspect_customer` and
+`support.propose_plan_credit`. Approval and apply remain outside MCP.
 
 ## How The Policy Is Governed
 
@@ -153,11 +186,11 @@ synapsor-runner cloud push examples/support-plan-credit/synapsor.contract.json -
 Real push uses your Cloud env vars:
 
 ```bash
-export SYNAPSOR_CONTROL_PLANE_URL="https://api.synapsor.ai"
-export SYNAPSOR_RUNNER_TOKEN="syn_wbr_..."
+export SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai"
+export SYNAPSOR_CLOUD_TOKEN="<workspace-scoped-token>"
+export SYNAPSOR_WORKSPACE_ID="<workspace_id>"
 
 synapsor-runner cloud push examples/support-plan-credit/synapsor.contract.json \
-  --workspace <workspace_id> \
   --name support-plan-credit
 ```
 
@@ -166,11 +199,14 @@ placeholder env names:
 
 ```bash
 curl -H "Authorization: Bearer $SYNAPSOR_CLOUD_TOKEN" \
-  "$SYNAPSOR_CONTROL_PLANE_URL/v1/control/projects/<workspace_id>/agent-contracts/support-plan-credit/versions/latest"
+  "$SYNAPSOR_CLOUD_BASE_URL/v1/control/projects/$SYNAPSOR_WORKSPACE_ID/agent-contracts/<contract_id>/versions/<version_id>"
 
 curl -H "Authorization: Bearer $SYNAPSOR_CLOUD_TOKEN" \
-  "$SYNAPSOR_CONTROL_PLANE_URL/v1/control/projects/<workspace_id>/agent-contracts/support-plan-credit/runner-bundle" \
-  -o support-plan-credit-runner-bundle.json
+  "$SYNAPSOR_CLOUD_BASE_URL/v1/control/projects/$SYNAPSOR_WORKSPACE_ID/agent-contracts/<contract_id>/versions/<version_id>/runner-bundle?download=1" \
+  -o support-plan-credit-runner-bundle.zip
 ```
+
+The push response supplies `<contract_id>` and `<version_id>`. The Cloud
+workspace also exposes the same download from **Contract registry**.
 
 No Cloud account is needed to run this local example.

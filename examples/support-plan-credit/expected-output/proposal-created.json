@@ -1,0 +1,23 @@
+{
+  "proposal_id": "wrp_example_low_risk_credit",
+  "capability": "support.propose_plan_credit",
+  "status": "approved",
+  "approval_actor": "policy:support_propose_plan_credit_auto_approval",
+  "target": {
+    "table": "customers",
+    "id": "CUS-3001",
+    "tenant_id": "acme"
+  },
+  "change_set": {
+    "plan_credit_cents": {
+      "before": 0,
+      "after": 2500
+    },
+    "credit_reason": {
+      "before": null,
+      "after": "SLA outage ticket SUP-481"
+    }
+  },
+  "source_database_changed": false,
+  "evidence_handle": "evidence://local/example-plan-credit"
+}

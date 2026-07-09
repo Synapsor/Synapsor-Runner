@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current alpha scope:
+Current `0.1.x` scope:
 
 - local semantic MCP tools for Postgres/MySQL-backed business actions;
 - schema inspection and guided config generation;

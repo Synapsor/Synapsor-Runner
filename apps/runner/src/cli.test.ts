@@ -621,11 +621,22 @@ describe("runner cli", () => {
     await fs.access(path.join(bundleDir, "synapsor.runner.json"));
     await fs.access(path.join(bundleDir, ".env.example"));
     await fs.access(path.join(bundleDir, "README.md"));
-    await fs.access(path.join(bundleDir, "mcp-client-examples/generic-stdio.json"));
+    for (const clientFile of [
+      "claude-desktop.json",
+      "cursor-project.mcp.json",
+      "cursor-global.mcp.json",
+      "openai-agents-stdio.ts",
+      "openai-agents-streamable-http.ts",
+      "generic-stdio.json",
+      "generic-streamable-http.json",
+    ]) {
+      await fs.access(path.join(bundleDir, "mcp-client-examples", clientFile));
+    }
     const bundleConfig = JSON.parse(await fs.readFile(path.join(bundleDir, "synapsor.runner.json"), "utf8"));
     expect(bundleConfig.contracts).toEqual(["./synapsor.contract.json"]);
     const bundleEnv = await fs.readFile(path.join(bundleDir, ".env.example"), "utf8");
     expect(bundleEnv).toContain("SYNAPSOR_DATABASE_READ_URL=");
+    expect(bundleEnv).toContain("SYNAPSOR_DATABASE_WRITE_URL=");
     expect(bundleEnv).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|synapsor_reader|O9wxy|nStZFA|bearer|token/i);
   });
 
@@ -747,6 +758,11 @@ describe("runner cli", () => {
       expect(seenRequest.body?.schema_version).toBe("synapsor.cloud-contract-push.v0.1");
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
+      expect(seenRequest.body?.source_versions).toEqual({
+        "@synapsor/spec": "0.1.3",
+        "@synapsor/dsl": "0.1.3",
+        "@synapsor/runner": "0.1.10",
+      });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

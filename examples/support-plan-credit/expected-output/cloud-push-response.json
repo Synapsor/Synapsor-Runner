@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "contract_id": "act_support_plan_credit_example",
+  "contract_version_id": "act_support_plan_credit_example_v1",
+  "version_number": 1,
+  "status": "draft",
+  "digest": "sha256:<server-computed-digest>",
+  "registry_url": "/workspace/contracts"
+}
