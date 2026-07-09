@@ -33,6 +33,15 @@ Tokens are sent in the authorization header and are never part of the contract.
 Database URLs, passwords, private keys, and model-controlled tenant bindings
 are rejected by server-side validation.
 
+`SYNAPSOR_CLOUD_WORKSPACE` is accepted as an alias for
+`SYNAPSOR_WORKSPACE_ID`. Explicit `--workspace` wins over environment values.
+
+Cloud push fails before upload when local validation fails. HTTP failures are
+reported distinctly for invalid/expired tokens (`401`), insufficient workspace
+permission (`403`), missing workspace/API paths (`404`), registry conflicts
+(`409`), server validation (`422`), and Cloud/network failures. Error output
+does not echo the bearer token.
+
 ## Cloud To Local
 
 Open **Contract registry** in the workspace, choose a version, and download its

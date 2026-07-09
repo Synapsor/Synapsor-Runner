@@ -1812,6 +1812,7 @@ function bundleReadme(contract: SynapsorContract): string {
     "```bash",
     "cp .env.example .env",
     "# edit .env, then export the values in your shell",
+    "set -a && . ./.env && set +a",
     "npx -y -p @synapsor/runner synapsor-runner contract validate ./synapsor.contract.json",
     "npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json",
     "npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db",
@@ -1847,8 +1848,8 @@ function bundleMcpClientExamples(): Record<string, string> {
     }),
     "generic-stdio.json": json({ name: "synapsor-runner", transport: "stdio", ...server }),
     "generic-streamable-http.json": json({ name: "synapsor-runner", transport: "streamable-http", url: "http://127.0.0.1:8766/mcp" }),
-    "openai-agents-stdio.ts": `import { Agent, MCPServerStdio, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStdio({\n  name: "Synapsor Runner",\n  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db",\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
-    "openai-agents-streamable-http.ts": `import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStreamableHttp({ name: "Synapsor Runner", url: "http://127.0.0.1:8766/mcp" });\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
+    "openai-agents-stdio.ts": `import { Agent, MCPServerStdio, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStdio({\n  name: "Synapsor Runner",\n  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db --alias-mode openai",\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
+    "openai-agents-streamable-http.ts": `import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";\n\n// Start Runner separately with: synapsor-runner mcp serve --transport streamable-http --alias-mode openai --config ./synapsor.runner.json --store ./.synapsor/local.db\nconst synapsor = new MCPServerStreamableHttp({ name: "Synapsor Runner", url: "http://127.0.0.1:8766/mcp" });\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
   };
 }
 
@@ -3972,7 +3973,7 @@ async function cloudPush(args: string[]): Promise<number> {
   if (!target) throw new Error("cloud push requires <synapsor.contract.json>");
   const parsed = JSON.parse(await fs.readFile(target, "utf8"));
   const contract = normalizeContract(parsed);
-  const workspace = (optionalArg(args, "--workspace") ?? optionalArg(args, "--project") ?? process.env.SYNAPSOR_WORKSPACE_ID ?? process.env.SYNAPSOR_PROJECT_ID ?? "").trim();
+  const workspace = (optionalArg(args, "--workspace") ?? optionalArg(args, "--project") ?? process.env.SYNAPSOR_CLOUD_WORKSPACE ?? process.env.SYNAPSOR_WORKSPACE_ID ?? process.env.SYNAPSOR_PROJECT_ID ?? "").trim();
   const name = (optionalArg(args, "--name") ?? contract.metadata?.name ?? "").trim();
   const description = (optionalArg(args, "--description") ?? contract.metadata?.description ?? "").trim();
   const idempotencyKey = optionalArg(args, "--idempotency-key");
@@ -4014,7 +4015,7 @@ async function cloudPush(args: string[]): Promise<number> {
   const apiUrl = (optionalArg(args, "--api-url") ?? process.env.SYNAPSOR_CLOUD_BASE_URL ?? "").trim();
   const token = (optionalArg(args, "--token") ?? process.env.SYNAPSOR_CLOUD_TOKEN ?? process.env.SYNAPSOR_RUNNER_TOKEN ?? "").trim();
   if (!workspace) {
-    throw new Error("cloud push upload requires --workspace <project_id> or SYNAPSOR_WORKSPACE_ID/SYNAPSOR_PROJECT_ID.");
+    throw new Error("cloud push upload requires --workspace <project_id> or SYNAPSOR_CLOUD_WORKSPACE/SYNAPSOR_WORKSPACE_ID/SYNAPSOR_PROJECT_ID.");
   }
   if (!apiUrl || !token) {
     throw new Error("cloud push upload requires --api-url plus --token/SYNAPSOR_CLOUD_TOKEN. Use --dry-run for local validation without a network call.");

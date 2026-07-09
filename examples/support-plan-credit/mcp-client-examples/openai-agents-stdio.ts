@@ -2,7 +2,7 @@ import { Agent, MCPServerStdio, run } from "@openai/agents";
 
 const synapsor = new MCPServerStdio({
   name: "Synapsor Runner",
-  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config examples/support-plan-credit/synapsor.runner.json --store ./tmp/support-plan-credit/local.db",
+  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config examples/support-plan-credit/synapsor.runner.json --store ./tmp/support-plan-credit/local.db --alias-mode openai",
 });
 
 await synapsor.connect();

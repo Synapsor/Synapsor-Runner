@@ -8,6 +8,16 @@ import { StdioClientTransport } from "../packages/mcp-server/node_modules/@model
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const configDir = path.join(root, "examples", "mcp-client-configs");
 const expectedFiles = ["generic-stdio.json", "claude-desktop.json", "cursor.json", "vscode.json"];
+const flagshipConfigDir = path.join(root, "examples", "support-plan-credit", "mcp-client-examples");
+const flagshipFiles = [
+  "claude-desktop.json",
+  "cursor-project.mcp.json",
+  "cursor-global.mcp.json",
+  "openai-agents-stdio.ts",
+  "openai-agents-streamable-http.ts",
+  "generic-stdio.json",
+  "generic-streamable-http.json",
+];
 const unsafeToolName = /execute_sql|run_query|approve|commit/i;
 const secretValue = /:\/\/[^/\s:@]+:[^@\s/]+@|syn_wbr_|bearer\s+|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
 
@@ -103,6 +113,43 @@ async function verifyServer(file, entry) {
   }
 }
 
+async function verifyFlagshipTools() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-mcp-client-support-plan-credit-"));
+  try {
+    const transport = new StdioClientTransport({
+      command: "corepack",
+      args: [
+        "pnpm", "runner", "mcp", "serve",
+        "--config", path.join(root, "examples", "support-plan-credit", "synapsor.runner.json"),
+        "--store", path.join(tempDir, "local.db"),
+      ],
+      cwd: root,
+      env: {
+        ...process.env,
+        PLAN_CREDIT_POSTGRES_READ_URL: "postgresql://localhost/not-used-for-tools-list",
+        PLAN_CREDIT_POSTGRES_WRITE_URL: "postgresql://localhost/not-used-for-tools-list",
+        SYNAPSOR_TENANT_ID: "acme",
+        SYNAPSOR_PRINCIPAL: "client_config_verifier",
+      },
+      stderr: "pipe",
+    });
+    const client = new Client({ name: "synapsor-flagship-client-config-verifier", version: "0.1.0" });
+    await client.connect(transport);
+    try {
+      const names = (await client.listTools()).tools.map((tool) => tool.name);
+      for (const expected of ["support.inspect_customer", "support.propose_plan_credit"]) {
+        if (!names.includes(expected)) throw new Error(`flagship MCP tools missing ${expected}: ${names.join(", ")}`);
+      }
+      const unsafe = names.filter((name) => unsafeToolName.test(name));
+      if (unsafe.length) throw new Error(`unsafe flagship tools exposed: ${unsafe.join(", ")}`);
+    } finally {
+      await client.close();
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 for (const file of expectedFiles) {
   const config = readJson(file);
   inspectSecretValues(config, [file]);
@@ -113,5 +160,40 @@ for (const file of expectedFiles) {
   await verifyServer(file, entry);
   console.log(`${file}: stdio tools/list verified`);
 }
+
+for (const file of flagshipFiles) {
+  const filePath = path.join(flagshipConfigDir, file);
+  const text = fs.readFileSync(filePath, "utf8");
+  if (/\/(?:home|Users)\//.test(text)) throw new Error(`${file}: contains a machine-specific absolute path`);
+  if (secretValue.test(text)) throw new Error(`${file}: contains a possible secret`);
+  if (file.endsWith(".json")) {
+    const parsed = JSON.parse(text);
+    inspectSecretValues(parsed, ["support-plan-credit", file]);
+    if (file === "generic-streamable-http.json") {
+      if (parsed.transport !== "streamable-http" || parsed.url !== "http://127.0.0.1:8766/mcp") {
+        throw new Error(`${file}: expected the local Streamable HTTP endpoint`);
+      }
+    } else if (file === "generic-stdio.json") {
+      if (parsed.transport !== "stdio" || parsed.command !== "npx" || !parsed.args?.includes("@synapsor/runner")) {
+        throw new Error(`${file}: expected the stable npm stdio command`);
+      }
+    } else {
+      const entry = serverEntry(parsed);
+      if (entry.command !== "npx" || !entry.args?.includes("@synapsor/runner")) {
+        throw new Error(`${file}: expected the stable npm command`);
+      }
+    }
+  } else if (file === "openai-agents-stdio.ts") {
+    if (!text.includes("MCPServerStdio") || !text.includes("--alias-mode openai")) {
+      throw new Error(`${file}: expected OpenAI stdio SDK wiring and safe tool aliases`);
+    }
+  } else if (!text.includes("MCPServerStreamableHttp") || !text.includes("--alias-mode openai")) {
+    throw new Error(`${file}: expected OpenAI Streamable HTTP wiring and matching server alias guidance`);
+  }
+  console.log(`support-plan-credit/${file}: parsed and safety-scanned`);
+}
+
+await verifyFlagshipTools();
+console.log("support-plan-credit: stdio tools/list verified");
 
 console.log("MCP client config examples are parseable, secret-free, and expose semantic tools only.");

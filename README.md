@@ -6,10 +6,11 @@
 
 Stop giving AI agents `execute_sql()`. Give them reviewed business actions.
 
-Synapsor Runner is an Open-source MCP safety layer for Postgres and MySQL. It
-sits between Claude, Cursor, OpenAI Agents SDK, or another MCP client and your
-database so the model can inspect scoped data and propose changes without
-receiving raw SQL, write credentials, approval tools, or commit authority.
+Synapsor Runner is an open-source, local-first MCP server that exposes reviewed semantic
+capabilities over Postgres and MySQL, stages risky writes as proposals, and
+keeps evidence and replay for agent actions. It sits between Claude, Cursor,
+OpenAI Agents SDK, or another MCP client and your database so the model does
+not receive raw SQL, write credentials, approval tools, or commit authority.
 
 ```text
 Without Synapsor:
@@ -25,8 +26,11 @@ With Synapsor Runner:
 Try the no-database quick demo:
 
 ```bash
-npx @synapsor/runner demo --quick
+npx -y @synapsor/runner demo --quick
 ```
+
+You will see semantic tools instead of raw SQL, an exact proposal rather than
+an immediate write, approval/apply outside MCP, and a receipt/replay record.
 
 ## The Five-Line Model
 
@@ -70,7 +74,7 @@ Run the guided quick demo first. It does not require Docker, a database, a
 config file, an MCP client, or a Synapsor Cloud account.
 
 ```bash
-npx @synapsor/runner demo --quick
+npx -y @synapsor/runner demo --quick
 ```
 
 In a terminal, it walks through the safety model step by step. In CI, piped
@@ -82,7 +86,7 @@ It does not prove database connectivity. It shows the proposal, evidence, and
 replay flow without giving the runner a database URL.
 
 ```bash
-npx @synapsor/runner demo inspect
+npx -y @synapsor/runner demo inspect
 ```
 
 Then choose one path:
@@ -128,6 +132,13 @@ If all you need is restricted reads, a read-only database user and safe views
 are a good start. Use Runner when you need the agent-facing boundary around
 those reads, or when database-backed actions must become proposals before any
 durable write happens.
+
+## More Than A Tool Proxy
+
+Synapsor is intentionally more than an MCP wrapper. The public packages include
+a versioned contract, DSL compiler, schema validation, conformance fixtures,
+Runner enforcement, proposal/evidence/replay artifacts, Cloud registry push,
+and C++/Cloud round-trip verification.
 
 ## Connect Your Postgres Or MySQL
 
@@ -963,8 +974,9 @@ per lifecycle event; it is not a hosted central ledger.
 
 This is local indexed search for local/dev/staging usage. It is not a hosted
 central ledger, not RBAC/SSO, not cross-runner search, and not compliance
-retention. Synapsor Cloud is the upgrade path for central searchable audit,
-team governance, retention, and production operations.
+retention. Synapsor Cloud adds a shared contract registry and enabled hosted
+activity/evidence surfaces; confirm retention and production operations for
+the specific design-partner deployment.
 
 ## Connect Claude, Cursor, Or Another MCP Client
 
@@ -1227,24 +1239,25 @@ internals.
 
 | Need | Synapsor Runner | Synapsor Cloud |
 | --- | --- | --- |
-| Local MCP server | Yes | Managed |
-| Local trusted context bindings | Yes | Org/session integrated |
+| Local MCP server | Yes | Contracts export back to Runner; a managed fleet is not claimed |
+| Local trusted context bindings | Yes | Contract bindings are registered; hosted session behavior is pilot-specific |
 | Local semantic capabilities | Yes | Hosted registry + versioning |
 | Local evidence/proposal/replay | Yes | Central searchable ledger |
-| Local approval | CLI/UI | Multi-user approvals |
-| Writeback | Guarded single-row `UPDATE` | Managed production orchestration |
+| Local approval | CLI/UI | Existing team approval surfaces where enabled for a pilot |
+| Writeback | Guarded single-row `UPDATE` | Cloud-linked jobs exist; managed production orchestration is not claimed |
 | MCP risk audit | Static/local | Continuous/org-wide |
-| RBAC/SSO | No | Yes |
-| Policy packs | No/basic | Yes |
-| Workflow builder | No | Yes |
+| RBAC/SSO | No | RBAC where configured; SAML/SCIM are not in this beta |
+| Policy packs | Local reviewed subset | Registry preserves policies; hosted enforcement is not implied |
+| Workflow builder | No | Existing Cloud authoring surfaces; full public DAG parity is not claimed |
 | Native branches/time travel | No | Yes |
 | Settlement policies | No | Yes |
-| Compliance exports | No | Yes |
-| Production support/SLA | No | Yes |
+| Compliance exports | No | Audit/retention primitives exist; legal hold/certification are not claimed |
+| Production support/SLA | No | Design-partner support; no enterprise SLA is claimed |
 
-The runner is useful by itself for local/staging safety. Synapsor Cloud is for
-teams, production governance, central audit, managed runners, enterprise
-controls, and proprietary Synapsor platform features.
+The runner is useful by itself for local/staging safety. Synapsor Cloud adds a
+shared contract registry, immutable versions, downloadable Runner bundles, and
+existing team activity/evidence/approval surfaces where enabled. Managed
+runners, SAML/SCIM, legal hold, and an enterprise SLA remain future work.
 
 Portable contracts can be checked locally before Cloud import:
 
@@ -1261,7 +1274,7 @@ synapsor-runner cloud push ./synapsor.contract.json \
 
 ## Current Limitations
 
-Supported in the current alpha:
+Supported in the current `0.1.x` line:
 
 - stdio MCP server;
 - authenticated HTTP MCP server for app/server deployments;
@@ -1337,9 +1350,10 @@ Synapsor name, logo, hosted cloud service, or proprietary Synapsor platform
 features. See [docs/licensing.md](docs/licensing.md) and
 [TRADEMARKS.md](TRADEMARKS.md).
 
-Synapsor Cloud, hosted governance, managed runners, advanced policy/workflow
-engines, enterprise controls, and native Synapsor DBMS/C++ internals remain
-proprietary.
+Synapsor Cloud, hosted governance, advanced policy/workflow engines, enterprise
+controls, and native Synapsor DBMS/C++ internals are outside this Apache-2.0
+repository. Managed runners and other hosted features, where offered, are
+proprietary and are not implied by the OSS package.
 
 ## Developer And Contributor Commands
 

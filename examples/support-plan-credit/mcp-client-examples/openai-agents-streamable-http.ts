@@ -1,5 +1,6 @@
 import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";
 
+// Start Runner with --alias-mode openai so model-visible tool names are valid OpenAI function names.
 const synapsor = new MCPServerStreamableHttp({
   name: "Synapsor Runner",
   url: "http://127.0.0.1:8766/mcp",

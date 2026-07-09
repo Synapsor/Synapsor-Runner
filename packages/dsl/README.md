@@ -59,6 +59,20 @@ synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json [
 `--strict` treats safety warnings as errors. Use it in CI for reviewed proposal
 contracts.
 
+Continue from authored DSL to a local/Cloud-compatible contract with:
+
+```bash
+synapsor-dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
+synapsor-spec validate ./synapsor.contract.json
+synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
+synapsor-runner cloud push ./synapsor.contract.json --dry-run
+```
+
+The generated `synapsor.contract.json` is the portable source of truth. Runner
+configuration supplies local database env names and transport settings; Cloud
+stores immutable normalized versions and never needs database credentials in
+the contract.
+
 ## Programmatic API
 
 ```ts

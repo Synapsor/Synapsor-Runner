@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Cloud Adoption Loop
+
+- Stages `@synapsor/spec@0.1.4`, `@synapsor/dsl@0.1.4`, and
+  `@synapsor/runner@0.1.11` without publishing them.
+- Adds a seven-file MCP client bundle for Claude Desktop, Cursor, OpenAI Agents
+  SDK, and generic stdio/Streamable HTTP clients, including OpenAI-safe tool
+  aliases.
+- Productizes local and Cloud-generated Runner bundles with placeholder env
+  wiring, validation/run instructions, and no embedded credentials or rows.
+- Adds a network-free adoption quickstart verifier and a real local
+  Runner-to-Cloud-to-ZIP-to-Runner verification path around the flagship
+  `support-plan-credit` contract.
+- Documents the Cloud registry/version/bundle loop and avoids implying managed
+  runner fleets, SAML/SCIM, hosted policy enforcement, or enterprise SLA.
+- Adds `SYNAPSOR_CLOUD_WORKSPACE` support and explicit Cloud push failure tests
+  for authorization, validation, conflict, server, and network outcomes.
+
+## 0.1.10
+
 ### Policy Auto-Approval
 
 - Stages `@synapsor/spec@0.1.3`, `@synapsor/dsl@0.1.3`, and

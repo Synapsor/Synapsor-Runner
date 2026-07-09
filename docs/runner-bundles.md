@@ -46,5 +46,14 @@ npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.run
 npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
+For the OpenAI Agents SDK, use the included TypeScript examples. Their stdio
+command enables `--alias-mode openai`; the Streamable HTTP example includes the
+matching server command. Claude, Cursor, and generic templates use canonical
+dotted capability names.
+
 Approval and writeback remain outside the model-facing MCP tool surface. Use
 `proposals`, `apply`, `receipts`, and `replay` from a trusted operator shell.
+
+The bundle's `.env.example` contains names and placeholders only. Fill it for a
+local or staging source, source it into the shell or process that launches your
+MCP client, and keep the resulting `.env` out of source control.

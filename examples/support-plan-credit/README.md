@@ -12,6 +12,38 @@ This example shows three enforcement tiers on one support action:
 - Node 22.5+
 - Port `55438` available
 
+Install the stable CLI once for the commands below:
+
+```bash
+npm install --global @synapsor/runner
+synapsor-runner --version
+```
+
+When working from this source checkout, use `corepack pnpm runner` in place of
+`synapsor-runner`.
+
+## No-Database Check
+
+Validate the authored boundary before starting Docker:
+
+```bash
+synapsor-runner dsl compile examples/support-plan-credit/contract.synapsor \
+  --out /tmp/support-plan-credit.contract.json \
+  --strict
+synapsor-runner contract validate /tmp/support-plan-credit.contract.json
+synapsor-runner config validate \
+  --config examples/support-plan-credit/synapsor.runner.json
+synapsor-runner cloud push /tmp/support-plan-credit.contract.json \
+  --dry-run \
+  --workspace local-preview \
+  --name support-plan-credit
+```
+
+This compiles, validates, and previews the Cloud payload without opening a
+network connection or connecting to a database. From a source checkout,
+`corepack pnpm verify:adoption` runs this boundary check plus the no-database
+quick demo and MCP config validation.
+
 ## Quick Start
 
 ```bash
@@ -30,6 +62,9 @@ synapsor-runner mcp serve \
   --config examples/support-plan-credit/synapsor.runner.json \
   --store ./tmp/support-plan-credit/local.db
 ```
+
+The checked-in `.env.example` contains disposable localhost Docker credentials
+only. Never reuse them for staging or production.
 
 ## Walkthrough
 
@@ -142,13 +177,17 @@ For Streamable HTTP, run:
 ```bash
 synapsor-runner mcp serve \
   --transport streamable-http \
+  --alias-mode openai \
   --host 127.0.0.1 \
   --port 8766 \
   --config examples/support-plan-credit/synapsor.runner.json \
   --store ./tmp/support-plan-credit/local.db
 ```
 
-The client receives `support.inspect_customer` and
+The OpenAI client receives `support__inspect_customer` and
+`support__propose_plan_credit`; Runner preserves the dotted canonical names in
+tool metadata and results. For Claude, Cursor, or generic MCP clients, omit
+`--alias-mode openai` to expose `support.inspect_customer` and
 `support.propose_plan_credit`. Approval and apply remain outside MCP.
 
 ## How The Policy Is Governed
@@ -210,3 +249,25 @@ The push response supplies `<contract_id>` and `<version_id>`. The Cloud
 workspace also exposes the same download from **Contract registry**.
 
 No Cloud account is needed to run this local example.
+
+## Clean Up
+
+```bash
+docker compose -f examples/support-plan-credit/docker-compose.yml down -v
+rm -rf ./tmp/support-plan-credit
+```
+
+## Troubleshooting
+
+- `synapsor-runner: command not found`: install `@synapsor/runner` globally or
+  use `corepack pnpm runner` from this repository.
+- port `55438` is busy: stop the previous example container or change the
+  published port and both URLs in `.env.example` together.
+- missing table/connection: wait for the Docker health check, then rerun the
+  command from the repository root with the `.env.example` values exported.
+- OpenAI rejects dotted tool names: start the MCP server with
+  `--alias-mode openai` and use the OpenAI template.
+- proposal stays pending: `$100` intentionally requires
+  `proposals approve`; only the `$25` tier is policy-approved.
+- apply reports a conflict: the row changed after the proposal read. Inspect
+  the new row, create a fresh proposal, and do not bypass the version guard.

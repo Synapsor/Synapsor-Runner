@@ -5,5 +5,5 @@
   "version_number": 1,
   "status": "draft",
   "digest": "sha256:<server-computed-digest>",
-  "registry_url": "/workspace/contracts"
+  "registry_url": "/workspace/contracts?contract=<contract_id>"
 }
