@@ -10,7 +10,7 @@ outreach without separate approval.
 ## Repositories
 
 - OSS repo: this checkout / `https://github.com/Synapsor/Synapsor-Runner`
-- OSS branch: `feature/reproducible-launch-demo-video`
+- OSS branch: merged into local `main` after manual-review approval
 - OSS base: `main` / `origin/main` at `8a3c0a985ae1806d3ff4975c54103b8ab67737bc`
 - Harness implementation commit: `afe54e6` (`Add reproducible launch demo video harness`)
 - Cloud repo: sibling proprietary checkout, inspection only
@@ -92,17 +92,18 @@ the successful rerun is recorded below rather than rewriting that history.
 
 ## Final Media Result
 
-- MP4: 177 seconds, 1920x1080, 30 fps, H.264/yuv420p, faststart, 2,768,398 bytes.
-- MP4 SHA-256: `f739fec0e6622d9fc9ba53128cb20dd072b11f431f6543fb2a4ca3e1becf350f`.
-- GIF: 26 seconds, 960x540, 638,816 bytes.
-- GIF SHA-256: `e7911ddeeb2472f580d9af47f3bef5214d70c4a0970f9fcc8282895b5e28a6ee`.
+- MP4: 177 seconds, 1920x1080, 30 fps, H.264/yuv420p, faststart, 2,768,833 bytes.
+- MP4 SHA-256: `2bc525b578336acec4f344a8ed498e238e6dcf71b6cb2ec2f502c4b0dcd6aa6e`.
+- GIF: 26 seconds, 960x540, 632,660 bytes.
+- GIF SHA-256: `7c0fea324117dd208a3f21a2f82127662559175c80080eb2bb60fcffec35c76c`.
 - Canonical Cloud digest:
   `sha256:864a30ac32de9c102354e4843fdc7566c5c5d40f4290c06a4ce5a452cfc1829d`.
 - Cloud contract match: passed.
 - Runner bundle: 11 files; required entries present; secret scan clean.
 - Disposable Cloud account, browser profile, local container, and Docker volume:
   removed.
-- Publication status: not published; awaiting manual review.
+- Review status: approved on 2026-07-10.
+- Publication status: not publicly uploaded or posted.
 
 ## Final Verification
 
@@ -139,5 +140,5 @@ corepack pnpm demo:video:verify
 
 ## Exact Next Action
 
-Give the local MP4/GIF to the user for the manual review gate. Do not push,
-merge, upload, publish, deploy, or send launch copy without separate approval.
+The harness is approved and merged into local `main`. Push `main`; keep the
+ignored MP4/GIF local until a separate upload/publication instruction is given.
