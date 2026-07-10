@@ -248,7 +248,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("0.1.14");
+      expect(output.join("").trim()).toBe("0.1.15");
     }
   });
 
@@ -660,7 +660,7 @@ describe("runner cli", () => {
 
   it("compiles SQL-like DSL into canonical contracts and dry-runs Cloud push", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-cloud-"));
-    const dslPath = workspacePath("packages/dsl/examples/billing-late-fee.synapsor");
+    const dslPath = workspacePath("packages/dsl/examples/billing-late-fee.synapsor.sql");
     const contractPath = path.join(tempDir, "synapsor.contract.json");
     const output: string[] = [];
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -722,6 +722,32 @@ describe("runner cli", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("accepts both DSL source extensions and emits equivalent canonical JSON", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-extensions-"));
+    const source = await fs.readFile(workspacePath("packages/dsl/examples/billing-late-fee.synapsor.sql"), "utf8");
+    const sqlPath = path.join(tempDir, "contract.synapsor.sql");
+    const legacyPath = path.join(tempDir, "contract.synapsor");
+    const sqlContractPath = path.join(tempDir, "sql.contract.json");
+    const legacyContractPath = path.join(tempDir, "legacy.contract.json");
+    await fs.writeFile(sqlPath, source, "utf8");
+    await fs.writeFile(legacyPath, source, "utf8");
+
+    await expect(main(["dsl", "validate", sqlPath, "--strict"])).resolves.toBe(0);
+    await expect(main(["dsl", "validate", legacyPath, "--strict"])).resolves.toBe(0);
+    await expect(main(["dsl", "compile", sqlPath, "--out", sqlContractPath, "--strict"])).resolves.toBe(0);
+    await expect(main(["dsl", "compile", legacyPath, "--out", legacyContractPath, "--strict"])).resolves.toBe(0);
+    expect(JSON.parse(await fs.readFile(sqlContractPath, "utf8"))).toEqual(JSON.parse(await fs.readFile(legacyContractPath, "utf8")));
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main(["dsl"])).resolves.toBe(2);
+    expect(output.join("")).toContain("./contract.synapsor.sql");
+    expect(output.join("")).toContain("legacy .synapsor source files are supported");
+  });
+
   it("uploads Cloud contract push to the configured control API", async () => {
     const contractPath = workspacePath("packages/spec/examples/guarded-writeback.contract.json");
     const output: string[] = [];
@@ -780,8 +806,8 @@ describe("runner cli", () => {
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "0.1.4",
-        "@synapsor/dsl": "0.1.4",
-        "@synapsor/runner": "0.1.14",
+        "@synapsor/dsl": "0.1.5",
+        "@synapsor/runner": "0.1.15",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {

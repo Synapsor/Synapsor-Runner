@@ -10,7 +10,7 @@ const repoRoot = path.resolve(packageRoot, "../..");
 
 describe("@synapsor/dsl", () => {
   it("parses context, read/proposal capabilities, and workflow", () => {
-    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor"), "utf8");
+    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8");
     const ast = parseAgentDsl(source);
     expect(ast.contexts).toHaveLength(1);
     expect(ast.capabilities.map((capability) => capability.name)).toEqual([
@@ -21,7 +21,7 @@ describe("@synapsor/dsl", () => {
   });
 
   it("compiles to valid @synapsor/spec JSON", () => {
-    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor"), "utf8");
+    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8");
     const contract = compileAgentDsl(source);
     const result = validateContract(contract);
     expect(result.errors).toEqual([]);
@@ -32,7 +32,7 @@ describe("@synapsor/dsl", () => {
   });
 
   it("keeps kept-out fields out of visible fields", () => {
-    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor"), "utf8");
+    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8");
     const contract = compileAgentDsl(source);
     expect(contract.capabilities[0]?.visible_fields).not.toContain("card_token");
     expect(contract.capabilities[0]?.kept_out_fields).toContain("card_token");
@@ -231,7 +231,7 @@ END
   });
 
   it("keeps the support-plan-credit example JSON in sync with its DSL source", () => {
-    const source = fs.readFileSync(path.join(repoRoot, "examples/support-plan-credit/contract.synapsor"), "utf8");
+    const source = fs.readFileSync(path.join(repoRoot, "examples/support-plan-credit/contract.synapsor.sql"), "utf8");
     const committed = JSON.parse(fs.readFileSync(path.join(repoRoot, "examples/support-plan-credit/synapsor.contract.json"), "utf8"));
     const result = compileAgentDslWithWarnings(source);
     expect(result.warnings).toEqual([]);

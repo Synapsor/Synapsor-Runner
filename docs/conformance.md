@@ -2,6 +2,11 @@
 
 Conformance fixtures prove behavior, not just JSON shape.
 
+The conformance artifacts are canonical JSON. When authoring a source contract
+for these checks, prefer `.synapsor.sql` for generic editor SQL highlighting;
+`.synapsor` remains backward compatible and the filename does not affect the
+compiled contract semantics.
+
 `@synapsor/spec` owns the fixtures under:
 
 ```text

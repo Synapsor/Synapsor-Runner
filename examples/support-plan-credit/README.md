@@ -27,7 +27,7 @@ When working from this source checkout, use `corepack pnpm runner` in place of
 Validate the authored boundary before starting Docker:
 
 ```bash
-synapsor-runner dsl compile examples/support-plan-credit/contract.synapsor \
+synapsor-runner dsl compile examples/support-plan-credit/contract.synapsor.sql \
   --out /tmp/support-plan-credit.contract.json \
   --strict
 synapsor-runner contract validate /tmp/support-plan-credit.contract.json
@@ -192,7 +192,7 @@ tool metadata and results. For Claude, Cursor, or generic MCP clients, omit
 
 ## How The Policy Is Governed
 
-The auto-approval policy lives in `contract.synapsor`:
+The auto-approval policy lives in `contract.synapsor.sql`:
 
 ```sql
 AUTO APPROVE WHEN plan_credit_cents <= 2500

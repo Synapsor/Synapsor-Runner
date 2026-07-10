@@ -61,7 +61,7 @@ missing trusted tenant/principal context
 Source:
 
 ```text
-examples/support-plan-credit/contract.synapsor
+examples/support-plan-credit/contract.synapsor.sql
 ```
 
 Show exact authored lines:

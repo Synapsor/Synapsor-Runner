@@ -10,7 +10,7 @@ required=(
   "$ROOT/apps/runner/dist/cli.js"
   "$ROOT/packages/spec/dist/cli.js"
   "$ROOT/packages/dsl/dist/cli.js"
-  "$EXAMPLE/contract.synapsor"
+  "$EXAMPLE/contract.synapsor.sql"
   "$EXAMPLE/synapsor.contract.json"
   "$EXAMPLE/synapsor.runner.json"
 )
@@ -40,7 +40,7 @@ grep -q "Synapsor quick demo complete" "$TMP_ROOT/quick-demo.txt"
 grep -q "source DB changed: no" "$TMP_ROOT/quick-demo.txt"
 
 echo "[3/8] Compile the flagship DSL in strict mode"
-"${dsl[@]}" compile "$EXAMPLE/contract.synapsor" \
+"${dsl[@]}" compile "$EXAMPLE/contract.synapsor.sql" \
   --out "$TMP_ROOT/synapsor.contract.json" \
   --strict
 
@@ -55,7 +55,7 @@ const [expectedPath, actualPath] = process.argv.slice(2);
 const expected = JSON.parse(fs.readFileSync(expectedPath, "utf8"));
 const actual = JSON.parse(fs.readFileSync(actualPath, "utf8"));
 if (JSON.stringify(expected) !== JSON.stringify(actual)) {
-  throw new Error("checked-in flagship contract has drifted from contract.synapsor");
+  throw new Error("checked-in flagship contract has drifted from contract.synapsor.sql");
 }
 NODE
 

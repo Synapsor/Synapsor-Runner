@@ -6,6 +6,10 @@ Status: Synapsor contract `0.1`.
 layer that compiles into that JSON. `@synapsor/runner` and Synapsor Cloud should
 consume the same contract shape instead of inventing separate semantics.
 
+Author DSL files as `contract.synapsor.sql` when possible so editors provide
+generic SQL highlighting. The legacy `contract.synapsor` suffix remains
+supported, and both filenames compile to the same canonical JSON.
+
 Legend:
 
 - Supported: validated and preserved.
