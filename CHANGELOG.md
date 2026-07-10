@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### README Path Polish
+
+- Makes the audit, demo, and staging-database adoption sequence explicit for
+  readers scanning the first minute of the README.
+- Trims the inline JSON example to the reviewed capability entry and links the
+  generated storage, source, trusted-context, and timeout wiring to the full
+  own-database guide.
+- Stages `@synapsor/runner@0.1.14`; `@synapsor/spec` and `@synapsor/dsl` remain
+  unchanged.
+
+## 0.1.13
+
 ### Front-Door Documentation
 
 - Rewrites the GitHub and npm READMEs around an audit-first 60-second proof,
@@ -14,6 +26,8 @@
   public repository root.
 - Stages `@synapsor/runner@0.1.13`; `@synapsor/spec` and `@synapsor/dsl` remain
   unchanged.
+
+## 0.1.12
 
 ### Runner Version Invocation
 

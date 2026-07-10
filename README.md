@@ -14,6 +14,10 @@ surface.
 
 ## Prove It In 60 Seconds
 
+The path is: **audit** your existing MCP risk, then **demo** the safety
+boundary, then **connect** a staging database. The first two commands finish in
+seconds and touch nothing but a local fixture file.
+
 First, inspect the risk in a typical raw-SQL database MCP server. This works
 even if you never adopt Runner:
 
@@ -77,48 +81,30 @@ creates trusted context, generates reviewed capabilities, previews the MCP tool
 surface, and prints the next smoke and serve commands. It stores environment
 variable names, not connection strings.
 
-A minimal generated read-only configuration looks like this:
+The interesting part of the generated configuration is the capability entry: a
+reviewed, tenant-scoped read with an explicit column allowlist and required
+evidence. The storage, source, and trusted-context wiring around it (including
+statement timeouts) is generated for you; the full file is in the
+[own-database guide](docs/getting-started-own-database.md).
 
 ```json
 {
-  "version": 1,
-  "mode": "read_only",
-  "result_format": 2,
-  "storage": { "sqlite_path": "./.synapsor/local.db" },
-  "sources": {
-    "app_postgres": {
-      "engine": "postgres",
-      "read_url_env": "DATABASE_URL",
-      "statement_timeout_ms": 3000
-    }
+  "name": "billing.inspect_invoice",
+  "kind": "read",
+  "source": "app_postgres",
+  "target": {
+    "schema": "public",
+    "table": "invoices",
+    "primary_key": "id",
+    "tenant_key": "tenant_id"
   },
-  "trusted_context": {
-    "provider": "environment",
-    "values": {
-      "tenant_id_env": "SYNAPSOR_TENANT_ID",
-      "principal_env": "SYNAPSOR_PRINCIPAL"
-    }
+  "args": {
+    "invoice_id": { "type": "string", "required": true, "max_length": 128 }
   },
-  "capabilities": [
-    {
-      "name": "billing.inspect_invoice",
-      "kind": "read",
-      "source": "app_postgres",
-      "target": {
-        "schema": "public",
-        "table": "invoices",
-        "primary_key": "id",
-        "tenant_key": "tenant_id"
-      },
-      "args": {
-        "invoice_id": { "type": "string", "required": true, "max_length": 128 }
-      },
-      "lookup": { "id_from_arg": "invoice_id" },
-      "visible_columns": ["id", "tenant_id", "status", "late_fee_cents", "updated_at"],
-      "evidence": "required",
-      "max_rows": 1
-    }
-  ]
+  "lookup": { "id_from_arg": "invoice_id" },
+  "visible_columns": ["id", "tenant_id", "status", "late_fee_cents", "updated_at"],
+  "evidence": "required",
+  "max_rows": 1
 }
 ```
 
