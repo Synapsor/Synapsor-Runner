@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -16,7 +16,7 @@
     "build:runner-package": "tsc -b && node scripts/build-runner-package.mjs",
     "clean": "find . -path '*/dist' -type d -prune -exec rm -rf {} +",
     "lint": "tsc -b --pretty false",
-    "test": "tsc -b --pretty false && vitest run && node scripts/check-license-content.mjs",
+    "test": "tsc -b --pretty false && vitest run && node scripts/check-license-content.mjs && ./scripts/verify-dsl-source-paths.sh",
     "test:license-content": "node scripts/check-license-content.mjs",
     "test:smoke": "./scripts/verify-release-gate.sh",
     "test:docker": "node scripts/smoke-local-examples.mjs",
@@ -48,6 +48,7 @@
     "own-db": "./scripts/use-your-db.sh",
     "verify:local-runner": "./scripts/verify-local-runner.sh",
     "verify:adoption": "./scripts/verify_adoption_quickstart.sh",
+    "verify:dsl-sources": "./scripts/verify-dsl-source-paths.sh",
     "verify:public-commands": "./scripts/verify-public-commands.sh",
     "verify:packed-runner": "./scripts/verify-packed-runner.sh",
     "verify:packed-own-db": "./scripts/verify-packed-own-db.sh",

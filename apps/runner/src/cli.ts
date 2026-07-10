@@ -1662,7 +1662,7 @@ async function dslCommand(args: string[]): Promise<number> {
 
 async function dslValidate(args: string[]): Promise<number> {
   const target = firstPositional(args);
-  if (!target) throw new Error("dsl validate requires <contract.synapsor>");
+  if (!target) throw new Error("dsl validate requires a DSL source file such as contract.synapsor.sql or contract.synapsor");
   const source = await fs.readFile(target, "utf8");
   const strict = args.includes("--strict");
   const result = validateAgentDsl(source);
@@ -1680,7 +1680,7 @@ async function dslValidate(args: string[]): Promise<number> {
 
 async function dslCompile(args: string[]): Promise<number> {
   const target = firstPositional(args);
-  if (!target) throw new Error("dsl compile requires <contract.synapsor>");
+  if (!target) throw new Error("dsl compile requires a DSL source file such as contract.synapsor.sql or contract.synapsor");
   const source = await fs.readFile(target, "utf8");
   const strict = args.includes("--strict");
   const result = compileAgentDslWithWarnings(source);
@@ -8908,7 +8908,7 @@ Examples:
   ${cmd} init --wizard --from-env DATABASE_URL
   ${cmd} contract validate ./synapsor.contract.json
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
-  ${cmd} dsl compile ./contract.synapsor --out ./synapsor.contract.json
+  ${cmd} dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json
   ${cmd} cloud push ./synapsor.contract.json --dry-run
   ${cmd} smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db
@@ -8926,8 +8926,10 @@ contexts, capabilities, workflows, evidence, proposal, receipt, and replay
 semantics. Local database URLs, ports, and store paths stay in runner config.
 `,
     dsl: `Usage:
-  ${cmd} dsl validate ./contract.synapsor [--json]
-  ${cmd} dsl compile ./contract.synapsor --out ./synapsor.contract.json
+  ${cmd} dsl validate ./contract.synapsor.sql [--json]
+  ${cmd} dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json
+
+Both .synapsor.sql and legacy .synapsor source files are supported.
 
 Compile the preview SQL-like Synapsor authoring DSL into canonical
 @synapsor/spec JSON. Unsupported Cloud-only/generated clauses fail explicitly

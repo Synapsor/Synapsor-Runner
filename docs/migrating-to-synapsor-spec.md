@@ -138,9 +138,12 @@ synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapso
 You can also compile from the SQL-like authoring layer:
 
 ```bash
-synapsor-runner dsl validate ./contract.synapsor
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
+synapsor-runner dsl validate ./contract.synapsor.sql
+synapsor-runner dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json --strict
 ```
+
+`.synapsor.sql` is the preferred editor-friendly source filename. Existing
+`.synapsor` files remain valid and compile to equivalent canonical JSON.
 
 ## Bundle For Local Runner
 

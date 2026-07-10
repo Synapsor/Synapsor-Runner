@@ -39,21 +39,27 @@ END
 ```
 
 A longer worked contract lives in
-[`examples/billing-late-fee.synapsor`](https://github.com/Synapsor/Synapsor-Runner/blob/main/packages/dsl/examples/billing-late-fee.synapsor),
+[`examples/billing-late-fee.synapsor.sql`](https://github.com/Synapsor/Synapsor-Runner/blob/main/packages/dsl/examples/billing-late-fee.synapsor.sql),
 and the runner README walks the full compile → validate → bundle → serve flow.
+
+Use `.synapsor.sql` for authored DSL files so editors recognize the file as
+SQL and provide generic SQL highlighting. Existing `.synapsor` files remain
+supported for compatibility. The filename suffix does not change DSL semantics
+or generated canonical JSON; this repository does not provide Synapsor-specific
+semantic editor highlighting.
 
 ## CLI
 
 ```bash
-synapsor-dsl validate ./contract.synapsor [--strict]
-synapsor-dsl compile ./contract.synapsor --out ./synapsor.contract.json [--strict]
+synapsor-dsl validate ./contract.synapsor.sql [--strict]
+synapsor-dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json [--strict]
 ```
 
 Runner also exposes:
 
 ```bash
-synapsor-runner dsl validate ./contract.synapsor [--strict]
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json [--strict]
+synapsor-runner dsl validate ./contract.synapsor.sql [--strict]
+synapsor-runner dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json [--strict]
 ```
 
 `--strict` treats safety warnings as errors. Use it in CI for reviewed proposal
@@ -62,7 +68,7 @@ contracts.
 Continue from authored DSL to a local/Cloud-compatible contract with:
 
 ```bash
-synapsor-dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
+synapsor-dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json --strict
 synapsor-spec validate ./synapsor.contract.json
 synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
 synapsor-runner cloud push ./synapsor.contract.json --dry-run

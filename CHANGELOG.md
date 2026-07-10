@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Editor-Friendly DSL Source Files
+
+- Prefers `.synapsor.sql` for DSL source files so editors can provide generic
+  SQL highlighting while keeping `.synapsor` backward compatible.
+- Keeps DSL semantics, Runner behavior, and generated canonical JSON unchanged.
+- Stages `@synapsor/dsl@0.1.5` and `@synapsor/runner@0.1.15`.
+
 ### README Path Polish
 
 - Makes the audit, demo, and staging-database adoption sequence explicit for
@@ -10,7 +17,7 @@
   generated storage, source, trusted-context, and timeout wiring to the full
   own-database guide.
 - Stages `@synapsor/runner@0.1.14`; `@synapsor/spec` and `@synapsor/dsl` remain
-  unchanged.
+  unchanged for that release.
 
 ## 0.1.13
 

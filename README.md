@@ -156,7 +156,9 @@ See [Security Boundary](docs/security-boundary.md) and
 
 Runner executes locally. The spec is the portable contract shared by Runner
 and Cloud/C++. The DSL gives that contract a reviewable source format. Start
-with [Capability Authoring](docs/capability-authoring.md).
+with [Capability Authoring](docs/capability-authoring.md). Use `.synapsor.sql`
+for DSL source files when you want editors to provide generic SQL highlighting;
+legacy `.synapsor` files remain supported and produce the same contract JSON.
 
 ## OSS And Cloud
 

@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "*.synapsor.sql": "sql",
+    "*.synapsor": "sql"
+  }
+}

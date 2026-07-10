@@ -14,7 +14,7 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (!target) {
-    process.stderr.write(`synapsor-dsl ${command} requires <contract.synapsor>\n`);
+    process.stderr.write(`synapsor-dsl ${command} requires a DSL source file such as contract.synapsor.sql or contract.synapsor\n`);
     return 2;
   }
   const source = await fs.readFile(target, "utf8");
@@ -60,8 +60,10 @@ function usage(): void {
   process.stdout.write(`Synapsor DSL
 
 Usage:
-  synapsor-dsl validate ./contract.synapsor [--strict]
-  synapsor-dsl compile ./contract.synapsor --out ./synapsor.contract.json [--strict]
+  synapsor-dsl validate ./contract.synapsor.sql [--strict]
+  synapsor-dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json [--strict]
+
+Both .synapsor.sql and legacy .synapsor source files are supported.
 `);
 }
 

@@ -36,7 +36,7 @@ const inspect = await json("inspect.json");
 const proposal = await json("proposal.json");
 const beforeApproval = await json("proposal-before-approval.json");
 const afterApply = await json("proposal-after-apply.json");
-const contractSource = await readFile(path.join(repoRoot, "examples/support-plan-credit/contract.synapsor"), "utf8");
+const contractSource = await readFile(path.join(repoRoot, "examples/support-plan-credit/contract.synapsor.sql"), "utf8");
 const audit = await text("audit.md");
 const auditSummary = audit.match(/Findings: HIGH (\d+) \| MEDIUM (\d+) \| LOW (\d+)/);
 if (!auditSummary) throw new Error("audit summary missing");

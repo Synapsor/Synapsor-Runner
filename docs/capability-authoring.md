@@ -5,8 +5,12 @@ source of truth for trusted context, resources, capabilities, evidence,
 proposal shape, and writeback intent.
 
 ```text
-contract.synapsor -> synapsor.contract.json -> synapsor.runner.json
+contract.synapsor.sql -> synapsor.contract.json -> synapsor.runner.json
 ```
+
+Use `.synapsor.sql` as the preferred DSL source extension because editors can
+provide generic SQL highlighting. Legacy `.synapsor` files remain supported;
+the suffix does not change DSL semantics or generated canonical JSON.
 
 Use `synapsor.runner.json` for local wiring: database env var names, SQLite
 store path, MCP transport settings, and local development flags. The model sees
@@ -69,7 +73,7 @@ END
 Compile and validate:
 
 ```bash
-synapsor-runner dsl compile ./contract.synapsor --out ./synapsor.contract.json --strict
+synapsor-runner dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json --strict
 synapsor-runner contract validate ./synapsor.contract.json
 synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner-bundle
 synapsor-runner cloud push ./synapsor.contract.json --dry-run

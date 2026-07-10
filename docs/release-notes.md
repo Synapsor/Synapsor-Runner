@@ -12,9 +12,17 @@ for the Synapsor Cloud CLI.
 
 ## Unreleased
 
-Prepared package version: `@synapsor/runner@0.1.12`. The already-published
-`@synapsor/spec@0.1.4` and `@synapsor/dsl@0.1.4` do not change and must not be
-republished for this release.
+### Editor-Friendly DSL Source Files
+
+- Prefers `.synapsor.sql` for DSL source files so editors can provide generic
+  SQL highlighting; `.synapsor` remains supported for compatibility.
+- The filename suffix does not change DSL semantics or generated canonical JSON.
+- Stages `@synapsor/dsl@0.1.5` and `@synapsor/runner@0.1.15`; `@synapsor/spec`
+  remains `0.1.4`.
+
+Prepared package versions: `@synapsor/dsl@0.1.5` and
+`@synapsor/runner@0.1.15`. The already-published `@synapsor/spec@0.1.4` does
+not change and must not be republished for this release.
 
 ### Runner Version Invocation
 
