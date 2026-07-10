@@ -4,8 +4,8 @@ Publication status: **NOT PUBLISHED - awaiting manual review**
 
 ## Source
 
-- OSS commit: `afe54e64142bb764f704ae2dbe419d81281a4414`
-- Runner execution mode: `published`
+- OSS commit: `b33b1f58d1bce30b18974943bfd59e0a2779b9a7`
+- Runner execution mode: `local`
 - Runner version: `0.1.12`
 - `@synapsor/spec`: `0.1.4`
 - `@synapsor/dsl`: `0.1.4`
@@ -18,8 +18,8 @@ Publication status: **NOT PUBLISHED - awaiting manual review**
 
 | Asset | Duration | Dimensions | Codec / format | Size | SHA-256 |
 | --- | ---: | --- | --- | ---: | --- |
-| `docs/launch/out/synapsor-launch-demo.mp4` | 177.000 s | 1920x1080 | h264 / yuv420p | 2768398 bytes | `f739fec0e6622d9fc9ba53128cb20dd072b11f431f6543fb2a4ca3e1becf350f` |
-| `docs/launch/out/synapsor-launch-demo.gif` | 26.000 s | 960x540 | GIF | 638816 bytes | `e7911ddeeb2472f580d9af47f3bef5214d70c4a0970f9fcc8282895b5e28a6ee` |
+| `docs/launch/out/synapsor-launch-demo.mp4` | 177.000 s | 1920x1080 | h264 / yuv420p | 2768833 bytes | `2bc525b578336acec4f344a8ed498e238e6dcf71b6cb2ec2f502c4b0dcd6aa6e` |
+| `docs/launch/out/synapsor-launch-demo.gif` | 26.000 s | 960x540 | GIF | 632660 bytes | `7c0fea324117dd208a3f21a2f82127662559175c80080eb2bb60fcffec35c76c` |
 
 Captions: `docs/launch/captions.srt`
 
@@ -38,7 +38,7 @@ Chrome profile, and the pinned FFmpeg image documented in
 ## Proven State
 
 - Proposal ID: `wrp_888fe169da44bf46a09a`
-- Evidence ID: `ev_8cd6189eff264bf8e1d9`
+- Evidence ID: `ev_e5354b114b8f33c038fe`
 - Receipt hash: `sha256:92ad59721e4cb5337f004696522cab26fac719798d8ebb092ae9e2f1fd6dab8b`
 - Source before proposal: 0 cents
 - Source after proposal: 0 cents
