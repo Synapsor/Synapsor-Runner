@@ -1,0 +1,55 @@
+1
+00:00:00,000 --> 00:00:08,000
+Stop giving agents execute_sql. Give them reviewed business actions instead.
+
+2
+00:00:08,000 --> 00:00:20,000
+Raw database MCP can hand SQL text, table selection, filters, and write authority to the model.
+
+3
+00:00:20,000 --> 00:00:32,000
+Synapsor binds tenant and principal scope from trusted context, outside model arguments.
+
+4
+00:00:32,000 --> 00:00:45,000
+The reviewed contract declares visible fields, kept-out fields, bounded writes, and approval.
+
+5
+00:00:45,000 --> 00:00:58,000
+The model sees two semantic tools. It does not see raw SQL, credentials, approval, or apply.
+
+6
+00:00:58,000 --> 00:01:10,000
+The inspect tool reads one tenant-scoped customer and records evidence. The source stays unchanged.
+
+7
+00:01:10,000 --> 00:01:28,000
+The agent requests a plan credit. Runner stores the exact diff, evidence handle, and expected row version.
+
+8
+00:01:28,000 --> 00:01:36,000
+Before approval, Postgres still shows zero credit. Proposal does not equal commit.
+
+9
+00:01:36,000 --> 00:01:48,000
+An operator reviews and approves outside the model-facing MCP surface.
+
+10
+00:01:48,000 --> 00:02:03,000
+Guarded writeback checks approval, primary key, tenant, allowed columns, row version, and affected rows.
+
+11
+00:02:03,000 --> 00:02:17,000
+The receipt and replay preserve the read, evidence, proposal, approval, writeback, and result.
+
+12
+00:02:17,000 --> 00:02:35,000
+The same canonical contract is pushed to Synapsor Cloud as an immutable version with a server digest.
+
+13
+00:02:35,000 --> 00:02:49,000
+The Cloud registry exposes the reviewed boundary and exports a secret-free Runner bundle.
+
+14
+00:02:49,000 --> 00:02:57,000
+Try the open-source Runner. Synapsor Cloud is available for design partners.

@@ -13,6 +13,7 @@ tmp/
 state/
 .synapsor/
 **/.synapsor/
+docs/launch/out/
 apps/runner/CHANGELOG.md
 apps/runner/TRADEMARKS.md
 apps/runner/docs/
