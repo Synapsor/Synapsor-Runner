@@ -1,13 +1,13 @@
 # Synapsor Runner Docs
 
 Start with the README. Use this index when you need the task-specific next
-step. The order is intentional: run something first, wire your database second,
-then read the concepts once the safety boundary is visible.
+step. The order is intentional: audit the model-facing risk first, run the
+no-database demo, wire your database, then read deeper concepts.
 
 ## 01 Quickstart
 
-- [README](../README.md): wedge, no-DB quick demo, five-line model, and the
-  shortest own-database path.
+- [README](../README.md): audit-first proof, no-database demo, safety diagram,
+  and the shortest own-database path.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 
@@ -98,6 +98,8 @@ then read the concepts once the safety boundary is visible.
   scope, database roles, receipt grants, local ledger backup, restart behavior,
   Docker/systemd shapes, TLS, and release-gate expectations.
 - [Cloud Mode](cloud-mode.md): what stays local and what Cloud-linked mode adds.
+- [OSS Runner Vs Synapsor Cloud](oss-vs-cloud.md): detailed product and
+  operational boundary.
 - [Cloud Push](cloud-push.md): register a validated local contract in the
   versioned Cloud registry.
 - [Runner Bundles](runner-bundles.md): download the same immutable contract and
@@ -116,3 +118,26 @@ then read the concepts once the safety boundary is visible.
 The public docs intentionally stay task-first. Historical implementation
 reports, release checklists, and internal planning notes are not part of the
 getting-started path.
+
+## Core Terms
+
+- Capability: a reviewed model-facing business tool such as
+  `billing.inspect_invoice` or `billing.propose_late_fee_waiver`.
+- Proposal: an exact suggested change saved without mutating the source
+  database.
+- Writeback: execution of an approved proposal outside the model-facing MCP
+  surface.
+- Executor: Runner's guarded one-row updater or an app-owned handler for richer
+  approved business transactions.
+
+## Repository Map
+
+- `apps/runner`: CLI, local review UI, and packaged npm documentation.
+- `packages/spec`: canonical contract schemas and conformance fixtures.
+- `packages/dsl`: SQL-like contract authoring.
+- `packages/mcp-server`: stdio and HTTP MCP runtime.
+- `packages/proposal-store`: local evidence, proposal, receipt, and replay
+  ledger.
+- `packages/postgres`, `packages/mysql`: guarded writeback adapters.
+- `examples`: disposable demos and client integrations.
+- `docs`: task guides, security boundaries, operations, and release policy.

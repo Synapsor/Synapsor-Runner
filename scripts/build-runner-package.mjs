@@ -117,6 +117,7 @@ const publicDocs = [
   "mcp-clients.md",
   "migrating-to-synapsor-spec.md",
   "openai-agents-sdk.md",
+  "oss-vs-cloud.md",
   "production.md",
   "release-notes.md",
   "release-policy.md",
@@ -132,6 +133,9 @@ const publicDocs = [
 ];
 const releaseAssets = [
   ["CHANGELOG.md", "CHANGELOG.md"],
+  ["AGENTS.md", "AGENTS.md"],
+  ["CONTRIBUTING.md", "CONTRIBUTING.md"],
+  ["THREAT_MODEL.md", "THREAT_MODEL.md"],
   ["TRADEMARKS.md", "TRADEMARKS.md"],
   ...publicDocs.map((name) => [`docs/${name}`, `docs/${name}`]),
   ["docs/rfcs", "docs/rfcs"],

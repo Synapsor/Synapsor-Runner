@@ -26,7 +26,12 @@ runner=(node "$ROOT/apps/runner/dist/cli.js")
 spec=(node "$ROOT/packages/spec/dist/cli.js")
 dsl=(node "$ROOT/packages/dsl/dist/cli.js")
 
-echo "[1/7] Run the no-database quick demo"
+echo "[1/8] Audit a dangerous database MCP shape"
+"${runner[@]}" audit --example dangerous-db-mcp > "$TMP_ROOT/audit.txt"
+grep -q "Target: example:dangerous-db-mcp" "$TMP_ROOT/audit.txt"
+grep -q "execute_sql" "$TMP_ROOT/audit.txt"
+
+echo "[2/8] Run the no-database quick demo"
 (
   cd "$TMP_ROOT"
   "${runner[@]}" demo --quick --no-interactive > quick-demo.txt
@@ -34,12 +39,12 @@ echo "[1/7] Run the no-database quick demo"
 grep -q "Synapsor quick demo complete" "$TMP_ROOT/quick-demo.txt"
 grep -q "source DB changed: no" "$TMP_ROOT/quick-demo.txt"
 
-echo "[2/7] Compile the flagship DSL in strict mode"
+echo "[3/8] Compile the flagship DSL in strict mode"
 "${dsl[@]}" compile "$EXAMPLE/contract.synapsor" \
   --out "$TMP_ROOT/synapsor.contract.json" \
   --strict
 
-echo "[3/7] Validate with the canonical spec and Runner"
+echo "[4/8] Validate with the canonical spec and Runner"
 "${spec[@]}" validate "$TMP_ROOT/synapsor.contract.json"
 "${runner[@]}" contract validate "$TMP_ROOT/synapsor.contract.json"
 "${runner[@]}" config validate --config "$EXAMPLE/synapsor.runner.json"
@@ -54,7 +59,7 @@ if (JSON.stringify(expected) !== JSON.stringify(actual)) {
 }
 NODE
 
-echo "[4/7] Preview the model-facing MCP tools"
+echo "[5/8] Preview the model-facing MCP tools"
 "${runner[@]}" tools preview \
   --config "$EXAMPLE/synapsor.runner.json" \
   --store "$TMP_ROOT/local.db" > "$TMP_ROOT/tools-preview.txt"
@@ -71,7 +76,7 @@ if grep -Eiq 'execute_sql|raw_sql|approve|commit|writeback' <<<"$exposed_tools";
   exit 1
 fi
 
-echo "[5/7] Prove kept-out fields remain in the reviewed boundary"
+echo "[6/8] Prove kept-out fields remain in the reviewed boundary"
 node - "$TMP_ROOT/synapsor.contract.json" <<'NODE'
 const fs = require("node:fs");
 const contract = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -82,7 +87,7 @@ for (const field of ["card_token", "raw_payment_method", "internal_risk_score", 
 }
 NODE
 
-echo "[6/7] Preview the exact network-free Cloud payload"
+echo "[7/8] Preview the exact network-free Cloud payload"
 "${runner[@]}" cloud push "$TMP_ROOT/synapsor.contract.json" \
   --dry-run \
   --workspace adoption_quickstart \
@@ -97,7 +102,7 @@ if (result.payload?.contract?.kind !== "SynapsorContract") throw new Error("unex
 if (result.payload?.summary?.proposal_capabilities !== 1) throw new Error("proposal summary drifted");
 NODE
 
-echo "[7/7] Verify MCP client JSON templates"
+echo "[8/8] Verify MCP client JSON templates"
 node "$ROOT/scripts/verify-mcp-client-configs.mjs"
 
 echo "Synapsor adoption quickstart verification passed."

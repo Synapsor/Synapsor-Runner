@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Stop giving AI agents execute_sql; expose reviewed Postgres/MySQL MCP actions with proposals, approval, writeback, and replay.",
   "license": "Apache-2.0",
   "type": "module",
@@ -31,9 +31,12 @@
     "schemas/**",
     "recipes/**/*.json",
     "README.md",
+    "AGENTS.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "LICENSE",
     "NOTICE",
+    "THREAT_MODEL.md",
     "TRADEMARKS.md"
   ],
   "keywords": [

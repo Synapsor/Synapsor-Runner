@@ -78,20 +78,11 @@ that is not a Postgres permission issue. It means the client reached the
 database, but your local Node/Postgres TLS stack could not verify the server's
 certificate chain.
 
-For disposable dev RDS fixtures, you can allow an insecure retry:
-
-```bash
-./scripts/use-your-db.sh --allow-insecure-ssl
-```
-
-or put `sslmode=no-verify` in the disposable test URL.
-
-For real staging or production-like testing, do not disable verification.
-Install/use the AWS RDS CA bundle and keep certificate verification enabled.
-For example, download the AWS RDS global bundle and configure your Postgres URL
-or client environment so the Node Postgres client trusts that CA. The exact
-mechanism depends on your deployment environment and should be treated like any
-other trusted database TLS setup.
+Do not disable certificate verification. Install the managed database CA bundle
+and configure the Postgres/MySQL client environment to trust it. For AWS RDS,
+use the current AWS RDS regional or global CA bundle. Treat database CA
+configuration like any other production trust-store dependency and verify it
+before using staging or production-like data.
 
 ## 2. Inspect metadata
 
