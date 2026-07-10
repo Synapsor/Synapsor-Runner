@@ -45,12 +45,37 @@ for (const pkgFile of listPackageJsonFiles()) {
 }
 
 const readme = read("README.md");
-const readmeFirstScreen = readme.split("## The Five-Line Model", 1)[0];
+const packagedReadme = read("apps/runner/README.md");
+const readmeFirstScreen = readme.split("## Prove It In 60 Seconds", 1)[0];
 if (!/\bopen-source\b/i.test(readmeFirstScreen)) {
   fail("README first screen must describe the runner as open source.");
 }
 if (!readme.includes("Apache License 2.0 (`Apache-2.0`)")) {
   fail("README must name Apache License 2.0.");
+}
+if (readme !== packagedReadme) {
+  fail("apps/runner/README.md must match the root README shipped to npm.");
+}
+
+const wordCount = readme.trim().split(/\s+/).length;
+if (wordCount > 1500) fail(`README must stay at or below 1,500 words; found ${wordCount}.`);
+
+const auditCommand = "npx -y @synapsor/runner audit --example dangerous-db-mcp";
+const demoCommand = "npx -y @synapsor/runner demo --quick";
+if ((readme.match(new RegExp(auditCommand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length !== 1) {
+  fail("README must contain the public audit command exactly once.");
+}
+if ((readme.match(new RegExp(demoCommand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length !== 1) {
+  fail("README must contain the public quick-demo command exactly once.");
+}
+if (readme.indexOf(auditCommand) > readme.indexOf(demoCommand)) {
+  fail("README must put the audit command before the quick demo.");
+}
+if (/sslmode=no-verify/i.test(readme)) {
+  fail("README must not recommend sslmode=no-verify.");
+}
+if (!readme.includes("[Threat Model](THREAT_MODEL.md)")) {
+  fail("README trust section must link the root threat model.");
 }
 
 for (const required of [

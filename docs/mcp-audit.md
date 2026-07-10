@@ -150,3 +150,29 @@ A safer model-facing database MCP tool should look like a reviewed semantic prop
 ```
 
 Trusted values such as tenant, principal, source, allowed columns, approval identity, row-version guard, and database credentials must come from Synapsor/runner context, not from model-facing arguments.
+
+## Related Fixture Benchmark
+
+`synapsor-runner benchmark mcp-efficiency` compares a fixed generic database
+MCP shape with the semantic late-fee-waiver path used by Runner. The checked-in
+fixture currently demonstrates:
+
+```text
+Generic database MCP reference:
+  exposed tools: 4
+  scripted tool calls: 5
+  raw SQL exposed: yes
+  approval separated: no
+  stale-row conflict checked: no
+
+Synapsor Runner semantic path:
+  exposed tools: 2
+  scripted tool calls: 2
+  raw SQL exposed: no
+  approval separated: yes
+  stale-row conflict checked: yes
+```
+
+The fixture tokenizer is deterministic and repeatable for this repository. It
+is not a model billing tokenizer and does not support a universal token-savings
+claim.

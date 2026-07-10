@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Front-Door Documentation
+
+- Rewrites the GitHub and npm READMEs around an audit-first 60-second proof,
+  one staging-database path, and direct links to task-specific documentation.
+- Adds a trust and verification section that links the threat model,
+  conformance fixtures, live Postgres/MySQL apply smoke, and Cloud/C++
+  contract round-trip evidence.
+- Untracks internal progress files, preserves them under the ignored local
+  notes directory, and adds ignore guards so session state cannot return to the
+  public repository root.
+- Stages `@synapsor/runner@0.1.13`; `@synapsor/spec` and `@synapsor/dsl` remain
+  unchanged.
+
 ### Runner Version Invocation
 
 - Stages `@synapsor/runner@0.1.12` without changing or republishing
