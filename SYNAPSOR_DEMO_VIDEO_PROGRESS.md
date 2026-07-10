@@ -12,6 +12,7 @@ outreach without separate approval.
 - OSS repo: this checkout / `https://github.com/Synapsor/Synapsor-Runner`
 - OSS branch: `feature/reproducible-launch-demo-video`
 - OSS base: `main` / `origin/main` at `8a3c0a985ae1806d3ff4975c54103b8ab67737bc`
+- Harness implementation commit: `afe54e6` (`Add reproducible launch demo video harness`)
 - Cloud repo: sibling proprietary checkout, inspection only
 - Cloud branch: `main` at `1af282f8c6a23218dc0b4cc527cfe7f5e39b4c23`
 - Cloud repo is inspection-only for this goal unless a narrow change is separately approved.
@@ -138,7 +139,5 @@ corepack pnpm demo:video:verify
 
 ## Exact Next Action
 
-Commit the harness and documentation on the review branch, refresh the manifest
-with the implementation commit, and give the local MP4/GIF to the user for the
-manual review gate. Do not push, merge, upload, publish, deploy, or send launch
-copy without separate approval.
+Give the local MP4/GIF to the user for the manual review gate. Do not push,
+merge, upload, publish, deploy, or send launch copy without separate approval.
