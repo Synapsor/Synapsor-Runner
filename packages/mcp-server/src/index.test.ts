@@ -482,6 +482,42 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("returns a semantic duplicate error and permits a successor after conflict", async () => {
+    let reads = 0;
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, {
+      readRow: async () => {
+        reads += 1;
+        return { row: fixtureRow, rowCount: 1 };
+      },
+    });
+    try {
+      const args = { invoice_id: "INV-3001", reason: "approved support waiver" };
+      const first = await runtime.callTool("billing.propose_late_fee_waiver", args);
+      const duplicate = await runtime.callTool("billing.propose_late_fee_waiver", args);
+      const existing = runtime.store.listProposals()[0];
+      if (!existing) throw new Error("proposal fixture missing");
+      expect(duplicate).toMatchObject({
+        ok: false,
+        error: {
+          code: "PROPOSAL_ALREADY_EXISTS",
+          retryable: false,
+          message: expect.stringContaining(existing.proposal_id),
+        },
+      });
+      expect(runtime.store.listProposals()).toHaveLength(1);
+      expect(reads).toBe(2);
+
+      runtime.store.db.prepare("UPDATE proposals SET state = 'conflict' WHERE proposal_id = ?").run(existing.proposal_id);
+      const successor = await runtime.callTool("billing.propose_late_fee_waiver", args);
+      expect(first).toMatchObject({ ok: true });
+      expect(successor).toMatchObject({ ok: true });
+      expect(runtime.store.listProposals()).toHaveLength(2);
+      expect(runtime.store.getProposal(existing.proposal_id)?.state).toBe("conflict");
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("returns safe result envelope v2 errors without raw infra strings", async () => {
     const runtime = createMcpRuntime({ ...config, result_format: 2 }, {
       readRow: async () => {
@@ -1134,6 +1170,22 @@ describe("local Synapsor MCP runtime", () => {
       expect(firstEvidenceContent && "text" in firstEvidenceContent ? firstEvidenceContent.text : "").toContain("INV-3001");
       expect(JSON.stringify(result)).not.toContain(token);
       expect(JSON.stringify(result)).not.toContain(databaseUrl);
+
+      const proposalArgs = { invoice_id: "INV-3001", reason: "reviewed waiver" };
+      const proposed = await client.callTool({
+        name: "billing.propose_late_fee_waiver",
+        arguments: proposalArgs,
+      });
+      expect(proposed.structuredContent).toMatchObject({ status: "review_required", source_database_mutated: false });
+      const duplicate = await client.callTool({
+        name: "billing.propose_late_fee_waiver",
+        arguments: proposalArgs,
+      });
+      expect(duplicate.structuredContent).toMatchObject({
+        ok: false,
+        code: "PROPOSAL_ALREADY_EXISTS",
+      });
+      expect(JSON.stringify(duplicate)).not.toContain(databaseUrl);
     } finally {
       await client.close().catch(() => undefined);
       await server.close();

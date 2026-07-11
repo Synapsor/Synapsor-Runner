@@ -132,7 +132,6 @@ export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Pr
 export async function applyMysqlJobWithConnection(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
   await connection.beginTransaction();
   try {
-    await connection.query(mysqlReceiptMigration);
     const existing = await claimReceipt(connection, job, config);
     if (existing) {
       await connection.commit();
@@ -220,7 +219,6 @@ export const mysqlAdapter: ApplyAdapter = {
     const connection = await mysql.createConnection({ uri: config.databaseUrl, dateStrings: true });
     try {
       const [rows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version");
-      await connection.query(mysqlReceiptMigration);
       await connection.beginTransaction();
       try {
         const doctorId = `doctor-${Date.now()}`;

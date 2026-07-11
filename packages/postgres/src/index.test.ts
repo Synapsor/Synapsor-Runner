@@ -3,6 +3,7 @@ import {
   applyPostgresJobWithClient,
   buildPostgresUpdate,
   normalizeVersionValue,
+  postgresPoolConfig,
   versionValuesMatch,
   type PostgresApplyClient
 } from "./index.js";
@@ -28,6 +29,15 @@ const job = {
 };
 
 describe("postgres adapter", () => {
+  it("preserves native timestamp text before proposal construction", () => {
+    const types = postgresPoolConfig("postgresql://example.invalid/app").types;
+    if (!types) throw new Error("custom postgres type parsers missing");
+    const parseTimestamp = types.getTypeParser(1114, "text");
+    const parseTimestampTz = types.getTypeParser(1184, "text");
+    expect(parseTimestamp("2026-07-11 19:13:14.482135")).toBe("2026-07-11 19:13:14.482135");
+    expect(parseTimestampTz("2026-07-11 19:13:14.482135+00")).toBe("2026-07-11 19:13:14.482135+00");
+  });
+
   it("builds parameterized SQL", () => {
     const update = buildPostgresUpdate(job);
     expect(update.sql).toContain('UPDATE "public"."tickets"');
@@ -65,6 +75,7 @@ describe("postgres adapter", () => {
 
     expect(result.status).toBe("already_applied");
     expect(result.result_hash).toBe("sha256:existing");
+    expect(client.sqlLog.some((sql) => /CREATE\s+TABLE/i.test(sql))).toBe(false);
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(false);
     expect(client.sqlLog).toContain("COMMIT");
   });

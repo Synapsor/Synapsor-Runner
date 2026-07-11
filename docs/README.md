@@ -41,6 +41,10 @@ no-database demo, wire your database, then read deeper concepts.
 - [Capability Authoring](capability-authoring.md): define read/proposal
   capabilities, model-facing descriptions, result envelopes, trusted context,
   and writeback guards.
+- [DSL Reference](dsl-reference.md): complete supported grammar, clause order,
+  compiled meaning, and constraints.
+- [Runner Config Reference](runner-config-reference.md): every public wiring
+  key, default, environment binding, and path-resolution rule.
 - [Recipes](recipes.md): starter business-capability templates.
 - [JSON Schema](../schemas/synapsor.runner.schema.json): editor validation for
   `synapsor.runner.json`.

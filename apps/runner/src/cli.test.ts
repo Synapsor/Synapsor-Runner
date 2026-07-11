@@ -248,7 +248,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("0.1.15");
+      expect(output.join("").trim()).toBe("0.1.16");
     }
   });
 
@@ -806,8 +806,8 @@ describe("runner cli", () => {
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "0.1.4",
-        "@synapsor/dsl": "0.1.5",
-        "@synapsor/runner": "0.1.15",
+        "@synapsor/dsl": "0.1.6",
+        "@synapsor/runner": "0.1.16",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -953,6 +953,18 @@ END
     await expect(main(["dsl", "compile", dslPath, "--strict"])).resolves.toBe(1);
     expect(output.join("")).toContain("dsl warnings treated as errors");
     expect(output.join("")).toContain("NUMERIC_PATCH_BOUND_RECOMMENDED");
+  });
+
+  it("rejects non-primary-key LOOKUP through the CLI without rewriting it", async () => {
+    const fixture = workspacePath("packages/dsl/fixtures/invalid/non-primary-lookup.synapsor.sql");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main(["dsl", "validate", fixture, "--json"])).resolves.toBe(1);
+    expect(output.join("")).toContain("LOOKUP_COLUMN_UNSUPPORTED");
+    await expect(main(["dsl", "compile", fixture, "--strict"])).rejects.toThrow(/LOOKUP_COLUMN_UNSUPPORTED/);
   });
 
   it("compiles DSL-authored numeric bounds into a contract enforced by runtime proposals", async () => {
@@ -2904,6 +2916,48 @@ END
     expect(report.summary.tools_inspected).toBe(1);
     expect(report.findings.map((finding: { code: string }) => finding.code)).not.toContain("GENERIC_SQL_TOOL");
     expect(output.join("")).toContain("static risk review");
+  });
+
+  it("resolves audit contract references relative to the config file", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-audit-contract-path-"));
+    const configDir = path.join(tempDir, "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.copyFile(
+      workspacePath("packages/spec/examples/support-refund.contract.json"),
+      path.join(configDir, "support.contract.json"),
+    );
+    const configPath = path.join(configDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        support_postgres: {
+          engine: "postgres",
+          read_url_env: "SUPPORT_POSTGRES_READ_URL",
+          write_url_env: "SUPPORT_POSTGRES_WRITE_URL",
+        },
+      },
+      contexts: {
+        support_agent_context: {
+          provider: "environment",
+          values: {
+            tenant_id_env: "SYNAPSOR_TENANT_ID",
+            principal_env: "SYNAPSOR_PRINCIPAL",
+          },
+        },
+      },
+      contracts: ["./support.contract.json"],
+      capabilities: [],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["audit", configPath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).summary.tools_inspected).toBe(2);
   });
 
   it("audits a stdio MCP tools/list server", async () => {

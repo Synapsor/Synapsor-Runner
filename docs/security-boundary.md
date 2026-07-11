@@ -66,11 +66,11 @@ outside the model-facing MCP server and verifies:
 If any authority check cannot be verified, the write fails closed.
 
 For direct SQL writeback, the writer connection is the env var named by the
-source `write_url_env` in `synapsor.runner.json`. Direct SQL writeback also
-creates or writes `synapsor_writeback_receipts` for idempotency and replay, so
-the writer needs permission for that receipt table or an administrator must
-pre-create and grant it. If your database policy forbids Runner-managed receipt
-tables, use an app-owned `http_handler` or `command_handler` executor instead.
+source `write_url_env` in `synapsor.runner.json`. Direct SQL writeback writes an
+administrator-created `synapsor_writeback_receipts` table for idempotency and
+replay. The writer needs `SELECT`/`INSERT`/`UPDATE` on that table, but not schema
+`CREATE`. If your database policy forbids the receipt table, use an app-owned
+`http_handler` or `command_handler` executor instead.
 
 When a capability uses an `http_handler` or `command_handler` executor, the
 same approval boundary applies. The runner sends a structured proposal/job

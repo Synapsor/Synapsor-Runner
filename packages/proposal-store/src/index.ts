@@ -1,5 +1,5 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   parseChangeSet,
@@ -217,6 +217,13 @@ export type CreateWritebackJobOptions = {
   lease_id?: string;
 };
 
+export type ActiveProposalLookup = {
+  tenant_id: string;
+  action: string;
+  business_object: string;
+  object_id: string;
+};
+
 export type RecordHandlerWritebackJobInput = {
   writeback_job_id: string;
   proposal_id: string;
@@ -240,9 +247,16 @@ export class ProposalStore {
   constructor(path = ":memory:") {
     this.path = path;
     if (path !== ":memory:") {
-      mkdirSync(dirname(resolve(path)), { recursive: true });
+      mkdirSync(dirname(resolve(path)), { recursive: true, mode: 0o700 });
     }
     this.db = new DatabaseSync(path);
+    if (path !== ":memory:" && process.platform !== "win32") {
+      try {
+        chmodSync(path, 0o600);
+      } catch (error) {
+        process.stderr.write(`warning: unable to restrict Synapsor store permissions to 0600: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    }
     this.migrate();
   }
 
@@ -652,6 +666,19 @@ export class ProposalStore {
       return existing;
     }
 
+    const active = this.findActiveProposal({
+      tenant_id: changeSet.scope.tenant_id,
+      action: changeSet.action,
+      business_object: changeSet.scope.business_object,
+      object_id: changeSet.scope.object_id,
+    });
+    if (active) {
+      throw new ProposalStoreError(
+        "PROPOSAL_ALREADY_EXISTS",
+        `active proposal ${active.proposal_id} is ${active.state} for ${active.business_object}:${active.object_id}`,
+      );
+    }
+
     const state = stateFromChangeSet(changeSet);
     const now = changeSet.created_at || new Date().toISOString();
     const insert = this.db.prepare(`
@@ -716,6 +743,20 @@ export class ProposalStore {
 
   getProposal(proposalId: string): StoredProposal | undefined {
     const row = this.db.prepare("SELECT * FROM proposals WHERE proposal_id = ?").get(proposalId);
+    return rowToProposal(row);
+  }
+
+  findActiveProposal(input: ActiveProposalLookup): StoredProposal | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM proposals
+      WHERE tenant_id = ?
+        AND action = ?
+        AND business_object = ?
+        AND object_id = ?
+        AND state IN ('pending_review', 'approved', 'pending_worker')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(input.tenant_id, input.action, input.business_object, input.object_id);
     return rowToProposal(row);
   }
 

@@ -26,7 +26,7 @@ export type AgentDslCapabilityAst = {
   primaryKey: string;
   tenantKey?: string;
   conflictKey?: string;
-  lookup?: { arg: string; column: string };
+  lookup?: { arg: string; column: string; line?: number };
   args: Record<string, { type: "string" | "number" | "boolean"; required?: boolean; max_length?: number; minimum?: number; maximum?: number; description?: string; line?: number }>;
   visibleFields: string[];
   keptOutFields: string[];
@@ -325,8 +325,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     }
     const lookup = item.text.match(/^LOOKUP\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
     if (lookup?.[1] && lookup[2]) {
-      capability.lookup = { arg: lookup[1], column: lookup[2] };
-      capability.primaryKey = lookup[2];
+      capability.lookup = { arg: lookup[1], column: lookup[2], line: item.line };
       if (!capability.args[lookup[1]]) capability.args[lookup[1]] = { type: "string", required: true, max_length: 128 };
       continue;
     }
@@ -415,6 +414,14 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   if (!capability.context) throw dslError(block.line, 1, "CAPABILITY_CONTEXT_REQUIRED", `${block.name} requires USING CONTEXT`);
   if (!capability.schema || !capability.table) throw dslError(block.line, 1, "CAPABILITY_SUBJECT_REQUIRED", `${block.name} requires ON schema.table`);
   if (!capability.tenantKey) throw dslError(block.line, 1, "CAPABILITY_TENANT_REQUIRED", `${block.name} requires TENANT KEY for 0.1 DSL`);
+  if (capability.lookup && capability.lookup.column !== capability.primaryKey) {
+    throw dslError(
+      capability.lookup.line ?? block.line,
+      1,
+      "LOOKUP_COLUMN_UNSUPPORTED",
+      `${block.name} LOOKUP BY ${capability.lookup.column} cannot be represented by spec 0.1; use declared PRIMARY KEY ${capability.primaryKey}`,
+    );
+  }
   if (capability.visibleFields.length === 0) throw dslError(block.line, 1, "CAPABILITY_VISIBLE_FIELDS_REQUIRED", `${block.name} requires ALLOW READ`);
   if (Object.keys(capability.args).length === 0 && capability.lookup) capability.args[capability.lookup.arg] = { type: "string", required: true, max_length: 128 };
   if (Object.keys(capability.args).length === 0) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
