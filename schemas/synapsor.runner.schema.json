@@ -5,12 +5,36 @@
   "description": "Configuration for local Synapsor Runner MCP capabilities over Postgres/MySQL.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "mode", "sources", "trusted_context", "capabilities"],
+  "required": ["version", "mode"],
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "cloud" } }, "required": ["mode"] },
+      "then": { "required": ["cloud"] },
+      "else": { "required": ["sources"] }
+    },
+    {
+      "if": { "required": ["contracts"] },
+      "then": {},
+      "else": {
+        "if": { "properties": { "mode": { "not": { "const": "cloud" } } }, "required": ["mode"] },
+        "then": {
+          "required": ["capabilities"],
+          "properties": { "capabilities": { "minItems": 1 } },
+          "anyOf": [
+            { "required": ["trusted_context"] },
+            { "required": ["contexts"] }
+          ]
+        }
+      }
+    }
+  ],
   "properties": {
     "version": {
+      "description": "Runner configuration contract version. Version 1 is the current public format.",
       "const": 1
     },
     "mode": {
+      "description": "Local execution mode. review permits proposals and trusted writeback; cloud delegates reviewed tools to Synapsor Cloud.",
       "type": "string",
       "enum": ["read_only", "shadow", "review", "cloud"]
     },
@@ -21,20 +45,24 @@
       "default": 1
     },
     "strict": {
+      "description": "Reject unknown configuration keys when true.",
       "type": "boolean",
       "default": true
     },
     "storage": {
+      "description": "Local proposal, evidence, receipt, and replay ledger. Relative sqlite_path values resolve from the Runner process working directory.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "sqlite_path": {
+          "description": "SQLite ledger path. The file can contain visible business-data evidence and is created with owner-only permissions on POSIX.",
           "type": "string",
           "minLength": 1
         }
       }
     },
     "sources": {
+      "description": "Named Postgres/MySQL sources. Contract SOURCE names must match these keys.",
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {
@@ -42,30 +70,69 @@
       }
     },
     "trusted_context": {
+      "description": "Default operator-controlled tenant/principal binding. These values are never model arguments.",
       "$ref": "#/$defs/trusted_context"
     },
     "contexts": {
+      "description": "Named trusted contexts referenced by capabilities or portable contracts.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/trusted_context"
       }
     },
     "executors": {
+      "description": "Trusted app-owned writeback executors. URLs, tokens, and commands are referenced through environment-variable names.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/executor"
       }
     },
-    "capabilities": {
+    "contracts": {
+      "description": "Portable @synapsor/spec contract files. Relative paths resolve from this config file's directory.",
       "type": "array",
       "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "capabilities": {
+      "description": "Embedded compatibility capabilities. May be empty when contracts supplies the capability catalog.",
+      "type": "array",
+      "minItems": 0,
       "items": {
         "$ref": "#/$defs/capability"
       }
     },
+    "policies": {
+      "description": "Embedded reviewed policies. Contract-authored policies are merged into the same runtime catalog.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/policy" }
+    },
+    "approvals": {
+      "description": "Local approval behavior overrides.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disable_auto_approval": { "type": "boolean" }
+      }
+    },
     "cloud": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": false,
+      "required": ["base_url_env", "runner_token_env", "adapter_id"],
+      "properties": {
+        "base_url_env": { "$ref": "#/$defs/env_name" },
+        "runner_token_env": { "$ref": "#/$defs/env_name" },
+        "runner_id": { "type": "string", "minLength": 1 },
+        "runner_version": { "type": "string", "minLength": 1 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "adapter_id": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 },
+        "engines": { "type": "array", "minItems": 1, "items": { "enum": ["postgres", "mysql"] } },
+        "capabilities": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "session": { "type": "object" }
+      }
     }
   },
   "$defs": {
@@ -94,15 +161,18 @@
           "enum": ["postgres", "mysql"]
         },
         "read_url_env": {
+          "description": "Environment variable containing the least-privilege read connection URL.",
           "$ref": "#/$defs/env_name"
         },
         "write_url_env": {
+          "description": "Environment variable containing the separate trusted writer URL. It is never exposed over MCP.",
           "$ref": "#/$defs/env_name"
         },
         "read_only": {
           "type": "boolean"
         },
         "statement_timeout_ms": {
+          "description": "Per-read database statement timeout in milliseconds.",
           "type": "integer",
           "minimum": 1
         },
@@ -295,8 +365,15 @@
             },
             "required_role": {
               "type": "string"
+            },
+            "policy": {
+              "type": "string",
+              "minLength": 1
             }
           }
+        },
+        "writeback": {
+          "$ref": "#/$defs/writeback"
         },
         "single_tenant_dev_ack": {
           "type": "boolean"
@@ -406,6 +483,42 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "writeback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "enum": ["direct_sql", "app_handler", "cloud_worker", "none"]
+        },
+        "executor": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["approval", "settlement", "scope", "custom"] },
+        "mode": { "type": "string" },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "max"],
+            "properties": {
+              "field": { "$ref": "#/$defs/identifier" },
+              "max": { "type": "integer", "minimum": 0 }
             }
           }
         }

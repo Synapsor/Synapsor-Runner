@@ -70,6 +70,16 @@ CREATE TABLE IF NOT EXISTS public.orders (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.synapsor_writeback_receipts (
+  idempotency_key text PRIMARY KEY,
+  job_id text UNIQUE NOT NULL,
+  proposal_id text NOT NULL,
+  status text NOT NULL,
+  result_hash text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz
+);
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'synapsor_reader') THEN
@@ -83,8 +93,8 @@ $$;
 
 GRANT CONNECT ON DATABASE synapsor_support_billing_agent TO synapsor_reader, synapsor_writer;
 GRANT USAGE ON SCHEMA public TO synapsor_reader, synapsor_writer;
-GRANT CREATE ON SCHEMA public TO synapsor_writer;
 GRANT SELECT ON public.tenants, public.customers, public.support_tickets, public.invoices, public.credits, public.agent_actions, public.orders TO synapsor_reader, synapsor_writer;
+GRANT SELECT, INSERT, UPDATE ON public.synapsor_writeback_receipts TO synapsor_writer;
 GRANT UPDATE (plan_credit_cents, credit_reason, updated_at) ON public.customers TO synapsor_writer;
 GRANT UPDATE (status, resolution_note, updated_at) ON public.support_tickets TO synapsor_writer;
 GRANT UPDATE (late_fee_cents, waiver_reason, updated_at) ON public.invoices TO synapsor_writer;

@@ -65,9 +65,9 @@ npx -y -p @synapsor/runner synapsor-runner writeback grants --engine postgres --
 ```
 
 `writeback doctor --check-db` connects with the configured writer credential and
-checks the receipt table path. That check can create the receipt table if the
-writer has `CREATE`, so run it only against staging/disposable databases or
-after reviewing the printed migration/grants.
+checks the pre-created receipt table path in a rolled-back transaction. Apply
+the printed migration as an administrator first; the steady-state writer needs
+table `SELECT`/`INSERT`/`UPDATE`, not schema `CREATE`.
 
 ## `http_handler`
 

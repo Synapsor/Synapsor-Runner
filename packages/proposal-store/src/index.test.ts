@@ -88,9 +88,56 @@ describe("proposal store", () => {
     const store = new ProposalStore(storePath);
     try {
       expect(await fs.stat(storePath)).toBeTruthy();
+      if (process.platform !== "win32") {
+        expect((await fs.stat(storePath)).mode & 0o777).toBe(0o600);
+      }
     } finally {
       store.close();
       await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("tightens an existing POSIX store to owner-only permissions", async () => {
+    if (process.platform === "win32") return;
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-mode-"));
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(storePath, "");
+    await fs.chmod(storePath, 0o644);
+    const store = new ProposalStore(storePath);
+    try {
+      expect((await fs.stat(storePath)).mode & 0o777).toBe(0o600);
+    } finally {
+      store.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks active duplicates but permits a successor after conflict", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      const duplicate = structuredClone(changeSet);
+      duplicate.proposal_id = "wrp_duplicate";
+      duplicate.integrity.proposal_hash = "sha256:duplicate";
+      expect(() => store.createProposal(duplicate)).toThrowError(expect.objectContaining({
+        code: "PROPOSAL_ALREADY_EXISTS",
+      }));
+
+      store.db.prepare("UPDATE proposals SET state = 'conflict' WHERE proposal_id = ?").run("wrp_123");
+      const successor = structuredClone(changeSet);
+      successor.proposal_id = "wrp_successor";
+      successor.integrity.proposal_hash = "sha256:successor";
+      successor.created_at = "2026-06-20T14:32:09Z";
+      expect(store.createProposal(successor).proposal_id).toBe("wrp_successor");
+      expect(store.getProposal("wrp_123")?.state).toBe("conflict");
+      expect(store.findActiveProposal({
+        tenant_id: "acme",
+        action: "billing.waive_late_fee",
+        business_object: "invoice",
+        object_id: "INV-3001",
+      })?.proposal_id).toBe("wrp_successor");
+    } finally {
+      store.close();
     }
   });
 

@@ -1,3 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { validateRunnerCapabilityConfig } from "./index.js";
 
@@ -69,6 +73,31 @@ const safeConfig = {
 };
 
 describe("runner capability config validation", () => {
+  it("keeps the public JSON Schema aligned with representative runtime shapes", () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+    const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas/synapsor.runner.schema.json"), "utf8"));
+    const schemaValidate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
+    const contractOnly = {
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: safeConfig.sources,
+      contracts: ["./synapsor.contract.json"],
+      capabilities: [],
+    };
+    const invalid = { ...structuredClone(safeConfig), execute_sql: "SELECT 1" };
+    const emptyWithoutContract = { ...structuredClone(safeConfig), capabilities: [] };
+
+    for (const accepted of [safeConfig, contractOnly]) {
+      expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
+      expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
+    }
+    expect(validateRunnerCapabilityConfig(invalid).ok).toBe(false);
+    expect(schemaValidate(invalid)).toBe(false);
+    expect(validateRunnerCapabilityConfig(emptyWithoutContract).ok).toBe(false);
+    expect(schemaValidate(emptyWithoutContract)).toBe(false);
+  });
+
   it("accepts reviewed read and proposal capabilities", () => {
     const result = validateRunnerCapabilityConfig(safeConfig);
     expect(result.ok).toBe(true);

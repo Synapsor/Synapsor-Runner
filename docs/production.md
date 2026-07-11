@@ -56,8 +56,9 @@ Write credential for direct `sql_update`:
 
 - can update only the allowed business columns;
 - cannot modify primary-key or tenant columns;
-- can create/write the `synapsor_writeback_receipts` table, or the table is
-  pre-created and granted by an administrator;
+- can `SELECT`/`INSERT`/`UPDATE` the administrator-created
+  `synapsor_writeback_receipts` table;
+- does not need schema `CREATE` during doctor or apply;
 - is never exposed to MCP clients.
 
 Example config:
@@ -81,7 +82,7 @@ worker flows that do not pass a local config.
 ## Receipt Table
 
 Direct SQL writeback stores idempotency receipts in the source database. Runner
-creates this table if allowed:
+expects an administrator to create this table before steady-state operation:
 
 ```sql
 CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (...);
@@ -97,10 +98,9 @@ synapsor-runner doctor --config synapsor.runner.json --check-writeback
 
 For MySQL, replace `postgres` with `mysql`.
 
-If the writer should not create application-schema tables, pre-create the
-receipt table with an administrator role, grant only the needed receipt-table
-permissions to the writer, or use an app-owned executor that stores receipts in
-your application boundary.
+Grant only receipt-table `SELECT`/`INSERT`/`UPDATE` and schema usage to the
+writer; schema `CREATE` is not required by doctor or apply. Use an app-owned
+executor when receipt storage belongs inside your application boundary.
 
 ## Direct Writeback Vs App-Owned Executor
 
@@ -286,4 +286,3 @@ Before promoting a package or calling a build production-candidate:
 The release gate should cover typecheck, focused tests, packed-package install,
 quick demo, own-db fixture, MCP stdio/HTTP checks, direct writeback,
 app-owned executor paths, package dry-run, and docs/package consistency.
-

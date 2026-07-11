@@ -9,6 +9,7 @@
     { "path": "../config" },
     { "path": "../control-plane-client" },
     { "path": "../proposal-store" },
+    { "path": "../postgres" },
     { "path": "../protocol" },
     { "path": "../spec" }
   ],

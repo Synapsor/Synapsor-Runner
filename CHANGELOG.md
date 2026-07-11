@@ -2,12 +2,37 @@
 
 ## Unreleased
 
+## 0.1.16
+
+### Fleet-Lab Runner Hardening
+
+- Preserves native Postgres timestamp precision from scoped reads through
+  evidence, proposals, conflict guards, and guarded writeback.
+- Keeps conflicts immutable and inspectable while allowing a freshly based
+  successor proposal for the same object.
+- Returns `PROPOSAL_ALREADY_EXISTS` with the active proposal id/state instead
+  of a generic `INTERNAL` error, and emits a matching structured log event.
+- Rejects DSL `LOOKUP ... BY` columns that differ from the declared primary key
+  instead of silently changing contract meaning.
+- Uses administrator-created receipt tables with least-privilege steady-state
+  writer grants; doctor/apply no longer require schema `CREATE`.
+- Aligns audit contract-path resolution, Runner JSON Schema, owner-only local
+  store permissions, CLI help, and reference documentation with runtime
+  behavior.
+- Stages `@synapsor/dsl@0.1.6` and `@synapsor/runner@0.1.16`;
+  `@synapsor/spec` remains `0.1.4` because canonical contract semantics did not
+  change.
+
+## 0.1.15
+
 ### Editor-Friendly DSL Source Files
 
 - Prefers `.synapsor.sql` for DSL source files so editors can provide generic
   SQL highlighting while keeping `.synapsor` backward compatible.
 - Keeps DSL semantics, Runner behavior, and generated canonical JSON unchanged.
 - Stages `@synapsor/dsl@0.1.5` and `@synapsor/runner@0.1.15`.
+
+## 0.1.14
 
 ### README Path Polish
 

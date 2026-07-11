@@ -64,6 +64,7 @@ describe("mysql adapter", () => {
 
     expect(result.status).toBe("already_applied");
     expect(result.result_hash).toBe("sha256:existing");
+    expect(connection.sqlLog.some((sql) => /CREATE\s+TABLE/i.test(sql))).toBe(false);
     expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(false);
     expect(connection.sqlLog).toContain("COMMIT");
   });

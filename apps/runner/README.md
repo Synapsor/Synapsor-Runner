@@ -160,6 +160,12 @@ with [Capability Authoring](docs/capability-authoring.md). Use `.synapsor.sql`
 for DSL source files when you want editors to provide generic SQL highlighting;
 legacy `.synapsor` files remain supported and produce the same contract JSON.
 
+Use the [DSL Reference](docs/dsl-reference.md) for exact authoring grammar and
+the [Runner Config Reference](docs/runner-config-reference.md) for every wiring
+key, default, and path-resolution rule. The
+[Store Lifecycle guide](docs/store-lifecycle.md) explains ledger sensitivity,
+owner-only permissions, inspection commands, and retention.
+
 ## OSS And Cloud
 
 Synapsor Runner works by itself for local and single-node deployments: your

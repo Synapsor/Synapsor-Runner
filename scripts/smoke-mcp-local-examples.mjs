@@ -45,7 +45,9 @@ const scenarios = [
     expectedProposed: 0,
     unchangedSql: "SELECT late_fee_cents || '|' || COALESCE(waiver_reason, '') FROM public.invoices WHERE id = 'INV-3001'",
     expectedUnchanged: "5500|",
-    resetSql: "UPDATE public.invoices SET late_fee_cents = 5500, waiver_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'INV-3001'; DELETE FROM public.synapsor_writeback_receipts;",
+    resetSql: "UPDATE public.invoices SET late_fee_cents = 5500, waiver_reason = NULL, updated_at = now() WHERE id = 'INV-3001'; DELETE FROM public.synapsor_writeback_receipts;",
+    precisionSql: "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS.US') FROM public.invoices WHERE id = 'INV-3001'",
+    successorSql: "SELECT late_fee_cents::text FROM public.invoices WHERE id = 'INV-3001'",
     staleMutateSql: "UPDATE public.invoices SET updated_at = '2026-06-20T15:00:00Z' WHERE id = 'INV-3001';",
     finalSql: "SELECT late_fee_cents || '|' || COALESCE(waiver_reason, '') FROM public.invoices WHERE id = 'INV-3001'",
     expectedFinal: "5500|",
@@ -82,6 +84,7 @@ const scenarios = [
     expectedUnchanged: "open|",
     resetSql: "UPDATE public.tickets SET status = 'open', resolution_note = NULL, updated_at = '2026-06-20T12:00:00Z' WHERE id = 'T-1042'; DELETE FROM public.synapsor_writeback_receipts;",
     staleMutateSql: "UPDATE public.tickets SET updated_at = '2026-06-20T15:00:00Z' WHERE id = 'T-1042';",
+    successorSql: "SELECT status FROM public.tickets WHERE id = 'T-1042'",
     finalSql: "SELECT status || '|' || COALESCE(resolution_note, '') FROM public.tickets WHERE id = 'T-1042'",
     expectedFinal: "open|",
     disallowedColumn: "internal_notes",
@@ -115,8 +118,10 @@ const scenarios = [
     expectedProposed: "review_required",
     unchangedSql: "SELECT CONCAT(refund_review_status, '|', COALESCE(refund_note, '')) FROM orders WHERE id = 'O-1001'",
     expectedUnchanged: "none|",
-    resetSql: "UPDATE orders SET refund_review_status = 'none', refund_note = NULL, updated_at = '2026-06-20 12:00:00' WHERE id = 'O-1001'; DELETE FROM synapsor_writeback_receipts;",
+    resetSql: "UPDATE orders SET refund_review_status = 'none', refund_note = NULL, updated_at = CURRENT_TIMESTAMP(6) WHERE id = 'O-1001'; DELETE FROM synapsor_writeback_receipts;",
+    precisionSql: "SELECT DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') FROM orders WHERE id = 'O-1001'",
     staleMutateSql: "UPDATE orders SET updated_at = '2026-06-20 15:00:00' WHERE id = 'O-1001';",
+    successorSql: "SELECT refund_review_status FROM orders WHERE id = 'O-1001'",
     finalSql: "SELECT CONCAT(refund_review_status, '|', COALESCE(refund_note, '')) FROM orders WHERE id = 'O-1001'",
     expectedFinal: "none|",
     disallowedColumn: "credit_card_note",
@@ -158,6 +163,7 @@ const scenarios = [
     expectedUnchanged: "0|",
     resetSql: "UPDATE public.customers SET plan_credit_cents = 0, credit_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'CUS-3001'; DELETE FROM public.synapsor_writeback_receipts;",
     staleMutateSql: "UPDATE public.customers SET updated_at = '2026-06-20T15:00:00Z' WHERE id = 'CUS-3001';",
+    successorSql: "SELECT plan_credit_cents::text FROM public.customers WHERE id = 'CUS-3001'",
     finalSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
     expectedFinal: "0|",
     autoApprovedFinalSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
@@ -361,13 +367,18 @@ async function exerciseMcpScenario(scenario) {
   run("docker", ["compose", "up", "-d"], { cwd: scenario.exampleDir });
   try {
     await waitForDatabase(scenario);
+    const doctor = runner(scenario, ["doctor", "--config", scenario.configPath, "--check-writeback", "--json"]);
+    const doctorReport = parseCliJson(doctor);
+    assert(!doctorReport.checks?.some((check) => check.level === "fail"), "Least-privilege writeback doctor failed", doctorReport);
+    console.log(`ACCEPT ${scenario.label} writer uses a pre-created receipt table without CREATE privilege`);
 
     if (scenario.autoApprovedProposalArgs) {
       await exerciseSupportPlanCreditPolicyChecks(scenario);
-      dockerSql(scenario, scenario.resetSql);
+      resetScenario(scenario);
       resetLocalStore(scenario);
     }
 
+    resetScenario(scenario);
     console.log(`\n== ${scenario.label}: MCP stdio tools/list and tool calls ==`);
     let firstProposalId = "";
     await withMcpClient(scenario, async (client) => {
@@ -412,6 +423,14 @@ async function exerciseMcpScenario(scenario) {
       assert(evidence.contents?.[0]?.text?.includes("external_row"), "Evidence resource did not include external row", evidence);
     });
 
+    if (scenario.precisionSql) {
+      const stored = proposalJson(scenario, firstProposalId);
+      const guard = String(stored.proposal?.change_set?.guards?.expected_version?.value ?? "");
+      assert(/\.\d{6}(?:[+-]\d{2}(?::?\d{2})?)?$/.test(guard), "Proposal did not preserve PostgreSQL microseconds", guard);
+      assert(!/\.\d{3}000(?:[+-]\d{2}(?::?\d{2})?)?$/.test(guard), "Fixture lost sub-millisecond precision", guard);
+      console.log("ACCEPT proposal preserved database-native timestamp precision");
+    }
+
     const unchanged = dockerSql(scenario, scenario.unchangedSql);
     assert(unchanged === scenario.expectedUnchanged, "Source database changed before approval", unchanged);
     console.log("ACCEPT source row unchanged after proposal");
@@ -449,7 +468,7 @@ async function exerciseMcpScenario(scenario) {
     console.log("ACCEPT replay export contains applied receipt");
 
     console.log(`== ${scenario.label}: stale-row conflict proof ==`);
-    dockerSql(scenario, scenario.resetSql);
+    resetScenario(scenario);
 
     let staleProposalId = "";
     await withMcpClient(scenario, async (client) => {
@@ -484,6 +503,25 @@ async function exerciseMcpScenario(scenario) {
       "Replay should include writeback_conflict event",
       conflictReplay,
     );
+
+    let successorProposalId = "";
+    await withMcpClient(scenario, async (client) => {
+      const proposed = structured(await client.callTool({
+        name: scenario.proposalTool,
+        arguments: scenario.staleProposalArgs,
+      }));
+      assert(proposed.status === "review_required", "Conflict should permit a fresh successor proposal", proposed);
+      successorProposalId = String(proposed.proposal_id);
+    });
+    assert(successorProposalId !== staleProposalId, "Successor proposal must retain distinct immutable history", { staleProposalId, successorProposalId });
+    runner(scenario, ["proposals", "approve", successorProposalId, "--store", scenario.storePath, "--actor", "local_reviewer", "--yes"]);
+    const successor = parseCliJson(runner(scenario, ["apply", successorProposalId, "--config", scenario.configPath, "--store", scenario.storePath, "--json"]));
+    assert(successor.status === "applied" && successor.affected_rows === 1, "Successor proposal did not apply after conflict", successor);
+    if (scenario.successorSql) {
+      assert(dockerSql(scenario, scenario.successorSql) === String(scenario.expectedProposed), "Successor changed the wrong business value");
+    }
+    assert(proposalJson(scenario, staleProposalId).proposal?.state === "conflict", "Original conflict history was rewritten");
+    console.log("ACCEPT conflict retained and fresh successor applied");
   } finally {
     run("docker", ["compose", "down", "-v"], { cwd: scenario.exampleDir, allowFailure: true });
     fs.rmSync(scenario.tmpDir, { recursive: true, force: true });
@@ -524,7 +562,7 @@ async function exerciseSupportPlanCreditPolicyChecks(scenario) {
   assert(autoApprovedRow === scenario.expectedAutoApprovedFinal, "Auto-approved writeback changed the wrong source row", autoApprovedRow);
   console.log("ACCEPT small credit auto-approved by policy and applied only through explicit writeback");
 
-  dockerSql(scenario, scenario.resetSql);
+  resetScenario(scenario);
   resetLocalStore(scenario);
   const cliResult = parseCliJson(runner(scenario, [
     "propose",
@@ -540,7 +578,7 @@ async function exerciseSupportPlanCreditPolicyChecks(scenario) {
   assert(cliResult.approval?.mode === "policy", "CLI propose did not use the same policy approval", cliResult);
   console.log("ACCEPT CLI propose and MCP propose share the same policy outcome");
 
-  dockerSql(scenario, scenario.resetSql);
+  resetScenario(scenario);
   resetLocalStore(scenario);
   console.log(`== ${scenario.label}: human review tier ==`);
   let reviewProposalId = "";
@@ -563,7 +601,7 @@ async function exerciseSupportPlanCreditPolicyChecks(scenario) {
   assert(reviewRow === scenario.expectedReviewRequiredFinal, "Human-approved writeback changed the wrong source row", reviewRow);
   console.log("ACCEPT larger credit stayed pending until local human approval");
 
-  dockerSql(scenario, scenario.resetSql);
+  resetScenario(scenario);
   resetLocalStore(scenario);
   console.log(`== ${scenario.label}: hard bound rejection tier ==`);
   const beforeStats = storeStats(scenario);
@@ -583,8 +621,20 @@ async function exerciseSupportPlanCreditPolicyChecks(scenario) {
   assert(afterStats.proposals === beforeStats.proposals, "Out-of-bounds credit created a proposal row", { beforeStats, afterStats });
   console.log("ACCEPT $1000 credit rejected before proposal creation");
 
-  dockerSql(scenario, scenario.resetSql);
+  resetScenario(scenario);
   resetLocalStore(scenario);
+}
+
+function resetScenario(scenario) {
+  dockerSql(scenario, scenario.resetSql);
+  if (!scenario.precisionSql) return;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const value = dockerSql(scenario, scenario.precisionSql);
+    const fraction = value.match(/\.(\d{6})/)?.[1];
+    if (fraction && !fraction.endsWith("000")) return;
+    dockerSql(scenario, scenario.resetSql);
+  }
+  throw new Error(`${scenario.label} could not produce a sub-millisecond database timestamp`);
 }
 
 for (const scenario of scenarios) {

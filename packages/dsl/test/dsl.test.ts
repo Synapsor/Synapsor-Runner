@@ -9,6 +9,19 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const repoRoot = path.resolve(packageRoot, "../..");
 
 describe("@synapsor/dsl", () => {
+  it("rejects LOOKUP columns that differ from the declared primary key", () => {
+    const invalid = fs.readFileSync(path.join(packageRoot, "fixtures/invalid/non-primary-lookup.synapsor.sql"), "utf8");
+    const result = validateAgentDsl(invalid);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "LOOKUP_COLUMN_UNSUPPORTED",
+        message: expect.stringContaining("PRIMARY KEY id"),
+      }),
+    ]));
+    expect(() => compileAgentDsl(invalid)).toThrow(AgentDslError);
+  });
+
   it("parses context, read/proposal capabilities, and workflow", () => {
     const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8");
     const ast = parseAgentDsl(source);

@@ -9,6 +9,44 @@ Default path:
 ./.synapsor/local.db
 ```
 
+## Data sensitivity and permissions
+
+The ledger contains copies of the business fields allowed by each capability:
+visible before/after evidence, proposal diffs, actor/tenant metadata, query
+fingerprints, approvals, receipts, and replay events. Treat it like a scoped
+database extract, not disposable cache data.
+
+Runner creates new POSIX store files with owner-only mode `0600` and tightens an
+owned existing store when it opens it. On Windows, use the operating system's
+file ACLs. Use encrypted disks, restrict OS accounts, and set a retention policy
+appropriate for the visible business data.
+
+`KEEP OUT` fields and redacted query parameters are not written to normal
+evidence records. They do not make the rest of the ledger non-sensitive.
+
+Direct SQLite inspection is supported **read-only** for independent verification:
+
+```bash
+sqlite3 -readonly ./.synapsor/local.db '.tables'
+```
+
+Do not mutate the database directly. Its internal tables may change between
+releases and are not a public storage API; use Runner commands for automation.
+
+## Inspect the ledger
+
+| Question | Command |
+| --- | --- |
+| What did the model propose? | `synapsor-runner proposals show <proposal-id> --details` |
+| What data supported it? | `synapsor-runner evidence list --proposal <proposal-id>` then `evidence show <evidence-id> --details` |
+| What query was run? | `synapsor-runner query-audit list --proposal <proposal-id>` |
+| Who approved or rejected it? | `synapsor-runner proposals show <proposal-id> --details` |
+| Did guarded writeback apply? | `synapsor-runner receipts list --proposal <proposal-id>` |
+| What happened end to end? | `synapsor-runner replay show --proposal <proposal-id> --details` |
+| What happened to one object? | `synapsor-runner activity search --object invoice:INV-3001` |
+| What are the latest events? | `synapsor-runner events tail` |
+| How large is the store? | `synapsor-runner store stats --store ./.synapsor/local.db` |
+
 ## Server leases
 
 MCP server modes write a small lease file next to the store:

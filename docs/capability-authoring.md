@@ -12,6 +12,11 @@ Use `.synapsor.sql` as the preferred DSL source extension because editors can
 provide generic SQL highlighting. Legacy `.synapsor` files remain supported;
 the suffix does not change DSL semantics or generated canonical JSON.
 
+For exact clause grammar, ordering, constraints, fixed-string patches, and the
+primary-key-only lookup rule, see the [DSL Reference](dsl-reference.md). For all
+local wiring keys and path rules, see the
+[Runner Config Reference](runner-config-reference.md).
+
 Use `synapsor.runner.json` for local wiring: database env var names, SQLite
 store path, MCP transport settings, and local development flags. The model sees
 semantic capabilities such as `billing.inspect_invoice`, not raw SQL, table

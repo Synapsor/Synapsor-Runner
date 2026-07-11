@@ -63,9 +63,9 @@ The target-table probe uses fixed schema/table/column identifiers from the
 reviewed config. It does not accept model SQL, user SQL, arbitrary table names,
 or arbitrary column names. It runs inside a transaction and rolls back.
 
-The receipt-table probe can create `synapsor_writeback_receipts` if the writer
-has permission. If your policy does not allow Runner to create tables in the
-application schema, pre-create the table and grant access:
+An administrator must pre-create `synapsor_writeback_receipts` and grant the
+steady-state writer access. The doctor probe does not execute DDL or require
+schema `CREATE`:
 
 ```bash
 synapsor-runner writeback migration --engine postgres --schema synapsor

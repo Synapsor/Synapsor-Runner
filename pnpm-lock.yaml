@@ -84,6 +84,9 @@ importers:
 
   packages/config:
     devDependencies:
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -150,6 +153,9 @@ importers:
       '@synapsor-runner/control-plane-client':
         specifier: workspace:*
         version: link:../control-plane-client
+      '@synapsor-runner/postgres':
+        specifier: workspace:*
+        version: link:../postgres
       '@synapsor-runner/proposal-store':
         specifier: workspace:*
         version: link:../proposal-store

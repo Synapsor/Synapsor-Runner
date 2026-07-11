@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { Pool } from "pg";
+import { Pool, types as pgTypes, type PoolConfig } from "pg";
 import type { WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
 import type { ApplyAdapter, RunnerConfig } from "@synapsor-runner/worker-core";
 
@@ -16,6 +16,27 @@ export const postgresReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_wri
 export type PostgresApplyClient = {
   query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
 };
+
+const POSTGRES_TIMESTAMP_OIDS = new Set([1114, 1184]);
+
+/** Keep database timestamp precision intact instead of coercing through JS Date. */
+export function postgresPoolConfig(connectionString: string): PoolConfig {
+  return {
+    connectionString,
+    types: {
+      getTypeParser(oid: number, format?: "text" | "binary") {
+        if ((format ?? "text") === "text" && POSTGRES_TIMESTAMP_OIDS.has(oid)) {
+          return (value: string) => value;
+        }
+        return pgTypes.getTypeParser(oid, format);
+      },
+    },
+  };
+}
+
+export function createPostgresPool(connectionString: string): Pool {
+  return new Pool(postgresPoolConfig(connectionString));
+}
 
 export function quotePostgresIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
@@ -140,7 +161,7 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
   if (!config.databaseUrl) {
     return failed(job, config, "DATABASE_UNAVAILABLE");
   }
-  const pool = new Pool({ connectionString: config.databaseUrl });
+  const pool = createPostgresPool(config.databaseUrl);
   const client = await pool.connect();
   try {
     return await applyPostgresJobWithClient(job, config, client);
@@ -155,7 +176,6 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
 
 export async function applyPostgresJobWithClient(job: WritebackJob, config: RunnerConfig, client: PostgresApplyClient): Promise<WritebackResult> {
   return await withTransaction(client, async () => {
-    await client.query(postgresReceiptMigration);
     const existing = await claimReceipt(client, job, config);
     if (existing) return existing;
 
@@ -257,11 +277,10 @@ function failed(job: WritebackJob, config: RunnerConfig, code: string): Writebac
 export const postgresAdapter: ApplyAdapter = {
   async doctor(config) {
     if (!config.databaseUrl) return { ok: false, details: { error: "database URL required; local config apply reads source.write_url_env, legacy workers use SYNAPSOR_DATABASE_URL" } };
-    const pool = new Pool({ connectionString: config.databaseUrl });
+    const pool = createPostgresPool(config.databaseUrl);
     const client = await pool.connect();
     try {
       const result = await client.query("SELECT version()");
-      await client.query(postgresReceiptMigration);
       await client.query("BEGIN");
       try {
         const doctorId = `doctor-${Date.now()}`;

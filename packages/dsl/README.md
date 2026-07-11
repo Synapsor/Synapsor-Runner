@@ -136,3 +136,7 @@ try {
 Unsupported Cloud-generated clauses such as `ROOT EXTERNAL`,
 `JOIN EXTERNAL`, `RETURN ANSWER WITH CITATIONS`, `AUTO BRANCH`, or `AUTO MERGE`
 fail explicitly instead of being ignored.
+
+The complete clause grammar and constraints, including primary-key-only
+`LOOKUP`, fixed-string `PATCH`, workflow declarations, and writeback forms, are
+in the [Synapsor DSL Reference](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/dsl-reference.md).

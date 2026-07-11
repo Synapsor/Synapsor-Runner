@@ -12,11 +12,11 @@ import {
   ControlPlaneClient,
   type AdapterToolCatalogEntry,
 } from "@synapsor-runner/control-plane-client";
-import { ProposalStore, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { createPostgresPool } from "@synapsor-runner/postgres";
+import { ProposalStore, ProposalStoreError, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions, type ChangeSetV1 } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
-import { Pool } from "pg";
 import { z } from "zod";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
@@ -228,6 +228,7 @@ export type SafeToolErrorCode =
   | "VERSION_CONFLICT"
   | "MULTI_ROW_BLOCKED"
   | "APPROVAL_REQUIRED"
+  | "PROPOSAL_ALREADY_EXISTS"
   | "TEMPORARILY_UNAVAILABLE"
   | "INTERNAL";
 
@@ -1346,7 +1347,28 @@ async function callConfiguredTool(input: {
     queryFingerprint,
     objectId,
   });
-  const proposal = input.store.createProposal(changeSet);
+  const activeProposal = input.store.findActiveProposal({
+    tenant_id: context.tenant_id,
+    action: capability.name,
+    business_object: capability.target.table,
+    object_id: objectId,
+  });
+  if (activeProposal) throw proposalAlreadyExists(activeProposal);
+  let proposal: StoredProposal;
+  try {
+    proposal = input.store.createProposal(changeSet);
+  } catch (error) {
+    if (error instanceof ProposalStoreError && error.code === "PROPOSAL_ALREADY_EXISTS") {
+      const existing = input.store.findActiveProposal({
+        tenant_id: context.tenant_id,
+        action: capability.name,
+        business_object: capability.target.table,
+        object_id: objectId,
+      });
+      if (existing) throw proposalAlreadyExists(existing);
+    }
+    throw error;
+  }
   const approvalResult = maybeAutoApproveProposal({
     config: input.config,
     capability,
@@ -1680,6 +1702,9 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
   if (runtimeCode === "PROPOSALS_DISABLED") {
     return { code: "APPROVAL_REQUIRED", message: "Proposal tools are disabled for this runner mode.", retryable: false };
   }
+  if (runtimeCode === "PROPOSAL_ALREADY_EXISTS") {
+    return { code: "PROPOSAL_ALREADY_EXISTS", message: error instanceof Error ? error.message : "An active proposal already exists.", retryable: false };
+  }
   if (runtimeCode && (
     runtimeCode.startsWith("ARGUMENT_")
     || runtimeCode === "LOOKUP_ARG_MISSING"
@@ -1735,6 +1760,7 @@ function buildChangeSet(input: {
       : writebackMode === "direct_sql"
         ? "sql_update"
         : capabilityWritebackExecutor(input.capability);
+  const createdAt = new Date().toISOString();
   const proposalCore = {
     schema_version: protocolVersions.changeSet,
     proposal_id: stableId("wrp", {
@@ -1743,6 +1769,7 @@ function buildChangeSet(input: {
       object: input.objectId,
       before,
       patch,
+      created_at: createdAt,
     }),
     proposal_version: 1,
     action: input.capability.name,
@@ -1788,7 +1815,7 @@ function buildChangeSet(input: {
       executor: writebackExecutor,
     },
     source_database_mutated: false,
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
   } satisfies Omit<ChangeSetV1, "integrity">;
 
   return {
@@ -1821,7 +1848,7 @@ async function readCurrentRow(input: {
 async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
   const connectionString = envValue(input.env, input.source.read_url_env);
   if (!connectionString) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
-  const pool = new Pool({ connectionString });
+  const pool = createPostgresPool(connectionString);
   const client = await pool.connect();
   try {
     const query = buildSelect(input.capability, "$");
@@ -2135,6 +2162,21 @@ function scalar(value: unknown): Scalar {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "bigint") return Number(value);
   return String(value);
+}
+
+function proposalAlreadyExists(existing: StoredProposal): McpRuntimeError {
+  process.stderr.write(`${JSON.stringify({
+    level: "warn",
+    event: "proposal_already_exists",
+    proposal_id: existing.proposal_id,
+    state: existing.state,
+    capability: existing.action,
+    object_id: existing.object_id,
+  })}\n`);
+  return new McpRuntimeError(
+    "PROPOSAL_ALREADY_EXISTS",
+    `Active proposal ${existing.proposal_id} is already ${existing.state} for this object. Inspect or resolve it before proposing again.`,
+  );
 }
 
 function stableId(prefix: string, input: unknown): string {

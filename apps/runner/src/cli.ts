@@ -1362,7 +1362,7 @@ function formatPostgresReceiptMigration(schema?: string): string {
   if (!schema) {
     return [
       "-- Synapsor Runner direct SQL writeback receipt table.",
-      "-- Run this as a database owner, or grant CREATE on the target schema to the trusted writer.",
+      "-- Run this once as a database owner before doctor/apply. The steady-state writer does not need schema CREATE.",
       `${postgresReceiptMigration};`,
       "",
     ].join("\n");
@@ -1371,7 +1371,7 @@ function formatPostgresReceiptMigration(schema?: string): string {
   const qualified = `${quotedSchema}.synapsor_writeback_receipts`;
   return [
     "-- Synapsor Runner direct SQL writeback receipt table.",
-    "-- If you use a dedicated schema, ensure the writer connection search_path includes it.",
+    "-- Run this once as a database owner. If you use a dedicated schema, ensure the writer connection search_path includes it.",
     `CREATE SCHEMA IF NOT EXISTS ${quotedSchema};`,
     `${postgresReceiptMigration.replace("synapsor_writeback_receipts", qualified)};`,
     "",
@@ -1400,9 +1400,6 @@ function formatPostgresReceiptGrants(schema: string, writerRole: string): string
     `GRANT USAGE ON SCHEMA ${quotedSchema} TO ${quotedRole};`,
     `GRANT SELECT, INSERT, UPDATE ON TABLE ${table} TO ${quotedRole};`,
     "",
-    "-- If you want Runner to create the receipt table itself, also grant CREATE on the schema:",
-    `-- GRANT CREATE ON SCHEMA ${quotedSchema} TO ${quotedRole};`,
-    "",
     "-- If the schema is not public, make sure the writer connection search_path includes it.",
     `-- ALTER ROLE ${quotedRole} SET search_path = ${schema}, public;`,
     "",
@@ -1415,9 +1412,6 @@ function formatMysqlReceiptGrants(database: string, writerRole: string): string 
   return [
     "-- Least-privilege grants for a pre-created Synapsor Runner receipt table.",
     `GRANT SELECT, INSERT, UPDATE ON ${quotedDatabase}.synapsor_writeback_receipts TO ${account};`,
-    "",
-    "-- If you want Runner to create the receipt table itself, also grant CREATE on the database:",
-    `-- GRANT CREATE ON ${quotedDatabase}.* TO ${account};`,
     "",
   ].join("\n");
 }
@@ -2382,6 +2376,9 @@ async function doctor(args: string[] = []): Promise<number> {
   const configPath = optionalArg(args, "--config");
   if (configPath || await fileExists("synapsor.runner.json")) {
     return localDoctor(args);
+  }
+  if (!process.env.SYNAPSOR_CONTROL_PLANE_URL) {
+    throw new Error(`Local doctor requires --config ./synapsor.runner.json. Cloud worker doctor requires SYNAPSOR_CONTROL_PLANE_URL and the scoped worker environment.`);
   }
   const config = loadConfig();
   const logger = createLogger(config);
@@ -3515,6 +3512,9 @@ function formatApplyResult(job: WritebackJob, result: WritebackResult, dryRun: b
       "",
       "Why:",
       errorCode === "VERSION_CONFLICT" ? "conflict/version guard did not match" : errorCode || "guarded writeback returned conflict",
+      "",
+      "Next:",
+      "Re-inspect the current source row and create a fresh proposal. The conflicted proposal and receipt remain in replay history.",
       "",
     );
   }
@@ -6136,7 +6136,7 @@ async function readMcpAuditTarget(target: string, args: string[], timeoutMs: num
   }
   const parsed = JSON.parse(await fs.readFile(target, "utf8"));
   if (isRunnerConfigLike(parsed)) {
-    const runtime = createMcpRuntime(parsed as RuntimeConfig, { storePath: ":memory:" });
+    const runtime = createMcpRuntime(loadRuntimeConfigFromFile(target), { storePath: ":memory:" });
     try {
       return { tools: runtime.listTools() };
     } finally {
@@ -8627,6 +8627,12 @@ function proposalNextCommands(proposal: StoredProposal, proposalRef: string, sto
       `${cliCommandName()} replay show --proposal ${proposal.proposal_id}${storeSuffix}`,
     ];
   }
+  if (proposal.state === "conflict") {
+    return [
+      `${cliCommandName()} propose ${proposal.action} --json '<fresh reviewed input>'${storeSuffix}`,
+      `${cliCommandName()} replay show --proposal ${proposal.proposal_id}${storeSuffix}`,
+    ];
+  }
   return [
     `${cliCommandName()} replay show --proposal ${proposal.proposal_id}${storeSuffix}`,
   ];
@@ -8877,6 +8883,7 @@ Commands:
   start        Start guided own-database setup, or no-arg legacy worker polling
   up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
+  config       Validate local synapsor.runner.json wiring
   mcp          Serve safe semantic tools over MCP
   contract     Validate and normalize canonical Synapsor contract files
   dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
@@ -8906,6 +8913,7 @@ Examples:
   ${cmd} onboard db --from-env DATABASE_URL
   ${cmd} inspect --from-env DATABASE_URL
   ${cmd} init --wizard --from-env DATABASE_URL
+  ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} contract validate ./synapsor.contract.json
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
   ${cmd} dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json
@@ -8916,6 +8924,14 @@ Examples:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} propose billing.propose_late_fee_waiver --sample
   ${cmd} audit ./synapsor.runner.json
+`,
+    config: `Usage:
+  ${cmd} config validate --config ./synapsor.runner.json
+  ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
+
+Validate local Runner wiring before tools preview, doctor, smoke, or MCP serve.
+Contract paths are resolved relative to the config file. SQLite store paths are
+resolved by the Runner process working directory.
 `,
     contract: `Usage:
   ${cmd} contract validate ./synapsor.contract.json [--json]
@@ -9166,7 +9182,8 @@ Static MCP/database risk review only. This is not a security guarantee.
   ${cmd} doctor --first-run
 
 Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, direct SQL writeback readiness, and local store stats. Reports are redacted; do not paste secrets into issues.
-Use --check-writeback only after reviewing receipt-table DDL/grants; it connects with the trusted writer and can create the receipt table if the writer has permission.
+Use --check-writeback only after an administrator applies the receipt-table migration and grants. It verifies the pre-created table with the trusted writer inside a rolled-back transaction and does not require schema CREATE.
+Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_CONTROL_PLANE_URL plus the scoped worker environment.
 `,
     proposals: `Usage:
 	  ${cmd} proposals list [--tenant acme] [--capability billing.propose_late_fee_waiver] [--object invoice:INV-3001] [--status applied]
@@ -9202,6 +9219,7 @@ Inspect local query fingerprints, table names, row counts, and redacted-paramete
 	Inspect guarded writeback receipts recorded by the trusted runner path. Use --details for idempotency keys, receipt hashes, and runner metadata.
 `,
     apply: `Usage:
+  ${cmd} apply <proposal-id> [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} apply latest [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} apply --job job.json --config ./synapsor.runner.json --store ./.synapsor/local.db
 
@@ -9211,9 +9229,9 @@ With --config, the writer connection comes from source.write_url_env, such as
 SYNAPSOR_DATABASE_WRITE_URL. SYNAPSOR_DATABASE_URL is only the legacy fallback
 for direct worker/apply flows without a local config.
 
-Direct SQL writeback creates or writes synapsor_writeback_receipts for
-idempotency and replay, so the trusted writer needs permission for that table
-or an administrator must pre-create and grant it.
+Direct SQL writeback writes the administrator-created
+synapsor_writeback_receipts table for idempotency and replay. The trusted writer
+needs SELECT/INSERT/UPDATE on that table, but does not need schema CREATE.
 `,
     replay: `Usage:
   ${cmd} replay list [--tenant acme] [--object invoice:INV-3001]

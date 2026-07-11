@@ -8,6 +8,16 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.synapsor_writeback_receipts (
+  idempotency_key text PRIMARY KEY,
+  job_id text UNIQUE NOT NULL,
+  proposal_id text NOT NULL,
+  status text NOT NULL,
+  result_hash text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz
+);
+
 INSERT INTO public.invoices (id, tenant_id, customer_name, status, late_fee_cents, waiver_reason, updated_at)
 VALUES
   ('INV-3001', 'acme', 'Acme Robotics', 'overdue', 5500, NULL, '2026-06-20T14:31:08Z'),
@@ -33,6 +43,6 @@ $$;
 
 GRANT CONNECT ON DATABASE synapsor_runner_mcp_billing TO synapsor_reader, synapsor_writer;
 GRANT USAGE ON SCHEMA public TO synapsor_reader, synapsor_writer;
-GRANT CREATE ON SCHEMA public TO synapsor_writer;
 GRANT SELECT ON public.invoices TO synapsor_reader, synapsor_writer;
 GRANT UPDATE (late_fee_cents, waiver_reason, updated_at) ON public.invoices TO synapsor_writer;
+GRANT SELECT, INSERT, UPDATE ON public.synapsor_writeback_receipts TO synapsor_writer;

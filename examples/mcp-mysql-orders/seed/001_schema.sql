@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS orders (
   status_change_reason text,
   refund_review_status varchar(64) NOT NULL DEFAULT 'none',
   refund_note text,
-  updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 );
 
 CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
   proposal_id varchar(512) NOT NULL,
   status varchar(64) NOT NULL,
   result_hash varchar(128),
-  created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at timestamp NULL
+  created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  completed_at timestamp(6) NULL
 );
 
 INSERT INTO orders (id, tenant_id, customer_name, status, status_change_reason, refund_review_status, refund_note, updated_at)
@@ -40,6 +40,4 @@ GRANT SELECT ON synapsor_runner_mcp_orders.orders TO 'synapsor_writer'@'%';
 GRANT UPDATE (refund_review_status, refund_note, updated_at) ON synapsor_runner_mcp_orders.orders TO 'synapsor_writer'@'%';
 GRANT UPDATE (status, status_change_reason, updated_at) ON synapsor_runner_mcp_orders.orders TO 'synapsor_writer'@'%';
 GRANT SELECT, INSERT, UPDATE ON synapsor_runner_mcp_orders.synapsor_writeback_receipts TO 'synapsor_writer'@'%';
-GRANT CREATE ON synapsor_runner_mcp_orders.* TO 'synapsor_writer'@'%';
-
 FLUSH PRIVILEGES;

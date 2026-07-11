@@ -12,6 +12,25 @@ for the Synapsor Cloud CLI.
 
 ## Unreleased
 
+## 0.1.16
+
+### Fleet-Lab Runner Hardening
+
+- Preserves Postgres microseconds in proposal conflict guards and proves normal
+  `now()` rows apply exactly once while genuinely stale rows conflict.
+- Allows a new proposal after conflict without deleting or rewriting the old
+  proposal, receipt, or replay history.
+- Returns semantic active-proposal errors and rejects non-primary DSL lookups.
+- Removes schema-creation requirements from steady-state writeback, aligns audit
+  paths and JSON Schema with contract configs, and creates local ledgers with
+  owner-only POSIX permissions.
+- Adds complete DSL, Runner config, and ledger inspection/security references.
+
+Prepared package versions: `@synapsor/dsl@0.1.6` and
+`@synapsor/runner@0.1.16`. `@synapsor/spec@0.1.4` remains unchanged.
+
+## 0.1.15
+
 ### Editor-Friendly DSL Source Files
 
 - Prefers `.synapsor.sql` for DSL source files so editors can provide generic
@@ -23,6 +42,8 @@ for the Synapsor Cloud CLI.
 Prepared package versions: `@synapsor/dsl@0.1.5` and
 `@synapsor/runner@0.1.15`. The already-published `@synapsor/spec@0.1.4` does
 not change and must not be republished for this release.
+
+## 0.1.12
 
 ### Runner Version Invocation
 
@@ -398,9 +419,9 @@ not change and must not be republished for this release.
   `SYNAPSOR_DATABASE_WRITE_URL`.
 - `SYNAPSOR_DATABASE_URL` is accepted only as a legacy fallback for older
   direct worker/apply flows without a local config.
-- Direct SQL writeback creates or writes `synapsor_writeback_receipts` for
-  idempotency and replay. The trusted writer needs permission for that receipt
-  table, or an administrator must pre-create the table and grant access.
+- Direct SQL writeback writes `synapsor_writeback_receipts` for idempotency and
+  replay. Current releases require an administrator-created table and grant the
+  trusted writer table access without schema `CREATE`.
 - Use `synapsor-runner writeback doctor`, `writeback migration`, and
   `writeback grants` to inspect and prepare the direct writeback path.
 - Use app-owned `http_handler` or `command_handler` executors for rich writes

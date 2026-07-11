@@ -38,6 +38,9 @@ fixture directories:
 - `docs/dsl-json-parity.md`, DSL/spec tests, and the
   `numeric-bounds-transition` C++ export fixture cover richer DSL/JSON parity
   fields such as `returns_hint`, numeric bounds, and transition guards.
+- `packages/dsl/fixtures/invalid/non-primary-lookup.synapsor.sql` proves the
+  DSL rejects a lookup meaning that canonical spec 0.1 cannot represent,
+  instead of silently rewriting it to primary-key access.
 - The main Synapsor repo script `scripts/verify_contract_cloud_push.sh`
   verifies real Cloud push, retrieval, idempotent versioning, unauthorized
   rejection, and runner-bundle download against a live local control-plane.
