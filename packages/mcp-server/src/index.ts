@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,7 +14,7 @@ import {
   type AdapterToolCatalogEntry,
 } from "@synapsor-runner/control-plane-client";
 import { createPostgresPool } from "@synapsor-runner/postgres";
-import { ProposalStore, ProposalStoreError, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions, type ChangeSetV1 } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
@@ -98,7 +99,32 @@ export type RuntimeConfig = {
   contracts?: string[];
   policies?: PolicySpec[];
   approvals?: { disable_auto_approval?: boolean };
-  storage?: { sqlite_path?: string };
+  operator_identity?: {
+    provider: "dev_env" | "signed_key";
+    actor_env?: string;
+    roles_env?: string;
+    apply_roles?: string[];
+    operators?: Record<string, { public_key_path: string; roles: string[] }>;
+  };
+  session_auth?: {
+    provider: "jwt_hs256";
+    secret_env: string;
+    previous_secret_env?: string;
+    issuer?: string;
+    audience?: string;
+    tenant_claim?: string;
+    principal_claim?: string;
+    clock_skew_seconds?: number;
+  };
+  storage?: {
+    sqlite_path?: string;
+    shared_postgres?: {
+      mode: "mirror" | "runtime_store" | "disabled";
+      url_env: string;
+      schema?: string;
+      lock_timeout_ms?: number;
+    };
+  };
   sources?: Record<string, RuntimeSourceConfig>;
   trusted_context?: {
     provider: ContextProvider;
@@ -141,21 +167,22 @@ export type DbRowReader = (input: {
 
 export type McpRuntimeOptions = {
   env?: NodeJS.ProcessEnv;
-  store?: ProposalStore;
+  store?: ProposalRuntimeStore;
   storePath?: string;
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
   controlPlaneClient?: CloudAdapterClient;
   cloudTools?: LocalToolMetadata[];
+  trustedContext?: TrustedContext;
 };
 
 export type McpRuntime = {
   config: RuntimeConfig;
-  store: ProposalStore;
+  store: ProposalRuntimeStore;
   listTools(): LocalToolMetadata[];
   callTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
-  readResource(uri: string): Record<string, unknown>;
-  close(): void;
+  readResource(uri: string): Promise<Record<string, unknown>>;
+  close(): Promise<void>;
 };
 
 export type LocalToolMetadata = {
@@ -181,6 +208,7 @@ export type HttpMcpServerOptions = {
   log?: false | { write(chunk: string): unknown };
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
+  tls?: StreamableHttpTlsOptions;
 };
 
 export type HttpMcpServerHandle = {
@@ -188,6 +216,13 @@ export type HttpMcpServerHandle = {
   port: number;
   url: string;
   close(): Promise<void>;
+};
+
+export type StreamableHttpTlsOptions = {
+  cert: string;
+  key: string;
+  ca?: string;
+  requestClientCert?: boolean;
 };
 
 export type SynapsorMcpServerOptions = {
@@ -236,6 +271,7 @@ type StreamableHttpSession = {
   transport: StreamableHTTPServerTransport;
   runtime: McpRuntime;
   sessionId?: string;
+  authFingerprint: string;
   closed?: boolean;
 };
 
@@ -411,14 +447,17 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   assertValidRunnerCapabilityConfig(config);
   const env = options.env ?? process.env;
   const storePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+  const sharedPostgres = config.storage?.shared_postgres;
   const ownsStore = !options.store;
-  const store = options.store ?? new ProposalStore(storePath);
+  const store = options.store ?? createDefaultRuntimeStore(config, env, storePath);
   const readRow = options.readRow ?? readCurrentRow;
   const cloudClient = options.controlPlaneClient ?? (config.mode === "cloud" ? createCloudClient(config, env) : undefined);
   const cloudTools = options.cloudTools ?? [];
   const resultFormat = options.resultFormat ?? config.result_format ?? 1;
+  const trustedContext = options.trustedContext;
+  const assertLocalStoreAvailable = ownsStore && sharedPostgres?.mode !== "runtime_store";
   const assertStoreAvailable = () => {
-    if (ownsStore) assertPersistentStoreAvailable(storePath);
+    if (assertLocalStoreAvailable) assertPersistentStoreAvailable(storePath);
   };
 
   return {
@@ -426,26 +465,54 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
     store,
     listTools: () => config.mode === "cloud" ? cloudTools : listedLocalCapabilities(config).map((capability) => toolMetadata(capability)),
     callTool: async (name, args) => {
-      if (resultFormat === 2) {
-        try {
+      const capability = config.mode === "cloud" ? undefined : localCapabilities(config).find((item) => item.name === name);
+      try {
+        if (resultFormat === 2) {
           assertStoreAvailable();
-          return await callConfiguredToolV2({ config, env, store, readRow, cloudClient, name, args });
-        } catch (error) {
-          const capability = config.mode === "cloud" ? undefined : localCapabilities(config).find((item) => item.name === name);
-          return errorEnvelopeFromError(error, capability, name);
+          return await callConfiguredToolV2({ config, env, store, readRow, cloudClient, trustedContext, name, args });
         }
+        assertStoreAvailable();
+        return await callConfiguredTool({ config, env, store, readRow, cloudClient, trustedContext, name, args });
+      } catch (error) {
+        logToolRejection(error, config, env, capability, name, trustedContext);
+        if (resultFormat === 2) return errorEnvelopeFromError(error, capability, name);
+        throw error;
       }
-      assertStoreAvailable();
-      return callConfiguredTool({ config, env, store, readRow, cloudClient, name, args });
     },
-    readResource: (uri) => {
+    readResource: async (uri) => {
       assertStoreAvailable();
       return readLocalResource(store, uri);
     },
-    close: () => {
-      if (!options.store) store.close();
+    close: async () => {
+      if (!options.store) await store.close();
     },
   };
+}
+
+function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): ProposalRuntimeStore {
+  const sharedPostgres = config.storage?.shared_postgres;
+  if (sharedPostgres?.mode === "runtime_store") {
+    const databaseUrl = envValue(env, sharedPostgres.url_env);
+    if (!databaseUrl) {
+      throw new McpRuntimeError("POSTGRES_RUNTIME_STORE_URL_MISSING", `${sharedPostgres.url_env} is required when storage.shared_postgres.mode is runtime_store.`);
+    }
+    return new PostgresProposalRuntimeStore({
+      pool: createPostgresPool(databaseUrl),
+      schema: sharedPostgres.schema ?? "synapsor_runner",
+      lockTimeoutMs: sharedPostgres.lock_timeout_ms,
+      autoMigrate: true,
+      closePool: true,
+    });
+  }
+  return new ProposalStore(storePath);
+}
+
+function assertRuntimeStoreStartupReady(config: RuntimeConfig, env: NodeJS.ProcessEnv): void {
+  const sharedPostgres = config.storage?.shared_postgres;
+  if (sharedPostgres?.mode !== "runtime_store") return;
+  if (!envValue(env, sharedPostgres.url_env)) {
+    throw new McpRuntimeError("POSTGRES_RUNTIME_STORE_URL_MISSING", `${sharedPostgres.url_env} is required when storage.shared_postgres.mode is runtime_store.`);
+  }
 }
 
 function assertPersistentStoreAvailable(storePath: string): void {
@@ -562,9 +629,11 @@ export async function serveStdio(options: { configPath?: string; storePath?: str
   process.stderr.write("synapsor-runner MCP stdio server ready. Waiting for an MCP client on stdio; logs stay on stderr.\n");
   await new Promise<void>((resolve) => {
     const previousOnClose = transport.onclose;
+    let closing = false;
     const close = () => {
-      runtime.close();
-      resolve();
+      if (closing) return;
+      closing = true;
+      void runtime.close().finally(resolve);
     };
     transport.onclose = () => {
       previousOnClose?.();
@@ -581,9 +650,13 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
   const authTokenEnv = options.authTokenEnv ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
+  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
 
   if (devNoAuth && !isLoopbackHost(host)) {
     throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
+  }
+  if (configUsesHttpClaims(config)) {
+    throw new McpRuntimeError("HTTP_CLAIMS_REQUIRES_STREAMABLE", "http_claims trusted context requires spec MCP Streamable HTTP sessions; the legacy JSON-RPC bridge cannot bind per-session context.");
   }
 
   const authToken = devNoAuth ? undefined : envValue(env, authTokenEnv);
@@ -591,7 +664,6 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
     throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. HTTP MCP requires bearer auth by default.`);
   }
 
-  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
   const runtime = createMcpRuntime(config, {
     env,
@@ -620,7 +692,7 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
       });
     });
   } catch (error) {
-    runtime.close();
+    await runtime.close();
     throw error;
   }
 
@@ -651,21 +723,30 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const authTokenEnv = options.authTokenEnv ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
+  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+  const usesSessionAuth = configUsesHttpClaims(config);
 
   if (devNoAuth && !isLoopbackHost(host)) {
     throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
   }
-
-  const authToken = devNoAuth ? undefined : envValue(env, authTokenEnv);
-  if (!devNoAuth && !authToken) {
-    throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. Streamable HTTP MCP requires bearer auth by default.`);
+  if (devNoAuth && usesSessionAuth) {
+    throw new McpRuntimeError("HTTP_CLAIMS_AUTH_REQUIRED", "http_claims trusted context cannot run with --dev-no-auth.");
   }
 
-  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+  const authToken = devNoAuth || usesSessionAuth ? undefined : envValue(env, authTokenEnv);
+  if (!devNoAuth && !usesSessionAuth && !authToken) {
+    throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. Streamable HTTP MCP requires bearer auth by default.`);
+  }
+  assertRuntimeStoreStartupReady(config, env);
+  if (usesSessionAuth) assertSessionAuthReady(config, env);
+  if (options.tls?.requestClientCert && !options.tls.ca) {
+    throw new McpRuntimeError("MTLS_CA_REQUIRED", "Streamable HTTP mTLS requires a CA bundle when client certificates are required.");
+  }
+
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
   const sessions = new Map<string, StreamableHttpSession>();
   const openSessions = new Set<StreamableHttpSession>();
-  const server = createServer((request, response) => {
+  const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
     void handleStreamableHttpMcpRequest({
       request,
       response,
@@ -682,7 +763,16 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       sessions,
       openSessions,
     });
-  });
+  };
+  const server = options.tls
+    ? createHttpsServer({
+      cert: options.tls.cert,
+      key: options.tls.key,
+      ca: options.tls.ca,
+      requestCert: options.tls.requestClientCert === true,
+      rejectUnauthorized: options.tls.requestClientCert === true,
+    }, requestHandler)
+    : createServer(requestHandler);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -700,12 +790,18 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const address = server.address() as AddressInfo;
   const actualHost = address.address === "::" ? host : address.address;
   const actualPort = address.port;
-  const url = `http://${actualHost}:${actualPort}/mcp`;
+  const scheme = options.tls ? "https" : "http";
+  const url = `${scheme}://${actualHost}:${actualPort}/mcp`;
 
   if (options.log !== false) {
     const log = options.log ?? process.stderr;
     log.write(`Synapsor Runner Streamable HTTP MCP listening on ${url}\n`);
-    log.write(devNoAuth ? "Auth: disabled for localhost development only\n" : `Auth: bearer token from ${authTokenEnv}\n`);
+    if (options.tls) log.write(options.tls.requestClientCert ? "TLS: enabled, client certificates required\n" : "TLS: enabled\n");
+    log.write(devNoAuth
+      ? "Auth: disabled for localhost development only\n"
+      : usesSessionAuth
+        ? `Auth: signed per-session JWT from ${config.session_auth?.secret_env}\n`
+        : `Auth: bearer token from ${authTokenEnv}\n`);
     log.write(`Config: ${options.configPath ?? "synapsor.runner.json"}\n`);
     log.write(`Store: ${options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db"}\n`);
   }
@@ -759,7 +855,8 @@ async function handleStreamableHttpMcpRequest(input: {
       writeJson(response, 404, { ok: false, error: "not_found" });
       return;
     }
-    if (!devNoAuth && !validBearerToken(request.headers.authorization, authToken ?? "")) {
+    const authentication = authenticateStreamableRequest(config, request.headers.authorization, env, authToken, devNoAuth);
+    if (!authentication) {
       writeJson(response, 401, { ok: false, error: "unauthorized" });
       return;
     }
@@ -769,6 +866,10 @@ async function handleStreamableHttpMcpRequest(input: {
       const existing = sessions.get(sessionId);
       if (!existing) {
         writeJson(response, 404, jsonRpcError(null, -32000, "MCP session not found."));
+        return;
+      }
+      if (existing.authFingerprint !== authentication.fingerprint) {
+        writeJson(response, 401, { ok: false, error: "session_auth_mismatch" });
         return;
       }
       await existing.transport.handleRequest(request, response);
@@ -802,8 +903,8 @@ async function handleStreamableHttpMcpRequest(input: {
         }
       },
     });
-    const runtime = createMcpRuntime(config, { env, storePath, resultFormat, readRow, cloudTools });
-    session = { transport, runtime };
+    const runtime = createMcpRuntime(config, { env, storePath, resultFormat, readRow, cloudTools, trustedContext: authentication.context });
+    session = { transport, runtime, authFingerprint: authentication.fingerprint };
     openSessions.add(session);
     transport.onclose = () => {
       if (session) disposeStreamableSession(session, sessions, openSessions);
@@ -902,7 +1003,7 @@ async function handleHttpJsonRpcMethod(
   if (method === "resources/read") {
     const uri = typeof params.uri === "string" ? params.uri : undefined;
     if (!uri) throw new McpRuntimeError("HTTP_RESOURCE_URI_REQUIRED", "resources/read requires params.uri.");
-    return resourceResult(uri, runtime.readResource);
+    return await resourceResult(uri, runtime.readResource);
   }
   throw new McpRuntimeError("HTTP_JSONRPC_METHOD_UNSUPPORTED", `Unsupported MCP HTTP method: ${method}`);
 }
@@ -933,6 +1034,115 @@ function validBearerToken(header: string | undefined, expected: string): boolean
   const actualBuffer = Buffer.from(actual);
   const expectedBuffer = Buffer.from(expected);
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+type StreamableAuthentication = {
+  fingerprint: string;
+  context?: TrustedContext;
+};
+
+function configUsesHttpClaims(config: RuntimeConfig): boolean {
+  if (config.trusted_context?.provider === "http_claims") return true;
+  return Object.values(config.contexts ?? {}).some((context) => context.provider === "http_claims");
+}
+
+function assertSessionAuthReady(config: RuntimeConfig, env: NodeJS.ProcessEnv): void {
+  const auth = config.session_auth;
+  if (!auth || auth.provider !== "jwt_hs256") {
+    throw new McpRuntimeError("SESSION_AUTH_REQUIRED", "http_claims trusted context requires session_auth.provider jwt_hs256.");
+  }
+  const activeSecret = envValue(env, auth.secret_env);
+  if (!activeSecret || Buffer.byteLength(activeSecret) < 32) {
+    throw new McpRuntimeError("SESSION_AUTH_SECRET_INVALID", `${auth.secret_env} must contain at least 32 bytes of HMAC key material.`);
+  }
+  if (auth.previous_secret_env) {
+    const previousSecret = envValue(env, auth.previous_secret_env);
+    if (!previousSecret || Buffer.byteLength(previousSecret) < 32) {
+      throw new McpRuntimeError("SESSION_AUTH_PREVIOUS_SECRET_INVALID", `${auth.previous_secret_env} must contain at least 32 bytes of previous HMAC key material during token rotation.`);
+    }
+  }
+}
+
+function authenticateStreamableRequest(
+  config: RuntimeConfig,
+  authorization: string | undefined,
+  env: NodeJS.ProcessEnv,
+  staticToken: string | undefined,
+  devNoAuth: boolean,
+): StreamableAuthentication | undefined {
+  if (devNoAuth) return { fingerprint: "dev-no-auth" };
+  const token = bearerToken(authorization);
+  if (!token) return undefined;
+  if (!configUsesHttpClaims(config)) {
+    if (!staticToken || !validBearerToken(authorization, staticToken)) return undefined;
+    return { fingerprint: tokenFingerprint(token) };
+  }
+  try {
+    const context = verifySessionJwt(config, token, env);
+    return { fingerprint: tokenFingerprint(token), context };
+  } catch {
+    return undefined;
+  }
+}
+
+function verifySessionJwt(config: RuntimeConfig, token: string, env: NodeJS.ProcessEnv): TrustedContext {
+  const auth = config.session_auth;
+  if (!auth || auth.provider !== "jwt_hs256") throw new Error("session auth is not configured");
+  const secrets = sessionAuthSecrets(auth, env);
+  if (secrets.length === 0) throw new Error("session auth secret is unavailable");
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) throw new Error("invalid JWT shape");
+  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8")) as unknown;
+  const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as unknown;
+  if (!isRecord(header) || header.alg !== "HS256" || !isRecord(claims)) throw new Error("invalid JWT header or claims");
+  const actual = Buffer.from(parts[2], "base64url");
+  if (!secrets.some((secret) => {
+    const expected = crypto.createHmac("sha256", secret).update(`${parts[0]}.${parts[1]}`).digest();
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  })) {
+    throw new Error("invalid JWT signature");
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const skew = auth.clock_skew_seconds ?? 30;
+  if (!Number.isFinite(Number(claims.exp)) || Number(claims.exp) < now - skew) throw new Error("JWT is expired or has no exp");
+  if (claims.nbf !== undefined && (!Number.isFinite(Number(claims.nbf)) || Number(claims.nbf) > now + skew)) throw new Error("JWT is not active");
+  if (auth.issuer && claims.iss !== auth.issuer) throw new Error("JWT issuer mismatch");
+  if (auth.audience && !jwtAudienceIncludes(claims.aud, auth.audience)) throw new Error("JWT audience mismatch");
+  const tenant = safeSessionClaim(claims[auth.tenant_claim ?? "tenant_id"]);
+  const principal = safeSessionClaim(claims[auth.principal_claim ?? "sub"]);
+  if (!tenant || !principal) throw new Error("JWT trusted context claims are missing or unsafe");
+  return { tenant_id: tenant, principal, provenance: "http_claims" };
+}
+
+function sessionAuthSecrets(auth: NonNullable<RuntimeConfig["session_auth"]>, env: NodeJS.ProcessEnv): string[] {
+  const secrets: string[] = [];
+  for (const envName of [auth.secret_env, auth.previous_secret_env]) {
+    if (!envName) continue;
+    const secret = envValue(env, envName);
+    if (secret && Buffer.byteLength(secret) >= 32) secrets.push(secret);
+  }
+  return secrets;
+}
+
+function bearerToken(header: string | undefined): string | undefined {
+  if (!header?.startsWith("Bearer ")) return undefined;
+  const token = header.slice("Bearer ".length).trim();
+  return token || undefined;
+}
+
+function tokenFingerprint(token: string): string {
+  return `sha256:${crypto.createHash("sha256").update(token).digest("hex")}`;
+}
+
+function jwtAudienceIncludes(value: unknown, expected: string): boolean {
+  return value === expected || (Array.isArray(value) && value.some((item) => item === expected));
+}
+
+function safeSessionClaim(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  if (!text || text.length > 128 || /[\u0000-\u001f\u007f]/.test(text)) return undefined;
+  return text;
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
@@ -1077,9 +1287,7 @@ async function closeHttpServer(server: Server, runtime: McpRuntime): Promise<voi
       if (error) reject(error);
       else resolve();
     });
-  }).finally(() => {
-    runtime.close();
-  });
+  }).finally(() => runtime.close());
 }
 
 async function closeStreamableHttpServer(server: Server, sessions: Set<StreamableHttpSession>): Promise<void> {
@@ -1108,7 +1316,7 @@ function disposeStreamableSession(
   session.closed = true;
   if (session.sessionId) sessionMap?.delete(session.sessionId);
   openSessions?.delete(session);
-  session.runtime.close();
+  void session.runtime.close();
 }
 
 async function toolCallResult(runtime: McpRuntime, toolName: string, args: Record<string, unknown>) {
@@ -1230,9 +1438,10 @@ function zodInputShapeFromJsonSchema(schema: Record<string, unknown>): Record<st
 async function callConfiguredTool(input: {
   config: RuntimeConfig;
   env: NodeJS.ProcessEnv;
-  store: ProposalStore;
+  store: ProposalRuntimeStore;
   readRow: DbRowReader;
   cloudClient?: CloudAdapterClient;
+  trustedContext?: TrustedContext;
   name: string;
   args: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
@@ -1253,7 +1462,7 @@ async function callConfiguredTool(input: {
   }
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
-  const context = resolveTrustedContext(input.config, input.env, capability);
+  const context = resolveTrustedContext(input.config, input.env, capability, input.trustedContext);
   const current = await input.readRow({
     sourceName: capability.source,
     source,
@@ -1275,7 +1484,7 @@ async function callConfiguredTool(input: {
   });
   const queryFingerprint = queryFingerprintFor(capability, context);
   const objectId = String(current.row[capability.target.primary_key] ?? input.args[capability.lookup.id_from_arg]);
-  input.store.recordEvidenceBundle({
+  await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
     tenant_id: context.tenant_id,
     payload: {
@@ -1298,7 +1507,7 @@ async function callConfiguredTool(input: {
       },
     ],
   });
-  input.store.recordQueryAudit({
+  await input.store.recordQueryAudit({
     evidence_bundle_id: evidenceBundleId,
     source_id: capability.source,
     query_fingerprint: queryFingerprint,
@@ -1347,7 +1556,7 @@ async function callConfiguredTool(input: {
     queryFingerprint,
     objectId,
   });
-  const activeProposal = input.store.findActiveProposal({
+  const activeProposal = await input.store.findActiveProposal({
     tenant_id: context.tenant_id,
     action: capability.name,
     business_object: capability.target.table,
@@ -1356,10 +1565,10 @@ async function callConfiguredTool(input: {
   if (activeProposal) throw proposalAlreadyExists(activeProposal);
   let proposal: StoredProposal;
   try {
-    proposal = input.store.createProposal(changeSet);
+    proposal = await input.store.createProposal(changeSet);
   } catch (error) {
     if (error instanceof ProposalStoreError && error.code === "PROPOSAL_ALREADY_EXISTS") {
-      const existing = input.store.findActiveProposal({
+      const existing = await input.store.findActiveProposal({
         tenant_id: context.tenant_id,
         action: capability.name,
         business_object: capability.target.table,
@@ -1369,14 +1578,14 @@ async function callConfiguredTool(input: {
     }
     throw error;
   }
-  const approvalResult = maybeAutoApproveProposal({
+  const approvalResult = await maybeAutoApproveProposal({
     config: input.config,
     capability,
     store: input.store,
     proposal,
     patch: changeSet.patch,
   });
-  input.store.recordEvidenceBundle({
+  await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
     proposal_id: proposal.proposal_id,
     tenant_id: context.tenant_id,
@@ -1395,7 +1604,7 @@ async function callConfiguredTool(input: {
       },
     ],
   });
-  input.store.recordQueryAudit({
+  await input.store.recordQueryAudit({
     proposal_id: proposal.proposal_id,
     evidence_bundle_id: evidenceBundleId,
     source_id: capability.source,
@@ -1431,6 +1640,10 @@ async function callConfiguredTool(input: {
         mode: capability.approval?.mode ?? "human",
         ...(capability.approval?.policy ? { policy: capability.approval.policy } : {}),
         ...(capability.approval?.required_role ? { required_role: capability.approval.required_role } : {}),
+        ...(approvalResult.tripped_limits?.length ? {
+          fallback: "human_review",
+          tripped_limits: approvalResult.tripped_limits,
+        } : {}),
       },
     approval_required: approvalResult.proposal.state === "pending_review",
     writeback: changeSet.writeback,
@@ -1442,21 +1655,18 @@ async function callConfiguredTool(input: {
 async function callConfiguredToolV2(input: {
   config: RuntimeConfig;
   env: NodeJS.ProcessEnv;
-  store: ProposalStore;
+  store: ProposalRuntimeStore;
   readRow: DbRowReader;
   cloudClient?: CloudAdapterClient;
+  trustedContext?: TrustedContext;
   name: string;
   args: Record<string, unknown>;
 }): Promise<ResultEnvelopeV2> {
   const capability = input.config.mode === "cloud"
     ? undefined
     : localCapabilities(input.config).find((item) => item.name === input.name);
-  try {
-    const legacy = await callConfiguredTool(input);
-    return resultEnvelopeFromLegacy(legacy, capability, input.name);
-  } catch (error) {
-    return errorEnvelopeFromError(error, capability, input.name);
-  }
+  const legacy = await callConfiguredTool(input);
+  return resultEnvelopeFromLegacy(legacy, capability, input.name);
 }
 
 function resultEnvelopeFromLegacy(
@@ -1597,13 +1807,18 @@ export function assertApprovalPolicyResolvable(config: RuntimeConfig, capability
   }
 }
 
-function maybeAutoApproveProposal(input: {
+async function maybeAutoApproveProposal(input: {
   config: RuntimeConfig;
   capability: RuntimeCapabilityConfig;
-  store: ProposalStore;
+  store: ProposalRuntimeStore;
   proposal: StoredProposal;
   patch: Record<string, Scalar>;
-}): { proposal: StoredProposal; approved: boolean; policy?: string } {
+}): Promise<{
+  proposal: StoredProposal;
+  approved: boolean;
+  policy?: string;
+  tripped_limits?: Array<Record<string, unknown>>;
+}> {
   if (input.config.mode !== "review") return { proposal: input.proposal, approved: false };
   if (input.config.approvals?.disable_auto_approval === true) return { proposal: input.proposal, approved: false };
   if (input.capability.approval?.mode !== "policy" || !input.capability.approval.policy) return { proposal: input.proposal, approved: false };
@@ -1617,13 +1832,19 @@ function maybeAutoApproveProposal(input: {
 
   // Safety boundary: policy approval is contract-owned server behavior only.
   // No MCP tool can choose a policy, approve a proposal, or apply the writeback.
-  const updated = input.store.approveProposal(input.proposal.proposal_id, {
-    approver: `policy:${policyName}`,
+  const decision = await input.store.approveProposalByPolicy(input.proposal.proposal_id, {
+    policy: policyName,
     proposal_hash: input.proposal.proposal_hash,
     proposal_version: input.proposal.proposal_version,
     reason: `auto-approved by policy ${policyName}: ${evaluation.reason}`,
+    limits: policy.limits,
   });
-  return { proposal: updated, approved: true, policy: policyName };
+  return {
+    proposal: decision.proposal,
+    approved: decision.approved,
+    policy: policyName,
+    tripped_limits: decision.tripped_limits,
+  };
 }
 
 function approvalPolicyByName(config: RuntimeConfig, policyName: string): PolicySpec | undefined {
@@ -1729,6 +1950,42 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
   return { code: "INTERNAL", message: "The capability failed safely. Check the local runner logs for details.", retryable: false };
 }
 
+function logToolRejection(
+  error: unknown,
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  capability: RuntimeCapabilityConfig | undefined,
+  canonicalName: string,
+  trustedContext?: TrustedContext,
+): void {
+  const safe = safeToolError(error);
+  process.stderr.write(`${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: safe.retryable ? "warn" : "info",
+    event: "tool_rejected",
+    capability: capability?.name ?? canonicalName,
+    tenant: trustedTenantForLog(config, env, capability, trustedContext),
+    error_code: safe.code,
+    runtime_code: error instanceof McpRuntimeError ? error.code : "UNCLASSIFIED",
+    retryable: safe.retryable,
+    source_database_changed: false,
+  })}\n`);
+}
+
+function trustedTenantForLog(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  capability: RuntimeCapabilityConfig | undefined,
+  trustedContext?: TrustedContext,
+): string | undefined {
+  try {
+    const context = resolveTrustedContext(config, env, capability, trustedContext);
+    return /^[A-Za-z0-9_.:@/-]{1,128}$/.test(context.tenant_id) ? context.tenant_id : "<redacted>";
+  } catch {
+    return undefined;
+  }
+}
+
 function looksLikeInfraError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return /\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|timeout|connect|connection|database|authentication|certificate)\b/i.test(message);
@@ -1826,7 +2083,7 @@ function buildChangeSet(input: {
 
 function expectedVersionGuard(capability: RuntimeCapabilityConfig, row: Record<string, Scalar>): { column: string; value: Scalar } {
   const column = capability.conflict_guard?.column;
-  if (column && row[column] !== undefined) return { column, value: row[column] };
+  if (column && row[column] !== undefined) return { column, value: conflictGuardScalar(row[column]) };
   if (capability.conflict_guard?.weak_guard_ack === true) {
     return { column: "__row_hash", value: hashJson(row) };
   }
@@ -1918,7 +2175,12 @@ function quoteIdentifier(identifier: string, style: "$" | "?"): string {
   return style === "$" ? `"${identifier}"` : `\`${identifier}\``;
 }
 
-function resolveTrustedContext(config: RuntimeConfig, env: NodeJS.ProcessEnv, capability?: RuntimeCapabilityConfig): TrustedContext {
+function resolveTrustedContext(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  capability?: RuntimeCapabilityConfig,
+  sessionContext?: TrustedContext,
+): TrustedContext {
   const namedContext = capability?.context ? config.contexts?.[capability.context] : undefined;
   const contextConfig = namedContext ?? config.trusted_context;
   if (!contextConfig) {
@@ -1941,6 +2203,12 @@ function resolveTrustedContext(config: RuntimeConfig, env: NodeJS.ProcessEnv, ca
     const principal = valueFromEnvOrLiteral(values.principal_env, values.principal, env);
     if (!tenant || !principal) throw new McpRuntimeError("TRUSTED_BINDING_MISSING", "static_dev trusted_context requires tenant_id/principal values or env bindings.");
     return { tenant_id: tenant, principal, provenance: "static_dev" };
+  }
+  if (provider === "http_claims" || provider === "cloud_session") {
+    if (!sessionContext || sessionContext.provenance !== provider) {
+      throw new McpRuntimeError("TRUSTED_BINDING_MISSING", `${provider} trusted context requires a verified per-session binding.`);
+    }
+    return sessionContext;
   }
   throw new McpRuntimeError("TRUSTED_CONTEXT_UNSUPPORTED", `${provider} trusted context is not available in local stdio mode.`);
 }
@@ -2099,31 +2367,31 @@ function diffFromChangeSet(changeSet: ChangeSetV1): Record<string, { before: Sca
   return diff;
 }
 
-function readLocalResource(store: ProposalStore, uri: string): Record<string, unknown> {
+async function readLocalResource(store: ProposalRuntimeStore, uri: string): Promise<Record<string, unknown>> {
   const parsed = new URL(uri);
   const parts = parsed.pathname.split("/").filter(Boolean);
   const collection = parsed.hostname;
   const id = parts[0];
   if (!id) throw new McpRuntimeError("RESOURCE_ID_MISSING", `Resource id missing in ${uri}.`);
   if (collection === "proposals") {
-    const proposal = store.getProposal(id);
+    const proposal = await store.getProposal(id);
     if (!proposal) throw new McpRuntimeError("RESOURCE_NOT_FOUND", `Proposal not found: ${id}`);
-    return { proposal, events: store.events(id), receipts: store.receipts(id) };
+    return { proposal, events: await store.events(id), receipts: await store.receipts(id) };
   }
   if (collection === "evidence") {
-    const evidence = store.getEvidenceBundle(id);
+    const evidence = await store.getEvidenceBundle(id);
     if (!evidence) throw new McpRuntimeError("RESOURCE_NOT_FOUND", `Evidence bundle not found: ${id}`);
     return evidence;
   }
   if (collection === "replay") {
     const proposalId = id.startsWith("replay_") ? id.slice("replay_".length) : id;
-    return store.replay(proposalId);
+    return await store.replay(proposalId);
   }
   throw new McpRuntimeError("RESOURCE_NOT_FOUND", `Unsupported Synapsor resource: ${uri}`);
 }
 
-function resourceResult(uri: string, reader: (uri: string) => Record<string, unknown>) {
-  const payload = reader(uri);
+async function resourceResult(uri: string, reader: (uri: string) => Promise<Record<string, unknown>>) {
+  const payload = await reader(uri);
   return {
     contents: [
       {
@@ -2164,15 +2432,15 @@ function scalar(value: unknown): Scalar {
   return String(value);
 }
 
+function conflictGuardScalar(value: Scalar): Scalar {
+  if (typeof value !== "string") return value;
+  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i);
+  if (!match) return value;
+  const fraction = (match[3] ?? "").padEnd(6, "0").slice(0, 6);
+  return `${match[1]} ${match[2]}.${fraction}${match[4] ?? ""}`;
+}
+
 function proposalAlreadyExists(existing: StoredProposal): McpRuntimeError {
-  process.stderr.write(`${JSON.stringify({
-    level: "warn",
-    event: "proposal_already_exists",
-    proposal_id: existing.proposal_id,
-    state: existing.state,
-    capability: existing.action,
-    object_id: existing.object_id,
-  })}\n`);
   return new McpRuntimeError(
     "PROPOSAL_ALREADY_EXISTS",
     `Active proposal ${existing.proposal_id} is already ${existing.state} for this object. Inspect or resolve it before proposing again.`,

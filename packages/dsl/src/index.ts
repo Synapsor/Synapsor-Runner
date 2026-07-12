@@ -40,6 +40,14 @@ export type AgentDslCapabilityAst = {
     transitionGuards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
     approvalRole?: string;
     autoApprovalRules?: Array<{ field: string; max: number; line: number }>;
+    autoApprovalLimits?: Array<{
+      kind: "count" | "total";
+      max: number;
+      period: "day";
+      field?: string;
+      scope: "tenant_policy" | "tenant_policy_object";
+      line: number;
+    }>;
     writebackMode?: "direct_sql" | "app_handler" | "cloud_worker" | "none";
     executor?: string;
   };
@@ -140,6 +148,9 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
           kind: "approval",
           mode: "green",
           rules: capability.proposal.autoApprovalRules?.map((rule) => ({ field: rule.field, max: rule.max })),
+          ...(capability.proposal.autoApprovalLimits?.length ? {
+            limits: capability.proposal.autoApprovalLimits.map(({ line: _line, ...limit }) => limit),
+          } : {}),
         });
       }
       spec.proposal = {
@@ -402,6 +413,12 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       parseAutoApprovalClause(capability, autoApproval[1], item.line);
       continue;
     }
+    const approvalLimit = item.text.match(/^LIMIT\s+(.+)$/i);
+    if (approvalLimit?.[1]) {
+      ensureProposal(capability, item);
+      parseAutoApprovalLimitClause(capability, approvalLimit[1], item.line);
+      continue;
+    }
     const writeback = item.text.match(/^WRITEBACK\s+(DIRECT\s+SQL|APP\s+HANDLER|CLOUD\s+WORKER|NONE)(?:\s+EXECUTOR\s+([A-Za-z_][A-Za-z0-9_.-]*))?$/i);
     if (writeback?.[1]) {
       ensureProposal(capability, item);
@@ -496,6 +513,49 @@ function parseAutoApprovalClause(capability: AgentDslCapabilityAst & { proposal:
     throw dslError(line, 1, "AUTO_APPROVE_DUPLICATE_FIELD", `AUTO APPROVE WHEN already defines a rule for ${field}`);
   }
   capability.proposal.autoApprovalRules.push({ field, max, line });
+}
+
+function parseAutoApprovalLimitClause(
+  capability: AgentDslCapabilityAst & { proposal: NonNullable<AgentDslCapabilityAst["proposal"]> },
+  rawLimit: string,
+  line: number,
+): void {
+  const rules = capability.proposal.autoApprovalRules ?? [];
+  if (rules.length === 0) {
+    throw dslError(line, 1, "AUTO_APPROVAL_LIMIT_POLICY_REQUIRED", "LIMIT must follow AUTO APPROVE WHEN in the same capability");
+  }
+  const value = rawLimit.trim();
+  const count = value.match(/^(\d+)\s+PER\s+(?:(OBJECT)\s+)?DAY$/i);
+  const total = value.match(/^TOTAL\s+(\d+)\s+PER\s+(?:(OBJECT)\s+)?DAY$/i);
+  if (!count && !total) {
+    throw dslError(line, 1, "AUTO_APPROVAL_LIMIT_UNSUPPORTED", "LIMIT supports: LIMIT <count> PER DAY or LIMIT TOTAL <amount> PER DAY");
+  }
+  const rawMax = count?.[1] ?? total?.[1] ?? "";
+  const max = Number(rawMax);
+  if (!Number.isSafeInteger(max)) {
+    throw dslError(line, 1, "AUTO_APPROVAL_LIMIT_MAX_INVALID", "LIMIT max must be a safe non-negative integer");
+  }
+  let field: string | undefined;
+  if (total) {
+    const fields = [...new Set(rules.map((rule) => rule.field))];
+    if (fields.length !== 1) {
+      throw dslError(line, 1, "AUTO_APPROVAL_TOTAL_FIELD_AMBIGUOUS", "LIMIT TOTAL requires exactly one AUTO APPROVE WHEN numeric field");
+    }
+    field = fields[0];
+  }
+  const kind = total ? "total" : "count";
+  capability.proposal.autoApprovalLimits ??= [];
+  if (capability.proposal.autoApprovalLimits.some((limit) => limit.kind === kind && limit.scope === ((count?.[2] ?? total?.[2]) ? "tenant_policy_object" : "tenant_policy"))) {
+    throw dslError(line, 1, "AUTO_APPROVAL_LIMIT_DUPLICATE", `duplicate ${kind} auto-approval limit for the same scope`);
+  }
+  capability.proposal.autoApprovalLimits.push({
+    kind,
+    max,
+    period: "day",
+    ...(field ? { field } : {}),
+    scope: (count?.[2] ?? total?.[2]) ? "tenant_policy_object" : "tenant_policy",
+    line,
+  });
 }
 
 function isNumericDslProposalField(capability: AgentDslCapabilityAst & { proposal: NonNullable<AgentDslCapabilityAst["proposal"]> }, field: string): boolean {

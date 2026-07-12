@@ -10,25 +10,28 @@ import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
-import { postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
+import { createPostgresPool, postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
 import {
   ProposalStore,
   type EvidenceSearchFilters,
   type EventSearchFilters,
   type LocalProposalState,
+  type OperationalMetricRow,
   type ProposalEvent,
   type ProposalReplayRecord,
   type ProposalSearchFilters,
   type QueryAuditSearchFilters,
   type ReceiptSearchFilters,
+  type SharedLedgerEntry,
   type StoredEvidenceBundle,
   type StoredProposal,
   type StoredWritebackReceipt,
   type StorePruneResult,
   type StoreStats,
+  type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
 import { parseWritebackJob, protocolVersions, type ChangeSetV1, type ExecutionReceiptV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
@@ -54,6 +57,8 @@ import {
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
 import { startLocalUiServer } from "./local-ui.js";
+import { resolveOperatorIdentity, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
+import { hydrateManagedSecrets, type ManagedSecretsProvider } from "./secrets-manager.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -62,6 +67,7 @@ const adapters = { postgres: postgresAdapter, mysql: mysqlAdapter };
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
 type RunnerSourceConfig = NonNullable<RuntimeConfig["sources"]>[string];
 type RunnerCapabilityConfig = NonNullable<RuntimeConfig["capabilities"]>[number];
+const runtimeStoreBridgeFlag = "--runtime-store-bridge";
 
 const dangerousDatabaseMcpAuditExample = {
   tools: [
@@ -399,6 +405,7 @@ export async function main(argv: string[]): Promise<number> {
     usage(rest);
     return 0;
   }
+  await maybeHydrateManagedSecrets(rest);
   if (command === "init") return init(rest);
   if (command === "inspect") return inspect(rest);
   if (command === "config") return configCommand(rest);
@@ -429,6 +436,8 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "receipts") return receipts(rest);
   if (command === "activity") return activity(rest);
   if (command === "events") return events(rest);
+  if (command === "metrics") return metrics(rest);
+  if (command === "worker") return workerCommand(rest);
   if (command === "store") return storeCommand(rest);
   if (command === "shadow") return shadow(rest);
   if (command === "ui") return ui(rest);
@@ -440,6 +449,27 @@ function normalizeCliArgv(argv: string[]): string[] {
   const [first, ...rest] = argv;
   if (first === "synapsor-runner" || first === "synapsor") return rest;
   return argv;
+}
+
+async function maybeHydrateManagedSecrets(args: string[]): Promise<void> {
+  const rawProvider = optionalArg(args, "--secrets-provider");
+  if (!rawProvider) return;
+  const provider = managedSecretsProvider(rawProvider);
+  const result = await hydrateManagedSecrets({
+    provider,
+    mapEnv: optionalArg(args, "--secret-map-env"),
+    valuesEnv: optionalArg(args, "--secret-values-env"),
+    regionEnv: optionalArg(args, "--aws-region-env"),
+    overwrite: args.includes("--secrets-overwrite"),
+    env: process.env,
+  });
+  if (!result) return;
+  process.stderr.write(`Synapsor loaded ${result.loaded.length} managed secret(s) from ${result.provider}${result.skipped.length ? `; ${result.skipped.length} existing env value(s) left unchanged` : ""}.\n`);
+}
+
+function managedSecretsProvider(value: string): ManagedSecretsProvider {
+  if (value === "aws-secretsmanager-cli" || value === "env-json") return value;
+  throw new Error("--secrets-provider must be aws-secretsmanager-cli or env-json.");
 }
 
 async function init(args: string[]): Promise<number> {
@@ -1162,7 +1192,7 @@ async function maybeRunGeneratedSmokeCall(input: {
       "",
     ].join("\n");
   } finally {
-    runtime.close();
+    await runtime.close();
   }
 }
 
@@ -2016,11 +2046,15 @@ function proposalApprovalPolicyResolutionDoctorCheck(config: RuntimeConfig, capa
   }
   try {
     assertApprovalPolicyResolvable(config, capability);
+    const policy = (config.policies ?? []).find((candidate) => candidate.name === capability.approval?.policy);
+    const limits = policy?.limits ?? [];
     return {
       name: `capability:${capability.name}:approval-policy-resolution`,
       ok: true,
       level: "pass",
-      message: `Approval policy ${capability.approval.policy} resolves from the reviewed contract/config.`,
+      message: limits.length > 0
+        ? `Approval policy ${capability.approval.policy} resolves with ${limits.length} reviewed aggregate limit(s): ${limits.map((limit) => limit.kind === "total" ? `total ${limit.field} <= ${limit.max} per ${limit.period}` : `count <= ${limit.max} per ${limit.period}`).join("; ")}.`
+        : `Approval policy ${capability.approval.policy} resolves without aggregate limits; do not schedule unattended batch apply.`,
     };
   } catch (error) {
     return {
@@ -2030,6 +2064,66 @@ function proposalApprovalPolicyResolutionDoctorCheck(config: RuntimeConfig, capa
       message: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+async function sharedPostgresLedgerDoctorChecks(config: RuntimeConfig): Promise<DoctorCheck[]> {
+  const configured = config.storage?.shared_postgres;
+  if (configured?.mode !== "mirror" && configured?.mode !== "runtime_store") return [];
+
+  const mirror = sharedPostgresLedgerMirrorOptions([], config);
+  const runtimeStoreMode = configured.mode === "runtime_store";
+  const checks: DoctorCheck[] = [{
+    name: runtimeStoreMode ? "shared-postgres-ledger:runtime-store-config" : "shared-postgres-ledger:mirror-config",
+    ok: true,
+    level: "pass",
+    message: runtimeStoreMode
+      ? `Shared Postgres runtime store is configured for schema ${mirror.schema} using URL env ${mirror.urlEnv}. MCP serving stores proposal, evidence, receipt, and replay records in this Postgres ledger under an advisory lock.`
+      : `Shared Postgres ledger mirror is configured for schema ${mirror.schema} using URL env ${mirror.urlEnv}. Mutating CLI commands restore/sync through this ledger under an advisory lock.`,
+  }];
+
+  const databaseUrl = envValue(mirror.urlEnv);
+  if (!databaseUrl) {
+    checks.push({
+      name: "shared-postgres-ledger:url-env",
+      ok: false,
+      level: "fail",
+      message: `${mirror.urlEnv} is required for shared Postgres ledger ${runtimeStoreMode ? "runtime store" : "mirror"} mode.`,
+    });
+    return checks;
+  }
+
+  const pool = createPostgresPool(databaseUrl);
+  try {
+    const counts = await sharedPostgresLedgerTableCounts(pool, mirror.schema);
+    const missing = Object.entries(counts)
+      .filter(([, count]) => count === null)
+      .map(([table]) => table);
+    if (missing.length > 0) {
+      checks.push({
+        name: "shared-postgres-ledger:migration",
+        ok: false,
+        level: "fail",
+        message: `Shared Postgres ledger schema ${mirror.schema} is not initialized; missing ${missing.join(", ")}. Run ${cliCommandName()} store shared-postgres apply-migration --schema ${mirror.schema} --url-env ${mirror.urlEnv} --yes before using ${runtimeStoreMode ? "runtime store" : "mirror"} mode.`,
+      });
+    } else {
+      checks.push({
+        name: "shared-postgres-ledger:migration",
+        ok: true,
+        level: "pass",
+        message: `Shared Postgres ledger schema ${mirror.schema} is initialized (${Object.entries(counts).map(([table, count]) => `${table}=${count}`).join(", ")}).`,
+      });
+    }
+  } catch (error) {
+    checks.push({
+      name: "shared-postgres-ledger:migration",
+      ok: false,
+      level: "fail",
+      message: `Could not inspect shared Postgres ledger schema ${mirror.schema} using ${mirror.urlEnv}: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  } finally {
+    await pool.end();
+  }
+  return checks;
 }
 
 async function httpHandlerReachabilityCheck(executorName: string, rawUrl: string, timeoutMs: number): Promise<DoctorCheck> {
@@ -2157,7 +2251,7 @@ async function inspectConfiguredSource(input: {
   }
 }
 
-function localToolNames(config: RuntimeConfig, checks: DoctorCheck[]): string[] {
+async function localToolNames(config: RuntimeConfig, checks: DoctorCheck[]): Promise<string[]> {
   try {
     const runtime = createMcpRuntime(config, { storePath: ":memory:" });
     try {
@@ -2170,7 +2264,7 @@ function localToolNames(config: RuntimeConfig, checks: DoctorCheck[]): string[] 
       });
       return tools;
     } finally {
-      runtime.close();
+      await runtime.close();
     }
   } catch (error) {
     checks.push({
@@ -2648,6 +2742,7 @@ async function localDoctor(args: string[]): Promise<number> {
   if (validation.ok) {
     parsed = await readRuntimeConfig(configPath);
   }
+  checks.push(...await sharedPostgresLedgerDoctorChecks(parsed));
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
   for (const [contextName, contextValues] of contextsToCheck) {
@@ -2750,7 +2845,7 @@ async function localDoctor(args: string[]): Promise<number> {
     }
   }
 
-  const tools = localToolNames(parsed, checks);
+  const tools = await localToolNames(parsed, checks);
   const forbiddenTools = tools.filter((tool) => /execute_sql|run_query|approve|commit|apply_writeback/i.test(tool));
   checks.push({
     name: "mcp-tool-boundary",
@@ -3008,20 +3103,32 @@ async function validate(args: string[]): Promise<number> {
 }
 
 async function apply(args: string[]): Promise<number> {
+  if (args.includes("--all-approved")) return applyAllApproved(args);
   const directProposalId = positional(args, 0);
   const proposalId = optionalArg(args, "--proposal") ?? (directProposalId && !directProposalId.endsWith(".json") ? directProposalId : undefined);
   if (proposalId) return applyProposal(args, proposalId);
 
-  const raw = await readJob(args);
-  const job = parseWritebackJob(raw);
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const configPath = optionalArg(args, "--config") ?? (await fileExists("synapsor.runner.json") ? "synapsor.runner.json" : undefined);
+  const runtimeConfig = configPath ? await optionalRuntimeConfig(configPath) : undefined;
+  if (runtimeConfig && runtimeStoreBridgeRequired(args, runtimeConfig)) {
+    return withSharedPostgresRuntimeStoreBridge(args, runtimeConfig, "apply --job", (bridgeStorePath) => apply(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(runtimeConfig, "apply --job", args);
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const mirrorStorePath = storePath ?? runtimeConfig?.storage?.sqlite_path;
+  if (mirrorStorePath && sharedPostgresLedgerMirrorRequested(args, runtimeConfig)) {
+    return withSharedPostgresLedgerMirror(args, mirrorStorePath, "apply --job", () => apply(withoutSharedPostgresLedgerMirror(args)), runtimeConfig);
+  }
+
+  const raw = await readJob(args);
+  const job = parseWritebackJob(raw);
   if (configPath) {
     if (!dryRun && !storePath) {
       throw new Error("local config writeback apply requires --store so proposal approval and digest can be verified");
     }
     await verifyLocalWritebackAuthority(job, configPath, storePath);
+    await authorizeConfiguredJobApply(args, job, configPath, storePath);
   }
   const databaseUrl = configPath
     ? await resolveSqlWriteDatabaseUrl(job, configPath, process.env)
@@ -3050,8 +3157,176 @@ async function apply(args: string[]): Promise<number> {
       store.close();
     }
   }
+  operationalLog("info", "writeback_outcome", {
+    proposal_id: job.proposal_id,
+    tenant: logIdentifier(job.target.tenant_guard.value),
+    source: job.source_id,
+    runner_id: config.runnerId,
+    executor: "sql_update",
+    status: writebackResultStatus(result),
+    rows_affected: writebackAffectedRows(result),
+    error_code: writebackErrorCode(result),
+    dry_run: dryRun,
+    source_database_changed: writebackResultStatus(result) === "applied" && !dryRun && writebackAffectedRows(result) > 0,
+  });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   return result.status === "failed" ? 1 : 0;
+}
+
+async function authorizeConfiguredJobApply(
+  args: string[],
+  job: WritebackJob,
+  configPath: string,
+  storePath: string | undefined,
+): Promise<void> {
+  const config = await readRuntimeConfig(configPath);
+  if (!config.operator_identity) return;
+  if (!storePath) {
+    throw new Error("operator_identity requires --store for apply so the signed authorization can be bound to the proposal ledger");
+  }
+  const store = new ProposalStore(storePath);
+  try {
+    const proposal = requireLocalProposal(store, job.proposal_id);
+    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "apply" });
+    store.recordOperatorAuthorization(job.proposal_id, identity, config.operator_identity.provider === "signed_key");
+    operationalLog("info", "operator_decision", {
+      action: "apply",
+      proposal_id: proposal.proposal_id,
+      capability: proposal.action,
+      tenant: proposal.tenant_id,
+      subject: identity.subject,
+      identity_provider: identity.provider,
+      identity_verified: identity.verified,
+      required_role: config.operator_identity.apply_roles?.join(",") || undefined,
+    });
+  } finally {
+    store.close();
+  }
+}
+
+type BatchApplyResult = {
+  proposal_id: string;
+  capability: string;
+  tenant: string;
+  status: "applied" | "conflict" | "skipped";
+  detail: string;
+};
+
+async function applyAllApproved(args: string[]): Promise<number> {
+  if (!args.includes("--yes")) {
+    throw new Error("apply --all-approved requires --yes because it can commit multiple approved proposals");
+  }
+  if (positional(args, 0)) throw new Error("apply --all-approved does not accept a proposal id or --job");
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, "apply --all-approved", (bridgeStorePath) => applyAllApproved(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "apply --all-approved", args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, "apply --all-approved", () => applyAllApproved(withoutSharedPostgresLedgerMirror(args)), config);
+  }
+  const capability = optionalArg(args, "--capability");
+  const tenant = optionalArg(args, "--tenant");
+  const max = optionalPositiveIntegerArg(args, "--max");
+  const store = new ProposalStore(storePath);
+  let selected: StoredProposal[];
+  try {
+    const filters = { capability, tenant };
+    selected = [
+      ...store.listProposals({ ...filters, state: "approved" }),
+      ...store.listProposals({ ...filters, state: "pending_worker" }),
+    ]
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))
+      .slice(0, max ?? Number.POSITIVE_INFINITY);
+  } finally {
+    store.close();
+  }
+
+  const results: BatchApplyResult[] = [];
+  for (const proposal of selected) {
+    try {
+      await applyProposal([
+        proposal.proposal_id,
+        "--config", configPath,
+        "--store", storePath,
+        "--yes",
+        "--batch-quiet",
+        ...(args.includes("--dry-run") ? ["--dry-run"] : []),
+        ...(optionalArg(args, "--runner") ? ["--runner", optionalArg(args, "--runner")!] : []),
+        ...(optionalArg(args, "--project") ? ["--project", optionalArg(args, "--project")!] : []),
+        ...(optionalArg(args, "--lease-seconds") ? ["--lease-seconds", optionalArg(args, "--lease-seconds")!] : []),
+        ...(optionalArg(args, "--identity") ? ["--identity", optionalArg(args, "--identity")!] : []),
+        ...(optionalArg(args, "--identity-key") ? ["--identity-key", optionalArg(args, "--identity-key")!] : []),
+        ...(optionalArg(args, "--actor") ? ["--actor", optionalArg(args, "--actor")!] : []),
+      ], proposal.proposal_id);
+      const afterStore = new ProposalStore(storePath);
+      try {
+        const after = afterStore.getProposal(proposal.proposal_id);
+        const status = after?.state === "conflict" ? "conflict" : after?.state === "applied" ? "applied" : "skipped";
+        results.push({
+          proposal_id: proposal.proposal_id,
+          capability: proposal.action,
+          tenant: proposal.tenant_id,
+          status,
+          detail: after ? `proposal state: ${after.state}` : "proposal no longer exists",
+        });
+      } finally {
+        afterStore.close();
+      }
+    } catch (error) {
+      operationalLog("warn", "writeback_outcome", {
+        proposal_id: proposal.proposal_id,
+        capability: proposal.action,
+        tenant: proposal.tenant_id,
+        status: "skipped",
+        error_code: safeOperationalErrorCode(error),
+        source_database_changed: false,
+      });
+      results.push({
+        proposal_id: proposal.proposal_id,
+        capability: proposal.action,
+        tenant: proposal.tenant_id,
+        status: "skipped",
+        detail: safeErrorMessage(error),
+      });
+    }
+  }
+
+  const summary = {
+    selected: selected.length,
+    applied: results.filter((result) => result.status === "applied").length,
+    conflict: results.filter((result) => result.status === "conflict").length,
+    skipped: results.filter((result) => result.status === "skipped").length,
+    filters: { capability: capability ?? null, tenant: tenant ?? null, max: max ?? null },
+    results,
+  };
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+  } else {
+    process.stdout.write(formatBatchApplySummary(summary));
+  }
+  return summary.skipped > 0 ? 1 : 0;
+}
+
+function formatBatchApplySummary(summary: {
+  selected: number;
+  applied: number;
+  conflict: number;
+  skipped: number;
+  results: BatchApplyResult[];
+}): string {
+  const lines = [
+    "Synapsor approved proposal batch",
+    "",
+    ...summary.results.map((result) => `${result.status.toUpperCase()} ${result.proposal_id}  ${result.capability}  tenant=${result.tenant}  ${result.detail}`),
+    ...(summary.results.length === 0 ? ["No approved or pending-worker proposals matched."] : []),
+    "",
+    `Summary: ${summary.applied} applied / ${summary.conflict} conflict / ${summary.skipped} skipped (${summary.selected} selected)`,
+    "",
+  ];
+  return lines.join("\n");
 }
 
 async function applyProposal(args: string[], proposalId: string): Promise<number> {
@@ -3059,7 +3334,15 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const runnerId = optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner";
+  const workerAttempt = Number(optionalArg(args, "--worker-attempt") ?? "1");
   const config = await readRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `apply ${proposalId}`, (bridgeStorePath) => applyProposal(argsWithRuntimeStoreBridge(args, bridgeStorePath), proposalId));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "apply", args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, `apply ${proposalId}`, () => applyProposal(withoutSharedPostgresLedgerMirror(args), proposalId), config);
+  }
   const resolvedProposalId = await resolveProposalId(proposalId, storePath);
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
@@ -3075,6 +3358,19 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
   try {
     const proposal = requireLocalProposal(store, resolvedProposalId);
     const capability = findProposalCapability(config, proposal);
+    await verifyStoredApprovalAuthority(config, configPath, store, proposal, capability);
+    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "apply" });
+    store.recordOperatorAuthorization(resolvedProposalId, identity, config.operator_identity?.provider === "signed_key");
+    operationalLog("info", "operator_decision", {
+      action: "apply",
+      proposal_id: proposal.proposal_id,
+      capability: proposal.action,
+      tenant: proposal.tenant_id,
+      subject: identity.subject,
+      identity_provider: identity.provider,
+      identity_verified: identity.verified,
+      required_role: config.operator_identity?.apply_roles?.join(",") || undefined,
+    });
     const executorName = proposalExecutorName(proposal, capability);
     if (executorName === "none" || executorName === "cloud_worker") {
       throw new Error(`proposal ${resolvedProposalId} is not locally applyable; capability ${capability.name} declares ${executorName === "none" ? "no local writeback" : "cloud-worker writeback"}.`);
@@ -3084,20 +3380,24 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
         project_id: optionalArg(args, "--project") ?? "local",
         runner_id: runnerId,
         lease_seconds: Number(optionalArg(args, "--lease-seconds") ?? "300"),
+        attempt: workerAttempt,
       });
       const result = await applySqlJob(job, configPath, storePath, dryRun, envWithDemoDefaults(config, configPath));
-      process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));
+      logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
+      if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));
       return result.status === "failed" ? 1 : 0;
     }
     const executor = executorConfig(config, executorName);
     if (executor.type === "http_handler") {
-      const result = await applyHttpHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, env: envWithDemoDefaults(config, configPath) });
-      process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
+      const result = await applyHttpHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, workerAttempt, env: envWithDemoDefaults(config, configPath) });
+      logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
+      if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
       return result.status === "failed" ? 1 : 0;
     }
     if (executor.type === "command_handler") {
-      const result = await applyCommandHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, env: envWithDemoDefaults(config, configPath) });
-      process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
+      const result = await applyCommandHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, workerAttempt, env: envWithDemoDefaults(config, configPath) });
+      logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
+      if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
       return result.status === "failed" ? 1 : 0;
     }
     throw new Error(`unsupported executor type for ${executorName}`);
@@ -3215,11 +3515,12 @@ async function applyHttpHandlerProposal(input: {
   executor: HttpHandlerExecutor;
   runnerId: string;
   dryRun: boolean;
+  workerAttempt: number;
   env: NodeJS.ProcessEnv;
 }): Promise<ExecutionReceiptV1> {
   const duplicate = duplicateHandlerReceipt(input.store, input.proposalId);
   if (duplicate) return alreadyAppliedReceipt(duplicate.receipt, input.runnerId);
-  const prepared = prepareHandlerProposal(input.store, input.proposal, input.runnerId);
+  const prepared = prepareHandlerProposal(input.store, input.proposal, input.runnerId, input.workerAttempt);
   input.store.recordHandlerWritebackJob({
     writeback_job_id: prepared.request.writeback_job_id,
     proposal_id: prepared.proposal.proposal_id,
@@ -3288,11 +3589,12 @@ async function applyCommandHandlerProposal(input: {
   executor: CommandHandlerExecutor;
   runnerId: string;
   dryRun: boolean;
+  workerAttempt: number;
   env: NodeJS.ProcessEnv;
 }): Promise<ExecutionReceiptV1> {
   const duplicate = duplicateHandlerReceipt(input.store, input.proposalId);
   if (duplicate) return alreadyAppliedReceipt(duplicate.receipt, input.runnerId);
-  const prepared = prepareHandlerProposal(input.store, input.proposal, input.runnerId);
+  const prepared = prepareHandlerProposal(input.store, input.proposal, input.runnerId, input.workerAttempt);
   input.store.recordHandlerWritebackJob({
     writeback_job_id: prepared.request.writeback_job_id,
     proposal_id: prepared.proposal.proposal_id,
@@ -3315,7 +3617,7 @@ async function applyCommandHandlerProposal(input: {
   return receipt;
 }
 
-function prepareHandlerProposal(store: ProposalStore, proposal: StoredProposal, runnerId: string): {
+function prepareHandlerProposal(store: ProposalStore, proposal: StoredProposal, runnerId: string, workerAttempt = 1): {
   proposal: StoredProposal;
   request: Record<string, unknown> & { writeback_job_id: string; idempotency_key: string };
 } {
@@ -3327,7 +3629,7 @@ function prepareHandlerProposal(store: ProposalStore, proposal: StoredProposal, 
     ? store.markPendingWorker(proposal.proposal_id, proposal.proposal_hash, proposal.proposal_version)
     : proposal;
   const changeSet = prepared.change_set;
-  const writebackJobId = `hwb_${prepared.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}`;
+  const writebackJobId = `hwb_${prepared.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}${workerAttempt > 1 ? `_a${workerAttempt}` : ""}`;
   return {
     proposal: prepared,
     request: {
@@ -3360,7 +3662,7 @@ function prepareHandlerProposal(store: ProposalStore, proposal: StoredProposal, 
 
 function duplicateHandlerReceipt(store: ProposalStore, proposalId: string): { receipt: ExecutionReceiptV1 } | undefined {
   const receipts = store.receipts(proposalId);
-  const existing = receipts.find((receipt) => receipt.writeback_job_id.startsWith("hwb_"));
+  const existing = receipts.find((receipt) => receipt.writeback_job_id.startsWith("hwb_") && (receipt.status === "applied" || receipt.status === "already_applied"));
   return existing ? { receipt: existing.receipt } : undefined;
 }
 
@@ -3575,27 +3877,82 @@ function formatHandlerApplyResult(receipt: ExecutionReceiptV1, proposalId: strin
   return `${lines.join("\n")}\n`;
 }
 
-function writebackResultStatus(result: WritebackResult): string {
+function writebackResultStatus(result: WritebackResult | ExecutionReceiptV1): string {
   return String((result as { status?: unknown }).status ?? "unknown");
 }
 
-function writebackAffectedRows(result: WritebackResult): number {
+function writebackAffectedRows(result: WritebackResult | ExecutionReceiptV1): number {
   const value = (result as { affected_rows?: unknown; rows_affected?: unknown }).affected_rows
     ?? (result as { affected_rows?: unknown; rows_affected?: unknown }).rows_affected
     ?? 0;
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
-function writebackErrorCode(result: WritebackResult): string | undefined {
+function writebackErrorCode(result: WritebackResult | ExecutionReceiptV1): string | undefined {
   const value = (result as { error_code?: unknown; safe_error_code?: unknown }).error_code
     ?? (result as { error_code?: unknown; safe_error_code?: unknown }).safe_error_code;
   return typeof value === "string" && value ? value : undefined;
 }
 
-function writebackReceiptHash(result: WritebackResult): string | undefined {
+function writebackReceiptHash(result: WritebackResult | ExecutionReceiptV1): string | undefined {
   const value = (result as { result_hash?: unknown; receipt_hash?: unknown }).result_hash
     ?? (result as { result_hash?: unknown; receipt_hash?: unknown }).receipt_hash;
   return typeof value === "string" && value ? value : undefined;
+}
+
+function logProposalWritebackOutcome(
+  proposal: StoredProposal,
+  runnerId: string,
+  executor: string,
+  result: WritebackResult | ExecutionReceiptV1,
+  dryRun: boolean,
+): void {
+  const status = writebackResultStatus(result);
+  const rowsAffected = writebackAffectedRows(result);
+  operationalLog(status === "failed" ? "error" : status === "conflict" ? "warn" : "info", "writeback_outcome", {
+    proposal_id: proposal.proposal_id,
+    capability: proposal.action,
+    tenant: proposal.tenant_id,
+    runner_id: runnerId,
+    executor,
+    status,
+    rows_affected: rowsAffected,
+    error_code: writebackErrorCode(result),
+    receipt_hash: writebackReceiptHash(result),
+    dry_run: dryRun,
+    source_database_changed: status === "applied" && !dryRun && rowsAffected > 0,
+  });
+}
+
+function operationalLog(
+  level: "info" | "warn" | "error",
+  event: string,
+  fields: Record<string, unknown>,
+): void {
+  const safeFields: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string") safeFields[key] = logIdentifier(value);
+    else if (typeof value === "number" && Number.isFinite(value)) safeFields[key] = value;
+    else if (typeof value === "boolean") safeFields[key] = value;
+  }
+  process.stderr.write(`${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level,
+    event,
+    ...safeFields,
+  })}\n`);
+}
+
+function logIdentifier(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text || text.length > 200 || /[\r\n\u0000-\u001f]/.test(text)) return "<redacted>";
+  return text;
+}
+
+function safeOperationalErrorCode(error: unknown): string {
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+  return code && /^[A-Z][A-Z0-9_:-]{1,79}$/.test(code) ? code : "COMMAND_REJECTED";
 }
 
 function parseOptionalJson(text: string): unknown {
@@ -3697,9 +4054,55 @@ async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: stri
       if (proposal.proposal_hash !== job.approval_id) {
         throw new Error("writeback approval/proposal digest does not match local proposal");
       }
+      await verifyStoredApprovalAuthority(config, configPath, store, proposal, matching);
     } finally {
       store.close();
     }
+  }
+}
+
+async function verifyStoredApprovalAuthority(
+  config: RuntimeConfig,
+  configPath: string,
+  store: ProposalStore,
+  proposal: StoredProposal,
+  capability: NonNullable<RuntimeConfig["capabilities"]>[number],
+): Promise<void> {
+  if (config.operator_identity?.provider !== "signed_key") return;
+  const approval = [...store.approvals(proposal.proposal_id)]
+    .reverse()
+    .find((item) => item.status === "approved" && item.proposal_hash === proposal.proposal_hash && item.proposal_version === proposal.proposal_version);
+  if (!approval) throw new Error(`proposal ${proposal.proposal_id} has no approval matching its immutable hash and version`);
+
+  const reviewedPolicy = capability.approval?.mode === "policy" ? capability.approval.policy : undefined;
+  if (reviewedPolicy && approval.approver === `policy:${reviewedPolicy}`) return;
+
+  const identity = approval.identity;
+  if (!identity || identity.provider !== "signed_key" || !identity.verified) {
+    throw new Error(`proposal ${proposal.proposal_id} does not have a verified signed human approval`);
+  }
+  if (
+    approval.approver !== identity.subject
+    || approval.decision_hash !== identity.decision_hash
+    || approval.signature !== identity.signature
+    || approval.integrity_hash !== identity.integrity_hash
+    || identity.decision.action !== "approve"
+    || identity.decision.proposal_id !== proposal.proposal_id
+    || identity.decision.proposal_hash !== proposal.proposal_hash
+    || identity.decision.proposal_version !== proposal.proposal_version
+  ) {
+    throw new Error(`proposal ${proposal.proposal_id} approval identity record failed integrity checks`);
+  }
+  const operator = config.operator_identity.operators?.[identity.subject];
+  if (!operator) throw new Error(`approval operator ${identity.subject} is no longer registered`);
+  const requiredRole = capability.approval?.required_role;
+  if (requiredRole && (!identity.roles.includes(requiredRole) || !operator.roles.includes(requiredRole))) {
+    throw new Error(`approval operator ${identity.subject} lacks required role ${requiredRole}`);
+  }
+  const publicKeyPath = path.resolve(path.dirname(path.resolve(configPath)), operator.public_key_path);
+  const publicKey = await fs.readFile(publicKeyPath, "utf8");
+  if (!verifySignedOperatorProof(identity, publicKey)) {
+    throw new Error(`proposal ${proposal.proposal_id} approval signature verification failed`);
   }
 }
 
@@ -4936,13 +5339,12 @@ async function mcpServe(args: string[]): Promise<number> {
   if (transport !== "stdio") throw new Error("--transport must be stdio, streamable-http, or http");
   const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
   const readOnly = args.includes("--read-only");
-  const config = readOnly
-    ? { ...await readRuntimeConfig(configPath ?? defaultConfigPath), mode: "read_only" as const }
-    : undefined;
+  const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
+  const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
-  const releaseLease = await writeStoreLease(storePath, "mcp", "stdio", args.includes("--allow-concurrent-store"));
+  const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "stdio", args.includes("--allow-concurrent-store"));
   try {
     await serveStdio({
       configPath,
@@ -4965,9 +5367,8 @@ async function mcpServeHttp(args: string[]): Promise<number> {
   ].join("\n"));
   const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
   const readOnly = args.includes("--read-only");
-  const config = readOnly
-    ? { ...await readRuntimeConfig(configPath ?? defaultConfigPath), mode: "read_only" as const }
-    : undefined;
+  const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
+  const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8765");
   const resultFormat = resultFormatOption(args);
@@ -4978,7 +5379,7 @@ async function mcpServeHttp(args: string[]): Promise<number> {
     process.stderr.write("Warning: binding Synapsor Runner HTTP MCP to 0.0.0.0 exposes model-facing tools on the network. Use TLS, private networking, authentication, and rate limits.\n");
   }
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
-  const releaseLease = await writeStoreLease(storePath, "mcp", "legacy-jsonrpc", args.includes("--allow-concurrent-store"));
+  const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "legacy-jsonrpc", args.includes("--allow-concurrent-store"));
   let server: Awaited<ReturnType<typeof startHttpMcpServer>>;
   try {
     server = await startHttpMcpServer({
@@ -5014,13 +5415,13 @@ async function mcpServeHttp(args: string[]): Promise<number> {
 async function mcpServeStreamableHttp(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
   const readOnly = args.includes("--read-only");
-  const config = readOnly
-    ? { ...await readRuntimeConfig(configPath ?? defaultConfigPath), mode: "read_only" as const }
-    : undefined;
+  const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
+  const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8766");
+  const tls = streamableHttpTlsOptions(args, process.env);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error("--port must be an integer from 1 to 65535");
   }
@@ -5028,7 +5429,7 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
     process.stderr.write("Warning: binding Synapsor Runner Streamable HTTP MCP to 0.0.0.0 exposes model-facing tools on the network. Use TLS, private networking, authentication, and rate limits.\n");
   }
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
-  const releaseLease = await writeStoreLease(storePath, "mcp", "streamable-http", args.includes("--allow-concurrent-store"));
+  const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "streamable-http", args.includes("--allow-concurrent-store"));
   let server: Awaited<ReturnType<typeof startStreamableHttpMcpServer>>;
   try {
     server = await startStreamableHttpMcpServer({
@@ -5042,6 +5443,7 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       devNoAuth: args.includes("--dev-no-auth"),
       corsOrigin: optionalArg(args, "--cors-origin"),
       resultFormat,
+      tls,
     });
   } catch (error) {
     await releaseLease();
@@ -5060,6 +5462,29 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
     process.once("SIGTERM", stop);
   });
   return 0;
+}
+
+function mcpServeLeaseStorePath(config: RuntimeConfig, storePath: string | undefined): string | undefined {
+  // In runtime_store mode, the MCP server never opens the local SQLite ledger.
+  // Holding a SQLite lease would be misleading and can block unrelated local
+  // inspection/reset commands for a file the server is not using.
+  return config.storage?.shared_postgres?.mode === "runtime_store" ? ":memory:" : storePath;
+}
+
+function streamableHttpTlsOptions(args: string[], env: NodeJS.ProcessEnv): StreamableHttpTlsOptions | undefined {
+  const certEnv = optionalArg(args, "--tls-cert-env");
+  const keyEnv = optionalArg(args, "--tls-key-env");
+  const caEnv = optionalArg(args, "--tls-ca-env");
+  const requestClientCert = args.includes("--require-client-cert");
+  if (!certEnv && !keyEnv && !caEnv && !requestClientCert) return undefined;
+  if (!certEnv || !keyEnv) throw new Error("Streamable HTTP TLS requires both --tls-cert-env and --tls-key-env.");
+  const cert = envValue(env, certEnv);
+  const key = envValue(env, keyEnv);
+  const ca = caEnv ? envValue(env, caEnv) : undefined;
+  if (!cert) throw new Error(`${certEnv} is not set or is empty.`);
+  if (!key) throw new Error(`${keyEnv} is not set or is empty.`);
+  if (requestClientCert && !ca) throw new Error("--require-client-cert requires --tls-ca-env with the trusted client CA bundle.");
+  return { cert, key, ca, requestClientCert };
 }
 
 type StoreLease = {
@@ -5203,6 +5628,9 @@ async function propose(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? defaultStorePath;
   const config = await readRuntimeConfig(configPath);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, `propose ${capabilityName}`, () => propose(withoutSharedPostgresLedgerMirror(args)), config);
+  }
   const capability = (config.capabilities ?? []).find((item) => item.name === capabilityName);
   if (!capability) throw new Error(`proposal capability not found: ${capabilityName}`);
   if (capability.kind !== "proposal") throw new Error(`${capabilityName} is a ${capability.kind} capability. Use a proposal capability with ${cliCommandName()} propose.`);
@@ -5219,7 +5647,7 @@ async function propose(args: string[]): Promise<number> {
     }
     return 0;
   } finally {
-    runtime.close();
+    await runtime.close();
   }
 }
 
@@ -5547,7 +5975,7 @@ async function smokeCall(args: string[]): Promise<number> {
     }
     return 0;
   } finally {
-    runtime.close();
+    await runtime.close();
   }
 }
 
@@ -5562,6 +5990,7 @@ async function toolsPreview(args: string[]): Promise<number> {
       auto_approval: boundary.autoApprovalDisabled ? "disabled" : "enabled",
       exposed_to_mcp: boundary.names,
       alias_mappings: boundary.exposures,
+      approval_policies: boundary.approvalPolicies,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
       checks: boundary.checks,
     }, null, 2)}\n`);
@@ -5579,6 +6008,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   names: string[];
   exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
   autoApprovalDisabled: boolean;
+  approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
   const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
@@ -5594,6 +6024,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   try {
     const tools = runtime.listTools();
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
+    const approvalPolicies = approvalPolicySummaries(parsed);
     const exposures = toolNameExposures(tools.map((tool) => tool.name), aliasMode);
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
@@ -5606,9 +6037,9 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, checks };
   } finally {
-    runtime.close();
+    await runtime.close();
   }
 }
 
@@ -5632,6 +6063,7 @@ function formatToolsPreview(input: {
   names: string[];
   exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
   autoApprovalDisabled: boolean;
+  approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
   const exposedLines = input.exposures.length > 0
@@ -5643,6 +6075,7 @@ function formatToolsPreview(input: {
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
     `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
+    ...formatApprovalPolicyPreview(input.approvalPolicies),
     "",
     "Exposed to MCP:",
     ...exposedLines,
@@ -5660,6 +6093,33 @@ function formatToolsPreview(input: {
   lines.push("Next:");
   lines.push(`  ${cliCommandName()} mcp serve --config ${input.configPath} --store ${input.storePath}`);
   return `${lines.join("\n")}\n`;
+}
+
+function approvalPolicySummaries(config: RuntimeConfig): Array<{ capability: string; policy: string; limits: unknown[] }> {
+  const policies = new Map((config.policies ?? []).map((policy) => [policy.name, policy]));
+  return (config.capabilities ?? []).flatMap((capability) => {
+    const policyName = capability.approval?.mode === "policy" ? capability.approval.policy : undefined;
+    if (!policyName) return [];
+    return [{ capability: capability.name, policy: policyName, limits: policies.get(policyName)?.limits ?? [] }];
+  });
+}
+
+function formatApprovalPolicyPreview(policies: Array<{ capability: string; policy: string; limits: unknown[] }>): string[] {
+  if (policies.length === 0) return [];
+  const lines = ["", "Reviewed auto-approval policies:"];
+  for (const item of policies) {
+    lines.push(`  - ${item.capability}: ${item.policy}`);
+    if (item.limits.length === 0) lines.push("    aggregate limits: none (do not schedule unattended batch apply)");
+    for (const raw of item.limits) {
+      if (!isRecord(raw)) continue;
+      const scope = raw.scope === "tenant_policy_object" ? "tenant + policy + object" : "tenant + policy";
+      const description = raw.kind === "total"
+        ? `total ${String(raw.field)} <= ${String(raw.max)}`
+        : `count <= ${String(raw.max)}`;
+      lines.push(`    ${description} per ${String(raw.period)} (${scope})`);
+    }
+  }
+  return lines;
 }
 
 function formatMcpSmoke(input: {
@@ -6139,10 +6599,10 @@ async function readMcpAuditTarget(target: string, args: string[], timeoutMs: num
     const runtime = createMcpRuntime(loadRuntimeConfigFromFile(target), { storePath: ":memory:" });
     try {
       return { tools: runtime.listTools() };
-    } finally {
-      runtime.close();
-    }
+  } finally {
+    await runtime.close();
   }
+}
   return parsed;
 }
 
@@ -6292,12 +6752,250 @@ async function events(args: string[]): Promise<number> {
   return 2;
 }
 
+async function metrics(args: string[]): Promise<number> {
+  const rest = args[0] === "show" ? args.slice(1) : args;
+  const store = await openLocalStore(rest);
+  try {
+    const rows = store.operationalMetrics({
+      tenant: optionalArg(rest, "--tenant"),
+      capability: optionalArg(rest, "--capability"),
+    });
+    const format = optionalArg(rest, "--format") ?? (rest.includes("--json") ? "json" : "prometheus");
+    if (format === "json") process.stdout.write(`${JSON.stringify({ metrics: rows }, null, 2)}\n`);
+    else if (format === "prometheus" || format === "openmetrics") process.stdout.write(formatPrometheusMetrics(rows));
+    else throw new Error("metrics --format must be prometheus, openmetrics, or json");
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function workerCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "run") return workerRun(rest);
+  if (subcommand === "status" || subcommand === "list") return workerStatus(rest);
+  usage(["worker"]);
+  return 2;
+}
+
+async function workerStatus(args: string[]): Promise<number> {
+  const store = await openLocalStore(args);
+  try {
+    const status = optionalArg(args, "--status") as Parameters<ProposalStore["listWorkerQueue"]>[0];
+    const items = store.listWorkerQueue(status);
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ worker_queue: items }, null, 2)}\n`);
+    else if (items.length === 0) process.stdout.write("Worker queue is empty.\n");
+    else for (const item of items) process.stdout.write(`${item.status.toUpperCase()} ${item.proposal_id} attempt=${item.attempts}/${item.max_attempts}${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function workerRun(args: string[]): Promise<number> {
+  if (!args.includes("--yes")) throw new Error("worker run requires --yes because it applies approved proposals");
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await readRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    if (!args.includes("--once") && !args.includes("--drain")) {
+      return workerRunSharedRuntimeStoreDaemon(args, config);
+    }
+    return withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => workerRun(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "worker run", args);
+  const storePath = optionalArg(args, "--store") ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    if (!args.includes("--once") && !args.includes("--drain")) {
+      throw new Error("shared Postgres ledger mirror for worker run requires --once or --drain. Use storage.shared_postgres.mode=runtime_store for long-running shared worker loops.");
+    }
+    return withSharedPostgresLedgerMirror(args, storePath, "worker run", () => workerRun(withoutSharedPostgresLedgerMirror(args)), config);
+  }
+  const workerId = optionalArg(args, "--worker-id") ?? process.env.SYNAPSOR_RUNNER_ID ?? `worker_${process.pid}`;
+  const maxAttempts = positiveIntOption(args, "--max-attempts", 5, 1, 100);
+  const retryBaseMs = positiveIntOption(args, "--retry-base-ms", 1000, 1, 3_600_000);
+  const retryMaxMs = positiveIntOption(args, "--retry-max-ms", 60_000, retryBaseMs, 86_400_000);
+  const leaseSeconds = positiveIntOption(args, "--lease-seconds", 60, 15, 3600);
+  const pollMs = positiveIntOption(args, "--poll-ms", 5000, 10, 3_600_000);
+  const once = args.includes("--once");
+  const drain = args.includes("--drain");
+  const capability = optionalArg(args, "--capability");
+  const tenant = optionalArg(args, "--tenant");
+  let stopped = false;
+  const stop = () => { stopped = true; };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    do {
+      const store = new ProposalStore(storePath);
+      let item;
+      try {
+        store.enqueueApprovedForWorker({ capability, tenant, maxAttempts });
+        item = store.claimWorkerItem({ workerId, leaseSeconds });
+      } finally {
+        store.close();
+      }
+      if (!item) {
+        if (once || drain) return 0;
+        await waitFor(pollMs);
+        continue;
+      }
+
+      let executionCode = "WORKER_EXECUTION_ERROR";
+      try {
+        await applyProposal([
+          item.proposal_id,
+          "--config", configPath,
+          "--store", storePath,
+          "--runner", workerId,
+          "--worker-attempt", String(item.attempts),
+          "--batch-quiet",
+          "--yes",
+          ...(optionalArg(args, "--identity") ? ["--identity", optionalArg(args, "--identity")!] : []),
+          ...(optionalArg(args, "--identity-key") ? ["--identity-key", optionalArg(args, "--identity-key")!] : []),
+          ...(optionalArg(args, "--actor") ? ["--actor", optionalArg(args, "--actor")!] : []),
+        ], item.proposal_id);
+        const afterStore = new ProposalStore(storePath);
+        try {
+          const proposal = requireLocalProposal(afterStore, item.proposal_id);
+          const receipt = afterStore.receipts(item.proposal_id).at(-1)?.receipt;
+          executionCode = receipt?.safe_error_code ?? (proposal.state === "failed" ? "WRITEBACK_FAILED" : "WORKER_STATE_INVALID");
+          if (proposal.state === "applied") {
+            afterStore.completeWorkerItem(item.proposal_id, workerId, receipt?.status === "already_applied" ? "already_applied" : "applied");
+            operationalLog("info", "worker_item_completed", { proposal_id: item.proposal_id, worker_id: workerId, status: proposal.state, attempt: item.attempts });
+          } else if (proposal.state === "conflict") {
+            afterStore.completeWorkerItem(item.proposal_id, workerId, "conflict");
+            operationalLog("warn", "worker_item_completed", { proposal_id: item.proposal_id, worker_id: workerId, status: proposal.state, attempt: item.attempts });
+          } else if (proposal.state === "failed") {
+            finishWorkerFailure(afterStore, item, workerId, executionCode, retryBaseMs, retryMaxMs);
+          } else {
+            finishWorkerFailure(afterStore, item, workerId, "WORKER_STATE_INVALID", retryBaseMs, retryMaxMs);
+          }
+        } finally {
+          afterStore.close();
+        }
+      } catch (error) {
+        executionCode = workerErrorCode(error);
+        const failureStore = new ProposalStore(storePath);
+        try {
+          finishWorkerFailure(failureStore, item, workerId, executionCode, retryBaseMs, retryMaxMs);
+        } finally {
+          failureStore.close();
+        }
+      }
+      if (once) return 0;
+    } while (!stopped);
+    return 0;
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+}
+
+async function workerRunSharedRuntimeStoreDaemon(args: string[], config: RuntimeConfig): Promise<number> {
+  const pollMs = positiveIntOption(args, "--poll-ms", 5000, 10, 3_600_000);
+  let stopped = false;
+  const stop = () => { stopped = true; };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    while (!stopped) {
+      await withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => {
+        return workerRun(argsWithRuntimeStoreBridge([...args, "--drain"], bridgeStorePath));
+      });
+      if (!stopped) await waitFor(pollMs);
+    }
+    return 0;
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+}
+
+function finishWorkerFailure(
+  store: ProposalStore,
+  item: WorkerQueueItem,
+  workerId: string,
+  errorCode: string,
+  retryBaseMs: number,
+  retryMaxMs: number,
+): void {
+  const retryable = isRetryableWritebackCode(errorCode);
+  if (!retryable) {
+    store.deadLetterWorkerItem({ proposalId: item.proposal_id, workerId, errorCode });
+    operationalLog("error", "worker_item_dead_lettered", { proposal_id: item.proposal_id, worker_id: workerId, error_code: errorCode, attempt: item.attempts });
+    return;
+  }
+  const delay = Math.min(retryMaxMs, retryBaseMs * 2 ** Math.max(0, item.attempts - 1));
+  const updated = store.retryWorkerItem({
+    proposalId: item.proposal_id,
+    workerId,
+    errorCode,
+    retryAt: new Date(Date.now() + delay).toISOString(),
+  });
+  operationalLog(updated.status === "dead_letter" ? "error" : "warn", updated.status === "dead_letter" ? "worker_item_dead_lettered" : "worker_retry_scheduled", {
+    proposal_id: item.proposal_id,
+    worker_id: workerId,
+    error_code: errorCode,
+    attempt: updated.attempts,
+    max_attempts: updated.max_attempts,
+  });
+}
+
+function isRetryableWritebackCode(code: string): boolean {
+  return /^(DATABASE_UNAVAILABLE|TRANSACTION_FAILED|HANDLER_TIMEOUT|HANDLER_REQUEST_FAILED|HANDLER_HTTP_(429|5\d\d)|IDEMPOTENCY_RECEIPT_IN_PROGRESS|WORKER_EXECUTION_ERROR)$/.test(code);
+}
+
+function workerErrorCode(error: unknown): string {
+  const safe = safeOperationalErrorCode(error);
+  if (safe !== "COMMAND_REJECTED") return safe;
+  const message = error instanceof Error ? error.message : "";
+  if (/timeout/i.test(message)) return "HANDLER_TIMEOUT";
+  return "WORKER_EXECUTION_ERROR";
+}
+
+function positiveIntOption(args: string[], flag: string, fallback: number, minimum: number, maximum: number): number {
+  const raw = optionalArg(args, flag);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`${flag} must be an integer from ${minimum} to ${maximum}`);
+  return value;
+}
+
+async function waitFor(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function formatPrometheusMetrics(rows: OperationalMetricRow[]): string {
+  const definitions = [
+    ["synapsor_proposals_total", "proposals", "Proposals created by trusted tenant and capability."],
+    ["synapsor_approvals_total", "approvals", "Approved decisions by trusted tenant and capability."],
+    ["synapsor_rejections_total", "rejections", "Rejected decisions by trusted tenant and capability."],
+    ["synapsor_applies_total", "applies", "Successful or idempotently completed writebacks."],
+    ["synapsor_conflicts_total", "conflicts", "Guarded writeback conflicts."],
+    ["synapsor_writeback_failures_total", "failures", "Failed writeback outcomes."],
+  ] as const;
+  const lines: string[] = [];
+  for (const [name, field, help] of definitions) {
+    lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} counter`);
+    for (const row of rows) {
+      lines.push(`${name}{tenant="${prometheusLabel(row.tenant_id)}",capability="${prometheusLabel(row.capability)}"} ${row[field]}`);
+    }
+  }
+  lines.push("# EOF", "");
+  return lines.join("\n");
+}
+
+function prometheusLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/"/g, '\\"');
+}
+
 async function storeCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "stats") return storeStats(rest);
   if (subcommand === "vacuum") return storeVacuum(rest);
   if (subcommand === "prune") return storePrune(rest);
   if (subcommand === "reset") return storeReset(rest);
+  if (subcommand === "shared-postgres") return storeSharedPostgres(rest);
   usage(["store"]);
   return 2;
 }
@@ -6485,6 +7183,16 @@ async function proposalsShow(args: string[]): Promise<number> {
 async function proposalsApprove(args: string[]): Promise<number> {
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals approve requires <proposal_id>");
+  const storePath = localStorePath(args);
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `proposals approve ${proposalId}`, (bridgeStorePath) => proposalsApprove(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "proposals approve", args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, `proposals approve ${proposalId}`, () => proposalsApprove(withoutSharedPostgresLedgerMirror(args)), config);
+  }
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
@@ -6494,11 +7202,24 @@ async function proposalsApprove(args: string[]): Promise<number> {
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
     await confirmDangerousAction(args, `Approve proposal ${resolvedProposalId} for guarded writeback?`);
+    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "approve", reason: optionalArg(args, "--reason") });
     const updated = store.approveProposal(resolvedProposalId, {
-      approver: optionalArg(args, "--actor") ?? process.env.USER ?? "local_operator",
+      approver: identity.subject,
       proposal_hash: proposal.proposal_hash,
       proposal_version: proposal.proposal_version,
       reason: optionalArg(args, "--reason") ?? undefined,
+      identity,
+      require_verified_identity: config?.operator_identity?.provider === "signed_key",
+    });
+    operationalLog("info", "operator_decision", {
+      action: "approve",
+      proposal_id: updated.proposal_id,
+      capability: updated.action,
+      tenant: updated.tenant_id,
+      subject: identity.subject,
+      identity_provider: identity.provider,
+      identity_verified: identity.verified,
+      required_role: proposal.change_set.approval.required_role,
     });
     process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : `approved ${updated.proposal_id}\n`);
     return 0;
@@ -6512,6 +7233,16 @@ async function proposalsReject(args: string[]): Promise<number> {
   if (!proposalId) throw new Error("proposals reject requires <proposal_id>");
   const reason = optionalArg(args, "--reason");
   if (!reason) throw new Error("proposals reject requires --reason <text>");
+  const storePath = localStorePath(args);
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `proposals reject ${proposalId}`, (bridgeStorePath) => proposalsReject(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "proposals reject", args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, `proposals reject ${proposalId}`, () => proposalsReject(withoutSharedPostgresLedgerMirror(args)), config);
+  }
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
@@ -6521,11 +7252,24 @@ async function proposalsReject(args: string[]): Promise<number> {
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
     await confirmDangerousAction(args, `Reject proposal ${resolvedProposalId}?`);
+    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "reject", reason });
     const updated = store.rejectProposal(resolvedProposalId, {
-      actor: optionalArg(args, "--actor") ?? process.env.USER ?? "local_operator",
+      actor: identity.subject,
       proposal_hash: proposal.proposal_hash,
       proposal_version: proposal.proposal_version,
       reason,
+      identity,
+      require_verified_identity: config?.operator_identity?.provider === "signed_key",
+    });
+    operationalLog("info", "operator_decision", {
+      action: "reject",
+      proposal_id: updated.proposal_id,
+      capability: updated.action,
+      tenant: updated.tenant_id,
+      subject: identity.subject,
+      identity_provider: identity.provider,
+      identity_verified: identity.verified,
+      required_role: proposal.change_set.approval.required_role,
     });
     process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : `rejected ${updated.proposal_id}\n`);
     return 0;
@@ -7012,6 +7756,549 @@ async function storeReset(args: string[]): Promise<number> {
   return 0;
 }
 
+async function storeSharedPostgres(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "migration") return storeSharedPostgresMigration(rest);
+  if (subcommand === "apply-migration") return storeSharedPostgresApplyMigration(rest);
+  if (subcommand === "status") return storeSharedPostgresStatus(rest);
+  if (subcommand === "sync") return storeSharedPostgresSync(rest);
+  if (subcommand === "restore") return storeSharedPostgresRestore(rest);
+  usage(["store"]);
+  return 2;
+}
+
+async function storeSharedPostgresMigration(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres migration");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const sql = sharedPostgresLedgerMigration(schema);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ ok: true, engine: "postgres", schema, sql }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`${sql}\n`);
+  }
+  return 0;
+}
+
+async function storeSharedPostgresApplyMigration(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres apply-migration");
+  if (!args.includes("--yes")) throw new Error("store shared-postgres apply-migration requires --yes.");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const databaseUrl = envValue(urlEnv);
+  if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  try {
+    await pool.query(sharedPostgresLedgerMigration(schema));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, engine: "postgres", schema, url_env: urlEnv }, null, 2)}\n`);
+    else process.stdout.write(`shared Postgres ledger migration applied in schema ${schema} using ${urlEnv}\n`);
+  } finally {
+    await pool.end();
+  }
+  return 0;
+}
+
+async function storeSharedPostgresStatus(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres status");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const databaseUrl = envValue(urlEnv);
+  if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  try {
+    const counts = await sharedPostgresLedgerTableCounts(pool, schema);
+    const ok = Object.values(counts).every((count) => typeof count === "number");
+    const payload = { ok, engine: "postgres", schema, url_env: urlEnv, tables: counts };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write(formatSharedPostgresStatus(payload));
+  } finally {
+    await pool.end();
+  }
+  return 0;
+}
+
+const sharedPostgresLedgerTables = ["ledger_entries", "proposal_locks", "worker_leases"] as const;
+
+async function sharedPostgresLedgerTableCounts(
+  pool: ReturnType<typeof createPostgresPool>,
+  schema: string,
+): Promise<Record<typeof sharedPostgresLedgerTables[number], number | null>> {
+  const qualified = `${quoteSqlIdentifier(schema, "postgres")}.`;
+  const counts: Record<typeof sharedPostgresLedgerTables[number], number | null> = {
+    ledger_entries: null,
+    proposal_locks: null,
+    worker_leases: null,
+  };
+  for (const table of sharedPostgresLedgerTables) {
+    try {
+      const result = await pool.query(`SELECT COUNT(*)::int AS count FROM ${qualified}${quoteSqlIdentifier(table, "postgres")}`);
+      counts[table] = Number(result.rows[0]?.count ?? 0);
+    } catch {
+      counts[table] = null;
+    }
+  }
+  return counts;
+}
+
+async function storeSharedPostgresSync(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres sync");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const dryRun = args.includes("--dry-run");
+  if (!dryRun && !args.includes("--yes")) throw new Error("store shared-postgres sync requires --yes unless --dry-run is set.");
+
+  const entries = localSharedLedgerEntries(storePath);
+
+  if (dryRun) {
+    const payload = { ok: true, dry_run: true, engine: "postgres", schema, url_env: urlEnv, store: path.resolve(storePath), entries: entries.length };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write(`shared Postgres ledger sync dry-run: ${entries.length} entr${entries.length === 1 ? "y" : "ies"} from ${storePath} into schema ${schema} using ${urlEnv}\n`);
+    return 0;
+  }
+
+  const result = await syncLocalStoreToSharedPostgres({ storePath, schema, urlEnv });
+  const payload = { ok: true, engine: "postgres", schema, url_env: urlEnv, store: path.resolve(storePath), entries: entries.length };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write(`shared Postgres ledger sync complete: ${result.entries} entr${result.entries === 1 ? "y" : "ies"} from ${storePath} into schema ${schema} using ${urlEnv}\n`);
+  return 0;
+}
+
+async function storeSharedPostgresRestore(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres restore");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const dryRun = args.includes("--dry-run");
+  if (!dryRun && !args.includes("--yes")) throw new Error("store shared-postgres restore requires --yes unless --dry-run is set.");
+  const entries = await fetchSharedPostgresEntriesFromEnv(urlEnv, schema);
+  if (dryRun) {
+    const payload = { ok: true, dry_run: true, engine: "postgres", schema, url_env: urlEnv, store: path.resolve(storePath), entries: entries.length };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write(`shared Postgres ledger restore dry-run: ${entries.length} entr${entries.length === 1 ? "y" : "ies"} from schema ${schema} into ${storePath} using ${urlEnv}\n`);
+    return 0;
+  }
+  const result = await restoreSharedPostgresToLocalStore({ storePath, schema, urlEnv, entries });
+  const payload = { ok: true, engine: "postgres", schema, url_env: urlEnv, store: path.resolve(storePath), ...result };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write(`shared Postgres ledger restore complete: imported ${result.imported}, skipped ${result.skipped}, source entries ${entries.length}, store ${storePath}, url env ${urlEnv}\n`);
+  return 0;
+}
+
+function localSharedLedgerEntries(storePath: string): SharedLedgerEntry[] {
+  const store = new ProposalStore(storePath);
+  try {
+    return store.sharedLedgerEntries();
+  } finally {
+    store.close();
+  }
+}
+
+type SharedPostgresLedgerMirror = {
+  schema: string;
+  urlEnv: string;
+  lockTimeoutMs: number;
+};
+
+type SharedPostgresLedgerClient = {
+  query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
+};
+
+function assertNoRuntimeStoreForLocalMutation(config: RuntimeConfig | undefined, command: string, args: string[] = []): void {
+  if (config?.storage?.shared_postgres?.mode !== "runtime_store") return;
+  if (args.includes(runtimeStoreBridgeFlag)) return;
+  throw new Error(`${command} cannot run directly against the local SQLite path when storage.shared_postgres.mode=runtime_store. Use the built-in runtime-store bridge or switch to local SQLite/mirror mode.`);
+}
+
+function runtimeStoreBridgeRequired(args: string[], config: RuntimeConfig | undefined): boolean {
+  return config?.storage?.shared_postgres?.mode === "runtime_store" && !args.includes(runtimeStoreBridgeFlag);
+}
+
+function argsWithRuntimeStoreBridge(args: string[], storePath: string): string[] {
+  const result: string[] = [];
+  const flagsWithValues = new Set(["--shared-ledger-url-env", "--shared-ledger-schema", "--shared-ledger-lock-timeout-ms"]);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg || arg === runtimeStoreBridgeFlag) continue;
+    if (arg === "--shared-ledger-mirror" || arg === "--no-shared-ledger-mirror") continue;
+    if (flagsWithValues.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg === "--store") {
+      index += 1;
+      continue;
+    }
+    result.push(arg);
+  }
+  result.push("--store", storePath, runtimeStoreBridgeFlag);
+  return result;
+}
+
+async function withSharedPostgresRuntimeStoreBridge<T>(
+  args: string[],
+  config: RuntimeConfig,
+  command: string,
+  callback: (storePath: string) => Promise<T>,
+): Promise<T> {
+  const mirror = sharedPostgresLedgerMirrorOptions(args, config);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-runtime-store-bridge-"));
+  const storePath = path.join(tempDir, "local.db");
+  try {
+    return await withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
+      const before = await restoreSharedPostgresToLocalStore({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+      operationalLog("info", "shared_runtime_store_restore", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        entries: before.entries,
+        imported: before.imported,
+        skipped: before.skipped,
+        source_database_changed: false,
+      });
+      let result: T | undefined;
+      let originalError: unknown;
+      try {
+        result = await callback(storePath);
+      } catch (error) {
+        originalError = error;
+      }
+
+      try {
+        const after = await syncLocalStoreToSharedPostgres({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+        operationalLog("info", "shared_runtime_store_sync", {
+          command,
+          schema: mirror.schema,
+          url_env: mirror.urlEnv,
+          entries: after.entries,
+          source_database_changed: false,
+          command_failed: originalError !== undefined,
+        });
+      } catch (syncError) {
+        operationalLog("error", "shared_runtime_store_sync_failed", {
+          command,
+          schema: mirror.schema,
+          url_env: mirror.urlEnv,
+          error_code: safeOperationalErrorCode(syncError),
+          source_database_changed: false,
+          command_failed: originalError !== undefined,
+        });
+        if (originalError === undefined) throw syncError;
+      }
+      if (originalError !== undefined) throw originalError;
+      return result as T;
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function sharedPostgresLedgerMirrorRequested(args: string[], config?: RuntimeConfig): boolean {
+  if (args.includes("--no-shared-ledger-mirror")) return false;
+  return args.includes("--shared-ledger-mirror")
+    || Boolean(optionalArg(args, "--shared-ledger-url-env"))
+    || process.env.SYNAPSOR_SHARED_LEDGER_MIRROR === "true"
+    || config?.storage?.shared_postgres?.mode === "mirror";
+}
+
+function sharedPostgresLedgerMirrorOptions(args: string[], config?: RuntimeConfig): SharedPostgresLedgerMirror {
+  const configured = config?.storage?.shared_postgres;
+  return {
+    schema: optionalArg(args, "--shared-ledger-schema")
+      ?? process.env.SYNAPSOR_SHARED_LEDGER_SCHEMA
+      ?? configured?.schema
+      ?? "synapsor_runner",
+    urlEnv: optionalArg(args, "--shared-ledger-url-env")
+      ?? process.env.SYNAPSOR_SHARED_LEDGER_URL_ENV
+      ?? configured?.url_env
+      ?? "SYNAPSOR_LEDGER_DATABASE_URL",
+    lockTimeoutMs: optionalNonNegativeIntegerArg(args, "--shared-ledger-lock-timeout-ms")
+      ?? optionalNonNegativeIntegerEnv("SYNAPSOR_SHARED_LEDGER_LOCK_TIMEOUT_MS")
+      ?? configured?.lock_timeout_ms
+      ?? 10_000,
+  };
+}
+
+function withoutSharedPostgresLedgerMirror(args: string[]): string[] {
+  const result: string[] = [];
+  const flagsWithValues = new Set(["--shared-ledger-url-env", "--shared-ledger-schema", "--shared-ledger-lock-timeout-ms"]);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--shared-ledger-mirror" || arg === "--no-shared-ledger-mirror") continue;
+    if (flagsWithValues.has(arg)) {
+      index += 1;
+      continue;
+    }
+    result.push(arg);
+  }
+  result.push("--no-shared-ledger-mirror");
+  return result;
+}
+
+async function withSharedPostgresLedgerMirror<T>(
+  args: string[],
+  storePath: string,
+  command: string,
+  callback: () => Promise<T>,
+  config?: RuntimeConfig,
+): Promise<T> {
+  if (storePath === ":memory:") {
+    throw new Error("shared Postgres ledger mirror requires a durable --store path, not :memory:");
+  }
+  const mirror = sharedPostgresLedgerMirrorOptions(args, config);
+  return withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
+    const before = await restoreSharedPostgresToLocalStore({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+    operationalLog("info", "shared_ledger_mirror_restore", {
+      command,
+      schema: mirror.schema,
+      url_env: mirror.urlEnv,
+      entries: before.entries,
+      imported: before.imported,
+      skipped: before.skipped,
+      source_database_changed: false,
+    });
+    let result: T | undefined;
+    let originalError: unknown;
+    try {
+      result = await callback();
+    } catch (error) {
+      originalError = error;
+    }
+
+    try {
+      const after = await syncLocalStoreToSharedPostgres({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+      operationalLog("info", "shared_ledger_mirror_sync", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        entries: after.entries,
+        source_database_changed: false,
+        command_failed: originalError !== undefined,
+      });
+    } catch (syncError) {
+      operationalLog("error", "shared_ledger_mirror_sync_failed", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        error_code: safeOperationalErrorCode(syncError),
+        source_database_changed: false,
+        command_failed: originalError !== undefined,
+      });
+      if (originalError === undefined) throw syncError;
+    }
+    if (originalError !== undefined) throw originalError;
+    return result as T;
+  });
+}
+
+async function withSharedPostgresLedgerMirrorLock<T>(
+  mirror: SharedPostgresLedgerMirror,
+  command: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const databaseUrl = envValue(mirror.urlEnv);
+  if (!databaseUrl) throw new Error(`${mirror.urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  const client = await pool.connect();
+  const lockKey = `synapsor-runner:${mirror.schema}:shared-ledger-mirror`;
+  let locked = false;
+  try {
+    locked = await acquirePostgresAdvisoryLock(client, lockKey, mirror.lockTimeoutMs);
+    if (!locked) {
+      operationalLog("warn", "shared_ledger_mirror_lock_timeout", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        lock_timeout_ms: mirror.lockTimeoutMs,
+        source_database_changed: false,
+      });
+      throw new Error(`shared Postgres ledger mirror lock is held for schema ${mirror.schema}; retry later or increase --shared-ledger-lock-timeout-ms`);
+    }
+    operationalLog("info", "shared_ledger_mirror_lock_acquired", {
+      command,
+      schema: mirror.schema,
+      url_env: mirror.urlEnv,
+      lock_timeout_ms: mirror.lockTimeoutMs,
+      source_database_changed: false,
+    });
+    return await callback();
+  } finally {
+    if (locked) {
+      await client.query("SELECT pg_advisory_unlock(hashtext($1)) AS unlocked", [lockKey]).catch((error: unknown) => {
+        operationalLog("error", "shared_ledger_mirror_lock_release_failed", {
+          command,
+          schema: mirror.schema,
+          url_env: mirror.urlEnv,
+          error_code: safeOperationalErrorCode(error),
+          source_database_changed: false,
+        });
+      });
+      operationalLog("info", "shared_ledger_mirror_lock_released", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        source_database_changed: false,
+      });
+    }
+    client.release();
+    await pool.end();
+  }
+}
+
+async function acquirePostgresAdvisoryLock(
+  client: SharedPostgresLedgerClient,
+  lockKey: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const started = Date.now();
+  for (;;) {
+    const result = await client.query("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [lockKey]);
+    if (result.rows[0]?.locked === true) return true;
+    if (Date.now() - started >= timeoutMs) return false;
+    await waitFor(Math.min(250, Math.max(25, timeoutMs - (Date.now() - started))));
+  }
+}
+
+async function fetchSharedPostgresEntriesFromEnv(urlEnv: string, schema: string): Promise<SharedLedgerEntry[]> {
+  const databaseUrl = envValue(urlEnv);
+  if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  try {
+    return await fetchSharedPostgresLedgerEntries(pool, schema);
+  } finally {
+    await pool.end();
+  }
+}
+
+async function syncLocalStoreToSharedPostgres(input: { storePath: string; schema: string; urlEnv: string }): Promise<{ entries: number }> {
+  const entries = localSharedLedgerEntries(input.storePath);
+  const databaseUrl = envValue(input.urlEnv);
+  if (!databaseUrl) throw new Error(`${input.urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  const qualified = `${quoteSqlIdentifier(input.schema, "postgres")}.ledger_entries`;
+  try {
+    await pool.query("BEGIN");
+    await pool.query(sharedPostgresLedgerMigration(input.schema));
+    for (const entry of entries) {
+      await pool.query(
+        `INSERT INTO ${qualified} (entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
+ON CONFLICT (entry_key) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  proposal_id = EXCLUDED.proposal_id,
+  tenant_id = EXCLUDED.tenant_id,
+  capability = EXCLUDED.capability,
+  payload_json = EXCLUDED.payload_json,
+  created_at = EXCLUDED.created_at`,
+        [
+          entry.entry_key,
+          entry.kind,
+          entry.proposal_id ?? null,
+          entry.tenant_id ?? null,
+          entry.capability ?? null,
+          JSON.stringify(entry.payload),
+          entry.created_at,
+        ],
+      );
+    }
+    await pool.query("COMMIT");
+    return { entries: entries.length };
+  } catch (error) {
+    await pool.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function restoreSharedPostgresToLocalStore(input: { storePath: string; schema: string; urlEnv: string; entries?: SharedLedgerEntry[] }): Promise<{ entries: number; imported: number; skipped: number }> {
+  if (input.storePath !== ":memory:") {
+    await fs.mkdir(path.dirname(path.resolve(input.storePath)), { recursive: true });
+  }
+  const entries = input.entries ?? await fetchSharedPostgresEntriesFromEnv(input.urlEnv, input.schema);
+  const store = new ProposalStore(input.storePath);
+  try {
+    const result = store.importSharedLedgerEntries(entries);
+    return { entries: entries.length, imported: result.imported, skipped: result.skipped };
+  } finally {
+    store.close();
+  }
+}
+
+async function fetchSharedPostgresLedgerEntries(pool: ReturnType<typeof createPostgresPool>, schema: string): Promise<SharedLedgerEntry[]> {
+  const qualified = `${quoteSqlIdentifier(schema, "postgres")}.ledger_entries`;
+  const result = await pool.query(`
+    SELECT entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at::text AS created_at
+    FROM ${qualified}
+    ORDER BY entry_id ASC
+  `);
+  return result.rows.map((row) => {
+    const rawPayload = row.payload_json;
+    let payload: Record<string, unknown>;
+    if (isRecord(rawPayload)) payload = rawPayload;
+    else {
+      const parsed = JSON.parse(String(rawPayload ?? "{}")) as unknown;
+      payload = isRecord(parsed) ? parsed : {};
+    }
+    return {
+      entry_key: String(row.entry_key),
+      kind: String(row.kind),
+      proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+      tenant_id: row.tenant_id == null ? undefined : String(row.tenant_id),
+      capability: row.capability == null ? undefined : String(row.capability),
+      payload,
+      created_at: String(row.created_at),
+    };
+  });
+}
+
+function sharedPostgresLedgerMigration(schema: string): string {
+  const s = quoteSqlIdentifier(schema, "postgres");
+  return [
+    `CREATE SCHEMA IF NOT EXISTS ${s};`,
+    `CREATE TABLE IF NOT EXISTS ${s}.ledger_entries (`,
+    "  entry_id bigserial PRIMARY KEY,",
+    "  entry_key text UNIQUE NOT NULL,",
+    "  kind text NOT NULL,",
+    "  proposal_id text,",
+    "  tenant_id text,",
+    "  capability text,",
+    "  payload_json jsonb NOT NULL,",
+    "  created_at timestamptz NOT NULL DEFAULT now()",
+    ");",
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_proposal ON ${s}.ledger_entries(proposal_id, created_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_tenant_capability ON ${s}.ledger_entries(tenant_id, capability, created_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_kind_created ON ${s}.ledger_entries(kind, created_at);`,
+    `CREATE TABLE IF NOT EXISTS ${s}.proposal_locks (`,
+    "  proposal_id text PRIMARY KEY,",
+    "  proposal_hash text NOT NULL,",
+    "  state text NOT NULL,",
+    "  tenant_id text NOT NULL,",
+    "  capability text NOT NULL,",
+    "  updated_at timestamptz NOT NULL DEFAULT now()",
+    ");",
+    `CREATE TABLE IF NOT EXISTS ${s}.worker_leases (`,
+    "  proposal_id text PRIMARY KEY,",
+    "  worker_id text NOT NULL,",
+    "  lease_expires_at timestamptz NOT NULL,",
+    "  attempt integer NOT NULL DEFAULT 1,",
+    "  updated_at timestamptz NOT NULL DEFAULT now()",
+    ");",
+  ].join("\n");
+}
+
+function formatSharedPostgresStatus(payload: { ok: boolean; schema: string; url_env: string; tables: Record<string, number | null> }): string {
+  const lines = [
+    `Shared Postgres ledger: ${payload.ok ? "ready" : "not initialized"}`,
+    `Schema: ${payload.schema}`,
+    `URL env: ${payload.url_env}`,
+  ];
+  for (const [table, count] of Object.entries(payload.tables)) {
+    lines.push(`- ${table}: ${count === null ? "missing" : count}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 const commonReadOptions = new Set(["--store", "--json", "--details", "--debug"]);
 const showAllowedOptions = new Set([...commonReadOptions]);
 const exportAllowedOptions = new Set([...commonReadOptions, "--output", "--out", "--format", "--evidence", "--audit"]);
@@ -7135,6 +8422,7 @@ const storeStatsAllowedOptions = new Set([...commonReadOptions]);
 const storeVacuumAllowedOptions = new Set([...commonReadOptions]);
 const storePruneAllowedOptions = new Set([...commonReadOptions, "--older-than", "--dry-run", "--yes", "--force"]);
 const storeResetAllowedOptions = new Set([...commonReadOptions, "--yes", "--force"]);
+const storeSharedPostgresAllowedOptions = new Set(["--schema", "--url-env", "--store", "--dry-run", "--yes", "--json"]);
 
 function assertKnownOptions(args: string[], allowed: Set<string>, commandName: string): void {
   for (const arg of args) {
@@ -7313,6 +8601,18 @@ function optionalPositiveIntegerArg(args: string[], flag: string): number | unde
   return parsed;
 }
 
+function optionalNonNegativeIntegerArg(args: string[], flag: string): number | undefined {
+  return optionalPositiveIntegerArg(args, flag);
+}
+
+function optionalNonNegativeIntegerEnv(name: string): number | undefined {
+  const value = envValue(name);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer`);
+  return parsed;
+}
+
 function envValue(name: string | undefined): string | undefined;
 function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined;
 function envValue(first: NodeJS.ProcessEnv | string | undefined, second?: string): string | undefined {
@@ -7408,12 +8708,16 @@ function proposalIdFromReplayId(replayId: string): string {
 }
 
 async function openLocalStore(args: string[]): Promise<ProposalStore> {
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storePath = localStorePath(args);
   if (storePath !== ":memory:") {
     if (!await fileExists(storePath)) throw missingLocalStoreError(storePath);
     await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
   }
   return new ProposalStore(storePath);
+}
+
+function localStorePath(args: string[]): string {
+  return optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
 }
 
 async function writeFileGuarded(filePath: string, content: string, force: boolean): Promise<void> {
@@ -7450,6 +8754,37 @@ function redactConfig(value: unknown, key = ""): unknown {
     if (/^(postgres(?:ql)?:\/\/|mysql:\/\/|Bearer\s+|syn_wbr_)/i.test(value)) return "<redacted>";
   }
   return value;
+}
+
+async function optionalRuntimeConfig(configPath: string): Promise<RuntimeConfig | undefined> {
+  return await fileExists(configPath) ? await readRuntimeConfig(configPath) : undefined;
+}
+
+async function operatorIdentityForDecision(input: {
+  args: string[];
+  config: RuntimeConfig | undefined;
+  configPath: string;
+  proposal: StoredProposal;
+  action: "approve" | "reject" | "apply";
+  reason?: string;
+}) {
+  const requiredRole = input.action === "apply" ? undefined : input.proposal.change_set.approval.required_role;
+  const identity = await resolveOperatorIdentity({
+    config: input.config?.operator_identity as OperatorIdentityConfig | undefined,
+    configPath: input.configPath,
+    proposal: input.proposal,
+    action: input.action,
+    reason: input.reason,
+    actor: optionalArg(input.args, "--actor"),
+    identity: optionalArg(input.args, "--identity"),
+    privateKeyPath: optionalArg(input.args, "--identity-key"),
+    requiredRole,
+  });
+  const applyRoles = input.config?.operator_identity?.apply_roles ?? [];
+  if (input.action === "apply" && applyRoles.length > 0 && !applyRoles.some((role) => identity.roles.includes(role))) {
+    throw new Error(`operator ${identity.subject} lacks an apply role; requires one of: ${applyRoles.join(", ")}`);
+  }
+  return identity;
 }
 
 function requireLocalProposal(store: ProposalStore, proposalId: string): StoredProposal {
@@ -7719,6 +9054,9 @@ function firstPositional(args: string[]): string | undefined {
     "--status",
     "--stdio",
     "--store",
+    "--shared-ledger-schema",
+    "--shared-ledger-lock-timeout-ms",
+    "--shared-ledger-url-env",
     "--table",
     "--tenant",
     "--tenant-env",
@@ -8475,6 +9813,7 @@ function formatStoreStats(stats: StoreStats): string {
     `Approvals: ${stats.approvals}`,
     `Proposal events: ${stats.proposal_events}`,
     `Shadow human actions: ${stats.shadow_human_actions}`,
+    `Worker queue items: ${stats.worker_queue}`,
   ].join("\n") + "\n";
 }
 
@@ -8841,6 +10180,8 @@ function isKnownTopLevelCommand(command: string): boolean {
     "receipts",
     "activity",
     "events",
+    "metrics",
+    "worker",
     "store",
     "shadow",
     "ui",
@@ -8901,6 +10242,8 @@ Commands:
   receipts    Inspect guarded writeback receipts
   activity    Search local evidence/replay ledger
   events      Tail or push local proposal/writeback lifecycle events
+  metrics     Export tenant/capability operational counters
+  worker      Run or inspect the supervised local writeback queue
   store       Inspect and maintain the local SQLite ledger
   apply        Apply an approved proposal with guarded writeback
   replay       Show what happened
@@ -8924,6 +10267,10 @@ Examples:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} propose billing.propose_late_fee_waiver --sample
   ${cmd} audit ./synapsor.runner.json
+
+Global options:
+  --secrets-provider aws-secretsmanager-cli --secret-map-env SYNAPSOR_SECRET_MAP
+  --secrets-provider env-json --secret-map-env SYNAPSOR_SECRET_MAP --secret-values-env SYNAPSOR_SECRET_VALUES
 `,
     config: `Usage:
   ${cmd} config validate --config ./synapsor.runner.json
@@ -9050,9 +10397,11 @@ Use --result-format v2 to return one stable ok/summary/data/proposal/error envel
     "mcp serve-streamable-http": `Usage:
   export SYNAPSOR_RUNNER_HTTP_TOKEN=...
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8766] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--alias-mode canonical|openai|both] [--result-format v1|v2]
+  ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM --tls-ca-env SYNAPSOR_TLS_CA_PEM --require-client-cert
 
 Start the spec-compatible MCP Streamable HTTP endpoint for clients and SDKs that support HTTP MCP.
 Bearer auth is required by default.
+TLS and mTLS are opt-in through environment variables; do not put PEM contents on the command line or in config JSON.
 
 Alpha scope:
   - Supports MCP initialize/session behavior through the official MCP Streamable HTTP transport.
@@ -9154,6 +10503,7 @@ Use --yes/--non-interactive with explicit flags, or --answers, when CI or an LLM
   ${cmd} propose <capability-name> --sample [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} propose <capability-name> --input ./input.json
   ${cmd} propose <capability-name> --json '{"invoice_id":"INV-3001","reason":"support-approved waiver"}'
+  ${cmd} propose <capability-name> --sample --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
 
 Examples after running ${cmd} demo:
   ${cmd} propose billing.propose_late_fee_waiver --sample
@@ -9161,6 +10511,11 @@ Examples after running ${cmd} demo:
   ${cmd} propose orders.propose_status_change --sample
 
 Create the same evidence-backed proposal the MCP tool would create. The source database is not mutated.
+Use --shared-ledger-mirror only when the shared Postgres ledger migration has
+been applied; it restores the shared ledger before mutation and syncs after
+mutation while the local SQLite store remains the live runtime store. Mirror
+mode holds a schema-scoped Postgres advisory lock while it runs; adjust the
+default 10000ms wait with --shared-ledger-lock-timeout-ms.
 `,
     audit: `Usage:
   ${cmd} audit --example dangerous-db-mcp
@@ -9191,6 +10546,7 @@ Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_
 	  ${cmd} proposals show latest --details
 	  ${cmd} proposals approve latest --yes
 	  ${cmd} proposals reject latest --reason "..."
+	  ${cmd} proposals approve latest --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
 
 	Review decisions happen outside the model-facing MCP tool surface. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
 	`,
@@ -9221,6 +10577,8 @@ Inspect local query fingerprints, table names, row counts, and redacted-paramete
     apply: `Usage:
   ${cmd} apply <proposal-id> [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} apply latest [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} apply --all-approved --yes [--capability name] [--tenant id] [--max N] --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} apply --all-approved --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
   ${cmd} apply --job job.json --config ./synapsor.runner.json --store ./.synapsor/local.db
 
 Apply an approved proposal through guarded writeback. Requires a trusted write credential.
@@ -9232,6 +10590,14 @@ for direct worker/apply flows without a local config.
 Direct SQL writeback writes the administrator-created
 synapsor_writeback_receipts table for idempotency and replay. The trusted writer
 needs SELECT/INSERT/UPDATE on that table, but does not need schema CREATE.
+
+When operator_identity.provider is signed_key, pass --identity <operator> and
+--identity-key <private-key.pem>. Batch apply handles each approved proposal
+independently; conflicts do not abort the remaining queue.
+Shared-ledger mirror mode is opt-in. It restores from Postgres before the local
+mutation and syncs back after while holding a schema-scoped Postgres advisory
+lock. For MCP serving with Postgres as the primary proposal/evidence/replay
+store, configure storage.shared_postgres.mode = "runtime_store".
 `,
     replay: `Usage:
   ${cmd} replay list [--tenant acme] [--object invoice:INV-3001]
@@ -9263,6 +10629,34 @@ Search the local SQLite evidence/replay ledger across proposals, evidence, query
 
 Show or push local proposal/writeback lifecycle events such as proposal_created, proposal_approved, writeback_applied, writeback_conflict, and writeback_failed. Webhook delivery POSTs one local event envelope per event and never exposes database credentials.
 	`,
+    metrics: `Usage:
+  ${cmd} metrics show --store ./.synapsor/local.db
+  ${cmd} metrics show --tenant acme --capability billing.propose_credit
+  ${cmd} metrics show --format json
+
+Export Prometheus/OpenMetrics counters for proposals, approvals, rejections,
+successful applies, conflicts, and failures, grouped by trusted tenant and
+reviewed capability. No database credentials or business-row values are emitted.
+`,
+    worker: `Usage:
+  ${cmd} worker run --yes --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} worker run --once --yes --max-attempts 5 --retry-base-ms 1000
+  ${cmd} worker run --drain --yes --capability support.propose_plan_credit --tenant acme
+  ${cmd} worker run --once --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
+  ${cmd} worker run --yes --config ./synapsor.runner.json
+  ${cmd} worker status --store ./.synapsor/local.db [--status dead_letter] [--json]
+
+Run a supervised local writeback worker over approved proposals. Queue claims
+use leases, transient failures use bounded exponential retries, terminal or
+exhausted failures enter the dead-letter queue, and durable idempotency receipts
+prevent duplicate effects. Signed-key configs still require a writeback operator
+identity through --identity/--identity-key or their documented environment vars.
+Shared-ledger mirror mode is only allowed for finite worker runs (--once or
+--drain). It holds a schema-scoped Postgres advisory lock during the bounded
+run. With storage.shared_postgres.mode=runtime_store, worker runs use repeated
+bounded drain cycles through the Postgres-backed bridge and release the advisory
+lock while idle, so multiple workers can share one runtime ledger safely.
+`,
     store: `Usage:
   ${cmd} store stats --store ./.synapsor/local.db
   ${cmd} store vacuum --store ./.synapsor/local.db
@@ -9270,9 +10664,15 @@ Show or push local proposal/writeback lifecycle events such as proposal_created,
   ${cmd} store prune --store ./.synapsor/local.db --older-than 30d --yes
   ${cmd} store prune --store ./.synapsor/local.db --older-than 30d --yes --force
   ${cmd} store reset --store ./.synapsor/local.db --yes
+  ${cmd} store shared-postgres migration --schema synapsor_runner
+  ${cmd} store shared-postgres apply-migration --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --yes
+  ${cmd} store shared-postgres status --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner
+  ${cmd} store shared-postgres sync --store ./.synapsor/local.db --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --yes
+  ${cmd} store shared-postgres restore --store ./.synapsor/restored.db --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --yes
 
 Local store maintenance only. Prune defaults to dry-run and reset requires --yes. These commands never touch your source Postgres/MySQL database. Destructive operations refuse while an active server lease exists unless --force is provided.
-`,
+Shared Postgres commands create, inspect, sync, and restore the schema used by a shared ledger deployment; they never print the database URL.
+	`,
 	    demo: `Usage:
 	  ${cmd} demo [--force]
 	  ${cmd} demo --quick
@@ -9300,6 +10700,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     .then((code) => process.exit(code))
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
+      operationalLog("warn", "cli_rejected", {
+        command: process.argv[2] ?? "unknown",
+        error_code: safeOperationalErrorCode(error),
+      });
       process.stderr.write(`${message}${formatCliErrorHint(message)}\n`);
       process.exit(1);
     });

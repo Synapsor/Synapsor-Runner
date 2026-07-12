@@ -150,11 +150,162 @@ Useful commands:
 ```bash
 synapsor-runner store stats --store ./.synapsor/local.db
 synapsor-runner events tail --store ./.synapsor/local.db --follow
+synapsor-runner metrics show --store ./.synapsor/local.db
 synapsor-runner store prune --store ./.synapsor/local.db --older-than 30d --dry-run
 synapsor-runner store vacuum --store ./.synapsor/local.db
 ```
 
 Details: [Store Lifecycle](store-lifecycle.md).
+
+## Shared Postgres Ledger Setup
+
+The default runtime ledger is SQLite. For shared deployments, Runner now ships a
+Postgres ledger setup surface that creates the schema used for shared audit
+entries, proposal locks, and worker leases:
+
+```bash
+export SYNAPSOR_LEDGER_DATABASE_URL="postgresql://ledger_writer:..."
+
+synapsor-runner store shared-postgres migration --schema synapsor_runner
+synapsor-runner store shared-postgres apply-migration \
+  --url-env SYNAPSOR_LEDGER_DATABASE_URL \
+  --schema synapsor_runner \
+  --yes
+synapsor-runner store shared-postgres status \
+  --url-env SYNAPSOR_LEDGER_DATABASE_URL \
+  --schema synapsor_runner
+synapsor-runner store shared-postgres sync \
+  --store ./.synapsor/local.db \
+  --url-env SYNAPSOR_LEDGER_DATABASE_URL \
+  --schema synapsor_runner \
+  --yes
+synapsor-runner store shared-postgres restore \
+  --store ./.synapsor/restored.db \
+  --url-env SYNAPSOR_LEDGER_DATABASE_URL \
+  --schema synapsor_runner \
+  --yes
+```
+
+These commands do not print the database URL. `sync` upserts a stable snapshot
+of the local proposal/evidence/replay ledger into Postgres for shared audit,
+backup, and retention. `restore` rebuilds a local SQLite store from those
+shared ledger entries for recovery or offline investigation.
+
+Runner supports two shared Postgres modes:
+
+- `mirror`: bounded CLI mutations restore from Postgres into local SQLite,
+  mutate locally, then sync back under a schema-scoped advisory lock.
+- `runtime_store`: MCP serving uses Postgres as the primary
+  proposal/evidence/replay store instead of opening a local SQLite store.
+
+Local SQLite remains the default. Use `runtime_store` when several MCP sessions
+or runner processes need to share proposal/evidence/replay state through one
+ledger database. Use `mirror` when you want bounded operator handoff while still
+running CLI mutations against a local SQLite file.
+
+Mirror mode config:
+
+```json
+{
+  "storage": {
+    "sqlite_path": "./.synapsor/local.db",
+    "shared_postgres": {
+      "mode": "mirror",
+      "url_env": "SYNAPSOR_LEDGER_DATABASE_URL",
+      "schema": "synapsor_runner",
+      "lock_timeout_ms": 10000
+    }
+  }
+}
+```
+
+```bash
+export SYNAPSOR_LEDGER_DATABASE_URL="postgresql://ledger_writer:..."
+
+synapsor-runner doctor \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+
+synapsor-runner propose support.propose_plan_credit --sample \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+
+synapsor-runner proposals approve latest --yes \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+
+synapsor-runner apply --all-approved --yes \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+When `storage.shared_postgres.mode` is `mirror`, `doctor` checks that the
+ledger URL environment variable is present and that `ledger_entries`,
+`proposal_locks`, and `worker_leases` exist in the configured schema. It reports
+environment variable names and table readiness only; it does not print database
+URLs or initialize the schema.
+
+Mirror mode restores the Postgres ledger into the local store before a mutation
+and syncs the local store back after the command, including failure events when
+they were recorded locally. While it runs, Runner holds a schema-scoped
+Postgres advisory lock so concurrent mirror-mode operators do not restore,
+mutate, and sync over one another. The default lock wait is 10 seconds; tune it
+with `--shared-ledger-lock-timeout-ms` or
+`SYNAPSOR_SHARED_LEDGER_LOCK_TIMEOUT_MS`.
+
+Mirror mode is explicit because the local SQLite store still executes the CLI
+mutation. It is useful for bounded operator workflows and finite workers
+(`worker run --once` or `--drain`); use `runtime_store` for long-lived MCP
+serving and shared worker loops that need one proposal/evidence/replay ledger.
+
+Runtime-store mode config:
+
+```json
+{
+  "storage": {
+    "shared_postgres": {
+      "mode": "runtime_store",
+      "url_env": "SYNAPSOR_LEDGER_DATABASE_URL",
+      "schema": "synapsor_runner",
+      "lock_timeout_ms": 10000
+    }
+  }
+}
+```
+
+When MCP serving starts in `runtime_store` mode, Runner opens the Postgres URL
+from `url_env`, auto-runs the shared-ledger migration, and serializes runtime
+mutations with a transaction-scoped advisory lock. The MCP tools still expose no
+database URLs or write credentials to the model.
+
+`runtime_store` covers MCP serving, CLI approval/apply, and supervised worker
+runs. For CLI mutations, Runner restores the shared ledger into a temporary
+local store while holding the Postgres advisory lock, runs the existing local
+mutation, then syncs the resulting ledger entries back to Postgres. A
+long-running `worker run --yes` repeats bounded drain cycles under that lock
+and sleeps between idle polls, so multiple workers can share one Postgres ledger
+without holding the lock while idle.
+
+For unattended policy-approved queues, declare reviewed aggregate `LIMIT`
+clauses first, then use the explicit batch command:
+
+```bash
+synapsor-runner apply --all-approved --yes \
+  --config ./synapsor.runner.json --store ./.synapsor/local.db \
+  --capability support.propose_plan_credit --tenant acme --max 20
+```
+
+Each proposal is independent: a stale-row conflict does not abort later jobs.
+The final summary reports applied, conflict, and skipped IDs. Re-running is
+idempotent through durable receipts. Do not schedule batch apply for a policy
+that has no reviewed aggregate limits.
+
+Runner writes newline-delimited JSON events to stderr for model-facing tool
+rejections, operator decisions, and terminal writeback outcomes. These events
+contain safe codes and identifiers, never tool arguments, row values, database
+URLs, tokens, private keys, or free-form driver errors. Prometheus/OpenMetrics
+counters are available with `metrics show` and are grouped by trusted tenant
+and reviewed capability.
 
 ## Restart And Recovery
 
@@ -183,7 +334,26 @@ synapsor-runner activity search --proposal wrp_... --store ./.synapsor/local.db
 ### Docker Compose Shape
 
 Use Compose to run the MCP server next to your app and database network. Keep
-secrets in environment variables or your platform secret manager.
+secrets in environment variables or your platform secret manager. To hydrate
+Runner env vars from AWS Secrets Manager at startup, pass a JSON map through
+`SYNAPSOR_SECRET_MAP`:
+
+```bash
+export SYNAPSOR_SECRET_MAP='{
+  "SYNAPSOR_DATABASE_READ_URL": "prod/synapsor/runner#read_url",
+  "SYNAPSOR_DATABASE_WRITE_URL": "prod/synapsor/runner#write_url",
+  "SYNAPSOR_RUNNER_HTTP_TOKEN": "prod/synapsor/runner#http_token"
+}'
+
+synapsor-runner mcp serve-streamable-http \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --secrets-provider aws-secretsmanager-cli \
+  --secret-map-env SYNAPSOR_SECRET_MAP
+```
+
+The AWS provider shells out to `aws secretsmanager get-secret-value`; the runner
+logs only how many target env vars were loaded or skipped.
 
 ```yaml
 services:

@@ -1,0 +1,68 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": { "name": "aggregate policy limits conformance" },
+  "contexts": [
+    {
+      "name": "support_agent_context",
+      "bindings": [
+        { "name": "tenant_id", "source": "environment", "key": "SYNAPSOR_TENANT_ID", "required": true },
+        { "name": "principal", "source": "environment", "key": "SYNAPSOR_PRINCIPAL", "required": true }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "support.propose_plan_credit",
+      "kind": "proposal",
+      "context": "support_agent_context",
+      "source": "local_postgres",
+      "subject": {
+        "schema": "public",
+        "table": "customers",
+        "primary_key": "id",
+        "tenant_key": "tenant_id",
+        "conflict_key": "updated_at"
+      },
+      "args": {
+        "customer_id": { "type": "string", "required": true, "max_length": 128 },
+        "credit_cents": { "type": "number", "required": true, "minimum": 1, "maximum": 50000 },
+        "reason": { "type": "string", "required": true, "max_length": 500 }
+      },
+      "lookup": { "id_from_arg": "customer_id" },
+      "visible_fields": ["id", "tenant_id", "plan_credit_cents", "credit_reason", "updated_at"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1,
+      "proposal": {
+        "action": "grant_plan_credit",
+        "allowed_fields": ["plan_credit_cents", "credit_reason"],
+        "patch": {
+          "plan_credit_cents": { "from_arg": "credit_cents" },
+          "credit_reason": { "from_arg": "reason" }
+        },
+        "numeric_bounds": { "plan_credit_cents": { "minimum": 1, "maximum": 50000 } },
+        "conflict_guard": { "column": "updated_at" },
+        "approval": {
+          "mode": "policy",
+          "required_role": "support_reviewer",
+          "policy": "support_credit_policy"
+        },
+        "writeback": { "mode": "direct_sql" }
+      }
+    }
+  ],
+  "policies": [
+    {
+      "name": "support_credit_policy",
+      "kind": "approval",
+      "mode": "green",
+      "rules": [{ "field": "plan_credit_cents", "max": 2500 }],
+      "limits": [
+        { "kind": "count", "max": 2, "period": "day", "scope": "tenant_policy" },
+        { "kind": "total", "field": "plan_credit_cents", "max": 5000, "period": "day", "scope": "tenant_policy" }
+      ]
+    }
+  ]
+}

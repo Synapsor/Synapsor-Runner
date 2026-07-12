@@ -166,6 +166,21 @@
   "policies": [
     {
       "kind": "approval",
+      "limits": [
+        {
+          "kind": "count",
+          "max": 20,
+          "period": "day",
+          "scope": "tenant_policy"
+        },
+        {
+          "field": "plan_credit_cents",
+          "kind": "total",
+          "max": 100000,
+          "period": "day",
+          "scope": "tenant_policy"
+        }
+      ],
       "mode": "green",
       "name": "support_propose_plan_credit_auto_approval",
       "rules": [

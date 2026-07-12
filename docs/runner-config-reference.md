@@ -26,7 +26,7 @@ Unknown keys fail when `strict` is true (the default).
 | `mode` | Yes | `read_only`, `shadow`, `review`, or `cloud`. |
 | `result_format` | No | `1` legacy or `2` stable `ok/summary/data/proposal/error` envelope. Default `1`. |
 | `strict` | No | Reject unknown config keys. Default `true`. |
-| `storage` | Local | Local SQLite ledger. |
+| `storage` | Local | Local SQLite ledger plus optional shared Postgres mirror or runtime-store wiring. |
 | `sources` | Local | Named Postgres/MySQL source wiring. |
 | `trusted_context` | Conditional | Default trusted tenant/principal binding. |
 | `contexts` | No | Named trusted contexts referenced by capabilities/contracts. |
@@ -34,6 +34,7 @@ Unknown keys fail when `strict` is true (the default).
 | `capabilities` | Conditional | Embedded compatibility capabilities; may be `[]` with `contracts`. |
 | `policies` | No | Embedded reviewed policies; contract policies merge into the same catalog. |
 | `approvals` | No | Local approval overrides. |
+| `operator_identity` | No | Verified operator identity and apply-role wiring for approve/reject/apply. |
 | `executors` | No | App-owned writeback wiring. |
 | `cloud` | Cloud mode | Scoped Cloud adapter configuration. |
 
@@ -50,12 +51,45 @@ Unknown keys fail when `strict` is true (the default).
 ## Storage
 
 ```json
-{ "storage": { "sqlite_path": "./.synapsor/local.db" } }
+{
+  "storage": {
+    "sqlite_path": "./.synapsor/local.db",
+    "shared_postgres": {
+      "mode": "mirror",
+      "url_env": "SYNAPSOR_LEDGER_DATABASE_URL",
+      "schema": "synapsor_runner",
+      "lock_timeout_ms": 10000
+    }
+  }
+}
 ```
 
 The ledger stores proposals, visible evidence copies, query audit, approvals,
 receipts, events, and replay. New POSIX stores are owner-only (`0600`). Protect
 the file like a database extract; see [Store Lifecycle](store-lifecycle.md).
+
+`storage.shared_postgres.mode = "mirror"` makes mutating CLI commands restore
+from the shared Postgres ledger before the local mutation and sync back after
+the command while holding a schema-scoped Postgres advisory lock. Mirror mode is
+a bounded operator handoff bridge; MCP serving still uses the local SQLite
+store.
+
+`storage.shared_postgres.mode = "runtime_store"` makes MCP serving use the
+shared Postgres ledger as the primary proposal/evidence/replay store. Runner
+creates a connection from the environment variable named by `url_env`, auto-runs
+the shared-ledger migration at startup, and uses a schema-scoped transaction
+advisory lock around runtime mutations. The URL is still referenced by
+environment variable name; never put the database URL in the config file.
+Bounded CLI approval/apply/worker commands bridge through the same Postgres
+ledger by restoring into a temporary local store under the Postgres advisory
+lock, running the existing mutation, and syncing back. Long-running worker
+processes repeat bounded drain cycles and release the advisory lock while idle.
+
+`synapsor-runner doctor --config ./synapsor.runner.json` checks shared Postgres
+wiring when this block is present: the URL env var must be set, and the
+configured schema must already contain `ledger_entries`, `proposal_locks`, and
+`worker_leases`. Doctor reports env var names and table readiness only; it does
+not print database URLs or create the schema.
 
 ## Sources
 
@@ -99,6 +133,33 @@ Providers are `environment`, `static_dev`, `http_claims`, and `cloud_session`.
 `static_dev` is only for local fixtures. Named `contexts` use the same shape.
 Capabilities may reference a context by name. The model never receives tenant
 or principal as an overridable argument.
+
+For multi-tenant Streamable HTTP services, use `http_claims` plus signed
+session auth:
+
+```json
+{
+  "trusted_context": {
+    "provider": "http_claims",
+    "values": {
+      "tenant_id_key": "tenant_id",
+      "principal_key": "sub"
+    }
+  },
+  "session_auth": {
+    "provider": "jwt_hs256",
+    "secret_env": "SYNAPSOR_SESSION_JWT_SECRET",
+    "previous_secret_env": "SYNAPSOR_PREVIOUS_SESSION_JWT_SECRET",
+    "issuer": "https://identity.example",
+    "audience": "synapsor-runner"
+  }
+}
+```
+
+`previous_secret_env` is optional and is only for rotation windows. Runner tries
+the active secret first, then the previous secret. Existing MCP sessions remain
+bound to the exact token fingerprint, so clients cannot swap tenant/principal
+identity inside an initialized session.
 
 ## Contracts and embedded capabilities
 
@@ -148,9 +209,53 @@ See [Writeback Executors](writeback-executors.md).
 
 `policies` is an array of reviewed policy objects. Local approval policies use
 `kind: "approval"` and numeric rules such as `{ "field": "amount_cents",
-"max": 2500 }`. `approvals.disable_auto_approval: true` disables local policy
-auto-approval without changing the reviewed contract. Approval never becomes an
-MCP tool.
+"max": 2500 }`. Canonical policies may also carry daily `count` or `total`
+limits scoped to `tenant_policy` or `tenant_policy_object`. These limits come
+from reviewed DSL `LIMIT` clauses, not an unreviewed local override. A tripped
+limit falls back to human review and is recorded in the ledger.
+`approvals.disable_auto_approval: true` disables local policy auto-approval
+without changing the reviewed contract. Approval never becomes an MCP tool.
+
+## Operator identity
+
+Local development compatibility uses an explicitly unverified environment
+identity:
+
+```json
+{
+  "operator_identity": {
+    "provider": "dev_env",
+    "actor_env": "SYNAPSOR_OPERATOR_ID",
+    "roles_env": "SYNAPSOR_OPERATOR_ROLES",
+    "apply_roles": ["writeback_operator"]
+  }
+}
+```
+
+Shared or production-like operation should register signed operator keys:
+
+```json
+{
+  "operator_identity": {
+    "provider": "signed_key",
+    "apply_roles": ["writeback_operator"],
+    "operators": {
+      "alice": {
+        "public_key_path": "./operators/alice.pub.pem",
+        "roles": ["support_reviewer", "writeback_operator"]
+      }
+    }
+  }
+}
+```
+
+The public key path resolves relative to `synapsor.runner.json`. Keep the
+private key outside the repository and invoke decisions with `--identity alice
+--identity-key /secure/path/alice.pem`. Runner verifies key possession and the
+contract's required role, then binds the exact proposal hash/version, action,
+subject, timestamp, roles, signature, and integrity hash into the approval
+ledger. `apply_roles` independently gates writeback. The local browser UI
+refuses approval/rejection in signed-key mode so it cannot bypass this check.
 
 ## Cloud mode
 

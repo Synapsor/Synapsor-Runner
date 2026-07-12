@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 1.0.0
+
+### Production Approval Loop
+
+- Adds `apply --all-approved --yes` with per-proposal results, conflict
+  isolation, idempotent reruns, and `--capability`, `--tenant`, and `--max`
+  filters.
+- Adds canonical aggregate auto-approval limits in `@synapsor/spec`, DSL
+  `LIMIT` clauses, reviewer-visible limit trip events, and doctor/tool preview
+  surfacing.
+- Adds signed operator identity checks for approve/reject/apply while keeping
+  dev env identity available for local experiments.
+- Adds structured operational logs, per-tenant/capability counters, supervised
+  writeback worker retries/dead letters, and continued owner-only local store
+  permission tests.
+- Adds Postgres shared ledger support, runtime-store mode, per-session
+  HTTP-claims trusted context, managed secret hydration, token rotation hooks,
+  and Streamable HTTP mTLS.
+- Declares the first semver contract for the documented CLI, schema, contract,
+  MCP result, writeback, approval, metrics, and replay surfaces.
+- Stages `@synapsor/spec@1.0.0`, `@synapsor/dsl@1.0.0`, and
+  `@synapsor/runner@1.0.0`.
+
 ## 0.1.16
 
 ### Fleet-Lab Runner Hardening

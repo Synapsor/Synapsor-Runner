@@ -26,10 +26,15 @@ Current fixture groups:
 - `proposal-capability`
 - `kept-out-fields`
 - `manual-approval`
+- `auto-approval`
+- `aggregate-policy-limits`
+- `numeric-bounds`
 
 The fixture set is intentionally small in 0.1. It covers the runner-supported
 semantic surface first: trusted context, scoped reads, evidence handles,
 proposal boundaries, kept-out fields, manual approval, and replay envelopes.
+The aggregate-policy fixture additionally proves that reviewed daily ceilings
+fall back to human review atomically and record the limit that tripped.
 
 Additional 0.1 parity coverage currently lives in tests and verification
 scripts rather than separate `cloud-push/` or `dsl-json-parity/` conformance

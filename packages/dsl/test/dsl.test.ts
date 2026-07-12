@@ -124,6 +124,52 @@ END
     expect(validateContract(contract).errors).toEqual([]);
   });
 
+  it("compiles daily aggregate auto-approval limits into the canonical policy", () => {
+    const contract = compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  LIMIT 20 PER DAY
+  LIMIT TOTAL 100000 PER DAY
+  WRITEBACK DIRECT SQL
+`));
+
+    expect(contract.policies?.[0]).toMatchObject({
+      name: "support_propose_plan_credit_auto_approval",
+      limits: [
+        { kind: "count", max: 20, period: "day", scope: "tenant_policy" },
+        { kind: "total", field: "plan_credit_cents", max: 100000, period: "day", scope: "tenant_policy" },
+      ],
+    });
+    expect(validateContract(contract).errors).toEqual([]);
+  });
+
+  it("supports per-object daily limits and rejects ambiguous or misplaced limits", () => {
+    const contract = compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  LIMIT 3 PER OBJECT DAY
+  LIMIT TOTAL 5000 PER OBJECT DAY
+  WRITEBACK DIRECT SQL
+`));
+    expect(contract.policies?.[0]?.limits).toEqual([
+      { kind: "count", max: 3, period: "day", scope: "tenant_policy_object" },
+      { kind: "total", field: "plan_credit_cents", max: 5000, period: "day", scope: "tenant_policy_object" },
+    ]);
+
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  LIMIT 20 PER DAY
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVAL_LIMIT_POLICY_REQUIRED/);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  LIMIT TOTAL nope PER DAY
+  WRITEBACK DIRECT SQL
+`))).toThrow(/AUTO_APPROVAL_LIMIT_UNSUPPORTED/);
+  });
+
   it("rejects AUTO APPROVE WHEN before APPROVAL ROLE", () => {
     expect(() => compileAgentDsl(planCreditSource(`
   AUTO APPROVE WHEN plan_credit_cents <= 2500

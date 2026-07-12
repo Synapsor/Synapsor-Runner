@@ -1,0 +1,13 @@
+{
+  "trusted_context": { "tenant_id": "acme", "principal": "support_agent" },
+  "cases": [
+    { "customer_id": "CUS-1", "credit_cents": 2000, "expected_state": "approved" },
+    { "customer_id": "CUS-2", "credit_cents": 2500, "expected_state": "approved" },
+    {
+      "customer_id": "CUS-3",
+      "credit_cents": 1000,
+      "expected_state": "pending_review",
+      "expected_tripped_limits": ["count", "total"]
+    }
+  ]
+}

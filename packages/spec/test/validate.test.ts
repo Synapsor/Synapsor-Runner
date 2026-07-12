@@ -103,6 +103,36 @@ describe("@synapsor/spec validation", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts reviewed aggregate auto-approval limits", () => {
+    const contract = cloneAutoApprovalContract();
+    (contract.policies as Array<Record<string, unknown>>)[0]!.limits = [
+      { kind: "count", max: 20, period: "day", scope: "tenant_policy" },
+      { kind: "total", field: "plan_credit_cents", max: 100000, period: "day", scope: "tenant_policy" },
+    ];
+
+    const result = validateContract(contract);
+
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects malformed aggregate auto-approval limits", () => {
+    const contract = cloneAutoApprovalContract();
+    (contract.policies as Array<Record<string, unknown>>)[0]!.limits = [
+      { kind: "total", max: 100000, period: "week" },
+      { kind: "count", field: "credit_requested_cents", max: -1, period: "day" },
+    ];
+
+    const result = validateContract(contract);
+    const codes = result.errors.map((error) => error.code);
+
+    expect(result.ok).toBe(false);
+    expect(codes).toContain("APPROVAL_POLICY_TOTAL_FIELD_REQUIRED");
+    expect(codes).toContain("INVALID_APPROVAL_POLICY_LIMIT_PERIOD");
+    expect(codes).toContain("APPROVAL_POLICY_COUNT_FIELD_FORBIDDEN");
+    expect(codes).toContain("INVALID_APPROVAL_POLICY_LIMIT_MAX");
+  });
+
   it("rejects policy approval without a matching approval policy", () => {
     const contract = cloneAutoApprovalContract();
     delete ((contract.capabilities as Array<any>)[0].proposal.approval as Record<string, unknown>).policy;

@@ -143,6 +143,10 @@ async function handleRequest(input: {
       sendJson(response, 403, { ok: false, error: "CSRF token required for proposal review actions" });
       return;
     }
+    if (await signedIdentityRequired(configPath)) {
+      sendJson(response, 403, { ok: false, error: "This Runner requires a signed operator identity. Approve with the CLI using --identity and --identity-key." });
+      return;
+    }
     const proposalId = decodeURIComponent(approveMatch[1] ?? "");
     const body = await readJsonBody(request);
     if (body.confirm !== "approve") throw new Error("approval requires confirm=approve");
@@ -163,6 +167,10 @@ async function handleRequest(input: {
   if (request.method === "POST" && rejectMatch) {
     if (!hasValidCsrf(request, csrfToken)) {
       sendJson(response, 403, { ok: false, error: "CSRF token required for proposal review actions" });
+      return;
+    }
+    if (await signedIdentityRequired(configPath)) {
+      sendJson(response, 403, { ok: false, error: "This Runner requires a signed operator identity. Reject with the CLI using --identity and --identity-key." });
       return;
     }
     const proposalId = decodeURIComponent(rejectMatch[1] ?? "");
@@ -200,6 +208,11 @@ async function readRunnerConfig(configPath: string): Promise<JsonRecord> {
   const parsed = JSON.parse(raw) as unknown;
   if (!isRecord(parsed)) throw new Error("runner config must be a JSON object");
   return parsed;
+}
+
+async function signedIdentityRequired(configPath: string): Promise<boolean> {
+  const config = await readRunnerConfig(configPath);
+  return isRecord(config.operator_identity) && config.operator_identity.provider === "signed_key";
 }
 
 function buildSummary(config: JsonRecord, configPath: string, storePath: string): JsonRecord {
@@ -242,7 +255,7 @@ function buildSummary(config: JsonRecord, configPath: string, storePath: string)
       config_path: configPath,
       store_path: storePath,
       mode: config.mode,
-      storage: { sqlite_path: asRecord(config.storage).sqlite_path },
+      storage: asRecord(config.storage),
       trusted_context: config.trusted_context,
       sources,
       capabilities,

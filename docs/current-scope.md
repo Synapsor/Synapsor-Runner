@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `0.1.x` scope:
+Current `1.0` scope:
 
 - local semantic MCP tools for Postgres/MySQL-backed business actions;
 - schema inspection and guided config generation;
@@ -13,7 +13,7 @@ Current `0.1.x` scope:
   business transactions;
 - stdio MCP, Streamable HTTP MCP, and a small JSON-RPC bridge.
 
-Stable `0.1.x` compatibility covers the documented `synapsor-runner` binary,
+Stable `1.x` compatibility covers the documented `synapsor-runner` binary,
 config schema version `1`, result envelope v2 with v1 opt-out, stdio/Streamable
 HTTP MCP surfaces, documented MCP client snippets, proposal/evidence/replay
 inspection commands, direct SQL writeback, and app-owned executor contracts.

@@ -58,6 +58,35 @@
           "description": "SQLite ledger path. The file can contain visible business-data evidence and is created with owner-only permissions on POSIX.",
           "type": "string",
           "minLength": 1
+        },
+        "shared_postgres": {
+          "description": "Optional shared Postgres ledger. mode=mirror coordinates bounded CLI mutations with a schema-scoped advisory lock while the live runtime store remains local SQLite. mode=runtime_store makes MCP serving use Postgres as the primary proposal/evidence/replay store.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "url_env"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["mirror", "runtime_store", "disabled"]
+            },
+            "url_env": {
+              "description": "Environment variable containing the shared ledger Postgres URL. The URL itself must not be stored in config.",
+              "type": "string",
+              "pattern": "^[A-Z_][A-Z0-9_]*$"
+            },
+            "schema": {
+              "description": "Postgres schema for shared ledger tables.",
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "default": "synapsor_runner"
+            },
+            "lock_timeout_ms": {
+              "description": "How long mirror-mode CLI commands wait for the schema-scoped advisory lock.",
+              "type": "integer",
+              "minimum": 0,
+              "default": 10000
+            }
+          }
         }
       }
     },
@@ -115,6 +144,53 @@
       "additionalProperties": false,
       "properties": {
         "disable_auto_approval": { "type": "boolean" }
+      }
+    },
+    "operator_identity": {
+      "description": "Operator identity used by approve, reject, and apply. signed_key verifies possession of a registered private key; dev_env is local-development compatibility only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "allOf": [
+        {
+          "if": { "properties": { "provider": { "const": "signed_key" } }, "required": ["provider"] },
+          "then": { "required": ["operators"] }
+        }
+      ],
+      "properties": {
+        "provider": { "enum": ["dev_env", "signed_key"] },
+        "actor_env": { "$ref": "#/$defs/env_name" },
+        "roles_env": { "$ref": "#/$defs/env_name" },
+        "apply_roles": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/identifier" } },
+        "operators": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["public_key_path", "roles"],
+            "properties": {
+              "public_key_path": { "type": "string", "minLength": 1 },
+              "roles": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/identifier" } }
+            }
+          }
+        }
+      }
+    },
+    "session_auth": {
+      "description": "Signed per-session identity for Streamable HTTP http_claims contexts. The HMAC secret stays in an environment variable.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "secret_env"],
+      "properties": {
+        "provider": { "const": "jwt_hs256" },
+        "secret_env": { "$ref": "#/$defs/env_name" },
+        "previous_secret_env": { "$ref": "#/$defs/env_name" },
+        "issuer": { "type": "string", "minLength": 1 },
+        "audience": { "type": "string", "minLength": 1 },
+        "tenant_claim": { "$ref": "#/$defs/identifier" },
+        "principal_claim": { "$ref": "#/$defs/identifier" },
+        "clock_skew_seconds": { "type": "integer", "minimum": 0, "maximum": 300 }
       }
     },
     "cloud": {
@@ -519,6 +595,30 @@
             "properties": {
               "field": { "$ref": "#/$defs/identifier" },
               "max": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "limits": {
+          "description": "Reviewed aggregate ceilings for policy auto-approval. Exceeding one falls back to human review.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "max", "period"],
+            "allOf": [
+              {
+                "if": { "properties": { "kind": { "const": "total" } }, "required": ["kind"] },
+                "then": { "required": ["field"] },
+                "else": { "not": { "required": ["field"] } }
+              }
+            ],
+            "properties": {
+              "kind": { "enum": ["count", "total"] },
+              "max": { "type": "integer", "minimum": 0 },
+              "period": { "const": "day" },
+              "field": { "$ref": "#/$defs/identifier" },
+              "scope": { "enum": ["tenant_policy", "tenant_policy_object"] }
             }
           }
         }

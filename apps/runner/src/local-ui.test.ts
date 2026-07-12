@@ -223,6 +223,61 @@ describe("local UI", () => {
       csrfToken: "csrf-token",
     })).rejects.toThrow(/binds to localhost/);
   });
+
+  it("does not let the local UI bypass signed operator identity", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-signed-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      operator_identity: {
+        provider: "signed_key",
+        operators: {
+          alice: { public_key_path: "./alice.pub.pem", roles: ["support_lead"] },
+        },
+      },
+    }), "utf8");
+    const store = new ProposalStore(storePath);
+    store.createProposal(changeSet);
+    store.close();
+
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      for (const action of ["approve", "reject"]) {
+        const response = await fetch(`${baseUrl}/api/proposals/wrp_ui/${action}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-synapsor-ui-token": "ui-token",
+            "x-synapsor-csrf": "csrf-token",
+          },
+          body: JSON.stringify({ confirm: action, reason: "reviewed" }),
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({
+          ok: false,
+          error: expect.stringContaining("signed operator identity"),
+        });
+      }
+      const persisted = new ProposalStore(storePath);
+      try {
+        expect(persisted.getProposal("wrp_ui")?.state).toBe("pending_review");
+        expect(persisted.approvals("wrp_ui")).toEqual([]);
+      } finally {
+        persisted.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 async function getJson(url: string, headers: Record<string, string>): Promise<any> {

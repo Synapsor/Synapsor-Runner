@@ -1,7 +1,7 @@
 # Release Notes
 
-These notes track public Synapsor Runner behavior. Starting with `0.1.0`, the
-normal install path uses the untagged stable package:
+These notes track public Synapsor Runner behavior. Starting with `1.0.0`, the
+documented production-loop compatibility line uses the untagged stable package:
 
 ```bash
 npx -y -p @synapsor/runner synapsor-runner demo --quick
@@ -11,6 +11,29 @@ The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
 ## Unreleased
+
+## 1.0.0
+
+### Production Approval Loop
+
+- Adds batch apply for approved proposals with independent per-proposal
+  outcomes, rerun-safe idempotency, and `--capability`, `--tenant`, and
+  `--max` filters.
+- Adds aggregate policy ceilings to canonical contracts and DSL authoring so
+  small proposals fall back to human review once daily count or total limits are
+  reached.
+- Adds signed operator-key approval/apply enforcement, tamper-evident approval
+  records, operational counters/logs, and a supervised local writeback worker.
+- Adds shared Postgres ledger support, runtime-store mode, per-session trusted
+  context, managed secret hydration, token rotation hooks, and Streamable HTTP
+  mTLS for scale-out deployments.
+- Keeps local SQLite as the default while allowing runtime-store workers to run
+  long-lived shared ledger drain loops under a Postgres advisory lock.
+- Declares the first semver contract for the documented CLI, schema, contract,
+  MCP result, writeback, approval, metrics, and replay surfaces.
+
+Prepared package versions: `@synapsor/spec@1.0.0`,
+`@synapsor/dsl@1.0.0`, and `@synapsor/runner@1.0.0`.
 
 ## 0.1.16
 
@@ -478,10 +501,9 @@ not change and must not be republished for this release.
 
 ## Stable Release Policy
 
-Use untagged `@synapsor/runner` for stable installs. Use `@alpha` or an exact
-prerelease only when intentionally testing preview behavior. Stable `0.1.x`
-releases should keep the compatibility promise documented in
-`docs/release-policy.md`.
+Use untagged `@synapsor/runner` for stable installs. Use an exact prerelease
+only when intentionally testing preview behavior. Stable `1.x` releases should
+keep the compatibility promise documented in `docs/release-policy.md`.
 
 The first stable `0.1.0` release was gated on:
 

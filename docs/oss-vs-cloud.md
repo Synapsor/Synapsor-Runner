@@ -6,7 +6,8 @@ contract, but they solve different operational problems.
 Runner is the open-source runtime that stays next to your application and
 database. It serves reviewed MCP tools, binds trusted context, stores local
 evidence and proposals, keeps approval outside MCP, applies or routes approved
-writeback, and records receipts and replay in a local SQLite ledger.
+writeback, and records receipts and replay in the default local SQLite ledger
+or an opt-in shared Postgres runtime store.
 
 Cloud is the team control plane. It stores versioned contracts, produces
 downloadable Runner bundles, and provides shared activity, evidence, approval,
@@ -18,7 +19,7 @@ and investigation surfaces for enabled design-partner deployments.
 | Contract source | Local files reviewed in Git | Shared registry with immutable versions and digests |
 | Trusted context | Local environment/session bindings | Registered bindings plus deployment-specific Cloud session context |
 | Capabilities | Local semantic MCP tools | Registry, version history, and capability inspection |
-| Evidence and replay | Local SQLite ledger | Shared activity and evidence surfaces where enabled |
+| Evidence and replay | Local SQLite ledger by default; optional shared Postgres runtime store | Shared activity and evidence surfaces where enabled |
 | Approval | Local CLI or localhost UI | Team approval surfaces where enabled |
 | Writeback | Guarded one-row update or app-owned executor | Cloud-linked jobs with local execution; managed production orchestration is future work |
 | MCP risk audit | Static local audit | Organization-wide continuous audit is future work |

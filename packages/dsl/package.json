@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/dsl",
-  "version": "0.1.6",
+  "version": "1.0.0",
   "description": "Preview SQL-like Synapsor authoring DSL compiler for canonical @synapsor/spec contracts.",
   "license": "Apache-2.0",
   "type": "module",
@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@synapsor/spec": "workspace:^0.1.4"
+    "@synapsor/spec": "workspace:^1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

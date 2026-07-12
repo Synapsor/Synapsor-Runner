@@ -46,6 +46,8 @@ CREATE CAPABILITY support.propose_plan_credit
   BOUND plan_credit_cents 1..50000
   APPROVAL ROLE support_reviewer
   AUTO APPROVE WHEN plan_credit_cents <= 2500
+  LIMIT 20 PER DAY
+  LIMIT TOTAL 100000 PER DAY
   WRITEBACK DIRECT SQL
 END
 

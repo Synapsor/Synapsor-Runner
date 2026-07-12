@@ -72,6 +72,47 @@ sessions: in-memory
 
 Use `/mcp` as the MCP endpoint. Health is available at `/healthz`.
 
+## TLS And mTLS
+
+For a non-local long-running service, terminate TLS at a trusted proxy or start
+Runner with env-backed PEM material:
+
+```bash
+export SYNAPSOR_TLS_CERT_PEM="$(cat ./server.crt)"
+export SYNAPSOR_TLS_KEY_PEM="$(cat ./server.key)"
+
+synapsor-runner mcp serve-streamable-http \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
+  --tls-cert-env SYNAPSOR_TLS_CERT_PEM \
+  --tls-key-env SYNAPSOR_TLS_KEY_PEM
+```
+
+To require client certificates:
+
+```bash
+export SYNAPSOR_TLS_CA_PEM="$(cat ./client-ca.crt)"
+
+synapsor-runner mcp serve-streamable-http \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
+  --tls-cert-env SYNAPSOR_TLS_CERT_PEM \
+  --tls-key-env SYNAPSOR_TLS_KEY_PEM \
+  --tls-ca-env SYNAPSOR_TLS_CA_PEM \
+  --require-client-cert
+```
+
+The CLI reads PEM contents from environment variables and never prints them.
+Runner-owned mTLS currently protects the Streamable HTTP MCP boundary. For
+app-owned `http_handler` executors, terminate mTLS in your service mesh/proxy
+or handler process and keep bearer/signature checks enabled in the handler.
+
 ## Start The JSON-RPC Bridge
 
 ```bash

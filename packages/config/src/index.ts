@@ -18,9 +18,13 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "cloud", "strict", "result_format"]);
-const STORAGE_KEYS = new Set(["sqlite_path"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "cloud", "strict", "result_format"]);
+const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
+const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
+const OPERATOR_IDENTITY_KEYS = new Set(["provider", "actor_env", "roles_env", "apply_roles", "operators"]);
+const OPERATOR_KEYS = new Set(["public_key_path", "roles"]);
+const SESSION_AUTH_KEYS = new Set(["provider", "secret_env", "previous_secret_env", "issuer", "audience", "tenant_claim", "principal_claim", "clock_skew_seconds"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
   "engine",
@@ -65,8 +69,9 @@ const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "policy"]);
-const POLICY_KEYS = new Set(["name", "kind", "mode", "rules"]);
+const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
 const APPROVAL_POLICY_RULE_KEYS = new Set(["field", "max"]);
+const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor"]);
 const WRITEBACK_MODES = new Set(["direct_sql", "app_handler", "cloud_worker", "none"]);
 
@@ -154,6 +159,8 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings, hasContracts);
   validateExecutors(input.executors, input.mode, strict, errors);
   validatePolicies(input.policies, strict, errors);
+  validateOperatorIdentity(input.operator_identity, strict, errors);
+  validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
   validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
   validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
   validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
@@ -238,6 +245,29 @@ function validateStorage(value: unknown, strict: boolean, errors: ConfigIssue[])
   if (strict) checkUnknownKeys(value, STORAGE_KEYS, "$.storage", errors);
   if (value.sqlite_path !== undefined && !isNonEmptyString(value.sqlite_path)) {
     errors.push({ path: "$.storage.sqlite_path", code: "INVALID_SQLITE_PATH", message: "sqlite_path must be a non-empty string." });
+  }
+  validateSharedPostgresStorage(value.shared_postgres, strict, errors);
+}
+
+function validateSharedPostgresStorage(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.storage.shared_postgres", code: "SHARED_POSTGRES_STORAGE_NOT_OBJECT", message: "storage.shared_postgres must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SHARED_POSTGRES_STORAGE_KEYS, "$.storage.shared_postgres", errors);
+  if (value.mode !== "mirror" && value.mode !== "runtime_store" && value.mode !== "disabled") {
+    errors.push({ path: "$.storage.shared_postgres.mode", code: "INVALID_SHARED_POSTGRES_MODE", message: "storage.shared_postgres.mode must be mirror, runtime_store, or disabled." });
+  }
+  if (!isEnvName(value.url_env)) {
+    errors.push({ path: "$.storage.shared_postgres.url_env", code: "SHARED_POSTGRES_URL_ENV_REQUIRED", message: "storage.shared_postgres.url_env must name the environment variable containing the shared ledger Postgres URL." });
+  }
+  if (value.schema !== undefined && !isSafeIdentifier(value.schema)) {
+    errors.push({ path: "$.storage.shared_postgres.schema", code: "INVALID_SHARED_POSTGRES_SCHEMA", message: "storage.shared_postgres.schema must be a safe Postgres schema name." });
+  }
+  const lockTimeoutMs = value.lock_timeout_ms;
+  if (lockTimeoutMs !== undefined && (typeof lockTimeoutMs !== "number" || !Number.isSafeInteger(lockTimeoutMs) || lockTimeoutMs < 0)) {
+    errors.push({ path: "$.storage.shared_postgres.lock_timeout_ms", code: "INVALID_SHARED_POSTGRES_LOCK_TIMEOUT", message: "storage.shared_postgres.lock_timeout_ms must be a non-negative integer." });
   }
 }
 
@@ -575,7 +605,103 @@ function validatePolicies(value: unknown, strict: boolean, errors: ConfigIssue[]
         policy.rules.forEach((rule, ruleIndex) => validateApprovalPolicyRule(rule, `${path}.rules[${ruleIndex}]`, strict, errors));
       }
     }
+    if (policy.limits !== undefined) {
+      if (!Array.isArray(policy.limits) || policy.limits.length === 0) {
+        errors.push({ path: `${path}.limits`, code: "APPROVAL_POLICY_LIMITS_NOT_ARRAY", message: "approval policy limits must be a non-empty array." });
+      } else if (policy.kind !== "approval") {
+        errors.push({ path: `${path}.limits`, code: "APPROVAL_POLICY_LIMITS_KIND_REQUIRED", message: "aggregate limits are supported only for approval policies." });
+      } else {
+        policy.limits.forEach((limit, limitIndex) => validateApprovalPolicyLimit(limit, `${path}.limits[${limitIndex}]`, strict, errors));
+      }
+    }
   });
+}
+
+function validateApprovalPolicyLimit(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "APPROVAL_POLICY_LIMIT_NOT_OBJECT", message: "approval policy limits must be objects." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, APPROVAL_POLICY_LIMIT_KEYS, path, errors);
+  if (value.kind !== "count" && value.kind !== "total") errors.push({ path: `${path}.kind`, code: "INVALID_APPROVAL_POLICY_LIMIT_KIND", message: "limit kind must be count or total." });
+  if (!Number.isSafeInteger(value.max) || Number(value.max) < 0) errors.push({ path: `${path}.max`, code: "INVALID_APPROVAL_POLICY_LIMIT_MAX", message: "limit max must be a safe non-negative integer." });
+  if (value.period !== "day") errors.push({ path: `${path}.period`, code: "INVALID_APPROVAL_POLICY_LIMIT_PERIOD", message: "limit period must be day." });
+  if (value.scope !== undefined && value.scope !== "tenant_policy" && value.scope !== "tenant_policy_object") errors.push({ path: `${path}.scope`, code: "INVALID_APPROVAL_POLICY_LIMIT_SCOPE", message: "limit scope must be tenant_policy or tenant_policy_object." });
+  if (value.kind === "total" && !isSafeIdentifier(value.field)) errors.push({ path: `${path}.field`, code: "APPROVAL_POLICY_TOTAL_FIELD_REQUIRED", message: "total limits require a numeric field." });
+  if (value.kind === "count" && value.field !== undefined) errors.push({ path: `${path}.field`, code: "APPROVAL_POLICY_COUNT_FIELD_FORBIDDEN", message: "count limits must not declare a field." });
+}
+
+function validateOperatorIdentity(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.operator_identity", code: "OPERATOR_IDENTITY_NOT_OBJECT", message: "operator_identity must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, OPERATOR_IDENTITY_KEYS, "$.operator_identity", errors);
+  if (value.provider !== "dev_env" && value.provider !== "signed_key") {
+    errors.push({ path: "$.operator_identity.provider", code: "INVALID_OPERATOR_IDENTITY_PROVIDER", message: "operator_identity.provider must be dev_env or signed_key." });
+  }
+  for (const key of ["actor_env", "roles_env"] as const) {
+    if (value[key] !== undefined && !isEnvName(value[key])) {
+      errors.push({ path: `$.operator_identity.${key}`, code: "INVALID_OPERATOR_IDENTITY_ENV", message: `${key} must name an environment variable.` });
+    }
+  }
+  if (value.apply_roles !== undefined && (!Array.isArray(value.apply_roles) || value.apply_roles.length === 0 || value.apply_roles.some((role) => !isSafeName(role)))) {
+    errors.push({ path: "$.operator_identity.apply_roles", code: "INVALID_OPERATOR_APPLY_ROLES", message: "apply_roles must contain one or more safe role names." });
+  }
+  if (value.provider === "signed_key") {
+    if (!isRecord(value.operators) || Object.keys(value.operators).length === 0) {
+      errors.push({ path: "$.operator_identity.operators", code: "SIGNED_OPERATORS_REQUIRED", message: "signed_key identity requires a non-empty operators map." });
+      return;
+    }
+    for (const [operatorName, operator] of Object.entries(value.operators)) {
+      const path = `$.operator_identity.operators.${operatorName}`;
+      if (!isSafeName(operatorName)) errors.push({ path, code: "INVALID_OPERATOR_NAME", message: "operator names must be safe identifiers." });
+      if (!isRecord(operator)) {
+        errors.push({ path, code: "OPERATOR_NOT_OBJECT", message: "operator entry must be an object." });
+        continue;
+      }
+      if (strict) checkUnknownKeys(operator, OPERATOR_KEYS, path, errors);
+      if (!isNonEmptyString(operator.public_key_path)) errors.push({ path: `${path}.public_key_path`, code: "OPERATOR_PUBLIC_KEY_REQUIRED", message: "operator public_key_path is required." });
+      if (!Array.isArray(operator.roles) || operator.roles.length === 0 || operator.roles.some((role) => !isSafeName(role))) {
+        errors.push({ path: `${path}.roles`, code: "OPERATOR_ROLES_REQUIRED", message: "operator roles must contain one or more safe role names." });
+      }
+    }
+  }
+}
+
+function validateSessionAuth(
+  value: unknown,
+  trustedContext: unknown,
+  contexts: unknown,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  const needsSessionAuth = (isRecord(trustedContext) && trustedContext.provider === "http_claims")
+    || (isRecord(contexts) && Object.values(contexts).some((context) => isRecord(context) && context.provider === "http_claims"));
+  if (value === undefined) {
+    if (needsSessionAuth) errors.push({ path: "$.session_auth", code: "SESSION_AUTH_REQUIRED", message: "http_claims trusted context requires session_auth." });
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push({ path: "$.session_auth", code: "SESSION_AUTH_NOT_OBJECT", message: "session_auth must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SESSION_AUTH_KEYS, "$.session_auth", errors);
+  if (value.provider !== "jwt_hs256") errors.push({ path: "$.session_auth.provider", code: "INVALID_SESSION_AUTH_PROVIDER", message: "session_auth.provider must be jwt_hs256." });
+  if (!isEnvName(value.secret_env)) errors.push({ path: "$.session_auth.secret_env", code: "SESSION_AUTH_SECRET_ENV_REQUIRED", message: "session_auth.secret_env must name the environment variable containing a 32-byte-or-longer HMAC secret." });
+  if (value.previous_secret_env !== undefined && !isEnvName(value.previous_secret_env)) {
+    errors.push({ path: "$.session_auth.previous_secret_env", code: "SESSION_AUTH_PREVIOUS_SECRET_ENV_INVALID", message: "session_auth.previous_secret_env must name the environment variable containing the previous HMAC secret during token rotation." });
+  }
+  for (const key of ["issuer", "audience"] as const) {
+    if (value[key] !== undefined && !isNonEmptyString(value[key])) errors.push({ path: `$.session_auth.${key}`, code: "INVALID_SESSION_AUTH_VALUE", message: `${key} must be a non-empty string.` });
+  }
+  for (const key of ["tenant_claim", "principal_claim"] as const) {
+    if (value[key] !== undefined && !isSafeIdentifier(value[key])) errors.push({ path: `$.session_auth.${key}`, code: "INVALID_SESSION_AUTH_CLAIM", message: `${key} must be a safe top-level JWT claim name.` });
+  }
+  if (value.clock_skew_seconds !== undefined && (!Number.isSafeInteger(value.clock_skew_seconds) || Number(value.clock_skew_seconds) < 0 || Number(value.clock_skew_seconds) > 300)) {
+    errors.push({ path: "$.session_auth.clock_skew_seconds", code: "INVALID_SESSION_AUTH_CLOCK_SKEW", message: "clock_skew_seconds must be an integer from 0 to 300." });
+  }
 }
 
 function validateApprovalPolicyRule(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
