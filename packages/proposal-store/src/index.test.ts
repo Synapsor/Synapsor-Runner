@@ -2,7 +2,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ProposalStore, ProposalStoreError } from "./index.js";
+import {
+  PostgresProposalRuntimeStore,
+  ProposalStore,
+  ProposalStoreError,
+  sharedPostgresRuntimeStoreMigration,
+  type PostgresRuntimeClient,
+  type PostgresRuntimePool,
+  type PostgresRuntimeQueryResult,
+} from "./index.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v1",
@@ -141,6 +149,202 @@ describe("proposal store", () => {
     }
   });
 
+  it("exports a stable shared-ledger snapshot without raw JSON strings", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      store.recordEvidenceBundle({
+        evidence_bundle_id: "ev_shared",
+        proposal_id: "wrp_123",
+        tenant_id: "acme",
+        payload: { rows: 1 },
+        items: [{ type: "row", id: "INV-3001" }],
+      });
+      store.recordQueryAudit({
+        proposal_id: "wrp_123",
+        evidence_bundle_id: "ev_shared",
+        source_id: "src_pg_acme",
+        query_fingerprint: "sha256:query",
+        table_name: "public.invoices",
+        row_count: 1,
+        payload: { redacted_params: ["tenant_id", "id"] },
+      });
+
+      const entries = store.sharedLedgerEntries();
+      const proposal = entries.find((entry) => entry.entry_key === "proposals:wrp_123");
+      const evidence = entries.find((entry) => entry.entry_key === "evidence_bundles:ev_shared");
+      const audit = entries.find((entry) => entry.kind === "query_audit");
+
+      expect(proposal).toMatchObject({
+        kind: "proposal",
+        proposal_id: "wrp_123",
+        tenant_id: "acme",
+        capability: "billing.waive_late_fee",
+      });
+      expect(proposal?.payload.change_set).toMatchObject({ proposal_id: "wrp_123" });
+      expect(evidence?.payload.payload).toEqual({ rows: 1 });
+      expect(audit?.payload.payload).toEqual({ redacted_params: ["tenant_id", "id"] });
+
+      const restored = new ProposalStore();
+      try {
+        expect(restored.importSharedLedgerEntries(entries)).toMatchObject({ imported: entries.length, skipped: 0 });
+        expect(restored.getProposal("wrp_123")?.proposal_hash).toBe("sha256:proposal");
+        expect(restored.getEvidenceBundle("ev_shared")?.payload).toEqual({ rows: 1 });
+        expect(restored.listQueryAudit({ evidence: "ev_shared" })[0]?.payload).toEqual({ redacted_params: ["tenant_id", "id"] });
+      } finally {
+        restored.close();
+      }
+    } finally {
+      store.close();
+    }
+  });
+
+  it("prints a safe shared Postgres runtime-store migration", () => {
+    expect(sharedPostgresRuntimeStoreMigration("synapsor_runner")).toContain("\"synapsor_runner\".ledger_entries");
+    expect(sharedPostgresRuntimeStoreMigration("tenant_runtime")).toContain("\"tenant_runtime\".worker_leases");
+    expect(() => sharedPostgresRuntimeStoreMigration("bad-schema")).toThrowError(expect.objectContaining({
+      code: "INVALID_POSTGRES_IDENTIFIER",
+    }));
+  });
+
+  it("persists runtime proposal state through a shared Postgres ledger store", async () => {
+    const pool = new FakePostgresRuntimePool();
+    const first = new PostgresProposalRuntimeStore({
+      pool,
+      autoMigrate: true,
+      lockTimeoutMs: 0,
+    });
+    const proposal = await first.createProposal(changeSet);
+    expect(proposal).toMatchObject({
+      proposal_id: "wrp_123",
+      state: "pending_review",
+      tenant_id: "acme",
+      capability: "billing.waive_late_fee",
+    });
+
+    await first.recordEvidenceBundle({
+      evidence_bundle_id: "ev_pg_runtime",
+      proposal_id: "wrp_123",
+      tenant_id: "acme",
+      capability: "billing.waive_late_fee",
+      payload: { capability: "billing.waive_late_fee", source_database_changed: false },
+      items: [{ kind: "external_row", visible_row: { id: "INV-3001", late_fee_cents: 5500 } }],
+    });
+    await first.recordQueryAudit({
+      proposal_id: "wrp_123",
+      evidence_bundle_id: "ev_pg_runtime",
+      source_id: "src_pg_acme",
+      query_fingerprint: "sha256:pg-runtime",
+      table_name: "public.invoices",
+      row_count: 1,
+      payload: { statement_template: "SELECT id FROM public.invoices WHERE id = $1 AND tenant_id = $2" },
+    });
+
+    const second = new PostgresProposalRuntimeStore({ pool, lockTimeoutMs: 0 });
+    expect(await second.getProposal("wrp_123")).toMatchObject({
+      proposal_id: "wrp_123",
+      state: "pending_review",
+    });
+    expect(await second.getEvidenceBundle("ev_pg_runtime")).toMatchObject({
+      evidence_bundle_id: "ev_pg_runtime",
+      proposal_id: "wrp_123",
+      tenant_id: "acme",
+    });
+
+    const decision = await second.approveProposalByPolicy("wrp_123", {
+      policy: "billing_small_auto",
+      proposal_hash: "sha256:proposal",
+      proposal_version: 1,
+      reason: "within aggregate policy",
+    });
+    expect(decision).toMatchObject({
+      approved: true,
+      policy: "billing_small_auto",
+      proposal: { proposal_id: "wrp_123", state: "approved" },
+    });
+
+    const third = new PostgresProposalRuntimeStore({ pool, lockTimeoutMs: 0, closePool: true });
+    expect(await third.getProposal("wrp_123")).toMatchObject({
+      proposal_id: "wrp_123",
+      state: "approved",
+    });
+    expect(await third.events("wrp_123")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "proposal_created" }),
+      expect.objectContaining({ kind: "evidence_recorded" }),
+      expect.objectContaining({ kind: "proposal_approved", actor: "policy:billing_small_auto" }),
+    ]));
+    const replay = await third.replay("wrp_123");
+    expect(replay.proposal.state).toBe("approved");
+    expect(replay.query_audit).toHaveLength(1);
+    await third.close();
+    expect(pool.ended).toBe(true);
+  });
+
+  it("enforces aggregate policy limits atomically and records human-review fallback", () => {
+    const store = new ProposalStore();
+    const limits = [
+      { kind: "count" as const, max: 2, period: "day" as const, scope: "tenant_policy" as const },
+      { kind: "total" as const, field: "credit_cents", max: 5000, period: "day" as const, scope: "tenant_policy" as const },
+    ];
+    const create = (id: string, objectId: string, credit: number) => {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = id;
+      proposal.scope.object_id = objectId;
+      proposal.source.primary_key.value = objectId;
+      proposal.patch = { credit_cents: credit };
+      proposal.after = { ...proposal.before, credit_cents: credit };
+      proposal.guards.allowed_columns = ["credit_cents"];
+      proposal.integrity.proposal_hash = `sha256:${id}`;
+      store.createProposal(proposal);
+      return proposal;
+    };
+    try {
+      const first = create("wrp_limit_1", "INV-LIMIT-1", 2000);
+      const second = create("wrp_limit_2", "INV-LIMIT-2", 2500);
+      const third = create("wrp_limit_3", "INV-LIMIT-3", 1000);
+      expect(store.approveProposalByPolicy(first.proposal_id, {
+        policy: "small_credit",
+        proposal_hash: first.integrity.proposal_hash,
+        proposal_version: 1,
+        reason: "qualified",
+        limits,
+        now: "2026-07-12T01:00:00.000Z",
+      }).approved).toBe(true);
+      expect(store.approveProposalByPolicy(second.proposal_id, {
+        policy: "small_credit",
+        proposal_hash: second.integrity.proposal_hash,
+        proposal_version: 1,
+        reason: "qualified",
+        limits,
+        now: "2026-07-12T02:00:00.000Z",
+      }).approved).toBe(true);
+
+      const deferred = store.approveProposalByPolicy(third.proposal_id, {
+        policy: "small_credit",
+        proposal_hash: third.integrity.proposal_hash,
+        proposal_version: 1,
+        reason: "qualified",
+        limits,
+        now: "2026-07-12T03:00:00.000Z",
+      });
+
+      expect(deferred.approved).toBe(false);
+      expect(deferred.proposal.state).toBe("pending_review");
+      expect(deferred.tripped_limits.map((limit) => limit.kind)).toEqual(["count", "total"]);
+      expect(deferred.tripped_limits[0]).toMatchObject({ observed: 2, proposed: 1, projected: 3 });
+      expect(deferred.tripped_limits[1]).toMatchObject({ observed: 4500, proposed: 1000, projected: 5500 });
+      expect(store.events(third.proposal_id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "policy_auto_approval_deferred",
+          actor: "policy:small_credit",
+          payload: expect.objectContaining({ fallback: "human_review" }),
+        }),
+      ]));
+    } finally {
+      store.close();
+    }
+  });
+
   it("persists immutable proposals and append-only events", () => {
     const store = new ProposalStore();
     try {
@@ -149,6 +353,73 @@ describe("proposal store", () => {
       expect(proposal.source_database_mutated).toBe(false);
       expect(store.createProposal(changeSet).proposal_hash).toBe("sha256:proposal");
       expect(store.events("wrp_123").map((event) => event.kind)).toEqual(["proposal_created"]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("derives tenant and capability operational counters from durable records", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      store.approveProposal("wrp_123", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
+      const job = store.createWritebackJobFromProposal("wrp_123");
+      store.recordExecutionReceipt({
+        ...appliedReceipt,
+        writeback_job_id: job.writeback_job_id,
+        idempotency_key: job.idempotency_key,
+      });
+
+      expect(store.operationalMetrics()).toEqual([{
+        tenant_id: "acme",
+        capability: "billing.waive_late_fee",
+        proposals: 1,
+        approvals: 1,
+        rejections: 0,
+        applies: 1,
+        conflicts: 0,
+        failures: 0,
+      }]);
+      expect(store.operationalMetrics({ tenant: "other" })).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("leases supervised worker items and dead-letters after the retry budget", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      store.approveProposal("wrp_123", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
+      expect(store.enqueueApprovedForWorker({ maxAttempts: 2, now: "2026-07-12T00:00:00.000Z" })).toEqual([
+        expect.objectContaining({ proposal_id: "wrp_123", status: "queued", attempts: 0, max_attempts: 2 }),
+      ]);
+
+      const first = store.claimWorkerItem({ workerId: "worker_a", leaseSeconds: 30, now: "2026-07-12T00:00:01.000Z" });
+      expect(first).toMatchObject({ status: "leased", attempts: 1, lease_owner: "worker_a" });
+      expect(() => store.completeWorkerItem("wrp_123", "worker_b", "applied")).toThrow(/does not hold the lease/);
+      expect(store.retryWorkerItem({
+        proposalId: "wrp_123",
+        workerId: "worker_a",
+        errorCode: "HANDLER_TIMEOUT",
+        retryAt: "2026-07-12T00:00:02.000Z",
+        now: "2026-07-12T00:00:01.500Z",
+      })).toMatchObject({ status: "retry_wait", attempts: 1 });
+
+      const second = store.claimWorkerItem({ workerId: "worker_b", leaseSeconds: 30, now: "2026-07-12T00:00:02.000Z" });
+      expect(second).toMatchObject({ status: "leased", attempts: 2, lease_owner: "worker_b" });
+      expect(store.retryWorkerItem({
+        proposalId: "wrp_123",
+        workerId: "worker_b",
+        errorCode: "HANDLER_TIMEOUT",
+        retryAt: "2026-07-12T00:00:04.000Z",
+        now: "2026-07-12T00:00:02.500Z",
+      })).toMatchObject({ status: "dead_letter", attempts: 2, last_error_code: "HANDLER_TIMEOUT" });
+      expect(store.claimWorkerItem({ workerId: "worker_c", now: "2026-07-12T00:01:00.000Z" })).toBeUndefined();
+      expect(store.events("wrp_123")).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "writeback_retry_scheduled" }),
+        expect.objectContaining({ kind: "writeback_dead_lettered" }),
+      ]));
     } finally {
       store.close();
     }
@@ -601,4 +872,100 @@ function indexNames(store: ProposalStore, table: string): string[] {
       return "";
     })
     .filter(Boolean);
+}
+
+type FakeLedgerRow = {
+  entry_id: number;
+  entry_key: string;
+  kind: string;
+  proposal_id: string | null;
+  tenant_id: string | null;
+  capability: string | null;
+  payload_json: Record<string, unknown>;
+  created_at: string;
+};
+
+class FakePostgresRuntimePool implements PostgresRuntimePool {
+  readonly rows = new Map<string, FakeLedgerRow>();
+  private nextEntryId = 1;
+  ended = false;
+
+  async connect(): Promise<PostgresRuntimeClient> {
+    return new FakePostgresRuntimeClient(this);
+  }
+
+  async query(sql: string, values?: unknown[]): Promise<PostgresRuntimeQueryResult> {
+    return await this.execute(sql, values);
+  }
+
+  async end(): Promise<void> {
+    this.ended = true;
+  }
+
+  async execute(sql: string, values: unknown[] = []): Promise<PostgresRuntimeQueryResult> {
+    const normalized = sql.trim().replace(/\s+/g, " ").toLowerCase();
+    if (
+      normalized === "begin" ||
+      normalized === "commit" ||
+      normalized === "rollback" ||
+      normalized.startsWith("create schema") ||
+      normalized.startsWith("create table") ||
+      normalized.startsWith("create index") ||
+      normalized.startsWith("alter table")
+    ) {
+      return { rows: [] };
+    }
+    if (normalized.startsWith("select pg_try_advisory_xact_lock")) {
+      return { rows: [{ locked: true }] };
+    }
+    if (normalized.startsWith("select entry_key")) {
+      return {
+        rows: [...this.rows.values()]
+          .sort((left, right) => left.entry_id - right.entry_id)
+          .map((row) => ({
+            entry_key: row.entry_key,
+            kind: row.kind,
+            proposal_id: row.proposal_id,
+            tenant_id: row.tenant_id,
+            capability: row.capability,
+            payload_json: row.payload_json,
+            created_at: row.created_at,
+          })),
+      };
+    }
+    if (normalized.startsWith("insert into") && normalized.includes("ledger_entries")) {
+      const [entryKey, kind, proposalId, tenantId, capability, payloadJson, createdAt] = values;
+      const key = String(entryKey);
+      const existing = this.rows.get(key);
+      this.rows.set(key, {
+        entry_id: existing?.entry_id ?? this.nextEntryId++,
+        entry_key: key,
+        kind: String(kind),
+        proposal_id: proposalId == null ? null : String(proposalId),
+        tenant_id: tenantId == null ? null : String(tenantId),
+        capability: capability == null ? null : String(capability),
+        payload_json: parseFakePayloadJson(payloadJson),
+        created_at: String(createdAt),
+      });
+      return { rows: [] };
+    }
+    throw new Error(`unexpected fake Postgres query: ${sql}`);
+  }
+}
+
+class FakePostgresRuntimeClient implements PostgresRuntimeClient {
+  constructor(private readonly pool: FakePostgresRuntimePool) {}
+
+  async query(sql: string, values?: unknown[]): Promise<PostgresRuntimeQueryResult> {
+    return await this.pool.execute(sql, values);
+  }
+
+  release(): void {}
+}
+
+function parseFakePayloadJson(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  const parsed = JSON.parse(String(value ?? "{}")) as unknown;
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  return {};
 }

@@ -341,6 +341,11 @@
               "rules": {
                 "type": "array",
                 "items": { "$ref": "#/$defs/approvalPolicyRule" }
+              },
+              "limits": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "#/$defs/approvalPolicyLimit" }
               }
             }
           }
@@ -350,7 +355,8 @@
         "name": { "$ref": "#/$defs/qualifiedOrSafeName" },
         "kind": { "enum": ["approval", "settlement", "scope", "custom"] },
         "mode": { "enum": ["green", "yellow", "red", "manual", "block"] },
-        "rules": { "type": "array", "items": { "type": "object" } }
+        "rules": { "type": "array", "items": { "type": "object" } },
+        "limits": { "type": "array", "items": { "type": "object" } }
       }
     },
     "approvalPolicyRule": {
@@ -360,6 +366,25 @@
       "properties": {
         "field": { "$ref": "#/$defs/safeIdentifier" },
         "max": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "approvalPolicyLimit": {
+      "type": "object",
+      "required": ["kind", "max", "period"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "total" } }, "required": ["kind"] },
+          "then": { "required": ["field"] },
+          "else": { "not": { "required": ["field"] } }
+        }
+      ],
+      "properties": {
+        "kind": { "enum": ["count", "total"] },
+        "max": { "type": "integer", "minimum": 0 },
+        "period": { "const": "day" },
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "scope": { "enum": ["tenant_policy", "tenant_policy_object"] }
       }
     },
     "evidenceRecord": {

@@ -6,7 +6,8 @@ Synapsor Runner is intentionally narrow in the current alpha.
 
 - Stdio MCP server for semantic database capabilities.
 - Local read and proposal tools.
-- Local SQLite evidence/proposal/query-audit/replay store.
+- Local SQLite evidence/proposal/query-audit/replay store by default.
+- Optional shared Postgres proposal/evidence/replay runtime store for MCP serving.
 - Human approval through CLI commands.
 - Public protocol objects:
   - `synapsor.change-set.v1`

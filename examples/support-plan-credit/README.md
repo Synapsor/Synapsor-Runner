@@ -196,10 +196,15 @@ The auto-approval policy lives in `contract.synapsor.sql`:
 
 ```sql
 AUTO APPROVE WHEN plan_credit_cents <= 2500
+LIMIT 20 PER DAY
+LIMIT TOTAL 100000 PER DAY
 ```
 
 That compiles into `synapsor.contract.json` as a reviewed approval policy. It is
-stored in git, validated by `@synapsor/spec`, and included in Cloud push payloads.
+stored in git, validated by `@synapsor/spec`, and included in Cloud push
+payloads. The policy may approve at most 20 qualifying credits or 100,000 cents
+in total per trusted tenant and UTC day. The first ceiling reached leaves later
+proposals in `pending_review` and records why the policy deferred to a human.
 
 To disable local policy approval without changing the contract:
 
@@ -213,6 +218,16 @@ To disable local policy approval without changing the contract:
 
 Auto-approval never applies the write. It only records an approval row and audit
 event with actor `policy:<policy_name>`.
+
+After reviewing the ceilings and running `doctor`, an operator can drain the
+approved queue without letting one stale-row conflict abort the remaining jobs:
+
+```bash
+synapsor-runner apply --all-approved --yes \
+  --capability support.propose_plan_credit --tenant acme --max 20 \
+  --config examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+```
 
 ## Cloud
 

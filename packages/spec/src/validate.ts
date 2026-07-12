@@ -36,7 +36,8 @@ const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "policy"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
 const WORKFLOW_KEYS = new Set(["name", "description", "context", "allowed_capabilities", "required_evidence", "approval", "settlement", "replay"]);
-const POLICY_KEYS = new Set(["name", "kind", "mode", "rules"]);
+const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
+const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
 const EVIDENCE_RECORD_KEYS = new Set(["handle", "capability", "query_fingerprint", "items"]);
 const PROPOSAL_RECORD_KEYS = new Set(["id", "capability", "subject", "status", "diff", "evidence_handle"]);
 const RECEIPT_KEYS = new Set(["id", "proposal_id", "status", "idempotency_key", "source_database_mutated", "rows_affected"]);
@@ -441,8 +442,43 @@ function validatePolicies(value: unknown, errors: ValidationIssue[]): Map<string
         policy.rules.forEach((rule, ruleIndex) => validateApprovalPolicyRuleShape(rule, `${path}.rules[${ruleIndex}]`, errors));
       }
     }
+    if (policy.limits !== undefined) {
+      if (!Array.isArray(policy.limits) || policy.limits.length === 0) {
+        errors.push({ path: `${path}.limits`, code: "APPROVAL_POLICY_LIMITS_NOT_ARRAY", message: "approval policy limits must be a non-empty array." });
+      } else if (policy.kind !== "approval") {
+        errors.push({ path: `${path}.limits`, code: "APPROVAL_POLICY_LIMITS_KIND_REQUIRED", message: "aggregate limits are supported only for approval policies." });
+      } else {
+        policy.limits.forEach((limit, limitIndex) => validateApprovalPolicyLimitShape(limit, `${path}.limits[${limitIndex}]`, errors));
+      }
+    }
   });
   return names;
+}
+
+function validateApprovalPolicyLimitShape(limit: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(limit)) {
+    errors.push({ path, code: "APPROVAL_POLICY_LIMIT_NOT_OBJECT", message: "approval policy limits must be objects." });
+    return;
+  }
+  checkUnknownKeys(limit, APPROVAL_POLICY_LIMIT_KEYS, path, errors);
+  if (limit.kind !== "count" && limit.kind !== "total") {
+    errors.push({ path: `${path}.kind`, code: "INVALID_APPROVAL_POLICY_LIMIT_KIND", message: "approval policy limit kind must be count or total." });
+  }
+  if (!Number.isSafeInteger(limit.max) || Number(limit.max) < 0) {
+    errors.push({ path: `${path}.max`, code: "INVALID_APPROVAL_POLICY_LIMIT_MAX", message: "approval policy limit max must be a safe non-negative integer." });
+  }
+  if (limit.period !== "day") {
+    errors.push({ path: `${path}.period`, code: "INVALID_APPROVAL_POLICY_LIMIT_PERIOD", message: "approval policy limit period must be day." });
+  }
+  if (limit.scope !== undefined && limit.scope !== "tenant_policy" && limit.scope !== "tenant_policy_object") {
+    errors.push({ path: `${path}.scope`, code: "INVALID_APPROVAL_POLICY_LIMIT_SCOPE", message: "approval policy limit scope must be tenant_policy or tenant_policy_object." });
+  }
+  if (limit.kind === "total" && !isSafeIdentifier(limit.field)) {
+    errors.push({ path: `${path}.field`, code: "APPROVAL_POLICY_TOTAL_FIELD_REQUIRED", message: "total approval limits require a safe numeric field." });
+  }
+  if (limit.kind === "count" && limit.field !== undefined) {
+    errors.push({ path: `${path}.field`, code: "APPROVAL_POLICY_COUNT_FIELD_FORBIDDEN", message: "count approval limits must not declare a field." });
+  }
 }
 
 function validateApprovalPolicyRuleShape(rule: unknown, path: string, errors: ValidationIssue[]): void {
@@ -494,10 +530,9 @@ function validateCapabilityApprovalPolicies(capabilities: unknown[], policies: u
 }
 
 function validateApprovalPolicyRulesAgainstCapability(policy: JsonRecord, policyIndex: number, capability: CapabilitySpec, capabilityIndex: number, errors: ValidationIssue[]): void {
-  if (!Array.isArray(policy.rules)) return;
   const proposal = capability.proposal;
   if (!proposal) return;
-  policy.rules.forEach((rule, ruleIndex) => {
+  if (Array.isArray(policy.rules)) policy.rules.forEach((rule, ruleIndex) => {
     if (!isRecord(rule)) return;
     const field = rule.field;
     const max = rule.max;
@@ -516,6 +551,16 @@ function validateApprovalPolicyRulesAgainstCapability(policy: JsonRecord, policy
         path: `${rulePath}.max`,
         code: "APPROVAL_POLICY_MAX_EXCEEDS_BOUND",
         message: `approval policy max for ${field} must be <= numeric_bounds maximum on $.capabilities[${capabilityIndex}].proposal.numeric_bounds.${field}.maximum.`,
+      });
+    }
+  });
+  if (Array.isArray(policy.limits)) policy.limits.forEach((limit, limitIndex) => {
+    if (!isRecord(limit) || limit.kind !== "total" || !isSafeIdentifier(limit.field)) return;
+    if (!isNumericProposalField(proposal, capability.args, limit.field)) {
+      errors.push({
+        path: `$.policies[${policyIndex}].limits[${limitIndex}].field`,
+        code: "APPROVAL_POLICY_TOTAL_FIELD_NOT_NUMERIC",
+        message: `aggregate approval total field ${limit.field} must be numeric for capability ${capability.name}.`,
       });
     }
   });

@@ -149,6 +149,8 @@ patched column. Values may be identifiers or quoted strings.
 ```sql
   APPROVAL ROLE billing_lead
   AUTO APPROVE WHEN amount_cents <= 2500
+  LIMIT 20 PER DAY
+  LIMIT TOTAL 100000 PER DAY
   WRITEBACK DIRECT SQL
 ```
 
@@ -159,6 +161,22 @@ Cloud boundary.
 `AUTO APPROVE WHEN field <= non_negative_integer` is supported only for a
 numeric patched field and must follow `APPROVAL ROLE`. Its maximum cannot exceed
 the field's `BOUND`. Policy approval still does not apply the write.
+
+Aggregate limits follow the auto-approval clause:
+
+```sql
+LIMIT 20 PER DAY
+LIMIT TOTAL 100000 PER DAY
+```
+
+`LIMIT n PER DAY` caps policy approvals for the trusted tenant and policy in
+the UTC calendar day. `LIMIT TOTAL n PER DAY` sums the policy's numeric patch
+field over the same scope. Use `PER OBJECT DAY` instead of `PER DAY` to scope a
+limit to one trusted tenant, policy, and business object. The check and approval
+are one atomic ledger transaction. When any ceiling would be exceeded, Runner
+leaves the proposal in `pending_review` and records
+`policy_auto_approval_deferred` with observed, proposed, and projected values.
+It does not reject or auto-apply the proposal.
 
 Writeback forms:
 

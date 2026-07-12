@@ -87,8 +87,58 @@ describe("runner capability config validation", () => {
     };
     const invalid = { ...structuredClone(safeConfig), execute_sql: "SELECT 1" };
     const emptyWithoutContract = { ...structuredClone(safeConfig), capabilities: [] };
+    const aggregateLimited = structuredClone(safeConfig) as any;
+    aggregateLimited.capabilities[1].approval = {
+      mode: "policy",
+      required_role: "support_lead",
+      policy: "billing_small_waiver",
+    };
+    aggregateLimited.policies = [{
+      name: "billing_small_waiver",
+      kind: "approval",
+      mode: "green",
+      rules: [{ field: "late_fee_cents", max: 5500 }],
+      limits: [
+        { kind: "count", max: 20, period: "day", scope: "tenant_policy" },
+        { kind: "total", field: "late_fee_cents", max: 100000, period: "day", scope: "tenant_policy" },
+      ],
+    }];
+    const perSession = structuredClone(safeConfig) as any;
+    perSession.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    perSession.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      previous_secret_env: "SYNAPSOR_PREVIOUS_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+      tenant_claim: "tenant_id",
+      principal_claim: "sub",
+      clock_skew_seconds: 30,
+    };
+    const sharedLedger = structuredClone(safeConfig) as any;
+    sharedLedger.storage = {
+      sqlite_path: "./.synapsor/local.db",
+      shared_postgres: {
+        mode: "mirror",
+        url_env: "SYNAPSOR_LEDGER_DATABASE_URL",
+        schema: "synapsor_runner",
+        lock_timeout_ms: 10000,
+      },
+    };
+    const sharedRuntimeStore = structuredClone(safeConfig) as any;
+    sharedRuntimeStore.storage = {
+      shared_postgres: {
+        mode: "runtime_store",
+        url_env: "SYNAPSOR_LEDGER_DATABASE_URL",
+        schema: "synapsor_runner",
+        lock_timeout_ms: 10000,
+      },
+    };
 
-    for (const accepted of [safeConfig, contractOnly]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, sharedLedger, sharedRuntimeStore]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -102,6 +152,57 @@ describe("runner capability config validation", () => {
     const result = validateRunnerCapabilityConfig(safeConfig);
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
+  });
+
+  it("validates shared Postgres storage wiring without accepting inline URLs", () => {
+    const config = mutableConfig();
+    config.storage.shared_postgres = {
+      mode: "mirror",
+      url_env: "SYNAPSOR_LEDGER_DATABASE_URL",
+      schema: "synapsor_runner",
+      lock_timeout_ms: 5000,
+    };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+
+    const runtimeStore = mutableConfig();
+    runtimeStore.storage.shared_postgres = {
+      mode: "runtime_store",
+      url_env: "SYNAPSOR_LEDGER_DATABASE_URL",
+      schema: "synapsor_runner",
+      lock_timeout_ms: 5000,
+    };
+    expect(validateRunnerCapabilityConfig(runtimeStore).ok).toBe(true);
+
+    const inline = mutableConfig();
+    inline.storage.shared_postgres = {
+      mode: "mirror",
+      url_env: "postgresql://writer:secret@example/ledger",
+    };
+    const inlineResult = validateRunnerCapabilityConfig(inline);
+    expect(inlineResult.ok).toBe(false);
+    expect(inlineResult.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "$.storage.shared_postgres.url_env", code: "SHARED_POSTGRES_URL_ENV_REQUIRED" }),
+    ]));
+
+    const invalidTimeout = mutableConfig();
+    invalidTimeout.storage.shared_postgres = {
+      mode: "mirror",
+      url_env: "SYNAPSOR_LEDGER_DATABASE_URL",
+      lock_timeout_ms: -1,
+    };
+    expect(validateRunnerCapabilityConfig(invalidTimeout).errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "$.storage.shared_postgres.lock_timeout_ms", code: "INVALID_SHARED_POSTGRES_LOCK_TIMEOUT" }),
+    ]));
+  });
+
+  it("requires signed session auth for http_claims trusted context", () => {
+    const config = mutableConfig();
+    config.trusted_context = { provider: "http_claims", values: { tenant_id_key: "tenant_id", principal_key: "sub" } };
+    const missing = validateRunnerCapabilityConfig(config);
+    expect(missing.errors.map((error) => error.code)).toContain("SESSION_AUTH_REQUIRED");
+
+    config.session_auth = { provider: "jwt_hs256", secret_env: "SYNAPSOR_SESSION_JWT_SECRET", previous_secret_env: "SYNAPSOR_PREVIOUS_SESSION_JWT_SECRET" };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
   });
 
   it("rejects model-controlled tenant and identifier args", () => {

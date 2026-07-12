@@ -130,6 +130,9 @@ try {
 - `TRANSITION`
 - `APPROVAL ROLE`
 - `AUTO APPROVE WHEN field <= integer`
+- `LIMIT count PER DAY` after auto-approval
+- `LIMIT TOTAL integer PER DAY` after auto-approval
+- optional `PER OBJECT DAY` scope for count/total limits
 - `WRITEBACK DIRECT SQL|APP HANDLER|CLOUD WORKER|NONE`
 - workflow `ALLOW CAPABILITY`
 

@@ -146,6 +146,22 @@ least-privilege database access, host security, or application authorization.
 See [Security Boundary](docs/security-boundary.md) and
 [Current Limitations](docs/limitations.md).
 
+## Operate The Approval Loop
+
+Reviewed policies can combine a per-proposal threshold with daily count and
+total ceilings. Exceeding a ceiling routes that proposal to human review; it
+never auto-applies. Operators can apply the bounded approved queue independently
+with `apply --all-approved --yes`, inspect Prometheus counters with `metrics
+show`, and consume safe newline-delimited JSON outcome logs from stderr. Signed
+operator keys can enforce contract reviewer roles and separate apply roles.
+Shared Postgres ledger mirror mode is available for bounded operator handoffs,
+and `storage.shared_postgres.mode = "runtime_store"` lets MCP serving use
+Postgres as the primary proposal/evidence/replay store with bounded CLI
+approval/apply/worker commands bridged through the same ledger. Local SQLite
+remains the default. See
+[Production](docs/production.md) and the
+[Runner Config Reference](docs/runner-config-reference.md).
+
 ## Packages
 
 | Package | Purpose |
@@ -169,8 +185,9 @@ owner-only permissions, inspection commands, and retention.
 ## OSS And Cloud
 
 Synapsor Runner works by itself for local and single-node deployments: your
-database remains the source of truth and the local SQLite ledger stores review
-artifacts. Synapsor Cloud adds a shared contract registry, immutable versions,
+database remains the source of truth and Runner stores review artifacts in the
+default local SQLite ledger or an opt-in shared Postgres runtime store.
+Synapsor Cloud adds a shared contract registry, immutable versions,
 downloadable Runner bundles, and team activity, evidence, and approval
 surfaces. See [OSS Runner vs Synapsor Cloud](docs/oss-vs-cloud.md) for the
 detailed boundary.

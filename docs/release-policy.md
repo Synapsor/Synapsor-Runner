@@ -1,7 +1,10 @@
 # Release Policy
 
-Synapsor Runner `0.1.0` is the first stable local runner line. Use the stable
-package for normal installs:
+Synapsor Runner `0.1.0` was the first stable local runner line. Synapsor
+Runner `1.0.0` is the first production approval-loop semver line: batch apply,
+aggregate policy limits, verified operator identity, structured operations, and
+shared runtime-store deployment are part of the documented compatibility
+surface. Use the stable package for normal installs:
 
 ```bash
 npx -y -p @synapsor/runner synapsor-runner demo --quick
@@ -55,10 +58,37 @@ A stable `0.1.0` release should only be tagged after:
 - there are no known docs/code mismatches around transport, credentials,
   receipt tables, or handler expectations.
 
+## 1.0 Stability Gate
+
+Do not tag `1.0.0` only because the package is useful. `1.0.0` is the public
+semver contract for the Runner production approval loop, and it should be cut
+only after the following are true in the current tree and release artifacts:
+
+- batch apply can apply all approved proposals independently, reports
+  applied/conflict/skipped IDs, is safe to rerun through idempotency receipts,
+  and supports `--capability`, `--tenant`, and `--max`;
+- aggregate auto-approval limits are authored in DSL, represented in the
+  canonical contract spec, enforced as human-review fallback, persisted with
+  tripped-limit details, and visible in doctor/tools preview output;
+- approve/reject/apply can require a verified operator identity, enforce
+  contract reviewer roles and apply roles, and bind tamper-evident identity
+  records into the proposal ledger;
+- designed rejections and writeback outcomes emit structured logs, operational
+  counters are available per tenant and capability, and owner-only local store
+  permissions remain under test;
+- the documented public surfaces below have release-gate coverage from packed
+  artifacts, not only source-tree tests.
+
+After `1.0.0`, changes to the documented CLI, schema, contract, MCP result,
+writeback, approval, metrics, and replay surfaces must follow semantic
+versioning. Breaking changes require a new major version, except for security
+fixes that close a vulnerability while preserving the safest possible
+compatibility path.
+
 ## Stable Compatibility Promise
 
-Starting with `0.1.0`, Synapsor Runner keeps these public surfaces compatible
-through the `0.1.x` line unless a release note marks a deprecation first:
+Starting with `1.0.0`, Synapsor Runner keeps these public surfaces compatible
+through the `1.x` line unless a release note marks a deprecation first:
 
 - the `synapsor-runner` binary name and README quickstart commands;
 - `synapsor.runner.json` schema version `1` for documented fields;
@@ -73,8 +103,9 @@ through the `0.1.x` line unless a release note marks a deprecation first:
 Stable does not promise production SLA, hosted Cloud features, compliance
 certification, physical Postgres/MySQL branching, generic SQL writeback,
 generic multi-row writes, or compatibility for undocumented local SQLite
-internals. Local store migrations may happen inside `0.1.x`, but documented CLI
-inspection commands should remain the supported way to read the store.
+internals. Local store migrations may happen inside `1.x` and later minor
+versions, but documented CLI inspection commands should remain the supported way
+to read the store.
 
 Alpha users should pin an exact alpha version in package.json, CI, and MCP
 client snippets. Use `@alpha` only when intentionally testing the moving

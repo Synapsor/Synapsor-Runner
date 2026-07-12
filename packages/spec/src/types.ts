@@ -138,6 +138,15 @@ export type PolicySpec = ExtensionFields & {
   kind: "approval" | "settlement" | "scope" | "custom";
   mode?: "green" | "yellow" | "red" | "manual" | "block";
   rules?: JsonRecord[];
+  limits?: ApprovalPolicyLimitSpec[];
+};
+
+export type ApprovalPolicyLimitSpec = ExtensionFields & {
+  kind: "count" | "total";
+  max: number;
+  period: "day";
+  field?: string;
+  scope?: "tenant_policy" | "tenant_policy_object";
 };
 
 export type EvidenceSpec = ExtensionFields & {

@@ -1,0 +1,8 @@
+{
+  "approved_before_limit": 2,
+  "deferred_state": "pending_review",
+  "deferred_event": "policy_auto_approval_deferred",
+  "count_limit": { "observed": 2, "proposed": 1, "projected": 3 },
+  "total_limit": { "observed": 4500, "proposed": 1000, "projected": 5500 },
+  "source_database_changed": false
+}
