@@ -25,6 +25,19 @@ even if you never adopt Runner:
 npx -y @synapsor/runner audit --example dangerous-db-mcp
 ```
 
+Then point the same static review at your own exported tool manifest, remote
+`tools/list` endpoint, or stdio MCP server:
+
+```bash
+npx -y @synapsor/runner audit ./tools-list.json
+```
+
+The audit flags raw SQL, arbitrary table/column inputs, model-controlled tenant
+or principal authority, model-facing approval/writeback tools, and missing
+conflict or idempotency signals. It does not call business tools, and it is a
+risk review rather than proof that a server is secure. See [MCP Database Risk
+Review](docs/mcp-audit.md) for remote, stdio, JSON, and Markdown workflows.
+
 Then see the proposal, approval boundary, evidence, and replay loop. It needs no
 database, Docker, config file, MCP client, or Synapsor account:
 
@@ -64,6 +77,21 @@ The model can inspect scoped data and propose an exact change. It cannot call
 approval or apply tools. A human or trusted operator approves outside MCP, then
 Runner either performs one guarded row update or routes the approved proposal
 to an app-owned executor.
+
+The distinction is the complete boundary, not a read-only toggle or a generic
+approve/reject prompt:
+
+- reviewed contracts constrain tools, tenant context, visible and writable
+  columns, numeric bounds, transitions, and approval requirements;
+- proposals separate model intent from commit authority, including aggregate
+  auto-approval ceilings where configured;
+- evidence, query audit, idempotency receipts, and replay preserve what was
+  inspected, requested, approved, and applied.
+
+Runner supports bounded production deployments when its documented database,
+identity, ledger, backup, and operational controls are satisfied. It does not
+make arbitrary agent code, raw SQL tools, host infrastructure, or
+prompt-injection-prone clients safe by itself.
 
 ## Connect A Staging Database
 
@@ -162,6 +190,16 @@ remains the default. See
 [Production](docs/production.md) and the
 [Runner Config Reference](docs/runner-config-reference.md).
 
+For a small multi-tenant fleet, bind every capability context to verified HTTP
+claims, use `jwt_asymmetric` session auth, and share a bounded Postgres
+`runtime_store`. Never assume a global `http_claims` setting overrides an
+environment-bound contract context; Runner rejects that contradiction before
+serving tools. Load balancers should use dependency-free `/healthz` for
+liveness and `/readyz` for source/ledger/writeback readiness. The tested
+two-Runner topology, pool/rate-limit budgets, metrics, backup/restore,
+dead-letter, and rolling-upgrade rules are in
+[Running A Small Runner Fleet](docs/running-a-runner-fleet.md).
+
 ## Packages
 
 | Package | Purpose |
@@ -184,9 +222,10 @@ owner-only permissions, inspection commands, and retention.
 
 ## OSS And Cloud
 
-Synapsor Runner works by itself for local and single-node deployments: your
-database remains the source of truth and Runner stores review artifacts in the
-default local SQLite ledger or an opt-in shared Postgres runtime store.
+Synapsor Runner works by itself for local, single-node, and bounded small-fleet
+deployments: your database remains the source of truth and Runner stores review
+artifacts in the default local SQLite ledger or an opt-in shared Postgres
+runtime store.
 Synapsor Cloud adds a shared contract registry, immutable versions,
 downloadable Runner bundles, and team activity, evidence, and approval
 surfaces. See [OSS Runner vs Synapsor Cloud](docs/oss-vs-cloud.md) for the

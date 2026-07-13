@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: synapsor_fleet
+      POSTGRES_USER: synapsor_admin
+      POSTGRES_PASSWORD: synapsor_admin_password
+    ports:
+      - "55439:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "test \"$(psql -U synapsor_admin -d synapsor_fleet -tAc \"SELECT pg_postmaster_start_time() > initialized_at FROM public.synapsor_fixture_ready LIMIT 1\" 2>/dev/null | xargs)\" = t"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - ./seed/postgres.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_DATABASE: synapsor_fleet
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "53309:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot_password"]
+      interval: 2s
+      timeout: 5s
+      retries: 40
+    volumes:
+      - ./seed/mysql.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+
+  runner-a:
+    profiles: ["fleet"]
+    build:
+      context: ../..
+      dockerfile: examples/runner-fleet/Dockerfile
+    command: ["mcp", "serve", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8766", "--config", "/config/synapsor.runner.json"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &runner_environment
+      FLEET_POSTGRES_READ_URL: postgresql://synapsor_reader:synapsor_reader_password@postgres:5432/synapsor_fleet
+      FLEET_POSTGRES_WRITE_URL: postgresql://synapsor_writer:synapsor_writer_password@postgres:5432/synapsor_fleet
+      SYNAPSOR_LEDGER_DATABASE_URL: postgresql://synapsor_admin:synapsor_admin_password@postgres:5432/synapsor_fleet
+      SYNAPSOR_SESSION_JWT_SECRET: synthetic-fleet-session-secret-change-before-use-0001
+      SYNAPSOR_METRICS_TOKEN: synthetic-fleet-metrics-token-change-before-use
+    ports:
+      - "8871:8766"
+    volumes:
+      - ./synapsor.runner.json:/config/synapsor.runner.json:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  runner-b:
+    profiles: ["fleet"]
+    build:
+      context: ../..
+      dockerfile: examples/runner-fleet/Dockerfile
+    command: ["mcp", "serve", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8766", "--config", "/config/synapsor.runner.json"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *runner_environment
+    ports:
+      - "8872:8766"
+    volumes:
+      - ./synapsor.runner.json:/config/synapsor.runner.json:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

@@ -56,7 +56,7 @@ export type ProposalEvent = {
 
 export type OperatorDecision = {
   schema_version: "synapsor.operator-decision.v1";
-  action: "approve" | "reject" | "apply";
+  action: "approve" | "reject" | "apply" | "worker_requeue" | "worker_discard";
   proposal_id: string;
   proposal_version: number;
   proposal_hash: string;
@@ -66,12 +66,13 @@ export type OperatorDecision = {
 };
 
 export type OperatorIdentityProof = {
-  provider: "dev_env" | "signed_key";
+  provider: "dev_env" | "signed_key" | "jwt_oidc";
   verified: boolean;
   subject: string;
   roles: string[];
   key_id?: string;
   algorithm?: string;
+  issuer?: string;
   decision: OperatorDecision;
   decision_hash: string;
   signature?: string;
@@ -93,6 +94,14 @@ export type StoredApproval = {
   created_at: string;
 };
 
+export type ApprovalProgress = {
+  approved: number;
+  required: number;
+  remaining: number;
+  rejected: boolean;
+  complete: boolean;
+};
+
 export type StoredWritebackReceipt = {
   receipt_id: number;
   writeback_job_id: string;
@@ -103,6 +112,13 @@ export type StoredWritebackReceipt = {
   source_database_mutated: boolean;
   receipt: ExecutionReceiptV1;
   created_at: string;
+  tenant_id?: string;
+  principal?: string;
+  capability?: string;
+  business_object?: string;
+  object_id?: string;
+  source_id?: string;
+  source_table?: string;
 };
 
 export type ProposalReplayRecord = {
@@ -186,6 +202,13 @@ export type ReceiptSearchFilters = LocalListOptions & {
   writebackJob?: string;
   idempotencyKey?: string;
   status?: string;
+  tenant?: string;
+  principal?: string;
+  capability?: string;
+  objectType?: string;
+  objectId?: string;
+  source?: string;
+  table?: string;
 };
 
 export type EventSearchFilters = LocalListOptions & {
@@ -262,7 +285,15 @@ export type OperationalMetricRow = {
   failures: number;
 };
 
-export type WorkerQueueStatus = "queued" | "leased" | "retry_wait" | "completed" | "dead_letter";
+export type FleetEventMetricRow = {
+  tenant_id: string;
+  capability: string;
+  worker_retries: number;
+  dead_letters: number;
+  auto_approval_limit_trips: number;
+};
+
+export type WorkerQueueStatus = "queued" | "leased" | "retry_wait" | "completed" | "dead_letter" | "discarded";
 
 export type WorkerQueueItem = {
   proposal_id: string;
@@ -382,6 +413,9 @@ export type ProposalRuntimeStore = {
     },
   ): MaybePromise<PolicyApprovalDecision>;
   getProposal(proposalId: string): MaybePromise<StoredProposal | undefined>;
+  approvalProgress?(proposalId: string): MaybePromise<ApprovalProgress>;
+  operationalMetrics?(filters?: { tenant?: string; capability?: string }): MaybePromise<OperationalMetricRow[]>;
+  fleetEventMetrics?(filters?: { tenant?: string; capability?: string }): MaybePromise<FleetEventMetricRow[]>;
   events(proposalId: string): MaybePromise<ProposalEvent[]>;
   receipts(proposalId: string): MaybePromise<StoredWritebackReceipt[]>;
   getEvidenceBundle(evidenceBundleId: string): MaybePromise<StoredEvidenceBundle | undefined>;
@@ -409,6 +443,7 @@ export type PostgresProposalRuntimeStoreOptions = {
   lockTimeoutMs?: number;
   autoMigrate?: boolean;
   closePool?: boolean;
+  maxEntries?: number;
 };
 
 export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
@@ -417,6 +452,7 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
   private readonly lockTimeoutMs: number;
   private readonly autoMigrate: boolean;
   private readonly closePool: boolean;
+  private readonly maxEntries: number;
 
   constructor(options: PostgresProposalRuntimeStoreOptions) {
     this.pool = options.pool;
@@ -425,6 +461,7 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     this.lockTimeoutMs = Math.max(0, options.lockTimeoutMs ?? 10_000);
     this.autoMigrate = options.autoMigrate === true;
     this.closePool = options.closePool === true;
+    this.maxEntries = Math.max(100, Math.min(options.maxEntries ?? 10_000, 100_000));
   }
 
   async close(): Promise<void> {
@@ -458,6 +495,18 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     return await this.withRead((store) => store.getProposal(proposalId));
   }
 
+  async approvalProgress(proposalId: string): Promise<ApprovalProgress> {
+    return await this.withRead((store) => store.approvalProgress(proposalId));
+  }
+
+  async operationalMetrics(filters: { tenant?: string; capability?: string } = {}): Promise<OperationalMetricRow[]> {
+    return await this.withRead((store) => store.operationalMetrics(filters));
+  }
+
+  async fleetEventMetrics(filters: { tenant?: string; capability?: string } = {}): Promise<FleetEventMetricRow[]> {
+    return await this.withRead((store) => store.fleetEventMetrics(filters));
+  }
+
   async events(proposalId: string): Promise<ProposalEvent[]> {
     return await this.withRead((store) => store.events(proposalId));
   }
@@ -487,14 +536,18 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      if (this.autoMigrate) await client.query(sharedPostgresRuntimeStoreMigration(this.schema));
       const locked = await acquirePostgresRuntimeStoreLock(client, `synapsor-runner:${this.schema}:runtime-store`, this.lockTimeoutMs);
       if (!locked) throw new ProposalStoreError("POSTGRES_RUNTIME_STORE_LOCK_TIMEOUT", `Postgres runtime store lock is held for schema ${this.schema} while running ${operation}`);
+      if (this.autoMigrate) await client.query(sharedPostgresRuntimeStoreMigration(this.schema));
       const store = await this.transientStoreFromPostgres(client);
       let result: T;
       try {
         result = callback(store);
-        await upsertSharedLedgerEntries(client, this.schema, store.sharedLedgerEntries());
+        const entries = store.sharedLedgerEntries();
+        if (entries.length > this.maxEntries) {
+          throw new ProposalStoreError("POSTGRES_RUNTIME_STORE_CAPACITY_EXCEEDED", `Postgres runtime store reached its configured ${this.maxEntries}-entry safety bound`);
+        }
+        await upsertSharedLedgerEntries(client, this.schema, entries);
       } finally {
         store.close();
       }
@@ -509,10 +562,31 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
   }
 
   private async transientStoreFromPostgres(connection: Pick<PostgresRuntimePool, "query">): Promise<ProposalStore> {
-    const entries = await fetchSharedLedgerEntries(connection, this.schema);
+    const entries = await fetchSharedLedgerEntries(connection, this.schema, this.maxEntries);
     const store = new ProposalStore();
     store.importSharedLedgerEntries(entries);
     return store;
+  }
+}
+
+export async function migrateSharedPostgresRuntimeStore(
+  pool: PostgresRuntimePool,
+  schema = "synapsor_runner",
+  lockTimeoutMs = 10_000,
+): Promise<void> {
+  assertSafePostgresIdentifier(schema, "schema");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await acquirePostgresRuntimeStoreLock(client, `synapsor-runner:${schema}:runtime-store`, Math.max(0, lockTimeoutMs));
+    if (!locked) throw new ProposalStoreError("POSTGRES_RUNTIME_STORE_LOCK_TIMEOUT", `Postgres runtime store migration lock timed out for schema ${schema}`);
+    await client.query(sharedPostgresRuntimeStoreMigration(schema));
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -549,16 +623,28 @@ export function sharedPostgresRuntimeStoreMigration(schema = "synapsor_runner"):
     "  attempt integer NOT NULL DEFAULT 1,",
     "  updated_at timestamptz NOT NULL DEFAULT now()",
     ");",
+    `CREATE TABLE IF NOT EXISTS ${s}.rate_limit_buckets (`,
+    "  bucket_key text NOT NULL,",
+    "  window_start bigint NOT NULL,",
+    "  request_count bigint NOT NULL DEFAULT 0,",
+    "  rejected_count bigint NOT NULL DEFAULT 0,",
+    "  updated_at timestamptz NOT NULL DEFAULT now(),",
+    "  PRIMARY KEY (bucket_key, window_start)",
+    ");",
   ].join("\n");
 }
 
-async function fetchSharedLedgerEntries(connection: Pick<PostgresRuntimePool, "query">, schema: string): Promise<SharedLedgerEntry[]> {
+async function fetchSharedLedgerEntries(connection: Pick<PostgresRuntimePool, "query">, schema: string, maxEntries: number): Promise<SharedLedgerEntry[]> {
   const qualified = `${quotePostgresIdentifier(schema)}.ledger_entries`;
   const result = await connection.query(`
     SELECT entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at::text AS created_at
     FROM ${qualified}
     ORDER BY entry_id ASC
-  `);
+    LIMIT $1
+  `, [maxEntries + 1]);
+  if (result.rows.length > maxEntries) {
+    throw new ProposalStoreError("POSTGRES_RUNTIME_STORE_CAPACITY_EXCEEDED", `Postgres runtime store exceeds its configured ${maxEntries}-entry safety bound`);
+  }
   return result.rows.map((row) => {
     const payload = parseJsonRecord(row.payload_json);
     return {
@@ -700,7 +786,11 @@ export class ProposalStore {
 
   pruneBefore(cutoffIso: string, options: { dryRun?: boolean } = {}): StorePruneResult {
     const dryRun = options.dryRun !== false;
-    const proposalIds = this.stringColumn("SELECT proposal_id FROM proposals WHERE created_at < ?", [cutoffIso], "proposal_id");
+    const proposalIds = this.stringColumn(
+      "SELECT proposal_id FROM proposals WHERE created_at < ? AND state IN ('applied', 'conflict', 'rejected', 'canceled')",
+      [cutoffIso],
+      "proposal_id",
+    );
     const evidenceIds = this.evidenceIdsForPrune(cutoffIso, proposalIds);
     const deleted: Record<string, number> = {};
     const run = (table: string, where: string, params: SQLInputValue[]) => {
@@ -1260,7 +1350,16 @@ export class ProposalStore {
     assertOperatorDecision(proposal, "approve", options.approver, options.identity, options.require_verified_identity === true);
     const now = new Date().toISOString();
     this.transaction(() => {
-      this.db.prepare("UPDATE proposals SET state = ?, updated_at = ? WHERE proposal_id = ?").run("approved", now, proposalId);
+      const current = this.requireProposal(proposalId);
+      if (current.state !== "pending_review") {
+        throw new ProposalStoreError("PROPOSAL_NOT_PENDING_REVIEW", `proposal ${proposalId} is ${current.state}`);
+      }
+      const existing = this.db.prepare(`
+        SELECT status FROM approvals WHERE proposal_id = ? AND approver = ? ORDER BY approval_id DESC LIMIT 1
+      `).get(proposalId, options.approver);
+      if (isRecord(existing)) {
+        throw new ProposalStoreError("APPROVER_ALREADY_COUNTED", `operator ${options.approver} already recorded a decision for proposal ${proposalId}`);
+      }
       this.db.prepare(`
         INSERT INTO approvals (
           proposal_id, proposal_version, proposal_hash, approver, status, reason,
@@ -1279,11 +1378,19 @@ export class ProposalStore {
         options.identity?.integrity_hash ?? null,
         now,
       );
-      this.appendEvent(proposalId, "proposal_approved", options.approver, {
+      const progress = this.approvalProgress(proposalId);
+      const complete = progress.approved >= progress.required;
+      if (complete) {
+        this.db.prepare("UPDATE proposals SET state = ?, updated_at = ? WHERE proposal_id = ?").run("approved", now, proposalId);
+      }
+      this.appendEvent(proposalId, complete ? "proposal_approved" : "proposal_approval_recorded", options.approver, {
         proposal_hash: options.proposal_hash,
         proposal_version: options.proposal_version,
         reason: options.reason ?? null,
         identity: publicIdentitySummary(options.identity),
+        approvals: progress.approved,
+        required_approvals: progress.required,
+        remaining_approvals: progress.remaining,
       });
     });
     return this.requireProposal(proposalId);
@@ -1304,12 +1411,25 @@ export class ProposalStore {
     const now = options.now ?? new Date().toISOString();
     const window = utcDayWindow(now);
     const trippedLimits: PolicyApprovalLimitTrip[] = [];
+    let quorumDeferred = false;
     this.transaction(() => {
       const proposal = this.requireProposal(proposalId);
       assertWritebackAllowed(proposal, "approved by policy");
       assertProposalIdentity(proposal, options.proposal_hash, options.proposal_version);
       if (proposal.state !== "pending_review") {
         throw new ProposalStoreError("PROPOSAL_NOT_PENDING_REVIEW", `proposal ${proposalId} is ${proposal.state}`);
+      }
+      const requiredApprovals = requiredApprovalCount(proposal);
+      if (requiredApprovals > 1) {
+        quorumDeferred = true;
+        this.appendEvent(proposalId, "policy_auto_approval_deferred", actor, {
+          policy: options.policy,
+          fallback: "human_review",
+          reason: "multi_reviewer_quorum_requires_verified_human_approvals",
+          approvals: 0,
+          required_approvals: requiredApprovals,
+        });
+        return;
       }
       for (const limit of options.limits ?? []) {
         const scope = limit.scope ?? "tenant_policy";
@@ -1404,7 +1524,7 @@ export class ProposalStore {
     });
     return {
       proposal: this.requireProposal(proposalId),
-      approved: trippedLimits.length === 0,
+      approved: !quorumDeferred && trippedLimits.length === 0,
       policy: options.policy,
       tripped_limits: trippedLimits,
     };
@@ -1463,6 +1583,27 @@ export class ProposalStore {
       .all(proposalId)
       .map(rowToApproval)
       .filter((approval): approval is StoredApproval => approval !== undefined);
+  }
+
+  approvalProgress(proposalId: string): ApprovalProgress {
+    const proposal = this.requireProposal(proposalId);
+    const required = requiredApprovalCount(proposal);
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(DISTINCT CASE WHEN status = 'approved' THEN approver END) AS approved,
+        MAX(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected
+      FROM approvals
+      WHERE proposal_id = ?
+    `).get(proposalId);
+    const approved = isRecord(row) ? Number(row.approved ?? 0) : 0;
+    const rejected = proposal.state === "rejected" || (isRecord(row) && Number(row.rejected ?? 0) === 1);
+    return {
+      approved,
+      required,
+      remaining: Math.max(0, required - approved),
+      rejected,
+      complete: !rejected && approved >= required,
+    };
   }
 
   recordOperatorAuthorization(proposalId: string, identity: OperatorIdentityProof, requireVerifiedIdentity = false): void {
@@ -1994,6 +2135,76 @@ export class ProposalStore {
     return rows.map(rowToWorkerQueueItem).filter((item): item is WorkerQueueItem => item !== undefined);
   }
 
+  getWorkerQueueItem(proposalId: string): WorkerQueueItem | undefined {
+    return this.workerQueueItem(proposalId);
+  }
+
+  requeueDeadLetter(options: {
+    proposalId: string;
+    retryBudget: number;
+    identity: OperatorIdentityProof;
+    reason?: string;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    const retryBudget = Math.max(1, Math.min(options.retryBudget, 100));
+    const proposal = this.requireProposal(options.proposalId);
+    assertOperatorDecision(proposal, "worker_requeue", options.identity.subject, options.identity, true);
+    this.transaction(() => {
+      const item = this.requireWorkerQueueItem(options.proposalId);
+      if (item.status !== "dead_letter") {
+        throw new ProposalStoreError("WORKER_ITEM_NOT_DEAD_LETTER", `worker queue item ${options.proposalId} is ${item.status}`);
+      }
+      const provenEffect = this.receipts(options.proposalId).find((receipt) =>
+        receipt.source_database_mutated || receipt.status === "applied" || receipt.status === "already_applied");
+      if (provenEffect) {
+        throw new ProposalStoreError("DEAD_LETTER_EFFECT_ALREADY_RECORDED", `proposal ${options.proposalId} has a receipt proving the database effect already completed`);
+      }
+      this.db.prepare(`
+        UPDATE worker_queue
+        SET status = 'queued', attempts = 0, max_attempts = ?, next_attempt_at = ?,
+            lease_owner = NULL, lease_expires_at = NULL, last_error_code = NULL, updated_at = ?
+        WHERE proposal_id = ?
+      `).run(retryBudget, now, now, options.proposalId);
+      if (proposal.state === "failed") {
+        this.db.prepare("UPDATE proposals SET state = 'approved', updated_at = ? WHERE proposal_id = ?").run(now, options.proposalId);
+      }
+      this.appendEvent(options.proposalId, "writeback_dead_letter_requeued", options.identity.subject, {
+        retry_budget: retryBudget,
+        reason: options.reason ?? null,
+        identity: publicIdentitySummary(options.identity),
+      });
+    });
+    return this.requireWorkerQueueItem(options.proposalId);
+  }
+
+  discardDeadLetter(options: {
+    proposalId: string;
+    identity: OperatorIdentityProof;
+    reason: string;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    const proposal = this.requireProposal(options.proposalId);
+    assertOperatorDecision(proposal, "worker_discard", options.identity.subject, options.identity, true);
+    this.transaction(() => {
+      const item = this.requireWorkerQueueItem(options.proposalId);
+      if (item.status !== "dead_letter") {
+        throw new ProposalStoreError("WORKER_ITEM_NOT_DEAD_LETTER", `worker queue item ${options.proposalId} is ${item.status}`);
+      }
+      this.db.prepare(`
+        UPDATE worker_queue
+        SET status = 'discarded', lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+        WHERE proposal_id = ?
+      `).run(now, options.proposalId);
+      this.appendEvent(options.proposalId, "writeback_dead_letter_discarded", options.identity.subject, {
+        reason: options.reason,
+        identity: publicIdentitySummary(options.identity),
+      });
+    });
+    return this.requireWorkerQueueItem(options.proposalId);
+  }
+
   private workerQueueItem(proposalId: string): WorkerQueueItem | undefined {
     return rowToWorkerQueueItem(this.db.prepare("SELECT * FROM worker_queue WHERE proposal_id = ?").get(proposalId));
   }
@@ -2068,6 +2279,41 @@ export class ProposalStore {
       if (raw.status === "applied" || raw.status === "already_applied") row.applies += count;
       else if (raw.status === "conflict") row.conflicts += count;
       else if (raw.status === "failed") row.failures += count;
+    }
+    return [...rows.values()].sort((left, right) => left.tenant_id.localeCompare(right.tenant_id) || left.capability.localeCompare(right.capability));
+  }
+
+  fleetEventMetrics(filters: { tenant?: string; capability?: string } = {}): FleetEventMetricRow[] {
+    const rows = new Map<string, FleetEventMetricRow>();
+    const ensure = (tenantId: string, capability: string) => {
+      const key = `${tenantId}\u0000${capability}`;
+      let row = rows.get(key);
+      if (!row) {
+        row = { tenant_id: tenantId, capability, worker_retries: 0, dead_letters: 0, auto_approval_limit_trips: 0 };
+        rows.set(key, row);
+      }
+      return row;
+    };
+    const events = this.db.prepare(`
+      SELECT p.tenant_id, p.action, e.kind, e.payload_json
+      FROM proposal_events e JOIN proposals p ON p.proposal_id = e.proposal_id
+      WHERE e.kind IN ('writeback_retry_scheduled', 'writeback_dead_lettered', 'policy_auto_approval_deferred')
+        AND (? IS NULL OR p.tenant_id = ?)
+        AND (? IS NULL OR p.action = ?)
+    `).all(filters.tenant ?? null, filters.tenant ?? null, filters.capability ?? null, filters.capability ?? null);
+    for (const raw of events) {
+      if (!isRecord(raw)) continue;
+      const row = ensure(String(raw.tenant_id), String(raw.action));
+      if (raw.kind === "writeback_retry_scheduled") row.worker_retries += 1;
+      if (raw.kind === "writeback_dead_lettered") row.dead_letters += 1;
+      if (raw.kind === "policy_auto_approval_deferred") {
+        try {
+          const payload = JSON.parse(String(raw.payload_json)) as Record<string, unknown>;
+          if (Array.isArray(payload.tripped_limits) && payload.tripped_limits.length > 0) row.auto_approval_limit_trips += 1;
+        } catch {
+          // Malformed historical payloads are ignored instead of becoming metric labels or scrape failures.
+        }
+      }
     }
     return [...rows.values()].sort((left, right) => left.tenant_id.localeCompare(right.tenant_id) || left.capability.localeCompare(right.capability));
   }
@@ -2461,6 +2707,13 @@ function stateFromChangeSet(changeSet: ChangeSetV1): LocalProposalState {
   return "pending_review";
 }
 
+function requiredApprovalCount(proposal: StoredProposal): number {
+  const configured = proposal.change_set.approval.required_approvals;
+  return typeof configured === "number" && Number.isSafeInteger(configured) && configured >= 1
+    ? configured
+    : 1;
+}
+
 function assertOperatorDecision(
   proposal: StoredProposal,
   action: OperatorDecision["action"],
@@ -2578,8 +2831,19 @@ function buildReceiptQuery(filters: ReceiptSearchFilters): SqlQuery {
   addEqual(clauses, params, "writeback_job_id", filters.writebackJob);
   addEqual(clauses, params, "idempotency_key", filters.idempotencyKey);
   addEqual(clauses, params, "status", filters.status);
+  addEqual(clauses, params, "tenant_id", filters.tenant);
+  addEqual(clauses, params, "principal", filters.principal);
+  addEqual(clauses, params, "capability", filters.capability);
+  addEqual(clauses, params, "source_id", filters.source);
+  addTableFilter(clauses, params, "source_table", filters.table);
+  addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
-  return finishQuery("SELECT * FROM writeback_receipts", clauses, params, filters.limit);
+  return finishQuery(`SELECT * FROM (
+    SELECT r.*, p.tenant_id, p.principal, p.action AS capability,
+      p.business_object, p.object_id, p.source_id, p.source_table
+    FROM writeback_receipts r
+    JOIN proposals p ON p.proposal_id = r.proposal_id
+  ) AS associated_receipts`, clauses, params, filters.limit);
 }
 
 function buildEventQuery(filters: EventSearchFilters): SqlQuery {
@@ -2805,7 +3069,7 @@ function rowToApproval(row: unknown): StoredApproval | undefined {
 function rowToWorkerQueueItem(row: unknown): WorkerQueueItem | undefined {
   if (!isRecord(row)) return undefined;
   const status = String(row.status);
-  if (!["queued", "leased", "retry_wait", "completed", "dead_letter"].includes(status)) return undefined;
+  if (!["queued", "leased", "retry_wait", "completed", "dead_letter", "discarded"].includes(status)) return undefined;
   return {
     proposal_id: String(row.proposal_id),
     status: status as WorkerQueueStatus,
@@ -2832,6 +3096,13 @@ function rowToReceipt(row: unknown): StoredWritebackReceipt | undefined {
     source_database_mutated: Number(row.source_database_mutated) === 1,
     receipt: parseExecutionReceipt(JSON.parse(String(row.receipt_json))),
     created_at: String(row.created_at),
+    tenant_id: row.tenant_id == null ? undefined : String(row.tenant_id),
+    principal: row.principal == null ? undefined : String(row.principal),
+    capability: row.capability == null ? undefined : String(row.capability),
+    business_object: row.business_object == null ? undefined : String(row.business_object),
+    object_id: row.object_id == null ? undefined : String(row.object_id),
+    source_id: row.source_id == null ? undefined : String(row.source_id),
+    source_table: row.source_table == null ? undefined : String(row.source_table),
   };
 }
 

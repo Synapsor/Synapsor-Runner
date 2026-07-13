@@ -85,6 +85,27 @@ versioning. Breaking changes require a new major version, except for security
 fixes that close a vulnerability while preserving the safest possible
 compatibility path.
 
+## 1.1 Fleet Gate
+
+Do not publish `1.1.0` until all 1.0 gates remain green and the local synthetic
+fleet verifier proves:
+
+- claim/context contradictions fail before serving;
+- two claim-bound Runners preserve tenant isolation and one active proposal;
+- shared fixed-window rate limits reject with `retry_after_ms`;
+- distinct verified reviewers satisfy canonical quorum and apply remains
+  blocked before `N/N`;
+- Postgres/MySQL pool acquisition and queue limits fail fast;
+- worker termination before write and after commit recovers without a duplicate
+  effect;
+- backup digest, clean restore, and archive-before-retention preserve active
+  records;
+- `/healthz`, `/readyz`, and separately authorized `/metrics` expose no secrets
+  or business object/principal labels.
+
+Run `corepack pnpm test:fleet`. Only homogeneous 1.1 fleet operation is part of
+this gate; mixed-minor operation must be tested before it is claimed.
+
 ## Stable Compatibility Promise
 
 Starting with `1.0.0`, Synapsor Runner keeps these public surfaces compatible

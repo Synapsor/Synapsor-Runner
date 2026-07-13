@@ -33,7 +33,7 @@ const PATCH_KEYS = new Set(["fixed", "from_arg"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
-const APPROVAL_KEYS = new Set(["mode", "required_role", "policy"]);
+const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
 const WORKFLOW_KEYS = new Set(["name", "description", "context", "allowed_capabilities", "required_evidence", "approval", "settlement", "replay"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
@@ -320,7 +320,17 @@ function validateProposalAction(value: unknown, path: string, errors: Validation
       if (value.conflict_guard.column === undefined && value.conflict_guard.weak_guard_ack !== true) errors.push({ path: `${path}.conflict_guard`, code: "CONFLICT_GUARD_REQUIRED", message: "proposal needs conflict_guard.column unless weak_guard_ack is explicit." });
     }
   }
-  if (value.approval !== undefined) validateNestedObject(value.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+  if (value.approval !== undefined) {
+    validateNestedObject(value.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+    if (isRecord(value.approval) && value.approval.required_approvals !== undefined
+      && (!Number.isSafeInteger(value.approval.required_approvals) || Number(value.approval.required_approvals) < 1 || Number(value.approval.required_approvals) > 10)) {
+      errors.push({
+        path: `${path}.approval.required_approvals`,
+        code: "INVALID_REQUIRED_APPROVALS",
+        message: "approval.required_approvals must be a safe integer from 1 through 10.",
+      });
+    }
+  }
   if (value.writeback !== undefined) {
     validateNestedObject(value.writeback, WRITEBACK_KEYS, `${path}.writeback`, errors);
     if (isRecord(value.writeback) && !["direct_sql", "app_handler", "cloud_worker", "none"].includes(String(value.writeback.mode))) errors.push({ path: `${path}.writeback.mode`, code: "INVALID_WRITEBACK_MODE", message: "writeback.mode must be direct_sql, app_handler, cloud_worker, or none." });

@@ -136,6 +136,7 @@ reviewed runner JSON capabilities. Current parity:
 | proposal `transition_guards` | `TRANSITION status ALLOW pending -> approved\|rejected` or `TRANSITION status FROM current_status ALLOW open -> closed` | 0.1.8 | Values are state strings; use `|` for multiple target states. |
 | proposal `conflict_guard` | `CONFLICT GUARD updated_at` | 0.1 | If omitted, DSL emits an explicit weak-guard acknowledgement. Prefer a real row-version column. |
 | proposal `approval` | `APPROVAL ROLE billing_lead` | 0.1 | Local mode records the required role; enforcement is still outside the model-facing MCP tool. |
+| proposal `approval.required_approvals` | `REQUIRE 2 APPROVALS` | 1.1 | Optional 1..10 distinct-reviewer quorum; defaults to 1. |
 | proposal `writeback` | `WRITEBACK DIRECT SQL`, `WRITEBACK APP HANDLER EXECUTOR name`, `WRITEBACK CLOUD WORKER`, `WRITEBACK NONE` | 0.1.7 | Handler URLs/tokens stay in `synapsor.runner.json`; contracts carry only the handler name. |
 | evidence options | `REQUIRE EVIDENCE` | 0.1 | Detailed evidence sources/handle prefixes are not expressible in DSL yet; use embedded JSON or generated contract JSON for those. |
 
@@ -285,7 +286,7 @@ surface.
     "late_fee_cents": { "minimum": 0, "maximum": 10000 }
   },
   "conflict_guard": { "column": "updated_at" },
-  "approval": { "mode": "human", "required_role": "billing_lead" }
+  "approval": { "mode": "human", "required_role": "billing_lead", "required_approvals": 2 }
 }
 ```
 

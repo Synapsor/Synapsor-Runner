@@ -2,19 +2,24 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { get as httpsGet, type RequestOptions } from "node:https";
+import { createServer as createHttpServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import {
   createMcpRuntime,
   createSynapsorMcpServer,
+  checkRunnerReadiness,
   loadRuntimeConfigFromFile,
   McpRuntimeError,
   openaiToolNameAlias,
+  serveStdio,
   startHttpMcpServer,
   startStreamableHttpMcpServer,
   type RuntimeConfig,
@@ -147,6 +152,75 @@ function autoApprovalConfig(): RuntimeConfig {
 }
 
 describe("local Synapsor MCP runtime", () => {
+  it("closes the stdio runtime when client input ends", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const serving = serveStdio({ config, storePath: ":memory:", stdin: input, stdout: output });
+    await new Promise((resolve) => setImmediate(resolve));
+    input.end();
+    await expect(Promise.race([
+      serving,
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("stdio shutdown timed out")), 1000)),
+    ])).resolves.toBeUndefined();
+  });
+
+  it("checks default direct-SQL writeback only when review mode can commit", async () => {
+    const unavailable = "postgresql://runner:redacted@127.0.0.1:1/unavailable";
+    const report = await checkRunnerReadiness(config, {
+      APP_POSTGRES_READ_URL: unavailable,
+      APP_POSTGRES_WRITE_URL: unavailable,
+    }, 50);
+    expect(report.components.map((component) => component.name)).toEqual([
+      "config",
+      "source:app_postgres",
+      "writeback:app_postgres",
+    ]);
+    expect(report.components.find((component) => component.name === "writeback:app_postgres"))
+      .toMatchObject({ ok: false, code: "WRITEBACK_UNAVAILABLE" });
+
+    const readOnly = await checkRunnerReadiness({ ...config, mode: "read_only" }, {
+      APP_POSTGRES_READ_URL: unavailable,
+      APP_POSTGRES_WRITE_URL: unavailable,
+    }, 50);
+    expect(readOnly.components.map((component) => component.name)).toEqual([
+      "config",
+      "source:app_postgres",
+    ]);
+  });
+
+  it("rejects a claims-mode runner that references an environment-bound contract", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-context-provider-conflict-"));
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.copyFileSync(path.resolve(testDir, "../../spec/examples/guarded-writeback.contract.json"), contractPath);
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      trusted_context: {
+        provider: "http_claims",
+        values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+      },
+      session_auth: {
+        provider: "jwt_hs256",
+        secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+        issuer: "https://identity.example",
+        audience: "synapsor-runner",
+      },
+      contracts: ["./synapsor.contract.json"],
+      capabilities: [],
+    }));
+
+    expect(() => loadRuntimeConfigFromFile(configPath)).toThrow(/TRUSTED_CONTEXT_PROVIDER_CONFLICT[\s\S]*billing\.inspect_invoice[\s\S]*HTTP_CLAIM tenant_id/);
+  });
+
   it("loads semantic tools from canonical contract references", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-contract-runtime-"));
     const sourceContract = path.resolve(testDir, "../../spec/examples/guarded-writeback.contract.json");
@@ -502,6 +576,59 @@ describe("local Synapsor MCP runtime", () => {
       expect(result).not.toHaveProperty("status");
     } finally {
       runtime.close();
+    }
+  });
+
+  it("enforces operational fixed-window limits from trusted tenant context", async () => {
+    const limited = structuredClone(config);
+    limited.result_format = 2;
+    limited.rate_limits = {
+      default: { requests: 2, window_seconds: 60 },
+      capabilities: { "billing.propose_late_fee_waiver": { requests: 1, window_seconds: 60 } },
+    };
+    let clock = 1_700_000_000_000;
+    const runtime = createMcpRuntime(limited, {
+      clock: () => clock,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      await expect(runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-1" })).resolves.toMatchObject({ ok: true });
+      await expect(runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-2" })).resolves.toMatchObject({ ok: true });
+      const rejected = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3" });
+      expect(rejected).toMatchObject({
+        ok: false,
+        error: { code: "RATE_LIMITED", retryable: true, retry_after_ms: 40000 },
+        source_database_changed: false,
+      });
+      expect(runtime.rateLimitMetrics()).toEqual([{ tenant: "acme", capability: "billing.inspect_invoice", rejected: 1 }]);
+      clock += 60_000;
+      await expect(runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-4" })).resolves.toMatchObject({ ok: true });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("keeps retry_after_ms in the legacy MCP rate-limit envelope", async () => {
+    const limited = structuredClone(config);
+    limited.rate_limits = { default: { requests: 1, window_seconds: 60 } };
+    const server = await startHttpMcpServer({
+      config: limited,
+      port: 0,
+      devNoAuth: true,
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      await httpRpc(server.port, undefined, "tools/call", { name: "billing.inspect_invoice", arguments: { invoice_id: "INV-1" } });
+      const rejected = await httpRpc(server.port, undefined, "tools/call", { name: "billing.inspect_invoice", arguments: { invoice_id: "INV-2" } });
+      const payload = await rejected.json() as { result: { structuredContent: Record<string, unknown> } };
+      expect(payload.result.structuredContent).toMatchObject({
+        ok: false,
+        code: "RATE_LIMITED",
+        retry_after_ms: expect.any(Number),
+      });
+    } finally {
+      await server.close();
     }
   });
 
@@ -1227,10 +1354,11 @@ describe("local Synapsor MCP runtime", () => {
       const healthPayload = await health.json() as Record<string, unknown>;
       expect(healthPayload).toMatchObject({
         ok: true,
+        status: "live",
         transport: "http",
-        tools: 2,
-        mode: "review",
       });
+      expect(healthPayload).not.toHaveProperty("tools");
+      expect(healthPayload).not.toHaveProperty("mode");
       expect(JSON.stringify(healthPayload)).not.toContain(token);
       expect(JSON.stringify(healthPayload)).not.toContain(databaseUrl);
 
@@ -1301,6 +1429,101 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("keeps liveness dependency-free and reports readiness recovery on both HTTP transports", async () => {
+    let ready = false;
+    const readinessCheck = async () => ({
+      ok: ready,
+      status: ready ? "ready" as const : "not_ready" as const,
+      components: [{ name: "source:app_postgres", ok: ready, code: ready ? "SOURCE_READY" : "SOURCE_UNAVAILABLE", latency_ms: 1 }],
+    });
+    for (const start of [startHttpMcpServer, startStreamableHttpMcpServer]) {
+      ready = false;
+      const server = await start({
+        config,
+        storePath: ":memory:",
+        port: 0,
+        devNoAuth: true,
+        log: false,
+        readinessCheck,
+        readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+      });
+      try {
+        const health = await fetch(server.url.replace(/\/mcp$/, "/healthz"));
+        expect(health.status).toBe(200);
+        await expect(health.json()).resolves.toMatchObject({ ok: true, status: "live" });
+        const unavailable = await fetch(server.url.replace(/\/mcp$/, "/readyz"));
+        expect(unavailable.status).toBe(503);
+        await expect(unavailable.json()).resolves.toEqual({
+          ok: false,
+          status: "not_ready",
+          components: [{ name: "source:app_postgres", ok: false, code: "SOURCE_UNAVAILABLE", latency_ms: 1 }],
+        });
+        ready = true;
+        const recovered = await fetch(server.url.replace(/\/mcp$/, "/readyz"));
+        expect(recovered.status).toBe(200);
+        await expect(recovered.json()).resolves.toMatchObject({ ok: true, status: "ready" });
+      } finally {
+        await server.close();
+      }
+    }
+  });
+
+  it("exposes bounded metrics only through the separately authorized endpoint", async () => {
+    const metricsConfig = structuredClone(config);
+    metricsConfig.metrics = { enabled: true, token_env: "SYNAPSOR_METRICS_TOKEN" };
+    const mcpToken = "model-facing-token";
+    const metricsToken = "operator-metrics-token";
+    const server = await startHttpMcpServer({
+      config: metricsConfig,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: mcpToken,
+        SYNAPSOR_METRICS_TOKEN: metricsToken,
+        APP_POSTGRES_READ_URL: "postgresql://reader:redacted@db.invalid/app",
+      },
+      log: false,
+      readinessCheck: async () => ({ ok: true, status: "ready", components: [{ name: "config", ok: true, code: "CONFIG_READY", latency_ms: 0 }] }),
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      await httpRpc(server.port, mcpToken, "tools/call", {
+        name: "billing.propose_late_fee_waiver",
+        arguments: { invoice_id: "INV-3001", reason: "reviewed customer request" },
+      });
+      expect((await fetch(`http://127.0.0.1:${server.port}/metrics`)).status).toBe(401);
+      expect((await fetch(`http://127.0.0.1:${server.port}/metrics`, {
+        headers: { authorization: `Bearer ${mcpToken}` },
+      })).status).toBe(401);
+      const response = await fetch(`http://127.0.0.1:${server.port}/metrics`, {
+        headers: { authorization: `Bearer ${metricsToken}` },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("application/openmetrics-text");
+      const body = await response.text();
+      expect(body).toContain("synapsor_ready 1");
+      expect(body).toContain('synapsor_proposals_total{tenant="acme",capability="billing.propose_late_fee_waiver"} 1');
+      expect(body).toContain("# EOF");
+      expect(body).not.toContain("INV-3001");
+      expect(body).not.toContain("support_agent_17");
+      expect(body).not.toContain(metricsToken);
+      expect(body).not.toContain(mcpToken);
+    } finally {
+      await server.close();
+    }
+
+    const unsafeConfig = structuredClone(config);
+    unsafeConfig.metrics = { enabled: true };
+    await expect(startHttpMcpServer({
+      config: unsafeConfig,
+      host: "0.0.0.0",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: mcpToken },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "METRICS_AUTH_REQUIRED" });
+  });
+
   it("serves spec-compatible Streamable HTTP MCP sessions with the official client transport", async () => {
     const token = "test-streamable-http-token";
     const databaseUrl = "postgresql://reader:secret@db.example/app";
@@ -1328,9 +1551,8 @@ describe("local Synapsor MCP runtime", () => {
       expect(health.status).toBe(200);
       await expect(health.json()).resolves.toMatchObject({
         ok: true,
+        status: "live",
         transport: "streamable-http",
-        tools: 2,
-        mode: "review",
       });
 
       await client.connect(transport);
@@ -1461,6 +1683,42 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("refuses claims-authenticated serving when a capability resolves an environment context", async () => {
+    const secret = "a-production-length-session-secret-32-bytes-minimum";
+    const mismatched = structuredClone(config);
+    mismatched.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    mismatched.contexts = {
+      legacy_operator: {
+        provider: "environment",
+        values: { tenant_id_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+      },
+    };
+    mismatched.capabilities = mismatched.capabilities?.map((capability) => ({
+      ...capability,
+      context: "legacy_operator",
+    }));
+    mismatched.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+    };
+
+    await expect(startStreamableHttpMcpServer({
+      config: mismatched,
+      port: 0,
+      env: {
+        SYNAPSOR_SESSION_JWT_SECRET: secret,
+        SYNAPSOR_TENANT_ID: "tenant_A",
+        SYNAPSOR_PRINCIPAL: "legacy-agent",
+      },
+      log: false,
+    })).rejects.toThrow(/TRUSTED_CONTEXT_PROVIDER_CONFLICT/);
+  });
+
   it("accepts active and previous JWT secrets during Streamable HTTP session rotation", async () => {
     const activeSecret = "active-production-length-session-secret-32-bytes";
     const previousSecret = "previous-production-length-session-secret-32-bytes";
@@ -1508,6 +1766,61 @@ describe("local Synapsor MCP runtime", () => {
       await staleClient.close().catch(() => undefined);
       await activeClient.close().catch(() => undefined);
       await server.close();
+    }
+  });
+
+  it("binds Streamable HTTP context from an RS256 JWKS session", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
+    const jwk = { ...await exportJWK(publicKey), kid: "runner-session-1", alg: "RS256", use: "sig" };
+    const jwksServer = createHttpServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ keys: [jwk] }));
+    });
+    await new Promise<void>((resolve) => jwksServer.listen(0, "127.0.0.1", resolve));
+    const jwksAddress = jwksServer.address();
+    if (!jwksAddress || typeof jwksAddress === "string") throw new Error("JWKS server did not bind");
+    const sessionConfig = structuredClone(config);
+    sessionConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    sessionConfig.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256"],
+      jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+      fetch_timeout_ms: 1000,
+      max_response_bytes: 8192,
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: sessionConfig,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_SESSION_JWKS_URL: `http://127.0.0.1:${jwksAddress.port}/jwks` },
+      log: false,
+      readRow: async ({ args, context }) => ({
+        row: { ...fixtureRow, id: args.invoice_id, tenant_id: context.tenant_id },
+        rowCount: 1,
+      }),
+    });
+    const token = await new SignJWT({ tenant_id: "globex" })
+      .setProtectedHeader({ alg: "RS256", kid: "runner-session-1" })
+      .setSubject("jwks-agent")
+      .setIssuer("https://identity.example")
+      .setAudience("synapsor-runner")
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 300)
+      .sign(privateKey);
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${token}` } } });
+    const client = new Client({ name: "jwks-agent", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-JWKS" } });
+      expect(result.structuredContent).toMatchObject({ trusted_context: { tenant_id: "globex", principal: "jwks-agent", provenance: "http_claims" } });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+      await new Promise<void>((resolve) => jwksServer.close(() => resolve()));
     }
   });
 

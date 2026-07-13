@@ -1,0 +1,12 @@
+{
+  "after_first_decision": {
+    "status": "pending_review",
+    "approval_progress": { "approved": 1, "required": 2 }
+  },
+  "after_second_distinct_decision": {
+    "status": "approved",
+    "approval_progress": { "approved": 2, "required": 2 }
+  },
+  "duplicate_subject_error": "APPROVER_ALREADY_COUNTED",
+  "policy_auto_approval": "deferred_to_human_review"
+}

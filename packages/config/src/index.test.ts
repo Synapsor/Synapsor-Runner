@@ -118,6 +118,21 @@ describe("runner capability config validation", () => {
       principal_claim: "sub",
       clock_skew_seconds: 30,
     };
+    const asymmetricSession = structuredClone(perSession) as any;
+    asymmetricSession.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256", "ES256"],
+      jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+      tenant_claim: "tenant_id",
+      principal_claim: "sub",
+      clock_skew_seconds: 30,
+      jwks_cache_seconds: 600,
+      jwks_cooldown_seconds: 30,
+      fetch_timeout_ms: 3000,
+      max_response_bytes: 1048576,
+    };
     const sharedLedger = structuredClone(safeConfig) as any;
     sharedLedger.storage = {
       sqlite_path: "./.synapsor/local.db",
@@ -137,8 +152,20 @@ describe("runner capability config validation", () => {
         lock_timeout_ms: 10000,
       },
     };
+    const operationallyBounded = structuredClone(safeConfig) as any;
+    operationallyBounded.sources.app_postgres.pool = {
+      max_connections: 8,
+      connection_timeout_ms: 3000,
+      idle_timeout_ms: 30000,
+      queue_timeout_ms: 5000,
+      queue_limit: 32,
+    };
+    operationallyBounded.rate_limits = {
+      default: { requests: 120, window_seconds: 60 },
+      capabilities: { "billing.propose_late_fee_waiver": { requests: 20, window_seconds: 60 } },
+    };
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, sharedLedger, sharedRuntimeStore]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -193,6 +220,57 @@ describe("runner capability config validation", () => {
     expect(validateRunnerCapabilityConfig(invalidTimeout).errors).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: "$.storage.shared_postgres.lock_timeout_ms", code: "INVALID_SHARED_POSTGRES_LOCK_TIMEOUT" }),
     ]));
+
+    const invalidCapacity = mutableConfig();
+    invalidCapacity.storage.shared_postgres = {
+      mode: "runtime_store",
+      url_env: "SYNAPSOR_LEDGER_DATABASE_URL",
+      max_entries: 99,
+    };
+    expect(validateRunnerCapabilityConfig(invalidCapacity).errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "$.storage.shared_postgres.max_entries", code: "INVALID_SHARED_POSTGRES_MAX_ENTRIES" }),
+    ]));
+  });
+
+  it("validates bounded per-source connection pool controls", () => {
+    const config = mutableConfig();
+    config.sources.app_postgres.pool = {
+      max_connections: 8,
+      connection_timeout_ms: 3000,
+      idle_timeout_ms: 30000,
+      queue_timeout_ms: 5000,
+      queue_limit: 32,
+    };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+
+    config.sources.app_postgres.pool.max_connections = 0;
+    expect(validateRunnerCapabilityConfig(config).errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "$.sources.app_postgres.pool.max_connections", code: "INVALID_SOURCE_POOL_BOUND" }),
+    ]));
+  });
+
+  it("validates operational per-capability rate limits", () => {
+    const config = mutableConfig();
+    config.rate_limits = {
+      enabled: true,
+      default: { requests: 100, window_seconds: 60 },
+      capabilities: { "billing.inspect_invoice": { requests: 20, window_seconds: 10 } },
+    };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+    config.rate_limits.capabilities["billing.inspect_invoice"].requests = 0;
+    expect(validateRunnerCapabilityConfig(config).errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "INVALID_RATE_LIMIT_REQUESTS" }),
+    ]));
+  });
+
+  it("validates separately authorized HTTP metrics configuration", () => {
+    const config = mutableConfig();
+    config.metrics = { enabled: true, token_env: "SYNAPSOR_METRICS_TOKEN" };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+    config.metrics.token_env = "not an env name";
+    expect(validateRunnerCapabilityConfig(config).errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "INVALID_METRICS_TOKEN_ENV" }),
+    ]));
   });
 
   it("requires signed session auth for http_claims trusted context", () => {
@@ -202,6 +280,55 @@ describe("runner capability config validation", () => {
     expect(missing.errors.map((error) => error.code)).toContain("SESSION_AUTH_REQUIRED");
 
     config.session_auth = { provider: "jwt_hs256", secret_env: "SYNAPSOR_SESSION_JWT_SECRET", previous_secret_env: "SYNAPSOR_PREVIOUS_SESSION_JWT_SECRET" };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+  });
+
+  it("validates asymmetric session auth key sources and algorithm allowlists", () => {
+    const config = mutableConfig();
+    config.trusted_context = { provider: "http_claims", values: { tenant_id_key: "tenant_id", principal_key: "sub" } };
+    config.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256", "ES256"],
+      jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+    };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+
+    config.session_auth.public_key_env = "SYNAPSOR_SESSION_PUBLIC_KEY";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("SESSION_AUTH_PUBLIC_KEY_SOURCE_REQUIRED");
+    delete config.session_auth.public_key_env;
+    config.session_auth.algorithms = ["HS256"];
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("INVALID_SESSION_AUTH_ALGORITHMS");
+  });
+
+  it("rejects claims sessions whose effective capability context is environment-bound", () => {
+    const config = mutableConfig();
+    config.trusted_context = { provider: "http_claims", values: { tenant_id_key: "tenant_id", principal_key: "sub" } };
+    config.session_auth = { provider: "jwt_hs256", secret_env: "SYNAPSOR_SESSION_JWT_SECRET" };
+    config.contexts = {
+      legacy_operator: {
+        provider: "environment",
+        values: { tenant_id_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+      },
+    };
+    config.capabilities[0].context = "legacy_operator";
+
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: "$.contexts.legacy_operator.provider",
+        code: "TRUSTED_CONTEXT_PROVIDER_CONFLICT",
+      }),
+    ]));
+    expect(result.errors.find((error) => error.code === "TRUSTED_CONTEXT_PROVIDER_CONFLICT")?.message).toContain("billing.inspect_invoice");
+    expect(result.errors.find((error) => error.code === "TRUSTED_CONTEXT_PROVIDER_CONFLICT")?.message).toContain("HTTP_CLAIM tenant_id");
+
+    config.contexts.legacy_operator = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
     expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
   });
 
@@ -332,6 +459,23 @@ describe("runner capability config validation", () => {
     const rejected = validateRunnerCapabilityConfig(config);
     expect(rejected.ok).toBe(false);
     expect(rejected.errors.map((error) => error.code)).toContain("UNKNOWN_EXECUTOR");
+  });
+
+  it("accepts OIDC operator tokens from stdin and rejects ambiguous token sources", () => {
+    const config = mutableConfig();
+    config.operator_identity = {
+      provider: "jwt_oidc",
+      algorithms: ["RS256"],
+      public_key_env: "SYNAPSOR_OPERATOR_PUBLIC_KEY",
+      token_stdin: true,
+      attestation_secret_env: "SYNAPSOR_OPERATOR_ATTESTATION_SECRET",
+    };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+
+    config.operator_identity.token_env = "SYNAPSOR_OPERATOR_TOKEN";
+    const rejected = validateRunnerCapabilityConfig(config);
+    expect(rejected.ok).toBe(false);
+    expect(rejected.errors.map((error) => error.code)).toContain("OPERATOR_TOKEN_SOURCE_CONFLICT");
   });
 
   it("keeps WRITEBACK NONE distinct from broken direct writeback", () => {

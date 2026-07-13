@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
+import type { Readable, Writable } from "node:stream";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -13,12 +14,16 @@ import {
   ControlPlaneClient,
   type AdapterToolCatalogEntry,
 } from "@synapsor-runner/control-plane-client";
-import { createPostgresPool } from "@synapsor-runner/postgres";
-import { PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
+import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions, type ChangeSetV1 } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { z } from "zod";
+import { createJwtVerifier, type JwtAlgorithm, type JwtVerifier, type JwtVerificationConfig } from "./jwt-auth.js";
+
+export { createJwtVerifier } from "./jwt-auth.js";
+export type { JwtAlgorithm, JwtVerifier, JwtVerificationConfig, VerifiedJwt } from "./jwt-auth.js";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
@@ -41,6 +46,15 @@ export type RuntimeSourceConfig = {
   write_url_env?: string;
   read_only?: boolean;
   statement_timeout_ms?: number;
+  pool?: RuntimeSourcePoolConfig;
+};
+
+export type RuntimeSourcePoolConfig = {
+  max_connections?: number;
+  connection_timeout_ms?: number;
+  idle_timeout_ms?: number;
+  queue_timeout_ms?: number;
+  queue_limit?: number;
 };
 
 export type RuntimeArgConfig = {
@@ -88,7 +102,7 @@ export type RuntimeCapabilityConfig = {
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
   transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
-  approval?: { mode?: "human" | "policy" | string; required_role?: string; policy?: string };
+  approval?: { mode?: "human" | "policy" | string; required_role?: string; required_approvals?: number; policy?: string };
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
 };
 
@@ -100,21 +114,55 @@ export type RuntimeConfig = {
   policies?: PolicySpec[];
   approvals?: { disable_auto_approval?: boolean };
   operator_identity?: {
-    provider: "dev_env" | "signed_key";
+    provider: "dev_env" | "signed_key" | "jwt_oidc";
     actor_env?: string;
     roles_env?: string;
     apply_roles?: string[];
     operators?: Record<string, { public_key_path: string; roles: string[] }>;
+    token_env?: string;
+    token_file_env?: string;
+    token_stdin?: boolean;
+    roles_claim?: string;
+    subject_claim?: string;
+    attestation_secret_env?: string;
+    algorithms?: JwtAlgorithm[];
+    jwks_url_env?: string;
+    public_key_env?: string;
+    public_key_path?: string;
+    issuer?: string;
+    audience?: string;
+    clock_skew_seconds?: number;
+    jwks_cache_seconds?: number;
+    jwks_cooldown_seconds?: number;
+    fetch_timeout_ms?: number;
+    max_response_bytes?: number;
   };
   session_auth?: {
-    provider: "jwt_hs256";
-    secret_env: string;
+    provider: "jwt_hs256" | "jwt_asymmetric";
+    secret_env?: string;
     previous_secret_env?: string;
+    algorithms?: JwtAlgorithm[];
+    jwks_url_env?: string;
+    public_key_env?: string;
+    public_key_path?: string;
     issuer?: string;
     audience?: string;
     tenant_claim?: string;
     principal_claim?: string;
     clock_skew_seconds?: number;
+    jwks_cache_seconds?: number;
+    jwks_cooldown_seconds?: number;
+    fetch_timeout_ms?: number;
+    max_response_bytes?: number;
+  };
+  rate_limits?: {
+    enabled?: boolean;
+    default?: RuntimeRateLimitRule;
+    capabilities?: Record<string, RuntimeRateLimitRule>;
+  };
+  metrics?: {
+    enabled?: boolean;
+    token_env?: string;
   };
   storage?: {
     sqlite_path?: string;
@@ -123,6 +171,7 @@ export type RuntimeConfig = {
       url_env: string;
       schema?: string;
       lock_timeout_ms?: number;
+      max_entries?: number;
     };
   };
   sources?: Record<string, RuntimeSourceConfig>;
@@ -150,6 +199,11 @@ export type RuntimeConfig = {
   };
 };
 
+export type RuntimeRateLimitRule = {
+  requests: number;
+  window_seconds: number;
+};
+
 export type TrustedContext = {
   tenant_id: string;
   principal: string;
@@ -174,6 +228,16 @@ export type McpRuntimeOptions = {
   controlPlaneClient?: CloudAdapterClient;
   cloudTools?: LocalToolMetadata[];
   trustedContext?: TrustedContext;
+  clock?: () => number;
+  sharedResources?: McpRuntimeSharedResources;
+};
+
+export type McpRuntimeSharedResources = {
+  readRow: DbRowReader;
+  consumeRateLimit(context: TrustedContext, capability: string): Promise<void>;
+  poolMetrics(): RuntimePoolMetric[];
+  rateLimitMetrics(): RuntimeRateLimitMetric[];
+  close(): Promise<void>;
 };
 
 export type McpRuntime = {
@@ -182,7 +246,23 @@ export type McpRuntime = {
   listTools(): LocalToolMetadata[];
   callTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
   readResource(uri: string): Promise<Record<string, unknown>>;
+  poolMetrics(): RuntimePoolMetric[];
+  rateLimitMetrics(): RuntimeRateLimitMetric[];
   close(): Promise<void>;
+};
+
+export type RuntimeRateLimitMetric = {
+  tenant: string;
+  capability: string;
+  rejected: number;
+};
+
+export type RuntimePoolMetric = {
+  source: string;
+  engine: SourceEngine;
+  active: number;
+  waiting: number;
+  max: number;
 };
 
 export type LocalToolMetadata = {
@@ -209,6 +289,20 @@ export type HttpMcpServerOptions = {
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
   tls?: StreamableHttpTlsOptions;
+  readinessCheck?: () => Promise<ReadinessReport>;
+};
+
+export type ReadinessComponent = {
+  name: string;
+  ok: boolean;
+  code: string;
+  latency_ms: number;
+};
+
+export type ReadinessReport = {
+  ok: boolean;
+  status: "ready" | "not_ready";
+  components: ReadinessComponent[];
 };
 
 export type HttpMcpServerHandle = {
@@ -241,6 +335,7 @@ export type ResultEnvelopeV2 = {
     code: SafeToolErrorCode;
     message: string;
     retryable: boolean;
+    retry_after_ms?: number;
   } | null;
   evidence: {
     bundle_id: string;
@@ -265,6 +360,7 @@ export type SafeToolErrorCode =
   | "APPROVAL_REQUIRED"
   | "PROPOSAL_ALREADY_EXISTS"
   | "TEMPORARILY_UNAVAILABLE"
+  | "RATE_LIMITED"
   | "INTERNAL";
 
 type StreamableHttpSession = {
@@ -273,6 +369,11 @@ type StreamableHttpSession = {
   sessionId?: string;
   authFingerprint: string;
   closed?: boolean;
+};
+
+type MetricsEndpointAccess = {
+  enabled: boolean;
+  token?: string;
 };
 
 type CloudAdapterClient = Pick<ControlPlaneClient, "adapterTools" | "callAdapterTool">;
@@ -291,7 +392,7 @@ const RESERVED_MODEL_ARGS = new Set([
 ]);
 
 export class McpRuntimeError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(public readonly code: string, message: string, public readonly details?: Record<string, unknown>) {
     super(message);
     this.name = "McpRuntimeError";
   }
@@ -450,7 +551,9 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   const sharedPostgres = config.storage?.shared_postgres;
   const ownsStore = !options.store;
   const store = options.store ?? createDefaultRuntimeStore(config, env, storePath);
-  const readRow = options.readRow ?? readCurrentRow;
+  const ownsResources = !options.sharedResources;
+  const resources = options.sharedResources ?? createMcpRuntimeSharedResources(config, env, options.readRow, options.clock);
+  const readRow = resources.readRow;
   const cloudClient = options.controlPlaneClient ?? (config.mode === "cloud" ? createCloudClient(config, env) : undefined);
   const cloudTools = options.cloudTools ?? [];
   const resultFormat = options.resultFormat ?? config.result_format ?? 1;
@@ -467,6 +570,10 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
     callTool: async (name, args) => {
       const capability = config.mode === "cloud" ? undefined : localCapabilities(config).find((item) => item.name === name);
       try {
+        if (capability) {
+          const context = resolveTrustedContext(config, env, capability, trustedContext);
+          await resources.consumeRateLimit(context, capability.name);
+        }
         if (resultFormat === 2) {
           assertStoreAvailable();
           return await callConfiguredToolV2({ config, env, store, readRow, cloudClient, trustedContext, name, args });
@@ -483,8 +590,35 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
       assertStoreAvailable();
       return readLocalResource(store, uri);
     },
+    poolMetrics: () => resources.poolMetrics(),
+    rateLimitMetrics: () => resources.rateLimitMetrics(),
     close: async () => {
+      if (ownsResources) await resources.close();
       if (!options.store) await store.close();
+    },
+  };
+}
+
+export function createMcpRuntimeSharedResources(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  customReadRow?: DbRowReader,
+  clock: () => number = Date.now,
+): McpRuntimeSharedResources {
+  const databasePools = customReadRow ? undefined : new RuntimeDatabasePools(env);
+  const rateLimiter = config.rate_limits && config.rate_limits.enabled !== false
+    ? new RuntimeRateLimiter(config, env, clock)
+    : undefined;
+  return {
+    readRow: customReadRow ?? ((input) => databasePools!.read(input)),
+    consumeRateLimit: async (context, capability) => {
+      await rateLimiter?.consume(context, capability);
+    },
+    poolMetrics: () => databasePools?.metrics() ?? [],
+    rateLimitMetrics: () => rateLimiter?.metrics() ?? [],
+    close: async () => {
+      await databasePools?.close();
+      await rateLimiter?.close();
     },
   };
 }
@@ -500,6 +634,7 @@ function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv
       pool: createPostgresPool(databaseUrl),
       schema: sharedPostgres.schema ?? "synapsor_runner",
       lockTimeoutMs: sharedPostgres.lock_timeout_ms,
+      maxEntries: sharedPostgres.max_entries,
       autoMigrate: true,
       closePool: true,
     });
@@ -618,12 +753,13 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
   return server;
 }
 
-export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat } = {}): Promise<void> {
+export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat; stdin?: Readable; stdout?: Writable } = {}): Promise<void> {
   const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, process.env) : undefined;
   const runtime = createMcpRuntime(config, { storePath: options.storePath, resultFormat: options.resultFormat, cloudTools });
   const server = createSynapsorMcpServer(runtime, { toolNameStyle: options.toolNameStyle });
-  const transport = new StdioServerTransport();
+  const input = options.stdin ?? process.stdin;
+  const transport = new StdioServerTransport(input, options.stdout ?? process.stdout);
   await server.connect(transport);
   // stdout is reserved for MCP protocol frames; human feedback goes to stderr.
   process.stderr.write("synapsor-runner MCP stdio server ready. Waiting for an MCP client on stdio; logs stay on stderr.\n");
@@ -633,12 +769,18 @@ export async function serveStdio(options: { configPath?: string; storePath?: str
     const close = () => {
       if (closing) return;
       closing = true;
-      void runtime.close().finally(resolve);
+      input.off("end", close);
+      input.off("close", close);
+      process.off("SIGINT", close);
+      process.off("SIGTERM", close);
+      void Promise.allSettled([server.close(), runtime.close()]).finally(resolve);
     };
     transport.onclose = () => {
       previousOnClose?.();
       close();
     };
+    input.once("end", close);
+    input.once("close", close);
     process.once("SIGINT", close);
     process.once("SIGTERM", close);
   });
@@ -651,6 +793,7 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
   const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+  const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
 
   if (devNoAuth && !isLoopbackHost(host)) {
     throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
@@ -672,6 +815,7 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
     readRow: options.readRow,
     cloudTools,
   });
+  const readinessCheck = options.readinessCheck ?? (() => checkRunnerReadiness(config, env));
   const server = createServer((request, response) => {
     void handleHttpMcpRequest({
       request,
@@ -680,6 +824,9 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
       authToken,
       devNoAuth,
       corsOrigin: options.corsOrigin,
+      readinessCheck,
+      metricsAccess,
+      metricsProvider: () => renderRuntimeMetrics(runtime.store, runtime.poolMetrics(), runtime.rateLimitMetrics(), readinessCheck),
     });
   });
 
@@ -724,7 +871,9 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
   const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+  assertValidRunnerCapabilityConfig(config);
   const usesSessionAuth = configUsesHttpClaims(config);
+  const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
 
   if (devNoAuth && !isLoopbackHost(host)) {
     throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
@@ -738,12 +887,18 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. Streamable HTTP MCP requires bearer auth by default.`);
   }
   assertRuntimeStoreStartupReady(config, env);
-  if (usesSessionAuth) assertSessionAuthReady(config, env);
+  const sessionVerifier = usesSessionAuth
+    ? sessionAuthVerifier(config, env, options.configPath ? path.dirname(path.resolve(options.configPath)) : process.cwd())
+    : undefined;
+  const readinessCheck = options.readinessCheck ?? (() => checkRunnerReadiness(config, env));
   if (options.tls?.requestClientCert && !options.tls.ca) {
     throw new McpRuntimeError("MTLS_CA_REQUIRED", "Streamable HTTP mTLS requires a CA bundle when client certificates are required.");
   }
 
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
+  const sharedStorePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+  const sharedStore = createDefaultRuntimeStore(config, env, sharedStorePath);
+  const sharedResources = createMcpRuntimeSharedResources(config, env, options.readRow);
   const sessions = new Map<string, StreamableHttpSession>();
   const openSessions = new Set<StreamableHttpSession>();
   const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
@@ -751,17 +906,22 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       request,
       response,
       config,
-      storePath: options.storePath,
-      readRow: options.readRow,
+      storePath: sharedStorePath,
+      sharedStore,
+      sharedResources,
       cloudTools,
       env,
       toolNameStyle: options.toolNameStyle,
       resultFormat: options.resultFormat,
       authToken,
+      sessionVerifier,
       devNoAuth,
       corsOrigin: options.corsOrigin,
       sessions,
       openSessions,
+      readinessCheck,
+      metricsAccess,
+      metricsProvider: () => renderRuntimeMetrics(sharedStore, sharedResources.poolMetrics(), sharedResources.rateLimitMetrics(), readinessCheck),
     });
   };
   const server = options.tls
@@ -784,6 +944,8 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     });
   } catch (error) {
     await closeStreamableSessions(openSessions);
+    await sharedResources.close();
+    await sharedStore.close();
     throw error;
   }
 
@@ -800,7 +962,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     log.write(devNoAuth
       ? "Auth: disabled for localhost development only\n"
       : usesSessionAuth
-        ? `Auth: signed per-session JWT from ${config.session_auth?.secret_env}\n`
+        ? `Auth: signed per-session JWT (${config.session_auth?.provider})\n`
         : `Auth: bearer token from ${authTokenEnv}\n`);
     log.write(`Config: ${options.configPath ?? "synapsor.runner.json"}\n`);
     log.write(`Store: ${options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db"}\n`);
@@ -810,7 +972,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     host: actualHost,
     port: actualPort,
     url,
-    close: () => closeStreamableHttpServer(server, openSessions),
+    close: () => closeStreamableHttpServer(server, openSessions, sharedResources, sharedStore),
   };
 }
 
@@ -819,18 +981,23 @@ async function handleStreamableHttpMcpRequest(input: {
   response: ServerResponse;
   config: RuntimeConfig;
   storePath?: string;
-  readRow?: DbRowReader;
+  sharedStore: ProposalRuntimeStore;
+  sharedResources: McpRuntimeSharedResources;
   cloudTools?: LocalToolMetadata[];
   env: NodeJS.ProcessEnv;
   toolNameStyle?: ToolNameStyle;
   resultFormat?: ResultFormat;
   authToken?: string;
+  sessionVerifier?: JwtVerifier;
   devNoAuth: boolean;
   corsOrigin?: string;
   sessions: Map<string, StreamableHttpSession>;
   openSessions: Set<StreamableHttpSession>;
+  readinessCheck: () => Promise<ReadinessReport>;
+  metricsAccess: MetricsEndpointAccess;
+  metricsProvider: () => Promise<string>;
 }): Promise<void> {
-  const { request, response, config, storePath, readRow, cloudTools, env, toolNameStyle, resultFormat, authToken, devNoAuth, corsOrigin, sessions, openSessions } = input;
+  const { request, response, config, storePath, sharedStore, sharedResources, cloudTools, env, toolNameStyle, resultFormat, authToken, sessionVerifier, devNoAuth, corsOrigin, sessions, openSessions, readinessCheck, metricsAccess, metricsProvider } = input;
   try {
     setCorsHeaders(response, corsOrigin);
     if (request.method === "OPTIONS" && corsOrigin) {
@@ -843,11 +1010,18 @@ async function handleStreamableHttpMcpRequest(input: {
     if (request.method === "GET" && url.pathname === "/healthz") {
       writeJson(response, 200, {
         ok: true,
+        status: "live",
         transport: "streamable-http",
-        sessions: sessions.size,
-        tools: config.mode === "cloud" ? (cloudTools ?? []).length : listedLocalCapabilities(config).length,
-        mode: config.mode,
       });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      const readiness = await readinessCheck();
+      writeJson(response, readiness.ok ? 200 : 503, readiness);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/metrics") {
+      await handleMetricsRequest(request, response, metricsAccess, metricsProvider);
       return;
     }
 
@@ -855,7 +1029,7 @@ async function handleStreamableHttpMcpRequest(input: {
       writeJson(response, 404, { ok: false, error: "not_found" });
       return;
     }
-    const authentication = authenticateStreamableRequest(config, request.headers.authorization, env, authToken, devNoAuth);
+    const authentication = await authenticateStreamableRequest(config, request.headers.authorization, sessionVerifier, authToken, devNoAuth);
     if (!authentication) {
       writeJson(response, 401, { ok: false, error: "unauthorized" });
       return;
@@ -903,7 +1077,15 @@ async function handleStreamableHttpMcpRequest(input: {
         }
       },
     });
-    const runtime = createMcpRuntime(config, { env, storePath, resultFormat, readRow, cloudTools, trustedContext: authentication.context });
+    const runtime = createMcpRuntime(config, {
+      env,
+      storePath,
+      store: sharedStore,
+      sharedResources,
+      resultFormat,
+      cloudTools,
+      trustedContext: authentication.context,
+    });
     session = { transport, runtime, authFingerprint: authentication.fingerprint };
     openSessions.add(session);
     transport.onclose = () => {
@@ -925,8 +1107,11 @@ async function handleHttpMcpRequest(input: {
   authToken?: string;
   devNoAuth: boolean;
   corsOrigin?: string;
+  readinessCheck: () => Promise<ReadinessReport>;
+  metricsAccess: MetricsEndpointAccess;
+  metricsProvider: () => Promise<string>;
 }): Promise<void> {
-  const { request, response, runtime, authToken, devNoAuth, corsOrigin } = input;
+  const { request, response, runtime, authToken, devNoAuth, corsOrigin, readinessCheck, metricsAccess, metricsProvider } = input;
   try {
     setCommonHttpHeaders(response, corsOrigin);
     if (request.method === "OPTIONS" && corsOrigin) {
@@ -939,10 +1124,18 @@ async function handleHttpMcpRequest(input: {
     if (request.method === "GET" && url.pathname === "/healthz") {
       writeJson(response, 200, {
         ok: true,
+        status: "live",
         transport: "http",
-        tools: runtime.listTools().length,
-        mode: runtime.config.mode,
       });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      const readiness = await readinessCheck();
+      writeJson(response, readiness.ok ? 200 : 503, readiness);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/metrics") {
+      await handleMetricsRequest(request, response, metricsAccess, metricsProvider);
       return;
     }
 
@@ -1036,6 +1229,92 @@ function validBearerToken(header: string | undefined, expected: string): boolean
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
+function resolveMetricsEndpointAccess(config: RuntimeConfig, env: NodeJS.ProcessEnv, host: string): MetricsEndpointAccess {
+  if (config.metrics?.enabled !== true) return { enabled: false };
+  const tokenEnv = config.metrics.token_env;
+  const token = tokenEnv ? envValue(env, tokenEnv) : undefined;
+  if (tokenEnv && !token) {
+    throw new McpRuntimeError("METRICS_AUTH_TOKEN_MISSING", `${tokenEnv} is not set. Metrics uses a separate bearer token.`);
+  }
+  if (!isLoopbackHost(host) && !token) {
+    throw new McpRuntimeError("METRICS_AUTH_REQUIRED", "Non-loopback metrics exposure requires metrics.token_env with a separate bearer token.");
+  }
+  return { enabled: true, ...(token ? { token } : {}) };
+}
+
+async function handleMetricsRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  access: MetricsEndpointAccess,
+  provider: () => Promise<string>,
+): Promise<void> {
+  if (!access.enabled) {
+    writeJson(response, 404, { ok: false, error: "not_found" });
+    return;
+  }
+  if (access.token && !validBearerToken(request.headers.authorization, access.token)) {
+    writeJson(response, 401, { ok: false, error: "unauthorized" });
+    return;
+  }
+  const body = await provider();
+  response.statusCode = 200;
+  response.setHeader("content-type", "application/openmetrics-text; version=1.0.0; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
+  response.end(body);
+}
+
+async function renderRuntimeMetrics(
+  store: ProposalRuntimeStore,
+  poolMetrics: RuntimePoolMetric[],
+  rateLimitMetrics: RuntimeRateLimitMetric[],
+  readinessCheck: () => Promise<ReadinessReport>,
+): Promise<string> {
+  const operational = store.operationalMetrics ? await store.operationalMetrics() : [];
+  const fleetEvents = store.fleetEventMetrics ? await store.fleetEventMetrics() : [];
+  const readiness = await readinessCheck();
+  const lines = [
+    "# HELP synapsor_ready Whether all required Runner dependencies are ready.",
+    "# TYPE synapsor_ready gauge",
+    `synapsor_ready ${readiness.ok ? 1 : 0}`,
+  ];
+  for (const component of readiness.components) {
+    lines.push(`synapsor_readiness_component{component="${prometheusLabel(component.name)}"} ${component.ok ? 1 : 0}`);
+  }
+  const counters: Array<[keyof (typeof operational)[number], string]> = [
+    ["proposals", "synapsor_proposals_total"],
+    ["approvals", "synapsor_approvals_total"],
+    ["rejections", "synapsor_rejections_total"],
+    ["applies", "synapsor_applies_total"],
+    ["conflicts", "synapsor_conflicts_total"],
+    ["failures", "synapsor_failures_total"],
+  ];
+  for (const row of operational) {
+    const labels = `tenant="${prometheusLabel(row.tenant_id)}",capability="${prometheusLabel(row.capability)}"`;
+    for (const [field, name] of counters) lines.push(`${name}{${labels}} ${row[field]}`);
+  }
+  for (const row of fleetEvents) {
+    const labels = `tenant="${prometheusLabel(row.tenant_id)}",capability="${prometheusLabel(row.capability)}"`;
+    lines.push(`synapsor_worker_retries_total{${labels}} ${row.worker_retries}`);
+    lines.push(`synapsor_dead_letters_total{${labels}} ${row.dead_letters}`);
+    lines.push(`synapsor_auto_approval_limit_trips_total{${labels}} ${row.auto_approval_limit_trips}`);
+  }
+  for (const row of rateLimitMetrics) {
+    lines.push(`synapsor_rate_limit_rejections_total{tenant="${prometheusLabel(row.tenant)}",capability="${prometheusLabel(row.capability)}"} ${row.rejected}`);
+  }
+  for (const row of poolMetrics) {
+    const labels = `source="${prometheusLabel(row.source)}",engine="${prometheusLabel(row.engine)}"`;
+    lines.push(`synapsor_source_pool_active{${labels}} ${row.active}`);
+    lines.push(`synapsor_source_pool_waiting{${labels}} ${row.waiting}`);
+    lines.push(`synapsor_source_pool_max{${labels}} ${row.max}`);
+  }
+  lines.push("# EOF", "");
+  return lines.join("\n");
+}
+
+function prometheusLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/"/g, '\\"');
+}
+
 type StreamableAuthentication = {
   fingerprint: string;
   context?: TrustedContext;
@@ -1046,30 +1325,160 @@ function configUsesHttpClaims(config: RuntimeConfig): boolean {
   return Object.values(config.contexts ?? {}).some((context) => context.provider === "http_claims");
 }
 
-function assertSessionAuthReady(config: RuntimeConfig, env: NodeJS.ProcessEnv): void {
-  const auth = config.session_auth;
-  if (!auth || auth.provider !== "jwt_hs256") {
-    throw new McpRuntimeError("SESSION_AUTH_REQUIRED", "http_claims trusted context requires session_auth.provider jwt_hs256.");
+export async function checkRunnerReadiness(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = 3000,
+): Promise<ReadinessReport> {
+  const components: ReadinessComponent[] = [{ name: "config", ok: true, code: "CONFIG_READY", latency_ms: 0 }];
+  for (const [sourceName, source] of Object.entries(config.sources ?? {})) {
+    components.push(await readinessComponent(`source:${sourceName}`, "SOURCE_READY", "SOURCE_UNAVAILABLE", timeoutMs, async () => {
+      const databaseUrl = envValue(env, source.read_url_env);
+      if (!databaseUrl) throw new Error("source URL unavailable");
+      await probeDatabase(source.engine, databaseUrl, timeoutMs);
+    }));
   }
-  const activeSecret = envValue(env, auth.secret_env);
-  if (!activeSecret || Buffer.byteLength(activeSecret) < 32) {
-    throw new McpRuntimeError("SESSION_AUTH_SECRET_INVALID", `${auth.secret_env} must contain at least 32 bytes of HMAC key material.`);
-  }
-  if (auth.previous_secret_env) {
-    const previousSecret = envValue(env, auth.previous_secret_env);
-    if (!previousSecret || Buffer.byteLength(previousSecret) < 32) {
-      throw new McpRuntimeError("SESSION_AUTH_PREVIOUS_SECRET_INVALID", `${auth.previous_secret_env} must contain at least 32 bytes of previous HMAC key material during token rotation.`);
+
+  if (config.mode === "review") {
+    const checkedWriteSources = new Set<string>();
+    for (const capability of config.capabilities ?? []) {
+      if (capability.kind !== "proposal" || capabilityWritebackMode(capability) !== "direct_sql") continue;
+      const source = config.sources?.[capability.source];
+      if (!source?.write_url_env || checkedWriteSources.has(capability.source)) continue;
+      checkedWriteSources.add(capability.source);
+      components.push(await readinessComponent(`writeback:${capability.source}`, "WRITEBACK_READY", "WRITEBACK_UNAVAILABLE", timeoutMs, async () => {
+        const databaseUrl = envValue(env, source.write_url_env!);
+        if (!databaseUrl) throw new Error("writeback URL unavailable");
+        await probeDatabase(source.engine, databaseUrl, timeoutMs);
+      }));
     }
+
+    const checkedExecutors = new Set<string>();
+    for (const capability of config.capabilities ?? []) {
+      if (capability.kind !== "proposal" || capabilityWritebackMode(capability) !== "app_handler") continue;
+      const executorName = capabilityWritebackExecutor(capability);
+      if (!executorName || checkedExecutors.has(executorName)) continue;
+      checkedExecutors.add(executorName);
+      components.push(await readinessComponent(`executor:${executorName}`, "EXECUTOR_READY", "EXECUTOR_UNAVAILABLE", timeoutMs, async () => {
+        const executor = isRecord(config.executors?.[executorName]) ? config.executors?.[executorName] : undefined;
+        if (!executor) throw new Error("executor missing");
+        if (executor.type === "http_handler") {
+          if (typeof executor.url_env !== "string" || !envValue(env, executor.url_env)) throw new Error("handler URL unavailable");
+          const handlerUrl = envValue(env, executor.url_env)!;
+          const auth = isRecord(executor.auth) ? executor.auth : undefined;
+          if (auth?.type === "bearer_env" && (typeof auth.token_env !== "string" || !envValue(env, auth.token_env))) throw new Error("handler token unavailable");
+          const response = await fetch(handlerUrl, {
+            method: "HEAD",
+            headers: auth?.type === "bearer_env" && typeof auth.token_env === "string"
+              ? { authorization: `Bearer ${envValue(env, auth.token_env)}` }
+              : undefined,
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          if (response.status >= 500 || response.status === 401 || response.status === 403) throw new Error("handler endpoint unavailable");
+        }
+        if (executor.type === "command_handler" && (typeof executor.command_env !== "string" || !envValue(env, executor.command_env))) {
+          throw new Error("handler command unavailable");
+        }
+      }));
+    }
+  }
+
+  const shared = config.storage?.shared_postgres;
+  if (shared?.mode === "runtime_store") {
+    components.push(await readinessComponent("ledger", "LEDGER_READY", "LEDGER_UNAVAILABLE", timeoutMs, async () => {
+      const databaseUrl = envValue(env, shared.url_env);
+      if (!databaseUrl) throw new Error("ledger URL unavailable");
+      const pool = createPostgresPool(databaseUrl, { connectionTimeoutMillis: timeoutMs });
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(`SET LOCAL statement_timeout = ${Math.max(1, Math.floor(timeoutMs))}`);
+        const table = `${quotePostgresIdentifier(shared.schema ?? "synapsor_runner")}.ledger_entries`;
+        await client.query(
+          `INSERT INTO ${table} (entry_key, kind, payload_json) VALUES ($1, 'readiness_probe', '{}'::jsonb)`,
+          [`readiness:${crypto.randomUUID()}`],
+        );
+        await client.query("ROLLBACK");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+        await pool.end();
+      }
+    }));
+  }
+  const ok = components.every((component) => component.ok);
+  return { ok, status: ok ? "ready" : "not_ready", components };
+}
+
+async function readinessComponent(
+  name: string,
+  successCode: string,
+  failureCode: string,
+  timeoutMs: number,
+  check: () => Promise<void>,
+): Promise<ReadinessComponent> {
+  const started = performance.now();
+  try {
+    await withReadinessTimeout(check(), timeoutMs);
+    return { name, ok: true, code: successCode, latency_ms: Math.max(0, Math.round(performance.now() - started)) };
+  } catch {
+    return { name, ok: false, code: failureCode, latency_ms: Math.max(0, Math.round(performance.now() - started)) };
   }
 }
 
-function authenticateStreamableRequest(
+async function withReadinessTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("readiness timeout")), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function probeDatabase(engine: SourceEngine, databaseUrl: string, timeoutMs: number): Promise<void> {
+  if (engine === "postgres") {
+    const pool = createPostgresPool(databaseUrl, { connectionTimeoutMillis: timeoutMs, statement_timeout: timeoutMs });
+    try {
+      await pool.query("SELECT 1");
+    } finally {
+      await pool.end();
+    }
+    return;
+  }
+  const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true, connectTimeout: timeoutMs });
+  try {
+    await connection.query("SELECT 1");
+  } finally {
+    await connection.end();
+  }
+}
+
+function sessionAuthVerifier(config: RuntimeConfig, env: NodeJS.ProcessEnv, baseDir: string): JwtVerifier {
+  const auth = config.session_auth;
+  if (!auth) throw new McpRuntimeError("SESSION_AUTH_REQUIRED", "http_claims trusted context requires signed session_auth.");
+  try {
+    return createJwtVerifier(auth, env, { baseDir });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "session authentication is not ready";
+    throw new McpRuntimeError("SESSION_AUTH_INVALID", message);
+  }
+}
+
+async function authenticateStreamableRequest(
   config: RuntimeConfig,
   authorization: string | undefined,
-  env: NodeJS.ProcessEnv,
+  sessionVerifier: JwtVerifier | undefined,
   staticToken: string | undefined,
   devNoAuth: boolean,
-): StreamableAuthentication | undefined {
+): Promise<StreamableAuthentication | undefined> {
   if (devNoAuth) return { fingerprint: "dev-no-auth" };
   const token = bearerToken(authorization);
   if (!token) return undefined;
@@ -1078,50 +1487,22 @@ function authenticateStreamableRequest(
     return { fingerprint: tokenFingerprint(token) };
   }
   try {
-    const context = verifySessionJwt(config, token, env);
+    if (!sessionVerifier) return undefined;
+    const context = await verifySessionJwt(config, token, sessionVerifier);
     return { fingerprint: tokenFingerprint(token), context };
   } catch {
     return undefined;
   }
 }
 
-function verifySessionJwt(config: RuntimeConfig, token: string, env: NodeJS.ProcessEnv): TrustedContext {
+async function verifySessionJwt(config: RuntimeConfig, token: string, verifier: JwtVerifier): Promise<TrustedContext> {
   const auth = config.session_auth;
-  if (!auth || auth.provider !== "jwt_hs256") throw new Error("session auth is not configured");
-  const secrets = sessionAuthSecrets(auth, env);
-  if (secrets.length === 0) throw new Error("session auth secret is unavailable");
-  const parts = token.split(".");
-  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) throw new Error("invalid JWT shape");
-  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8")) as unknown;
-  const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as unknown;
-  if (!isRecord(header) || header.alg !== "HS256" || !isRecord(claims)) throw new Error("invalid JWT header or claims");
-  const actual = Buffer.from(parts[2], "base64url");
-  if (!secrets.some((secret) => {
-    const expected = crypto.createHmac("sha256", secret).update(`${parts[0]}.${parts[1]}`).digest();
-    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
-  })) {
-    throw new Error("invalid JWT signature");
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const skew = auth.clock_skew_seconds ?? 30;
-  if (!Number.isFinite(Number(claims.exp)) || Number(claims.exp) < now - skew) throw new Error("JWT is expired or has no exp");
-  if (claims.nbf !== undefined && (!Number.isFinite(Number(claims.nbf)) || Number(claims.nbf) > now + skew)) throw new Error("JWT is not active");
-  if (auth.issuer && claims.iss !== auth.issuer) throw new Error("JWT issuer mismatch");
-  if (auth.audience && !jwtAudienceIncludes(claims.aud, auth.audience)) throw new Error("JWT audience mismatch");
+  if (!auth) throw new Error("session auth is not configured");
+  const { payload: claims } = await verifier(token);
   const tenant = safeSessionClaim(claims[auth.tenant_claim ?? "tenant_id"]);
   const principal = safeSessionClaim(claims[auth.principal_claim ?? "sub"]);
   if (!tenant || !principal) throw new Error("JWT trusted context claims are missing or unsafe");
   return { tenant_id: tenant, principal, provenance: "http_claims" };
-}
-
-function sessionAuthSecrets(auth: NonNullable<RuntimeConfig["session_auth"]>, env: NodeJS.ProcessEnv): string[] {
-  const secrets: string[] = [];
-  for (const envName of [auth.secret_env, auth.previous_secret_env]) {
-    if (!envName) continue;
-    const secret = envValue(env, envName);
-    if (secret && Buffer.byteLength(secret) >= 32) secrets.push(secret);
-  }
-  return secrets;
 }
 
 function bearerToken(header: string | undefined): string | undefined {
@@ -1290,13 +1671,22 @@ async function closeHttpServer(server: Server, runtime: McpRuntime): Promise<voi
   }).finally(() => runtime.close());
 }
 
-async function closeStreamableHttpServer(server: Server, sessions: Set<StreamableHttpSession>): Promise<void> {
+async function closeStreamableHttpServer(
+  server: Server,
+  sessions: Set<StreamableHttpSession>,
+  sharedResources: McpRuntimeSharedResources,
+  sharedStore: ProposalRuntimeStore,
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) reject(error);
       else resolve();
     });
-  }).finally(() => closeStreamableSessions(sessions));
+  }).finally(async () => {
+    await closeStreamableSessions(sessions);
+    await sharedResources.close();
+    await sharedStore.close();
+  });
 }
 
 async function closeStreamableSessions(sessions: Set<StreamableHttpSession>): Promise<void> {
@@ -1926,6 +2316,12 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
   if (runtimeCode === "PROPOSAL_ALREADY_EXISTS") {
     return { code: "PROPOSAL_ALREADY_EXISTS", message: error instanceof Error ? error.message : "An active proposal already exists.", retryable: false };
   }
+  if (runtimeCode === "RATE_LIMITED") {
+    const retryAfter = error instanceof McpRuntimeError && typeof error.details?.retry_after_ms === "number"
+      ? Math.max(1, Math.round(error.details.retry_after_ms))
+      : undefined;
+    return { code: "RATE_LIMITED", message: "The trusted tenant request limit was reached. Retry after the current window.", retryable: true, ...(retryAfter ? { retry_after_ms: retryAfter } : {}) };
+  }
   if (runtimeCode && (
     runtimeCode.startsWith("ARGUMENT_")
     || runtimeCode === "LOOKUP_ARG_MISSING"
@@ -1967,6 +2363,7 @@ function logToolRejection(
     tenant: trustedTenantForLog(config, env, capability, trustedContext),
     error_code: safe.code,
     runtime_code: error instanceof McpRuntimeError ? error.code : "UNCLASSIFIED",
+    retry_after_ms: error instanceof McpRuntimeError && typeof error.details?.retry_after_ms === "number" ? error.details.retry_after_ms : undefined,
     retryable: safe.retryable,
     source_database_changed: false,
   })}\n`);
@@ -2065,6 +2462,7 @@ function buildChangeSet(input: {
       ...(input.capability.approval?.mode ? { mode: input.capability.approval.mode } : {}),
       ...(input.capability.approval?.policy ? { policy: input.capability.approval.policy } : {}),
       required_role: input.capability.approval?.required_role,
+      ...(input.capability.approval?.required_approvals ? { required_approvals: input.capability.approval.required_approvals } : {}),
     },
     writeback: {
       status: "not_applied",
@@ -2100,6 +2498,220 @@ async function readCurrentRow(input: {
 }): Promise<{ row: Record<string, unknown>; rowCount: number }> {
   if (input.source.engine === "postgres") return readPostgresRow(input);
   return readMysqlRow(input);
+}
+
+class RuntimeRateLimiter {
+  private readonly local = new Map<string, { windowStart: number; count: number }>();
+  private readonly rejected = new Map<string, RuntimeRateLimitMetric>();
+  private readonly sharedPool?: ReturnType<typeof createPostgresPool>;
+  private readonly sharedSchema?: string;
+  private readonly migration?: Promise<unknown>;
+
+  constructor(
+    private readonly config: RuntimeConfig,
+    env: NodeJS.ProcessEnv,
+    private readonly clock: () => number,
+  ) {
+    const shared = config.storage?.shared_postgres;
+    if (shared?.mode === "runtime_store") {
+      const databaseUrl = envValue(env, shared.url_env);
+      if (!databaseUrl) throw new McpRuntimeError("POSTGRES_RUNTIME_STORE_URL_MISSING", `${shared.url_env} is required for fleet-wide rate limits.`);
+      this.sharedSchema = shared.schema ?? "synapsor_runner";
+      this.sharedPool = createPostgresPool(databaseUrl);
+      this.migration = migrateSharedPostgresRuntimeStore(
+        this.sharedPool,
+        this.sharedSchema,
+        shared.lock_timeout_ms ?? 10_000,
+      );
+    }
+  }
+
+  async consume(context: TrustedContext, capability: string): Promise<void> {
+    const rule = this.config.rate_limits?.capabilities?.[capability] ?? this.config.rate_limits?.default;
+    if (!rule) return;
+    const now = this.clock();
+    const windowMs = rule.window_seconds * 1000;
+    const windowStart = Math.floor(now / windowMs) * windowMs;
+    let count: number;
+    if (this.sharedPool && this.sharedSchema) {
+      await this.migration;
+      const table = `${quotePostgresIdentifier(this.sharedSchema)}.rate_limit_buckets`;
+      const bucketKey = crypto.createHash("sha256").update(`${context.tenant_id}\u0000${capability}`).digest("hex");
+      const result = await this.sharedPool.query(
+        `INSERT INTO ${table} AS bucket (bucket_key, window_start, request_count, rejected_count)
+         VALUES ($1, $2, 1, 0)
+         ON CONFLICT (bucket_key, window_start) DO UPDATE
+         SET request_count = bucket.request_count + 1, updated_at = now()
+         RETURNING request_count`,
+        [bucketKey, windowStart],
+      );
+      count = Number(result.rows[0]?.request_count ?? 0);
+      if (count > rule.requests) {
+        await this.sharedPool.query(
+          `UPDATE ${table} SET rejected_count = rejected_count + 1, updated_at = now() WHERE bucket_key = $1 AND window_start = $2`,
+          [bucketKey, windowStart],
+        );
+      }
+    } else {
+      const key = `${context.tenant_id}\u0000${capability}`;
+      const current = this.local.get(key);
+      const bucket = !current || current.windowStart !== windowStart ? { windowStart, count: 0 } : current;
+      bucket.count += 1;
+      this.local.set(key, bucket);
+      count = bucket.count;
+    }
+    if (count <= rule.requests) return;
+    const retryAfterMs = Math.max(1, windowStart + windowMs - now);
+    const metricKey = `${context.tenant_id}\u0000${capability}`;
+    const metric = this.rejected.get(metricKey) ?? { tenant: context.tenant_id, capability, rejected: 0 };
+    metric.rejected += 1;
+    this.rejected.set(metricKey, metric);
+    throw new McpRuntimeError(
+      "RATE_LIMITED",
+      `Capability ${capability} exceeded its trusted tenant request limit.`,
+      { retry_after_ms: retryAfterMs },
+    );
+  }
+
+  metrics(): RuntimeRateLimitMetric[] {
+    return [...this.rejected.values()].sort((left, right) => left.tenant.localeCompare(right.tenant) || left.capability.localeCompare(right.capability));
+  }
+
+  async close(): Promise<void> {
+    await this.sharedPool?.end();
+  }
+}
+
+class RuntimeDatabasePools {
+  private readonly postgres = new Map<string, ReturnType<typeof createPostgresPool>>();
+  private readonly mysqlPools = new Map<string, ReturnType<typeof mysql.createPool>>();
+  private readonly counters = new Map<string, { engine: SourceEngine; active: number; waiting: number; max: number }>();
+
+  constructor(private readonly env: NodeJS.ProcessEnv) {}
+
+  async read(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
+    const databaseUrl = envValue(this.env, input.source.read_url_env);
+    if (!databaseUrl) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
+    const poolConfig = input.source.pool ?? {};
+    const max = poolConfig.max_connections ?? 10;
+    const queueLimit = poolConfig.queue_limit ?? Math.max(10, max * 4);
+    const counter = this.counters.get(input.sourceName) ?? { engine: input.source.engine, active: 0, waiting: 0, max };
+    this.counters.set(input.sourceName, counter);
+    if (counter.waiting >= queueLimit) throw new McpRuntimeError("SOURCE_POOL_QUEUE_FULL", `Source ${input.sourceName} connection queue is full.`);
+    counter.waiting += 1;
+    try {
+      if (input.source.engine === "postgres") {
+        let pool = this.postgres.get(input.sourceName);
+        if (!pool) {
+          pool = createPostgresPool(databaseUrl, {
+            max,
+            connectionTimeoutMillis: poolConfig.connection_timeout_ms ?? 3000,
+            idleTimeoutMillis: poolConfig.idle_timeout_ms ?? 30000,
+          });
+          this.postgres.set(input.sourceName, pool);
+        }
+        const client = await withPoolAcquireTimeout(
+          pool.connect(),
+          poolConfig.queue_timeout_ms ?? 5000,
+          input.sourceName,
+          (lateClient) => lateClient.release(),
+        );
+        counter.waiting -= 1;
+        counter.active += 1;
+        try {
+          const query = buildSelect(input.capability, "$");
+          await client.query("BEGIN");
+          if (input.source.statement_timeout_ms) await client.query(`SET LOCAL statement_timeout = ${Number(input.source.statement_timeout_ms)}`);
+          const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
+          await client.query("COMMIT");
+          return { row: result.rows[0] ?? {}, rowCount: result.rowCount ?? 0 };
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw error;
+        } finally {
+          counter.active -= 1;
+          client.release();
+        }
+      }
+
+      let pool = this.mysqlPools.get(input.sourceName);
+      if (!pool) {
+        pool = mysql.createPool({
+          uri: databaseUrl,
+          dateStrings: true,
+          waitForConnections: true,
+          connectionLimit: max,
+          maxIdle: max,
+          idleTimeout: poolConfig.idle_timeout_ms ?? 30000,
+          queueLimit,
+          connectTimeout: poolConfig.connection_timeout_ms ?? 3000,
+        });
+        this.mysqlPools.set(input.sourceName, pool);
+      }
+      const connection = await withPoolAcquireTimeout(
+        pool.getConnection(),
+        poolConfig.queue_timeout_ms ?? 5000,
+        input.sourceName,
+        (lateConnection) => lateConnection.release(),
+      );
+      counter.waiting -= 1;
+      counter.active += 1;
+      try {
+        if (input.source.statement_timeout_ms) await connection.query("SET SESSION max_execution_time = ?", [Number(input.source.statement_timeout_ms)]).catch(() => undefined);
+        const query = buildSelect(input.capability, "?");
+        const values = queryValues(input.capability, input.args, input.context).map(scalar);
+        const [rows] = await connection.execute(query.sql, values);
+        const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+        return { row: list[0] ?? {}, rowCount: list.length };
+      } finally {
+        counter.active -= 1;
+        connection.release();
+      }
+    } catch (error) {
+      if (counter.waiting > 0) counter.waiting -= 1;
+      throw error;
+    }
+  }
+
+  metrics(): RuntimePoolMetric[] {
+    return [...this.counters.entries()].map(([source, value]) => ({ source, ...value }));
+  }
+
+  async close(): Promise<void> {
+    await Promise.all([
+      ...[...this.postgres.values()].map((pool) => pool.end()),
+      ...[...this.mysqlPools.values()].map((pool) => pool.end()),
+    ]);
+    this.postgres.clear();
+    this.mysqlPools.clear();
+  }
+}
+
+async function withPoolAcquireTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  sourceName: string,
+  releaseLate: (value: T) => void,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  void promise.then((value) => {
+    if (timedOut) releaseLate(value);
+  }).catch(() => undefined);
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new McpRuntimeError("SOURCE_POOL_TIMEOUT", `Source ${sourceName} connection queue timed out.`));
+        }, timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
@@ -2464,7 +3076,15 @@ function toolErrorPayload(error: unknown): Record<string, unknown> {
     if (error.code === "LOCAL_STORE_UNAVAILABLE") {
       return { ok: false, code: "TEMPORARILY_UNAVAILABLE", error: "The local runner store is temporarily unavailable. Restart the runner or recreate the store before retrying." };
     }
-    return { ok: false, code: error.code, error: error.message };
+    const retryAfter = error.code === "RATE_LIMITED" && typeof error.details?.retry_after_ms === "number"
+      ? Math.max(1, Math.round(error.details.retry_after_ms))
+      : undefined;
+    return {
+      ok: false,
+      code: error.code,
+      error: error.message,
+      ...(retryAfter ? { retry_after_ms: retryAfter } : {}),
+    };
   }
   return { ok: false, code: "MCP_TOOL_FAILED", error: error instanceof Error ? error.message : String(error) };
 }

@@ -343,7 +343,32 @@ async function withMcpClient(scenario, callback) {
     throw error;
   } finally {
     await client.close();
+    await waitForStdioLeaseRelease(scenario);
   }
+}
+
+async function waitForStdioLeaseRelease(scenario) {
+  const leasePath = `${scenario.storePath}.lease.json`;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (!fs.existsSync(leasePath)) return;
+    try {
+      const lease = JSON.parse(fs.readFileSync(leasePath, "utf8"));
+      if (typeof lease.pid === "number") {
+        try {
+          process.kill(lease.pid, 0);
+        } catch (error) {
+          if (error?.code === "ESRCH") {
+            fs.rmSync(leasePath, { force: true });
+            return;
+          }
+        }
+      }
+    } catch {
+      // The server may be replacing/removing the lease while it shuts down.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`MCP stdio server did not release its local-store lease: ${leasePath}`);
 }
 
 function structured(result) {

@@ -103,6 +103,17 @@ describe("@synapsor/spec validation", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts bounded approval quorum and rejects unsafe quorum values", () => {
+    const contract = readJson("fixtures/conformance/manual-approval/contract.json") as Record<string, any>;
+    contract.capabilities[0].proposal.approval.required_approvals = 2;
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    contract.capabilities[0].proposal.approval.required_approvals = 0;
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("INVALID_REQUIRED_APPROVALS");
+    contract.capabilities[0].proposal.approval.required_approvals = 11;
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("INVALID_REQUIRED_APPROVALS");
+  });
+
   it("accepts reviewed aggregate auto-approval limits", () => {
     const contract = cloneAutoApprovalContract();
     (contract.policies as Array<Record<string, unknown>>)[0]!.limits = [

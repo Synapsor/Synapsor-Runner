@@ -224,6 +224,43 @@ describe("local UI", () => {
     })).rejects.toThrow(/binds to localhost/);
   });
 
+  it("uses the injected shared-store bridge for review reads and writes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-shared-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    const sharedStore = new ProposalStore();
+    sharedStore.createProposal(changeSet);
+    const operations: string[] = [];
+    const server = await startLocalUiServer({
+      configPath,
+      storePath: path.join(tempDir, "must-not-be-opened.db"),
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      storeAccess: async (mode, operation, callback) => {
+        operations.push(`${mode}:${operation}`);
+        return callback(sharedStore);
+      },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const proposals = await getJson(`${baseUrl}/api/proposals`, headers);
+      expect(proposals.proposals).toHaveLength(1);
+      const approved = await postJson(`${baseUrl}/api/proposals/wrp_ui/approve`, {
+        ...headers,
+        "x-synapsor-csrf": "csrf-token",
+      }, { confirm: "approve", actor: "shared_reviewer" });
+      expect(approved.proposal.state).toBe("approved");
+      expect(sharedStore.getProposal("wrp_ui")?.state).toBe("approved");
+      expect(operations).toEqual(["read:proposals-list", "write:proposal-approve"]);
+      await expect(fs.stat(path.join(tempDir, "must-not-be-opened.db"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      sharedStore.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("does not let the local UI bypass signed operator identity", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-signed-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");

@@ -16,6 +16,7 @@ import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { createPostgresPool, postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
 import {
   ProposalStore,
+  sharedPostgresRuntimeStoreMigration,
   type EvidenceSearchFilters,
   type EventSearchFilters,
   type LocalProposalState,
@@ -56,8 +57,8 @@ import {
   type RunnerConfig,
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
-import { startLocalUiServer } from "./local-ui.js";
-import { resolveOperatorIdentity, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
+import { startLocalUiServer, type LocalUiStoreAccess } from "./local-ui.js";
+import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { hydrateManagedSecrets, type ManagedSecretsProvider } from "./secrets-manager.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
@@ -3188,7 +3189,7 @@ async function authorizeConfiguredJobApply(
   try {
     const proposal = requireLocalProposal(store, job.proposal_id);
     const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "apply" });
-    store.recordOperatorAuthorization(job.proposal_id, identity, config.operator_identity.provider === "signed_key");
+    store.recordOperatorAuthorization(job.proposal_id, identity, config.operator_identity.provider !== "dev_env");
     operationalLog("info", "operator_decision", {
       action: "apply",
       proposal_id: proposal.proposal_id,
@@ -3360,7 +3361,7 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
     const capability = findProposalCapability(config, proposal);
     await verifyStoredApprovalAuthority(config, configPath, store, proposal, capability);
     const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "apply" });
-    store.recordOperatorAuthorization(resolvedProposalId, identity, config.operator_identity?.provider === "signed_key");
+    store.recordOperatorAuthorization(resolvedProposalId, identity, Boolean(config.operator_identity && config.operator_identity.provider !== "dev_env"));
     operationalLog("info", "operator_decision", {
       action: "apply",
       proposal_id: proposal.proposal_id,
@@ -4068,7 +4069,7 @@ async function verifyStoredApprovalAuthority(
   proposal: StoredProposal,
   capability: NonNullable<RuntimeConfig["capabilities"]>[number],
 ): Promise<void> {
-  if (config.operator_identity?.provider !== "signed_key") return;
+  if (!config.operator_identity || config.operator_identity.provider === "dev_env") return;
   const approval = [...store.approvals(proposal.proposal_id)]
     .reverse()
     .find((item) => item.status === "approved" && item.proposal_hash === proposal.proposal_hash && item.proposal_version === proposal.proposal_version);
@@ -4078,8 +4079,8 @@ async function verifyStoredApprovalAuthority(
   if (reviewedPolicy && approval.approver === `policy:${reviewedPolicy}`) return;
 
   const identity = approval.identity;
-  if (!identity || identity.provider !== "signed_key" || !identity.verified) {
-    throw new Error(`proposal ${proposal.proposal_id} does not have a verified signed human approval`);
+  if (!identity || identity.provider !== config.operator_identity.provider || !identity.verified) {
+    throw new Error(`proposal ${proposal.proposal_id} does not have a verified ${config.operator_identity.provider} human approval`);
   }
   if (
     approval.approver !== identity.subject
@@ -4093,16 +4094,25 @@ async function verifyStoredApprovalAuthority(
   ) {
     throw new Error(`proposal ${proposal.proposal_id} approval identity record failed integrity checks`);
   }
-  const operator = config.operator_identity.operators?.[identity.subject];
-  if (!operator) throw new Error(`approval operator ${identity.subject} is no longer registered`);
   const requiredRole = capability.approval?.required_role;
-  if (requiredRole && (!identity.roles.includes(requiredRole) || !operator.roles.includes(requiredRole))) {
+  if (requiredRole && !identity.roles.includes(requiredRole)) {
     throw new Error(`approval operator ${identity.subject} lacks required role ${requiredRole}`);
   }
-  const publicKeyPath = path.resolve(path.dirname(path.resolve(configPath)), operator.public_key_path);
-  const publicKey = await fs.readFile(publicKeyPath, "utf8");
-  if (!verifySignedOperatorProof(identity, publicKey)) {
-    throw new Error(`proposal ${proposal.proposal_id} approval signature verification failed`);
+  if (identity.provider === "signed_key") {
+    const operator = config.operator_identity.operators?.[identity.subject];
+    if (!operator) throw new Error(`approval operator ${identity.subject} is no longer registered`);
+    if (requiredRole && !operator.roles.includes(requiredRole)) throw new Error(`approval operator ${identity.subject} lacks currently registered role ${requiredRole}`);
+    const publicKeyPath = path.resolve(path.dirname(path.resolve(configPath)), operator.public_key_path);
+    const publicKey = await fs.readFile(publicKeyPath, "utf8");
+    if (!verifySignedOperatorProof(identity, publicKey)) {
+      throw new Error(`proposal ${proposal.proposal_id} approval signature verification failed`);
+    }
+  } else {
+    const secretEnv = config.operator_identity.attestation_secret_env ?? "SYNAPSOR_OPERATOR_ATTESTATION_SECRET";
+    const secret = trimmedEnvValue(process.env, secretEnv);
+    if (!secret || Buffer.byteLength(secret) < 32 || !verifyJwtOperatorProof(identity, secret)) {
+      throw new Error(`proposal ${proposal.proposal_id} approval attestation verification failed`);
+    }
   }
 }
 
@@ -6754,6 +6764,8 @@ async function events(args: string[]): Promise<number> {
 
 async function metrics(args: string[]): Promise<number> {
   const rest = args[0] === "show" ? args.slice(1) : args;
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(rest, "metrics show", (bridgeStorePath) => metrics(argsWithRuntimeStoreBridge(rest, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   const store = await openLocalStore(rest);
   try {
     const rows = store.operationalMetrics({
@@ -6774,11 +6786,17 @@ async function workerCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "run") return workerRun(rest);
   if (subcommand === "status" || subcommand === "list") return workerStatus(rest);
+  if (subcommand === "dead-letter") return workerDeadLetter(rest);
   usage(["worker"]);
   return 2;
 }
 
 async function workerStatus(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreReadBridge(args, config, "worker status", (bridgeStorePath) => workerStatus(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
   const store = await openLocalStore(args);
   try {
     const status = optionalArg(args, "--status") as Parameters<ProposalStore["listWorkerQueue"]>[0];
@@ -6786,6 +6804,92 @@ async function workerStatus(args: string[]): Promise<number> {
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ worker_queue: items }, null, 2)}\n`);
     else if (items.length === 0) process.stdout.write("Worker queue is empty.\n");
     else for (const item of items) process.stdout.write(`${item.status.toUpperCase()} ${item.proposal_id} attempt=${item.attempts}/${item.max_attempts}${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function workerDeadLetter(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "list") return workerStatus([...rest, "--status", "dead_letter"]);
+  if (subcommand === "show") return workerDeadLetterShow(rest);
+  if (subcommand === "requeue") return workerDeadLetterMutate("requeue", rest);
+  if (subcommand === "discard") return workerDeadLetterMutate("discard", rest);
+  usage(["worker"]);
+  return 2;
+}
+
+async function workerDeadLetterShow(args: string[]): Promise<number> {
+  const proposalId = positional(args, 0);
+  if (!proposalId) throw new Error("worker dead-letter show requires <proposal_id>");
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter show ${proposalId}`, (bridgeStorePath) => workerDeadLetterShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  const store = await openLocalStore(args);
+  try {
+    const item = store.getWorkerQueueItem(proposalId);
+    if (!item) throw new Error(`worker queue item not found for ${proposalId}`);
+    const proposal = requireLocalProposal(store, proposalId);
+    const payload = { worker_queue: item, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId) };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write([
+      `${item.status.toUpperCase()} ${item.proposal_id}`,
+      `Attempts: ${item.attempts}/${item.max_attempts}`,
+      `Last safe error: ${item.last_error_code ?? "none"}`,
+      `Proposal state: ${proposal.state}`,
+      `Receipts retained: ${payload.receipts.length}`,
+      `Events retained: ${payload.events.length}`,
+      "",
+    ].join("\n"));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function workerDeadLetterMutate(action: "requeue" | "discard", args: string[]): Promise<number> {
+  const proposalId = positional(args, 0);
+  if (!proposalId) throw new Error(`worker dead-letter ${action} requires <proposal_id>`);
+  const reason = optionalArg(args, "--reason");
+  if (action === "discard" && !reason) throw new Error("worker dead-letter discard requires --reason <text>");
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter ${action} ${proposalId}`, (bridgeStorePath) => workerDeadLetterMutate(action, argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, `worker dead-letter ${action}`, args);
+  const store = await openLocalStore(args);
+  try {
+    const proposal = requireLocalProposal(store, proposalId);
+    await confirmDangerousAction(args, `${action === "requeue" ? "Requeue" : "Discard"} dead-letter item ${proposalId}?`);
+    const identity = await operatorIdentityForDecision({
+      args,
+      config,
+      configPath,
+      proposal,
+      action: action === "requeue" ? "worker_requeue" : "worker_discard",
+      reason,
+    });
+    if (!identity.verified) throw new Error(`worker dead-letter ${action} requires a verified signed_key or jwt_oidc operator identity`);
+    const item = action === "requeue"
+      ? store.requeueDeadLetter({
+        proposalId,
+        retryBudget: positiveIntOption(args, "--retry-budget", 3, 1, 100),
+        identity,
+        reason,
+      })
+      : store.discardDeadLetter({ proposalId, identity, reason: reason! });
+    operationalLog("warn", `worker_dead_letter_${action === "requeue" ? "requeued" : "discarded"}`, {
+      proposal_id: proposalId,
+      subject: identity.subject,
+      identity_provider: identity.provider,
+      identity_verified: identity.verified,
+      retry_budget: action === "requeue" ? item.max_attempts : undefined,
+    });
+    process.stdout.write(args.includes("--json") ? `${JSON.stringify({ worker_queue: item }, null, 2)}\n` : `${item.status} ${item.proposal_id}\n`);
     return 0;
   } finally {
     store.close();
@@ -6850,6 +6954,7 @@ async function workerRun(args: string[]): Promise<number> {
           "--worker-attempt", String(item.attempts),
           "--batch-quiet",
           "--yes",
+          ...(args.includes(runtimeStoreBridgeFlag) ? [runtimeStoreBridgeFlag] : []),
           ...(optionalArg(args, "--identity") ? ["--identity", optionalArg(args, "--identity")!] : []),
           ...(optionalArg(args, "--identity-key") ? ["--identity-key", optionalArg(args, "--identity-key")!] : []),
           ...(optionalArg(args, "--actor") ? ["--actor", optionalArg(args, "--actor")!] : []),
@@ -7012,9 +7117,23 @@ async function shadow(args: string[]): Promise<number> {
 
 async function ui(args: string[]): Promise<number> {
   const portArg = optionalArg(args, "--port");
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  const configuredStorePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storeAccess: LocalUiStoreAccess | undefined = config?.storage?.shared_postgres?.mode === "runtime_store"
+    ? async (mode, operation, callback) => (mode === "read" ? withSharedPostgresRuntimeStoreReadBridge : withSharedPostgresRuntimeStoreBridge)(args, config, `ui ${operation}`, async (bridgeStorePath) => {
+      const store = new ProposalStore(bridgeStorePath);
+      try {
+        return callback(store);
+      } finally {
+        store.close();
+      }
+    })
+    : undefined;
   const server = await startLocalUiServer({
-    configPath: optionalArg(args, "--config") ?? "synapsor.runner.json",
-    storePath: optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db",
+    configPath,
+    storePath: configuredStorePath,
+    storeAccess,
     host: optionalArg(args, "--host") ?? "127.0.0.1",
     port: portArg ? Number(portArg) : 0,
     allowRemoteBind: args.includes("--allow-remote-bind"),
@@ -7132,6 +7251,8 @@ async function shadowReport(args: string[]): Promise<number> {
 }
 
 async function proposalsList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "proposals list", (bridgeStorePath) => proposalsList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, proposalListAllowedOptions, "proposals list");
   const store = await openLocalStore(args);
   try {
@@ -7155,6 +7276,8 @@ async function proposalsList(args: string[]): Promise<number> {
 }
 
 async function proposalsShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "proposals show", (bridgeStorePath) => proposalsShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, showAllowedOptions, "proposals show");
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals show requires <proposal_id>");
@@ -7164,11 +7287,13 @@ async function proposalsShow(args: string[]): Promise<number> {
     const proposal = store.getProposal(resolvedProposalId);
     if (!proposal) throw new Error(`proposal not found: ${resolvedProposalId}`);
     const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
-    const payload = { proposal, events: store.events(resolvedProposalId), receipts: store.receipts(resolvedProposalId), evidence };
+    const approvalProgress = store.approvalProgress(resolvedProposalId);
+    const payload = { proposal, approval_progress: approvalProgress, events: store.events(resolvedProposalId), receipts: store.receipts(resolvedProposalId), evidence };
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     } else if (showDetails(args)) {
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
+      process.stdout.write(`Approval progress: ${approvalProgress.approved}/${approvalProgress.required}${approvalProgress.rejected ? " (rejected)" : ""}\n`);
       process.stdout.write(formatProposalEventDetail(payload.events));
       if (args.includes("--debug")) process.stdout.write(formatProposalDebug(proposal, optionalArg(args, "--store")));
     } else {
@@ -7209,7 +7334,7 @@ async function proposalsApprove(args: string[]): Promise<number> {
       proposal_version: proposal.proposal_version,
       reason: optionalArg(args, "--reason") ?? undefined,
       identity,
-      require_verified_identity: config?.operator_identity?.provider === "signed_key",
+      require_verified_identity: Boolean(config?.operator_identity && config.operator_identity.provider !== "dev_env"),
     });
     operationalLog("info", "operator_decision", {
       action: "approve",
@@ -7220,8 +7345,15 @@ async function proposalsApprove(args: string[]): Promise<number> {
       identity_provider: identity.provider,
       identity_verified: identity.verified,
       required_role: proposal.change_set.approval.required_role,
+      approval_progress: `${store.approvalProgress(resolvedProposalId).approved}/${store.approvalProgress(resolvedProposalId).required}`,
     });
-    process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : `approved ${updated.proposal_id}\n`);
+    const progress = store.approvalProgress(resolvedProposalId);
+    const approvalResult = { ...updated, approval_progress: progress };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(approvalResult, null, 2)}\n`
+      : progress.complete
+        ? `approved ${updated.proposal_id} (${progress.approved}/${progress.required})\n`
+        : `approval recorded for ${updated.proposal_id} (${progress.approved}/${progress.required}); awaiting ${progress.remaining} more verified reviewer${progress.remaining === 1 ? "" : "s"}\n`);
     return 0;
   } finally {
     store.close();
@@ -7259,7 +7391,7 @@ async function proposalsReject(args: string[]): Promise<number> {
       proposal_version: proposal.proposal_version,
       reason,
       identity,
-      require_verified_identity: config?.operator_identity?.provider === "signed_key",
+      require_verified_identity: Boolean(config?.operator_identity && config.operator_identity.provider !== "dev_env"),
     });
     operationalLog("info", "operator_decision", {
       action: "reject",
@@ -7305,6 +7437,8 @@ async function proposalsWritebackJob(args: string[]): Promise<number> {
 }
 
 async function evidenceList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "evidence list", (bridgeStorePath) => evidenceList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, evidenceListAllowedOptions, "evidence list");
   const store = await openLocalStore(args);
   try {
@@ -7323,6 +7457,8 @@ async function evidenceList(args: string[]): Promise<number> {
 }
 
 async function evidenceShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "evidence show", (bridgeStorePath) => evidenceShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, showAllowedOptions, "evidence show");
   const evidenceId = positional(args, 0);
   if (!evidenceId) throw new Error("evidence show requires <evidence_bundle_id>");
@@ -7340,6 +7476,8 @@ async function evidenceShow(args: string[]): Promise<number> {
 }
 
 async function evidenceExport(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "evidence export", (bridgeStorePath) => evidenceExport(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, exportAllowedOptions, "evidence export");
   const evidenceId = positional(args, 0) ?? optionalArg(args, "--evidence");
   if (!evidenceId) throw new Error("evidence export requires <evidence_bundle_id>");
@@ -7361,6 +7499,8 @@ async function evidenceExport(args: string[]): Promise<number> {
 }
 
 async function queryAuditList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "query-audit list", (bridgeStorePath) => queryAuditList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, queryAuditListAllowedOptions, "query-audit list");
   const store = await openLocalStore(args);
   try {
@@ -7375,6 +7515,8 @@ async function queryAuditList(args: string[]): Promise<number> {
 }
 
 async function queryAuditShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "query-audit show", (bridgeStorePath) => queryAuditShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, showAllowedOptions, "query-audit show");
   const auditId = Number(positional(args, 0));
   if (!Number.isInteger(auditId) || auditId <= 0) throw new Error("query-audit show requires <audit_id>");
@@ -7391,6 +7533,8 @@ async function queryAuditShow(args: string[]): Promise<number> {
 }
 
 async function queryAuditExport(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "query-audit export", (bridgeStorePath) => queryAuditExport(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, exportAllowedOptions, "query-audit export");
   const auditId = Number(positional(args, 0) ?? optionalArg(args, "--audit"));
   if (!Number.isInteger(auditId) || auditId <= 0) throw new Error("query-audit export requires <audit_id>");
@@ -7411,6 +7555,8 @@ async function queryAuditExport(args: string[]): Promise<number> {
 }
 
 async function receiptsList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "receipts list", (bridgeStorePath) => receiptsList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, receiptListAllowedOptions, "receipts list");
   const store = await openLocalStore(args);
   try {
@@ -7425,6 +7571,8 @@ async function receiptsList(args: string[]): Promise<number> {
 }
 
 async function receiptsShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "receipts show", (bridgeStorePath) => receiptsShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, showAllowedOptions, "receipts show");
   const receiptId = Number(positional(args, 0));
   if (!Number.isInteger(receiptId) || receiptId <= 0) throw new Error("receipts show requires <receipt_id>");
@@ -7441,6 +7589,8 @@ async function receiptsShow(args: string[]): Promise<number> {
 }
 
 async function replayList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay list", (bridgeStorePath) => replayList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayListAllowedOptions, "replay list");
   const store = await openLocalStore(args);
   try {
@@ -7467,6 +7617,8 @@ async function replayList(args: string[]): Promise<number> {
 }
 
 async function replayShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay show", (bridgeStorePath) => replayShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayShowAllowedOptions, "replay show");
   const store = await openLocalStore(args);
   try {
@@ -7487,6 +7639,8 @@ async function replayShow(args: string[]): Promise<number> {
 }
 
 async function replayExport(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay export", (bridgeStorePath) => replayExport(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayExportAllowedOptions, "replay export");
   const output = outputArg(args);
   if (!output) throw new Error("replay export requires --output <path>");
@@ -7506,6 +7660,8 @@ async function replayExport(args: string[]): Promise<number> {
 }
 
 async function activitySearch(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "activity search", (bridgeStorePath) => activitySearch(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, activitySearchAllowedOptions, "activity search");
   const store = await openLocalStore(args);
   try {
@@ -7763,6 +7919,10 @@ async function storeSharedPostgres(args: string[]): Promise<number> {
   if (subcommand === "status") return storeSharedPostgresStatus(rest);
   if (subcommand === "sync") return storeSharedPostgresSync(rest);
   if (subcommand === "restore") return storeSharedPostgresRestore(rest);
+  if (subcommand === "backup" || subcommand === "export") return storeSharedPostgresBackup(rest);
+  if (subcommand === "verify-backup") return storeSharedPostgresVerifyBackup(rest);
+  if (subcommand === "restore-backup") return storeSharedPostgresRestoreBackup(rest);
+  if (subcommand === "retention") return storeSharedPostgresRetention(rest);
   usage(["store"]);
   return 2;
 }
@@ -7770,7 +7930,7 @@ async function storeSharedPostgres(args: string[]): Promise<number> {
 async function storeSharedPostgresMigration(args: string[]): Promise<number> {
   assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres migration");
   const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
-  const sql = sharedPostgresLedgerMigration(schema);
+  const sql = sharedPostgresRuntimeStoreMigration(schema);
   if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify({ ok: true, engine: "postgres", schema, sql }, null, 2)}\n`);
   } else {
@@ -7788,7 +7948,7 @@ async function storeSharedPostgresApplyMigration(args: string[]): Promise<number
   if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
   const pool = createPostgresPool(databaseUrl);
   try {
-    await pool.query(sharedPostgresLedgerMigration(schema));
+    await pool.query(sharedPostgresRuntimeStoreMigration(schema));
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, engine: "postgres", schema, url_env: urlEnv }, null, 2)}\n`);
     else process.stdout.write(`shared Postgres ledger migration applied in schema ${schema} using ${urlEnv}\n`);
   } finally {
@@ -7816,7 +7976,7 @@ async function storeSharedPostgresStatus(args: string[]): Promise<number> {
   return 0;
 }
 
-const sharedPostgresLedgerTables = ["ledger_entries", "proposal_locks", "worker_leases"] as const;
+const sharedPostgresLedgerTables = ["ledger_entries", "proposal_locks", "worker_leases", "rate_limit_buckets"] as const;
 
 async function sharedPostgresLedgerTableCounts(
   pool: ReturnType<typeof createPostgresPool>,
@@ -7827,6 +7987,7 @@ async function sharedPostgresLedgerTableCounts(
     ledger_entries: null,
     proposal_locks: null,
     worker_leases: null,
+    rate_limit_buckets: null,
   };
   for (const table of sharedPostgresLedgerTables) {
     try {
@@ -7884,6 +8045,180 @@ async function storeSharedPostgresRestore(args: string[]): Promise<number> {
   return 0;
 }
 
+type SharedLedgerArchive = {
+  schema_version: "synapsor.shared-ledger-archive.v1";
+  created_at: string;
+  source: { engine: "postgres"; schema: string };
+  entries: SharedLedgerEntry[];
+  manifest: { entries: number; digest: `sha256:${string}` };
+};
+
+async function storeSharedPostgresBackup(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres backup");
+  const output = optionalArg(args, "--output");
+  if (!output) throw new Error("store shared-postgres backup requires --output <archive.json>");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const maxEntries = positiveIntOption(args, "--max-entries", 10_000, 100, 100_000);
+  const entries = await fetchSharedPostgresEntriesFromEnv(urlEnv, schema, maxEntries);
+  const archive = createSharedLedgerArchive(schema, entries);
+  const resolved = path.resolve(output);
+  await fs.mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 });
+  await fs.writeFile(resolved, `${JSON.stringify(archive, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  if (process.platform !== "win32") await fs.chmod(resolved, 0o600);
+  const payload = { ok: true, archive: resolved, entries: archive.manifest.entries, digest: archive.manifest.digest };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write(`shared Postgres ledger backup written: ${resolved}\nentries: ${archive.manifest.entries}\ndigest: ${archive.manifest.digest}\n`);
+  return 0;
+}
+
+async function storeSharedPostgresVerifyBackup(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres verify-backup");
+  const input = optionalArg(args, "--input");
+  if (!input) throw new Error("store shared-postgres verify-backup requires --input <archive.json>");
+  const archive = await readSharedLedgerArchive(input);
+  const payload = { ok: true, archive: path.resolve(input), entries: archive.manifest.entries, digest: archive.manifest.digest };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write(`shared ledger backup verified: ${payload.archive}\nentries: ${payload.entries}\ndigest: ${payload.digest}\n`);
+  return 0;
+}
+
+async function storeSharedPostgresRestoreBackup(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres restore-backup");
+  const input = optionalArg(args, "--input");
+  if (!input) throw new Error("store shared-postgres restore-backup requires --input <archive.json>");
+  if (!args.includes("--yes")) throw new Error("store shared-postgres restore-backup requires --yes and restores only into an empty ledger schema.");
+  const archive = await readSharedLedgerArchive(input);
+  const schema = optionalArg(args, "--schema") ?? archive.source.schema;
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const databaseUrl = envValue(urlEnv);
+  if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  try {
+    await pool.query(sharedPostgresRuntimeStoreMigration(schema));
+    const qualified = `${quoteSqlIdentifier(schema, "postgres")}.ledger_entries`;
+    const existing = await pool.query(`SELECT COUNT(*)::int AS count FROM ${qualified}`);
+    if (Number(existing.rows[0]?.count ?? 0) !== 0) throw new Error(`restore target ${schema}.ledger_entries is not empty`);
+    await pool.query("BEGIN");
+    try {
+      await upsertSharedPostgresEntries(pool, schema, archive.entries);
+      await pool.query("COMMIT");
+    } catch (error) {
+      await pool.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+    const restored = await fetchSharedPostgresLedgerEntries(pool, schema, archive.entries.length + 1);
+    const verified = createSharedLedgerArchive(schema, restored);
+    if (verified.manifest.digest !== archive.manifest.digest || restored.length !== archive.entries.length) {
+      throw new Error("restored shared ledger failed manifest verification");
+    }
+    const payload = { ok: true, schema, url_env: urlEnv, entries: restored.length, digest: archive.manifest.digest };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write(`shared ledger backup restored and verified in schema ${schema}\nentries: ${restored.length}\ndigest: ${archive.manifest.digest}\n`);
+    return 0;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function storeSharedPostgresRetention(args: string[]): Promise<number> {
+  assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres retention");
+  const olderThan = optionalArg(args, "--older-than");
+  if (!olderThan) throw new Error("store shared-postgres retention requires --older-than <duration>");
+  const dryRun = !args.includes("--yes");
+  if (!dryRun && args.includes("--dry-run")) throw new Error("store shared-postgres retention accepts either --dry-run or --yes, not both");
+  const output = optionalArg(args, "--output");
+  if (!dryRun && !output) throw new Error("store shared-postgres retention requires --output <archive.json> before --yes deletion");
+  const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
+  const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
+  const maxEntries = positiveIntOption(args, "--max-entries", 10_000, 100, 100_000);
+  const cutoff = cutoffFromOlderThan(olderThan);
+  const entries = await fetchSharedPostgresEntriesFromEnv(urlEnv, schema, maxEntries);
+  const store = new ProposalStore();
+  let archivedEntries: SharedLedgerEntry[];
+  let deleted: Record<string, number>;
+  try {
+    store.importSharedLedgerEntries(entries);
+    const before = new Map(store.sharedLedgerEntries().map((entry) => [entry.entry_key, entry]));
+    const result = store.pruneBefore(cutoff, { dryRun: false });
+    deleted = result.deleted;
+    const retained = new Set(store.sharedLedgerEntries().map((entry) => entry.entry_key));
+    archivedEntries = [...before.values()].filter((entry) => !retained.has(entry.entry_key));
+  } finally {
+    store.close();
+  }
+  if (dryRun) {
+    const payload = { ok: true, dry_run: true, schema, url_env: urlEnv, cutoff, archive_entries: archivedEntries.length, deleted };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write(`shared ledger retention dry-run\ncutoff: ${cutoff}\narchive entries: ${archivedEntries.length}\nno rows deleted\n`);
+    return 0;
+  }
+
+  const archive = createSharedLedgerArchive(schema, archivedEntries);
+  const archivePath = path.resolve(output!);
+  await fs.mkdir(path.dirname(archivePath), { recursive: true, mode: 0o700 });
+  await fs.writeFile(archivePath, `${JSON.stringify(archive, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  if (process.platform !== "win32") await fs.chmod(archivePath, 0o600);
+  await readSharedLedgerArchive(archivePath);
+
+  const databaseUrl = envValue(urlEnv);
+  if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  const qualified = `${quoteSqlIdentifier(schema, "postgres")}.ledger_entries`;
+  try {
+    await pool.query("BEGIN");
+    try {
+      if (archivedEntries.length > 0) {
+        await pool.query(`DELETE FROM ${qualified} WHERE entry_key = ANY($1::text[])`, [archivedEntries.map((entry) => entry.entry_key)]);
+      }
+      const retentionEntry: SharedLedgerEntry = {
+        entry_key: `retention:${crypto.randomUUID()}`,
+        kind: "retention_event",
+        payload: {
+          cutoff,
+          archive_digest: archive.manifest.digest,
+          archived_entries: archivedEntries.length,
+          deleted,
+        },
+        created_at: new Date().toISOString(),
+      };
+      await upsertSharedPostgresEntries(pool, schema, [retentionEntry]);
+      await pool.query("COMMIT");
+    } catch (error) {
+      await pool.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await pool.end();
+  }
+  const payload = { ok: true, dry_run: false, schema, url_env: urlEnv, cutoff, archive: archivePath, archive_entries: archivedEntries.length, archive_digest: archive.manifest.digest, deleted };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write(`shared ledger retention complete\narchive: ${archivePath}\ndigest: ${archive.manifest.digest}\narchived entries: ${archivedEntries.length}\n`);
+  return 0;
+}
+
+function createSharedLedgerArchive(schema: string, entries: SharedLedgerEntry[]): SharedLedgerArchive {
+  const body = {
+    schema_version: "synapsor.shared-ledger-archive.v1" as const,
+    created_at: new Date().toISOString(),
+    source: { engine: "postgres" as const, schema },
+    entries,
+  };
+  return { ...body, manifest: { entries: entries.length, digest: hashReceipt({ schema_version: body.schema_version, entries }) } };
+}
+
+async function readSharedLedgerArchive(input: string): Promise<SharedLedgerArchive> {
+  const parsed = JSON.parse(await fs.readFile(path.resolve(input), "utf8")) as unknown;
+  if (!isRecord(parsed) || parsed.schema_version !== "synapsor.shared-ledger-archive.v1" || !isRecord(parsed.source)
+    || parsed.source.engine !== "postgres" || typeof parsed.source.schema !== "string" || !Array.isArray(parsed.entries) || !isRecord(parsed.manifest)) {
+    throw new Error("invalid shared ledger backup envelope");
+  }
+  const entries = parsed.entries as SharedLedgerEntry[];
+  const digest = hashReceipt({ schema_version: parsed.schema_version, entries });
+  if (parsed.manifest.entries !== entries.length || parsed.manifest.digest !== digest) throw new Error("shared ledger backup manifest digest mismatch");
+  return parsed as SharedLedgerArchive;
+}
+
 function localSharedLedgerEntries(storePath: string): SharedLedgerEntry[] {
   const store = new ProposalStore(storePath);
   try {
@@ -7897,6 +8232,7 @@ type SharedPostgresLedgerMirror = {
   schema: string;
   urlEnv: string;
   lockTimeoutMs: number;
+  maxEntries: number;
 };
 
 type SharedPostgresLedgerClient = {
@@ -7945,7 +8281,7 @@ async function withSharedPostgresRuntimeStoreBridge<T>(
   const storePath = path.join(tempDir, "local.db");
   try {
     return await withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
-      const before = await restoreSharedPostgresToLocalStore({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+      const before = await restoreSharedPostgresToLocalStore({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv, maxEntries: mirror.maxEntries });
       operationalLog("info", "shared_runtime_store_restore", {
         command,
         schema: mirror.schema,
@@ -7964,7 +8300,7 @@ async function withSharedPostgresRuntimeStoreBridge<T>(
       }
 
       try {
-        const after = await syncLocalStoreToSharedPostgres({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+        const after = await syncLocalStoreToSharedPostgres({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv, maxEntries: mirror.maxEntries });
         operationalLog("info", "shared_runtime_store_sync", {
           command,
           schema: mirror.schema,
@@ -7992,6 +8328,50 @@ async function withSharedPostgresRuntimeStoreBridge<T>(
   }
 }
 
+async function withSharedPostgresRuntimeStoreReadBridge<T>(
+  args: string[],
+  config: RuntimeConfig,
+  command: string,
+  callback: (storePath: string) => Promise<T>,
+): Promise<T> {
+  const mirror = sharedPostgresLedgerMirrorOptions(args, config);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-runtime-store-read-"));
+  const storePath = path.join(tempDir, "local.db");
+  try {
+    return await withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
+      const restored = await restoreSharedPostgresToLocalStore({
+        storePath,
+        schema: mirror.schema,
+        urlEnv: mirror.urlEnv,
+        maxEntries: mirror.maxEntries,
+      });
+      operationalLog("info", "shared_runtime_store_read", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        entries: restored.entries,
+        imported: restored.imported,
+        skipped: restored.skipped,
+        source_database_changed: false,
+      });
+      return callback(storePath);
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function maybeSharedPostgresRuntimeStoreRead(
+  args: string[],
+  command: string,
+  callback: (storePath: string) => Promise<number>,
+): Promise<number | undefined> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (!config || !runtimeStoreBridgeRequired(args, config)) return undefined;
+  return withSharedPostgresRuntimeStoreReadBridge(args, config, command, callback);
+}
+
 function sharedPostgresLedgerMirrorRequested(args: string[], config?: RuntimeConfig): boolean {
   if (args.includes("--no-shared-ledger-mirror")) return false;
   return args.includes("--shared-ledger-mirror")
@@ -8015,6 +8395,7 @@ function sharedPostgresLedgerMirrorOptions(args: string[], config?: RuntimeConfi
       ?? optionalNonNegativeIntegerEnv("SYNAPSOR_SHARED_LEDGER_LOCK_TIMEOUT_MS")
       ?? configured?.lock_timeout_ms
       ?? 10_000,
+    maxEntries: configured?.max_entries ?? 10_000,
   };
 }
 
@@ -8047,7 +8428,7 @@ async function withSharedPostgresLedgerMirror<T>(
   }
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
   return withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
-    const before = await restoreSharedPostgresToLocalStore({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+    const before = await restoreSharedPostgresToLocalStore({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv, maxEntries: mirror.maxEntries });
     operationalLog("info", "shared_ledger_mirror_restore", {
       command,
       schema: mirror.schema,
@@ -8066,7 +8447,7 @@ async function withSharedPostgresLedgerMirror<T>(
     }
 
     try {
-      const after = await syncLocalStoreToSharedPostgres({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv });
+      const after = await syncLocalStoreToSharedPostgres({ storePath, schema: mirror.schema, urlEnv: mirror.urlEnv, maxEntries: mirror.maxEntries });
       operationalLog("info", "shared_ledger_mirror_sync", {
         command,
         schema: mirror.schema,
@@ -8159,48 +8540,28 @@ async function acquirePostgresAdvisoryLock(
   }
 }
 
-async function fetchSharedPostgresEntriesFromEnv(urlEnv: string, schema: string): Promise<SharedLedgerEntry[]> {
+async function fetchSharedPostgresEntriesFromEnv(urlEnv: string, schema: string, maxEntries = 10_000): Promise<SharedLedgerEntry[]> {
   const databaseUrl = envValue(urlEnv);
   if (!databaseUrl) throw new Error(`${urlEnv} is not set.`);
   const pool = createPostgresPool(databaseUrl);
   try {
-    return await fetchSharedPostgresLedgerEntries(pool, schema);
+    return await fetchSharedPostgresLedgerEntries(pool, schema, maxEntries);
   } finally {
     await pool.end();
   }
 }
 
-async function syncLocalStoreToSharedPostgres(input: { storePath: string; schema: string; urlEnv: string }): Promise<{ entries: number }> {
+async function syncLocalStoreToSharedPostgres(input: { storePath: string; schema: string; urlEnv: string; maxEntries?: number }): Promise<{ entries: number }> {
   const entries = localSharedLedgerEntries(input.storePath);
+  const maxEntries = input.maxEntries ?? 10_000;
+  if (entries.length > maxEntries) throw new Error(`shared Postgres ledger sync exceeds configured ${maxEntries}-entry safety bound`);
   const databaseUrl = envValue(input.urlEnv);
   if (!databaseUrl) throw new Error(`${input.urlEnv} is not set.`);
   const pool = createPostgresPool(databaseUrl);
-  const qualified = `${quoteSqlIdentifier(input.schema, "postgres")}.ledger_entries`;
   try {
     await pool.query("BEGIN");
-    await pool.query(sharedPostgresLedgerMigration(input.schema));
-    for (const entry of entries) {
-      await pool.query(
-        `INSERT INTO ${qualified} (entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at)
-VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
-ON CONFLICT (entry_key) DO UPDATE SET
-  kind = EXCLUDED.kind,
-  proposal_id = EXCLUDED.proposal_id,
-  tenant_id = EXCLUDED.tenant_id,
-  capability = EXCLUDED.capability,
-  payload_json = EXCLUDED.payload_json,
-  created_at = EXCLUDED.created_at`,
-        [
-          entry.entry_key,
-          entry.kind,
-          entry.proposal_id ?? null,
-          entry.tenant_id ?? null,
-          entry.capability ?? null,
-          JSON.stringify(entry.payload),
-          entry.created_at,
-        ],
-      );
-    }
+    await pool.query(sharedPostgresRuntimeStoreMigration(input.schema));
+    await upsertSharedPostgresEntries(pool, input.schema, entries);
     await pool.query("COMMIT");
     return { entries: entries.length };
   } catch (error) {
@@ -8211,11 +8572,13 @@ ON CONFLICT (entry_key) DO UPDATE SET
   }
 }
 
-async function restoreSharedPostgresToLocalStore(input: { storePath: string; schema: string; urlEnv: string; entries?: SharedLedgerEntry[] }): Promise<{ entries: number; imported: number; skipped: number }> {
+async function restoreSharedPostgresToLocalStore(input: { storePath: string; schema: string; urlEnv: string; entries?: SharedLedgerEntry[]; maxEntries?: number }): Promise<{ entries: number; imported: number; skipped: number }> {
   if (input.storePath !== ":memory:") {
     await fs.mkdir(path.dirname(path.resolve(input.storePath)), { recursive: true });
   }
-  const entries = input.entries ?? await fetchSharedPostgresEntriesFromEnv(input.urlEnv, input.schema);
+  const maxEntries = input.maxEntries ?? 10_000;
+  const entries = input.entries ?? await fetchSharedPostgresEntriesFromEnv(input.urlEnv, input.schema, maxEntries);
+  if (entries.length > maxEntries) throw new Error(`shared Postgres ledger restore exceeds configured ${maxEntries}-entry safety bound`);
   const store = new ProposalStore(input.storePath);
   try {
     const result = store.importSharedLedgerEntries(entries);
@@ -8225,13 +8588,15 @@ async function restoreSharedPostgresToLocalStore(input: { storePath: string; sch
   }
 }
 
-async function fetchSharedPostgresLedgerEntries(pool: ReturnType<typeof createPostgresPool>, schema: string): Promise<SharedLedgerEntry[]> {
+async function fetchSharedPostgresLedgerEntries(pool: ReturnType<typeof createPostgresPool>, schema: string, maxEntries = 10_000): Promise<SharedLedgerEntry[]> {
   const qualified = `${quoteSqlIdentifier(schema, "postgres")}.ledger_entries`;
   const result = await pool.query(`
     SELECT entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at::text AS created_at
     FROM ${qualified}
     ORDER BY entry_id ASC
-  `);
+    LIMIT $1
+  `, [maxEntries + 1]);
+  if (result.rows.length > maxEntries) throw new Error(`shared Postgres ledger exceeds configured ${maxEntries}-entry safety bound`);
   return result.rows.map((row) => {
     const rawPayload = row.payload_json;
     let payload: Record<string, unknown>;
@@ -8252,39 +8617,26 @@ async function fetchSharedPostgresLedgerEntries(pool: ReturnType<typeof createPo
   });
 }
 
-function sharedPostgresLedgerMigration(schema: string): string {
-  const s = quoteSqlIdentifier(schema, "postgres");
-  return [
-    `CREATE SCHEMA IF NOT EXISTS ${s};`,
-    `CREATE TABLE IF NOT EXISTS ${s}.ledger_entries (`,
-    "  entry_id bigserial PRIMARY KEY,",
-    "  entry_key text UNIQUE NOT NULL,",
-    "  kind text NOT NULL,",
-    "  proposal_id text,",
-    "  tenant_id text,",
-    "  capability text,",
-    "  payload_json jsonb NOT NULL,",
-    "  created_at timestamptz NOT NULL DEFAULT now()",
-    ");",
-    `CREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_proposal ON ${s}.ledger_entries(proposal_id, created_at);`,
-    `CREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_tenant_capability ON ${s}.ledger_entries(tenant_id, capability, created_at);`,
-    `CREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_kind_created ON ${s}.ledger_entries(kind, created_at);`,
-    `CREATE TABLE IF NOT EXISTS ${s}.proposal_locks (`,
-    "  proposal_id text PRIMARY KEY,",
-    "  proposal_hash text NOT NULL,",
-    "  state text NOT NULL,",
-    "  tenant_id text NOT NULL,",
-    "  capability text NOT NULL,",
-    "  updated_at timestamptz NOT NULL DEFAULT now()",
-    ");",
-    `CREATE TABLE IF NOT EXISTS ${s}.worker_leases (`,
-    "  proposal_id text PRIMARY KEY,",
-    "  worker_id text NOT NULL,",
-    "  lease_expires_at timestamptz NOT NULL,",
-    "  attempt integer NOT NULL DEFAULT 1,",
-    "  updated_at timestamptz NOT NULL DEFAULT now()",
-    ");",
-  ].join("\n");
+async function upsertSharedPostgresEntries(
+  pool: Pick<ReturnType<typeof createPostgresPool>, "query">,
+  schema: string,
+  entries: SharedLedgerEntry[],
+): Promise<void> {
+  const qualified = `${quoteSqlIdentifier(schema, "postgres")}.ledger_entries`;
+  for (const entry of entries) {
+    await pool.query(
+      `INSERT INTO ${qualified} (entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
+ON CONFLICT (entry_key) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  proposal_id = EXCLUDED.proposal_id,
+  tenant_id = EXCLUDED.tenant_id,
+  capability = EXCLUDED.capability,
+  payload_json = EXCLUDED.payload_json,
+  created_at = EXCLUDED.created_at`,
+      [entry.entry_key, entry.kind, entry.proposal_id ?? null, entry.tenant_id ?? null, entry.capability ?? null, JSON.stringify(entry.payload), entry.created_at],
+    );
+  }
 }
 
 function formatSharedPostgresStatus(payload: { ok: boolean; schema: string; url_env: string; tables: Record<string, number | null> }): string {
@@ -8299,7 +8651,7 @@ function formatSharedPostgresStatus(payload: { ok: boolean; schema: string; url_
   return `${lines.join("\n")}\n`;
 }
 
-const commonReadOptions = new Set(["--store", "--json", "--details", "--debug"]);
+const commonReadOptions = new Set(["--store", "--config", "--json", "--details", "--debug", runtimeStoreBridgeFlag]);
 const showAllowedOptions = new Set([...commonReadOptions]);
 const exportAllowedOptions = new Set([...commonReadOptions, "--output", "--out", "--format", "--evidence", "--audit"]);
 const proposalListAllowedOptions = new Set([
@@ -8422,7 +8774,7 @@ const storeStatsAllowedOptions = new Set([...commonReadOptions]);
 const storeVacuumAllowedOptions = new Set([...commonReadOptions]);
 const storePruneAllowedOptions = new Set([...commonReadOptions, "--older-than", "--dry-run", "--yes", "--force"]);
 const storeResetAllowedOptions = new Set([...commonReadOptions, "--yes", "--force"]);
-const storeSharedPostgresAllowedOptions = new Set(["--schema", "--url-env", "--store", "--dry-run", "--yes", "--json"]);
+const storeSharedPostgresAllowedOptions = new Set(["--schema", "--url-env", "--store", "--dry-run", "--yes", "--json", "--output", "--input", "--max-entries", "--older-than"]);
 
 function assertKnownOptions(args: string[], allowed: Set<string>, commandName: string): void {
   for (const arg of args) {
@@ -8571,11 +8923,19 @@ function queryAuditFiltersFromActivityArgs(args: string[], store?: ProposalStore
 }
 
 function receiptFiltersFromActivityArgs(args: string[], store?: ProposalStore): ReceiptSearchFilters {
+  const object = objectFilterFromArgs(args);
   const linkedProposal = linkedProposalFilter(args, store, { includeReceipt: false });
   return {
     receipt: optionalArg(args, "--receipt"),
     proposal: optionalArg(args, "--proposal") ?? linkedProposal,
     status: optionalArg(args, "--status") ?? optionalArg(args, "--state"),
+    tenant: optionalArg(args, "--tenant"),
+    principal: optionalArg(args, "--principal"),
+    capability: optionalArg(args, "--capability"),
+    objectType: optionalArg(args, "--object-type") ?? object.type,
+    objectId: optionalArg(args, "--object-id") ?? object.id,
+    source: optionalArg(args, "--source"),
+    table: optionalArg(args, "--table"),
     from: optionalArg(args, "--from"),
     to: optionalArg(args, "--to"),
     limit: limitFromArgs(args),
@@ -8765,10 +9125,11 @@ async function operatorIdentityForDecision(input: {
   config: RuntimeConfig | undefined;
   configPath: string;
   proposal: StoredProposal;
-  action: "approve" | "reject" | "apply";
+  action: "approve" | "reject" | "apply" | "worker_requeue" | "worker_discard";
   reason?: string;
 }) {
-  const requiredRole = input.action === "apply" ? undefined : input.proposal.change_set.approval.required_role;
+  const applyAuthorityAction = ["apply", "worker_requeue", "worker_discard"].includes(input.action);
+  const requiredRole = applyAuthorityAction ? undefined : input.proposal.change_set.approval.required_role;
   const identity = await resolveOperatorIdentity({
     config: input.config?.operator_identity as OperatorIdentityConfig | undefined,
     configPath: input.configPath,
@@ -8781,7 +9142,7 @@ async function operatorIdentityForDecision(input: {
     requiredRole,
   });
   const applyRoles = input.config?.operator_identity?.apply_roles ?? [];
-  if (input.action === "apply" && applyRoles.length > 0 && !applyRoles.some((role) => identity.roles.includes(role))) {
+  if (applyAuthorityAction && applyRoles.length > 0 && !applyRoles.some((role) => identity.roles.includes(role))) {
     throw new Error(`operator ${identity.subject} lacks an apply role; requires one of: ${applyRoles.join(", ")}`);
   }
   return identity;
@@ -9684,10 +10045,16 @@ function activityFromReceipt(receipt: StoredWritebackReceipt): Record<string, un
   return {
     kind: "receipt",
     created_at: receipt.created_at,
+    capability: receipt.capability,
+    tenant: receipt.tenant_id,
+    principal: receipt.principal,
+    object: receipt.business_object && receipt.object_id ? `${receipt.business_object}:${receipt.object_id}` : undefined,
     proposal: receipt.proposal_id,
     receipt: receipt.receipt_id,
     status: receipt.status,
     replay: `replay_${receipt.proposal_id}`,
+    source: receipt.source_id,
+    table: receipt.source_table,
     source_database_mutated: receipt.source_database_mutated,
   };
 }
@@ -10645,6 +11012,10 @@ reviewed capability. No database credentials or business-row values are emitted.
   ${cmd} worker run --once --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
   ${cmd} worker run --yes --config ./synapsor.runner.json
   ${cmd} worker status --store ./.synapsor/local.db [--status dead_letter] [--json]
+  ${cmd} worker dead-letter list --config ./synapsor.runner.json
+  ${cmd} worker dead-letter show wrp_... --config ./synapsor.runner.json
+  ${cmd} worker dead-letter requeue wrp_... --retry-budget 3 --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
+  ${cmd} worker dead-letter discard wrp_... --reason "closed by operator" --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
 
 Run a supervised local writeback worker over approved proposals. Queue claims
 use leases, transient failures use bounded exponential retries, terminal or
@@ -10656,6 +11027,9 @@ Shared-ledger mirror mode is only allowed for finite worker runs (--once or
 run. With storage.shared_postgres.mode=runtime_store, worker runs use repeated
 bounded drain cycles through the Postgres-backed bridge and release the advisory
 lock while idle, so multiple workers can share one runtime ledger safely.
+Dead-letter requeue and discard require verified operator identity, preserve all
+receipts/events, and refuse requeue when a durable receipt already proves the
+database effect completed.
 `,
     store: `Usage:
   ${cmd} store stats --store ./.synapsor/local.db
@@ -10669,9 +11043,17 @@ lock while idle, so multiple workers can share one runtime ledger safely.
   ${cmd} store shared-postgres status --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner
   ${cmd} store shared-postgres sync --store ./.synapsor/local.db --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --yes
   ${cmd} store shared-postgres restore --store ./.synapsor/restored.db --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --yes
+  ${cmd} store shared-postgres backup --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --output ./ledger-backup.json
+  ${cmd} store shared-postgres verify-backup --input ./ledger-backup.json
+  ${cmd} store shared-postgres restore-backup --input ./ledger-backup.json --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner_restore --yes
+  ${cmd} store shared-postgres retention --older-than 30d --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --dry-run
+  ${cmd} store shared-postgres retention --older-than 30d --output ./ledger-archive.json --url-env SYNAPSOR_LEDGER_DATABASE_URL --schema synapsor_runner --yes
 
 Local store maintenance only. Prune defaults to dry-run and reset requires --yes. These commands never touch your source Postgres/MySQL database. Destructive operations refuse while an active server lease exists unless --force is provided.
 Shared Postgres commands create, inspect, sync, and restore the schema used by a shared ledger deployment; they never print the database URL.
+Backups include a manifest digest. Retention archives terminal proposal graphs
+before deletion and never removes pending review, approved, pending-worker,
+failed/retry, or dead-letter records.
 	`,
 	    demo: `Usage:
 	  ${cmd} demo [--force]

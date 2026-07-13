@@ -39,6 +39,7 @@ export type AgentDslCapabilityAst = {
     numericBounds?: Record<string, { minimum?: number; maximum?: number }>;
     transitionGuards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
     approvalRole?: string;
+    requiredApprovals?: number;
     autoApprovalRules?: Array<{ field: string; max: number; line: number }>;
     autoApprovalLimits?: Array<{
       kind: "count" | "total";
@@ -161,8 +162,17 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
         ...(capability.proposal.transitionGuards ? { transition_guards: capability.proposal.transitionGuards } : {}),
         conflict_guard: capability.conflictKey ? { column: capability.conflictKey } : { weak_guard_ack: true },
         approval: autoApprovalPolicyName
-          ? { mode: "policy", required_role: capability.proposal.approvalRole ?? "local_reviewer", policy: autoApprovalPolicyName }
-          : { mode: "human", required_role: capability.proposal.approvalRole ?? "local_reviewer" },
+          ? {
+            mode: "policy",
+            required_role: capability.proposal.approvalRole ?? "local_reviewer",
+            ...(capability.proposal.requiredApprovals ? { required_approvals: capability.proposal.requiredApprovals } : {}),
+            policy: autoApprovalPolicyName,
+          }
+          : {
+            mode: "human",
+            required_role: capability.proposal.approvalRole ?? "local_reviewer",
+            ...(capability.proposal.requiredApprovals ? { required_approvals: capability.proposal.requiredApprovals } : {}),
+          },
         writeback: {
           mode: capability.proposal.writebackMode ?? "direct_sql",
           ...(capability.proposal.executor ? { executor: capability.proposal.executor } : {}),
@@ -405,6 +415,16 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     if (approval?.[1]) {
       ensureProposal(capability, item);
       capability.proposal.approvalRole = approval[1];
+      continue;
+    }
+    const approvalQuorum = item.text.match(/^REQUIRE\s+(\d+)\s+APPROVALS$/i);
+    if (approvalQuorum?.[1]) {
+      ensureProposal(capability, item);
+      const requiredApprovals = Number(approvalQuorum[1]);
+      if (!Number.isSafeInteger(requiredApprovals) || requiredApprovals < 1 || requiredApprovals > 10) {
+        throw dslError(item.line, 1, "INVALID_REQUIRED_APPROVALS", "REQUIRE N APPROVALS supports a small-team quorum from 1 through 10");
+      }
+      capability.proposal.requiredApprovals = requiredApprovals;
       continue;
     }
     const autoApproval = item.text.match(/^AUTO\s+APPROVE\s+WHEN\s+(.+)$/i);

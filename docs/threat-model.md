@@ -12,6 +12,10 @@ Runner is designed to protect the model-facing database boundary:
   tools;
 - trusted tenant/principal context comes from config/session/env values, not
   model arguments;
+- an HTTP-claims server rejects any capability whose effective contract
+  context resolves tenant/principal from environment or static values;
+- asymmetric sessions verify an explicit RS256/ES256 allowlist, issuer,
+  audience, time bounds, and `kid` against bounded public-key/JWKS inputs;
 - proposal tools save a proposed change without mutating the source database;
 - direct writeback enforces primary key, tenant/scope, allowed columns,
   expected-version/conflict guard, affected-row count, idempotency, and
@@ -19,6 +23,8 @@ Runner is designed to protect the model-facing database boundary:
 - app-owned executors are called only after approval outside MCP;
 - local evidence, query audit, proposal, receipt, and replay records are
   inspectable without rerunning side effects.
+- shared-ledger mutations, reviewer decisions, worker claims, and fleet-wide
+  rate buckets are serialized/atomic within one configured Postgres schema.
 
 ## Main Threats Addressed
 
@@ -28,6 +34,32 @@ Runner is designed to protect the model-facing database boundary:
 - A retry could duplicate a write without an idempotency key.
 - A developer accidentally exposes approval or commit tools to the MCP client.
 - A reviewer needs evidence/replay for what was read and proposed.
+- A valid JWT session could otherwise execute an environment-bound contract
+  under another tenant.
+- Concurrent Runners could otherwise create duplicate proposals, lose an
+  approval, exceed a process-local rate limit, or duplicate a recovered write.
+- A compromised/redirecting JWKS endpoint could supply unexpected key material.
+- Metrics, readiness errors, archives, or dead-letter operations could leak
+  credentials or high-cardinality business identifiers.
+
+## Fleet Trust Boundaries
+
+- The TLS load balancer and configured identity issuer are trusted to deliver
+  the original bearer token without inventing tenant headers.
+- A configured JWKS URL is an operator-controlled network trust decision.
+  Runner bounds timeout/size/cache/cooldown, refuses redirects, uses `kid`, and
+  rejects private JWK fields, but operators must still allowlist the host and
+  protect DNS/egress.
+- `/healthz` proves only process liveness. `/readyz` reports safe component
+  codes and does not authorize traffic by itself.
+- `/metrics` uses separate authorization on non-loopback binds. MCP authority
+  does not imply metrics authority.
+- The shared Postgres role can read/write sensitive review artifacts. Protect
+  it like a database credential and restrict it to one ledger schema.
+- The bounded runtime-store bridge serializes operations and copies at most
+  `max_entries`; capacity exhaustion fails closed.
+- Verified reviewer identity proves possession of a registered key or a valid
+  asymmetric operator token. `dev_env` is unverified and not production-safe.
 
 ## Non-Goals
 
@@ -37,7 +69,9 @@ Runner does not claim to solve:
 - malicious MCP hosts or compromised local machines;
 - stolen database credentials;
 - bugs in app-owned handler business logic;
-- production HA, compliance certification, SOC 2, or SLA;
+- multi-region/high-throughput HA, compliance certification, SOC 2, or SLA;
+- IdP compromise, malicious administrator-approved contracts, or compromised
+  ledger/source database servers;
 - physical branching of external Postgres/MySQL;
 - generic safe execution of arbitrary SQL, DDL, INSERT, DELETE, UPSERT, or
   multi-row writes.

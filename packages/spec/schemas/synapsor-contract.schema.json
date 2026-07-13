@@ -227,6 +227,7 @@
           "properties": {
             "mode": { "enum": ["human", "operator", "policy"] },
             "required_role": { "type": "string" },
+            "required_approvals": { "type": "integer", "minimum": 1, "maximum": 10 },
             "policy": { "$ref": "#/$defs/qualifiedOrSafeName" }
           }
         },

@@ -1,0 +1,16 @@
+.git
+.github
+.synapsor
+**/.synapsor
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.turbo
+**/*.tsbuildinfo
+*.tgz
+.env
+.env.*
+!.env.example
+docs/launch/out
+tmp

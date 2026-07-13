@@ -17,7 +17,14 @@ export type LocalUiOptions = {
   csrfToken?: string;
   allowRemoteBind?: boolean;
   tour?: boolean;
+  storeAccess?: LocalUiStoreAccess;
 };
+
+export type LocalUiStoreAccess = <T>(
+  mode: "read" | "write",
+  operation: string,
+  callback: (store: ProposalStore) => T,
+) => Promise<T>;
 
 export type LocalUiServer = {
   server: Server;
@@ -38,10 +45,11 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const storePath = path.resolve(options.storePath ?? "./.synapsor/local.db");
   const token = options.token ?? crypto.randomBytes(24).toString("base64url");
   const csrfToken = options.csrfToken ?? crypto.randomBytes(24).toString("base64url");
+  const storeAccess = options.storeAccess ?? localStoreAccess(storePath);
 
   const server = createServer(async (request, response) => {
     try {
-      await handleRequest({ request, response, configPath, storePath, token, csrfToken, tour: options.tour === true });
+      await handleRequest({ request, response, configPath, storePath, storeAccess, token, csrfToken, tour: options.tour === true });
     } catch (error) {
       sendJson(response, 500, {
         ok: false,
@@ -82,11 +90,12 @@ async function handleRequest(input: {
   response: ServerResponse;
   configPath: string;
   storePath: string;
+  storeAccess: LocalUiStoreAccess;
   token: string;
   csrfToken: string;
   tour: boolean;
 }): Promise<void> {
-  const { request, response, configPath, storePath, token, csrfToken, tour } = input;
+  const { request, response, configPath, storePath, storeAccess, token, csrfToken, tour } = input;
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
   if (!hasValidSessionToken(request, url, token)) {
     sendJson(response, 401, { ok: false, error: "local UI session token required" });
@@ -113,7 +122,7 @@ async function handleRequest(input: {
 
   if (request.method === "GET" && url.pathname === "/api/proposals") {
     const state = url.searchParams.get("state") as LocalProposalState | null;
-    withStore(storePath, (store) => {
+    await storeAccess("read", "proposals-list", (store) => {
       const proposals = store.listProposals(state ?? undefined).map((proposal) => summarizeProposal(proposal));
       sendJson(response, 200, { ok: true, proposals });
     });
@@ -123,11 +132,12 @@ async function handleRequest(input: {
   const proposalDetailMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)$/);
   if (request.method === "GET" && proposalDetailMatch) {
     const proposalId = decodeURIComponent(proposalDetailMatch[1] ?? "");
-    withStore(storePath, (store) => {
+    await storeAccess("read", "proposal-show", (store) => {
       const proposal = requireProposal(store, proposalId);
       sendJson(response, 200, {
         ok: true,
         proposal,
+        approval_progress: store.approvalProgress(proposalId),
         review_view: proposalReviewView(proposal),
         events: store.events(proposalId),
         receipts: store.receipts(proposalId),
@@ -150,7 +160,7 @@ async function handleRequest(input: {
     const proposalId = decodeURIComponent(approveMatch[1] ?? "");
     const body = await readJsonBody(request);
     if (body.confirm !== "approve") throw new Error("approval requires confirm=approve");
-    withStore(storePath, (store) => {
+    await storeAccess("write", "proposal-approve", (store) => {
       const proposal = requireProposal(store, proposalId);
       const updated = store.approveProposal(proposalId, {
         approver: stringOrDefault(body.actor, "local_reviewer"),
@@ -158,7 +168,7 @@ async function handleRequest(input: {
         proposal_version: proposal.proposal_version,
         reason: typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : undefined,
       });
-      sendJson(response, 200, { ok: true, proposal: updated });
+      sendJson(response, 200, { ok: true, proposal: updated, approval_progress: store.approvalProgress(proposalId) });
     });
     return;
   }
@@ -178,7 +188,7 @@ async function handleRequest(input: {
     if (body.confirm !== "reject") throw new Error("rejection requires confirm=reject");
     const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : "";
     if (!reason) throw new Error("rejection requires a reason");
-    withStore(storePath, (store) => {
+    await storeAccess("write", "proposal-reject", (store) => {
       const proposal = requireProposal(store, proposalId);
       const updated = store.rejectProposal(proposalId, {
         actor: stringOrDefault(body.actor, "local_reviewer"),
@@ -194,7 +204,7 @@ async function handleRequest(input: {
   const replayMatch = url.pathname.match(/^\/api\/replay\/([^/]+)$/);
   if (request.method === "GET" && replayMatch) {
     const proposalId = decodeURIComponent(replayMatch[1] ?? "");
-    withStore(storePath, (store) => {
+    await storeAccess("read", "replay-show", (store) => {
       sendJson(response, 200, { ok: true, replay: store.replay(proposalId) });
     });
     return;
@@ -212,7 +222,7 @@ async function readRunnerConfig(configPath: string): Promise<JsonRecord> {
 
 async function signedIdentityRequired(configPath: string): Promise<boolean> {
   const config = await readRunnerConfig(configPath);
-  return isRecord(config.operator_identity) && config.operator_identity.provider === "signed_key";
+  return isRecord(config.operator_identity) && ["signed_key", "jwt_oidc"].includes(String(config.operator_identity.provider));
 }
 
 function buildSummary(config: JsonRecord, configPath: string, storePath: string): JsonRecord {
@@ -366,13 +376,15 @@ function contextValuesForCapability(config: JsonRecord, capability: JsonRecord):
   return asRecord(asRecord(config.trusted_context).values) ?? config.trusted_context;
 }
 
-function withStore<T>(storePath: string, fn: (store: ProposalStore) => T): T {
-  const store = new ProposalStore(storePath);
-  try {
-    return fn(store);
-  } finally {
-    store.close();
-  }
+function localStoreAccess(storePath: string): LocalUiStoreAccess {
+  return async <T>(_mode: "read" | "write", _operation: string, callback: (store: ProposalStore) => T): Promise<T> => {
+    const store = new ProposalStore(storePath);
+    try {
+      return callback(store);
+    } finally {
+      store.close();
+    }
+  };
 }
 
 function requireProposal(store: ProposalStore, proposalId: string): StoredProposal {
@@ -740,6 +752,7 @@ function buildStory(payload) {
   const find = (k) => events.find((e) => e.kind === k);
   const principalId = (cs.principal && cs.principal.id) || "the agent";
   const requiredRole = (cs.approval && cs.approval.required_role) || "a reviewer";
+  const approvalProgress = payload.approval_progress || { approved: 0, required: 1, remaining: 1, complete: false };
   const story = el("div", { class: "story" });
 
   // 1. Agent requested a change
@@ -775,7 +788,12 @@ function buildStory(payload) {
   ]));
 
   // 5. Approval boundary
-  const approveBody = [el("div", { class: "callout", text: "Approval happened outside MCP. The model did not get approve or commit tools." })];
+  const approveBody = [
+    el("div", { class: "callout", text: "Approval happened outside MCP. The model did not get approve or commit tools." }),
+    el("div", { class: "kv" }, [
+      el("dt", { text: "Approval progress" }), el("dd", { text: approvalProgress.approved + "/" + approvalProgress.required }),
+    ]),
+  ];
   const approvedEv = find("proposal_approved");
   const rejectedEv = find("proposal_rejected");
   if (stateVal === "pending_review") {

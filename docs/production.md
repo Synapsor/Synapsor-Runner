@@ -14,10 +14,36 @@ MCP agent
 -> receipt/replay
 ```
 
-Use this only for bounded database workflows where you can accept a single-node
-local ledger and local/operator approval. Use Synapsor Cloud when you need HA,
-central audit, RBAC/SSO, multi-reviewer approvals, hosted retention, managed
-runners, policy packs, or production support/SLA.
+Use this only for bounded database workflows using either the default
+single-node SQLite ledger or the tested, serialized small-fleet Postgres
+runtime store. Use Synapsor Cloud when you need a managed fleet, hosted central
+audit, organization administration, SSO/SCIM, compliance retention, or a
+production support/SLA. See [Running A Small Runner
+Fleet](running-a-runner-fleet.md) for the exact OSS fleet guarantees and limits.
+
+## Audit The Agent-Facing Surface First
+
+Before configuring writeback or connecting a production-like database, audit
+the MCP tools the agent can see. Start with Runner's built-in risky database MCP
+example:
+
+```bash
+npx -y @synapsor/runner audit --example dangerous-db-mcp
+```
+
+Then audit the actual manifest, remote MCP endpoint, or stdio server you intend
+to expose:
+
+```bash
+synapsor-runner audit ./tools-list.json
+synapsor-runner audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN
+synapsor-runner audit 'stdio:node ./server.mjs'
+```
+
+Audit is a static risk review, not proof that an MCP server is secure. Treat
+generic SQL/query tools, model-controlled tenant or principal fields, and
+model-facing approval/apply tools as deployment blockers. See [MCP
+Audit](mcp-audit.md) for supported inputs, findings, and machine-readable output.
 
 ## Supported Scope
 
@@ -27,6 +53,11 @@ Production-candidate OSS scope:
 - trusted context from environment/session values, not model arguments;
 - local SQLite ledger for evidence, query audit, proposals, receipts, replay,
   and lifecycle events;
+- bounded shared Postgres runtime ledger for several claim-bound HTTP Runner
+  instances and verified reviewers;
+- asymmetric RS256/ES256 session authentication, readiness probes, separately
+  protected metrics, source pools, and fleet-wide rate limits;
+- distinct-reviewer approval quorum from the canonical contract;
 - direct guarded single-row `UPDATE` for simple approved edits;
 - app-owned `http_handler` or `command_handler` executors for richer approved
   business transactions;
@@ -37,8 +68,8 @@ Out of scope:
 - raw `execute_sql` or model-generated SQL;
 - generic direct `INSERT`, `DELETE`, `UPSERT`, DDL, or multi-row SQL writeback;
 - physical branching of external Postgres/MySQL;
-- workflow DAGs, auto-merge/settlement, RBAC/SSO, HA ledger, or compliance
-  retention;
+- workflow DAGs, auto-merge/settlement, hosted team administration, SSO/SCIM,
+  multi-region ledger replication, or compliance retention;
 - making prompt injection impossible.
 
 ## Database Roles
@@ -213,7 +244,8 @@ Mirror mode config:
       "mode": "mirror",
       "url_env": "SYNAPSOR_LEDGER_DATABASE_URL",
       "schema": "synapsor_runner",
-      "lock_timeout_ms": 10000
+      "lock_timeout_ms": 10000,
+      "max_entries": 10000
     }
   }
 }
@@ -241,7 +273,8 @@ synapsor-runner apply --all-approved --yes \
 
 When `storage.shared_postgres.mode` is `mirror`, `doctor` checks that the
 ledger URL environment variable is present and that `ledger_entries`,
-`proposal_locks`, and `worker_leases` exist in the configured schema. It reports
+`proposal_locks`, `worker_leases`, and `rate_limit_buckets` exist in the
+configured schema. It reports
 environment variable names and table readiness only; it does not print database
 URLs or initialize the schema.
 
@@ -285,6 +318,13 @@ mutation, then syncs the resulting ledger entries back to Postgres. A
 long-running `worker run --yes` repeats bounded drain cycles under that lock
 and sleeps between idle polls, so multiple workers can share one Postgres ledger
 without holding the lock while idle.
+
+The current bridge loads a bounded snapshot and serializes each mutation. It
+fails closed above `max_entries`; it is not an unbounded scalable database
+engine. `proposals`, `evidence`, `query-audit`, `receipts`, `replay`,
+`activity`, `metrics`, worker status, and the local UI can read the same shared
+queue with `--config`. Back up, verify, restore, and archive-before-retention
+with the commands in [Running A Small Runner Fleet](running-a-runner-fleet.md).
 
 For unattended policy-approved queues, declare reviewed aggregate `LIMIT`
 clauses first, then use the explicit batch command:
@@ -426,6 +466,8 @@ synapsor-runner config validate --config synapsor.runner.json
 synapsor-runner doctor --config synapsor.runner.json --report --redact --output synapsor-doctor.md
 synapsor-runner doctor --config synapsor.runner.json --check-writeback
 synapsor-runner tools preview --config synapsor.runner.json --store ./.synapsor/local.db
+curl --fail http://127.0.0.1:8766/healthz
+curl --fail http://127.0.0.1:8766/readyz
 ```
 
 Doctor reports should be redacted by default before sharing. They must not

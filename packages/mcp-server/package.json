@@ -13,10 +13,11 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@synapsor-runner/config": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
-    "@synapsor-runner/proposal-store": "workspace:*",
     "@synapsor-runner/postgres": "workspace:*",
+    "@synapsor-runner/proposal-store": "workspace:*",
     "@synapsor-runner/protocol": "workspace:*",
     "@synapsor/spec": "workspace:*",
+    "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0",
     "zod": "^3.25.0"

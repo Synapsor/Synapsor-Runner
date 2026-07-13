@@ -1,6 +1,29 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (prepared, not published)
+
+### Fleet Safety And Operations
+
+- Fails closed when claim-authenticated HTTP serving resolves an
+  environment/static contract context, and fixes object-filtered activity so
+  unrelated receipts cannot enter results.
+- Adds RS256/ES256 session and operator JWT verification with bounded JWKS or
+  public-PEM loading, plus verified operator attestations without bearer-token
+  persistence.
+- Adds dependency-aware `/readyz`, separately protected `/metrics`, reusable
+  bounded Postgres/MySQL pools, and trusted tenant/capability fixed-window rate
+  limits that are atomic in shared runtime-store mode.
+- Adds optional canonical `required_approvals` and DSL `REQUIRE n APPROVALS`,
+  distinct-reviewer enforcement, `n/N` progress, terminal rejection, and
+  policy-auto-approval deferral for multi-human quorum.
+- Hardens shared Postgres migration startup, bounds the transient bridge with
+  `max_entries`, makes CLI/UI reviewers read the shared queue, and fixes nested
+  worker/apply bridge locking.
+- Adds verified dead-letter list/show/requeue/discard, shared-ledger
+  backup/digest/restore, archive-before-retention, and a repeatable two-Runner
+  kill/recovery test over synthetic Postgres/MySQL.
+- Stages `@synapsor/spec@1.1.0`, `@synapsor/dsl@1.1.0`, and
+  `@synapsor/runner@1.1.0`. Nothing is published by this change.
 
 ## 1.0.0
 

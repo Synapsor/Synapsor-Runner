@@ -1,6 +1,7 @@
 # Limitations
 
-Synapsor Runner is intentionally narrow in the current alpha.
+Synapsor Runner is intentionally narrow. Version 1.1 adds a bounded small-fleet
+shape; it does not claim Synapsor Cloud scale or an enterprise SLA.
 
 ## Supported
 
@@ -8,7 +9,13 @@ Synapsor Runner is intentionally narrow in the current alpha.
 - Local read and proposal tools.
 - Local SQLite evidence/proposal/query-audit/replay store by default.
 - Optional shared Postgres proposal/evidence/replay runtime store for MCP serving.
-- Human approval through CLI commands.
+- Asymmetric claim-bound Streamable HTTP sessions and explicit readiness.
+- Native Postgres/MySQL source pools and operational/fleet-wide rate limits.
+- Verified operator approval through CLI, optional distinct-reviewer quorum,
+  and shared local review UI reads.
+- Separately protected scrapeable metrics and dead-letter recovery commands.
+- Shared-ledger backup/digest verification, clean restore, and
+  archive-before-retention.
 - Public protocol objects:
   - `synapsor.change-set.v1`
   - `synapsor.writeback-job.v1`
@@ -56,7 +63,8 @@ truth for the model-facing tools.
 - Model-callable approval or commit tools.
 - Generic MCP firewall behavior.
 - Prompt-injection prevention.
-- High availability, SLA, compliance certification, or production support guarantee.
+- Unbounded/high-throughput or multi-region ledger scale.
+- Managed fleet, SLA, compliance certification, or production support guarantee.
 
 ## Important External Database Semantics
 
@@ -78,9 +86,15 @@ It does not mean external Postgres/MySQL time travel. Runner cannot reconstruct
 arbitrary historical rows that were never captured as evidence, and it does not
 provide `AS OF` queries over an external source.
 
-Local search is single-node SQLite search over the local runner store. It is
-useful for local/dev/staging usage. It is not a hosted central evidence ledger,
-not cross-runner aggregation, not RBAC/SSO, and not compliance retention.
+Local search uses SQLite by default. In `runtime_store` mode, CLI/UI reads can
+inspect one bounded shared Postgres ledger across a small fleet. This is still
+not a hosted central evidence service, organization RBAC/SSO, compliance
+retention system, or unbounded search engine. Each bridge operation serializes
+through an advisory lock and fails above configured `max_entries`.
+
+Only homogeneous 1.1 fleet operation is currently verified. Mixed 1.0/1.1
+rolling operation is not claimed. See [Running A Small Runner
+Fleet](running-a-runner-fleet.md).
 
 Use this wording:
 
