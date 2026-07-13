@@ -447,6 +447,7 @@ async function verifyPoolPressure(engine, databaseUrl, table, invoiceId) {
   const config = {
     version: 1,
     mode: "read_only",
+    result_format: 2,
     sources: {
       source: {
         engine,
@@ -478,12 +479,15 @@ async function verifyPoolPressure(engine, databaseUrl, table, invoiceId) {
   try {
     await runtime.callTool(`fleet.inspect_${engine}_pool`, { invoice_id: invoiceId });
     const results = await Promise.allSettled(Array.from({ length: 3 }, () => runtime.callTool(`fleet.inspect_${engine}_pool`, { invoice_id: invoiceId })));
-    const codes = results.map((result) => result.status === "fulfilled"
-      ? result.value.code ?? result.value.status
-      : result.reason?.code ?? "UNCLASSIFIED");
-    assert(codes.filter((code) => code === "ok").length === 1, `${engine} pool should run one request at a time`, codes);
-    assert(codes.some((code) => code === "SOURCE_POOL_TIMEOUT"), `${engine} pool should time out bounded queued work`, codes);
-    assert(codes.some((code) => code === "SOURCE_POOL_QUEUE_FULL"), `${engine} pool should reject excess queue work`, codes);
+    const values = results.map((result) => result.status === "fulfilled"
+      ? result.value
+      : { ok: false, error: { code: result.reason?.code ?? "UNCLASSIFIED", retryable: false } });
+    assert(values.filter((value) => value.ok === true).length === 1, `${engine} pool should run one request at a time`, values);
+    const unavailable = values.filter((value) => value.error?.code === "TEMPORARILY_UNAVAILABLE");
+    assert(unavailable.length === 2 && unavailable.every((value) => value.error.retryable === true && Number(value.error.retry_after_ms) > 0),
+      `${engine} pool pressure should return bounded retryable unavailable envelopes`, values);
+    assert(JSON.stringify(values).match(/SOURCE_POOL_QUEUE_FULL|SOURCE_POOL_TIMEOUT|postgres(?:ql)?:\/\/|mysql:\/\//i) === null,
+      `${engine} pool pressure leaked internal codes or connection details to the model-facing envelope`, values);
   } finally {
     await runtime.close();
   }
@@ -642,6 +646,37 @@ async function main() {
     const replay = parseCliJson(runner(["replay", "show", created.proposal_id, "--config", configPath, "--json"]));
     assert(replay.proposal?.proposal_id === created.proposal_id, "shared replay command did not read the fleet ledger", replay);
 
+    console.log("== prove shared runtime-store batch apply preserves one authoritative bridge ==");
+    const batchProposals = await Promise.all([
+      proposalFrom(acmeB.client, "billing.propose_late_fee_waiver", "INV-BATCH-A", "shared batch apply a"),
+      proposalFrom(acmeB.client, "billing.propose_late_fee_waiver", "INV-BATCH-B", "shared batch apply b"),
+    ]);
+    assert(batchProposals.every((proposal) => proposal.status === "review_required"), "shared batch proposals were not created", batchProposals);
+    for (const proposal of batchProposals) {
+      await approve(configPath, proposal.proposal_id, alice);
+      const approved = await approve(configPath, proposal.proposal_id, bob);
+      assert(approved.proposal?.state === "approved", "shared batch proposal did not reach approved state", approved);
+    }
+    const batchApplied = parseCliJson(runner([
+      "apply", "--all-approved", "--yes", "--json",
+      "--config", configPath,
+      "--tenant", "acme",
+      "--capability", "billing.propose_late_fee_waiver",
+      "--max", "2",
+      "--identity", alice.name,
+      "--identity-key", alice.privatePath,
+    ]));
+    assert(batchApplied.selected === 2 && batchApplied.applied === 2 && batchApplied.conflict === 0 && batchApplied.skipped === 0,
+      "shared runtime-store batch apply did not apply every selected proposal", batchApplied);
+    const batchRows = await pool.query("SELECT id, late_fee_cents FROM public.invoices WHERE id IN ('INV-BATCH-A', 'INV-BATCH-B') ORDER BY id");
+    assert(batchRows.rows.length === 2 && batchRows.rows.every((row) => Number(row.late_fee_cents) === 0),
+      "shared runtime-store batch apply did not produce both guarded database effects", batchRows.rows);
+    for (const proposal of batchProposals) {
+      const state = parseCliJson(runner(["proposals", "show", proposal.proposal_id, "--config", configPath, "--json"]));
+      assert(state.proposal?.state === "applied" && state.receipts?.length === 1,
+        "shared runtime-store batch result was not durable in the authoritative ledger", state);
+    }
+
     console.log("== prove concurrent reviewers preserve both quorum decisions ==");
     const quorumRace = await proposalFrom(acmeB.client, "billing.propose_late_fee_waiver", "INV-QUORUM-RACE", "concurrent reviewer decisions");
     assert(quorumRace.status === "review_required", "concurrent quorum proposal was not created", quorumRace);
@@ -752,6 +787,7 @@ async function main() {
   console.log("- two claim-bound Runners shared one bounded Postgres ledger");
   console.log("- tenant isolation, fleet-wide rate limits, and one-active-proposal locking held");
   console.log("- two-person quorum blocked early apply; concurrent reviewer decisions were preserved");
+  console.log("- shared runtime-store batch apply committed every selected proposal through one authoritative bridge");
   console.log("- competing workers produced one effect; termination before, during, and after commit recovered safely");
   console.log("- readiness failed for source, read-only ledger, and timeout, then recovered; dead letters requeued/discarded with history");
   console.log("- Postgres/MySQL pool pressure failed fast within configured bounds");

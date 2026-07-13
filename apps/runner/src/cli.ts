@@ -3261,6 +3261,7 @@ async function applyAllApproved(args: string[]): Promise<number> {
         ...(optionalArg(args, "--identity") ? ["--identity", optionalArg(args, "--identity")!] : []),
         ...(optionalArg(args, "--identity-key") ? ["--identity-key", optionalArg(args, "--identity-key")!] : []),
         ...(optionalArg(args, "--actor") ? ["--actor", optionalArg(args, "--actor")!] : []),
+        ...(args.includes(runtimeStoreBridgeFlag) ? [runtimeStoreBridgeFlag] : []),
       ], proposal.proposal_id);
       const afterStore = new ProposalStore(storePath);
       try {
@@ -3271,7 +3272,11 @@ async function applyAllApproved(args: string[]): Promise<number> {
           capability: proposal.action,
           tenant: proposal.tenant_id,
           status,
-          detail: after ? `proposal state: ${after.state}` : "proposal no longer exists",
+          detail: after
+            ? status === "skipped"
+              ? `not applied; proposal remained ${after.state}`
+              : `proposal state: ${after.state}`
+            : "not applied; proposal no longer exists",
         });
       } finally {
         afterStore.close();

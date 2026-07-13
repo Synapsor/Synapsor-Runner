@@ -249,7 +249,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.1.1");
+      expect(output.join("").trim()).toBe("1.1.2");
     }
   });
 
@@ -1061,7 +1061,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.1.0",
         "@synapsor/dsl": "1.1.0",
-        "@synapsor/runner": "1.1.1",
+        "@synapsor/runner": "1.1.2",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -4950,6 +4950,76 @@ END
     await expect(main(["apply", "--all-approved", "--yes", "--config", configPath, "--store", storePath, "--tenant", "acme"])).resolves.toBe(0);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(output.join("")).toContain("No approved or pending-worker proposals matched.");
+  });
+
+  it("batch-applies policy-approved proposals through an existing runtime-store bridge", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-runtime-store-batch-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "bridge.db");
+    const config = httpHandlerConfig() as any;
+    config.storage = {
+      sqlite_path: storePath,
+      shared_postgres: {
+        mode: "runtime_store",
+        url_env: "SYNAPSOR_TEST_LEDGER_URL",
+        schema: "synapsor_runner",
+      },
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+
+    const store = new ProposalStore(storePath);
+    const proposal = structuredClone(changeSet) as any;
+    proposal.proposal_id = "wrp_runtime_batch_policy";
+    proposal.integrity.proposal_hash = "sha256:runtime-batch-policy";
+    store.createProposal(proposal);
+    const decision = store.approveProposalByPolicy(proposal.proposal_id, {
+      policy: "billing_auto_approval",
+      proposal_hash: proposal.integrity.proposal_hash,
+      proposal_version: 1,
+      reason: "within reviewed aggregate limits",
+    });
+    expect(decision.approved).toBe(true);
+    expect(store.getProposal(proposal.proposal_id)?.state).toBe("approved");
+    store.close();
+
+    vi.stubEnv("SYNAPSOR_TEST_HANDLER_URL", "https://handler.internal/writeback");
+    vi.stubEnv("SYNAPSOR_TEST_HANDLER_TOKEN", "handler-secret-token");
+    vi.stubEnv("SYNAPSOR_TEST_HANDLER_SIGNING_SECRET", "handler-signing-secret");
+    vi.stubEnv("SYNAPSOR_TEST_LEDGER_URL", "");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      status: "applied",
+      rows_affected: 1,
+      source_database_mutated: true,
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(main([
+      "apply", "--all-approved", "--yes", "--json",
+      "--config", configPath,
+      "--store", storePath,
+      "--runtime-store-bridge",
+    ])).resolves.toBe(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      selected: 1,
+      applied: 1,
+      conflict: 0,
+      skipped: 0,
+      results: [{
+        proposal_id: proposal.proposal_id,
+        status: "applied",
+        detail: "proposal state: applied",
+      }],
+    });
+    const after = new ProposalStore(storePath);
+    expect(after.getProposal(proposal.proposal_id)?.state).toBe("applied");
+    expect(after.receipts(proposal.proposal_id)).toHaveLength(1);
+    after.close();
   });
 
   it("supervises transient handler failures with bounded retry and durable completion", async () => {

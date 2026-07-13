@@ -10,7 +10,29 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.1.0 (prepared, not published)
+## 1.1.2 (prepared, not published)
+
+### Retry And Shared Batch Correctness
+
+- Makes transient source pool and recognized database saturation errors
+  consistently retryable with a bounded retry hint and safe normalized logs.
+- Fixes `apply --all-approved` in shared `runtime_store` mode so every selected
+  proposal uses the same authoritative bridge and durable outcome ledger.
+
+Prepared package version: `@synapsor/runner@1.1.2`. Canonical Spec and DSL stay
+at `1.1.0`.
+
+## 1.1.1
+
+### Resource Read Authorization
+
+- Reauthorizes local proposal, evidence, and replay resources against the
+  current trusted tenant and principal instead of treating opaque handles as
+  bearer authority.
+
+Released package version: `@synapsor/runner@1.1.1`.
+
+## 1.1.0
 
 ### Bounded Small-Fleet Runtime
 
@@ -27,7 +49,7 @@ for the Synapsor Cloud CLI.
 - Adds [Running A Small Runner Fleet](running-a-runner-fleet.md) and the
   `corepack pnpm test:fleet` synthetic two-Runner verification.
 
-Prepared package versions: `@synapsor/spec@1.1.0`,
+Released package versions: `@synapsor/spec@1.1.0`,
 `@synapsor/dsl@1.1.0`, and `@synapsor/runner@1.1.0`.
 
 ## 1.0.0
