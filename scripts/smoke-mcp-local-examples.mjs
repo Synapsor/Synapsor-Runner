@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -269,6 +270,7 @@ function dockerSql(scenario, sql) {
 
 async function waitForDatabase(scenario) {
   let last = "";
+  const endpoint = new URL(scenario.readUrl);
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const result = scenario.engine === "postgres"
       ? run(
@@ -293,14 +295,33 @@ async function waitForDatabase(scenario) {
         ],
         { capture: true, allowFailure: true },
     );
-    if (result.status === 0) {
+    if (result.status === 0 && await canConnect(endpoint.hostname, Number(endpoint.port))) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return;
     }
-    last = result.stderr || result.stdout || `exit ${result.status}`;
+    last = result.status === 0
+      ? `published database port ${endpoint.hostname}:${endpoint.port} is not accepting connections yet`
+      : result.stderr || result.stdout || `exit ${result.status}`;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(`${scenario.label} database did not become ready: ${last}`);
+}
+
+function canConnect(host, port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let settled = false;
+    const finish = (connected) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(connected);
+    };
+    socket.setTimeout(1000);
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.once("timeout", () => finish(false));
+  });
 }
 
 async function withMcpClient(scenario, callback) {
