@@ -96,6 +96,83 @@ describe("@synapsor/spec validation", () => {
     expect(result.errors.map((error) => error.code)).toContain("UNKNOWN_CORE_FIELD");
   });
 
+  it("keeps omitted operation semantics backward-compatible with UPDATE", () => {
+    const contract = readJson("examples/guarded-writeback.contract.json") as Record<string, any>;
+    expect(contract.capabilities[1].proposal.operation).toBeUndefined();
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("accepts guarded INSERT with source-enforced proposal deduplication", () => {
+    const contract = writeContract();
+    const proposal = contract.capabilities[1].proposal;
+    proposal.action = "billing.create_credit";
+    proposal.operation = {
+      kind: "insert",
+      deduplication: {
+        components: [
+          { column: "tenant_id", source: "trusted_tenant" },
+          { column: "request_id", source: "proposal_id" },
+        ],
+      },
+    };
+    proposal.allowed_fields = ["amount_cents", "reason"];
+    proposal.patch = { amount_cents: { fixed: 500 }, reason: { from_arg: "waiver_reason" } };
+    delete proposal.conflict_guard;
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("rejects INSERT without proposal-specific source deduplication", () => {
+    const contract = writeContract();
+    const proposal = contract.capabilities[1].proposal;
+    proposal.operation = {
+      kind: "insert",
+      deduplication: { components: [{ column: "tenant_id", source: "trusted_tenant" }] },
+    };
+
+    const codes = validateContract(contract).errors.map((error) => error.code);
+    expect(codes).toContain("PROPOSAL_DEDUPLICATION_REQUIRED");
+  });
+
+  it("accepts guarded DELETE without a patch and rejects weak DELETE guards", () => {
+    const contract = writeContract();
+    const proposal = contract.capabilities[1].proposal;
+    proposal.action = "billing.delete_credit";
+    proposal.operation = { kind: "delete" };
+    proposal.allowed_fields = [];
+    proposal.patch = {};
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    proposal.conflict_guard = { weak_guard_ack: true };
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("DELETE_CONFLICT_GUARD_REQUIRED");
+  });
+
+  it("rejects policy auto-approval for direct hard DELETE", () => {
+    const contract = writeContract();
+    const proposal = contract.capabilities[1].proposal;
+    proposal.action = "billing.delete_credit";
+    proposal.operation = { kind: "delete" };
+    proposal.allowed_fields = [];
+    proposal.patch = {};
+    proposal.approval = { mode: "policy", role: "support_lead", policy: "low_risk_waiver" };
+
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("HARD_DELETE_HUMAN_APPROVAL_REQUIRED");
+  });
+
+  it("validates UPDATE version advancement against its conflict guard", () => {
+    const contract = writeContract();
+    const proposal = contract.capabilities[1].proposal;
+    proposal.operation = {
+      kind: "update",
+      version_advance: { column: "updated_at", strategy: "database_generated" },
+    };
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    proposal.operation.version_advance.column = "other_version";
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("VERSION_ADVANCE_GUARD_MISMATCH");
+  });
+
   it("accepts policy-based auto-approval contracts", () => {
     const result = validateContract(readJson("fixtures/conformance/auto-approval/contract.json"));
 
@@ -201,4 +278,16 @@ describe("@synapsor/spec validation", () => {
 
 function cloneAutoApprovalContract(): Record<string, unknown> {
   return JSON.parse(JSON.stringify(readJson("fixtures/conformance/auto-approval/contract.json"))) as Record<string, unknown>;
+}
+
+function writeContract(): Record<string, any> {
+  const contract = readJson("examples/guarded-writeback.contract.json") as Record<string, any>;
+  contract.capabilities[1].subject = {
+    schema: "public",
+    table: "credits",
+    primary_key: "id",
+    tenant_key: "tenant_id",
+    conflict_key: "updated_at",
+  };
+  return contract;
 }

@@ -355,6 +355,17 @@
             "queue_limit": { "type": "integer", "minimum": 0, "maximum": 100000 }
           }
         },
+        "receipts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority"],
+          "properties": {
+            "authority": { "enum": ["source_db", "runner_ledger"] },
+            "provisioning": { "enum": ["precreated", "auto_migrate"] },
+            "schema": { "$ref": "#/$defs/identifier" },
+            "table": { "$ref": "#/$defs/identifier" }
+          }
+        },
         "ssl": {
           "type": "object",
           "additionalProperties": true
@@ -505,6 +516,9 @@
             "$ref": "#/$defs/patch_binding"
           }
         },
+        "operation": {
+          "$ref": "#/$defs/proposal_operation"
+        },
         "allowed_columns": {
           "type": "array",
           "items": {
@@ -638,6 +652,45 @@
         "from_arg": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "proposal_operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["update", "insert", "delete"] },
+        "deduplication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["components"],
+          "properties": {
+            "components": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["column", "source"],
+                "properties": {
+                  "column": { "$ref": "#/$defs/identifier" },
+                  "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] },
+                  "fixed": { "$ref": "#/$defs/scalar" }
+                }
+              }
+            }
+          }
+        },
+        "version_advance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["column", "strategy"],
+          "properties": {
+            "column": { "$ref": "#/$defs/identifier" },
+            "strategy": { "enum": ["integer_increment", "database_generated"] }
+          }
         }
       }
     },

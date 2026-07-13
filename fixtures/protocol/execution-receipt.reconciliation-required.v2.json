@@ -1,0 +1,25 @@
+{
+  "schema_version": "synapsor.execution-receipt.v2",
+  "writeback_job_id": "wbj_update_2004",
+  "proposal_id": "wrp_update_2004",
+  "proposal_hash": "sha256:reconcile-proposal",
+  "approval_id": "approval_update_2004",
+  "runner_id": "runner_demo",
+  "operation": "single_row_update",
+  "receipt_authority": "runner_ledger",
+  "status": "reconciliation_required",
+  "target": {
+    "source_id": "src_billing_demo",
+    "schema": "public",
+    "table": "account_credits",
+    "identity": [{ "column": "id", "value": "credit_2004" }, { "column": "tenant_id", "value": "tenant_demo" }]
+  },
+  "rows_affected": 0,
+  "idempotency_key": "idem_update_2004",
+  "source_database_mutated": false,
+  "safe_outcome_code": "OUTCOME_UNKNOWN",
+  "safe_error_code": "RECONCILIATION_REQUIRED",
+  "executed_at": "2026-07-13T18:13:00Z",
+  "receipt_hash": "sha256:reconciliation-receipt",
+  "reconciliation": { "intent_id": "intent_update_2004", "reason": "source_commit_not_proven" }
+}

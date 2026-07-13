@@ -319,7 +319,8 @@ Runner rejects model-facing trust-scope arguments.
 
 ## Direct SQL Writeback
 
-Use direct SQL writeback only for simple bounded single-row `UPDATE` proposals.
+Use direct SQL writeback only for reviewed bounded single-row INSERT, UPDATE,
+or DELETE proposals.
 Runner validates:
 
 - fixed table and column names;
@@ -331,19 +332,25 @@ Runner validates:
 - one affected row;
 - idempotency receipt.
 
-Runner does not expose generic SQL, model-generated SQL, DDL, INSERT, DELETE,
-UPSERT, or multi-row writes.
+INSERT additionally requires a source-unique dedup key. DELETE requires an exact
+version guard and fails closed on widening cascades or write triggers.
+
+Runner does not expose generic SQL, model-generated SQL, DDL, UPSERT, or
+multi-row writes.
 
 Direct SQL writeback uses the source `write_url_env`, such as
-`SYNAPSOR_DATABASE_WRITE_URL`. The writer needs permission for
-`synapsor_writeback_receipts` or an administrator must pre-create and grant that
-table.
+`SYNAPSOR_DATABASE_WRITE_URL`. Select atomic `source_db` receipts (precreated or
+auto-migrated) or zero-source-schema `runner_ledger` receipts. Ledger authority
+has an explicit post-source-commit crash window and reconciliation workflow; it
+is not distributed exactly-once. See
+[Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
 
 ## App-Owned Executors
 
 Use an app-owned executor when an approved proposal needs richer business work:
-creating a credit row, inserting an outbox event, updating multiple app tables,
-or calling your own service.
+inserting an outbox event, updating multiple app tables, calling your own
+service, or creating a row whose source constraints cannot satisfy native
+single-row INSERT guards.
 
 In DSL, keep the reviewed business contract portable and name the executor:
 

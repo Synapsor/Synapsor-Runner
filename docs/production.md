@@ -10,7 +10,7 @@ MCP agent
 -> scoped Postgres/MySQL read
 -> evidence/query audit/proposal
 -> approval outside MCP
--> guarded one-row update or app-owned executor
+-> guarded one-row INSERT/UPDATE/DELETE or app-owned executor
 -> receipt/replay
 ```
 
@@ -58,7 +58,8 @@ Production-candidate OSS scope:
 - asymmetric RS256/ES256 session authentication, readiness probes, separately
   protected metrics, source pools, and fleet-wide rate limits;
 - distinct-reviewer approval quorum from the canonical contract;
-- direct guarded single-row `UPDATE` for simple approved edits;
+- direct guarded single-row `INSERT`, `UPDATE`, and `DELETE` for approved
+  operations whose source constraints satisfy the operation-specific guards;
 - app-owned `http_handler` or `command_handler` executors for richer approved
   business transactions;
 - stdio MCP and Streamable HTTP MCP.
@@ -66,7 +67,8 @@ Production-candidate OSS scope:
 Out of scope:
 
 - raw `execute_sql` or model-generated SQL;
-- generic direct `INSERT`, `DELETE`, `UPSERT`, DDL, or multi-row SQL writeback;
+- direct `UPSERT`, DDL, model-generated predicates, multi-row SQL writeback,
+  or INSERT/DELETE whose source constraints cannot prove a one-row effect;
 - physical branching of external Postgres/MySQL;
 - workflow DAGs, auto-merge/settlement, hosted team administration, SSO/SCIM,
   multi-region ledger replication, or compliance retention;
@@ -85,11 +87,12 @@ Read credential:
 
 Write credential for direct `sql_update`:
 
-- can update only the allowed business columns;
+- can use only the operation-specific business DML and reviewed columns;
 - cannot modify primary-key or tenant columns;
-- can `SELECT`/`INSERT`/`UPDATE` the administrator-created
-  `synapsor_writeback_receipts` table;
-- does not need schema `CREATE` during doctor or apply;
+- has source receipt-table `SELECT`/`INSERT`/`UPDATE` only when receipt
+  authority is `source_db`;
+- needs schema `CREATE` only for explicitly selected `auto_migrate` receipt
+  provisioning;
 - is never exposed to MCP clients.
 
 Example config:
@@ -110,10 +113,11 @@ Example config:
 `write_url_env`. `SYNAPSOR_DATABASE_URL` is only a legacy fallback for direct
 worker flows that do not pass a local config.
 
-## Receipt Table
+## Receipt Authority
 
-Direct SQL writeback stores idempotency receipts in the source database. Runner
-expects an administrator to create this table before steady-state operation:
+Direct SQL writeback supports atomic `source_db` receipts and
+zero-source-schema `runner_ledger` receipts. For source receipts, choose an
+administrator-precreated table or explicit idempotent auto-migration:
 
 ```sql
 CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (...);
@@ -129,16 +133,20 @@ synapsor-runner doctor --config synapsor.runner.json --check-writeback
 
 For MySQL, replace `postgres` with `mysql`.
 
-Grant only receipt-table `SELECT`/`INSERT`/`UPDATE` and schema usage to the
-writer; schema `CREATE` is not required by doctor or apply. Use an app-owned
-executor when receipt storage belongs inside your application boundary.
+Grant only receipt-table `SELECT`/`INSERT`/`UPDATE` and schema usage in
+`precreated` mode. `auto_migrate` additionally needs bounded `CREATE`.
+`runner_ledger` needs neither source receipt-table grants nor `CREATE`, but an
+ambiguous crash after source commit requires operator reconciliation and is not
+distributed exactly-once. See
+[Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md) for the complete
+mode, operation, and privilege matrix.
 
 ## Direct Writeback Vs App-Owned Executor
 
 Use direct `sql_update` when the approved change is:
 
 ```text
-one existing row -> one allowed-column patch -> one guarded UPDATE
+one reviewed row -> one guarded INSERT/UPDATE/DELETE -> one exact effect
 ```
 
 Use an app-owned executor when the change is richer:

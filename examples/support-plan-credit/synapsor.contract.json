@@ -139,6 +139,105 @@
         "credit_reason",
         "updated_at"
       ]
+    },
+    {
+      "args": {
+        "credit_cents": {
+          "description": "Requested plan credit in cents.",
+          "maximum": 50000,
+          "minimum": 1,
+          "required": true,
+          "type": "number"
+        },
+        "customer_id": {
+          "description": "Customer id such as CUS-3001.",
+          "max_length": 128,
+          "required": true,
+          "type": "string"
+        },
+        "reason": {
+          "description": "Business reason tied to support evidence.",
+          "max_length": 500,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "context": "support_agent_context",
+      "description": "Propose creating one bounded plan-credit record with source-enforced deduplication.",
+      "evidence": {
+        "query_audit": true,
+        "required": true
+      },
+      "kind": "proposal",
+      "max_rows": 1,
+      "name": "support.propose_plan_credit_record",
+      "proposal": {
+        "action": "create_plan_credit",
+        "allowed_fields": [
+          "customer_id",
+          "amount_cents",
+          "reason"
+        ],
+        "approval": {
+          "mode": "human",
+          "required_role": "support_reviewer"
+        },
+        "conflict_guard": {
+          "weak_guard_ack": true
+        },
+        "numeric_bounds": {
+          "amount_cents": {
+            "maximum": 50000,
+            "minimum": 1
+          }
+        },
+        "operation": {
+          "deduplication": {
+            "components": [
+              {
+                "column": "tenant_id",
+                "source": "trusted_tenant"
+              },
+              {
+                "column": "request_id",
+                "source": "proposal_id"
+              }
+            ]
+          },
+          "kind": "insert"
+        },
+        "patch": {
+          "amount_cents": {
+            "from_arg": "credit_cents"
+          },
+          "customer_id": {
+            "from_arg": "customer_id"
+          },
+          "reason": {
+            "from_arg": "reason"
+          }
+        },
+        "writeback": {
+          "mode": "direct_sql"
+        }
+      },
+      "returns_hint": "Returns a proposal id for one new account_credits row; source database unchanged until human approval and guarded apply.",
+      "source": "local_postgres",
+      "subject": {
+        "primary_key": "id",
+        "schema": "public",
+        "table": "account_credits",
+        "tenant_key": "tenant_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "request_id",
+        "customer_id",
+        "amount_cents",
+        "reason",
+        "created_at"
+      ]
     }
   ],
   "contexts": [
@@ -196,7 +295,8 @@
     {
       "allowed_capabilities": [
         "support.inspect_customer",
-        "support.propose_plan_credit"
+        "support.propose_plan_credit",
+        "support.propose_plan_credit_record"
       ],
       "approval": {
         "required": true,

@@ -28,7 +28,11 @@ const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "ten
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const EVIDENCE_KEYS = new Set(["required", "sources", "query_audit", "handle_prefix"]);
-const PROPOSAL_KEYS = new Set(["action", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "conflict_guard", "approval", "writeback"]);
+const PROPOSAL_KEYS = new Set(["action", "operation", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "conflict_guard", "approval", "writeback"]);
+const OPERATION_KEYS = new Set(["kind", "deduplication", "version_advance"]);
+const DEDUPLICATION_KEYS = new Set(["components"]);
+const DEDUPLICATION_COMPONENT_KEYS = new Set(["column", "source", "fixed"]);
+const VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
 const PATCH_KEYS = new Set(["fixed", "from_arg"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
@@ -215,7 +219,7 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     validateKeptOutExclusion(capability.visible_fields, capability.kept_out_fields, path, errors);
     if (capability.evidence !== undefined) validateEvidenceRequirement(capability.evidence, `${path}.evidence`, errors);
     if (capability.max_rows !== undefined && !isPositiveInteger(capability.max_rows)) errors.push({ path: `${path}.max_rows`, code: "INVALID_MAX_ROWS", message: "max_rows must be a positive integer." });
-    if (capability.kind === "proposal") validateProposalAction(capability.proposal, `${path}.proposal`, errors);
+    if (capability.kind === "proposal") validateProposalAction(capability.proposal, capability.subject, `${path}.proposal`, errors);
     if (capability.kind !== "proposal" && capability.proposal !== undefined) errors.push({ path: `${path}.proposal`, code: "PROPOSAL_ONLY_FOR_PROPOSAL_KIND", message: "proposal is only valid for proposal capabilities." });
   });
   return names;
@@ -287,16 +291,20 @@ function validateEvidenceRequirement(value: unknown, path: string, errors: Valid
   if (value.sources !== undefined && (!Array.isArray(value.sources) || value.sources.some((source) => !isNonEmptyString(source)))) errors.push({ path: `${path}.sources`, code: "INVALID_EVIDENCE_SOURCES", message: "evidence.sources must be non-empty strings." });
 }
 
-function validateProposalAction(value: unknown, path: string, errors: ValidationIssue[]): void {
+function validateProposalAction(value: unknown, subject: unknown, path: string, errors: ValidationIssue[]): void {
   if (!isRecord(value)) {
     errors.push({ path, code: "PROPOSAL_REQUIRED", message: "proposal capabilities must define proposal action semantics." });
     return;
   }
   checkUnknownKeys(value, PROPOSAL_KEYS, path, errors);
   if (!isQualifiedOrSafeName(value.action)) errors.push({ path: `${path}.action`, code: "INVALID_PROPOSAL_ACTION", message: "proposal.action must be a safe action name." });
-  validateFieldList(value.allowed_fields, `${path}.allowed_fields`, "ALLOWED_FIELDS_REQUIRED", errors);
-  if (!isRecord(value.patch) || Object.keys(value.patch).length === 0) {
-    errors.push({ path: `${path}.patch`, code: "PATCH_REQUIRED", message: "proposal.patch must map allowed fields to fixed or arg values." });
+  const operation = validateProposalOperation(value.operation, subject, value.patch, value.conflict_guard, `${path}.operation`, errors);
+  const deleteOperation = operation === "delete";
+  validateFieldList(value.allowed_fields, `${path}.allowed_fields`, "ALLOWED_FIELDS_REQUIRED", errors, deleteOperation);
+  if (!isRecord(value.patch) || (!deleteOperation && Object.keys(value.patch).length === 0)) {
+    errors.push({ path: `${path}.patch`, code: "PATCH_REQUIRED", message: "UPDATE and INSERT proposals must map allowed fields to fixed or arg values." });
+  } else if (deleteOperation && Object.keys(value.patch).length > 0) {
+    errors.push({ path: `${path}.patch`, code: "DELETE_PATCH_FORBIDDEN", message: "DELETE proposals must not contain a model-generated patch." });
   } else {
     for (const [field, patch] of Object.entries(value.patch)) {
       const patchPath = `${path}.patch.${field}`;
@@ -322,6 +330,9 @@ function validateProposalAction(value: unknown, path: string, errors: Validation
   }
   if (value.approval !== undefined) {
     validateNestedObject(value.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+    if (isRecord(value.approval) && value.approval.mode !== undefined && !["human", "operator", "policy"].includes(String(value.approval.mode))) {
+      errors.push({ path: `${path}.approval.mode`, code: "INVALID_APPROVAL_MODE", message: "approval.mode must be human, operator, or policy." });
+    }
     if (isRecord(value.approval) && value.approval.required_approvals !== undefined
       && (!Number.isSafeInteger(value.approval.required_approvals) || Number(value.approval.required_approvals) < 1 || Number(value.approval.required_approvals) > 10)) {
       errors.push({
@@ -335,6 +346,93 @@ function validateProposalAction(value: unknown, path: string, errors: Validation
     validateNestedObject(value.writeback, WRITEBACK_KEYS, `${path}.writeback`, errors);
     if (isRecord(value.writeback) && !["direct_sql", "app_handler", "cloud_worker", "none"].includes(String(value.writeback.mode))) errors.push({ path: `${path}.writeback.mode`, code: "INVALID_WRITEBACK_MODE", message: "writeback.mode must be direct_sql, app_handler, cloud_worker, or none." });
   }
+  if (deleteOperation && isRecord(value.writeback) && value.writeback.mode === "direct_sql") {
+    const approvalMode = isRecord(value.approval) ? value.approval.mode : undefined;
+    if (approvalMode !== "human" && approvalMode !== "operator") {
+      errors.push({ path: `${path}.approval.mode`, code: "HARD_DELETE_HUMAN_APPROVAL_REQUIRED", message: "Direct hard DELETE must require human/operator approval and cannot use policy auto-approval." });
+    }
+  }
+}
+
+function validateProposalOperation(
+  value: unknown,
+  subject: unknown,
+  patch: unknown,
+  conflictGuard: unknown,
+  path: string,
+  errors: ValidationIssue[],
+): "update" | "insert" | "delete" {
+  if (value === undefined) return "update";
+  if (!isRecord(value)) {
+    errors.push({ path, code: "OPERATION_NOT_OBJECT", message: "proposal.operation must be an object." });
+    return "update";
+  }
+  checkUnknownKeys(value, OPERATION_KEYS, path, errors);
+  const kind = value.kind;
+  if (kind !== "update" && kind !== "insert" && kind !== "delete") {
+    errors.push({ path: `${path}.kind`, code: "INVALID_OPERATION_KIND", message: "operation.kind must be update, insert, or delete." });
+    return "update";
+  }
+  if (value.version_advance !== undefined) {
+    if (!isRecord(value.version_advance)) {
+      errors.push({ path: `${path}.version_advance`, code: "VERSION_ADVANCE_NOT_OBJECT", message: "version_advance must be an object." });
+    } else {
+      checkUnknownKeys(value.version_advance, VERSION_ADVANCE_KEYS, `${path}.version_advance`, errors);
+      if (!isSafeIdentifier(value.version_advance.column)) errors.push({ path: `${path}.version_advance.column`, code: "INVALID_VERSION_ADVANCE_COLUMN", message: "version_advance.column must be a fixed safe identifier." });
+      if (value.version_advance.strategy !== "integer_increment" && value.version_advance.strategy !== "database_generated") errors.push({ path: `${path}.version_advance.strategy`, code: "INVALID_VERSION_ADVANCE_STRATEGY", message: "version_advance.strategy must be integer_increment or database_generated." });
+      const conflictColumn = isRecord(conflictGuard) ? conflictGuard.column : undefined;
+      if (isSafeIdentifier(value.version_advance.column) && value.version_advance.column !== conflictColumn) errors.push({ path: `${path}.version_advance.column`, code: "VERSION_ADVANCE_GUARD_MISMATCH", message: "version_advance.column must match conflict_guard.column." });
+    }
+    if (kind !== "update") errors.push({ path: `${path}.version_advance`, code: "VERSION_ADVANCE_UPDATE_ONLY", message: "version_advance is valid only for UPDATE." });
+  }
+  if (kind === "insert") {
+    validateDeduplication(value.deduplication, subject, patch, `${path}.deduplication`, errors);
+  } else if (value.deduplication !== undefined) {
+    errors.push({ path: `${path}.deduplication`, code: "DEDUPLICATION_INSERT_ONLY", message: "deduplication is valid only for INSERT." });
+  }
+  if (kind === "delete") {
+    if (!isRecord(conflictGuard) || !isSafeIdentifier(conflictGuard.column)) errors.push({ path: `${path.replace(/\.operation$/, "")}.conflict_guard.column`, code: "DELETE_CONFLICT_GUARD_REQUIRED", message: "DELETE requires an exact conflict_guard.column." });
+  }
+  return kind;
+}
+
+function validateDeduplication(value: unknown, subject: unknown, patch: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "INSERT_DEDUPLICATION_REQUIRED", message: "INSERT requires source-enforced deduplication components." });
+    return;
+  }
+  checkUnknownKeys(value, DEDUPLICATION_KEYS, path, errors);
+  if (!Array.isArray(value.components) || value.components.length === 0 || value.components.length > 8) {
+    errors.push({ path: `${path}.components`, code: "INVALID_DEDUPLICATION_COMPONENTS", message: "deduplication.components must contain 1 through 8 fixed components." });
+    return;
+  }
+  const seen = new Set<string>();
+  let hasProposalId = false;
+  let hasTrustedTenant = false;
+  const patchFields = isRecord(patch) ? new Set(Object.keys(patch)) : new Set<string>();
+  const tenantKey = isRecord(subject) ? subject.tenant_key : undefined;
+  value.components.forEach((component, index) => {
+    const componentPath = `${path}.components[${index}]`;
+    if (!isRecord(component)) {
+      errors.push({ path: componentPath, code: "DEDUPLICATION_COMPONENT_NOT_OBJECT", message: "deduplication component must be an object." });
+      return;
+    }
+    checkUnknownKeys(component, DEDUPLICATION_COMPONENT_KEYS, componentPath, errors);
+    if (!isSafeIdentifier(component.column)) errors.push({ path: `${componentPath}.column`, code: "INVALID_DEDUPLICATION_COLUMN", message: "deduplication column must be a fixed safe identifier." });
+    else if (seen.has(component.column)) errors.push({ path: `${componentPath}.column`, code: "DUPLICATE_DEDUPLICATION_COLUMN", message: "deduplication columns must be unique." });
+    else seen.add(component.column);
+    if (patchFields.has(String(component.column))) errors.push({ path: `${componentPath}.column`, code: "DEDUPLICATION_COLUMN_MODEL_CONTROLLED", message: "deduplication columns are Runner-supplied and must not also be patch fields." });
+    if (component.source !== "proposal_id" && component.source !== "trusted_tenant" && component.source !== "fixed") errors.push({ path: `${componentPath}.source`, code: "INVALID_DEDUPLICATION_SOURCE", message: "deduplication source must be proposal_id, trusted_tenant, or fixed." });
+    if (component.source === "proposal_id") hasProposalId = true;
+    if (component.source === "trusted_tenant") {
+      if (isSafeIdentifier(tenantKey) && component.column === tenantKey) hasTrustedTenant = true;
+      else errors.push({ path: `${componentPath}.column`, code: "DEDUPLICATION_TENANT_MISMATCH", message: "trusted_tenant deduplication must map to subject.tenant_key." });
+    }
+    if (component.source === "fixed" && component.fixed === undefined) errors.push({ path: `${componentPath}.fixed`, code: "DEDUPLICATION_FIXED_VALUE_REQUIRED", message: "fixed deduplication components require fixed." });
+    if (component.source !== "fixed" && component.fixed !== undefined) errors.push({ path: `${componentPath}.fixed`, code: "DEDUPLICATION_FIXED_VALUE_FORBIDDEN", message: "fixed is valid only when source is fixed." });
+  });
+  if (!hasProposalId) errors.push({ path: `${path}.components`, code: "PROPOSAL_DEDUPLICATION_REQUIRED", message: "INSERT deduplication must include a proposal_id component so retries are source-identifiable." });
+  if (!hasTrustedTenant) errors.push({ path: `${path}.components`, code: "TRUSTED_TENANT_DEDUPLICATION_REQUIRED", message: "INSERT deduplication must include subject.tenant_key from trusted_tenant so retries cannot cross tenant scope." });
 }
 
 function validateNumericBounds(value: unknown, patch: unknown, path: string, errors: ValidationIssue[]): void {

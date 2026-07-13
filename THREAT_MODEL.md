@@ -53,8 +53,11 @@ idempotency boundary for effects.
 - Wrong tenant or object: reads and writes include trusted primary-key and tenant predicates.
 - Disallowed field update: patch columns must be allowlisted.
 - Stale row: conflict guard mismatch returns `conflict` instead of silently writing.
-- Duplicate retry: receipt/idempotency state prevents applying the same job twice.
-- Over-broad update: only single-row `UPDATE` is supported and success requires exactly one affected row.
+- Duplicate retry: atomic source receipts or durable Runner intents plus
+  source-enforced version/unique guards prevent a known duplicate effect;
+  ambiguous ledger/source crash windows stop for reconciliation.
+- Over-broad write: direct INSERT/UPDATE/DELETE is single-row, tenant-bound,
+  operation-guarded, and success requires exactly one affected row.
 - Cloud credential leakage: database URLs and write credentials stay local and are not sent to Cloud.
 - Model-callable approval: approval/commit tools are not exposed to MCP clients by default.
 - Claims/environment confusion: an `http_claims` server fails before serving
@@ -81,8 +84,8 @@ idempotency boundary for effects.
 - Sensitive data already returned to a model.
 - Prompt injection itself.
 - Business invariants not represented in the capability config, proposal, application handler, or database constraints.
-- Generic multi-row business transactions, DDL, DELETE, INSERT, UPSERT, or
-  cross-database atomicity in the Runner direct-write path.
+- Generic multi-row business transactions, DDL, UPSERT, model-generated
+  predicates, or cross-database atomicity in the Runner direct-write path.
 - A compromised IdP/JWKS host, ledger database, source database, TLS
   terminator, or administrator-approved contract.
 - Unbounded/high-throughput or multi-region ledger scale, compliance

@@ -249,7 +249,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.1.2");
+      expect(output.join("").trim()).toBe("1.2.0");
     }
   });
 
@@ -1059,9 +1059,9 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.1.0",
-        "@synapsor/dsl": "1.1.0",
-        "@synapsor/runner": "1.1.2",
+        "@synapsor/spec": "1.2.0",
+        "@synapsor/dsl": "1.2.0",
+        "@synapsor/runner": "1.2.0",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -1465,6 +1465,88 @@ END
     }
   });
 
+  it("initializes guarded INSERT and DELETE from inspected source constraints", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-crud-"));
+    const oldCwd = process.cwd();
+    const inspectionPath = path.join(tempDir, "schema-inspection.json");
+    await fs.writeFile(inspectionPath, JSON.stringify({
+      engine: "postgres",
+      server_version: "PostgreSQL 16 fixture",
+      current_user: "synapsor_reader",
+      inspected_at: "2026-07-13T00:00:00Z",
+      schemas: ["public"],
+      warnings: [],
+      tables: [{
+        schema: "public",
+        name: "credits",
+        type: "table",
+        writable: true,
+        columns: [
+          { name: "id", data_type: "text", nullable: false, generated: false, ordinal_position: 1, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+          { name: "tenant_id", data_type: "text", nullable: false, generated: false, ordinal_position: 2, suggestions: { tenant: true, conflict: false, sensitive: false, immutable: true, large_or_binary: false } },
+          { name: "amount_cents", data_type: "integer", nullable: false, generated: false, ordinal_position: 3, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } },
+          { name: "version", data_type: "integer", nullable: false, default: "0", generated: false, ordinal_position: 4, suggestions: { tenant: false, conflict: true, sensitive: false, immutable: false, large_or_binary: false } },
+        ],
+        primary_key: ["id"],
+        unique_constraints: [],
+        foreign_keys: [],
+        referenced_by: [],
+        write_triggers: [],
+        indexes: [],
+        suggestions: {
+          tenant_columns: ["tenant_id"],
+          conflict_columns: ["version"],
+          sensitive_columns: [],
+          default_visible_columns: ["id", "tenant_id", "amount_cents", "version"],
+        },
+      }],
+    }), "utf8");
+
+    try {
+      process.chdir(tempDir);
+      await expect(main([
+        "init", "--inspection-json", inspectionPath, "--from-env", "DATABASE_URL",
+        "--table", "credits", "--mode", "review", "--operation", "insert",
+        "--patch", "amount_cents=arg:amount_cents",
+        "--dedup", "id=proposal_id,tenant_id=trusted_tenant",
+        "--receipt-mode", "runner_ledger", "--output", "insert.runner.json",
+      ])).resolves.toBe(0);
+      const insertConfig = JSON.parse(await fs.readFile(path.join(tempDir, "insert.runner.json"), "utf8"));
+      expect(insertConfig.sources.local_postgres.receipts).toEqual({ authority: "runner_ledger" });
+      expect(insertConfig.capabilities[1]).toMatchObject({
+        kind: "proposal",
+        operation: {
+          kind: "insert",
+          deduplication: {
+            components: [
+              { column: "id", source: "proposal_id" },
+              { column: "tenant_id", source: "trusted_tenant" },
+            ],
+          },
+        },
+      });
+
+      await expect(main([
+        "init", "--inspection-json", inspectionPath, "--from-env", "DATABASE_URL",
+        "--table", "credits", "--mode", "review", "--operation", "delete",
+        "--conflict-column", "version", "--receipt-mode", "runner_ledger",
+        "--output", "delete.runner.json", "--force",
+      ])).resolves.toBe(0);
+      const deleteConfig = JSON.parse(await fs.readFile(path.join(tempDir, "delete.runner.json"), "utf8"));
+      expect(deleteConfig.sources.local_postgres.receipts).toEqual({ authority: "runner_ledger" });
+      expect(deleteConfig.capabilities[1]).toMatchObject({
+        kind: "proposal",
+        operation: { kind: "delete" },
+        patch: {},
+        allowed_columns: [],
+        conflict_guard: { column: "version" },
+        approval: { mode: "human" },
+      });
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
   it("uses table-derived capability names by default and supports explicit tool-name overrides", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-names-"));
     const oldCwd = process.cwd();
@@ -1637,6 +1719,7 @@ END
       "", // tenant env default
       "", // principal env default
       "review",
+      "", // proposal operation default update
       "", // conflict default updated_at
       "", // visible columns default inspected safe columns
       "manual",
@@ -1656,6 +1739,7 @@ END
       "v2",
       "", // writeback path default sql_update
       "", // write URL env default
+      "", // receipt mode default source_auto_migrate
       "billing_lead",
       "yes", // edit final preview
       "id,tenant_id,late_fee_cents,updated_at",
@@ -1781,6 +1865,7 @@ END
       "", // tenant env default
       "", // principal env default
       "review",
+      "", // proposal operation default update
       "", // conflict default updated_at
       "", // visible columns default inspected safe columns
       "manual",
@@ -1894,6 +1979,7 @@ END
       "", // tenant env default
       "", // principal env default
       "review",
+      "", // proposal operation default update
       "", // conflict default updated_at
       "", // visible columns default inspected safe columns
       "recipe",
@@ -1920,6 +2006,7 @@ END
       "", // result envelope default
       "", // writeback path default sql_update
       "", // write URL env default
+      "", // receipt mode default source_auto_migrate
       "", // approval role from recipe
       "no", // accept preview
       "yes",
@@ -3806,6 +3893,14 @@ END
     expect(output.join("")).toContain("writer env: APP_POSTGRES_WRITE_URL");
     expect(output.join("")).toContain("env status: missing");
     expect(output.join("")).toContain("writeback migration");
+
+    output.length = 0;
+    await expect(main(["writeback", "reconcile", "list", "--config", configPath, "--store", path.join(tempDir, "local.db")])).resolves.toBe(0);
+    expect(output.join("")).toContain("No writeback intents found");
+
+    output.length = 0;
+    await expect(main(["writeback", "--help"])).resolves.toBe(0);
+    expect(output.join("")).toContain("writeback reconcile inspect latest");
   });
 
   it("creates app-owned writeback handler templates without package-relative paths", async () => {

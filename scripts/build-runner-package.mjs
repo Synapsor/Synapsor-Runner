@@ -106,6 +106,7 @@ const publicDocs = [
   "current-scope.md",
   "doctor.md",
   "getting-started-own-database.md",
+  "guarded-crud-writeback.md",
   "handler-helper.md",
   "dependency-license-inventory.md",
   "dsl-reference.md",

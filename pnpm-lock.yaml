@@ -113,7 +113,7 @@ importers:
   packages/dsl:
     dependencies:
       '@synapsor/spec':
-        specifier: workspace:^1.1.0
+        specifier: workspace:^1.2.0
         version: link:../spec
     devDependencies:
       typescript:

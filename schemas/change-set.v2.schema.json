@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.change-set.v2.schema.json",
+  "title": "Synapsor Change Set v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proposal_id",
+    "proposal_version",
+    "action",
+    "operation",
+    "mode",
+    "principal",
+    "scope",
+    "source",
+    "before",
+    "patch",
+    "after",
+    "guards",
+    "evidence",
+    "approval",
+    "writeback",
+    "source_database_mutated",
+    "integrity",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "synapsor.change-set.v2" },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["single_row_update", "single_row_insert", "single_row_delete"] },
+    "mode": { "enum": ["read_only", "shadow", "review_required", "approved_for_writeback"] },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["trusted_session", "cloud_session", "environment", "static_dev"] }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "business_object", "object_id"],
+      "properties": {
+        "tenant_id": { "type": "string", "minLength": 1 },
+        "business_object": { "type": "string", "minLength": 1 },
+        "object_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source_id", "schema", "table", "primary_key"],
+      "properties": {
+        "kind": { "enum": ["external_postgres", "external_mysql", "synapsor_table"] },
+        "source_id": { "type": "string", "minLength": 1 },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "primary_key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["column"],
+          "properties": {
+            "column": { "$ref": "#/$defs/safeIdentifier" },
+            "value": { "$ref": "#/$defs/scalar" }
+          }
+        }
+      }
+    },
+    "before": { "$ref": "#/$defs/scalarRecord" },
+    "patch": { "$ref": "#/$defs/scalarRecord" },
+    "after": { "$ref": "#/$defs/scalarRecord" },
+    "guards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant", "allowed_columns"],
+      "properties": {
+        "tenant": { "$ref": "#/$defs/columnValue" },
+        "allowed_columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/safeIdentifier" },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "expected_version": { "$ref": "#/$defs/columnValue" },
+        "version_advance": { "$ref": "#/$defs/versionAdvance" },
+        "deduplication": { "$ref": "#/$defs/deduplication" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["bundle_id", "query_fingerprint", "items"],
+      "properties": {
+        "bundle_id": { "type": "string", "minLength": 1 },
+        "query_fingerprint": { "$ref": "#/$defs/sha256" },
+        "items": { "type": "array", "maxItems": 1000 }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["pending", "approved", "rejected", "canceled"] },
+        "required_role": { "type": "string" },
+        "required_approvals": { "type": "integer", "minimum": 1, "maximum": 10 }
+      }
+    },
+    "writeback": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "mode"],
+      "properties": {
+        "status": { "enum": ["not_applied", "pending_worker", "applied", "conflict", "failed", "canceled", "reconciliation_required"] },
+        "mode": { "enum": ["trusted_worker_required", "synapsor_merge", "read_only"] }
+      }
+    },
+    "source_database_mutated": { "type": "boolean" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_hash"],
+      "properties": { "proposal_hash": { "$ref": "#/$defs/sha256" } }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "single_row_insert" } } },
+      "then": {
+        "properties": {
+          "before": { "maxProperties": 0 },
+          "patch": { "minProperties": 1 },
+          "after": { "minProperties": 1 },
+          "guards": {
+            "required": ["deduplication"],
+            "not": { "anyOf": [{ "required": ["expected_version"] }, { "required": ["version_advance"] }] },
+            "properties": {
+              "allowed_columns": { "minItems": 1 },
+              "deduplication": {
+                "properties": {
+                  "components": {
+                    "allOf": [
+                      { "contains": { "properties": { "source": { "const": "proposal_id" } }, "required": ["source"] } },
+                      { "contains": { "properties": { "source": { "const": "trusted_tenant" } }, "required": ["source"] } }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "single_row_update" } } },
+      "then": {
+        "properties": {
+          "source": { "properties": { "primary_key": { "required": ["value"] } } },
+          "before": { "minProperties": 1 },
+          "patch": { "minProperties": 1 },
+          "after": { "minProperties": 1 },
+          "guards": {
+            "required": ["expected_version"],
+            "not": { "required": ["deduplication"] },
+            "properties": { "allowed_columns": { "minItems": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "single_row_delete" } } },
+      "then": {
+        "properties": {
+          "source": { "properties": { "primary_key": { "required": ["value"] } } },
+          "before": { "minProperties": 1 },
+          "patch": { "maxProperties": 0 },
+          "after": { "maxProperties": 0 },
+          "guards": {
+            "required": ["expected_version"],
+            "not": { "anyOf": [{ "required": ["version_advance"] }, { "required": ["deduplication"] }] },
+            "properties": { "allowed_columns": { "maxItems": 0 } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "sha256": { "type": "string", "pattern": "^sha256:.+" },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "scalarRecord": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/safeIdentifier" },
+      "additionalProperties": { "$ref": "#/$defs/scalar" },
+      "maxProperties": 256
+    },
+    "columnValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    },
+    "versionAdvance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "strategy"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "strategy": { "enum": ["integer_increment", "database_generated"] }
+      }
+    },
+    "deduplicationComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value", "source"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" },
+        "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] }
+      }
+    },
+    "deduplication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["components"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deduplicationComponent" },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      }
+    }
+  }
+}

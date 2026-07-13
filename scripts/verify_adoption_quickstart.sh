@@ -69,7 +69,7 @@ grep -q "PASS execute_sql absent" "$TMP_ROOT/tools-preview.txt"
 grep -q "PASS approval tools absent" "$TMP_ROOT/tools-preview.txt"
 grep -q "PASS commit tools absent" "$TMP_ROOT/tools-preview.txt"
 
-exposed_tools="$(sed -n '/^Exposed to MCP:/,/^Not exposed to MCP:/p' "$TMP_ROOT/tools-preview.txt")"
+exposed_tools="$(awk '/^Exposed to MCP:/{capture=1; next} capture && /^$/{exit} capture{print}' "$TMP_ROOT/tools-preview.txt")"
 if grep -Eiq 'execute_sql|raw_sql|approve|commit|writeback' <<<"$exposed_tools"; then
   echo "Unsafe tool appeared in the MCP-exposed section:" >&2
   printf '%s\n' "$exposed_tools" >&2
@@ -99,7 +99,7 @@ const result = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 if (result.ok !== true || result.dry_run !== true) throw new Error("Cloud push was not a successful dry run");
 if (result.payload?.name !== "support-plan-credit") throw new Error("unexpected Cloud registry name");
 if (result.payload?.contract?.kind !== "SynapsorContract") throw new Error("unexpected Cloud contract payload");
-if (result.payload?.summary?.proposal_capabilities !== 1) throw new Error("proposal summary drifted");
+if (result.payload?.summary?.proposal_capabilities !== 2) throw new Error("proposal summary drifted");
 NODE
 
 echo "[8/8] Verify MCP client JSON templates"

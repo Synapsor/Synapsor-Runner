@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PostgresProposalRuntimeStore,
+  PostgresWritebackIntentStore,
   ProposalStore,
   ProposalStoreError,
   sharedPostgresRuntimeStoreMigration,
@@ -87,6 +88,51 @@ function shadowChangeSet() {
     proposal_id: "wrp_shadow",
     mode: "shadow",
     integrity: { proposal_hash: "sha256:shadow" },
+  };
+}
+
+function operationChangeSet(operation: "single_row_update" | "single_row_insert" | "single_row_delete", suffix: string) {
+  const insert = operation === "single_row_insert";
+  const deletion = operation === "single_row_delete";
+  const proposalId = `wrp_${suffix}`;
+  return {
+    schema_version: "synapsor.change-set.v2",
+    proposal_id: proposalId,
+    proposal_version: 1,
+    action: `billing.${operation}`,
+    operation,
+    mode: "review_required",
+    principal: { id: "support_agent_17", source: "trusted_session" },
+    scope: { tenant_id: "acme", business_object: "credits", object_id: insert ? proposalId : `credit_${suffix}` },
+    source: {
+      kind: "external_postgres",
+      source_id: "src_pg_acme",
+      schema: "public",
+      table: "credits",
+      primary_key: { column: "id", ...(insert ? {} : { value: `credit_${suffix}` }) },
+    },
+    before: insert ? {} : { id: `credit_${suffix}`, tenant_id: "acme", amount_cents: 100, version: 7 },
+    patch: deletion ? {} : { amount_cents: 500 },
+    after: deletion ? {} : { id: `credit_${suffix}`, tenant_id: "acme", amount_cents: 500, version: 8 },
+    guards: {
+      tenant: { column: "tenant_id", value: "acme" },
+      allowed_columns: deletion ? [] : ["amount_cents"],
+      ...(insert ? {
+        deduplication: { components: [
+          { column: "tenant_id", value: "acme", source: "trusted_tenant" },
+          { column: "request_id", value: proposalId, source: "proposal_id" },
+        ] },
+      } : {
+        expected_version: { column: "version", value: 7 },
+        ...(operation === "single_row_update" ? { version_advance: { column: "version", strategy: "integer_increment" } } : {}),
+      }),
+    },
+    evidence: { bundle_id: `ev_${suffix}`, query_fingerprint: "sha256:evidence", items: [] },
+    approval: { status: "pending", required_role: "support_lead" },
+    writeback: { status: "not_applied", mode: "trusted_worker_required", executor: "sql_update" },
+    source_database_mutated: false,
+    integrity: { proposal_hash: `sha256:${suffix}` },
+    created_at: "2026-07-13T00:00:00Z",
   };
 }
 
@@ -326,6 +372,34 @@ describe("proposal store", () => {
     expect(pool.ended).toBe(true);
   });
 
+  it("persists fleet writeback intents directly before end-of-command ledger sync", async () => {
+    const pool = new FakePostgresRuntimePool();
+    const store = new PostgresWritebackIntentStore({ pool, autoMigrate: true });
+    const normalizedJob = new ProposalStore();
+    try {
+      normalizedJob.createProposal(changeSet);
+      normalizedJob.approveProposal("wrp_123", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
+      const job = normalizedJob.recordWritebackJob(writebackJob);
+      expect(await store.claimWritebackIntent(job, "runner_a")).toEqual({ decision: "proceed", intent_id: "wbi:wbj_123" });
+      expect(pool.rows.get("writeback_intents:wbi:wbj_123")?.payload_json).toMatchObject({ status: "intent_recorded" });
+      await store.markWritebackIntentApplying("wbi:wbj_123", "runner_a");
+      expect(await store.claimWritebackIntent(job, "runner_b")).toMatchObject({ decision: "reconciliation_required" });
+      await store.requireWritebackReconciliation("wbi:wbj_123", "commit acknowledgement missing");
+      expect(pool.rows.get("writeback_intents:wbi:wbj_123")?.payload_json).toMatchObject({
+        status: "reconciliation_required",
+        reconciliation_reason: "commit acknowledgement missing",
+      });
+      const migrationLock = pool.queries.findIndex((query) => query.includes("synapsor-writeback-intent") && query.includes("migration"));
+      const migration = pool.queries.findIndex((query) => query.startsWith("create schema"));
+      expect(migrationLock).toBeGreaterThanOrEqual(0);
+      expect(migration).toBeGreaterThan(migrationLock);
+      expect(pool.queries.filter((query) => query.startsWith("create schema"))).toHaveLength(1);
+    } finally {
+      normalizedJob.close();
+      await store.close();
+    }
+  });
+
   it("fails closed before copying an over-capacity shared runtime ledger", async () => {
     const pool = new FakePostgresRuntimePool();
     for (let index = 0; index < 101; index += 1) {
@@ -417,6 +491,170 @@ describe("proposal store", () => {
       expect(proposal.source_database_mutated).toBe(false);
       expect(store.createProposal(changeSet).proposal_hash).toBe("sha256:proposal");
       expect(store.events("wrp_123").map((event) => event.kind)).toEqual(["proposal_created"]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("persists a fail-closed writeback intent across the source mutation boundary", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      store.approveProposal("wrp_123", {
+        approver: "support_lead",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      const job = store.recordWritebackJob(writebackJob);
+      const claim = store.claimWritebackIntent(job, "runner_a");
+      expect(claim).toEqual({ decision: "proceed", intent_id: "wbi:wbj_123" });
+      expect(store.getWritebackIntent("wbi:wbj_123")).toMatchObject({ status: "intent_recorded", operation: "single_row_update" });
+
+      store.markWritebackIntentApplying("wbi:wbj_123", "runner_a");
+      expect(store.claimWritebackIntent(job, "runner_b")).toMatchObject({
+        decision: "reconciliation_required",
+        intent_id: "wbi:wbj_123",
+      });
+
+      const result = {
+        protocol_version: "1.0" as const,
+        job_id: "wbj_123",
+        runner_id: "runner_a",
+        status: "applied" as const,
+        affected_rows: 1,
+        result_hash: "sha256:result",
+        completed_at: "2026-07-13T01:00:00Z",
+      };
+      store.completeWritebackIntent("wbi:wbj_123", result);
+      expect(store.claimWritebackIntent(job, "runner_b")).toEqual({
+        decision: "existing_result",
+        intent_id: "wbi:wbj_123",
+        result,
+      });
+      expect(store.sharedLedgerEntries()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "writeback_intent", entry_key: "writeback_intents:wbi:wbj_123" }),
+      ]));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("requires reconciliation after an incomplete applying intent is restored", () => {
+    const first = new ProposalStore();
+    const restored = new ProposalStore();
+    try {
+      first.createProposal(changeSet);
+      first.approveProposal("wrp_123", {
+        approver: "support_lead",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      const job = first.recordWritebackJob(writebackJob);
+      first.claimWritebackIntent(job, "runner_a");
+      first.markWritebackIntentApplying("wbi:wbj_123", "runner_a");
+
+      restored.importSharedLedgerEntries(first.sharedLedgerEntries());
+      const restoredJob = restored.getWritebackIntent("wbi:wbj_123")?.intent;
+      if (!restoredJob) throw new Error("restored intent missing");
+      expect(restored.claimWritebackIntent(restoredJob, "runner_b")).toMatchObject({
+        decision: "reconciliation_required",
+        reason: expect.stringContaining("source mutation boundary"),
+      });
+    } finally {
+      first.close();
+      restored.close();
+    }
+  });
+
+  it("records a signed reconciliation as an immutable terminal receipt", () => {
+    const store = new ProposalStore();
+    try {
+      const change = operationChangeSet("single_row_update", "reconcile");
+      store.createProposal(change);
+      store.approveProposal(change.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+      });
+      const job = store.createWritebackJobFromProposal(change.proposal_id);
+      const claim = store.claimWritebackIntent(job, "runner_a");
+      if (claim.decision !== "proceed") throw new Error("expected new intent");
+      store.markWritebackIntentApplying(claim.intent_id, "runner_a");
+      store.requireWritebackReconciliation(claim.intent_id, "commit acknowledgement missing");
+
+      const identity: OperatorIdentityProof = {
+        provider: "signed_key",
+        verified: true,
+        subject: "fleet_operator",
+        roles: ["runner_operator"],
+        key_id: "fleet-key-1",
+        algorithm: "ed25519",
+        decision: {
+          schema_version: "synapsor.operator-decision.v1",
+          action: "reconcile",
+          proposal_id: change.proposal_id,
+          proposal_version: 1,
+          proposal_hash: change.integrity.proposal_hash,
+          subject: "fleet_operator",
+          issued_at: "2026-07-13T02:00:00Z",
+          reason: "source version proves the reviewed update committed",
+        },
+        decision_hash: "sha256:decision",
+        signature: "signed-proof",
+        integrity_hash: "sha256:identity",
+      };
+      const receipt = {
+        schema_version: "synapsor.execution-receipt.v2" as const,
+        writeback_job_id: job.writeback_job_id,
+        proposal_id: change.proposal_id,
+        proposal_hash: change.integrity.proposal_hash,
+        approval_id: job.proposal_hash,
+        runner_id: "fleet_operator",
+        operation: "single_row_update" as const,
+        receipt_authority: "runner_ledger" as const,
+        status: "applied" as const,
+        target: {
+          source_id: job.runner_scope.source_id,
+          schema: job.target.schema,
+          table: job.target.table,
+          identity: [{ column: "id", value: "credit_reconcile" }],
+        },
+        rows_affected: 0,
+        idempotency_key: job.idempotency_key,
+        after_digest: "sha256:observed",
+        source_database_mutated: true,
+        safe_outcome_code: "RECONCILED_APPLIED",
+        executed_at: "2026-07-13T02:00:00Z",
+        receipt_hash: "sha256:reconciled",
+        reconciliation: { intent_id: claim.intent_id, reason: "source version proves the reviewed update committed" },
+      };
+
+      const resolved = store.reconcileWritebackIntent({
+        intent_id: claim.intent_id,
+        receipt,
+        actor: "fleet_operator",
+        reason: "source version proves the reviewed update committed",
+        observation: { classification: "matches_proposed", observed_digest: "sha256:observed" },
+        identity,
+        require_verified_identity: true,
+      });
+      expect(resolved).toMatchObject({ status: "applied", result: { status: "applied" } });
+      expect(store.getProposal(change.proposal_id)).toMatchObject({ state: "applied", source_database_mutated: true });
+      expect(store.receipts(change.proposal_id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ status: "applied", receipt: expect.objectContaining({ receipt_hash: "sha256:reconciled" }) }),
+      ]));
+      expect(store.events(change.proposal_id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "writeback_reconciled", actor: "fleet_operator" }),
+      ]));
+      expect(() => store.reconcileWritebackIntent({
+        intent_id: claim.intent_id,
+        receipt,
+        actor: "fleet_operator",
+        reason: "try to rewrite history",
+        observation: {},
+        identity,
+        require_verified_identity: true,
+      })).toThrow(/is applied/i);
     } finally {
       store.close();
     }
@@ -806,6 +1044,7 @@ describe("proposal store", () => {
         lease_id: "lease_123"
       });
       expect(job.schema_version).toBe("synapsor.writeback-job.v1");
+      if (job.schema_version !== "synapsor.writeback-job.v1") throw new Error("expected v1 writeback job");
       expect(job.writeback_job_id).toBe("wbj_wrp_123");
       expect(job.proposal_hash).toBe("sha256:proposal");
       expect(job.runner_scope).toEqual({ project_id: "acme-support", source_id: "src_pg_acme" });
@@ -825,6 +1064,38 @@ describe("proposal store", () => {
       ]);
     } finally {
       store.close();
+    }
+  });
+
+  it("creates operation-aware v2 jobs from approved UPDATE, INSERT, and DELETE proposals", () => {
+    for (const [operation, suffix] of [
+      ["single_row_update", "update"],
+      ["single_row_insert", "insert"],
+      ["single_row_delete", "delete"],
+    ] as const) {
+      const store = new ProposalStore();
+      try {
+        const input = operationChangeSet(operation, suffix);
+        store.createProposal(input);
+        store.approveProposal(input.proposal_id, {
+          approver: "support_lead_1",
+          proposal_hash: input.integrity.proposal_hash,
+          proposal_version: 1,
+        });
+        const job = store.createWritebackJobFromProposal(input.proposal_id);
+        expect(job.schema_version).toBe("synapsor.writeback-job.v2");
+        if (job.schema_version !== "synapsor.writeback-job.v2") throw new Error("expected v2 writeback job");
+        expect(job.mutation.kind).toBe(operation);
+        expect(job.tenant_guard).toEqual({ column: "tenant_id", value: "acme" });
+        if (operation === "single_row_insert" && job.mutation.kind === "single_row_insert") {
+          expect(job.mutation.deduplication.components).toEqual(expect.arrayContaining([
+            { column: "request_id", value: input.proposal_id, source: "proposal_id" },
+          ]));
+        }
+        if (operation === "single_row_delete") expect(job.allowed_columns).toEqual([]);
+      } finally {
+        store.close();
+      }
     }
   });
 
@@ -1155,6 +1426,7 @@ type FakeLedgerRow = {
 
 class FakePostgresRuntimePool implements PostgresRuntimePool {
   readonly rows = new Map<string, FakeLedgerRow>();
+  readonly queries: string[] = [];
   private nextEntryId = 1;
   ended = false;
 
@@ -1172,6 +1444,7 @@ class FakePostgresRuntimePool implements PostgresRuntimePool {
 
   async execute(sql: string, values: unknown[] = []): Promise<PostgresRuntimeQueryResult> {
     const normalized = sql.trim().replace(/\s+/g, " ").toLowerCase();
+    this.queries.push(`${normalized}${values.length > 0 ? ` ${values.map(String).join(" ")}` : ""}`);
     if (
       normalized === "begin" ||
       normalized === "commit" ||
@@ -1185,6 +1458,11 @@ class FakePostgresRuntimePool implements PostgresRuntimePool {
     }
     if (normalized.startsWith("select pg_try_advisory_xact_lock")) {
       return { rows: [{ locked: true }] };
+    }
+    if (normalized.startsWith("select pg_advisory_xact_lock")) return { rows: [{}] };
+    if (normalized.startsWith("select payload_json from") && normalized.includes("ledger_entries")) {
+      const row = this.rows.get(String(values[0]));
+      return { rows: row ? [{ payload_json: row.payload_json }] : [] };
     }
     if (normalized.startsWith("select entry_key")) {
       return {
@@ -1202,6 +1480,22 @@ class FakePostgresRuntimePool implements PostgresRuntimePool {
       };
     }
     if (normalized.startsWith("insert into") && normalized.includes("ledger_entries")) {
+      if (normalized.includes("'writeback_intent'")) {
+        const [entryKey, proposalId, payloadJson, createdAt] = values;
+        const key = String(entryKey);
+        const existing = this.rows.get(key);
+        this.rows.set(key, {
+          entry_id: existing?.entry_id ?? this.nextEntryId++,
+          entry_key: key,
+          kind: "writeback_intent",
+          proposal_id: proposalId == null ? null : String(proposalId),
+          tenant_id: null,
+          capability: null,
+          payload_json: parseFakePayloadJson(payloadJson),
+          created_at: String(createdAt),
+        });
+        return { rows: [] };
+      }
       const [entryKey, kind, proposalId, tenantId, capability, payloadJson, createdAt] = values;
       const key = String(entryKey);
       const existing = this.rows.get(key);

@@ -3,9 +3,9 @@
 Use this path after the Docker demo passes and you want to try Synapsor Runner
 against a staging or disposable Postgres/MySQL database.
 
-Do not start with your most sensitive production database. The current alpha
-runner is a local commit-safety runtime for reviewed single-row business
-actions, not a production certification.
+Do not start with your most sensitive production database. Runner is a
+commit-safety runtime for reviewed single-row business actions, not a
+production certification.
 
 If you only ran `synapsor-runner demo --quick`, you have tested the fixture-only
 teaching path and local ledger commands. This page is the real own-database
@@ -170,6 +170,8 @@ The wizard:
   mode, semantic capability names, and proposal patch mappings;
 - asks review-mode users to choose direct guarded SQL writeback, an app-owned
   HTTP handler, or an app-owned command handler;
+- for direct SQL, asks for UPDATE/INSERT/DELETE and source receipt
+  auto-migrate, precreated receipt, or zero-source-schema Runner-ledger mode;
 - previews the MCP tools and what is not exposed, then lets you revise visible
   fields or capability names before writing files;
 - attempts a first smoke call when you supplied a real object id and the
@@ -237,6 +239,27 @@ writeback is disabled.
 
 Use `--writeback command_handler --handler-command-env APP_WRITEBACK_COMMAND`
 when your app-owned writer is a local command/script instead of HTTP.
+
+For native single-row CRUD, use operation-aware onboarding. INSERT requires a
+source primary/unique dedup key; DELETE requires an exact conflict guard and
+safe cascade/trigger inspection:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner onboard db \
+  --from-env DATABASE_URL \
+  --table account_credits \
+  --mode review \
+  --operation insert \
+  --dedup-columns request_id \
+  --receipt-mode runner_ledger \
+  --patch amount_cents=arg:amount_cents \
+  --write-url-env SYNAPSOR_DATABASE_WRITE_URL \
+  --yes
+```
+
+Review [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md) before
+choosing receipt authority. Runner-ledger mode creates no source receipt table,
+but ambiguous post-commit crashes stop for operator reconciliation.
 
 Or generate from a saved inspection snapshot without reconnecting:
 

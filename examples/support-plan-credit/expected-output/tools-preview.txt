@@ -3,6 +3,7 @@ Synapsor tools preview: ok
 Exposed to MCP:
   - support.inspect_customer
   - support.propose_plan_credit
+  - support.propose_plan_credit_record
 
 Not exposed to MCP:
   - execute_sql / raw query tools

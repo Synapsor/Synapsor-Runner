@@ -6,6 +6,12 @@ This example shows three enforcement tiers on one support action:
 - `$100` (`10000` cents): saved as `pending_review` until a local operator approves.
 - `$1000` (`100000` cents): rejected before proposal creation by the contract bound.
 
+It also shows native guarded single-row INSERT through
+`support.propose_plan_credit_record`. Runner supplies the trusted tenant and a
+proposal-derived request ID; the database enforces `(tenant_id, request_id)` as
+a unique deduplication key. The existing UPDATE scenario above remains the
+policy-tier demonstration.
+
 ## Prerequisites
 
 - Docker
@@ -132,6 +138,30 @@ synapsor-runner apply latest --config examples/support-plan-credit/synapsor.runn
 The live smoke test mutates `updated_at` before apply and proves stale proposals
 return `VERSION_CONFLICT` without changing the source row.
 
+Create one reviewed credit record with native INSERT:
+
+```bash
+synapsor-runner propose support.propose_plan_credit_record \
+  --config examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db \
+  --json '{"customer_id":"CUS-3001","credit_cents":2500,"reason":"SLA outage ticket SUP-481"}'
+
+synapsor-runner proposals approve latest --yes \
+  --config examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+synapsor-runner apply latest \
+  --config examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+synapsor-runner replay show latest --store ./tmp/support-plan-credit/local.db
+```
+
+The insert is exactly one row. The model cannot set `tenant_id`, `request_id`,
+table names, or columns. Retry is classified from the atomic source receipt and
+the source-unique deduplication key. Use an
+[app-owned executor](../../docs/writeback-executors.md) for multi-table writes,
+external effects, UPSERT, or business actions that cannot fit this one-row
+boundary.
+
 Run the complete Docker-backed scenario, including all three policy tiers and
 the stale-row conflict:
 
@@ -153,6 +183,7 @@ The contract keeps these fields out:
 ```text
 support.inspect_customer
 support.propose_plan_credit
+support.propose_plan_credit_record
 auto-approval: enabled
 ```
 

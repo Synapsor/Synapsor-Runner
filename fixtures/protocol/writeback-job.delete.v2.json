@@ -1,0 +1,22 @@
+{
+  "schema_version": "synapsor.writeback-job.v2",
+  "writeback_job_id": "wbj_delete_2003",
+  "proposal_id": "wrp_delete_2003",
+  "proposal_version": 1,
+  "proposal_hash": "sha256:delete-proposal",
+  "runner_scope": { "project_id": "project_demo", "source_id": "src_support_demo" },
+  "engine": "mysql",
+  "target": {
+    "schema": "support",
+    "table": "pending_tasks",
+    "primary_key": { "column": "id", "value": "task_2003" }
+  },
+  "tenant_guard": { "column": "tenant_id", "value": "tenant_demo" },
+  "allowed_columns": [],
+  "mutation": {
+    "kind": "single_row_delete",
+    "conflict_guard": { "kind": "column", "column": "version", "expected_value": 4 }
+  },
+  "idempotency_key": "idem_delete_2003",
+  "lease": { "lease_id": "lease_delete_2003", "attempt": 1, "expires_at": "2026-07-13T19:02:00Z" }
+}

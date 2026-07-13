@@ -16,7 +16,7 @@ import {
 } from "@synapsor-runner/control-plane-client";
 import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { protocolVersions, type ChangeSetV1 } from "@synapsor-runner/protocol";
+import { protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2 } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { z } from "zod";
@@ -47,6 +47,12 @@ export type RuntimeSourceConfig = {
   read_only?: boolean;
   statement_timeout_ms?: number;
   pool?: RuntimeSourcePoolConfig;
+  receipts?: {
+    authority: "source_db" | "runner_ledger";
+    provisioning?: "precreated" | "auto_migrate";
+    schema?: string;
+    table?: string;
+  };
 };
 
 export type RuntimeSourcePoolConfig = {
@@ -101,6 +107,7 @@ export type RuntimeCapabilityConfig = {
   allowed_columns?: string[];
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
   transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
+  operation?: NonNullable<ProposalActionSpec["operation"]>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: { mode?: "human" | "policy" | string; required_role?: string; required_approvals?: number; policy?: string };
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
@@ -523,6 +530,7 @@ function runtimeCapabilityFromSpec(
     runtime.allowed_columns = capability.proposal.allowed_fields;
     runtime.numeric_bounds = capability.proposal.numeric_bounds;
     runtime.transition_guards = capability.proposal.transition_guards;
+    runtime.operation = capability.proposal.operation;
     runtime.conflict_guard = capability.proposal.conflict_guard;
     runtime.approval = capability.proposal.approval;
     runtime.writeback = {
@@ -1853,27 +1861,57 @@ async function callConfiguredTool(input: {
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
   const context = resolveTrustedContext(input.config, input.env, capability, input.trustedContext);
-  const current = await input.readRow({
-    sourceName: capability.source,
-    source,
-    capability,
-    args: input.args,
-    context,
-    env: input.env,
-  });
-  if (current.rowCount !== 1) {
+  const operation = capability.kind === "proposal" ? capability.operation?.kind ?? "update" : "update";
+  const current = capability.kind === "proposal" && operation === "insert"
+    ? { row: {}, rowCount: 0 }
+    : await input.readRow({
+      sourceName: capability.source,
+      source,
+      capability,
+      args: input.args,
+      context,
+      env: input.env,
+    });
+  if ((capability.kind !== "proposal" || operation !== "insert") && current.rowCount !== 1) {
     throw new McpRuntimeError("ROW_NOT_FOUND", "The scoped capability read did not find exactly one authorized row.");
   }
+
+  const patch = capability.kind !== "proposal" || operation === "delete" ? {} : buildPatch(capability, input.args);
+  const before = scalarRecord(current.row);
+  if (capability.kind === "proposal") enforcePatchGuards(capability, before, patch);
+  const createdAt = new Date().toISOString();
+  const proposalId = stableId("wrp", capability.operation ? {
+    action: capability.name,
+    operation,
+    tenant: context.tenant_id,
+    before,
+    patch,
+    created_at: createdAt,
+  } : {
+    action: capability.name,
+    tenant: context.tenant_id,
+    object: String(current.row[capability.target.primary_key] ?? input.args[capability.lookup.id_from_arg]),
+    before,
+    patch,
+    created_at: createdAt,
+  });
+  const resolvedDeduplication = capability.kind === "proposal" && operation === "insert"
+    ? resolveDeduplication(capability, proposalId, context)
+    : undefined;
+  const primaryDedup = resolvedDeduplication?.components.find((component) => component.column === capability.target.primary_key);
+  const objectId = capability.kind === "proposal" && operation === "insert"
+    ? String(primaryDedup?.value ?? proposalId)
+    : String(current.row[capability.target.primary_key] ?? input.args[capability.lookup.id_from_arg]);
 
   const evidenceBundleId = stableId("ev", {
     capability: capability.name,
     source: capability.source,
     tenant: context.tenant_id,
-    row: current.row,
-    at: new Date().toISOString(),
+    row: capability.kind === "proposal" && operation === "insert" ? undefined : current.row,
+    patch: capability.kind === "proposal" && operation === "insert" ? patch : undefined,
+    at: createdAt,
   });
   const queryFingerprint = queryFingerprintFor(capability, context);
-  const objectId = String(current.row[capability.target.primary_key] ?? input.args[capability.lookup.id_from_arg]);
   await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
     tenant_id: context.tenant_id,
@@ -1888,29 +1926,32 @@ async function callConfiguredTool(input: {
     },
     items: [
       {
-        kind: "external_row",
+        kind: capability.kind === "proposal" && operation === "insert" ? "reviewed_insert_intent" : "external_row",
         source_id: capability.source,
         table: `${capability.target.schema}.${capability.target.table}`,
         primary_key: { column: capability.target.primary_key, value: objectId },
         tenant: capability.target.tenant_key ? { column: capability.target.tenant_key, value: context.tenant_id } : undefined,
-        visible_row: scalarRecord(current.row),
+        visible_row: capability.kind === "proposal" && operation === "insert" ? patch : scalarRecord(current.row),
+        ...(resolvedDeduplication ? { deduplication: resolvedDeduplication } : {}),
       },
     ],
   });
-  await input.store.recordQueryAudit({
-    evidence_bundle_id: evidenceBundleId,
-    source_id: capability.source,
-    query_fingerprint: queryFingerprint,
-    table_name: `${capability.target.schema}.${capability.target.table}`,
-    row_count: current.rowCount,
-    payload: {
-      capability: capability.name,
-      columns: capability.visible_columns,
-      tenant_bound: Boolean(capability.target.tenant_key),
-      statement_template: selectTemplate(capability),
-      parameters_redacted: true,
-    },
-  });
+  if (capability.kind !== "proposal" || operation !== "insert") {
+    await input.store.recordQueryAudit({
+      evidence_bundle_id: evidenceBundleId,
+      source_id: capability.source,
+      query_fingerprint: queryFingerprint,
+      table_name: `${capability.target.schema}.${capability.target.table}`,
+      row_count: current.rowCount,
+      payload: {
+        capability: capability.name,
+        columns: capability.visible_columns,
+        tenant_bound: Boolean(capability.target.tenant_key),
+        statement_template: selectTemplate(capability),
+        parameters_redacted: true,
+      },
+    });
+  }
 
   if (capability.kind === "read") {
     return {
@@ -1942,6 +1983,10 @@ async function callConfiguredTool(input: {
     sourceName: capability.source,
     source,
     currentRow: current.row,
+    patch,
+    proposalId,
+    createdAt,
+    resolvedDeduplication,
     evidenceBundleId,
     queryFingerprint,
     objectId,
@@ -1994,19 +2039,21 @@ async function callConfiguredTool(input: {
       },
     ],
   });
-  await input.store.recordQueryAudit({
-    proposal_id: proposal.proposal_id,
-    evidence_bundle_id: evidenceBundleId,
-    source_id: capability.source,
-    query_fingerprint: queryFingerprint,
-    table_name: `${capability.target.schema}.${capability.target.table}`,
-    row_count: current.rowCount,
-    payload: {
-      capability: capability.name,
-      statement_template: selectTemplate(capability),
-      parameters_redacted: true,
-    },
-  });
+  if (operation !== "insert") {
+    await input.store.recordQueryAudit({
+      proposal_id: proposal.proposal_id,
+      evidence_bundle_id: evidenceBundleId,
+      source_id: capability.source,
+      query_fingerprint: queryFingerprint,
+      table_name: `${capability.target.schema}.${capability.target.table}`,
+      row_count: current.rowCount,
+      payload: {
+        capability: capability.name,
+        statement_template: selectTemplate(capability),
+        parameters_redacted: true,
+      },
+    });
+  }
 
   return {
     status: input.config.mode === "shadow" ? "shadow_proposal_created" : approvalResult.proposal.state === "approved" ? "approved" : "review_required",
@@ -2079,11 +2126,16 @@ function resultEnvelopeFromLegacy(
     const state = typeof legacy.status === "string" ? legacy.status : "review_required";
     const approvalRequired = legacy.approval_required !== false;
     const executor = writebackExecutorName(legacy.writeback);
+    const operation = capability?.operation?.kind ?? "update";
     const writebackMode = executor === "read_only" || executor === "none"
       ? "proposal_only"
       : executor && executor !== "sql_update" && executor !== "trusted_worker_required"
         ? "app_handler"
-        : "direct_update";
+        : operation === "insert"
+          ? "direct_insert"
+          : operation === "delete"
+            ? "direct_delete"
+            : "direct_update";
     return {
       ok: true,
       summary: `Created proposal ${proposalId} for ${targetType} ${targetId}. Source database changed: no.`,
@@ -2099,6 +2151,7 @@ function resultEnvelopeFromLegacy(
         ...(approval ? { approval } : {}),
         writeback: {
           mode: writebackMode,
+          operation,
           applied: false,
         },
         next: approvalRequired
@@ -2211,6 +2264,7 @@ async function maybeAutoApproveProposal(input: {
 }> {
   if (input.config.mode !== "review") return { proposal: input.proposal, approved: false };
   if (input.config.approvals?.disable_auto_approval === true) return { proposal: input.proposal, approved: false };
+  if (input.capability.operation?.kind === "delete") return { proposal: input.proposal, approved: false };
   if (input.capability.approval?.mode !== "policy" || !input.capability.approval.policy) return { proposal: input.proposal, approved: false };
   if (input.proposal.state === "approved") return { proposal: input.proposal, approved: true, policy: input.capability.approval.policy };
   if (input.proposal.state !== "pending_review") return { proposal: input.proposal, approved: false };
@@ -2520,15 +2574,20 @@ function buildChangeSet(input: {
   sourceName: string;
   source: RuntimeSourceConfig;
   currentRow: Record<string, unknown>;
+  patch: Record<string, Scalar>;
+  proposalId: string;
+  createdAt: string;
+  resolvedDeduplication?: NonNullable<ChangeSetV2["guards"]["deduplication"]>;
   evidenceBundleId: string;
   queryFingerprint: string;
   objectId: string;
-}): ChangeSetV1 {
-  const patch = buildPatch(input.capability, input.args);
+}): ChangeSet {
+  const patch = input.patch;
   const before = scalarRecord(input.currentRow);
   enforcePatchGuards(input.capability, before, patch);
-  const after = { ...before, ...patch };
-  const guard = expectedVersionGuard(input.capability, before);
+  const operation = input.capability.operation?.kind ?? "update";
+  const after = operation === "delete" ? {} : operation === "insert" ? { ...patch } : { ...before, ...patch };
+  const guard = operation === "insert" ? undefined : expectedVersionGuard(input.capability, before);
   const writebackMode = capabilityWritebackMode(input.capability);
   const changeSetWritebackMode = writebackMode === "none" ? "read_only" : "trusted_worker_required";
   const writebackExecutor = writebackMode === "none"
@@ -2538,17 +2597,73 @@ function buildChangeSet(input: {
       : writebackMode === "direct_sql"
         ? "sql_update"
         : capabilityWritebackExecutor(input.capability);
-  const createdAt = new Date().toISOString();
-  const proposalCore = {
-    schema_version: protocolVersions.changeSet,
-    proposal_id: stableId("wrp", {
+  const createdAt = input.createdAt;
+  if (input.capability.operation) {
+    const operationName = `single_row_${operation}` as ChangeSetV2["operation"];
+    const proposalCore = {
+      schema_version: protocolVersions.changeSetV2,
+      proposal_id: input.proposalId,
+      proposal_version: 1,
       action: input.capability.name,
-      tenant: input.context.tenant_id,
-      object: input.objectId,
+      operation: operationName,
+      mode: input.config.mode === "shadow" ? "shadow" : "review_required",
+      principal: {
+        id: input.context.principal,
+        source: input.context.provenance === "environment" ? "environment" : input.context.provenance === "cloud_session" ? "cloud_session" : input.context.provenance === "static_dev" ? "static_dev" : "trusted_session",
+      },
+      scope: {
+        tenant_id: input.context.tenant_id,
+        business_object: input.capability.target.table,
+        object_id: input.objectId,
+      },
+      source: {
+        kind: input.source.engine === "postgres" ? "external_postgres" : "external_mysql",
+        source_id: input.sourceName,
+        schema: input.capability.target.schema,
+        table: input.capability.target.table,
+        primary_key: {
+          column: input.capability.target.primary_key,
+          ...(operation === "insert" && !input.resolvedDeduplication?.components.some((component) => component.column === input.capability.target.primary_key)
+            ? {}
+            : { value: scalar(input.currentRow[input.capability.target.primary_key] ?? input.objectId) }),
+        },
+      },
       before,
       patch,
+      after,
+      guards: {
+        tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+        allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
+        ...(guard ? { expected_version: guard } : {}),
+        ...(input.capability.operation.version_advance ? { version_advance: input.capability.operation.version_advance } : {}),
+        ...(input.resolvedDeduplication ? { deduplication: input.resolvedDeduplication } : {}),
+      },
+      evidence: {
+        bundle_id: input.evidenceBundleId,
+        query_fingerprint: input.queryFingerprint,
+        items: [],
+      },
+      approval: {
+        status: "pending",
+        ...(input.capability.approval?.mode ? { mode: input.capability.approval.mode } : {}),
+        ...(input.capability.approval?.policy ? { policy: input.capability.approval.policy } : {}),
+        required_role: input.capability.approval?.required_role,
+        ...(input.capability.approval?.required_approvals ? { required_approvals: input.capability.approval.required_approvals } : {}),
+      },
+      writeback: {
+        status: "not_applied",
+        mode: changeSetWritebackMode,
+        executor: writebackExecutor,
+      },
+      source_database_mutated: false,
       created_at: createdAt,
-    }),
+    } satisfies Omit<ChangeSetV2, "integrity">;
+    return { ...proposalCore, integrity: { proposal_hash: hashJson(proposalCore) } };
+  }
+
+  const proposalCore = {
+    schema_version: protocolVersions.changeSet,
+    proposal_id: input.proposalId,
     proposal_version: 1,
     action: input.capability.name,
     mode: input.config.mode === "shadow" ? "shadow" : "review_required",
@@ -2574,7 +2689,7 @@ function buildChangeSet(input: {
     guards: {
       tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
       allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
-      expected_version: guard,
+      expected_version: guard!,
     },
     evidence: {
       bundle_id: input.evidenceBundleId,
@@ -3058,6 +3173,28 @@ function buildPatch(capability: RuntimeCapabilityConfig, args: Record<string, un
   return patch;
 }
 
+function resolveDeduplication(
+  capability: RuntimeCapabilityConfig,
+  proposalId: string,
+  context: TrustedContext,
+): NonNullable<ChangeSetV2["guards"]["deduplication"]> {
+  const declared = capability.operation?.kind === "insert" ? capability.operation.deduplication?.components : undefined;
+  if (!declared?.length) throw new McpRuntimeError("INSERT_DEDUPLICATION_REQUIRED", `INSERT capability ${capability.name} requires source-enforced deduplication.`);
+  const components = declared.map((component) => ({
+    column: component.column,
+    source: component.source,
+    value: component.source === "proposal_id"
+      ? proposalId
+      : component.source === "trusted_tenant"
+        ? context.tenant_id
+        : scalar(component.fixed ?? null),
+  }));
+  if (!components.some((component) => component.source === "proposal_id")) {
+    throw new McpRuntimeError("INSERT_PROPOSAL_ID_DEDUP_REQUIRED", `INSERT capability ${capability.name} must include a proposal_id deduplication component.`);
+  }
+  return { components };
+}
+
 function enforcePatchGuards(
   capability: RuntimeCapabilityConfig,
   before: Record<string, Scalar>,
@@ -3092,8 +3229,12 @@ function enforcePatchGuards(
   }
 }
 
-function diffFromChangeSet(changeSet: ChangeSetV1): Record<string, { before: Scalar; proposed: Scalar }> {
+function diffFromChangeSet(changeSet: ChangeSet): Record<string, { before: Scalar; proposed: Scalar }> {
   const diff: Record<string, { before: Scalar; proposed: Scalar }> = {};
+  if (changeSet.schema_version === protocolVersions.changeSetV2 && changeSet.operation === "single_row_delete") {
+    for (const [column, value] of Object.entries(changeSet.before)) diff[column] = { before: value, proposed: null };
+    return diff;
+  }
   for (const column of Object.keys(changeSet.patch)) {
     diff[column] = {
       before: changeSet.before[column] ?? null,

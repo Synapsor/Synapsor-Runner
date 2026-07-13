@@ -1,0 +1,28 @@
+{
+  "schema_version": "synapsor.writeback-job.v2",
+  "writeback_job_id": "wbj_insert_2002",
+  "proposal_id": "wrp_insert_2002",
+  "proposal_version": 1,
+  "proposal_hash": "sha256:insert-proposal",
+  "runner_scope": { "project_id": "project_demo", "source_id": "src_billing_demo" },
+  "engine": "postgres",
+  "target": {
+    "schema": "public",
+    "table": "account_credits",
+    "primary_key": { "column": "id" }
+  },
+  "tenant_guard": { "column": "tenant_id", "value": "tenant_demo" },
+  "allowed_columns": ["amount_cents", "reason"],
+  "mutation": {
+    "kind": "single_row_insert",
+    "values": { "amount_cents": 2500, "reason": "service interruption" },
+    "deduplication": {
+      "components": [
+        { "column": "tenant_id", "value": "tenant_demo", "source": "trusted_tenant" },
+        { "column": "request_id", "value": "wrp_insert_2002", "source": "proposal_id" }
+      ]
+    }
+  },
+  "idempotency_key": "idem_insert_2002",
+  "lease": { "lease_id": "lease_insert_2002", "attempt": 1, "expires_at": "2026-07-13T19:01:00Z" }
+}

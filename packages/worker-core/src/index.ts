@@ -14,7 +14,62 @@ export type RunnerConfig = {
   logLevel: "debug" | "info" | "warn" | "error";
   dryRun: boolean;
   stateDir: string;
+  receipts?: {
+    authority: "source_db" | "runner_ledger";
+    provisioning?: "precreated" | "auto_migrate";
+    schema?: string;
+    table?: string;
+  };
+  writebackIntentStore?: WritebackIntentStore;
+  /** Test-only crash injection. Production config loaders must never expose this. */
+  testFailpoint?: (name: WritebackFailpoint) => void | Promise<void>;
 };
+
+export type WritebackIntentStatus =
+  | "intent_recorded"
+  | "applying"
+  | "applied"
+  | "already_applied"
+  | "conflict"
+  | "failed"
+  | "reconciliation_required";
+
+export type WritebackIntentClaim =
+  | { decision: "proceed"; intent_id: string }
+  | { decision: "existing_result"; intent_id: string; result: WritebackResult }
+  | { decision: "reconciliation_required"; intent_id: string; reason: string };
+
+export type WritebackIntentStore = {
+  claimWritebackIntent(job: WritebackJob, runnerId: string): Promise<WritebackIntentClaim> | WritebackIntentClaim;
+  markWritebackIntentApplying(intentId: string, runnerId: string): Promise<void> | void;
+  completeWritebackIntent(intentId: string, result: WritebackResult): Promise<void> | void;
+  requireWritebackReconciliation(intentId: string, reason: string): Promise<void> | void;
+};
+
+export type ReconciliationClassification =
+  | "matches_reviewed_before"
+  | "matches_proposed"
+  | "not_observed"
+  | "target_absent"
+  | "drifted";
+
+export type ReconciliationObservation = {
+  operation: "single_row_update" | "single_row_insert" | "single_row_delete";
+  classification: ReconciliationClassification;
+  target_identity: Array<{ column: string; value: string | number | boolean | null }>;
+  expected: Record<string, string | number | boolean | null>;
+  observed: Record<string, string | number | boolean | null>;
+  observed_digest: `sha256:${string}`;
+};
+
+export type WritebackFailpoint =
+  | "after_intent_recorded"
+  | "after_intent_applying"
+  | "after_source_begin"
+  | "after_source_mutation"
+  | "before_source_commit"
+  | "after_source_commit"
+  | "after_intent_completed";
 
 export type ApplyAdapter = {
   doctor(config: RunnerConfig): Promise<{ ok: boolean; details: Record<string, unknown> }>;

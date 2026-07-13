@@ -203,7 +203,8 @@
       },
       "properties": {
         "action": { "$ref": "#/$defs/qualifiedOrSafeName" },
-        "allowed_fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeIdentifier" } },
+        "operation": { "$ref": "#/$defs/proposalOperation" },
+        "allowed_fields": { "type": "array", "items": { "$ref": "#/$defs/safeIdentifier" } },
         "patch": { "type": "object", "additionalProperties": { "$ref": "#/$defs/patchBinding" } },
         "numeric_bounds": {
           "type": "object",
@@ -241,6 +242,52 @@
             "idempotency_key": { "type": "string" }
           }
         }
+      }
+    },
+    "proposalOperation": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "kind": { "enum": ["update", "insert", "delete"] },
+        "deduplication": {
+          "type": "object",
+          "required": ["components"],
+          "additionalProperties": false,
+          "properties": {
+            "components": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": { "$ref": "#/$defs/deduplicationComponent" }
+            }
+          }
+        },
+        "version_advance": {
+          "type": "object",
+          "required": ["column", "strategy"],
+          "additionalProperties": false,
+          "properties": {
+            "column": { "$ref": "#/$defs/safeIdentifier" },
+            "strategy": { "enum": ["integer_increment", "database_generated"] }
+          }
+        }
+      }
+    },
+    "deduplicationComponent": {
+      "type": "object",
+      "required": ["column", "source"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] },
+        "fixed": { "$ref": "#/$defs/scalar" }
       }
     },
     "numericBound": {

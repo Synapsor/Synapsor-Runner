@@ -12,7 +12,13 @@
       "engine": "postgres",
       "read_url_env": "PLAN_CREDIT_POSTGRES_READ_URL",
       "write_url_env": "PLAN_CREDIT_POSTGRES_WRITE_URL",
-      "statement_timeout_ms": 3000
+      "statement_timeout_ms": 3000,
+      "receipts": {
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "public",
+        "table": "synapsor_writeback_receipts"
+      }
     }
   }
 }

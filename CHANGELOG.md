@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0 (prepared, not published)
+
+### Guarded CRUD And Receipt Authority
+
+- Adds canonical and DSL operation semantics for native guarded single-row
+  `INSERT`, `UPDATE`, and `DELETE`, while preserving operation-less contracts
+  and v1 writeback jobs as guarded UPDATE.
+- Adds operation-aware v2 change-set, writeback-job, and execution-receipt
+  schemas with trusted tenant binding, source-enforced INSERT deduplication,
+  DELETE cascade/trigger refusal, bounded diffs, and replay-safe digests.
+- Separates receipt authority (`source_db` or `runner_ledger`) from source
+  receipt provisioning (`precreated` or `auto_migrate`). Runner-ledger mode
+  records durable intents without source receipt DDL and stops ambiguous
+  post-commit outcomes for verified operator reconciliation.
+- Extends Postgres and MySQL adapters, onboarding, doctor, tools preview, and
+  the support-plan-credit example with least-privilege guarded CRUD paths.
+- Adds disposable-engine verification for every operation and receipt mode,
+  retries, crash windows, concurrent applies, stale guards, and hidden DELETE
+  effects. No npm package is published by this change.
+- Stages `@synapsor/spec@1.2.0`, `@synapsor/dsl@1.2.0`, and
+  `@synapsor/runner@1.2.0`.
+
 ## 1.1.2 (prepared, not published)
 
 ### Fleet Error And Batch Apply Correctness

@@ -10,6 +10,25 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.2.0 (prepared, not published)
+
+### Guarded CRUD And Receipt Authority
+
+- Adds canonical and DSL operation semantics for guarded single-row INSERT,
+  UPDATE, and DELETE while preserving legacy UPDATE contracts.
+- Adds atomic source receipts with precreated or auto-migrated tables and an
+  opt-in Runner-ledger mode that creates no source receipt table.
+- Adds durable writeback intents and a fail-closed operator reconciliation
+  workflow for ambiguous ledger/source crash windows.
+- Extends onboarding, doctor, preview, schema inspection, protocol v2,
+  Postgres/MySQL adapters, the support-plan-credit example, and disposable live
+  conformance tests.
+- Keeps multi-row writes, UPSERT, DDL, cross-table work, and external effects
+  on the app-owned executor path.
+
+Prepared package versions: `@synapsor/spec@1.2.0`,
+`@synapsor/dsl@1.2.0`, and `@synapsor/runner@1.2.0`.
+
 ## 1.1.2 (prepared, not published)
 
 ### Retry And Shared Batch Correctness

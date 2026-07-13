@@ -12,9 +12,10 @@ import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
 import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
-import { mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
-import { createPostgresPool, postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
+import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
+import { createPostgresPool, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
 import {
+  PostgresWritebackIntentStore,
   ProposalStore,
   sharedPostgresRuntimeStoreMigration,
   type EvidenceSearchFilters,
@@ -29,14 +30,16 @@ import {
   type SharedLedgerEntry,
   type StoredEvidenceBundle,
   type StoredProposal,
+  type StoredWritebackIntent,
   type StoredWritebackReceipt,
   type StorePruneResult,
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ChangeSetV1, type ExecutionReceiptV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type ChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
+  assessDirectWritePrerequisites,
   generateRunnerConfigFromSpec,
   inspectDatabase,
   summarizeInspection,
@@ -55,6 +58,8 @@ import {
   startPolling,
   type McpAuditReport,
   type RunnerConfig,
+  type ReconciliationObservation,
+  type WritebackIntentStore,
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
 import { startLocalUiServer, type LocalUiStoreAccess } from "./local-ui.js";
@@ -594,7 +599,10 @@ export async function runInitWizard(
   stdout.write("\nStep 3: Create capability\n");
   stdout.write("Name the semantic tool the model can call. Table, key, visible fields, and mode define what that capability can do.\n");
   const mode = await askChoice(ask, "Capability mode", optionalArg(args, "--mode") ?? "read_only", ["read_only", "shadow", "review"]);
-  const conflictAnswer = mode === "read_only"
+  const operation = mode === "read_only"
+    ? "update"
+    : await askChoice(ask, "Proposal operation", optionalArg(args, "--operation") ?? "update", ["update", "insert", "delete"]);
+  const conflictAnswer = mode === "read_only" || operation === "insert"
     ? optionalArg(args, "--conflict-column") ?? ""
     : await askDefault(ask, "Conflict/version column", optionalArg(args, "--conflict-column") ?? table.suggestions.conflict_columns[0] ?? "");
   if (conflictAnswer && !columns.includes(conflictAnswer)) throw new Error(`conflict column ${conflictAnswer} does not exist on ${table.schema}.${table.name}`);
@@ -602,12 +610,15 @@ export async function runInitWizard(
   let visibleColumns = parseColumnList(await askDefault(ask, "Capability read-visible columns", optionalArg(args, "--visible-columns") ?? defaultVisible));
   ensureColumnsExist(visibleColumns, columns, "visible");
 
-  if (mode !== "read_only" && !conflictAnswer) {
+  if (mode !== "read_only" && operation === "delete" && !conflictAnswer) {
+    throw new Error("hard DELETE is unavailable without an inspected exact conflict/version column; use a guarded soft-delete UPDATE instead");
+  }
+  if (mode !== "read_only" && operation === "update" && !conflictAnswer) {
     const weak = await askDefault(ask, "No conflict/version column selected. Type yes to continue with a weak guard", "no");
     if (weak.toLowerCase() !== "yes") throw new Error("conflict/version column is required unless weak guard is explicitly acknowledged");
   }
   let recipeSpec: OnboardingSelectionSpec | undefined;
-  if (mode !== "read_only") {
+  if (mode !== "read_only" && operation === "update") {
     const actionSetup = await askChoice(ask, "Business action setup", optionalArg(args, "--recipe") ? "recipe" : "manual", ["manual", "recipe"]);
     if (actionSetup === "recipe") {
       const recipes = await loadBuiltInRecipes();
@@ -635,7 +646,7 @@ export async function runInitWizard(
   let allowedColumns: string[] | undefined;
   let numericBounds: OnboardingSelectionSpec["numeric_bounds"] = undefined;
   let transitionGuards: OnboardingSelectionSpec["transition_guards"] = undefined;
-  if (mode !== "read_only") {
+  if (mode !== "read_only" && operation !== "delete") {
     const patchable = columns.filter((column) => !new Set([primaryKey, tenantAnswer, conflictAnswer].filter(Boolean)).has(column));
     const defaultPatch = recipeSpec?.patch
       ? formatPatchMappings(recipeSpec.patch)
@@ -669,6 +680,28 @@ export async function runInitWizard(
     }
   }
 
+  let deduplication: OnboardingSelectionSpec["deduplication"];
+  if (mode !== "read_only" && operation === "insert") {
+    if (!tenantAnswer) throw new Error("native guarded INSERT requires a trusted tenant column");
+    const inferred = inferInsertDeduplication(table, tenantAnswer, primaryKey);
+    const mappingInput = await askDefault(
+      ask,
+      "INSERT dedup mapping (column=proposal_id|trusted_tenant|fixed:value, comma-separated)",
+      optionalArg(args, "--dedup") ?? formatDeduplication(inferred),
+    );
+    deduplication = parseDeduplicationInput(mappingInput);
+    const assessment = assessDirectWritePrerequisites(table, {
+      operation: "insert",
+      primary_key: primaryKey,
+      tenant_key: tenantAnswer,
+      allowed_columns: allowedColumns ?? [],
+      patch_columns: Object.keys(patch),
+      dedup_columns: deduplication.components.map((component) => component.column),
+    });
+    const failures = assessment.filter((item) => item.level === "fail");
+    if (failures.length > 0) throw new Error(`native INSERT prerequisites failed: ${failures.map((item) => item.message).join(" ")}`);
+  }
+
   const inferredObjectName = recipeSpec?.object_name ?? safeObjectName(table.name);
   const namespace = await askDefault(ask, "Capability namespace", optionalArg(args, "--namespace") ?? recipeSpec?.namespace ?? inferCapabilityNamespace(table.name));
   const objectName = await askDefault(ask, "Business object name", optionalArg(args, "--object-name") ?? inferredObjectName);
@@ -679,7 +712,7 @@ export async function runInitWizard(
     "Read capability name",
     optionalArg(args, "--read-tool") ?? optionalArg(args, "--inspect-tool-name") ?? defaultInspectToolName,
   );
-  const defaultProposalToolName = recipeSpec?.proposal_tool_name ?? `${namespace}.propose_${objectName}_update`;
+  const defaultProposalToolName = recipeSpec?.proposal_tool_name ?? `${namespace}.propose_${objectName}_${operation}`;
   const proposalToolName = mode === "read_only" ? undefined : await askDefault(
     ask,
     "Proposal capability name",
@@ -700,7 +733,7 @@ export async function runInitWizard(
   const proposalDescription = mode === "read_only" ? undefined : await askDefault(
     ask,
     "Proposal capability description",
-    optionalArg(args, "--proposal-description") ?? `Create a review-required proposal to update one ${objectLabel}. The source database remains unchanged until approval and writeback.`,
+    optionalArg(args, "--proposal-description") ?? `Create a review-required proposal to ${operation} one ${objectLabel}. The source database remains unchanged until approval and writeback.`,
   );
   const proposalReturnsHint = mode === "read_only" ? undefined : await askDefault(
     ask,
@@ -711,6 +744,8 @@ export async function runInitWizard(
   const resultFormat = resultFormatAnswer === "v1" ? 1 : resultFormatAnswer === "v2" ? 2 : undefined;
   let writeUrlEnv: string | undefined = optionalArg(args, "--write-url-env");
   let writeback: OnboardingSelectionSpec["writeback"] | undefined;
+  let receipts: OnboardingSelectionSpec["receipts"] | undefined;
+  let versionAdvance: OnboardingSelectionSpec["version_advance"] | undefined;
   let generatedHandlerTemplate: { name: HandlerTemplateName; output: string } | undefined;
   if (mode === "review") {
     const writebackPath = await askChoice(
@@ -722,6 +757,35 @@ export async function runInitWizard(
     if (writebackPath === "sql_update") {
       writeUrlEnv = await askEnvName(ask, "Write URL env var for trusted direct SQL apply", writeUrlEnv ?? "SYNAPSOR_DATABASE_WRITE_URL");
       writeback = { executor: "sql_update" };
+      stdout.write("Receipt authority controls crash classification. source_db is atomic with the mutation; runner_ledger changes no source schema but may require operator reconciliation after an ambiguous crash.\n");
+      const receiptChoice = await askChoice(
+        ask,
+        "Receipt mode",
+        optionalArg(args, "--receipt-mode") ?? "source_auto_migrate",
+        ["source_auto_migrate", "source_precreated", "runner_ledger"],
+      );
+      receipts = receiptChoice === "runner_ledger"
+        ? { authority: "runner_ledger" }
+        : {
+          authority: "source_db",
+          provisioning: receiptChoice === "source_auto_migrate" ? "auto_migrate" : "precreated",
+          schema: optionalArg(args, "--receipt-schema"),
+          table: optionalArg(args, "--receipt-table") ?? "synapsor_writeback_receipts",
+        };
+      if (receipts.authority === "runner_ledger" && operation === "update") {
+        if (!conflictAnswer) throw new Error("runner_ledger UPDATE requires an exact conflict/version column");
+        const conflictColumn = table.columns.find((column) => column.name === conflictAnswer);
+        const inferredStrategy = conflictColumn && /int|numeric|decimal|number/i.test(conflictColumn.data_type)
+          ? "integer_increment"
+          : "database_generated";
+        const strategy = await askChoice(
+          ask,
+          "Version advancement strategy",
+          optionalArg(args, "--version-advance") ?? inferredStrategy,
+          ["integer_increment", "database_generated"],
+        );
+        versionAdvance = { column: conflictAnswer, strategy: strategy as "integer_increment" | "database_generated" };
+      }
     } else if (writebackPath === "http_handler") {
       const urlEnv = await askEnvName(ask, "App-owned HTTP handler URL env var", optionalArg(args, "--handler-url-env") ?? "SYNAPSOR_APP_WRITEBACK_URL");
       const tokenEnv = await askOptionalEnvName(ask, "Optional HTTP handler bearer-token env var", optionalArg(args, "--handler-token-env") ?? "");
@@ -755,6 +819,18 @@ export async function runInitWizard(
       }
     }
   }
+  if (mode === "review" && writeback?.executor === "sql_update" && operation === "delete") {
+    const assessment = assessDirectWritePrerequisites(table, {
+      operation: "delete",
+      primary_key: primaryKey,
+      tenant_key: tenantAnswer || undefined,
+      allowed_columns: [],
+      patch_columns: [],
+      conflict_column: conflictAnswer || undefined,
+    });
+    const failures = assessment.filter((item) => item.level === "fail");
+    if (failures.length > 0) throw new Error(`native hard DELETE prerequisites failed: ${failures.map((item) => item.message).join(" ")} Prefer a guarded soft-delete UPDATE or an app-owned executor.`);
+  }
   const approvalRole = mode === "read_only" ? "local_reviewer" : await askDefault(ask, "Required approval role", optionalArg(args, "--approval-role") ?? recipeSpec?.approval?.required_role ?? "local_reviewer");
 
   let spec: OnboardingSelectionSpec = {
@@ -781,6 +857,10 @@ export async function runInitWizard(
     lookup_arg: lookupArg,
     result_format: resultFormat as 1 | 2 | undefined,
     visible_columns: visibleColumns,
+    operation: operation as "update" | "insert" | "delete",
+    deduplication,
+    version_advance: versionAdvance,
+    receipts,
     allowed_columns: allowedColumns,
     patch,
     patch_args: patchArgs,
@@ -858,7 +938,11 @@ export async function runInitWizard(
     stdout.write(`  2. Smoke-call a real row: ${cliCommandName()} smoke call ${smokeToolName} --json '{"${lookupArg}":"<real_id>"}' --config ${outputPath} --store ${defaultStorePath}\n`);
   }
   stdout.write(`  3. Serve MCP tools: ${cliCommandName()} mcp serve --config ${outputPath} --store ${defaultStorePath}\n`);
-  stdout.write(`  OpenAI Agents SDK: use ${cliCommandName()} mcp serve-streamable-http --config ${outputPath} --store ${defaultStorePath} --alias-mode openai\n`);
+  if (receipts?.authority === "runner_ledger") {
+    stdout.write("  Networked/Streamable HTTP with runner_ledger requires storage.shared_postgres.mode=runtime_store; local SQLite is intentionally limited to one stdio/operator process.\n");
+  } else {
+    stdout.write(`  OpenAI Agents SDK: use ${cliCommandName()} mcp serve-streamable-http --config ${outputPath} --store ${defaultStorePath} --alias-mode openai\n`);
+  }
   return 0;
 }
 
@@ -886,8 +970,15 @@ function printWizardContractPreview(
   stdout.write(`  primary key: ${input.spec.primary_key}${input.spec.conflict_column ? `; conflict guard: ${input.spec.conflict_column}` : ""}\n`);
   stdout.write(`  visible fields: ${visiblePreview || "none"}\n`);
   stdout.write(`  mode: ${input.spec.mode}\n`);
+  if (input.spec.mode !== "read_only") stdout.write(`  operation: ${(input.spec.operation ?? "update").toUpperCase()}; max rows: 1\n`);
   stdout.write(`  result envelope: ${input.spec.result_format ? `v${input.spec.result_format}` : "default"}\n`);
   stdout.write(`  writeback path: ${input.spec.writeback?.executor ?? (input.spec.mode === "review" ? "sql_update" : "none")}\n`);
+  if (input.spec.writeback?.executor === "sql_update") {
+    const source = (input.generated.config.sources as Record<string, RunnerSourceConfig>)[input.spec.source_name ?? (input.spec.engine === "postgres" ? "local_postgres" : "local_mysql")];
+    stdout.write(`  receipt mode: ${formatSourceReceiptMode(source)}\n`);
+  }
+  if (input.spec.deduplication) stdout.write(`  source dedup columns: ${input.spec.deduplication.components.map((component) => component.column).join(", ")}\n`);
+  if (input.spec.version_advance) stdout.write(`  version advance: ${input.spec.version_advance.column}:${input.spec.version_advance.strategy}\n`);
   stdout.write(`  read capability: ${readCapability}\n`);
   if (proposalCapability) stdout.write(`  proposal capability: ${proposalCapability}\n`);
   stdout.write(`  exposed tools: ${tools.join(", ")}\n`);
@@ -958,8 +1049,24 @@ function answersToSelectionSpec(raw: unknown): OnboardingSelectionSpec {
           executor: "command_handler" as const,
           handler_command_env: stringValue(raw.handler_command_env) ?? "SYNAPSOR_APP_WRITEBACK_COMMAND",
         };
+  const operation = (stringValue(raw.operation) ?? "update") as "update" | "insert" | "delete";
+  if (!["update", "insert", "delete"].includes(operation)) throw new Error("answers.operation must be update, insert, or delete");
   const patch = parsePatchBindings(arrayOrStringList(raw.patch), "--answers.patch");
+  if (operation === "delete" && Object.keys(patch).length > 0) throw new Error("answers.patch must be empty for DELETE");
+  if (mode !== "read_only" && operation !== "delete" && Object.keys(patch).length === 0) {
+    throw new Error(`answers.patch must define at least one reviewed column for ${operation.toUpperCase()}`);
+  }
   const allowedColumns = arrayOrStringList(raw.allowed_columns);
+  const conflictColumn = stringValue(raw.conflict_column);
+  if (mode !== "read_only" && operation === "delete" && !conflictColumn) throw new Error("answers.conflict_column is required for DELETE");
+  const tenantKey = stringValue(raw.tenant_column) ?? stringValue(raw.tenant_key);
+  const deduplication = operation === "insert" ? deduplicationFromAnswerValue(raw.deduplication ?? raw.dedup) : undefined;
+  if (operation === "insert" && !deduplication) throw new Error("answers.deduplication is required for INSERT");
+  const receipts = mode === "review" && writeback.executor === "sql_update" ? receiptsFromAnswerValue(raw.receipts ?? raw.receipt_mode) : undefined;
+  const versionAdvance = operation === "update" ? versionAdvanceFromAnswerValue(raw.version_advance) : undefined;
+  if (receipts?.authority === "runner_ledger" && operation === "update" && !versionAdvance) {
+    throw new Error("answers.version_advance is required for runner_ledger UPDATE");
+  }
   return {
     version: 1,
     engine,
@@ -970,9 +1077,9 @@ function answersToSelectionSpec(raw: unknown): OnboardingSelectionSpec {
     schema: requiredAnswerString(raw.schema, "schema"),
     table,
     primary_key: requiredAnswerString(raw.primary_key, "primary_key"),
-    tenant_key: stringValue(raw.tenant_column) ?? stringValue(raw.tenant_key),
+    tenant_key: tenantKey,
     single_tenant_dev: raw.single_tenant_dev === true,
-    conflict_column: stringValue(raw.conflict_column),
+    conflict_column: conflictColumn,
     namespace,
     object_name: objectName,
     inspect_tool_name: stringValue(raw.read_tool) ?? stringValue(raw.inspect_tool_name),
@@ -984,6 +1091,10 @@ function answersToSelectionSpec(raw: unknown): OnboardingSelectionSpec {
     proposal_returns_hint: stringValue(raw.proposal_returns_hint),
     result_format: resultFormatFromAnswerValue(raw.result_format),
     visible_columns: arrayOrStringList(raw.visible_columns),
+    operation,
+    deduplication,
+    version_advance: versionAdvance,
+    receipts,
     allowed_columns: allowedColumns.length > 0 ? allowedColumns : undefined,
     patch,
     numeric_bounds: parseNumericBoundsInput(arrayOrStringList(raw.patch_bounds ?? raw.numeric_bounds).join(",")),
@@ -997,6 +1108,72 @@ function answersToSelectionSpec(raw: unknown): OnboardingSelectionSpec {
     },
     writeback,
   };
+}
+
+function deduplicationFromAnswerValue(value: unknown): OnboardingSelectionSpec["deduplication"] {
+  if (typeof value === "string") return parseDeduplicationInput(value);
+  if (!isRecord(value) || !Array.isArray(value.components)) return undefined;
+  const components: NonNullable<OnboardingSelectionSpec["deduplication"]>["components"] = value.components.map((entry, index) => {
+    if (!isRecord(entry)) throw new Error(`answers.deduplication.components[${index}] must be an object`);
+    const column = requiredAnswerString(entry.column, `deduplication.components[${index}].column`);
+    const source = requiredAnswerString(entry.source, `deduplication.components[${index}].source`);
+    if (source !== "proposal_id" && source !== "trusted_tenant" && source !== "fixed") {
+      throw new Error(`answers.deduplication.components[${index}].source must be proposal_id, trusted_tenant, or fixed`);
+    }
+    if (source === "fixed") {
+      if (!("fixed" in entry)) throw new Error(`answers.deduplication.components[${index}].fixed is required for source fixed`);
+      const fixed = entry.fixed;
+      if (fixed !== null && !["string", "number", "boolean"].includes(typeof fixed)) {
+        throw new Error(`answers.deduplication.components[${index}].fixed must be a scalar or null`);
+      }
+      return { column, source: "fixed", fixed: fixed as string | number | boolean | null };
+    }
+    return { column, source: source as "proposal_id" | "trusted_tenant" };
+  });
+  if (components.length === 0) throw new Error("answers.deduplication.components must not be empty");
+  return { components };
+}
+
+function receiptsFromAnswerValue(value: unknown): OnboardingSelectionSpec["receipts"] {
+  if (value === undefined || value === null || value === "") return { authority: "source_db", provisioning: "auto_migrate" };
+  if (typeof value === "string") {
+    if (value === "runner_ledger") return { authority: "runner_ledger" };
+    if (value === "source_auto_migrate") return { authority: "source_db", provisioning: "auto_migrate" };
+    if (value === "source_precreated") return { authority: "source_db", provisioning: "precreated" };
+    throw new Error("answers.receipt_mode must be source_auto_migrate, source_precreated, or runner_ledger");
+  }
+  if (!isRecord(value)) throw new Error("answers.receipts must be an object or receipt mode string");
+  const authority = requiredAnswerString(value.authority, "receipts.authority");
+  if (authority === "runner_ledger") return { authority };
+  if (authority !== "source_db") throw new Error("answers.receipts.authority must be source_db or runner_ledger");
+  const provisioning = stringValue(value.provisioning) ?? "auto_migrate";
+  if (provisioning !== "auto_migrate" && provisioning !== "precreated") {
+    throw new Error("answers.receipts.provisioning must be auto_migrate or precreated");
+  }
+  return {
+    authority,
+    provisioning,
+    ...(stringValue(value.schema) ? { schema: stringValue(value.schema) } : {}),
+    ...(stringValue(value.table) ? { table: stringValue(value.table) } : {}),
+  };
+}
+
+function versionAdvanceFromAnswerValue(value: unknown): OnboardingSelectionSpec["version_advance"] {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "string") {
+    const [column, strategy] = value.split(":").map((part) => part.trim());
+    if (!column || (strategy !== "integer_increment" && strategy !== "database_generated")) {
+      throw new Error("answers.version_advance must use column:integer_increment or column:database_generated");
+    }
+    return { column, strategy };
+  }
+  if (!isRecord(value)) throw new Error("answers.version_advance must be an object or column:strategy string");
+  const column = requiredAnswerString(value.column, "version_advance.column");
+  const strategy = requiredAnswerString(value.strategy, "version_advance.strategy");
+  if (strategy !== "integer_increment" && strategy !== "database_generated") {
+    throw new Error("answers.version_advance.strategy must be integer_increment or database_generated");
+  }
+  return { column, strategy };
 }
 
 async function maybeWriteHandlerTemplateForArgs(args: string[], writeback: OnboardingSelectionSpec["writeback"]): Promise<void> {
@@ -1048,6 +1225,8 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
   if (!["read_only", "shadow", "review"].includes(mode)) {
     throw new Error("init from inspection --mode must be read_only, shadow, or review");
   }
+  const operation = (optionalArg(args, "--operation") ?? "update") as "update" | "insert" | "delete";
+  if (!["update", "insert", "delete"].includes(operation)) throw new Error("--operation must be update, insert, or delete");
   const primaryKey = optionalArg(args, "--primary-key") ?? (table.primary_key.length === 1 ? table.primary_key[0] : inferPrimaryKeyCandidate(table));
   if (!primaryKey) {
     throw new Error(`--primary-key is required for ${table.schema}.${table.name}; detected primary keys: ${table.primary_key.join(", ") || "none"}`);
@@ -1061,7 +1240,10 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
     throw new Error(`--tenant-key is required for ${table.schema}.${table.name}, or pass --single-tenant-dev for a reviewed single-tenant dev source.`);
   }
   const conflictColumn = optionalArg(args, "--conflict-column") ?? table.suggestions.conflict_columns[0];
-  if (mode !== "read_only" && !conflictColumn) {
+  if (mode !== "read_only" && operation === "delete" && !conflictColumn) {
+    throw new Error(`native hard DELETE requires --conflict-column on ${table.schema}.${table.name}; use soft-delete UPDATE or an app-owned executor`);
+  }
+  if (mode !== "read_only" && operation === "update" && !conflictColumn) {
     process.stderr.write(`warning: no conflict/version column selected for ${table.schema}.${table.name}; generated proposal will require weak-guard acknowledgement.\n`);
   }
   const visibleColumns = listArg(args, "--visible-columns") ?? table.suggestions.default_visible_columns;
@@ -1069,14 +1251,39 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
     throw new Error(`no visible columns selected for ${table.schema}.${table.name}; pass --visible-columns col1,col2`);
   }
   const patch = parsePatchFlags(args);
-  if (mode !== "read_only" && Object.keys(patch).length === 0) {
+  if (mode !== "read_only" && operation !== "delete" && Object.keys(patch).length === 0) {
     throw new Error(`${mode} init requires at least one --patch-fixed column=value or --patch-from-arg column=arg. Use --mode read_only for inspect-only tools.`);
   }
+  if (operation === "delete" && Object.keys(patch).length > 0) throw new Error("native DELETE does not accept patch mappings");
   const numericBounds = parseNumericBoundsFlags(args);
   const transitionGuards = parseTransitionGuardFlags(args);
   const allowedColumns = listArg(args, "--allowed-columns") ?? Object.keys(patch);
   const writeback = writebackSpecFromArgs(args);
   const sqlWriteback = (writeback?.executor ?? "sql_update") === "sql_update";
+  const receipts = mode === "review" && sqlWriteback ? receiptSpecFromArgs(args) : undefined;
+  if (operation === "insert" && !tenantKey) throw new Error("native guarded INSERT requires a trusted tenant column; single-tenant development acknowledgement is not sufficient");
+  const deduplication = operation === "insert"
+    ? optionalArg(args, "--dedup")
+      ? parseDeduplicationInput(optionalArg(args, "--dedup") as string)
+      : inferInsertDeduplication(table, tenantKey ?? "", primaryKey)
+    : undefined;
+  const versionAdvance = operation === "update" && receipts?.authority === "runner_ledger"
+    ? inferVersionAdvanceFromArgs(args, table, conflictColumn)
+    : undefined;
+  if (mode === "review" && sqlWriteback) {
+    const assessment = assessDirectWritePrerequisites(table, {
+      operation,
+      primary_key: primaryKey,
+      tenant_key: tenantKey,
+      allowed_columns: operation === "delete" ? [] : allowedColumns,
+      patch_columns: Object.keys(patch),
+      conflict_column: conflictColumn,
+      version_advance: versionAdvance,
+      dedup_columns: deduplication?.components.map((component) => component.column),
+    });
+    const failures = assessment.filter((item) => item.level === "fail");
+    if (failures.length > 0) throw new Error(`native ${operation.toUpperCase()} prerequisites failed: ${failures.map((item) => item.message).join(" ")}`);
+  }
   const objectName = optionalArg(args, "--object-name") ?? safeObjectName(table.name);
   const namespace = optionalArg(args, "--namespace") ?? inferCapabilityNamespace(table.name);
   const spec: OnboardingSelectionSpec = {
@@ -1103,6 +1310,10 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
     proposal_returns_hint: optionalArg(args, "--proposal-returns-hint"),
     result_format: resultFormatOption(args),
     visible_columns: visibleColumns,
+    operation,
+    deduplication,
+    version_advance: versionAdvance,
+    receipts,
     allowed_columns: allowedColumns,
     patch,
     numeric_bounds: numericBounds,
@@ -1271,6 +1482,34 @@ function writebackSpecFromArgs(args: string[]): OnboardingSelectionSpec["writeba
   };
 }
 
+function receiptSpecFromArgs(args: string[]): NonNullable<OnboardingSelectionSpec["receipts"]> {
+  const mode = optionalArg(args, "--receipt-mode") ?? "source_auto_migrate";
+  if (mode === "runner_ledger") return { authority: "runner_ledger" };
+  if (mode !== "source_auto_migrate" && mode !== "source_precreated") {
+    throw new Error("--receipt-mode must be source_auto_migrate, source_precreated, or runner_ledger");
+  }
+  return {
+    authority: "source_db",
+    provisioning: mode === "source_auto_migrate" ? "auto_migrate" : "precreated",
+    ...(optionalArg(args, "--receipt-schema") ? { schema: optionalArg(args, "--receipt-schema") } : {}),
+    table: optionalArg(args, "--receipt-table") ?? "synapsor_writeback_receipts",
+  };
+}
+
+function inferVersionAdvanceFromArgs(
+  args: string[],
+  table: TableInfo,
+  conflictColumn: string | undefined,
+): NonNullable<OnboardingSelectionSpec["version_advance"]> {
+  if (!conflictColumn) throw new Error("runner_ledger UPDATE requires --conflict-column");
+  const column = table.columns.find((item) => item.name === conflictColumn);
+  if (!column) throw new Error(`conflict/version column does not exist: ${conflictColumn}`);
+  const inferred = /int|numeric|decimal|number/i.test(column.data_type) ? "integer_increment" : "database_generated";
+  const strategy = optionalArg(args, "--version-advance") ?? inferred;
+  if (strategy !== "integer_increment" && strategy !== "database_generated") throw new Error("--version-advance must be integer_increment or database_generated");
+  return { column: conflictColumn, strategy };
+}
+
 function parseColumnList(value: string): string[] {
   return uniqueStrings(value.split(",").map((item) => item.trim()).filter(Boolean));
 }
@@ -1306,6 +1545,53 @@ function parseWizardPatchMappings(input: string): {
   return { patch, patchArgs: Object.keys(patchArgs).length > 0 ? patchArgs : undefined };
 }
 
+function inferInsertDeduplication(table: TableInfo, tenantKey: string, primaryKey: string): NonNullable<OnboardingSelectionSpec["deduplication"]> {
+  const columns = new Map(table.columns.map((column) => [column.name, column]));
+  const sourceUniqueSets = [
+    ...(table.primary_key.length ? [table.primary_key] : []),
+    ...table.unique_constraints.map((constraint) => constraint.columns),
+  ];
+  const candidate = sourceUniqueSets.find((set) => {
+    const nonTenant = set.filter((column) => column !== tenantKey);
+    return nonTenant.length === 1 && isProposalIdentityColumn(columns.get(nonTenant[0]!));
+  });
+  if (!candidate) {
+    throw new Error(`native INSERT requires a PRIMARY KEY/UNIQUE constraint containing one non-generated text identity column. Add a reviewed request/idempotency column, or use an app-owned executor.`);
+  }
+  const proposalColumn = candidate.find((column) => column !== tenantKey)!;
+  const components: NonNullable<OnboardingSelectionSpec["deduplication"]>["components"] = [
+    { column: proposalColumn, source: "proposal_id" },
+  ];
+  if (tenantKey !== proposalColumn) components.push({ column: tenantKey, source: "trusted_tenant" });
+  if (primaryKey !== proposalColumn && candidate.includes(primaryKey) && !components.some((component) => component.column === primaryKey)) {
+    throw new Error("native INSERT cannot infer a deterministic value for the selected primary key; use an identity/default primary key or an app-owned executor.");
+  }
+  return { components };
+}
+
+function isProposalIdentityColumn(column: TableInfo["columns"][number] | undefined): boolean {
+  return Boolean(column && !column.generated && !column.identity && /char|text|string/i.test(column.data_type));
+}
+
+function formatDeduplication(value: OnboardingSelectionSpec["deduplication"]): string {
+  return value?.components.map((component) => component.source === "fixed"
+    ? `${component.column}=fixed:${String(component.fixed)}`
+    : `${component.column}=${component.source}`).join(",") ?? "";
+}
+
+function parseDeduplicationInput(input: string): NonNullable<OnboardingSelectionSpec["deduplication"]> {
+  const components = input.split(",").map((item) => item.trim()).filter(Boolean).map((entry) => {
+    const [column, ...rest] = entry.split("=");
+    const source = rest.join("=").trim();
+    if (!column || !source) throw new Error("INSERT dedup mappings must use column=proposal_id|trusted_tenant|fixed:value");
+    if (source === "proposal_id" || source === "trusted_tenant") return { column: column.trim(), source } as const;
+    if (source.startsWith("fixed:")) return { column: column.trim(), source: "fixed" as const, fixed: parseFixedPatchValue(source.slice("fixed:".length)) };
+    throw new Error("INSERT dedup mappings must use proposal_id, trusted_tenant, or fixed:value");
+  });
+  if (components.length === 0) throw new Error("INSERT requires at least one dedup mapping");
+  return { components };
+}
+
 function recipeColumns(recipe: CapabilityRecipe): string[] {
   const spec = recipe.spec;
   const transitionColumns = Object.entries(spec.transition_guards ?? {}).flatMap(([column, guard]) => [column, guard.from_column].filter((value): value is string => Boolean(value)));
@@ -1339,6 +1625,16 @@ function remapRecipeSpec(spec: OnboardingSelectionSpec, columnMap: Record<string
     patch: mapRecordKeys(spec.patch, mapColumn),
     numeric_bounds: mapRecordKeys(spec.numeric_bounds, mapColumn),
     transition_guards: mapTransitionGuards(spec.transition_guards, mapColumn),
+    deduplication: spec.deduplication ? {
+      components: spec.deduplication.components.map((component) => ({
+        ...component,
+        column: mapColumn(component.column) ?? component.column,
+      })),
+    } : undefined,
+    version_advance: spec.version_advance ? {
+      ...spec.version_advance,
+      column: mapColumn(spec.version_advance.column) ?? spec.version_advance.column,
+    } : undefined,
   };
   return mapped;
 }
@@ -1389,17 +1685,18 @@ function requiredWritebackEngine(args: string[]): "postgres" | "mysql" {
   throw new Error("writeback command requires --engine postgres or --engine mysql");
 }
 
-function formatPostgresReceiptMigration(schema?: string): string {
+function formatPostgresReceiptMigration(schema?: string, tableName = "synapsor_writeback_receipts"): string {
+  const quotedTable = tableName === "synapsor_writeback_receipts" ? tableName : quoteSqlIdentifier(tableName, "postgres");
   if (!schema) {
     return [
       "-- Synapsor Runner direct SQL writeback receipt table.",
       "-- Run this once as a database owner before doctor/apply. The steady-state writer does not need schema CREATE.",
-      `${postgresReceiptMigration};`,
+      `${postgresReceiptMigration.replace("synapsor_writeback_receipts", quotedTable)};`,
       "",
     ].join("\n");
   }
   const quotedSchema = quoteSqlIdentifier(schema, "postgres");
-  const qualified = `${quotedSchema}.synapsor_writeback_receipts`;
+  const qualified = `${quotedSchema}.${quotedTable}`;
   return [
     "-- Synapsor Runner direct SQL writeback receipt table.",
     "-- Run this once as a database owner. If you use a dedicated schema, ensure the writer connection search_path includes it.",
@@ -1412,20 +1709,21 @@ function formatPostgresReceiptMigration(schema?: string): string {
   ].join("\n");
 }
 
-function formatMysqlReceiptMigration(database?: string): string {
+function formatMysqlReceiptMigration(database?: string, tableName = "synapsor_writeback_receipts"): string {
+  const quotedTable = tableName === "synapsor_writeback_receipts" ? tableName : quoteSqlIdentifier(tableName, "mysql");
   return [
     "-- Synapsor Runner direct SQL writeback receipt table.",
     "-- Run this in the database/schema used by the trusted writer connection.",
     ...(database ? [`USE ${quoteSqlIdentifier(database, "mysql")};`] : []),
-    `${mysqlReceiptMigration};`,
+    `${mysqlReceiptMigration.replace("synapsor_writeback_receipts", quotedTable)};`,
     "",
   ].join("\n");
 }
 
-function formatPostgresReceiptGrants(schema: string, writerRole: string): string {
+function formatPostgresReceiptGrants(schema: string, writerRole: string, tableName = "synapsor_writeback_receipts"): string {
   const quotedSchema = quoteSqlIdentifier(schema, "postgres");
   const quotedRole = writerRole === "<writer_role>" ? writerRole : quoteSqlIdentifier(writerRole, "postgres");
-  const table = `${quotedSchema}.synapsor_writeback_receipts`;
+  const table = `${quotedSchema}.${tableName === "synapsor_writeback_receipts" ? tableName : quoteSqlIdentifier(tableName, "postgres")}`;
   return [
     "-- Least-privilege grants for a pre-created Synapsor Runner receipt table.",
     `GRANT USAGE ON SCHEMA ${quotedSchema} TO ${quotedRole};`,
@@ -1437,12 +1735,12 @@ function formatPostgresReceiptGrants(schema: string, writerRole: string): string
   ].join("\n");
 }
 
-function formatMysqlReceiptGrants(database: string, writerRole: string): string {
+function formatMysqlReceiptGrants(database: string, writerRole: string, tableName = "synapsor_writeback_receipts"): string {
   const quotedDatabase = database === "<database_name>" ? "`<database_name>`" : quoteSqlIdentifier(database, "mysql");
   const account = writerRole === "<writer_role>" ? "'<writer_user>'@'%'" : writerRole;
   return [
     "-- Least-privilege grants for a pre-created Synapsor Runner receipt table.",
-    `GRANT SELECT, INSERT, UPDATE ON ${quotedDatabase}.synapsor_writeback_receipts TO ${account};`,
+    `GRANT SELECT, INSERT, UPDATE ON ${quotedDatabase}.${tableName === "synapsor_writeback_receipts" ? tableName : quoteSqlIdentifier(tableName, "mysql")} TO ${account};`,
     "",
   ].join("\n");
 }
@@ -2240,6 +2538,35 @@ async function inspectConfiguredSource(input: {
             message: `Proposal capability targets a view/non-table object: ${capability.target.schema}.${capability.target.table}.`,
           });
         }
+        if (capability.kind === "proposal" && capabilityWritebackMode(capability) === "direct_sql") {
+          const operation = capabilityOperation(capability);
+          const prerequisites = assessDirectWritePrerequisites(table, {
+            operation,
+            primary_key: capability.target.primary_key,
+            tenant_key: capability.target.tenant_key,
+            allowed_columns: capability.allowed_columns ?? [],
+            patch_columns: Object.keys(capability.patch ?? {}),
+            conflict_column: capability.conflict_guard?.column,
+            version_advance: capability.operation?.version_advance,
+            dedup_columns: capability.operation?.deduplication?.components.map((component) => component.column),
+          });
+          for (const prerequisite of prerequisites) {
+            input.checks.push({
+              name: `capability:${capability.name}:prerequisite:${prerequisite.code.toLowerCase()}`,
+              ok: prerequisite.level !== "fail",
+              level: prerequisite.level,
+              message: prerequisite.message,
+            });
+          }
+          if (input.source.receipts?.authority === "runner_ledger" && operation === "update" && !capability.operation?.version_advance) {
+            input.checks.push({
+              name: `capability:${capability.name}:prerequisite:runner-ledger-version-advance`,
+              ok: false,
+              level: "fail",
+              message: "runner_ledger UPDATE requires reviewed monotonic version advancement in the same source transaction.",
+            });
+          }
+        }
       }
     } catch (error) {
       input.checks.push({
@@ -2762,6 +3089,9 @@ async function localDoctor(args: string[]): Promise<number> {
     }
   }
   for (const [sourceName, source] of Object.entries(sources)) {
+    if (parsed.mode === "review" && sourceNeedsSqlWriteback(parsed, sourceName)) {
+      checks.push(sourceReceiptModeDoctorCheck(parsed, sourceName, source));
+    }
     checks.push(envPresenceCheck(source.read_url_env, `${source.read_url_env} is required for ${sourceName} reads.`));
     if (parsed.mode === "review") {
       if (sourceNeedsSqlWriteback(parsed, sourceName)) {
@@ -2895,21 +3225,25 @@ async function directSqlWritebackDoctorChecks(
       logLevel: "error",
       dryRun: true,
       stateDir: "./state",
+      receipts: runnerReceiptConfig(source),
     } satisfies RunnerConfig);
+    const receiptMode = formatSourceReceiptMode(source);
     checks.push({
       name: `source:${sourceName}:receipt-table-probe`,
       ok: result.ok,
       level: result.ok ? "pass" : "fail",
       message: result.ok
-        ? "Writer credential can reach the database and the receipt-table rollback probe succeeded."
-        : `Writer receipt-table probe failed (${safeDatabaseProbeError(result.details)}). ${receiptTableGuidance(source.engine)}`,
+        ? source.receipts?.authority === "runner_ledger"
+          ? `Writer credential can reach the source; ${receiptMode} performed no source receipt DDL/DML.`
+          : `Writer credential can reach the database and the ${receiptMode} SELECT/INSERT/UPDATE rollback probe succeeded.`
+        : `Writer receipt-mode probe failed (${safeDatabaseProbeError(result.details)}). ${receiptTableGuidance(source.engine, source)}`,
     });
   } catch (error) {
     checks.push({
       name: `source:${sourceName}:receipt-table-probe`,
       ok: false,
       level: "fail",
-      message: `Writer receipt-table probe failed (${safeDatabaseProbeError(error)}). ${receiptTableGuidance(source.engine)}`,
+      message: `Writer receipt-mode probe failed (${safeDatabaseProbeError(error)}). ${receiptTableGuidance(source.engine, source)}`,
     });
   }
 
@@ -2920,14 +3254,14 @@ async function directSqlWritebackDoctorChecks(
         name: `capability:${capability.name}:writeback-target-probe`,
         ok: true,
         level: "pass",
-        message: `Rollback-only writer probe reached ${capability.target.schema}.${capability.target.table} and verified configured write columns without mutating business rows.`,
+        message: `Rollback-only writer probe reached ${capability.target.schema}.${capability.target.table} and verified ${capabilityOperation(capability).toUpperCase()} authority without mutating business rows.`,
       });
     } catch (error) {
       checks.push({
         name: `capability:${capability.name}:writeback-target-probe`,
         ok: false,
         level: "fail",
-        message: `Rollback-only writer probe failed for configured target ${capability.target.schema}.${capability.target.table} (${safeDatabaseProbeError(error)}). Verify writer SELECT/UPDATE on the target table and configured columns.`,
+        message: `Rollback-only writer probe failed for configured target ${capability.target.schema}.${capability.target.table} (${safeDatabaseProbeError(error)}). Verify writer SELECT/${capabilityOperation(capability).toUpperCase()} on the target table and configured columns.`,
       });
     }
   }
@@ -2957,11 +3291,21 @@ async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: 
     await client.query("BEGIN");
     try {
       const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
-      const columns = proposalProbeColumns(capability).map(quotePostgresIdentifier).join(", ");
-      await client.query(`SELECT ${columns} FROM ${table} WHERE false FOR UPDATE`);
-      for (const column of proposalUpdateProbeColumns(capability)) {
-        const quoted = quotePostgresIdentifier(column);
-        await client.query(`UPDATE ${table} SET ${quoted} = ${quoted} WHERE false`);
+      const columns = proposalReadProbeColumns(capability).map(quotePostgresIdentifier).join(", ");
+      await client.query(`SELECT ${columns} FROM ${table} WHERE false`);
+      const operation = capabilityOperation(capability);
+      const writeColumns = proposalWriteProbeColumns(capability);
+      if (operation === "update") {
+        for (const column of writeColumns) {
+          const quoted = quotePostgresIdentifier(column);
+          await client.query(`UPDATE ${table} SET ${quoted} = NULL WHERE false`);
+        }
+      } else if (operation === "insert") {
+        const quotedColumns = writeColumns.map(quotePostgresIdentifier).join(", ");
+        const nullValues = writeColumns.map(() => "NULL").join(", ");
+        await client.query(`INSERT INTO ${table} (${quotedColumns}) SELECT ${nullValues} WHERE false`);
+      } else {
+        await client.query(`DELETE FROM ${table} WHERE false`);
       }
       await client.query("ROLLBACK");
     } catch (error) {
@@ -2981,11 +3325,21 @@ async function rollbackOnlyMysqlTargetProbe(databaseUrl: string, capability: Run
     await connection.beginTransaction();
     try {
       const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
-      const columns = proposalProbeColumns(capability).map(quoteMysqlIdentifier).join(", ");
-      await connection.query(`SELECT ${columns} FROM ${table} WHERE 1 = 0 FOR UPDATE`);
-      for (const column of proposalUpdateProbeColumns(capability)) {
-        const quoted = quoteMysqlIdentifier(column);
-        await connection.query(`UPDATE ${table} SET ${quoted} = ${quoted} WHERE 1 = 0`);
+      const columns = proposalReadProbeColumns(capability).map(quoteMysqlIdentifier).join(", ");
+      await connection.query(`SELECT ${columns} FROM ${table} WHERE 1 = 0`);
+      const operation = capabilityOperation(capability);
+      const writeColumns = proposalWriteProbeColumns(capability);
+      if (operation === "update") {
+        for (const column of writeColumns) {
+          const quoted = quoteMysqlIdentifier(column);
+          await connection.query(`UPDATE ${table} SET ${quoted} = NULL WHERE 1 = 0`);
+        }
+      } else if (operation === "insert") {
+        const quotedColumns = writeColumns.map(quoteMysqlIdentifier).join(", ");
+        const nullValues = writeColumns.map(() => "NULL").join(", ");
+        await connection.query(`INSERT INTO ${table} (${quotedColumns}) SELECT ${nullValues} FROM DUAL WHERE 1 = 0`);
+      } else {
+        await connection.query(`DELETE FROM ${table} WHERE 1 = 0`);
       }
       await connection.rollback();
     } catch (error) {
@@ -3014,20 +3368,27 @@ type MysqlProbeConnection = {
   end(): Promise<void>;
 };
 
-function proposalProbeColumns(capability: RunnerCapabilityConfig): string[] {
+function proposalReadProbeColumns(capability: RunnerCapabilityConfig): string[] {
   const columns = new Set<string>();
   columns.add(capability.target.primary_key);
-  if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
-  if (capability.conflict_guard?.column) columns.add(capability.conflict_guard.column);
-  for (const column of capability.visible_columns ?? []) columns.add(column);
-  for (const column of proposalUpdateProbeColumns(capability)) columns.add(column);
+  const operation = capabilityOperation(capability);
+  if (operation === "insert") {
+    for (const component of capability.operation?.deduplication?.components ?? []) columns.add(component.column);
+  } else {
+    if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
+    if (capability.conflict_guard?.column) columns.add(capability.conflict_guard.column);
+  }
   return [...columns];
 }
 
-function proposalUpdateProbeColumns(capability: RunnerCapabilityConfig): string[] {
+function proposalWriteProbeColumns(capability: RunnerCapabilityConfig): string[] {
   const columns = new Set<string>();
   for (const column of capability.allowed_columns ?? []) columns.add(column);
   for (const column of Object.keys(capability.patch ?? {})) columns.add(column);
+  if (capabilityOperation(capability) === "insert") {
+    if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
+    for (const component of capability.operation?.deduplication?.components ?? []) columns.add(component.column);
+  }
   return [...columns];
 }
 
@@ -3054,11 +3415,54 @@ function safeDatabaseProbeError(error: unknown): string {
   return "database probe failed";
 }
 
-function receiptTableGuidance(engine: "postgres" | "mysql"): string {
-  if (engine === "postgres") {
-    return `Pre-create the receipt table with "${cliCommandName()} writeback migration --engine postgres --schema synapsor" and grant it with "${cliCommandName()} writeback grants --engine postgres --schema synapsor --writer-role <writer_role>", or use an app-owned handler executor.`;
+function receiptTableGuidance(engine: "postgres" | "mysql", source?: RunnerSourceConfig): string {
+  if (source?.receipts?.authority === "runner_ledger") {
+    return "Verify the authoritative Runner ledger and minimum business-table writer grants; runner_ledger never creates or writes a receipt table in the source database.";
   }
-  return `Pre-create the receipt table with "${cliCommandName()} writeback migration --engine mysql --schema <database_name>" and grant it with "${cliCommandName()} writeback grants --engine mysql --schema <database_name> --writer-role \\"'<writer>'@'%'\\"", or use an app-owned handler executor.`;
+  const schema = source?.receipts?.schema ?? (engine === "postgres" ? "synapsor" : "<database_name>");
+  const table = source?.receipts?.table ?? "synapsor_writeback_receipts";
+  if (engine === "postgres") {
+    return `Prepare ${schema}.${table} with "${cliCommandName()} writeback migration --engine postgres --schema ${schema} --table ${table}" and grant it with "${cliCommandName()} writeback grants --engine postgres --schema ${schema} --table ${table} --writer-role <writer_role>", or use runner_ledger/app-owned writeback.`;
+  }
+  return `Prepare ${schema}.${table} with "${cliCommandName()} writeback migration --engine mysql --schema ${schema} --table ${table}" and grant it with "${cliCommandName()} writeback grants --engine mysql --schema ${schema} --table ${table} --writer-role \\"'<writer>'@'%'\\"", or use runner_ledger/app-owned writeback.`;
+}
+
+function capabilityOperation(capability: RunnerCapabilityConfig): "update" | "insert" | "delete" {
+  return capability.operation?.kind ?? "update";
+}
+
+function formatSourceReceiptMode(source: RunnerSourceConfig | undefined): string {
+  const receipts = runnerReceiptConfig(source);
+  if (receipts?.authority === "runner_ledger") return "runner_ledger (zero source receipt schema)";
+  const provisioning = receipts?.provisioning ?? "precreated";
+  const schema = receipts?.schema;
+  const table = receipts?.table ?? "synapsor_writeback_receipts";
+  return `source_db/${provisioning} (${schema ? `${schema}.` : ""}${table})`;
+}
+
+function sourceReceiptModeDoctorCheck(config: RuntimeConfig, sourceName: string, source: RunnerSourceConfig): DoctorCheck {
+  const receipts = runnerReceiptConfig(source);
+  if (receipts?.authority !== "runner_ledger") {
+    return {
+      name: `source:${sourceName}:receipt-mode`,
+      ok: true,
+      level: receipts?.provisioning === "auto_migrate" ? "warn" : "pass",
+      message: receipts?.provisioning === "auto_migrate"
+        ? `${formatSourceReceiptMode(source)} is active; Runner may execute only its fixed idempotent receipt-table migration and the writer needs CREATE for that table.`
+        : `${formatSourceReceiptMode(source)} is active; Runner will not execute source DDL and requires the pre-created table with SELECT/INSERT/UPDATE.`,
+    };
+  }
+  const shared = config.storage?.shared_postgres;
+  const local = Boolean(config.storage?.sqlite_path);
+  const authoritative = shared?.mode === "runtime_store" || (!shared && local);
+  return {
+    name: `source:${sourceName}:receipt-mode`,
+    ok: authoritative,
+    level: authoritative ? "pass" : "fail",
+    message: authoritative
+      ? `${formatSourceReceiptMode(source)} is active; durable intents use ${shared?.mode === "runtime_store" ? "the authoritative shared Postgres runtime store" : "single-process local SQLite"} and no source receipt DDL/DML is allowed.`
+      : "runner_ledger requires single-process local SQLite or storage.shared_postgres.mode runtime_store before source mutation.",
+  };
 }
 
 async function localDoctorStoreStats(storePath?: string): Promise<LocalDoctorReport["store_stats"]> {
@@ -3144,19 +3548,25 @@ async function apply(args: string[]): Promise<number> {
     pollIntervalMs: Number(process.env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
     logLevel: (process.env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
     dryRun,
-    stateDir: process.env.SYNAPSOR_STATE_DIR || "./state"
+    stateDir: process.env.SYNAPSOR_STATE_DIR || "./state",
+    receipts: runnerReceiptConfig(runtimeConfig?.sources?.[job.source_id]),
   };
-  const result = await adapters[job.engine].apply(job, config);
+  let localStore: ProposalStore | undefined;
   if (storePath) {
     if (storePath !== ":memory:") {
       await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
     }
-    const store = new ProposalStore(storePath);
-    try {
-      store.recordExecutionReceipt(toExecutionReceipt(job, result, config.dryRun));
-    } finally {
-      store.close();
-    }
+    localStore = new ProposalStore(storePath);
+  }
+  const intentAuthority = createWritebackIntentAuthority(runtimeConfig, job.source_id, process.env, localStore);
+  if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
+  let result: WritebackResult;
+  try {
+    result = await adapters[job.engine].apply(job, config);
+    localStore?.recordExecutionReceipt(toExecutionReceipt(job, result, config.dryRun));
+  } finally {
+    await intentAuthority.close();
+    localStore?.close();
   }
   operationalLog("info", "writeback_outcome", {
     proposal_id: job.proposal_id,
@@ -3171,7 +3581,7 @@ async function apply(args: string[]): Promise<number> {
     source_database_changed: writebackResultStatus(result) === "applied" && !dryRun && writebackAffectedRows(result) > 0,
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  return result.status === "failed" ? 1 : 0;
+  return result.status === "failed" || result.status === "reconciliation_required" ? 1 : 0;
 }
 
 async function authorizeConfiguredJobApply(
@@ -3391,7 +3801,7 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
       const result = await applySqlJob(job, configPath, storePath, dryRun, envWithDemoDefaults(config, configPath));
       logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
       if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));
-      return result.status === "failed" ? 1 : 0;
+      return result.status === "failed" || result.status === "reconciliation_required" ? 1 : 0;
     }
     const executor = executorConfig(config, executorName);
     if (executor.type === "http_handler") {
@@ -3415,6 +3825,7 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
 async function applySqlJob(job: unknown, configPath: string, storePath: string | undefined, dryRun: boolean, env: NodeJS.ProcessEnv = process.env): Promise<WritebackResult> {
   const parsedJob = parseWritebackJob(job);
   await verifyLocalWritebackAuthority(parsedJob, configPath, storePath);
+  const runtimeConfig = await readRuntimeConfig(configPath);
   const databaseUrl = await resolveSqlWriteDatabaseUrl(parsedJob, configPath, env);
   const config: RunnerConfig = {
     controlPlaneUrl: env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
@@ -3426,18 +3837,56 @@ async function applySqlJob(job: unknown, configPath: string, storePath: string |
     pollIntervalMs: Number(env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
     logLevel: (env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
     dryRun,
-    stateDir: env.SYNAPSOR_STATE_DIR || "./state"
+    stateDir: env.SYNAPSOR_STATE_DIR || "./state",
+    receipts: runnerReceiptConfig(runtimeConfig.sources?.[parsedJob.source_id]),
   };
-  const result = await adapters[parsedJob.engine].apply(parsedJob, config);
-  if (storePath) {
-    const store = new ProposalStore(storePath);
-    try {
-      store.recordExecutionReceipt(toExecutionReceipt(parsedJob, result, config.dryRun));
-    } finally {
-      store.close();
-    }
+  const store = storePath ? new ProposalStore(storePath) : undefined;
+  const intentAuthority = createWritebackIntentAuthority(runtimeConfig, parsedJob.source_id, env, store);
+  if (config.receipts?.authority === "runner_ledger" && !intentAuthority.store) throw new Error("runner_ledger receipt authority requires --store or an authoritative shared runtime store");
+  if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
+  try {
+    const result = await adapters[parsedJob.engine].apply(parsedJob, config);
+    store?.recordExecutionReceipt(toExecutionReceipt(parsedJob, result, config.dryRun));
+    return result;
+  } finally {
+    await intentAuthority.close();
+    store?.close();
   }
-  return result;
+}
+
+function createWritebackIntentAuthority(
+  config: RuntimeConfig | undefined,
+  sourceId: string,
+  env: NodeJS.ProcessEnv,
+  localStore: ProposalStore | undefined,
+): { store?: WritebackIntentStore; close(): Promise<void> } {
+  if (runnerReceiptConfig(config?.sources?.[sourceId])?.authority !== "runner_ledger") return { close: async () => undefined };
+  const shared = config?.storage?.shared_postgres;
+  if (shared?.mode === "runtime_store") {
+    const databaseUrl = envValue(env, shared.url_env);
+    if (!databaseUrl) throw new Error(`${shared.url_env} is required for authoritative runner_ledger intents`);
+    const store = new PostgresWritebackIntentStore({
+      pool: createPostgresPool(databaseUrl),
+      schema: shared.schema ?? "synapsor_runner",
+      autoMigrate: true,
+      closePool: true,
+    });
+    return { store, close: () => store.close() };
+  }
+  return { store: localStore, close: async () => undefined };
+}
+
+function runnerReceiptConfig(source: RunnerSourceConfig | undefined): RunnerConfig["receipts"] {
+  const receipts = source?.receipts;
+  if (!receipts) return { authority: "source_db", provisioning: "precreated" };
+  return receipts.authority === "runner_ledger"
+    ? { authority: "runner_ledger" }
+    : {
+      authority: "source_db",
+      provisioning: receipts.provisioning ?? "precreated",
+      schema: receipts.schema,
+      table: receipts.table,
+    };
 }
 
 export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv): Promise<string> {
@@ -3669,7 +4118,8 @@ function prepareHandlerProposal(store: ProposalStore, proposal: StoredProposal, 
 function duplicateHandlerReceipt(store: ProposalStore, proposalId: string): { receipt: ExecutionReceiptV1 } | undefined {
   const receipts = store.receipts(proposalId);
   const existing = receipts.find((receipt) => receipt.writeback_job_id.startsWith("hwb_") && (receipt.status === "applied" || receipt.status === "already_applied"));
-  return existing ? { receipt: existing.receipt } : undefined;
+  if (!existing || existing.receipt.schema_version !== protocolVersions.executionReceipt) return undefined;
+  return { receipt: existing.receipt };
 }
 
 function alreadyAppliedReceipt(receipt: ExecutionReceiptV1, runnerId: string): ExecutionReceiptV1 {
@@ -4126,8 +4576,20 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
   if (capability.target.table !== job.target.table) return false;
   if (capability.target.primary_key !== job.target.primary_key.column) return false;
   if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
+  const reviewedOperation = capability.operation?.kind ?? "update";
+  const jobOperation = (job.operation ?? "single_row_update").replace("single_row_", "");
+  if (reviewedOperation !== jobOperation) return false;
   const reviewedAllowed = new Set(capability.allowed_columns ?? []);
-  if (reviewedAllowed.size === 0) return false;
+  if (reviewedOperation !== "delete" && reviewedAllowed.size === 0) return false;
+  if (reviewedOperation === "delete" && (reviewedAllowed.size !== 0 || Object.keys(job.patch).length !== 0)) return false;
+  if (reviewedOperation === "insert") {
+    if (job.protocol_version !== protocolVersions.normalizedWritebackJobV2 || !job.deduplication) return false;
+    const reviewedDedup = capability.operation?.deduplication?.components ?? [];
+    if (reviewedDedup.length !== job.deduplication.components.length) return false;
+    for (const component of reviewedDedup) {
+      if (!job.deduplication.components.some((resolved) => resolved.column === component.column && resolved.source === component.source)) return false;
+    }
+  }
   return Object.keys(job.patch).every((column) => reviewedAllowed.has(column));
 }
 
@@ -4180,6 +4642,7 @@ async function up(args: string[] = []): Promise<number> {
   if (serveRequested && transport === "stdio") {
     throw new Error("up --serve starts the Streamable HTTP MCP server. Omit --transport or use --transport streamable-http; for stdio, use mcp client-config so the client launches Runner.");
   }
+  assertReceiptTopologyForTransport(config, transport);
   const port = Number(optionalArg(args, "--port") ?? "8766");
   if (transport === "streamable-http" && (!Number.isInteger(port) || port <= 0 || port > 65535)) {
     throw new Error("--port must be an integer from 1 to 65535");
@@ -4323,7 +4786,7 @@ function formatUpWritebackLines(config: RuntimeConfig): string[] {
     if (mode === "direct_sql") {
       const source = config.sources?.[capability.source];
       const envName = source?.write_url_env ?? "SYNAPSOR_DATABASE_URL";
-      return `  - ${capability.name}: direct guarded one-row UPDATE via ${envName} (${envValue(process.env, envName) ? "set" : "missing"})`;
+      return `  - ${capability.name}: direct guarded one-row ${capabilityOperation(capability).toUpperCase()} via ${envName} (${envValue(process.env, envName) ? "set" : "missing"}); receipts ${formatSourceReceiptMode(source)}`;
     }
     const executorName = capabilityWritebackExecutor(capability) ?? "missing_executor";
     const executor = config.executors?.[executorName] as Record<string, unknown> | undefined;
@@ -4688,8 +5151,207 @@ async function writeback(args: string[]): Promise<number> {
   if (subcommand === "doctor") return writebackDoctor(rest);
   if (subcommand === "migration") return writebackMigration(rest);
   if (subcommand === "grants") return writebackGrants(rest);
+  if (subcommand === "reconcile") return writebackReconcile(rest);
   usage(["writeback"]);
   return 2;
+}
+
+async function writebackReconcile(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (!subcommand || !["list", "inspect", "resolve"].includes(subcommand)) {
+    throw new Error("writeback reconcile requires list, inspect, or resolve");
+  }
+  const configPath = optionalArg(rest, "--config") ?? defaultConfigPath;
+  const storePath = optionalArg(rest, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(rest, config)) {
+    return withSharedPostgresRuntimeStoreBridge(rest, config, `writeback reconcile ${subcommand}`, (bridgeStorePath) =>
+      writebackReconcile([subcommand, ...argsWithRuntimeStoreBridge(rest, bridgeStorePath)]));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, `writeback reconcile ${subcommand}`, rest);
+  if (subcommand === "list") return writebackReconcileList(rest, storePath);
+  if (subcommand === "inspect") return writebackReconcileInspect(rest, configPath, storePath, config);
+  return writebackReconcileResolve(rest, configPath, storePath, config);
+}
+
+function writebackReconcileList(args: string[], storePath: string): number {
+  assertKnownOptions(args, new Set(["--config", "--store", "--status", "--proposal", "--limit", "--json", runtimeStoreBridgeFlag]), "writeback reconcile list");
+  const status = optionalArg(args, "--status") as StoredWritebackIntent["status"] | undefined;
+  if (status && !["intent_recorded", "applying", "applied", "already_applied", "conflict", "failed", "reconciliation_required"].includes(status)) {
+    throw new Error(`unsupported writeback intent status: ${status}`);
+  }
+  const store = new ProposalStore(storePath);
+  try {
+    const intents = store.listWritebackIntents({ status, proposal_id: optionalArg(args, "--proposal"), limit: optionalPositiveIntegerArg(args, "--limit") });
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ intents: intents.map(publicWritebackIntent) }, null, 2)}\n`);
+    else process.stdout.write(formatWritebackIntentList(intents));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function writebackReconcileInspect(args: string[], configPath: string, storePath: string, config: RuntimeConfig): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--store", "--json", runtimeStoreBridgeFlag]), "writeback reconcile inspect");
+  const context = await inspectWritebackIntentContext(args, configPath, storePath, config);
+  const payload = { intent: publicWritebackIntent(context.intent), observation: context.observation };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write(formatReconciliationInspection(context.intent, context.observation));
+  return 0;
+}
+
+async function writebackReconcileResolve(args: string[], configPath: string, storePath: string, config: RuntimeConfig): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--store", "--outcome", "--reason", "--yes", "--json", "--actor", "--identity", "--identity-key", runtimeStoreBridgeFlag]), "writeback reconcile resolve");
+  if (!args.includes("--yes")) throw new Error("writeback reconcile resolve requires --yes after inspecting the source observation");
+  const outcome = optionalArg(args, "--outcome") as "applied" | "conflict" | "failed" | undefined;
+  if (!outcome || !["applied", "conflict", "failed"].includes(outcome)) throw new Error("--outcome must be applied, conflict, or failed");
+  const reason = optionalArg(args, "--reason")?.trim();
+  if (!reason) throw new Error("writeback reconcile resolve requires --reason");
+  const context = await inspectWritebackIntentContext(args, configPath, storePath, config);
+  const supportedOutcome = reconciliationSupportedOutcome(context.observation);
+  if (outcome !== supportedOutcome) {
+    throw new Error(`live source observation ${context.observation.classification} supports outcome ${supportedOutcome}, not ${outcome}; re-inspect and investigate instead of overriding the guard`);
+  }
+  const identity = await operatorIdentityForDecision({
+    args,
+    config,
+    configPath,
+    proposal: context.proposal,
+    action: "reconcile",
+    reason,
+  });
+  const receipt = reconciliationReceipt(context.intent, context.observation, outcome, identity.subject, reason);
+  const store = new ProposalStore(storePath);
+  try {
+    const resolved = store.reconcileWritebackIntent({
+      intent_id: context.intent.intent_id,
+      receipt,
+      actor: identity.subject,
+      reason,
+      observation: context.observation,
+      identity,
+      require_verified_identity: Boolean(config.operator_identity && config.operator_identity.provider !== "dev_env"),
+    });
+    operationalLog("info", "writeback_reconciled", {
+      proposal_id: resolved.proposal_id,
+      operation: resolved.operation,
+      status: resolved.status,
+      source_database_changed: false,
+    });
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ intent: publicWritebackIntent(resolved), receipt }, null, 2)}\n`);
+    else process.stdout.write(`Reconciled ${resolved.intent_id} as ${resolved.status}.\nReason: ${reason}\nReceipt: ${receipt.receipt_hash}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function inspectWritebackIntentContext(
+  args: string[],
+  configPath: string,
+  storePath: string,
+  config: RuntimeConfig,
+): Promise<{ intent: StoredWritebackIntent; proposal: StoredProposal; observation: ReconciliationObservation }> {
+  const requested = positional(args, 0) ?? "latest";
+  const store = new ProposalStore(storePath);
+  let intent: StoredWritebackIntent;
+  let proposal: StoredProposal;
+  try {
+    intent = requested === "latest"
+      ? store.listWritebackIntents({ status: "reconciliation_required", limit: 1 })[0] ?? (() => { throw new Error("no writeback intents require reconciliation"); })()
+      : store.getWritebackIntent(requested) ?? (() => { throw new Error(`writeback intent not found: ${requested}`); })();
+    if (intent.status !== "reconciliation_required" && intent.status !== "applying") throw new Error(`writeback intent ${intent.intent_id} is ${intent.status}, not reconcilable`);
+    proposal = requireLocalProposal(store, intent.proposal_id);
+  } finally {
+    store.close();
+  }
+  const source = config.sources?.[intent.intent.source_id];
+  if (runnerReceiptConfig(source)?.authority !== "runner_ledger") throw new Error(`source ${intent.intent.source_id} does not use runner_ledger receipt authority`);
+  const databaseUrl = await resolveSqlWriteDatabaseUrl(intent.intent, configPath, process.env);
+  const observation = intent.intent.engine === "postgres"
+    ? await inspectPostgresWritebackSource(intent.intent, databaseUrl)
+    : await inspectMysqlWritebackSource(intent.intent, databaseUrl);
+  return { intent, proposal, observation };
+}
+
+function reconciliationSupportedOutcome(observation: ReconciliationObservation): "applied" | "conflict" | "failed" {
+  if (observation.classification === "matches_proposed") return "applied";
+  if (observation.operation === "single_row_delete" && observation.classification === "target_absent") return "applied";
+  if (observation.classification === "matches_reviewed_before" || observation.classification === "not_observed") return "failed";
+  return "conflict";
+}
+
+function reconciliationReceipt(
+  intent: StoredWritebackIntent,
+  observation: ReconciliationObservation,
+  outcome: "applied" | "conflict" | "failed",
+  runnerId: string,
+  reason: string,
+): ExecutionReceiptV2 {
+  const job = intent.intent;
+  const executedAt = new Date().toISOString();
+  const base = {
+    schema_version: protocolVersions.executionReceiptV2,
+    writeback_job_id: intent.writeback_job_id,
+    proposal_id: intent.proposal_id,
+    proposal_hash: intent.proposal_hash as `sha256:${string}`,
+    approval_id: job.approval_id,
+    runner_id: runnerId,
+    operation: intent.operation,
+    receipt_authority: "runner_ledger" as const,
+    status: outcome,
+    target: { source_id: job.source_id, schema: job.target.schema, table: job.target.table, identity: observation.target_identity },
+    rows_affected: 0,
+    idempotency_key: intent.idempotency_key,
+    source_database_mutated: outcome === "applied",
+    safe_outcome_code: `RECONCILED_${outcome.toUpperCase()}`,
+    ...(outcome === "applied" ? {} : { safe_error_code: `RECONCILED_${outcome.toUpperCase()}` }),
+    executed_at: executedAt,
+    reconciliation: { intent_id: intent.intent_id, reason: reason.slice(0, 500) },
+    ...(outcome === "applied" && intent.operation === "single_row_delete"
+      ? { tombstone_digest: observation.observed_digest }
+      : { after_digest: observation.observed_digest }),
+  };
+  return {
+    ...base,
+    receipt_hash: `sha256:${crypto.createHash("sha256").update(JSON.stringify(base)).digest("hex")}`,
+  };
+}
+
+function publicWritebackIntent(intent: StoredWritebackIntent): Record<string, unknown> {
+  return {
+    intent_id: intent.intent_id,
+    proposal_id: intent.proposal_id,
+    writeback_job_id: intent.writeback_job_id,
+    operation: intent.operation,
+    status: intent.status,
+    reconciliation_reason: intent.reconciliation_reason,
+    created_at: intent.created_at,
+    updated_at: intent.updated_at,
+  };
+}
+
+function formatWritebackIntentList(intents: StoredWritebackIntent[]): string {
+  if (intents.length === 0) return "No writeback intents found.\n";
+  return ["Synapsor writeback intents", "", ...intents.map((intent) => `${intent.intent_id}  ${intent.status}  ${intent.operation}  proposal=${intent.proposal_id}`), ""].join("\n");
+}
+
+function formatReconciliationInspection(intent: StoredWritebackIntent, observation: ReconciliationObservation): string {
+  return [
+    `Writeback reconciliation: ${intent.intent_id}`,
+    `Proposal: ${intent.proposal_id}`,
+    `Operation: ${intent.operation}`,
+    `Intent state: ${intent.status}`,
+    `Live observation: ${observation.classification}`,
+    `Supported resolution: ${reconciliationSupportedOutcome(observation)}`,
+    `Expected safe metadata: ${JSON.stringify(observation.expected)}`,
+    `Observed allowlisted metadata: ${JSON.stringify(observation.observed)}`,
+    `Observation digest: ${observation.observed_digest}`,
+    "",
+    "Runner has not resolved this outcome automatically.",
+    `After investigation: ${cliCommandName()} writeback reconcile resolve ${intent.intent_id} --outcome <applied|conflict|failed> --reason \"...\" --yes`,
+    "",
+  ].join("\n");
 }
 
 async function handler(args: string[]): Promise<number> {
@@ -4774,11 +5436,15 @@ async function writebackDoctor(args: string[]): Promise<number> {
   for (const [sourceName, source] of sqlSources) {
     const writeEnv = source.write_url_env;
     const writeUrl = writeEnv ? envValue(process.env, writeEnv) : undefined;
+    const receipts = runnerReceiptConfig(source);
     lines.push(`Source: ${sourceName}`);
     lines.push(`  engine: ${source.engine}`);
     lines.push(`  writer env: ${writeEnv ?? "(missing write_url_env)"}`);
     lines.push(`  env status: ${writeUrl ? "set" : "missing"}`);
-    lines.push("  receipt table: synapsor_writeback_receipts");
+    lines.push(`  receipt mode: ${formatSourceReceiptMode(source)}`);
+    if (receipts?.authority === "runner_ledger") {
+      lines.push("  source receipt table: not used");
+    }
     if (!writeEnv || !writeUrl) ok = false;
     if (checkDb && writeUrl) {
       const result = await adapters[source.engine].doctor({
@@ -4792,6 +5458,7 @@ async function writebackDoctor(args: string[]): Promise<number> {
         logLevel: "error",
         dryRun: true,
         stateDir: "./state",
+        receipts,
       } satisfies RunnerConfig);
       lines.push(`  db check: ${result.ok ? "ok" : "failed"}`);
       lines.push(`  details: ${JSON.stringify(redactConfig(result.details ?? {}))}`);
@@ -4799,12 +5466,12 @@ async function writebackDoctor(args: string[]): Promise<number> {
     } else if (checkDb) {
       lines.push("  db check: skipped because writer env is missing");
     }
+    lines.push(`  guidance: ${receiptTableGuidance(source.engine, source)}`);
     lines.push("");
   }
-  lines.push("Next:");
-  lines.push(`  ${cliCommandName()} writeback migration --engine postgres`);
-  lines.push(`  ${cliCommandName()} writeback grants --engine postgres --writer-role <writer_role>`);
-  lines.push("");
+  if (sqlSources.some(([, source]) => runnerReceiptConfig(source)?.authority === "source_db")) {
+    lines.push("Source-receipt setup commands are shown per source above. Runner-ledger sources do not need these commands.", "");
+  }
   process.stdout.write(lines.join("\n"));
   return ok ? 0 : 1;
 }
@@ -4812,11 +5479,12 @@ async function writebackDoctor(args: string[]): Promise<number> {
 async function writebackMigration(args: string[]): Promise<number> {
   const engine = requiredWritebackEngine(args);
   const schema = optionalArg(args, "--schema");
+  const table = optionalArg(args, "--table") ?? "synapsor_writeback_receipts";
   if (engine === "postgres") {
-    process.stdout.write(formatPostgresReceiptMigration(schema));
+    process.stdout.write(formatPostgresReceiptMigration(schema, table));
     return 0;
   }
-  process.stdout.write(formatMysqlReceiptMigration(schema));
+  process.stdout.write(formatMysqlReceiptMigration(schema, table));
   return 0;
 }
 
@@ -4824,11 +5492,12 @@ async function writebackGrants(args: string[]): Promise<number> {
   const engine = requiredWritebackEngine(args);
   const writerRole = optionalArg(args, "--writer-role") ?? "<writer_role>";
   const schema = optionalArg(args, "--schema") ?? (engine === "postgres" ? "public" : "<database_name>");
+  const table = optionalArg(args, "--table") ?? "synapsor_writeback_receipts";
   if (engine === "postgres") {
-    process.stdout.write(formatPostgresReceiptGrants(schema, writerRole));
+    process.stdout.write(formatPostgresReceiptGrants(schema, writerRole, table));
     return 0;
   }
-  process.stdout.write(formatMysqlReceiptGrants(schema, writerRole));
+  process.stdout.write(formatMysqlReceiptGrants(schema, writerRole, table));
   return 0;
 }
 
@@ -5384,6 +6053,7 @@ async function mcpServeHttp(args: string[]): Promise<number> {
   const readOnly = args.includes("--read-only");
   const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
+  assertReceiptTopologyForTransport(config, "http");
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8765");
   const resultFormat = resultFormatOption(args);
@@ -5432,6 +6102,7 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
   const readOnly = args.includes("--read-only");
   const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
+  assertReceiptTopologyForTransport(config, "streamable-http");
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
@@ -5484,6 +6155,16 @@ function mcpServeLeaseStorePath(config: RuntimeConfig, storePath: string | undef
   // Holding a SQLite lease would be misleading and can block unrelated local
   // inspection/reset commands for a file the server is not using.
   return config.storage?.shared_postgres?.mode === "runtime_store" ? ":memory:" : storePath;
+}
+
+function assertReceiptTopologyForTransport(config: RuntimeConfig, transport: string): void {
+  if (transport === "stdio" || config.mode !== "review") return;
+  const runnerLedgerSources = Object.entries(config.sources ?? {}).filter(([sourceName, source]) =>
+    source.receipts?.authority === "runner_ledger" && sourceNeedsSqlWriteback(config, sourceName));
+  if (runnerLedgerSources.length === 0) return;
+  if (config.storage?.shared_postgres?.mode !== "runtime_store") {
+    throw new Error(`Networked MCP with runner_ledger writeback requires storage.shared_postgres.mode runtime_store. Local SQLite is supported only for one local stdio/operator process. Unsafe sources: ${runnerLedgerSources.map(([name]) => name).join(", ")}.`);
+  }
 }
 
 function streamableHttpTlsOptions(args: string[], env: NodeJS.ProcessEnv): StreamableHttpTlsOptions | undefined {
@@ -6006,6 +6687,7 @@ async function toolsPreview(args: string[]): Promise<number> {
       exposed_to_mcp: boundary.names,
       alias_mappings: boundary.exposures,
       approval_policies: boundary.approvalPolicies,
+      capability_details: boundary.capabilityDetails,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
       checks: boundary.checks,
     }, null, 2)}\n`);
@@ -6024,6 +6706,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
+  capabilityDetails: ToolPreviewCapabilityDetail[];
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
   const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
@@ -6040,6 +6723,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
     const tools = runtime.listTools();
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
     const approvalPolicies = approvalPolicySummaries(parsed);
+    const capabilityDetails = toolPreviewCapabilityDetails(parsed);
     const exposures = toolNameExposures(tools.map((tool) => tool.name), aliasMode);
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
@@ -6052,7 +6736,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, checks };
   } finally {
     await runtime.close();
   }
@@ -6079,6 +6763,7 @@ function formatToolsPreview(input: {
   exposures: Array<{ canonicalName: string; exposedName: string; isAlias: boolean; style: ToolNameStyle }>;
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
+  capabilityDetails: ToolPreviewCapabilityDetail[];
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
   const exposedLines = input.exposures.length > 0
@@ -6095,6 +6780,9 @@ function formatToolsPreview(input: {
     "Exposed to MCP:",
     ...exposedLines,
     "",
+    "Reviewed capability boundary:",
+    ...formatToolPreviewCapabilityDetails(input.capabilityDetails),
+    "",
     "Not exposed to MCP:",
     ...defaultBlockedToolSurface().map((name) => `  - ${name}`),
     "",
@@ -6108,6 +6796,63 @@ function formatToolsPreview(input: {
   lines.push("Next:");
   lines.push(`  ${cliCommandName()} mcp serve --config ${input.configPath} --store ${input.storePath}`);
   return `${lines.join("\n")}\n`;
+}
+
+type ToolPreviewCapabilityDetail = {
+  name: string;
+  kind: "read" | "proposal";
+  operation?: "update" | "insert" | "delete";
+  target: string;
+  tenant_source: string;
+  writable_columns: string[];
+  dedup_columns: string[];
+  version_guard?: string;
+  version_advance?: string;
+  receipt_mode?: string;
+  approval: string;
+  max_rows: number;
+};
+
+function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabilityDetail[] {
+  return (config.capabilities ?? []).map((capability) => {
+    const context = capability.context ? config.contexts?.[capability.context] : config.trusted_context;
+    const operation = capability.kind === "proposal" ? capabilityOperation(capability) : undefined;
+    return {
+      name: capability.name,
+      kind: capability.kind,
+      operation,
+      target: `${capability.target.schema}.${capability.target.table}`,
+      tenant_source: capability.target.single_tenant_dev
+        ? "explicit single-tenant development acknowledgement"
+        : `${capability.target.tenant_key ?? "missing tenant key"} from trusted ${context?.provider ?? "context"}`,
+      writable_columns: capability.allowed_columns ?? [],
+      dedup_columns: capability.operation?.deduplication?.components.map((component) => component.column) ?? [],
+      version_guard: capability.conflict_guard?.column,
+      version_advance: capability.operation?.version_advance
+        ? `${capability.operation.version_advance.column}:${capability.operation.version_advance.strategy}`
+        : undefined,
+      receipt_mode: capability.kind === "proposal" ? formatSourceReceiptMode(config.sources?.[capability.source]) : undefined,
+      approval: capability.kind === "proposal"
+        ? `${capability.approval?.mode ?? "human"}${capability.approval?.required_role ? ` role=${capability.approval.required_role}` : ""} quorum=${capability.approval?.required_approvals ?? 1}`
+        : "not applicable",
+      max_rows: capability.max_rows ?? 1,
+    };
+  });
+}
+
+function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail[]): string[] {
+  if (details.length === 0) return ["  - (none)"];
+  return details.flatMap((detail) => [
+    `  - ${detail.name}: ${detail.kind}${detail.operation ? ` ${detail.operation.toUpperCase()}` : ""}`,
+    `    target: ${detail.target}; max rows: ${detail.max_rows}`,
+    `    tenant: ${detail.tenant_source}`,
+    ...(detail.kind === "proposal" ? [
+      `    writable columns: ${detail.writable_columns.join(", ") || "none"}`,
+      `    dedup: ${detail.dedup_columns.join(", ") || "not applicable"}`,
+      `    version guard: ${detail.version_guard ?? "not applicable"}${detail.version_advance ? `; advance: ${detail.version_advance}` : ""}`,
+      `    receipts: ${detail.receipt_mode ?? "not configured"}; approval: ${detail.approval}`,
+    ] : []),
+  ]);
 }
 
 function approvalPolicySummaries(config: RuntimeConfig): Array<{ capability: string; policy: string; limits: unknown[] }> {
@@ -9130,10 +9875,10 @@ async function operatorIdentityForDecision(input: {
   config: RuntimeConfig | undefined;
   configPath: string;
   proposal: StoredProposal;
-  action: "approve" | "reject" | "apply" | "worker_requeue" | "worker_discard";
+  action: "approve" | "reject" | "apply" | "reconcile" | "worker_requeue" | "worker_discard";
   reason?: string;
 }) {
-  const applyAuthorityAction = ["apply", "worker_requeue", "worker_discard"].includes(input.action);
+  const applyAuthorityAction = ["apply", "reconcile", "worker_requeue", "worker_discard"].includes(input.action);
   const requiredRole = applyAuthorityAction ? undefined : input.proposal.change_set.approval.required_role;
   const identity = await resolveOperatorIdentity({
     config: input.config?.operator_identity as OperatorIdentityConfig | undefined,
@@ -9575,7 +10320,7 @@ function formatProposalDetail(proposal: StoredProposal, storedEvidenceItemCount?
     `proposal hash: ${proposal.proposal_hash}`,
     `proposal version: ${proposal.proposal_version}`,
     `allowed columns: ${changeSet.guards.allowed_columns.join(", ")}`,
-    `conflict guard: ${conflictGuard.column || "none"}=${formatScalar(conflictGuard.value)}`,
+    `conflict guard: ${conflictGuard?.column || "none"}=${formatScalar(conflictGuard?.value)}`,
     `evidence: ${changeSet.evidence.bundle_id}  query ${changeSet.evidence.query_fingerprint}  items ${evidenceItems}`,
     `writeback: ${writebackStatus} via ${changeSet.writeback.mode}`,
     `source database changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
@@ -10398,6 +11143,52 @@ function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: 
       affected_rows: affectedRows,
       error_code: result.error_code ?? null,
     })).digest("hex")}`;
+  if (result.protocol_version === protocolVersions.normalizedWritebackJobV2) {
+    const safeOutcomeCode = dryRun
+      ? "DRY_RUN"
+      : terminalStatus === "applied"
+        ? "APPLIED"
+        : terminalStatus === "already_applied"
+          ? "ALREADY_APPLIED"
+          : terminalStatus === "conflict"
+            ? "CONFLICT"
+            : terminalStatus === "reconciliation_required"
+              ? "RECONCILIATION_REQUIRED"
+              : "FAILED";
+    return {
+      schema_version: protocolVersions.executionReceiptV2,
+      writeback_job_id: job.job_id,
+      proposal_id: job.proposal_id,
+      proposal_hash: job.approval_id,
+      approval_id: job.approval_id,
+      runner_id: result.runner_id,
+      operation: result.operation,
+      receipt_authority: result.receipt_authority,
+      status: terminalStatus,
+      target: {
+        source_id: job.source_id,
+        schema: job.target.schema,
+        table: job.target.table,
+        identity: result.target_identity,
+      },
+      rows_affected: affectedRows,
+      idempotency_key: job.idempotency_key,
+      before_digest: result.before_digest,
+      after_digest: result.after_digest,
+      tombstone_digest: result.tombstone_digest,
+      source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
+      safe_outcome_code: safeOutcomeCode,
+      safe_error_code: result.error_code,
+      executed_at: result.completed_at,
+      receipt_hash: receiptHash,
+      ...(result.status === "reconciliation_required" ? {
+        reconciliation: {
+          intent_id: result.intent_id,
+          reason: "source outcome requires operator reconciliation",
+        },
+      } : {}),
+    };
+  }
   return {
     schema_version: protocolVersions.executionReceipt,
     writeback_job_id: job.job_id,
@@ -10724,13 +11515,19 @@ Inspect schema metadata without mutating the database or printing credentials.
 `,
     init: `Usage:
   ${cmd} init --wizard --from-env DATABASE_URL [--mode read_only|review|shadow] [--out synapsor.runner.json]
-  ${cmd} init --engine postgres --url-env DATABASE_URL --mode review --table public.invoices
-  ${cmd} init --inspection-json schema.json --table invoices --mode review --patch late_fee_cents=fixed:0,waiver_reason=arg:reason
+  ${cmd} init --engine postgres --url-env DATABASE_URL --mode review --table public.invoices --operation update
+  ${cmd} init --inspection-json schema.json --table invoices --mode review --operation update --patch late_fee_cents=fixed:0,waiver_reason=arg:reason
+  ${cmd} init --inspection-json schema.json --table account_credits --mode review --operation insert --dedup-columns request_id --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents
+  ${cmd} init --inspection-json schema.json --table sessions --mode review --operation delete
   ${cmd} init --answers answers.json --yes
   ${cmd} init --inspection-json schema.json --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
 
 Generate a reviewed Synapsor Runner contract. Defaults to read-only in the wizard.
-Review mode writeback choices: sql_update, http_handler, command_handler.
+Native direct SQL operations are update, insert, and delete. Existing configs default to update.
+Receipt modes are source_auto_migrate, source_precreated, and runner_ledger.
+Runner-ledger mode creates no Synapsor table in the source database, but an ambiguous
+post-commit crash must be reconciled by an operator instead of retried automatically.
+Rich or externally visible writes still use http_handler or command_handler.
 If --namespace is omitted, init derives one from the table name instead of using source.*.
 Use --read-tool and --proposal-tool to override the exact model-facing capability names.
 The guided wizard shows a final preview and lets you revise visible fields or capability names before writing files.
@@ -10833,12 +11630,21 @@ Call a generated semantic tool locally before wiring Claude, Cursor, or another 
 `,
     writeback: `Usage:
   ${cmd} writeback doctor --config ./synapsor.runner.json [--check-db]
-  ${cmd} writeback migration --engine postgres [--schema synapsor]
-  ${cmd} writeback migration --engine mysql [--schema appdb]
-  ${cmd} writeback grants --engine postgres --writer-role app_writer [--schema synapsor]
-  ${cmd} writeback grants --engine mysql --writer-role "'app_writer'@'%'" [--schema appdb]
+  ${cmd} writeback migration --engine postgres [--schema synapsor] [--table synapsor_writeback_receipts]
+  ${cmd} writeback migration --engine mysql [--schema appdb] [--table synapsor_writeback_receipts]
+  ${cmd} writeback grants --engine postgres --writer-role app_writer [--schema synapsor] [--table synapsor_writeback_receipts]
+  ${cmd} writeback grants --engine mysql --writer-role "'app_writer'@'%'" [--schema appdb] [--table synapsor_writeback_receipts]
+  ${cmd} writeback reconcile list --status reconciliation_required --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} writeback reconcile inspect latest --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} writeback reconcile resolve wbi:... --outcome applied --reason "verified source state" --yes --config ./synapsor.runner.json --store ./.synapsor/local.db
 
-Print and verify the receipt-table setup required by direct SQL writeback. Rich writes should prefer app-owned http_handler or command_handler executors.
+Print and verify receipt setup for direct writeback. source_db + auto_migrate
+creates the fixed receipt table idempotently; source_db + precreated verifies
+rollback-only permissions and never runs DDL. runner_ledger creates no receipt
+table in the source database and sends ambiguous post-commit outcomes to the
+operator reconciliation queue. Reconciliation re-reads only reviewed,
+tenant-scoped metadata and never retries or guesses an ambiguous source commit.
+Rich or externally visible writes should use app-owned handlers.
 `,
     handler: `Usage:
   ${cmd} handler template --list
@@ -10864,11 +11670,15 @@ The template receives an approved proposal writeback request and must return an 
 `,
     onboard: `Usage:
   ${cmd} onboard db --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
-  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
+  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --operation update --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
+  ${cmd} onboard db --from-env DATABASE_URL --table account_credits --mode review --operation insert --dedup-columns request_id --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
   ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes
   ${cmd} onboard db --answers answers.json --yes
 
-Guided own-database setup: inspect schema, choose one object, create trusted context, choose read-only/shadow/review writeback mode, generate semantic tools, validate config, run a tool-boundary smoke check, and print the MCP/UI next steps.
+Guided own-database setup: inspect schema, choose one object, create trusted
+context, choose read-only/shadow/review mode, select guarded single-row
+INSERT/UPDATE/DELETE or an app-owned handler, select receipt authority, generate
+semantic tools, validate config, and run a tool-boundary smoke check.
 Use --yes/--non-interactive with explicit flags, or --answers, when CI or an LLM agent must run without prompts.
 `,
     propose: `Usage:
@@ -10908,8 +11718,8 @@ Static MCP/database risk review only. This is not a security guarantee.
   ${cmd} doctor --config synapsor.runner.json --report --redact --output synapsor-doctor.md
   ${cmd} doctor --first-run
 
-Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, direct SQL writeback readiness, and local store stats. Reports are redacted; do not paste secrets into issues.
-Use --check-writeback only after an administrator applies the receipt-table migration and grants. It verifies the pre-created table with the trusted writer inside a rolled-back transaction and does not require schema CREATE.
+Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, operation-specific direct SQL writeback readiness, receipt authority, and local store stats. Reports are redacted; do not paste secrets into issues.
+Use --check-writeback to verify the configured receipt mode. source_db/precreated uses rollback-only probes and never runs CREATE; source_db/auto_migrate verifies the fixed migration; runner_ledger verifies its durable intent store and requires no source receipt table.
 Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_CONTROL_PLANE_URL plus the scoped worker environment.
 `,
     proposals: `Usage:
@@ -10959,9 +11769,11 @@ With --config, the writer connection comes from source.write_url_env, such as
 SYNAPSOR_DATABASE_WRITE_URL. SYNAPSOR_DATABASE_URL is only the legacy fallback
 for direct worker/apply flows without a local config.
 
-Direct SQL writeback writes the administrator-created
-synapsor_writeback_receipts table for idempotency and replay. The trusted writer
-needs SELECT/INSERT/UPDATE on that table, but does not need schema CREATE.
+Direct SQL writeback supports reviewed single-row INSERT, UPDATE, and DELETE.
+With source_db receipt authority, mutation and receipt commit atomically; the
+trusted writer needs receipt-table permissions and auto_migrate additionally
+needs CREATE. With runner_ledger authority, no Synapsor source table is created,
+but a crash after source commit can require explicit operator reconciliation.
 
 When operator_identity.provider is signed_key, pass --identity <operator> and
 --identity-key <private-key.pem>. Batch apply handles each approved proposal
