@@ -1,8 +1,8 @@
 # Limitations
 
-Synapsor Runner is intentionally narrow. Version 1.2 adds guarded single-row
-CRUD and explicit receipt authority; it does not claim Synapsor Cloud scale or
-an enterprise SLA.
+Synapsor Runner is intentionally narrow. Version 1.3 adds guarded bounded-set
+writeback on top of single-row CRUD and explicit receipt authority; it does not
+claim Synapsor Cloud scale or an enterprise SLA.
 
 ## Supported
 
@@ -22,8 +22,12 @@ an enterprise SLA.
   - `synapsor.writeback-job.v1`
   - `synapsor.execution-receipt.v1`
   - backward-compatible operation-aware v2 change sets, jobs, and receipts
+  - bounded-set v3 change sets, jobs, and receipts
   - `synapsor.runner-registration.v1`
 - Guarded single-row `INSERT`, `UPDATE`, and `DELETE` for Postgres and MySQL.
+- Fixed-predicate set `UPDATE`/`DELETE` and exact-review batch `INSERT` with
+  mandatory row/value caps, a hard 100-row ceiling, human approval, frozen
+  members, atomic apply, and exact receipts.
 - Atomic source receipts with precreated or auto-migrated tables, or
   zero-source-schema Runner-ledger receipts with explicit reconciliation.
 - App/API handler writeback through approved `http_handler` executors.
@@ -54,8 +58,9 @@ truth for the model-facing tools.
 - Model-generated SQL.
 - DDL.
 - UPSERT.
-- Multi-row UPDATE.
-- Multi-row INSERT or DELETE.
+- Model-generated/free-form set predicates or dynamic identifiers.
+- Unbounded set writes or more than 100 reviewed members.
+- Policy auto-approval for bounded sets.
 - Stored procedures.
 - Cross-database transactions.
 - Physical branching of Postgres/MySQL.
@@ -95,8 +100,8 @@ not a hosted central evidence service, organization RBAC/SSO, compliance
 retention system, or unbounded search engine. Each bridge operation serializes
 through an advisory lock and fails above configured `max_entries`.
 
-Only homogeneous 1.2 fleet operation is currently verified for the new
-operation-aware intent path. Mixed 1.1/1.2 rolling operation is not claimed.
+Only homogeneous 1.3 fleet operation is claimed for protocol-v3 bounded-set
+jobs. Mixed-minor v2/v3 rolling writeback is not claimed.
 See [Running A Small Runner
 Fleet](running-a-runner-fleet.md).
 

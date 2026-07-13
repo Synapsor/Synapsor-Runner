@@ -108,6 +108,11 @@ guarded proposals use `direct_insert`, `direct_update`, or `direct_delete`, and
 proposal result still reports `source_database_changed: false` until external
 apply.
 
+For bounded sets, the same model-facing v2 envelope reports the operation,
+reviewed member count, row cap, aggregate values/maximums, set digest, and exact
+allowlisted member diffs. Protocol v3 is used behind the envelope for the
+frozen job and receipt; see [Result Envelope v3](result-envelope-v3.md).
+
 ## Error Result
 
 Model-facing errors are safe and stable. Structured tool-rejection logs also

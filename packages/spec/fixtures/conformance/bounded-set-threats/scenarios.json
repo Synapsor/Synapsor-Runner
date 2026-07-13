@@ -1,0 +1,9 @@
+{
+  "r1_fixed_selection": { "model_args": { "reason": "reviewed cleanup", "where": "1=1" }, "expected": "MODEL_PREDICATE_REJECTED" },
+  "r2_count_value_cap": { "matched_rows": 11, "max_rows": 10, "expected": "SET_ROW_CAP_EXCEEDED" },
+  "r3_frozen_drift": { "frozen_versions": [1, 1], "apply_versions": [1, 2], "expected": "SET_MEMBER_STALE" },
+  "r4_atomic_rollback": { "member_results": ["ready", "constraint_failure"], "expected_source_changes": 0 },
+  "r5_exact_receipt": { "primary_keys": ["INV-1", "INV-2"], "expected_receipt_id_count": 2 },
+  "r6_delete_side_effects": { "write_trigger": true, "expected": "DELETE_HIDDEN_EFFECT_BLOCKED" },
+  "r7_human_approval": { "approval_mode": "policy", "expected": "SET_WRITE_HUMAN_APPROVAL_REQUIRED" }
+}

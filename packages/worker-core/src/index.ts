@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { parseWritebackJob, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
@@ -11,6 +12,8 @@ export type RunnerConfig = {
   databaseUrl: string;
   engine: "postgres" | "mysql";
   pollIntervalMs: number;
+  /** Operator-controlled upper bound for source write statements and lock waits. */
+  statementTimeoutMs?: number;
   logLevel: "debug" | "info" | "warn" | "error";
   dryRun: boolean;
   stateDir: string;
@@ -54,13 +57,158 @@ export type ReconciliationClassification =
   | "drifted";
 
 export type ReconciliationObservation = {
-  operation: "single_row_update" | "single_row_insert" | "single_row_delete";
+  operation: "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert";
   classification: ReconciliationClassification;
   target_identity: Array<{ column: string; value: string | number | boolean | null }>;
   expected: Record<string, string | number | boolean | null>;
   observed: Record<string, string | number | boolean | null>;
   observed_digest: `sha256:${string}`;
+  member_observations?: Array<{
+    primary_key: { column: string; value: string | number | boolean | null };
+    classification: ReconciliationClassification;
+    observed: Record<string, string | number | boolean | null>;
+    observed_digest: `sha256:${string}`;
+  }>;
 };
+
+type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
+type Scalar = string | number | boolean | null;
+
+export function classifyFrozenSetReconciliation(
+  job: SetWritebackJob,
+  rows: Record<string, unknown>[],
+  valuesEqual: (actual: unknown, expected: unknown) => boolean = (actual, expected) => actual === expected,
+): ReconciliationObservation {
+  const primaryKey = job.target.primary_key.column;
+  const observedByIdentity = new Map<string, Record<string, unknown>>();
+  let duplicateIdentity = false;
+  for (const row of rows) {
+    const key = JSON.stringify(asScalar(row[primaryKey]));
+    if (observedByIdentity.has(key)) duplicateIdentity = true;
+    observedByIdentity.set(key, row);
+  }
+  const memberObservations = job.frozen_set.members.map((member) => {
+    const row = observedByIdentity.get(JSON.stringify(member.primary_key.value));
+    const observed = row
+      ? Object.fromEntries(Object.keys({ ...member.before, ...member.after }).map((column) => [column, asScalar(row[column])]))
+      : {};
+    const beforeMatches = row !== undefined && recordValuesMatch(row, member.before, valuesEqual);
+    const afterMatches = row !== undefined && recordValuesMatch(row, member.after, valuesEqual);
+    const classification: ReconciliationClassification = !row
+      ? job.operation === "set_delete" ? "target_absent" : "not_observed"
+      : job.operation === "set_delete"
+        ? beforeMatches ? "matches_reviewed_before" : "drifted"
+        : afterMatches
+          ? "matches_proposed"
+          : beforeMatches ? "matches_reviewed_before" : "drifted";
+    return {
+      primary_key: member.primary_key,
+      classification,
+      observed,
+      observed_digest: reconciliationDigest(observed),
+    };
+  });
+  const expectedIdentities = new Set(job.frozen_set.members.map((member) => JSON.stringify(member.primary_key.value)));
+  const unexpectedIdentity = [...observedByIdentity.keys()].some((identity) => !expectedIdentities.has(identity));
+  const classifications = memberObservations.map((member) => member.classification);
+  let classification: ReconciliationClassification;
+  if (duplicateIdentity || unexpectedIdentity) classification = "drifted";
+  else if (job.operation === "set_delete") {
+    if (classifications.every((item) => item === "target_absent")) classification = "target_absent";
+    else if (classifications.every((item) => item === "matches_reviewed_before")) classification = "matches_reviewed_before";
+    else classification = "drifted";
+  } else if (classifications.every((item) => item === "matches_proposed")) classification = "matches_proposed";
+  else if (job.operation === "set_update" && classifications.every((item) => item === "matches_reviewed_before")) classification = "matches_reviewed_before";
+  else if (job.operation === "batch_insert" && classifications.every((item) => item === "not_observed")) classification = "not_observed";
+  else classification = "drifted";
+  const observed = {
+    row_count: rows.length,
+    set_digest: reconciliationDigest(memberObservations.map((member) => ({ primary_key: member.primary_key, observed: member.observed }))),
+  };
+  return {
+    operation: job.operation,
+    classification,
+    target_identity: job.frozen_set.members.map((member) => member.primary_key),
+    expected: {
+      row_count: job.frozen_set.row_count,
+      max_rows: job.frozen_set.max_rows,
+      set_digest: job.frozen_set.set_digest,
+    },
+    observed,
+    observed_digest: reconciliationDigest(observed),
+    member_observations: memberObservations,
+  };
+}
+
+export function assertFrozenSetJobIntegrity(job: SetWritebackJob): void {
+  const set = job.frozen_set;
+  if (set.row_count !== set.members.length || set.row_count < 1 || set.row_count > set.max_rows || set.max_rows > 100) throw new Error("SET_ROW_CAP_EXCEEDED");
+  const identities = set.members.map((member) => JSON.stringify(member.primary_key.value));
+  if (new Set(identities).size !== identities.length) throw new Error("SET_IDENTITY_NOT_UNIQUE");
+  if (identities.some((identity, index) => index > 0 && identities[index - 1]!.localeCompare(identity) > 0)) throw new Error("SET_IDENTITY_ORDER_INVALID");
+  for (const member of set.members) {
+    if (member.primary_key.column !== job.target.primary_key.column) throw new Error("SET_PRIMARY_KEY_MISMATCH");
+    if (job.operation === "set_update") {
+      if (!job.version_advance || job.version_advance.strategy !== "integer_increment" || !member.expected_version || member.expected_version.column !== job.version_advance.column) throw new Error("SET_VERSION_GUARD_REQUIRED");
+      if (typeof member.expected_version.value !== "number" || member.before[job.version_advance.column] !== member.expected_version.value) throw new Error("SET_VERSION_GUARD_MISMATCH");
+      if (member.before[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("SET_TENANT_GUARD_MISMATCH");
+      const expectedAfter = { ...member.before, ...job.patch, [job.version_advance.column]: member.expected_version.value + 1 };
+      if (!recordsEqual(member.after, expectedAfter)) throw new Error("SET_AFTER_STATE_MISMATCH");
+      if (member.before_digest !== reconciliationDigest({ primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
+      if (member.after_digest !== reconciliationDigest({ primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
+    } else if (job.operation === "set_delete") {
+      if (!member.expected_version || member.before[member.expected_version.column] !== member.expected_version.value) throw new Error("SET_VERSION_GUARD_MISMATCH");
+      if (member.before[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("SET_TENANT_GUARD_MISMATCH");
+      if (Object.keys(member.after).length !== 0) throw new Error("SET_DELETE_PATCH_FORBIDDEN");
+      if (member.before_digest !== reconciliationDigest({ primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
+      if (member.tombstone_digest !== reconciliationDigest({ primary_key: member.primary_key.value, expected_version: member.expected_version })) throw new Error("SET_TOMBSTONE_DIGEST_MISMATCH");
+    } else {
+      const components = member.deduplication?.components ?? [];
+      const primary = components.find((component) => component.column === job.target.primary_key.column);
+      const tenant = components.find((component) => component.column === job.target.tenant_guard.column);
+      if (!primary || primary.value !== member.primary_key.value || !tenant || tenant.source !== "trusted_tenant" || tenant.value !== job.target.tenant_guard.value) throw new Error("BATCH_DEDUP_REQUIRED");
+      if (member.after[job.target.primary_key.column] !== member.primary_key.value || member.after[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("BATCH_IDENTITY_MISMATCH");
+      if (member.after_digest !== reconciliationDigest({ primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
+    }
+  }
+  for (const bound of set.aggregate_bounds) {
+    const actual = set.members.reduce((total, member) => {
+      if (bound.measure === "before") return total + Math.abs(finiteNumber(member.before[bound.column], bound.column));
+      if (bound.measure === "after") return total + Math.abs(finiteNumber(member.after[bound.column], bound.column));
+      return total + Math.abs(finiteNumber(member.after[bound.column], bound.column) - finiteNumber(member.before[bound.column], bound.column));
+    }, 0);
+    if (actual !== bound.actual || actual > bound.maximum) throw new Error("SET_AGGREGATE_BOUND_MISMATCH");
+  }
+  const expectedSetDigest = reconciliationDigest({ operation: job.operation, members: set.members, aggregate_bounds: set.aggregate_bounds });
+  if (set.set_digest !== expectedSetDigest) throw new Error("SET_DIGEST_MISMATCH");
+}
+
+function recordValuesMatch(
+  actual: Record<string, unknown>,
+  expected: Record<string, Scalar>,
+  valuesEqual: (actual: unknown, expected: unknown) => boolean,
+): boolean {
+  return Object.entries(expected).every(([column, value]) => valuesEqual(actual[column], value));
+}
+
+function recordsEqual(left: Record<string, Scalar>, right: Record<string, Scalar>): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+}
+
+function finiteNumber(value: Scalar | undefined, column: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`SET_AGGREGATE_VALUE_INVALID:${column}`);
+  return value;
+}
+
+function asScalar(value: unknown): Scalar {
+  return value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value as Scalar : String(value);
+}
+
+function reconciliationDigest(value: unknown): `sha256:${string}` {
+  return `sha256:${crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
 
 export type WritebackFailpoint =
   | "after_intent_recorded"
@@ -103,10 +251,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     databaseUrl: env.SYNAPSOR_DATABASE_URL || "",
     engine,
     pollIntervalMs: Number(env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
+    statementTimeoutMs: optionalPositiveInteger(env.SYNAPSOR_WRITEBACK_TIMEOUT_MS, "SYNAPSOR_WRITEBACK_TIMEOUT_MS"),
     logLevel: (env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
     dryRun: String(env.SYNAPSOR_DRY_RUN || "false").toLowerCase() === "true",
     stateDir: env.SYNAPSOR_STATE_DIR || "./state"
   };
+}
+
+function optionalPositiveInteger(value: string | undefined, name: string): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  const parsed = Number(value.trim());
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
+  return parsed;
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {

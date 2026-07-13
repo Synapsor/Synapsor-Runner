@@ -151,6 +151,78 @@ function autoApprovalConfig(): RuntimeConfig {
   return cloned;
 }
 
+function boundedSetUpdateConfig(maxRows = 2, aggregateMaximum = 10_000): RuntimeConfig {
+  const cloned = structuredClone(config);
+  cloned.capabilities = [{
+    name: "billing.close_overdue_invoices",
+    kind: "proposal",
+    source: "app_postgres",
+    target: { schema: "public", table: "invoices", primary_key: "id", tenant_key: "tenant_id" },
+    args: { reason: { type: "string", required: true, max_length: 500 } },
+    lookup: { id_from_arg: "reason" },
+    visible_columns: ["id", "tenant_id", "status", "balance_cents", "close_reason", "version"],
+    evidence: "required",
+    patch: { status: { fixed: "closed" }, close_reason: { from_arg: "reason" } },
+    allowed_columns: ["status", "close_reason"],
+    operation: {
+      kind: "update",
+      cardinality: "set",
+      selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+      max_rows: maxRows,
+      aggregate_bounds: [{ column: "balance_cents", measure: "before", maximum: aggregateMaximum }],
+      version_advance: { column: "version", strategy: "integer_increment" },
+    },
+    conflict_guard: { column: "version" },
+    approval: { mode: "human", required_role: "billing_reviewer" },
+    writeback: { mode: "direct_sql" },
+  }];
+  return cloned;
+}
+
+function boundedBatchInsertConfig(maxRows = 2, aggregateMaximum = 5_000): RuntimeConfig {
+  const cloned = structuredClone(config);
+  cloned.capabilities = [{
+    name: "billing.create_credits",
+    kind: "proposal",
+    source: "app_postgres",
+    target: { schema: "public", table: "account_credits", primary_key: "id", tenant_key: "tenant_id" },
+    args: {
+      items: {
+        type: "object_array",
+        required: true,
+        max_items: maxRows,
+        fields: {
+          id: { type: "string", required: true, max_length: 128 },
+          external_id: { type: "string", required: true, max_length: 128 },
+          amount_cents: { type: "number", required: true, minimum: 1, maximum: 2_500 },
+          reason: { type: "string", required: true, max_length: 500 },
+        },
+      },
+    },
+    lookup: { id_from_arg: "items" },
+    visible_columns: ["id", "tenant_id", "external_id", "amount_cents", "reason"],
+    evidence: "required",
+    patch: { amount_cents: { from_item: "amount_cents" }, reason: { from_item: "reason" } },
+    allowed_columns: ["amount_cents", "reason"],
+    numeric_bounds: { amount_cents: { minimum: 1, maximum: 2_500 } },
+    operation: {
+      kind: "insert",
+      cardinality: "set",
+      batch: { items_from_arg: "items" },
+      max_rows: maxRows,
+      aggregate_bounds: [{ column: "amount_cents", measure: "after", maximum: aggregateMaximum }],
+      deduplication: { components: [
+        { column: "tenant_id", source: "trusted_tenant" },
+        { column: "id", source: "item_field", item_field: "id" },
+        { column: "external_id", source: "item_field", item_field: "external_id" },
+      ] },
+    },
+    approval: { mode: "human", required_role: "billing_reviewer" },
+    writeback: { mode: "direct_sql" },
+  }];
+  return cloned;
+}
+
 describe("local Synapsor MCP runtime", () => {
   it("closes the stdio runtime when client input ends", async () => {
     const input = new PassThrough();
@@ -288,6 +360,39 @@ describe("local Synapsor MCP runtime", () => {
       } finally {
         runtime.close();
       }
+    }
+  });
+
+  it("executes the bounded-set R1 predicate-abuse fixture and keeps R7 human approval fixed", async () => {
+    const fixtureRoot = path.resolve(testDir, "../../spec/fixtures/conformance/bounded-set-threats");
+    const scenario = JSON.parse(fs.readFileSync(path.join(fixtureRoot, "scenarios.json"), "utf8"));
+    const expected = JSON.parse(fs.readFileSync(path.join(fixtureRoot, "expected.outcomes.json"), "utf8"));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-bounded-set-threats-"));
+    fs.copyFileSync(path.join(fixtureRoot, "contract.json"), path.join(tempDir, "synapsor.contract.json"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./synapsor.contract.json"],
+      sources: { local_postgres: { engine: "postgres", read_url_env: "APP_POSTGRES_READ_URL", write_url_env: "APP_POSTGRES_WRITE_URL" } },
+    }));
+    const loaded = loadRuntimeConfigFromFile(configPath);
+    const capability = loaded.capabilities?.find((item) => item.name === "billing.close_overdue_invoices");
+    expect(expected.selection_is_contract_fixed).toBe(true);
+    expect(expected.human_approval_required).toBe(true);
+    expect(capability?.operation?.selection).toEqual({ all: [{ column: "status", operator: "eq", value: "overdue" }] });
+    expect(capability?.approval?.mode).toBe("human");
+
+    const runtime = createMcpRuntime(loaded, {
+      env: { SYNAPSOR_TENANT_ID: "acme", SYNAPSOR_PRINCIPAL: "support_agent" },
+      readRow: async () => ({ row: {}, rows: [], rowCount: 0 }),
+    });
+    try {
+      await expect(runtime.callTool("billing.close_overdue_invoices", scenario.r1_fixed_selection.model_args))
+        .rejects.toMatchObject({ code: scenario.r1_fixed_selection.expected });
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -1056,6 +1161,122 @@ describe("local Synapsor MCP runtime", () => {
         after: {},
       });
       expect(result.diff).toMatchObject({ id: { before: "INV-3001", proposed: null } });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("freezes the exact bounded set in a v3 proposal with per-member guards", async () => {
+    const rows = [
+      { id: "INV-2", tenant_id: "acme", status: "overdue", balance_cents: 2_000, close_reason: null, version: 7 },
+      { id: "INV-1", tenant_id: "acme", status: "overdue", balance_cents: 1_000, close_reason: null, version: 3 },
+    ];
+    const runtime = createMcpRuntime(boundedSetUpdateConfig(), {
+      readRow: async () => ({ row: rows[0]!, rows, rowCount: rows.length }),
+    });
+    try {
+      const result = await runtime.callTool("billing.close_overdue_invoices", { reason: "reviewed collections close" });
+      const proposal = await runtime.store.getProposal(String(result.proposal_id));
+      expect(proposal?.state).toBe("pending_review");
+      expect(proposal?.change_set).toMatchObject({
+        schema_version: "synapsor.change-set.v3",
+        operation: "set_update",
+        approval: { status: "pending", mode: "human" },
+        frozen_set: {
+          max_rows: 2,
+          row_count: 2,
+          aggregate_bounds: [{ column: "balance_cents", measure: "before", maximum: 10_000, actual: 3_000 }],
+          members: [
+            {
+              primary_key: { column: "id", value: "INV-1" },
+              expected_version: { column: "version", value: 3 },
+              before: { status: "overdue", version: 3 },
+              after: { status: "closed", close_reason: "reviewed collections close", version: 4 },
+            },
+            {
+              primary_key: { column: "id", value: "INV-2" },
+              expected_version: { column: "version", value: 7 },
+              after: { version: 8 },
+            },
+          ],
+        },
+      });
+      expect(result).toMatchObject({
+        status: "review_required",
+        approval_required: true,
+        source_database_mutated: false,
+        diff: { affected_rows: { before: 2, proposed: 2 } },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("rejects bounded-set cap and aggregate overflow before proposal persistence", async () => {
+    const capStore = new ProposalStore();
+    const capRows = [
+      { id: "INV-1", tenant_id: "acme", status: "overdue", balance_cents: 100, close_reason: null, version: 1 },
+      { id: "INV-2", tenant_id: "acme", status: "overdue", balance_cents: 100, close_reason: null, version: 1 },
+      { id: "INV-3", tenant_id: "acme", status: "overdue", balance_cents: 100, close_reason: null, version: 1 },
+    ];
+    const capRuntime = createMcpRuntime(boundedSetUpdateConfig(2), {
+      store: capStore,
+      readRow: async () => ({ row: capRows[0]!, rows: capRows, rowCount: capRows.length }),
+    });
+    try {
+      await expect(capRuntime.callTool("billing.close_overdue_invoices", { reason: "too many" }))
+        .rejects.toMatchObject({ code: "SET_ROW_CAP_EXCEEDED" });
+      expect(capStore.listProposals()).toEqual([]);
+    } finally {
+      await capRuntime.close();
+    }
+
+    const aggregateStore = new ProposalStore();
+    const aggregateRows = capRows.slice(0, 2).map((row) => ({ ...row, balance_cents: 600 }));
+    const aggregateRuntime = createMcpRuntime(boundedSetUpdateConfig(2, 1_000), {
+      store: aggregateStore,
+      readRow: async () => ({ row: aggregateRows[0]!, rows: aggregateRows, rowCount: aggregateRows.length }),
+    });
+    try {
+      await expect(aggregateRuntime.callTool("billing.close_overdue_invoices", { reason: "too valuable" }))
+        .rejects.toMatchObject({ code: "SET_AGGREGATE_BOUND_EXCEEDED" });
+      expect(aggregateStore.listProposals()).toEqual([]);
+    } finally {
+      await aggregateRuntime.close();
+    }
+  });
+
+  it("freezes exact reviewed batch items with trusted tenant and deterministic identities", async () => {
+    const runtime = createMcpRuntime(boundedBatchInsertConfig());
+    try {
+      const result = await runtime.callTool("billing.create_credits", {
+        items: [
+          { id: "CR-2", external_id: "ext-2", amount_cents: 1_500, reason: "second" },
+          { id: "CR-1", external_id: "ext-1", amount_cents: 500, reason: "first" },
+        ],
+      });
+      const proposal = await runtime.store.getProposal(String(result.proposal_id));
+      expect(proposal?.state).toBe("pending_review");
+      expect(proposal?.change_set).toMatchObject({
+        schema_version: "synapsor.change-set.v3",
+        operation: "batch_insert",
+        frozen_set: {
+          row_count: 2,
+          aggregate_bounds: [{ column: "amount_cents", measure: "after", maximum: 5_000, actual: 2_000 }],
+          members: [
+            {
+              primary_key: { column: "id", value: "CR-1" },
+              before: {},
+              after: { id: "CR-1", tenant_id: "acme", external_id: "ext-1", amount_cents: 500, reason: "first" },
+            },
+            {
+              primary_key: { column: "id", value: "CR-2" },
+              after: { id: "CR-2", tenant_id: "acme", external_id: "ext-2", amount_cents: 1_500, reason: "second" },
+            },
+          ],
+        },
+      });
+      expect(result).toMatchObject({ status: "review_required", approval_required: true, source_database_mutated: false });
     } finally {
       await runtime.close();
     }

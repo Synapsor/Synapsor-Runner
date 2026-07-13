@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.writeback-job.v3.schema.json",
+  "title": "Synapsor Bounded Writeback Job v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "writeback_job_id", "proposal_id", "proposal_version", "proposal_hash", "runner_scope", "engine", "operation", "target", "tenant_guard", "allowed_columns", "patch", "frozen_set", "idempotency_key", "lease"],
+  "properties": {
+    "schema_version": { "const": "synapsor.writeback-job.v3" },
+    "writeback_job_id": { "type": "string", "minLength": 1 },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "proposal_hash": { "$ref": "#/$defs/sha256" },
+    "runner_scope": { "type": "object", "additionalProperties": false, "required": ["project_id", "source_id"], "properties": { "project_id": { "type": "string", "minLength": 1 }, "source_id": { "type": "string", "minLength": 1 } } },
+    "engine": { "enum": ["postgres", "mysql"] },
+    "operation": { "enum": ["set_update", "set_delete", "batch_insert"] },
+    "target": { "type": "object", "additionalProperties": false, "required": ["schema", "table", "primary_key"], "properties": { "schema": { "$ref": "#/$defs/safeIdentifier" }, "table": { "$ref": "#/$defs/safeIdentifier" }, "primary_key": { "type": "object", "additionalProperties": false, "required": ["column"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" } } } } },
+    "tenant_guard": { "$ref": "#/$defs/columnValue" },
+    "allowed_columns": { "type": "array", "items": { "$ref": "#/$defs/safeIdentifier" }, "maxItems": 256, "uniqueItems": true },
+    "patch": { "$ref": "#/$defs/scalarRecord" },
+    "version_advance": { "$ref": "#/$defs/versionAdvance" },
+    "frozen_set": { "$ref": "#/$defs/frozenSet" },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "lease": { "type": "object", "additionalProperties": false, "required": ["lease_id", "attempt", "expires_at"], "properties": { "lease_id": { "type": "string", "minLength": 1 }, "attempt": { "type": "integer", "minimum": 1 }, "expires_at": { "type": "string", "format": "date-time" } } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "set_update" } }, "required": ["operation"] },
+      "then": { "required": ["version_advance"], "properties": { "patch": { "minProperties": 1 }, "allowed_columns": { "minItems": 1 }, "version_advance": { "properties": { "strategy": { "const": "integer_increment" } }, "required": ["strategy"] }, "frozen_set": { "properties": { "members": { "items": { "required": ["expected_version", "before_digest", "after_digest"], "not": { "anyOf": [{ "required": ["tombstone_digest"] }, { "required": ["deduplication"] }] } } } } } } }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "set_delete" } }, "required": ["operation"] },
+      "then": { "not": { "required": ["version_advance"] }, "properties": { "patch": { "maxProperties": 0 }, "allowed_columns": { "maxItems": 0 }, "frozen_set": { "properties": { "members": { "items": { "required": ["expected_version", "before_digest", "tombstone_digest"], "properties": { "after": { "maxProperties": 0 } }, "not": { "anyOf": [{ "required": ["after_digest"] }, { "required": ["deduplication"] }] } } } } } } }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "batch_insert" } }, "required": ["operation"] },
+      "then": { "not": { "required": ["version_advance"] }, "properties": { "allowed_columns": { "minItems": 1 }, "frozen_set": { "properties": { "members": { "items": { "required": ["after_digest", "deduplication"], "properties": { "before": { "maxProperties": 0 }, "after": { "minProperties": 1 } }, "not": { "anyOf": [{ "required": ["expected_version"] }, { "required": ["before_digest"] }, { "required": ["tombstone_digest"] }] } } } } } } }
+    }
+  ],
+  "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "sha256": { "type": "string", "pattern": "^sha256:.+" },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "scalarRecord": { "type": "object", "propertyNames": { "$ref": "#/$defs/safeIdentifier" }, "additionalProperties": { "$ref": "#/$defs/scalar" }, "maxProperties": 256 },
+    "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "value": { "$ref": "#/$defs/scalar" } } },
+    "versionAdvance": { "type": "object", "additionalProperties": false, "required": ["column", "strategy"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "strategy": { "enum": ["integer_increment", "database_generated"] } } },
+    "deduplicationComponent": { "type": "object", "additionalProperties": false, "required": ["column", "value", "source"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "value": { "$ref": "#/$defs/scalar" }, "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] } } },
+    "deduplication": { "type": "object", "additionalProperties": false, "required": ["components"], "properties": { "components": { "type": "array", "items": { "$ref": "#/$defs/deduplicationComponent" }, "minItems": 1, "maxItems": 8 } } },
+    "aggregateBound": { "type": "object", "additionalProperties": false, "required": ["column", "measure", "maximum", "actual"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "measure": { "enum": ["before", "after", "absolute_delta"] }, "maximum": { "type": "number", "minimum": 0 }, "actual": { "type": "number", "minimum": 0 } } },
+    "frozenMember": { "type": "object", "additionalProperties": false, "required": ["primary_key", "before", "after"], "properties": { "primary_key": { "$ref": "#/$defs/columnValue" }, "expected_version": { "$ref": "#/$defs/columnValue" }, "before": { "$ref": "#/$defs/scalarRecord" }, "after": { "$ref": "#/$defs/scalarRecord" }, "before_digest": { "$ref": "#/$defs/sha256" }, "after_digest": { "$ref": "#/$defs/sha256" }, "tombstone_digest": { "$ref": "#/$defs/sha256" }, "deduplication": { "$ref": "#/$defs/deduplication" } } },
+    "frozenSet": { "type": "object", "additionalProperties": false, "required": ["max_rows", "row_count", "aggregate_bounds", "members", "set_digest"], "properties": { "max_rows": { "type": "integer", "minimum": 1, "maximum": 100 }, "row_count": { "type": "integer", "minimum": 1, "maximum": 100 }, "aggregate_bounds": { "type": "array", "items": { "$ref": "#/$defs/aggregateBound" }, "minItems": 1, "maxItems": 8 }, "members": { "type": "array", "items": { "$ref": "#/$defs/frozenMember" }, "minItems": 1, "maxItems": 100 }, "set_digest": { "$ref": "#/$defs/sha256" } } }
+  }
+}

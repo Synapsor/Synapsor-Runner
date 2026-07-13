@@ -1,0 +1,115 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": { "name": "bounded-set-threats", "version": "1.0.0" },
+  "contexts": [
+    {
+      "name": "trusted_operator",
+      "bindings": [
+        { "name": "tenant_id", "source": "environment", "key": "SYNAPSOR_TENANT_ID", "required": true },
+        { "name": "principal", "source": "environment", "key": "SYNAPSOR_PRINCIPAL", "required": true }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "billing.close_overdue_invoices",
+      "kind": "proposal",
+      "context": "trusted_operator",
+      "source": "local_postgres",
+      "subject": { "schema": "public", "table": "invoices", "primary_key": "id", "tenant_key": "tenant_id", "conflict_key": "version" },
+      "args": { "reason": { "type": "string", "required": true, "max_length": 500 } },
+      "visible_fields": ["id", "tenant_id", "status", "balance_cents", "version"],
+      "kept_out_fields": ["internal_risk_score"],
+      "evidence": { "required": true, "query_audit": true },
+      "proposal": {
+        "action": "close_overdue",
+        "operation": {
+          "kind": "update",
+          "cardinality": "set",
+          "selection": { "all": [{ "column": "status", "operator": "eq", "value": "overdue" }] },
+          "max_rows": 10,
+          "aggregate_bounds": [{ "column": "balance_cents", "measure": "before", "maximum": 50000 }],
+          "version_advance": { "column": "version", "strategy": "integer_increment" }
+        },
+        "allowed_fields": ["status", "close_reason"],
+        "patch": { "status": { "fixed": "closed" }, "close_reason": { "from_arg": "reason" } },
+        "conflict_guard": { "column": "version" },
+        "approval": { "mode": "human", "required_role": "billing_reviewer" },
+        "writeback": { "mode": "direct_sql" }
+      }
+    },
+    {
+      "name": "billing.delete_expired_drafts",
+      "kind": "proposal",
+      "context": "trusted_operator",
+      "source": "local_postgres",
+      "subject": { "schema": "public", "table": "invoice_drafts", "primary_key": "id", "tenant_key": "tenant_id", "conflict_key": "version" },
+      "args": { "reason": { "type": "string", "required": true, "max_length": 500 } },
+      "visible_fields": ["id", "tenant_id", "status", "estimated_cents", "version"],
+      "evidence": { "required": true, "query_audit": true },
+      "proposal": {
+        "action": "delete_expired_drafts",
+        "operation": {
+          "kind": "delete",
+          "cardinality": "set",
+          "selection": { "all": [{ "column": "status", "operator": "eq", "value": "expired" }] },
+          "max_rows": 5,
+          "aggregate_bounds": [{ "column": "estimated_cents", "measure": "before", "maximum": 10000 }]
+        },
+        "allowed_fields": [],
+        "patch": {},
+        "conflict_guard": { "column": "version" },
+        "approval": { "mode": "human", "required_role": "billing_reviewer", "required_approvals": 2 },
+        "writeback": { "mode": "direct_sql" }
+      }
+    },
+    {
+      "name": "billing.create_credits",
+      "kind": "proposal",
+      "context": "trusted_operator",
+      "source": "local_postgres",
+      "subject": { "schema": "public", "table": "account_credits", "primary_key": "id", "tenant_key": "tenant_id" },
+      "args": {
+        "items": {
+          "type": "object_array",
+          "required": true,
+          "max_items": 10,
+          "fields": {
+            "id": { "type": "string", "required": true, "max_length": 128 },
+            "external_id": { "type": "string", "required": true, "max_length": 128 },
+            "amount_cents": { "type": "number", "required": true, "minimum": 1, "maximum": 2500 },
+            "reason": { "type": "string", "required": true, "max_length": 500 }
+          }
+        }
+      },
+      "visible_fields": ["id", "tenant_id", "external_id", "amount_cents", "reason", "version"],
+      "kept_out_fields": ["internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "proposal": {
+        "action": "create_credits",
+        "operation": {
+          "kind": "insert",
+          "cardinality": "set",
+          "batch": { "items_from_arg": "items" },
+          "max_rows": 10,
+          "aggregate_bounds": [{ "column": "amount_cents", "measure": "after", "maximum": 25000 }],
+          "deduplication": {
+            "components": [
+              { "column": "tenant_id", "source": "trusted_tenant" },
+              { "column": "id", "source": "item_field", "item_field": "id" },
+              { "column": "external_id", "source": "item_field", "item_field": "external_id" }
+            ]
+          }
+        },
+        "allowed_fields": ["amount_cents", "reason"],
+        "patch": { "amount_cents": { "from_item": "amount_cents" }, "reason": { "from_item": "reason" } },
+        "numeric_bounds": { "amount_cents": { "minimum": 1, "maximum": 2500 } },
+        "approval": { "mode": "human", "required_role": "billing_reviewer" },
+        "writeback": { "mode": "direct_sql" }
+      }
+    }
+  ]
+}

@@ -44,8 +44,9 @@ Idempotency-Key
 
 ## Direct SQL Writeback Checks
 
-For direct guarded INSERT/UPDATE/DELETE, add `--check-writeback` after reviewing
-the selected receipt mode and operation-specific grants:
+For direct guarded single-row CRUD or bounded-set writeback, add
+`--check-writeback` after reviewing the selected receipt mode and
+operation-specific grants:
 
 ```bash
 synapsor-runner doctor --config synapsor.runner.json --check-writeback
@@ -60,6 +61,11 @@ checks:
 - rollback-only access to each configured proposal target table;
 - operation-specific version, unique/dedup, generated-column, trigger,
   cascade, RLS, and DML prerequisites.
+
+For bounded sets, the normal doctor report also identifies operation kind,
+fixed selection or exact batch source, row cap, aggregate bounds, and the
+mandatory human/operator approval boundary. It fails validation before any
+proposal exists when those portable guards are incomplete.
 
 The target-table probe uses fixed schema/table/column identifiers from the
 reviewed config. It does not accept model SQL, user SQL, arbitrary table names,
@@ -84,6 +90,8 @@ Use `source_db` + `auto_migrate` only when the writer may create the fixed
 receipt table. Use `runner_ledger` for no source receipt table; doctor then
 checks the local/small-fleet topology and crash-reconciliation prerequisites.
 See [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
+For set-specific prerequisites, see [Bounded Set
+Writeback](bounded-set-writeback.md).
 
 Use an app-owned `http_handler` or `command_handler` executor when your
 application should own richer business writes or receipt storage.

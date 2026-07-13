@@ -48,6 +48,9 @@ no-database demo, wire your database, then read deeper concepts.
 - [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md): native
   INSERT/UPDATE/DELETE, receipt modes, crash semantics, privileges, and
   reconciliation.
+- [Bounded Set Writeback](bounded-set-writeback.md): fixed-predicate set
+  UPDATE/DELETE, exact-review batch INSERT, mandatory caps, atomicity, and
+  exact receipts.
 
 ## 05 Generate Capabilities
 
@@ -92,6 +95,8 @@ no-database demo, wire your database, then read deeper concepts.
 
 - [Result Envelope v2](result-envelope-v2.md): stable
   `ok`/`summary`/`data`/`proposal`/`error` MCP tool results.
+- [Result Envelope v3](result-envelope-v3.md): frozen-set jobs and receipts
+  with every bounded member identity and safe digest.
 - [Store Lifecycle](store-lifecycle.md): active-store leases, prune safety,
   deleted-store behavior, and concurrent server guardrails.
 - `synapsor-runner activity search`, `evidence`, `query-audit`, `receipts`,
@@ -133,7 +138,9 @@ no-database demo, wire your database, then read deeper concepts.
 - RFC source context:
   [001 result envelope](rfcs/001-result-envelope-v2.md),
   [002 handler helper](rfcs/002-app-owned-handler-helper.md),
-  [003 integrator teardown](rfcs/003-integrator-feedback-teardown.md).
+  [003 integrator teardown](rfcs/003-integrator-feedback-teardown.md),
+  [004 guarded CRUD and receipt authority](rfcs/004-guarded-crud-receipt-authority.md),
+  [005 bounded set writeback](rfcs/005-bounded-set-writeback.md).
 
 The public docs intentionally stay task-first. Historical implementation
 reports, release checklists, and internal planning notes are not part of the
@@ -147,8 +154,8 @@ getting-started path.
   database.
 - Writeback: execution of an approved proposal outside the model-facing MCP
   surface.
-- Executor: Runner's guarded one-row CRUD adapter or an app-owned handler for
-  richer approved business transactions.
+- Executor: Runner's guarded one-row/bounded-set database adapter or an
+  app-owned handler for richer approved business transactions.
 
 ## Repository Map
 

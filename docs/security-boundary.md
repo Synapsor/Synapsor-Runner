@@ -69,7 +69,7 @@ outside the model-facing MCP server and verifies:
 - idempotency key;
 - operation-specific version or source-unique deduplication guard;
 - job expiry;
-- exactly one affected row.
+- exactly one reviewed row or every member of one bounded frozen set.
 
 If any authority check cannot be verified, the write fails closed.
 
@@ -81,6 +81,13 @@ can be administrator-precreated or explicitly auto-migrated. With
 after source commit and before ledger completion can require verified operator
 reconciliation. It is not distributed exactly-once. See
 [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
+
+Bounded-set direct writeback additionally requires a contract-fixed predicate
+or complete reviewed item list, `MAX ROWS` plus aggregate bounds,
+human/operator approval, exact frozen identities and versions, deterministic
+locks, one atomic source transaction, and per-member receipt digests. The
+model cannot supply the predicate or cap. See [Bounded Set
+Writeback](bounded-set-writeback.md).
 
 When a capability uses an `http_handler` or `command_handler` executor, the
 same approval boundary applies. The runner sends a structured proposal/job
@@ -99,7 +106,8 @@ approve/reject actions. It does not expose raw SQL, database URLs, write
 credentials, approval tools, commit tools, or controls that widen reviewed
 tables/columns.
 
-Synapsor Runner supports reviewed single-row INSERT, UPDATE, and DELETE. It does
-not support arbitrary SQL, DDL, UPSERT, model-generated predicates, or
-multi-row direct writeback. Hard DELETE fails closed when cascades, write
-triggers, or required metadata visibility prevent a one-row proof.
+Synapsor Runner supports reviewed single-row CRUD and the narrowly bounded set
+path documented above. It does not support arbitrary SQL, DDL, UPSERT,
+model-generated predicates, unbounded sets, or cross-table direct writeback.
+Hard DELETE fails closed when cascades, write triggers, or required metadata
+visibility prevent a bounded-effect proof.

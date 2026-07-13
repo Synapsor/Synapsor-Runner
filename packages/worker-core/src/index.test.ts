@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MCP_AUDIT_DISCLAIMER,
   auditMcpManifest,
+  classifyFrozenSetReconciliation,
   doctorChecks,
   formatMcpAuditReport,
   redact,
@@ -53,6 +54,29 @@ describe("worker core", () => {
       idempotency_key: "idem",
       lease_expires_at: 1
     }).job_id).toBe("wbj_1");
+  });
+
+  it("classifies frozen-set reconciliation atomically and treats mixed outcomes as drift", () => {
+    const parsed = validateJob(v3SetJob());
+    if (parsed.protocol_version !== "3.0") throw new Error("v3 fixture did not parse");
+    const before = classifyFrozenSetReconciliation(parsed, [
+      { id: "INV-1", tenant_id: "acme", status: "overdue", version: 1 },
+      { id: "INV-2", tenant_id: "acme", status: "overdue", version: 2 },
+    ]);
+    expect(before.classification).toBe("matches_reviewed_before");
+    expect(before.member_observations).toHaveLength(2);
+
+    const applied = classifyFrozenSetReconciliation(parsed, [
+      { id: "INV-1", tenant_id: "acme", status: "closed", version: 2 },
+      { id: "INV-2", tenant_id: "acme", status: "closed", version: 3 },
+    ]);
+    expect(applied.classification).toBe("matches_proposed");
+
+    const partial = classifyFrozenSetReconciliation(parsed, [
+      { id: "INV-1", tenant_id: "acme", status: "closed", version: 2 },
+      { id: "INV-2", tenant_id: "acme", status: "overdue", version: 2 },
+    ]);
+    expect(partial.classification).toBe("drifted");
   });
 
   it("combines runner-token doctor and database doctor checks", async () => {
@@ -144,3 +168,55 @@ describe("worker core", () => {
     expect(report.findings.map((finding) => finding.code)).not.toContain("NO_CONFLICT_GUARD");
   });
 });
+
+function v3SetJob(): Record<string, unknown> {
+  return {
+    protocol_version: "3.0",
+    job_id: "wbj_set_1",
+    proposal_id: "wrp_set_1",
+    proposal_hash: "sha256:proposal-set-1",
+    approval_id: "sha256:approval-set-1",
+    source_id: "src_1",
+    engine: "postgres",
+    operation: "set_update",
+    target: {
+      schema: "public",
+      table: "invoices",
+      primary_key: { column: "id" },
+      tenant_guard: { column: "tenant_id", value: "acme" },
+    },
+    allowed_columns: ["status"],
+    patch: { status: "closed" },
+    conflict_guard: { kind: "none" },
+    version_advance: { column: "version", strategy: "integer_increment" },
+    frozen_set: {
+      max_rows: 2,
+      row_count: 2,
+      aggregate_bounds: [{ column: "version", measure: "before", maximum: 3, actual: 3 }],
+      members: [
+        {
+          primary_key: { column: "id", value: "INV-1" },
+          expected_version: { column: "version", value: 1 },
+          before: { status: "overdue", version: 1 },
+          after: { status: "closed", version: 2 },
+          before_digest: "sha256:before-1",
+          after_digest: "sha256:after-1",
+        },
+        {
+          primary_key: { column: "id", value: "INV-2" },
+          expected_version: { column: "version", value: 2 },
+          before: { status: "overdue", version: 2 },
+          after: { status: "closed", version: 3 },
+          before_digest: "sha256:before-2",
+          after_digest: "sha256:after-2",
+        },
+      ],
+      set_digest: "sha256:set-1",
+    },
+    idempotency_key: "idem-set-1",
+    lease_expires_at: 1,
+    lease_token: "lease-set-1",
+    runner_id: "runner-1",
+    attempt_count: 1,
+  };
+}

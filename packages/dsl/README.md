@@ -125,6 +125,11 @@ try {
 - `REQUIRE EVIDENCE`
 - `PROPOSE ACTION`
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE` (operation defaults to `UPDATE`)
+- `PROPOSE ACTION name UPDATE|INSERT|DELETE SET` for bounded-set authoring
+- fixed literal `SELECT WHERE term [AND term]` for set UPDATE/DELETE
+- `MAX ROWS n` plus `MAX TOTAL column BEFORE|AFTER|ABSOLUTE DELTA maximum`
+- `ARG name ROWS MAX n` and typed `ITEM FIELD` declarations for batch INSERT
+- `BATCH ITEMS FROM ARG name`, `ITEM field` patches, and `ITEM field` dedup keys
 - `DEDUP KEY column = TRUSTED TENANT|PROPOSAL ID|FIXED value` for `INSERT`
 - `ADVANCE VERSION column USING INTEGER INCREMENT|DATABASE GENERATED` for
   Runner-ledger `UPDATE`
@@ -140,6 +145,11 @@ try {
 - optional `PER OBJECT DAY` scope for count/total limits
 - `WRITEBACK DIRECT SQL|APP HANDLER|CLOUD WORKER|NONE`
 - workflow `ALLOW CAPABILITY`
+
+Bounded sets have a hard 100-row ceiling, freeze exact members before review,
+and require human/operator approval. The compiler rejects policy auto-approval,
+missing fixed selection, missing aggregate bounds, and model-supplied
+predicates. See the [bounded-set guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/bounded-set-writeback.md).
 
 Unsupported Cloud-generated clauses such as `ROOT EXTERNAL`,
 `JOIN EXTERNAL`, `RETURN ANSWER WITH CITATIONS`, `AUTO BRANCH`, or `AUTO MERGE`

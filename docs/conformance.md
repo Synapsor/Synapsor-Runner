@@ -29,12 +29,18 @@ Current fixture groups:
 - `auto-approval`
 - `aggregate-policy-limits`
 - `numeric-bounds`
+- `bounded-set-threats`
 
 The fixture set is intentionally small in 0.1. It covers the runner-supported
 semantic surface first: trusted context, scoped reads, evidence handles,
 proposal boundaries, kept-out fields, manual approval, and replay envelopes.
 The aggregate-policy fixture additionally proves that reviewed daily ceilings
 fall back to human review atomically and record the limit that tripped.
+The bounded-set fixture maps threats R1-R7 to executable expectations: fixed
+selection, count/value caps, frozen-version drift checks, atomic rollback,
+exact receipts, hard-delete side-effect refusal, and human approval. Adapter
+tests and `corepack pnpm test:bounded-set` complete the live PostgreSQL/MySQL
+matrix.
 
 Additional 0.1 parity coverage currently lives in tests and verification
 scripts rather than separate `cloud-push/` or `dsl-json-parity/` conformance

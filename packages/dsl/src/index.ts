@@ -1,4 +1,4 @@
-import { assertValidContract, normalizeContract, type AgentContextSpec, type ArgumentSpec, type CapabilitySpec, type PolicySpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
+import { assertValidContract, normalizeContract, type AgentContextSpec, type ArgumentSpec, type CapabilitySpec, type PolicySpec, type ScalarArgumentSpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
 
 export type AgentDslAst = {
   contexts: AgentDslContextAst[];
@@ -27,7 +27,10 @@ export type AgentDslCapabilityAst = {
   tenantKey?: string;
   conflictKey?: string;
   lookup?: { arg: string; column: string; line?: number };
-  args: Record<string, { type: "string" | "number" | "boolean"; required?: boolean; max_length?: number; minimum?: number; maximum?: number; description?: string; line?: number }>;
+  args: Record<string, (
+    | (ScalarArgumentSpec & { line?: number })
+    | { type: "object_array"; required?: boolean; description?: string; max_items: number; fields: Record<string, ScalarArgumentSpec>; line?: number }
+  )>;
   visibleFields: string[];
   keptOutFields: string[];
   evidenceRequired?: boolean;
@@ -35,7 +38,7 @@ export type AgentDslCapabilityAst = {
   proposal?: {
     action: string;
     allowedFields: string[];
-    patch: Record<string, { fixed?: string | number | boolean | null; from_arg?: string }>;
+    patch: Record<string, { fixed?: string | number | boolean | null; from_arg?: string; from_item?: string }>;
     numericBounds?: Record<string, { minimum?: number; maximum?: number }>;
     transitionGuards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
     approvalRole?: string;
@@ -51,11 +54,17 @@ export type AgentDslCapabilityAst = {
     }>;
     operation?: {
       kind: "update" | "insert" | "delete";
+      cardinality?: "single" | "set";
+      selection?: { all: Array<{ column: string; operator: "eq"; value: string | number | boolean | null }> };
+      max_rows?: number;
+      aggregate_bounds?: Array<{ column: string; measure: "before" | "after" | "absolute_delta"; maximum: number }>;
+      batch?: { items_from_arg: string };
       deduplication?: {
         components: Array<{
           column: string;
-          source: "proposal_id" | "trusted_tenant" | "fixed";
+          source: "proposal_id" | "trusted_tenant" | "fixed" | "item_field";
           fixed?: string | number | boolean | null;
+          item_field?: string;
         }>;
       };
       version_advance?: {
@@ -354,6 +363,26 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       capability.conflictKey = conflict[1];
       continue;
     }
+    const rowsArg = item.text.match(/^ARG\s+([A-Za-z_][A-Za-z0-9_]*)\s+ROWS\s+MAX\s+(\d+)(?:\s+REQUIRED)?$/i);
+    if (rowsArg?.[1] && rowsArg[2]) {
+      capability.args[rowsArg[1]] = {
+        type: "object_array",
+        required: /\sREQUIRED$/i.test(item.text),
+        max_items: Number(rowsArg[2]),
+        fields: {},
+        line: item.line,
+      };
+      continue;
+    }
+    const itemField = item.text.match(/^ITEM\s+FIELD\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+(STRING|TEXT|NUMBER|BOOLEAN|BOOL)\b(.*)$/i);
+    if (itemField?.[1] && itemField[2] && itemField[3]) {
+      const arg = capability.args[itemField[1]];
+      if (!arg || arg.type !== "object_array") throw dslError(item.line, 1, "ITEM_FIELD_ROWS_ARG_REQUIRED", `ITEM FIELD requires ARG ${itemField[1]} ROWS MAX n first`);
+      const parsed = parseArgSpec(itemField[2], itemField[3], itemField[4] ?? "", item.line);
+      const { line: _line, ...field } = parsed;
+      arg.fields[itemField[2]] = field;
+      continue;
+    }
     const arg = item.text.match(/^ARG\s+([A-Za-z_][A-Za-z0-9_]*)\s+(STRING|TEXT|NUMBER|BOOLEAN|BOOL)\b(.*)$/i);
     if (arg?.[1] && arg[2]) {
       capability.args[arg[1]] = parseArgSpec(arg[1], arg[2], arg[3] ?? "", item.line);
@@ -381,18 +410,45 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     }
     const maxRows = item.text.match(/^MAX\s+ROWS\s+(\d+)$/i);
     if (maxRows?.[1]) {
-      capability.maxRows = Number(maxRows[1]);
+      if (capability.proposal?.operation?.cardinality === "set") capability.proposal.operation.max_rows = Number(maxRows[1]);
+      else capability.maxRows = Number(maxRows[1]);
       continue;
     }
-    const propose = item.text.match(/^PROPOSE\s+ACTION\s+([A-Za-z_][A-Za-z0-9_.]*)(?:\s+(UPDATE|INSERT|DELETE))?$/i);
+    const propose = item.text.match(/^PROPOSE\s+ACTION\s+([A-Za-z_][A-Za-z0-9_.]*)(?:\s+(UPDATE|INSERT|DELETE)(\s+SET)?)?$/i);
     if (propose?.[1]) {
       capability.kind = "proposal";
       capability.proposal = {
         action: propose[1],
         allowedFields: [],
         patch: {},
-        ...(propose[2] ? { operation: { kind: propose[2].toLowerCase() as "update" | "insert" | "delete" } } : {}),
+        ...(propose[2] ? { operation: { kind: propose[2].toLowerCase() as "update" | "insert" | "delete", ...(propose[3] ? { cardinality: "set" as const } : {}) } } : {}),
       };
+      continue;
+    }
+    const selection = item.text.match(/^SELECT\s+WHERE\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
+    if (selection?.[1] && selection[2]) {
+      ensureSetProposal(capability, item);
+      if (capability.proposal.operation.kind === "insert") throw dslError(item.line, 1, "BATCH_INSERT_SELECTION_FORBIDDEN", "batch INSERT reviews explicit items and cannot use SELECT WHERE");
+      capability.proposal.operation.selection ??= { all: [] };
+      capability.proposal.operation.selection.all.push({ column: selection[1], operator: "eq", value: parseLiteral(selection[2]) });
+      continue;
+    }
+    const aggregate = item.text.match(/^MAX\s+TOTAL\s+([A-Za-z_][A-Za-z0-9_]*)\s+(BEFORE|AFTER|ABSOLUTE\s+DELTA)\s+(-?\d+(?:\.\d+)?)$/i);
+    if (aggregate?.[1] && aggregate[2] && aggregate[3]) {
+      ensureSetProposal(capability, item);
+      capability.proposal.operation.aggregate_bounds ??= [];
+      capability.proposal.operation.aggregate_bounds.push({
+        column: aggregate[1],
+        measure: aggregate[2].toLowerCase().replace(/\s+/g, "_") as "before" | "after" | "absolute_delta",
+        maximum: Number(aggregate[3]),
+      });
+      continue;
+    }
+    const batch = item.text.match(/^BATCH\s+ITEMS\s+FROM\s+ARG\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+    if (batch?.[1]) {
+      ensureSetProposal(capability, item);
+      if (capability.proposal.operation.kind !== "insert") throw dslError(item.line, 1, "BATCH_INSERT_ONLY", "BATCH ITEMS is valid only for PROPOSE ACTION ... INSERT SET");
+      capability.proposal.operation.batch = { items_from_arg: batch[1] };
       continue;
     }
     const dedup = item.text.match(/^DEDUP\s+KEY\s+(.+)$/i);
@@ -526,11 +582,26 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       const tenantKey = capability.tenantKey;
       const hasTrustedTenant = capability.proposal.operation.deduplication.components.some((component) => component.source === "trusted_tenant" && component.column === tenantKey);
       const hasProposalId = capability.proposal.operation.deduplication.components.some((component) => component.source === "proposal_id");
+      const hasItemField = capability.proposal.operation.deduplication.components.some((component) => component.source === "item_field");
       if (!hasTrustedTenant) throw dslError(block.line, 1, "INSERT_TRUSTED_TENANT_DEDUP_REQUIRED", `${block.name} INSERT DEDUP KEY must bind ${tenantKey ?? "the tenant key"} from TRUSTED TENANT`);
-      if (!hasProposalId) throw dslError(block.line, 1, "INSERT_PROPOSAL_ID_DEDUP_REQUIRED", `${block.name} INSERT DEDUP KEY must include a PROPOSAL ID component`);
+      if (capability.proposal.operation.cardinality === "set" ? !hasItemField : !hasProposalId) throw dslError(block.line, 1, capability.proposal.operation.cardinality === "set" ? "INSERT_ITEM_DEDUP_REQUIRED" : "INSERT_PROPOSAL_ID_DEDUP_REQUIRED", capability.proposal.operation.cardinality === "set" ? `${block.name} batch INSERT DEDUP KEY must include an ITEM component` : `${block.name} INSERT DEDUP KEY must include a PROPOSAL ID component`);
     }
     if (operation === "delete" && capability.proposal.autoApprovalRules?.length) {
       throw dslError(block.line, 1, "DELETE_AUTO_APPROVAL_FORBIDDEN", `${block.name} DELETE cannot use AUTO APPROVE`);
+    }
+    if (capability.proposal.operation?.cardinality === "set") {
+      const set = capability.proposal.operation;
+      if (!set.max_rows || set.max_rows > 100) throw dslError(block.line, 1, "SET_MAX_ROWS_REQUIRED", `${block.name} bounded set write requires MAX ROWS 1..100 after PROPOSE ACTION`);
+      if (!set.aggregate_bounds?.length) throw dslError(block.line, 1, "SET_AGGREGATE_BOUND_REQUIRED", `${block.name} bounded set write requires MAX TOTAL <column> BEFORE|AFTER|ABSOLUTE DELTA <maximum>`);
+      if (capability.proposal.autoApprovalRules?.length) throw dslError(block.line, 1, "SET_AUTO_APPROVAL_FORBIDDEN", `${block.name} bounded set writes require human/operator approval in the first release`);
+      if (operation === "insert") {
+        const itemsArg = set.batch?.items_from_arg;
+        const arg = itemsArg ? capability.args[itemsArg] : undefined;
+        if (!itemsArg || !arg || arg.type !== "object_array" || Object.keys(arg.fields).length === 0) throw dslError(block.line, 1, "BATCH_ITEMS_ARG_REQUIRED", `${block.name} batch INSERT requires BATCH ITEMS FROM ARG <rows-arg> and typed ITEM FIELD declarations`);
+        if (arg.max_items > set.max_rows) throw dslError(block.line, 1, "BATCH_ITEMS_EXCEED_MAX_ROWS", `${block.name} rows argument MAX must not exceed MAX ROWS`);
+      } else if (!set.selection?.all.length) {
+        throw dslError(block.line, 1, "SET_FIXED_SELECTION_REQUIRED", `${block.name} bounded ${operation.toUpperCase()} requires one or more SELECT WHERE <column> = <literal> clauses`);
+      }
     }
   }
   return capability;
@@ -695,31 +766,44 @@ function ensureProposal(capability: AgentDslCapabilityAst, item: { line: number 
   if (!capability.proposal) throw dslError(item.line, 1, "PROPOSAL_ACTION_REQUIRED", "proposal clauses require PROPOSE ACTION first");
 }
 
-function parsePatchBinding(raw: string): { fixed?: string | number | boolean | null; from_arg?: string } {
+function ensureSetProposal(capability: AgentDslCapabilityAst, item: { line: number }): asserts capability is AgentDslCapabilityAst & { proposal: NonNullable<AgentDslCapabilityAst["proposal"]> & { operation: NonNullable<NonNullable<AgentDslCapabilityAst["proposal"]>["operation"]> & { cardinality: "set" } } } {
+  ensureProposal(capability, item);
+  if (!capability.proposal.operation || capability.proposal.operation.cardinality !== "set") throw dslError(item.line, 1, "SET_OPERATION_REQUIRED", "bounded-set clauses require PROPOSE ACTION ... UPDATE SET, INSERT SET, or DELETE SET");
+}
+
+function parsePatchBinding(raw: string): { fixed?: string | number | boolean | null; from_arg?: string; from_item?: string } {
   const trimmed = raw.trim();
   const arg = trimmed.match(/^ARG\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
   if (arg?.[1]) return { from_arg: arg[1] };
-  if (/^NULL$/i.test(trimmed)) return { fixed: null };
-  if (/^TRUE$/i.test(trimmed)) return { fixed: true };
-  if (/^FALSE$/i.test(trimmed)) return { fixed: false };
-  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return { fixed: Number(trimmed) };
+  const item = trimmed.match(/^ITEM\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+  if (item?.[1]) return { from_item: item[1] };
+  return { fixed: parseLiteral(trimmed) };
+}
+
+function parseLiteral(raw: string): string | number | boolean | null {
+  const trimmed = raw.trim();
+  if (/^NULL$/i.test(trimmed)) return null;
+  if (/^TRUE$/i.test(trimmed)) return true;
+  if (/^FALSE$/i.test(trimmed)) return false;
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
   const quoted = trimmed.match(/^'(.*)'$/);
-  if (quoted) return { fixed: quoted[1] ?? "" };
-  return { fixed: trimmed };
+  if (quoted) return quoted[1] ?? "";
+  throw dslError(1, 1, "FIXED_LITERAL_REQUIRED", `expected a quoted string, number, boolean, or NULL: ${trimmed}`);
 }
 
 function parseDedupComponents(
   raw: string,
   line: number,
-): Array<{ column: string; source: "proposal_id" | "trusted_tenant" | "fixed"; fixed?: string | number | boolean | null }> {
+): Array<{ column: string; source: "proposal_id" | "trusted_tenant" | "fixed" | "item_field"; fixed?: string | number | boolean | null; item_field?: string }> {
   const components = raw.split(",").map((item) => item.trim()).filter(Boolean).map((item) => {
-    const match = item.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(PROPOSAL\s+ID|TRUSTED\s+TENANT|FIXED\s+.+)$/i);
+    const match = item.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(PROPOSAL\s+ID|TRUSTED\s+TENANT|ITEM\s+[A-Za-z_][A-Za-z0-9_]*|FIXED\s+.+)$/i);
     if (!match?.[1] || !match[2]) {
-      throw dslError(line, 1, "DEDUP_COMPONENT_INVALID", `DEDUP KEY component must use column = PROPOSAL ID, TRUSTED TENANT, or FIXED <value>: ${item}`);
+      throw dslError(line, 1, "DEDUP_COMPONENT_INVALID", `DEDUP KEY component must use column = PROPOSAL ID, TRUSTED TENANT, ITEM <field>, or FIXED <value>: ${item}`);
     }
     const source = match[2].toUpperCase();
     if (source === "PROPOSAL ID") return { column: match[1], source: "proposal_id" as const };
     if (source === "TRUSTED TENANT") return { column: match[1], source: "trusted_tenant" as const };
+    if (/^ITEM\s+/i.test(source)) return { column: match[1], source: "item_field" as const, item_field: match[2].replace(/^ITEM\s+/i, "") };
     const binding = parsePatchBinding(match[2].replace(/^FIXED\s+/i, ""));
     return { column: match[1], source: "fixed" as const, fixed: binding.fixed ?? null };
   });
@@ -737,7 +821,7 @@ function parseArgSpec(
   rawType: string,
   rawOptions: string,
   line: number,
-): AgentDslCapabilityAst["args"][string] {
+): ScalarArgumentSpec & { line?: number } {
   const type = normalizeArgType(rawType);
   let rest = rawOptions.trim();
   let description: string | undefined;

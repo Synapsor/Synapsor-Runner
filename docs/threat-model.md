@@ -77,7 +77,9 @@ Runner does not claim to solve:
   ledger/source database servers;
 - physical branching of external Postgres/MySQL;
 - generic safe execution of arbitrary SQL, DDL, UPSERT, model-generated
-  predicates, or multi-row writes.
+  predicates, or unbounded/cross-table writes. The only multi-row direct path
+  is the fixed, frozen, capped set described in [Bounded Set
+  Writeback](bounded-set-writeback.md).
 
 ## App-Owned Handler Responsibility
 

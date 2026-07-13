@@ -9,13 +9,17 @@ const safeIdentifier = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "expected fi
 export const protocolVersions = {
   changeSet: "synapsor.change-set.v1",
   changeSetV2: "synapsor.change-set.v2",
+  changeSetV3: "synapsor.change-set.v3",
   writebackJob: "synapsor.writeback-job.v1",
   writebackJobV2: "synapsor.writeback-job.v2",
+  writebackJobV3: "synapsor.writeback-job.v3",
   executionReceipt: "synapsor.execution-receipt.v1",
   executionReceiptV2: "synapsor.execution-receipt.v2",
+  executionReceiptV3: "synapsor.execution-receipt.v3",
   runnerRegistration: "synapsor.runner-registration.v1",
   legacyWritebackJob: "1.0",
   normalizedWritebackJobV2: "2.0",
+  normalizedWritebackJobV3: "3.0",
 } as const;
 
 export const writebackEngineSchema = z.enum(["postgres", "mysql"]);
@@ -49,6 +53,37 @@ const resolvedDeduplicationComponentSchema = z.object({
 const versionAdvanceSchema = z.object({
   column: safeIdentifier,
   strategy: z.enum(["integer_increment", "database_generated"]),
+});
+
+const setOperationSchema = z.enum(["set_update", "set_delete", "batch_insert"]);
+const aggregateBoundSchema = z.object({
+  column: safeIdentifier,
+  measure: z.enum(["before", "after", "absolute_delta"]),
+  maximum: z.number().finite().nonnegative(),
+  actual: z.number().finite().nonnegative(),
+});
+const frozenSetMemberSchema = z.object({
+  primary_key: columnValueSchema,
+  expected_version: columnValueSchema.optional(),
+  before: boundedScalarRecord,
+  after: boundedScalarRecord,
+  before_digest: sha256.optional(),
+  after_digest: sha256.optional(),
+  tombstone_digest: sha256.optional(),
+  deduplication: z.object({ components: z.array(resolvedDeduplicationComponentSchema).min(1).max(8) }).optional(),
+});
+const frozenSetSchema = z.object({
+  max_rows: z.number().int().min(1).max(100),
+  row_count: z.number().int().min(1).max(100),
+  aggregate_bounds: z.array(aggregateBoundSchema).min(1).max(8),
+  members: z.array(frozenSetMemberSchema).min(1).max(100),
+  set_digest: sha256,
+}).superRefine((set, ctx) => {
+  if (set.members.length !== set.row_count || set.row_count > set.max_rows) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "frozen set count must equal members and remain within max_rows", path: ["row_count"] });
+  for (const [index, bound] of set.aggregate_bounds.entries()) if (bound.actual > bound.maximum) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "frozen set aggregate exceeds reviewed maximum", path: ["aggregate_bounds", index, "actual"] });
+  const identities = set.members.map((member) => JSON.stringify(member.primary_key.value));
+  if (new Set(identities).size !== identities.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "frozen set primary keys must be unique", path: ["members"] });
+  if (identities.some((value, index) => index > 0 && identities[index - 1]!.localeCompare(value) > 0)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "frozen set members must use deterministic primary-key ordering", path: ["members"] });
 });
 
 export const changeSetV1Schema = z.object({
@@ -213,6 +248,64 @@ export const changeSetV2Schema = z.object({
     }
     if (changeSet.guards.version_advance) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "DELETE must not advance a version", path: ["guards", "version_advance"] });
   }
+});
+
+export const changeSetV3Schema = z.object({
+  schema_version: z.literal(protocolVersions.changeSetV3),
+  proposal_id: z.string().min(1),
+  proposal_version: z.number().int().positive(),
+  action: z.string().min(1),
+  operation: setOperationSchema,
+  mode: z.enum(["read_only", "shadow", "review_required", "approved_for_writeback"]),
+  principal: z.object({
+    id: z.string().min(1),
+    source: z.enum(["trusted_session", "cloud_session", "environment", "static_dev"]),
+  }),
+  scope: z.object({ tenant_id: z.string().min(1), business_object: z.string().min(1), object_id: z.string().min(1) }),
+  source: z.object({
+    kind: z.enum(["external_postgres", "external_mysql", "synapsor_table"]),
+    source_id: z.string().min(1),
+    schema: safeIdentifier,
+    table: safeIdentifier,
+    primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }),
+  }),
+  before: boundedScalarRecord,
+  patch: boundedScalarRecord,
+  after: boundedScalarRecord,
+  guards: z.object({
+    tenant: columnValueSchema,
+    allowed_columns: z.array(safeIdentifier).max(256),
+    expected_version: columnValueSchema.optional(),
+    version_advance: versionAdvanceSchema.optional(),
+  }),
+  frozen_set: frozenSetSchema,
+  evidence: z.object({ bundle_id: z.string().min(1), query_fingerprint: sha256, items: z.array(z.unknown()).max(100) }).passthrough(),
+  approval: z.object({
+    status: z.enum(["pending", "approved", "rejected", "canceled"]),
+    mode: z.enum(["human", "operator"]),
+    required_role: z.string().min(1).optional(),
+    required_approvals: z.number().int().min(1).max(10).optional(),
+  }).passthrough(),
+  writeback: z.object({ status: z.enum(["not_applied", "pending_worker", "applied", "conflict", "failed", "canceled", "reconciliation_required"]), mode: z.literal("trusted_worker_required"), executor: z.literal("sql_update") }).passthrough(),
+  source_database_mutated: z.boolean(),
+  integrity: z.object({ proposal_hash: sha256 }),
+  created_at: z.string().min(1),
+}).superRefine((changeSet, ctx) => {
+  if (changeSet.source.primary_key.value !== undefined || changeSet.guards.expected_version) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set guards live on frozen members, not the top-level envelope", path: ["frozen_set"] });
+  const allowed = new Set(changeSet.guards.allowed_columns);
+  for (const column of Object.keys(changeSet.patch)) if (!allowed.has(column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `patch column not allowed: ${column}`, path: ["patch", column] });
+  for (const [index, member] of changeSet.frozen_set.members.entries()) {
+    if (member.primary_key.column !== changeSet.source.primary_key.column) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "member primary key column must match source", path: ["frozen_set", "members", index, "primary_key", "column"] });
+    if (changeSet.operation === "set_update") {
+      if (!member.expected_version || !member.before_digest || !member.after_digest || member.tombstone_digest || member.deduplication) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set UPDATE members require version and before/after digests", path: ["frozen_set", "members", index] });
+    } else if (changeSet.operation === "set_delete") {
+      if (!member.expected_version || !member.before_digest || !member.tombstone_digest || Object.keys(member.after).length || member.after_digest || member.deduplication) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set DELETE members require version and tombstone", path: ["frozen_set", "members", index] });
+    } else if (member.expected_version || Object.keys(member.before).length || member.before_digest || !member.after_digest || !member.deduplication) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "batch INSERT members require exact after data and deduplication", path: ["frozen_set", "members", index] });
+    }
+  }
+  if (changeSet.operation !== "set_update" && changeSet.guards.version_advance) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "version advance is valid only for set UPDATE", path: ["guards", "version_advance"] });
+  if (changeSet.operation === "set_delete" && changeSet.guards.allowed_columns.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set DELETE has no allowed write columns", path: ["guards", "allowed_columns"] });
 });
 
 const publicConflictGuardSchema = z.discriminatedUnion("kind", [
@@ -448,7 +541,66 @@ export const writebackJobV2Schema = z.object({
   attempt_count: job.lease.attempt,
 }));
 
-export const writebackJobSchema = z.union([legacyWritebackJobSchema, normalizedWritebackJobV2InputSchema, normalizedWritebackJobV1Schema, writebackJobV2Schema]);
+export const normalizedWritebackJobV3InputSchema = z.object({
+  protocol_version: z.literal(protocolVersions.normalizedWritebackJobV3),
+  job_id: z.string().min(1),
+  proposal_id: z.string().min(1),
+  approval_id: sha256,
+  source_id: z.string().min(1),
+  engine: writebackEngineSchema,
+  operation: setOperationSchema,
+  target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }), tenant_guard: columnValueSchema }),
+  allowed_columns: z.array(safeIdentifier).max(256),
+  patch: boundedScalarRecord,
+  conflict_guard: z.object({ kind: z.literal("none") }).default({ kind: "none" }),
+  version_advance: versionAdvanceSchema.optional(),
+  frozen_set: frozenSetSchema,
+  idempotency_key: z.string().min(1),
+  lease_expires_at: z.union([z.string(), z.number()]),
+  attempt_count: z.number().int().positive(),
+}).superRefine((job, ctx) => {
+  if (job.operation === "set_delete" && (job.allowed_columns.length || Object.keys(job.patch).length || job.version_advance)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set DELETE cannot carry patch authority", path: ["patch"] });
+  if (job.operation === "set_update" && (!Object.keys(job.patch).length || !job.version_advance)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set UPDATE requires patch and version advance", path: ["patch"] });
+  if (job.operation === "batch_insert" && !job.frozen_set.members.every((member) => member.deduplication)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "batch INSERT requires per-item source deduplication", path: ["frozen_set", "members"] });
+});
+
+export const writebackJobV3Schema = z.object({
+  schema_version: z.literal(protocolVersions.writebackJobV3),
+  writeback_job_id: z.string().min(1),
+  proposal_id: z.string().min(1),
+  proposal_version: z.number().int().positive(),
+  proposal_hash: sha256,
+  runner_scope: z.object({ project_id: z.string().min(1), source_id: z.string().min(1) }),
+  engine: writebackEngineSchema,
+  operation: setOperationSchema,
+  target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }) }),
+  tenant_guard: columnValueSchema,
+  allowed_columns: z.array(safeIdentifier).max(256),
+  patch: boundedScalarRecord,
+  version_advance: versionAdvanceSchema.optional(),
+  frozen_set: frozenSetSchema,
+  idempotency_key: z.string().min(1),
+  lease: z.object({ lease_id: z.string().min(1), attempt: z.number().int().positive(), expires_at: z.string().min(1) }),
+}).transform((job) => ({
+  protocol_version: protocolVersions.normalizedWritebackJobV3,
+  job_id: job.writeback_job_id,
+  proposal_id: job.proposal_id,
+  approval_id: job.proposal_hash,
+  source_id: job.runner_scope.source_id,
+  engine: job.engine,
+  operation: job.operation,
+  target: { ...job.target, primary_key: { ...job.target.primary_key, value: undefined }, tenant_guard: job.tenant_guard },
+  allowed_columns: job.allowed_columns,
+  patch: job.patch,
+  conflict_guard: { kind: "none" as const },
+  ...(job.version_advance ? { version_advance: job.version_advance } : {}),
+  frozen_set: job.frozen_set,
+  idempotency_key: job.idempotency_key,
+  lease_expires_at: job.lease.expires_at,
+  attempt_count: job.lease.attempt,
+}));
+
+export const writebackJobSchema = z.union([legacyWritebackJobSchema, normalizedWritebackJobV3InputSchema, normalizedWritebackJobV2InputSchema, normalizedWritebackJobV1Schema, writebackJobV3Schema, writebackJobV2Schema]);
 
 export const executionReceiptV1Schema = z.object({
   schema_version: z.literal(protocolVersions.executionReceipt),
@@ -508,6 +660,43 @@ export const executionReceiptV2Schema = z.object({
   }
 });
 
+export const executionReceiptV3Schema = z.object({
+  schema_version: z.literal(protocolVersions.executionReceiptV3),
+  writeback_job_id: z.string().min(1),
+  proposal_id: z.string().min(1),
+  proposal_hash: sha256,
+  approval_id: z.string().min(1),
+  runner_id: z.string().min(1),
+  operation: setOperationSchema,
+  receipt_authority: z.enum(["source_db", "runner_ledger"]),
+  status: writebackTerminalStatusV2Schema,
+  target: z.object({
+    source_id: z.string().min(1),
+    schema: safeIdentifier,
+    table: safeIdentifier,
+    identities: z.array(columnValueSchema).min(1).max(100),
+    set_digest: sha256,
+  }),
+  rows_affected: z.number().int().min(0).max(100),
+  idempotency_key: z.string().min(1),
+  member_effects: z.array(z.object({
+    primary_key: columnValueSchema,
+    before_digest: sha256.optional(),
+    after_digest: sha256.optional(),
+    tombstone_digest: sha256.optional(),
+  })).max(100),
+  source_database_mutated: z.boolean(),
+  safe_outcome_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+  safe_error_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  executed_at: z.string().min(1),
+  receipt_hash: sha256,
+  reconciliation: z.object({ intent_id: z.string().min(1), reason: z.string().min(1) }).optional(),
+}).superRefine((receipt, ctx) => {
+  if (receipt.status === "applied" && (receipt.rows_affected !== receipt.target.identities.length || receipt.member_effects.length !== receipt.target.identities.length)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "applied set receipt must identify every affected member", path: ["rows_affected"] });
+  if (receipt.rows_affected > 0 && !receipt.source_database_mutated) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "mutated rows require source_database_mutated", path: ["source_database_mutated"] });
+  if (receipt.status === "reconciliation_required" && !receipt.reconciliation) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "reconciliation metadata required", path: ["reconciliation"] });
+});
+
 const normalizedExecutionReceiptV1Schema = executionReceiptV1Schema.transform((receipt) => ({
   protocol_version: protocolVersions.legacyWritebackJob,
   job_id: receipt.writeback_job_id,
@@ -555,7 +744,28 @@ export const normalizedWritebackResultV2Schema = z.object({
   }
 });
 
-export const writebackResultSchema = z.union([legacyWritebackResultSchema, normalizedExecutionReceiptV1Schema, normalizedWritebackResultV2Schema]);
+export const normalizedWritebackResultV3Schema = z.object({
+  protocol_version: z.literal(protocolVersions.normalizedWritebackJobV3),
+  job_id: z.string().min(1),
+  runner_id: z.string().min(1),
+  operation: setOperationSchema,
+  receipt_authority: z.enum(["source_db", "runner_ledger"]),
+  status: writebackTerminalStatusV2Schema,
+  affected_rows: z.number().int().min(0).max(100),
+  target_identities: z.array(columnValueSchema).min(1).max(100),
+  set_digest: sha256,
+  member_effects: z.array(z.object({ primary_key: columnValueSchema, before_digest: sha256.optional(), after_digest: sha256.optional(), tombstone_digest: sha256.optional() })).max(100),
+  result_version: scalar.optional(),
+  result_hash: sha256.optional(),
+  completed_at: z.string().min(1),
+  error_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
+  intent_id: z.string().min(1).optional(),
+}).superRefine((result, ctx) => {
+  if (result.status === "applied" && (result.affected_rows !== result.target_identities.length || result.member_effects.length !== result.target_identities.length)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "applied set result must identify every member", path: ["affected_rows"] });
+  if (result.status === "reconciliation_required" && !result.intent_id) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "reconciliation_required results require intent_id", path: ["intent_id"] });
+});
+
+export const writebackResultSchema = z.union([legacyWritebackResultSchema, normalizedExecutionReceiptV1Schema, normalizedWritebackResultV3Schema, normalizedWritebackResultV2Schema]);
 
 export const runnerRegistrationV1Schema = z.object({
   schema_version: z.literal(protocolVersions.runnerRegistration),
@@ -572,12 +782,15 @@ export const runnerRegistrationV1Schema = z.object({
 
 export type ChangeSetV1 = z.infer<typeof changeSetV1Schema>;
 export type ChangeSetV2 = z.infer<typeof changeSetV2Schema>;
-export type ChangeSet = ChangeSetV1 | ChangeSetV2;
+export type ChangeSetV3 = z.infer<typeof changeSetV3Schema>;
+export type ChangeSet = ChangeSetV1 | ChangeSetV2 | ChangeSetV3;
 export type WritebackJobV1 = z.infer<typeof writebackJobV1Schema>;
 export type WritebackJobV2 = z.input<typeof writebackJobV2Schema>;
+export type WritebackJobV3 = z.input<typeof writebackJobV3Schema>;
 export type ExecutionReceiptV1 = z.infer<typeof executionReceiptV1Schema>;
 export type ExecutionReceiptV2 = z.infer<typeof executionReceiptV2Schema>;
-export type ExecutionReceipt = ExecutionReceiptV1 | ExecutionReceiptV2;
+export type ExecutionReceiptV3 = z.infer<typeof executionReceiptV3Schema>;
+export type ExecutionReceipt = ExecutionReceiptV1 | ExecutionReceiptV2 | ExecutionReceiptV3;
 export type RunnerRegistrationV1 = z.infer<typeof runnerRegistrationV1Schema>;
 export type WritebackJob = z.infer<typeof writebackJobSchema>;
 export type WritebackResult = z.infer<typeof writebackResultSchema>;
@@ -656,7 +869,7 @@ function normalizeConflictGuard(guard: z.infer<typeof publicConflictGuardSchema>
 }
 
 export function parseChangeSet(input: unknown): ChangeSet {
-  return z.union([changeSetV1Schema, changeSetV2Schema]).parse(input);
+  return z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema]).parse(input);
 }
 
 export function parseWritebackJob(input: unknown): WritebackJob {
@@ -664,7 +877,7 @@ export function parseWritebackJob(input: unknown): WritebackJob {
 }
 
 export function parseExecutionReceipt(input: unknown): ExecutionReceipt {
-  return z.union([executionReceiptV1Schema, executionReceiptV2Schema]).parse(input);
+  return z.union([executionReceiptV1Schema, executionReceiptV2Schema, executionReceiptV3Schema]).parse(input);
 }
 
 export function parseWritebackResult(input: unknown): WritebackResult {

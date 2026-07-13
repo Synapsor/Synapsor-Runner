@@ -1,0 +1,9 @@
+{
+  "selection_is_contract_fixed": true,
+  "overflow_is_rejection_not_truncation": true,
+  "apply_uses_frozen_targets": true,
+  "transaction_is_all_or_nothing": true,
+  "receipt_lists_every_identity": true,
+  "hard_delete_hidden_effects_rejected": true,
+  "human_approval_required": true
+}

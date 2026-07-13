@@ -257,6 +257,93 @@ END
 `))).toThrow(/DELETE_PATCH_FORBIDDEN/);
   });
 
+  it("compiles fixed bounded-set UPDATE and exact-review batch INSERT", () => {
+    const update = compileAgentDsl(crudSource(`
+  PROPOSE ACTION close_overdue UPDATE SET
+  SELECT WHERE status = 'overdue'
+  MAX ROWS 10
+  MAX TOTAL balance_cents BEFORE 50000
+  ALLOW WRITE status
+  PATCH status = 'closed'
+  ADVANCE VERSION updated_at USING INTEGER INCREMENT
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`));
+    expect(update.capabilities[0]?.proposal?.operation).toMatchObject({
+      kind: "update",
+      cardinality: "set",
+      selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+      max_rows: 10,
+      aggregate_bounds: [{ column: "balance_cents", measure: "before", maximum: 50000 }],
+    });
+
+    const batch = compileAgentDsl(`
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+CREATE CAPABILITY support.create_credits
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.account_credits
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ARG items ROWS MAX 10 REQUIRED
+  ITEM FIELD items.id STRING REQUIRED MAX LENGTH 128
+  ITEM FIELD items.external_id STRING REQUIRED MAX LENGTH 128
+  ITEM FIELD items.amount_cents NUMBER REQUIRED MIN 1 MAX 2500
+  ITEM FIELD items.reason STRING REQUIRED MAX LENGTH 500
+  ALLOW READ id, tenant_id, external_id, amount_cents, reason, version
+  KEEP OUT internal_note
+  REQUIRE EVIDENCE
+  PROPOSE ACTION create_credits INSERT SET
+  BATCH ITEMS FROM ARG items
+  MAX ROWS 10
+  MAX TOTAL amount_cents AFTER 25000
+  DEDUP KEY tenant_id = TRUSTED TENANT, id = ITEM id, external_id = ITEM external_id
+  ALLOW WRITE amount_cents, reason
+  PATCH amount_cents = ITEM amount_cents
+  PATCH reason = ITEM reason
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+END
+`);
+    expect(batch.capabilities[0]?.args.items).toMatchObject({ type: "object_array", max_items: 10 });
+    expect(batch.capabilities[0]?.proposal?.operation).toMatchObject({
+      kind: "insert",
+      cardinality: "set",
+      batch: { items_from_arg: "items" },
+      deduplication: { components: expect.arrayContaining([{ column: "external_id", source: "item_field", item_field: "external_id" }]) },
+    });
+    expect(batch.capabilities[0]?.proposal?.patch).toEqual({ amount_cents: { from_item: "amount_cents" }, reason: { from_item: "reason" } });
+  });
+
+  it("rejects bounded sets without fixed selection, value cap, or human approval", () => {
+    expect(() => compileAgentDsl(crudSource(`
+  PROPOSE ACTION close_overdue UPDATE SET
+  MAX ROWS 10
+  ALLOW WRITE status
+  PATCH status = 'closed'
+  ADVANCE VERSION updated_at USING DATABASE GENERATED
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`))).toThrow(/SET_AGGREGATE_BOUND_REQUIRED/);
+    expect(() => compileAgentDsl(crudSource(`
+  PROPOSE ACTION close_overdue UPDATE SET
+  SELECT WHERE status = 'overdue'
+  MAX ROWS 10
+  MAX TOTAL balance_cents BEFORE 50000
+  ALLOW WRITE status
+  PATCH status = 'closed'
+  ADVANCE VERSION version USING INTEGER INCREMENT
+  APPROVAL ROLE support_reviewer
+  AUTO APPROVE WHEN status <= 1
+  WRITEBACK DIRECT SQL
+`))).toThrow();
+  });
+
   it("rejects AUTO APPROVE WHEN before APPROVAL ROLE", () => {
     expect(() => compileAgentDsl(planCreditSource(`
   AUTO APPROVE WHEN plan_credit_cents <= 2500
@@ -441,7 +528,7 @@ CREATE CAPABILITY support.mutate_credit
   ARG credit_id STRING REQUIRED MAX LENGTH 128
   ARG amount_cents NUMBER REQUIRED MIN 1 MAX 50000
   ARG reason TEXT REQUIRED MAX LENGTH 500
-  ALLOW READ id, tenant_id, amount_cents, reason, updated_at
+  ALLOW READ id, tenant_id, amount_cents, reason, status, balance_cents, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
 ${proposalBody.trimEnd()}

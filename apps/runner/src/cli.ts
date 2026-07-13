@@ -36,7 +36,7 @@ import {
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type ChangeSet, type ChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
@@ -3086,6 +3086,20 @@ async function localDoctor(args: string[]): Promise<number> {
     for (const capability of (parsed.capabilities ?? []).filter((item) => item.kind === "proposal")) {
       checks.push(proposalWritebackResolutionDoctorCheck(parsed, capability));
       checks.push(proposalApprovalPolicyResolutionDoctorCheck(parsed, capability));
+      if (capability.operation?.cardinality === "set") {
+        const selection = capability.operation.selection?.all
+          .map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`)
+          .join(" AND ") || "exact reviewed batch items";
+        const bounds = capability.operation.aggregate_bounds
+          ?.map((bound) => `${bound.measure}(${bound.column}) <= ${bound.maximum}`)
+          .join("; ") || "missing";
+        checks.push({
+          name: `capability:${capability.name}:bounded-set-authority`,
+          ok: true,
+          level: "pass",
+          message: `Bounded-set ${capabilityOperation(capability).toUpperCase()}: fixed selection ${selection}; max rows ${capability.operation.max_rows}; aggregate bounds ${bounds}; human/operator approval required.`,
+        });
+      }
     }
   }
   for (const [sourceName, source] of Object.entries(sources)) {
@@ -3222,6 +3236,7 @@ async function directSqlWritebackDoctorChecks(
       databaseUrl: writeUrl,
       engine: source.engine,
       pollIntervalMs: 0,
+      statementTimeoutMs: writebackTimeoutMs(source),
       logLevel: "error",
       dryRun: true,
       stateDir: "./state",
@@ -3546,6 +3561,7 @@ async function apply(args: string[]): Promise<number> {
     databaseUrl,
     engine: job.engine,
     pollIntervalMs: Number(process.env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
+    statementTimeoutMs: writebackTimeoutMs(runtimeConfig?.sources?.[job.source_id], process.env),
     logLevel: (process.env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
     dryRun,
     stateDir: process.env.SYNAPSOR_STATE_DIR || "./state",
@@ -3835,6 +3851,7 @@ async function applySqlJob(job: unknown, configPath: string, storePath: string |
     databaseUrl,
     engine: parsedJob.engine,
     pollIntervalMs: Number(env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
+    statementTimeoutMs: writebackTimeoutMs(runtimeConfig.sources?.[parsedJob.source_id], env),
     logLevel: (env.SYNAPSOR_LOG_LEVEL || "info") as RunnerConfig["logLevel"],
     dryRun,
     stateDir: env.SYNAPSOR_STATE_DIR || "./state",
@@ -3887,6 +3904,15 @@ function runnerReceiptConfig(source: RunnerSourceConfig | undefined): RunnerConf
       schema: receipts.schema,
       table: receipts.table,
     };
+}
+
+function writebackTimeoutMs(source: RunnerSourceConfig | undefined, env: NodeJS.ProcessEnv = process.env): number | undefined {
+  if (source?.statement_timeout_ms !== undefined) return source.statement_timeout_ms;
+  const raw = envValue(env, "SYNAPSOR_WRITEBACK_TIMEOUT_MS");
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("SYNAPSOR_WRITEBACK_TIMEOUT_MS must be a positive integer");
+  return parsed;
 }
 
 export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv): Promise<string> {
@@ -4577,18 +4603,39 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
   if (capability.target.primary_key !== job.target.primary_key.column) return false;
   if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
   const reviewedOperation = capability.operation?.kind ?? "update";
-  const jobOperation = (job.operation ?? "single_row_update").replace("single_row_", "");
+  const setJob = job.protocol_version === protocolVersions.normalizedWritebackJobV3;
+  const jobOperation = (job.operation ?? "single_row_update").replace("single_row_", "").replace("set_", "").replace("batch_", "");
   if (reviewedOperation !== jobOperation) return false;
+  if ((capability.operation?.cardinality === "set") !== setJob) return false;
   const reviewedAllowed = new Set(capability.allowed_columns ?? []);
   if (reviewedOperation !== "delete" && reviewedAllowed.size === 0) return false;
   if (reviewedOperation === "delete" && (reviewedAllowed.size !== 0 || Object.keys(job.patch).length !== 0)) return false;
   if (reviewedOperation === "insert") {
-    if (job.protocol_version !== protocolVersions.normalizedWritebackJobV2 || !job.deduplication) return false;
     const reviewedDedup = capability.operation?.deduplication?.components ?? [];
-    if (reviewedDedup.length !== job.deduplication.components.length) return false;
-    for (const component of reviewedDedup) {
-      if (!job.deduplication.components.some((resolved) => resolved.column === component.column && resolved.source === component.source)) return false;
+    if (setJob) {
+      if (reviewedDedup.length < 1 || job.frozen_set.members.some((member) => {
+        const resolved = member.deduplication?.components ?? [];
+        return reviewedDedup.length !== resolved.length || reviewedDedup.some((component) => !resolved.some((item) => item.column === component.column));
+      })) return false;
+    } else {
+      if (job.protocol_version !== protocolVersions.normalizedWritebackJobV2 || !job.deduplication) return false;
+      if (reviewedDedup.length !== job.deduplication.components.length) return false;
+      for (const component of reviewedDedup) {
+        if (!job.deduplication.components.some((resolved) => resolved.column === component.column && resolved.source === component.source)) return false;
+      }
     }
+  }
+  if (setJob) {
+    if (capability.operation?.max_rows !== job.frozen_set.max_rows) return false;
+    const reviewedBounds = capability.operation?.aggregate_bounds ?? [];
+    if (reviewedBounds.length !== job.frozen_set.aggregate_bounds.length) return false;
+    for (const bound of reviewedBounds) {
+      if (!job.frozen_set.aggregate_bounds.some((resolved) => resolved.column === bound.column && resolved.measure === bound.measure && resolved.maximum === bound.maximum)) return false;
+    }
+    if (reviewedOperation === "update" && (
+      capability.operation?.version_advance?.column !== job.version_advance?.column
+      || capability.operation?.version_advance?.strategy !== job.version_advance?.strategy
+    )) return false;
   }
   return Object.keys(job.patch).every((column) => reviewedAllowed.has(column));
 }
@@ -4786,7 +4833,10 @@ function formatUpWritebackLines(config: RuntimeConfig): string[] {
     if (mode === "direct_sql") {
       const source = config.sources?.[capability.source];
       const envName = source?.write_url_env ?? "SYNAPSOR_DATABASE_URL";
-      return `  - ${capability.name}: direct guarded one-row ${capabilityOperation(capability).toUpperCase()} via ${envName} (${envValue(process.env, envName) ? "set" : "missing"}); receipts ${formatSourceReceiptMode(source)}`;
+      const cardinality = capability.operation?.cardinality === "set"
+        ? `bounded-set ${capabilityOperation(capability).toUpperCase()} (max ${capability.operation.max_rows}; fixed selection; human/operator approval)`
+        : `one-row ${capabilityOperation(capability).toUpperCase()}`;
+      return `  - ${capability.name}: direct guarded ${cardinality} via ${envName} (${envValue(process.env, envName) ? "set" : "missing"}); receipts ${formatSourceReceiptMode(source)}`;
     }
     const executorName = capabilityWritebackExecutor(capability) ?? "missing_executor";
     const executor = config.executors?.[executorName] as Record<string, unknown> | undefined;
@@ -5274,21 +5324,69 @@ async function inspectWritebackIntentContext(
   return { intent, proposal, observation };
 }
 
-function reconciliationSupportedOutcome(observation: ReconciliationObservation): "applied" | "conflict" | "failed" {
+export function reconciliationSupportedOutcome(observation: ReconciliationObservation): "applied" | "conflict" | "failed" {
   if (observation.classification === "matches_proposed") return "applied";
-  if (observation.operation === "single_row_delete" && observation.classification === "target_absent") return "applied";
+  if ((observation.operation === "single_row_delete" || observation.operation === "set_delete") && observation.classification === "target_absent") return "applied";
   if (observation.classification === "matches_reviewed_before" || observation.classification === "not_observed") return "failed";
   return "conflict";
 }
 
-function reconciliationReceipt(
+export function reconciliationReceipt(
   intent: StoredWritebackIntent,
   observation: ReconciliationObservation,
   outcome: "applied" | "conflict" | "failed",
   runnerId: string,
   reason: string,
-): ExecutionReceiptV2 {
+): ExecutionReceiptV2 | ExecutionReceiptV3 {
   const job = intent.intent;
+  if (intent.operation === "set_update" || intent.operation === "set_delete" || intent.operation === "batch_insert") {
+    if (job.protocol_version !== protocolVersions.normalizedWritebackJobV3) throw new Error("bounded-set reconciliation requires a writeback-job v3");
+    const executedAt = new Date().toISOString();
+    const memberEffects: ExecutionReceiptV3["member_effects"] = outcome === "applied"
+      ? job.frozen_set.members.map((member) => {
+        if (job.operation === "set_update") {
+          if (!member.before_digest || !member.after_digest) throw new Error("set UPDATE reconciliation requires exact before and after digests");
+          return { primary_key: member.primary_key, before_digest: member.before_digest, after_digest: member.after_digest };
+        }
+        if (job.operation === "set_delete") {
+          if (!member.before_digest || !member.tombstone_digest) throw new Error("set DELETE reconciliation requires exact before and tombstone digests");
+          return { primary_key: member.primary_key, before_digest: member.before_digest, tombstone_digest: member.tombstone_digest };
+        }
+        if (!member.after_digest) throw new Error("batch INSERT reconciliation requires exact after digests");
+        return { primary_key: member.primary_key, after_digest: member.after_digest };
+      })
+      : [];
+    const base = {
+      schema_version: protocolVersions.executionReceiptV3,
+      writeback_job_id: intent.writeback_job_id,
+      proposal_id: intent.proposal_id,
+      proposal_hash: intent.proposal_hash as `sha256:${string}`,
+      approval_id: job.approval_id,
+      runner_id: runnerId,
+      operation: job.operation,
+      receipt_authority: "runner_ledger" as const,
+      status: outcome,
+      target: {
+        source_id: job.source_id,
+        schema: job.target.schema,
+        table: job.target.table,
+        identities: job.frozen_set.members.map((member) => member.primary_key),
+        set_digest: job.frozen_set.set_digest,
+      },
+      rows_affected: outcome === "applied" ? job.frozen_set.row_count : 0,
+      idempotency_key: intent.idempotency_key,
+      member_effects: memberEffects,
+      source_database_mutated: outcome === "applied",
+      safe_outcome_code: `RECONCILED_${outcome.toUpperCase()}`,
+      ...(outcome === "applied" ? {} : { safe_error_code: `RECONCILED_${outcome.toUpperCase()}` }),
+      executed_at: executedAt,
+      reconciliation: { intent_id: intent.intent_id, reason: reason.slice(0, 500) },
+    };
+    return {
+      ...base,
+      receipt_hash: `sha256:${crypto.createHash("sha256").update(JSON.stringify(base)).digest("hex")}`,
+    };
+  }
   const executedAt = new Date().toISOString();
   const base = {
     schema_version: protocolVersions.executionReceiptV2,
@@ -5337,12 +5435,22 @@ function formatWritebackIntentList(intents: StoredWritebackIntent[]): string {
 }
 
 function formatReconciliationInspection(intent: StoredWritebackIntent, observation: ReconciliationObservation): string {
+  const setSummary = observation.member_observations
+    ? [
+      `Frozen members observed: ${observation.member_observations.length}`,
+      `Member classifications: ${JSON.stringify(Object.fromEntries(
+        [...new Set(observation.member_observations.map((member) => member.classification))]
+          .map((classification) => [classification, observation.member_observations!.filter((member) => member.classification === classification).length]),
+      ))}`,
+    ]
+    : [];
   return [
     `Writeback reconciliation: ${intent.intent_id}`,
     `Proposal: ${intent.proposal_id}`,
     `Operation: ${intent.operation}`,
     `Intent state: ${intent.status}`,
     `Live observation: ${observation.classification}`,
+    ...setSummary,
     `Supported resolution: ${reconciliationSupportedOutcome(observation)}`,
     `Expected safe metadata: ${JSON.stringify(observation.expected)}`,
     `Observed allowlisted metadata: ${JSON.stringify(observation.observed)}`,
@@ -5455,6 +5563,7 @@ async function writebackDoctor(args: string[]): Promise<number> {
         databaseUrl: writeUrl,
         engine: source.engine,
         pollIntervalMs: 0,
+        statementTimeoutMs: writebackTimeoutMs(source),
         logLevel: "error",
         dryRun: true,
         stateDir: "./state",
@@ -6384,6 +6493,10 @@ async function proposalInput(args: string[], capability: RuntimeCapabilityConfig
 function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   for (const [name, spec] of Object.entries(capability.args)) {
+    if (spec.type === "object_array") {
+      input[name] = [Object.fromEntries(Object.entries(spec.fields).map(([fieldName, fieldSpec]) => [fieldName, sampleScalarArg(fieldName, fieldSpec)]))];
+      continue;
+    }
     if (name === capability.lookup.id_from_arg) input[name] = sampleIdForCapability(capability, name);
     else if (/reason/i.test(name)) input[name] = sampleReasonForCapability(capability);
     else if (/resolution/i.test(name)) input[name] = "Resolved after reviewing policy evidence.";
@@ -6402,6 +6515,15 @@ function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<s
     throw new Error(`no sample exists for ${capability.name}. Required input fields: ${missing.join(", ")}`);
   }
   return input;
+}
+
+function sampleScalarArg(name: string, spec: Exclude<RuntimeCapabilityConfig["args"][string], { type: "object_array" }>): unknown {
+  if (spec.enum?.length) return spec.enum[0];
+  if (/reason/i.test(name)) return "Reviewed sample reason.";
+  if (/status/i.test(name)) return "pending_review";
+  if (spec.type === "number") return spec.minimum ?? (typeof spec.maximum === "number" ? Math.min(spec.maximum, 1000) : 1);
+  if (spec.type === "boolean") return true;
+  return `sample_${name}`;
 }
 
 function sampleIdForCapability(capability: RuntimeCapabilityConfig, argName: string): string {
@@ -6802,10 +6924,13 @@ type ToolPreviewCapabilityDetail = {
   name: string;
   kind: "read" | "proposal";
   operation?: "update" | "insert" | "delete";
+  cardinality?: "single" | "set";
   target: string;
   tenant_source: string;
   writable_columns: string[];
   dedup_columns: string[];
+  fixed_selection: string[];
+  aggregate_bounds: string[];
   version_guard?: string;
   version_advance?: string;
   receipt_mode?: string;
@@ -6817,16 +6942,20 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
   return (config.capabilities ?? []).map((capability) => {
     const context = capability.context ? config.contexts?.[capability.context] : config.trusted_context;
     const operation = capability.kind === "proposal" ? capabilityOperation(capability) : undefined;
+    const cardinality = capability.kind === "proposal" ? capability.operation?.cardinality ?? "single" : undefined;
     return {
       name: capability.name,
       kind: capability.kind,
       operation,
+      cardinality,
       target: `${capability.target.schema}.${capability.target.table}`,
       tenant_source: capability.target.single_tenant_dev
         ? "explicit single-tenant development acknowledgement"
         : `${capability.target.tenant_key ?? "missing tenant key"} from trusted ${context?.provider ?? "context"}`,
       writable_columns: capability.allowed_columns ?? [],
       dedup_columns: capability.operation?.deduplication?.components.map((component) => component.column) ?? [],
+      fixed_selection: capability.operation?.selection?.all.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`) ?? [],
+      aggregate_bounds: capability.operation?.aggregate_bounds?.map((bound) => `${bound.measure}(${bound.column}) <= ${bound.maximum}`) ?? [],
       version_guard: capability.conflict_guard?.column,
       version_advance: capability.operation?.version_advance
         ? `${capability.operation.version_advance.column}:${capability.operation.version_advance.strategy}`
@@ -6835,7 +6964,7 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
       approval: capability.kind === "proposal"
         ? `${capability.approval?.mode ?? "human"}${capability.approval?.required_role ? ` role=${capability.approval.required_role}` : ""} quorum=${capability.approval?.required_approvals ?? 1}`
         : "not applicable",
-      max_rows: capability.max_rows ?? 1,
+      max_rows: cardinality === "set" ? capability.operation?.max_rows ?? 0 : capability.max_rows ?? 1,
     };
   });
 }
@@ -6843,12 +6972,17 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
 function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail[]): string[] {
   if (details.length === 0) return ["  - (none)"];
   return details.flatMap((detail) => [
-    `  - ${detail.name}: ${detail.kind}${detail.operation ? ` ${detail.operation.toUpperCase()}` : ""}`,
+    `  - ${detail.name}: ${detail.kind}${detail.operation ? ` ${detail.cardinality === "set" ? "BOUNDED SET " : "SINGLE-ROW "}${detail.operation.toUpperCase()}` : ""}`,
     `    target: ${detail.target}; max rows: ${detail.max_rows}`,
     `    tenant: ${detail.tenant_source}`,
     ...(detail.kind === "proposal" ? [
       `    writable columns: ${detail.writable_columns.join(", ") || "none"}`,
       `    dedup: ${detail.dedup_columns.join(", ") || "not applicable"}`,
+      ...(detail.cardinality === "set" ? [
+        `    fixed selection: ${detail.fixed_selection.join(" AND ") || "exact reviewed batch items"}`,
+        `    aggregate bounds: ${detail.aggregate_bounds.join("; ") || "missing"}`,
+        "    set approval: human/operator required; policy auto-approval unavailable",
+      ] : []),
       `    version guard: ${detail.version_guard ?? "not applicable"}${detail.version_advance ? `; advance: ${detail.version_advance}` : ""}`,
       `    receipts: ${detail.receipt_mode ?? "not configured"}; approval: ${detail.approval}`,
     ] : []),
@@ -10278,6 +10412,7 @@ function formatProposalFirstLook(proposal: StoredProposal, storedEvidenceItemCou
     "",
     "Business object:",
     `${proposal.business_object} ${proposal.object_id}`,
+    ...boundedSetReviewLines(proposal.change_set),
     "",
     "Proposed change:",
     ...formatChangeLines(proposal).map((line) => line.replace(/^  /, "")),
@@ -10313,7 +10448,7 @@ function formatProposalDetail(proposal: StoredProposal, storedEvidenceItemCount?
     `principal: ${changeSet.principal.id} (${changeSet.principal.source})`,
     `tenant: ${proposal.tenant_id}`,
     `target: ${proposal.source_kind}:${proposal.source_id}/${proposal.source_schema}.${proposal.source_table}/${proposal.object_id}`,
-    `primary key: ${changeSet.source.primary_key.column}=${formatScalar(changeSet.source.primary_key.value)}`,
+    `primary key: ${changeSet.source.primary_key.column}${changeSet.source.primary_key.value === undefined ? " (exact identities frozen below)" : `=${formatScalar(changeSet.source.primary_key.value)}`}`,
     `status: ${proposal.state}`,
     `action: ${proposal.action}`,
     `approval: ${approvalStatus}${changeSet.approval.required_role ? ` required role ${changeSet.approval.required_role}` : ""}`,
@@ -10324,9 +10459,10 @@ function formatProposalDetail(proposal: StoredProposal, storedEvidenceItemCount?
     `evidence: ${changeSet.evidence.bundle_id}  query ${changeSet.evidence.query_fingerprint}  items ${evidenceItems}`,
     `writeback: ${writebackStatus} via ${changeSet.writeback.mode}`,
     `source database changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
+    ...boundedSetReviewLines(changeSet, true),
     "",
     "Diff:",
-    ...formatChangeLines(proposal),
+    ...formatChangeLines(proposal, 100),
   ].join("\n") + "\n";
 }
 
@@ -10525,8 +10661,11 @@ function formatReceiptSummary(receipt: StoredWritebackReceipt): string {
 }
 
 function formatReceiptFirstLook(receipt: StoredWritebackReceipt, storeSuffix: string): string {
+  const setReceipt = receipt.receipt.schema_version === protocolVersions.executionReceiptV3 ? receipt.receipt : undefined;
   const checks = receipt.status === "applied"
-    ? ["primary key matched", "tenant guard matched", "allowed columns only", "conflict guard passed"]
+    ? setReceipt
+      ? ["every frozen identity matched", "trusted tenant matched", "allowed columns only", "every version guard passed", "one atomic set transaction"]
+      : ["primary key matched", "tenant guard matched", "allowed columns only", "conflict guard passed"]
     : receipt.status === "conflict"
       ? ["primary key matched", "tenant guard matched", "conflict guard blocked stale write"]
       : ["guarded writeback did not apply"];
@@ -10538,7 +10677,7 @@ function formatReceiptFirstLook(receipt: StoredWritebackReceipt, storeSuffix: st
     receipt.proposal_id,
     "",
     "Writeback:",
-    "guarded single-row update",
+    setReceipt ? `guarded bounded-set ${setReceipt.operation.replace(/^set_|^batch_/, "").toUpperCase()}` : `guarded ${receiptOperationLabel(receipt)}`,
     "",
     "Checks:",
     ...checks.map((check) => `${check}`),
@@ -10557,6 +10696,7 @@ function formatReceiptFirstLook(receipt: StoredWritebackReceipt, storeSuffix: st
 }
 
 function formatReceiptDetail(receipt: StoredWritebackReceipt): string {
+  const setReceipt = receipt.receipt.schema_version === protocolVersions.executionReceiptV3 ? receipt.receipt : undefined;
   return [
     `Receipt: ${receipt.receipt_id}`,
     `Proposal: ${receipt.proposal_id}`,
@@ -10566,6 +10706,12 @@ function formatReceiptDetail(receipt: StoredWritebackReceipt): string {
     `Idempotency key: ${receipt.idempotency_key}`,
     `Source database mutated: ${receipt.source_database_mutated ? "yes" : "no"}`,
     `Rows affected: ${receipt.receipt.rows_affected}`,
+    ...(setReceipt ? [
+      `Operation: ${setReceipt.operation}`,
+      `Frozen set digest: ${setReceipt.target.set_digest}`,
+      `Exact member effects: ${setReceipt.member_effects.length}`,
+      ...setReceipt.member_effects.map((member) => `  ${member.primary_key.column}=${formatScalar(member.primary_key.value)} before=${member.before_digest ?? "none"} after=${member.after_digest ?? "none"} tombstone=${member.tombstone_digest ?? "none"}`),
+    ] : []),
     `Safe error: ${receipt.receipt.safe_error_code ?? "none"}`,
     `Receipt hash: ${receipt.receipt.receipt_hash}`,
     `Created at: ${receipt.created_at}`,
@@ -10716,7 +10862,7 @@ function formatReplayMarkdown(replay: ProposalReplayRecord): string {
     "",
     "## Proposed Diff",
     "",
-    ...Object.keys(proposal.change_set.patch).map((column) => `- ${column}: ${JSON.stringify(proposal.change_set.before[column as keyof typeof proposal.change_set.before])} -> ${JSON.stringify(proposal.change_set.after[column as keyof typeof proposal.change_set.after])}`),
+    ...formatChangeLines(proposal, 100).map((line) => `- ${line.trim()}`),
     "",
     "## Approval",
     "",
@@ -11094,8 +11240,45 @@ function proposalNextCommands(proposal: StoredProposal, proposalRef: string, sto
   ];
 }
 
-function formatChangeLines(proposal: StoredProposal): string[] {
+function boundedSetReviewLines(changeSet: ChangeSet, includeAllIdentities = false): string[] {
+  if (changeSet.schema_version !== protocolVersions.changeSetV3) return [];
+  const members = includeAllIdentities ? changeSet.frozen_set.members : changeSet.frozen_set.members.slice(0, 10);
+  const remaining = changeSet.frozen_set.members.length - members.length;
+  return [
+    "",
+    "Bounded set:",
+    `operation: ${changeSet.operation}`,
+    `exact rows frozen: ${changeSet.frozen_set.row_count} (reviewed maximum ${changeSet.frozen_set.max_rows})`,
+    `aggregate bounds: ${changeSet.frozen_set.aggregate_bounds.map((bound) => `${bound.measure}(${bound.column}) ${bound.actual}/${bound.maximum}`).join("; ")}`,
+    `set digest: ${changeSet.frozen_set.set_digest}`,
+    "exact identities:",
+    ...members.map((member) => `  ${member.primary_key.column}=${formatScalar(member.primary_key.value)}`),
+    ...(remaining > 0 ? [`  ... ${remaining} more; use --details to review every identity`] : []),
+    "approval: verified human/operator required; policy auto-approval unavailable",
+  ];
+}
+
+function receiptOperationLabel(receipt: StoredWritebackReceipt): string {
+  if (receipt.receipt.schema_version === protocolVersions.executionReceiptV2) {
+    return receipt.receipt.operation.replaceAll("_", " ");
+  }
+  return "single-row update";
+}
+
+function formatChangeLines(proposal: StoredProposal, memberLimit = 10): string[] {
   const changeSet = proposal.change_set;
+  if (changeSet.schema_version === protocolVersions.changeSetV3) {
+    const members = changeSet.frozen_set.members.slice(0, memberLimit);
+    const lines = members.flatMap((member) => {
+      const identity = `${member.primary_key.column}=${formatScalar(member.primary_key.value)}`;
+      if (changeSet.operation === "batch_insert") return [`  ${identity}: create ${JSON.stringify(member.after)}`];
+      if (changeSet.operation === "set_delete") return [`  ${identity}: delete ${JSON.stringify(member.before)}`];
+      return Object.keys(changeSet.patch).map((column) => `  ${identity} ${column}: ${formatScalar(member.before[column])} -> ${formatScalar(member.after[column])}`);
+    });
+    const remaining = changeSet.frozen_set.members.length - members.length;
+    if (remaining > 0) lines.push(`  ... ${remaining} more exact members; use --details to review all`);
+    return lines.length > 0 ? lines : ["  (no changed columns)"];
+  }
   const columns = Object.keys(changeSet.patch);
   if (columns.length === 0) return ["  (no changed columns)"];
   return columns.map((column) => {
@@ -11143,6 +11326,44 @@ function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: 
       affected_rows: affectedRows,
       error_code: result.error_code ?? null,
     })).digest("hex")}`;
+  if (result.protocol_version === protocolVersions.normalizedWritebackJobV3) {
+    const setStatus = dryRun ? "canceled" : terminalStatus;
+    const safeOutcomeCode = dryRun
+      ? "DRY_RUN"
+      : setStatus === "applied" ? "APPLIED"
+        : setStatus === "already_applied" ? "ALREADY_APPLIED"
+          : setStatus === "conflict" ? "CONFLICT"
+            : setStatus === "reconciliation_required" ? "RECONCILIATION_REQUIRED" : "FAILED";
+    return {
+      schema_version: protocolVersions.executionReceiptV3,
+      writeback_job_id: job.job_id,
+      proposal_id: job.proposal_id,
+      proposal_hash: job.approval_id,
+      approval_id: job.approval_id,
+      runner_id: result.runner_id,
+      operation: result.operation,
+      receipt_authority: result.receipt_authority,
+      status: setStatus,
+      target: {
+        source_id: job.source_id,
+        schema: job.target.schema,
+        table: job.target.table,
+        identities: result.target_identities,
+        set_digest: result.set_digest,
+      },
+      rows_affected: dryRun ? 0 : affectedRows,
+      idempotency_key: job.idempotency_key,
+      member_effects: dryRun ? [] : result.member_effects,
+      source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
+      safe_outcome_code: safeOutcomeCode,
+      safe_error_code: result.error_code,
+      executed_at: result.completed_at,
+      receipt_hash: receiptHash,
+      ...(result.status === "reconciliation_required" ? {
+        reconciliation: { intent_id: result.intent_id, reason: "source outcome requires operator reconciliation" },
+      } : {}),
+    };
+  }
   if (result.protocol_version === protocolVersions.normalizedWritebackJobV2) {
     const safeOutcomeCode = dryRun
       ? "DRY_RUN"

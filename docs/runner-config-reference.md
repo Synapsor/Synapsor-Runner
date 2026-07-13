@@ -127,8 +127,13 @@ not print database URLs or create the schema.
 `engine` is `postgres` or `mysql`. `read_url_env` is required. Use a
 least-privilege read credential. `write_url_env` is optional unless direct SQL
 writeback must apply; it should name a separate restricted writer. `read_only:
-true` forbids direct SQL writeback. `statement_timeout_ms` is a positive read
-timeout. `ssl` carries adapter-specific reviewed SSL options when used.
+true` forbids direct SQL writeback. `statement_timeout_ms` is an
+operator-controlled positive timeout used for reads and direct SQL writeback.
+PostgreSQL applies it as transaction-local `statement_timeout` and
+`lock_timeout`. MySQL applies it to read/preflight execution and rounds it up
+to whole seconds for `innodb_lock_wait_timeout`; MySQL does not provide the
+same general DML statement-timeout guarantee as PostgreSQL. `ssl` carries
+adapter-specific reviewed SSL options when used.
 
 A contract's `SOURCE billing_postgres` must exactly match a `sources` key.
 
@@ -255,6 +260,39 @@ fields are documented in the JSON Schema and
 [Capability Authoring](capability-authoring.md): fixed target, args, primary-key
 lookup, visible fields, evidence, patch allowlist, bounds/transitions, conflict
 guard, approval, and writeback mode.
+
+## Bounded set operation fields
+
+A set operation is portable reviewed authority, so it can arrive from a
+contract or the equivalent embedded capability:
+
+```json
+{
+  "operation": {
+    "kind": "update",
+    "cardinality": "set",
+    "selection": {
+      "all": [{ "column": "status", "operator": "eq", "value": "overdue" }]
+    },
+    "max_rows": 10,
+    "aggregate_bounds": [
+      { "column": "balance_cents", "measure": "before", "maximum": 50000 }
+    ],
+    "version_advance": { "column": "version", "strategy": "integer_increment" }
+  },
+  "approval": { "mode": "human", "required_role": "billing_reviewer" },
+  "writeback": { "mode": "direct_sql" }
+}
+```
+
+Set UPDATE/DELETE requires one through eight fixed equality terms in
+`selection.all`; the model cannot add or override them. Every set requires
+`max_rows` from 1 through 100 and one through eight aggregate bounds. Set
+UPDATE requires integer version advancement. Batch INSERT instead declares
+`operation.batch.items_from_arg` pointing to a bounded `object_array` argument
+and item-field dedup components. All forms require human/operator approval and
+direct SQL writeback in 1.3. See [Bounded Set
+Writeback](bounded-set-writeback.md).
 
 ## Executors
 

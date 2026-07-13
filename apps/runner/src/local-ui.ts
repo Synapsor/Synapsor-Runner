@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { protocolVersions } from "@synapsor-runner/protocol";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -293,6 +294,7 @@ function buildTools(config: JsonRecord): JsonRecord {
       lookup: item.lookup,
       visible_columns: item.visible_columns,
       allowed_patch_columns: item.allowed_columns ?? [],
+      operation: item.operation,
       conflict_guard: item.conflict_guard,
       executor: item.executor ?? "sql_update",
       no_raw_sql_exposed: !/execute_sql|run_query/i.test(String(item.name ?? "")),
@@ -304,6 +306,14 @@ function buildTools(config: JsonRecord): JsonRecord {
 
 function summarizeProposal(proposal: StoredProposal): JsonRecord {
   const changeSet = proposal.change_set;
+  const boundedSet = changeSet.schema_version === protocolVersions.changeSetV3 ? {
+    operation: changeSet.operation,
+    row_count: changeSet.frozen_set.row_count,
+    max_rows: changeSet.frozen_set.max_rows,
+    aggregate_bounds: changeSet.frozen_set.aggregate_bounds,
+    set_digest: changeSet.frozen_set.set_digest,
+    identities: changeSet.frozen_set.members.map((member) => member.primary_key),
+  } : undefined;
   return {
     proposal_id: proposal.proposal_id,
     action: proposal.action,
@@ -325,6 +335,7 @@ function summarizeProposal(proposal: StoredProposal): JsonRecord {
     writeback_status: changeSet.writeback.status,
     writeback_mode: changeSet.writeback.mode,
     executor: (changeSet.writeback as { executor?: unknown }).executor ?? "sql_update",
+    ...(boundedSet ? { bounded_set: boundedSet } : {}),
     diff: Object.fromEntries(Object.keys(changeSet.patch).map((column) => [column, {
       before: changeSet.before[column],
       proposed: changeSet.after[column],
@@ -336,12 +347,28 @@ function summarizeProposal(proposal: StoredProposal): JsonRecord {
 
 function proposalReviewView(proposal: StoredProposal): JsonRecord {
   const changeSet = proposal.change_set;
+  const boundedSet = changeSet.schema_version === protocolVersions.changeSetV3 ? {
+    operation: changeSet.operation,
+    row_count: changeSet.frozen_set.row_count,
+    max_rows: changeSet.frozen_set.max_rows,
+    aggregate_bounds: changeSet.frozen_set.aggregate_bounds,
+    set_digest: changeSet.frozen_set.set_digest,
+    members: changeSet.frozen_set.members.map((member) => ({
+      primary_key: member.primary_key,
+      expected_version: member.expected_version,
+      before: member.before,
+      after: member.after,
+      before_digest: member.before_digest,
+      after_digest: member.after_digest,
+      tombstone_digest: member.tombstone_digest,
+    })),
+  } : undefined;
   return {
     message: proposal.source_database_mutated
       ? "Commit executed by trusted runner."
       : "The model can propose this change. It cannot approve or commit it.",
     source_database_changed: proposal.source_database_mutated,
-    source_row_before: changeSet.before,
+    source_row_before: boundedSet ? undefined : changeSet.before,
     proposed_patch: changeSet.patch,
     diff: Object.fromEntries(Object.keys(changeSet.patch).map((column) => [column, {
       before: changeSet.before[column],
@@ -357,7 +384,13 @@ function proposalReviewView(proposal: StoredProposal): JsonRecord {
       primary_key: changeSet.source.primary_key,
       conflict_version: changeSet.guards.expected_version,
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
-      affected_row_count_required: 1,
+      affected_row_count_required: boundedSet?.row_count ?? 1,
+      ...(boundedSet ? {
+        bounded_set: true,
+        max_rows: boundedSet.max_rows,
+        aggregate_bounds: boundedSet.aggregate_bounds,
+        exact_set_digest: boundedSet.set_digest,
+      } : {}),
     },
     writeback: {
       status: proposal.state,
@@ -365,6 +398,7 @@ function proposalReviewView(proposal: StoredProposal): JsonRecord {
       executor: (changeSet.writeback as { executor?: unknown }).executor ?? "sql_update",
     },
     evidence: changeSet.evidence,
+    ...(boundedSet ? { bounded_set: boundedSet } : {}),
   };
 }
 
@@ -702,7 +736,7 @@ async function loadTools() {
     box.append(text("strong", tool.name), text("div", tool.target_business_object, "pitem-target"));
     box.append(chip(tool.kind, tool.kind === "read" ? "ok" : "wait"));
     box.append(chip(tool.no_raw_sql_exposed ? "No raw SQL" : "RAW SQL EXPOSED", tool.no_raw_sql_exposed ? "ok" : "bad"));
-    box.append(rawJson("View raw JSON", { target: tool.target_business_object, input_schema: tool.input_schema, hidden_trusted_bindings: tool.hidden_trusted_bindings, allowed_patch_columns: tool.allowed_patch_columns, conflict_guard: tool.conflict_guard }));
+    box.append(rawJson("View reviewed boundary", { target: tool.target_business_object, operation: tool.operation, input_schema: tool.input_schema, hidden_trusted_bindings: tool.hidden_trusted_bindings, allowed_patch_columns: tool.allowed_patch_columns, conflict_guard: tool.conflict_guard }));
     root.append(box);
   }
 }
@@ -772,9 +806,12 @@ function buildStory(payload) {
   ]));
 
   // 3. The proposed change
-  story.append(stepCard("3", "The proposed change", "info", [
-    diffBlock(target, rv.diff),
-  ]));
+  const proposedChange = [diffBlock(target, rv.diff)];
+  if (rv.bounded_set) {
+    proposedChange.push(el("div", { class: "callout", text: "Bounded set: " + rv.bounded_set.row_count + " exact rows frozen (reviewed maximum " + rv.bounded_set.max_rows + "). Apply will not re-run a broad predicate." }));
+    proposedChange.push(rawJson("Review exact members and aggregate bounds", rv.bounded_set));
+  }
+  story.append(stepCard("3", "The proposed change", "info", proposedChange));
 
   // 4. Safety result
   story.append(stepCard("4", "Safety result", mutated ? "ok" : "ok", [

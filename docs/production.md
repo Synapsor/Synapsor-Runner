@@ -10,7 +10,7 @@ MCP agent
 -> scoped Postgres/MySQL read
 -> evidence/query audit/proposal
 -> approval outside MCP
--> guarded one-row INSERT/UPDATE/DELETE or app-owned executor
+-> guarded one-row CRUD, bounded frozen set, or app-owned executor
 -> receipt/replay
 ```
 
@@ -60,6 +60,9 @@ Production-candidate OSS scope:
 - distinct-reviewer approval quorum from the canonical contract;
 - direct guarded single-row `INSERT`, `UPDATE`, and `DELETE` for approved
   operations whose source constraints satisfy the operation-specific guards;
+- fixed-predicate set `UPDATE`/`DELETE` and exact-review batch `INSERT`, with
+  human approval, mandatory row/value caps, a hard 100-row ceiling, frozen
+  members, atomic execution, and exact per-member receipts;
 - app-owned `http_handler` or `command_handler` executors for richer approved
   business transactions;
 - stdio MCP and Streamable HTTP MCP.
@@ -67,8 +70,9 @@ Production-candidate OSS scope:
 Out of scope:
 
 - raw `execute_sql` or model-generated SQL;
-- direct `UPSERT`, DDL, model-generated predicates, multi-row SQL writeback,
-  or INSERT/DELETE whose source constraints cannot prove a one-row effect;
+- direct `UPSERT`, DDL, model-generated predicates, unbounded set writes,
+  cross-table transactions, or INSERT/DELETE whose source constraints cannot
+  prove the reviewed effect;
 - physical branching of external Postgres/MySQL;
 - workflow DAGs, auto-merge/settlement, hosted team administration, SSO/SCIM,
   multi-region ledger replication, or compliance retention;
@@ -113,6 +117,12 @@ Example config:
 `write_url_env`. `SYNAPSOR_DATABASE_URL` is only a legacy fallback for direct
 worker flows that do not pass a local config.
 
+Set `statement_timeout_ms` on each production source. PostgreSQL direct
+writeback uses it for transaction-local statement and lock limits. MySQL uses
+it for preflight execution and InnoDB lock waits; because MySQL does not apply
+`max_execution_time` to general DML, keep bounded sets small and enforce
+source-side operational query limits too.
+
 ## Receipt Authority
 
 Direct SQL writeback supports atomic `source_db` receipts and
@@ -143,19 +153,25 @@ mode, operation, and privilege matrix.
 
 ## Direct Writeback Vs App-Owned Executor
 
-Use direct `sql_update` when the approved change is:
+Use direct writeback when the approved change is either:
 
 ```text
 one reviewed row -> one guarded INSERT/UPDATE/DELETE -> one exact effect
+
+or
+
+one fixed reviewed rule/item list -> <= 100 frozen rows -> one atomic bounded set
 ```
 
 Use an app-owned executor when the change is richer:
 
-- insert a credit/refund/review row;
-- update more than one row;
+- choose rows from a model-supplied predicate or exceed the reviewed cap;
 - touch more than one table;
 - emit an event or call another internal service;
 - enforce business logic that belongs in your app.
+
+Bounded sets must satisfy every invariant in [Bounded Set
+Writeback](bounded-set-writeback.md); otherwise they remain executor work.
 
 Handlers must re-check tenant/scope, expected version, idempotency, allowed
 business action, transaction boundaries, and safe errors. See

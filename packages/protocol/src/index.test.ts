@@ -188,7 +188,7 @@ describe("public protocol fixtures", () => {
     };
     expect(manifest.schema_version).toBe("synapsor.protocol-manifest.v1");
     expect(manifest.hash_algorithm).toBe("sha256");
-    expect(manifest.artifacts).toHaveLength(22);
+    expect(manifest.artifacts).toHaveLength(28);
     for (const artifact of manifest.artifacts) {
       const file = artifact.kind === "schema"
         ? path.resolve(here, "../../../schemas", artifact.name)
@@ -208,6 +208,7 @@ describe("public protocol fixtures", () => {
   it("normalizes a public writeback-job fixture for the existing worker", () => {
     const job = parseWritebackJob(fixture("writeback-job.late-fee-waiver.v1.json"));
     expect(job.protocol_version).toBe("1.0");
+    if (job.protocol_version !== protocolVersions.legacyWritebackJob) throw new Error("expected v1 writeback job fixture");
     expect(job.job_id).toBe("wbj_123");
     expect(job.source_id).toBe("src_pg_acme");
     expect(job.target.tenant_guard).toEqual({ column: "tenant_id", value: "acme" });
@@ -267,6 +268,67 @@ describe("public protocol fixtures", () => {
     });
   });
 
+  it("accepts bounded set v3 jobs and exact applied receipts", () => {
+    const job = parseWritebackJob(v3Job());
+    expect(job).toMatchObject({
+      protocol_version: protocolVersions.normalizedWritebackJobV3,
+      operation: "set_update",
+      frozen_set: { max_rows: 2, row_count: 2 },
+    });
+
+    const receipt = parseExecutionReceipt(v3Receipt());
+    expect(receipt).toMatchObject({
+      schema_version: protocolVersions.executionReceiptV3,
+      operation: "set_update",
+      rows_affected: 2,
+    });
+  });
+
+  it("parses the public bounded-set v3 change set, job, and receipt", () => {
+    const changeSet = parseChangeSet(fixture("change-set.bounded-update.v3.json"));
+    expect(changeSet).toMatchObject({
+      schema_version: protocolVersions.changeSetV3,
+      operation: "set_update",
+      frozen_set: { row_count: 2, max_rows: 10 },
+    });
+    if (changeSet.schema_version !== protocolVersions.changeSetV3) throw new Error("expected v3 change-set fixture");
+
+    const job = parseWritebackJob(fixture("writeback-job.bounded-update.v3.json"));
+    expect(job).toMatchObject({
+      protocol_version: protocolVersions.normalizedWritebackJobV3,
+      operation: "set_update",
+      frozen_set: { set_digest: changeSet.frozen_set.set_digest },
+    });
+
+    const receipt = parseExecutionReceipt(fixture("execution-receipt.bounded-update-applied.v3.json"));
+    expect(receipt).toMatchObject({
+      schema_version: protocolVersions.executionReceiptV3,
+      operation: "set_update",
+      rows_affected: 2,
+      target: { set_digest: changeSet.frozen_set.set_digest },
+    });
+    if (receipt.schema_version !== protocolVersions.executionReceiptV3) throw new Error("expected v3 receipt fixture");
+    expect(receipt.member_effects.map((member) => member.primary_key.value)).toEqual(["INV-1", "INV-2"]);
+  });
+
+  it("rejects unsafe bounded set envelopes", () => {
+    const unordered = v3Job();
+    unordered.frozen_set.members.reverse();
+    expect(() => parseWritebackJob(unordered)).toThrow(/deterministic primary-key ordering/i);
+
+    const overflow = v3Job();
+    overflow.frozen_set.max_rows = 1;
+    expect(() => parseWritebackJob(overflow)).toThrow(/within max_rows/i);
+
+    const aggregateOverflow = v3Job();
+    aggregateOverflow.frozen_set.aggregate_bounds[0]!.actual = 20_001;
+    expect(() => parseWritebackJob(aggregateOverflow)).toThrow(/aggregate exceeds reviewed maximum/i);
+
+    const incompleteReceipt = v3Receipt();
+    incompleteReceipt.member_effects.pop();
+    expect(() => parseExecutionReceipt(incompleteReceipt)).toThrow(/identify every affected member/i);
+  });
+
   it("keeps credentials and unrestricted SQL out of protocol fixtures", () => {
     const fixtureDir = path.resolve(here, "../../../fixtures/protocol");
     for (const file of fs.readdirSync(fixtureDir)) {
@@ -279,6 +341,91 @@ describe("public protocol fixtures", () => {
 function fixture(name: string): unknown {
   const file = path.resolve(here, "../../../fixtures/protocol", name);
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function v3Job() {
+  return {
+    protocol_version: protocolVersions.normalizedWritebackJobV3,
+    job_id: "wbj_set_1",
+    proposal_id: "wrp_set_1",
+    proposal_hash: "sha256:proposal-set-1",
+    approval_id: "sha256:approval-set-1",
+    source_id: "src_1",
+    engine: "postgres" as const,
+    operation: "set_update" as const,
+    target: {
+      schema: "public",
+      table: "invoices",
+      primary_key: { column: "id" },
+      tenant_guard: { column: "tenant_id", value: "acme" },
+    },
+    allowed_columns: ["status"],
+    patch: { status: "closed" },
+    version_advance: { column: "version", strategy: "integer_increment" as const },
+    frozen_set: {
+      max_rows: 2,
+      row_count: 2,
+      aggregate_bounds: [{ column: "balance_cents", measure: "before" as const, maximum: 20_000, actual: 15_000 }],
+      members: [
+        {
+          primary_key: { column: "id", value: "INV-1" },
+          expected_version: { column: "version", value: 1 },
+          before: { status: "overdue", balance_cents: 5_000 },
+          after: { status: "closed", balance_cents: 5_000 },
+          before_digest: "sha256:before-1",
+          after_digest: "sha256:after-1",
+        },
+        {
+          primary_key: { column: "id", value: "INV-2" },
+          expected_version: { column: "version", value: 2 },
+          before: { status: "overdue", balance_cents: 10_000 },
+          after: { status: "closed", balance_cents: 10_000 },
+          before_digest: "sha256:before-2",
+          after_digest: "sha256:after-2",
+        },
+      ],
+      set_digest: "sha256:set-1",
+    },
+    idempotency_key: "idem-set-1",
+    lease_expires_at: 1,
+    lease_token: "lease-set-1",
+    runner_id: "runner-1",
+    attempt_count: 1,
+  };
+}
+
+function v3Receipt() {
+  return {
+    schema_version: protocolVersions.executionReceiptV3,
+    writeback_job_id: "wbj_set_1",
+    proposal_id: "wrp_set_1",
+    proposal_hash: "sha256:proposal-set-1",
+    approval_id: "approval_set_1",
+    runner_id: "runner-1",
+    operation: "set_update" as const,
+    receipt_authority: "source_db" as const,
+    status: "applied" as const,
+    target: {
+      source_id: "src_1",
+      schema: "public",
+      table: "invoices",
+      identities: [
+        { column: "id", value: "INV-1" },
+        { column: "id", value: "INV-2" },
+      ],
+      set_digest: "sha256:set-1",
+    },
+    rows_affected: 2,
+    idempotency_key: "idem-set-1",
+    member_effects: [
+      { primary_key: { column: "id", value: "INV-1" }, before_digest: "sha256:before-1", after_digest: "sha256:after-1" },
+      { primary_key: { column: "id", value: "INV-2" }, before_digest: "sha256:before-2", after_digest: "sha256:after-2" },
+    ],
+    source_database_mutated: true,
+    safe_outcome_code: "APPLIED",
+    executed_at: "2026-07-13T00:00:00Z",
+    receipt_hash: "sha256:receipt-set-1",
+  };
 }
 
 function v2Job(mutation: Record<string, unknown>, allowedColumns = ["amount_cents"]): Record<string, unknown> {

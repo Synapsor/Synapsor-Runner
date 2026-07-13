@@ -25,15 +25,20 @@ const CONTEXT_KEYS = new Set(["name", "description", "bindings", "tenant_binding
 const BINDING_KEYS = new Set(["name", "source", "key", "required"]);
 const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal"]);
 const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
-const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum"]);
+const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const EVIDENCE_KEYS = new Set(["required", "sources", "query_audit", "handle_prefix"]);
 const PROPOSAL_KEYS = new Set(["action", "operation", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "conflict_guard", "approval", "writeback"]);
-const OPERATION_KEYS = new Set(["kind", "deduplication", "version_advance"]);
+const OPERATION_KEYS = new Set(["kind", "cardinality", "selection", "max_rows", "aggregate_bounds", "batch", "deduplication", "version_advance"]);
+const SELECTION_KEYS = new Set(["all"]);
+const PREDICATE_TERM_KEYS = new Set(["column", "operator", "value"]);
+const AGGREGATE_BOUND_KEYS = new Set(["column", "measure", "maximum"]);
+const BATCH_KEYS = new Set(["items_from_arg"]);
 const DEDUPLICATION_KEYS = new Set(["components"]);
-const DEDUPLICATION_COMPONENT_KEYS = new Set(["column", "source", "fixed"]);
+const DEDUPLICATION_COMPONENT_KEYS = new Set(["column", "source", "fixed", "item_field"]);
 const VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
-const PATCH_KEYS = new Set(["fixed", "from_arg"]);
+const PATCH_KEYS = new Set(["fixed", "from_arg", "from_item"]);
+const SET_MAX_ROWS_HARD_CEILING = 100;
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
@@ -219,10 +224,54 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     validateKeptOutExclusion(capability.visible_fields, capability.kept_out_fields, path, errors);
     if (capability.evidence !== undefined) validateEvidenceRequirement(capability.evidence, `${path}.evidence`, errors);
     if (capability.max_rows !== undefined && !isPositiveInteger(capability.max_rows)) errors.push({ path: `${path}.max_rows`, code: "INVALID_MAX_ROWS", message: "max_rows must be a positive integer." });
-    if (capability.kind === "proposal") validateProposalAction(capability.proposal, capability.subject, `${path}.proposal`, errors);
+    if (capability.kind === "proposal") {
+      validateProposalAction(capability.proposal, capability.subject, `${path}.proposal`, errors);
+      validateSetCapabilityArgs(capability, path, errors);
+    }
     if (capability.kind !== "proposal" && capability.proposal !== undefined) errors.push({ path: `${path}.proposal`, code: "PROPOSAL_ONLY_FOR_PROPOSAL_KIND", message: "proposal is only valid for proposal capabilities." });
   });
   return names;
+}
+
+function validateSetCapabilityArgs(capability: JsonRecord, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(capability.proposal) || !isRecord(capability.proposal.operation) || capability.proposal.operation.cardinality !== "set") return;
+  const operation = capability.proposal.operation;
+  const args = isRecord(capability.args) ? capability.args : {};
+  const patch = isRecord(capability.proposal.patch) ? capability.proposal.patch : {};
+  const visible = new Set(Array.isArray(capability.visible_fields) ? capability.visible_fields.filter((field): field is string => typeof field === "string") : []);
+  const requiredReadFields = [
+    ...(Array.isArray(operation.aggregate_bounds) ? operation.aggregate_bounds.filter(isRecord).map((bound) => bound.column) : []),
+    ...(isRecord(operation.selection) && Array.isArray(operation.selection.all) ? operation.selection.all.filter(isRecord).map((term) => term.column) : []),
+    ...(isRecord(capability.proposal.conflict_guard) ? [capability.proposal.conflict_guard.column] : []),
+  ].filter(isSafeIdentifier);
+  for (const field of requiredReadFields) if (!visible.has(field)) errors.push({ path: `${path}.visible_fields`, code: "SET_REVIEW_FIELD_NOT_VISIBLE", message: `bounded set review requires visible field ${field}.` });
+  if (operation.kind === "insert") {
+    const itemsArg = isRecord(operation.batch) ? operation.batch.items_from_arg : undefined;
+    const arg = isSafeIdentifier(itemsArg) ? args[itemsArg] : undefined;
+    if (!isRecord(arg) || arg.type !== "object_array") {
+      errors.push({ path: `${path}.proposal.operation.batch.items_from_arg`, code: "BATCH_ITEMS_ARG_NOT_OBJECT_ARRAY", message: "batch.items_from_arg must reference an object_array argument." });
+      return;
+    }
+    if (Number(arg.max_items) > Number(operation.max_rows)) errors.push({ path: `${path}.args.${String(itemsArg)}.max_items`, code: "BATCH_ITEMS_EXCEED_MAX_ROWS", message: "object_array max_items must not exceed operation.max_rows." });
+    const fields = isRecord(arg.fields) ? arg.fields : {};
+    for (const [column, binding] of Object.entries(patch)) {
+      if (!isRecord(binding) || !isSafeIdentifier(binding.from_item) || !Object.prototype.hasOwnProperty.call(fields, binding.from_item)) {
+        errors.push({ path: `${path}.proposal.patch.${column}.from_item`, code: "UNKNOWN_BATCH_ITEM_FIELD", message: "batch INSERT patch fields must bind a declared item field." });
+      }
+    }
+    const components = isRecord(operation.deduplication) && Array.isArray(operation.deduplication.components) ? operation.deduplication.components : [];
+    const primaryKey = isRecord(capability.subject) ? capability.subject.primary_key : undefined;
+    if (isSafeIdentifier(primaryKey) && !components.some((component) => isRecord(component) && component.source === "item_field" && component.column === primaryKey)) {
+      errors.push({ path: `${path}.proposal.operation.deduplication.components`, code: "BATCH_PRIMARY_KEY_REQUIRED", message: `batch INSERT must derive primary key ${primaryKey} from a typed item field.` });
+    }
+    for (const [index, component] of components.entries()) {
+      if (isRecord(component) && component.source === "item_field" && (!isSafeIdentifier(component.item_field) || !Object.prototype.hasOwnProperty.call(fields, component.item_field))) {
+        errors.push({ path: `${path}.proposal.operation.deduplication.components[${index}].item_field`, code: "UNKNOWN_DEDUP_ITEM_FIELD", message: "item_field deduplication must reference a declared batch item field." });
+      }
+    }
+  } else {
+    for (const [column, binding] of Object.entries(patch)) if (isRecord(binding) && binding.from_item !== undefined) errors.push({ path: `${path}.proposal.patch.${column}.from_item`, code: "FROM_ITEM_BATCH_INSERT_ONLY", message: "from_item is valid only for batch INSERT." });
+  }
 }
 
 function validateSubject(value: unknown, path: string, resourceNames: Set<string>, errors: ValidationIssue[], warnings: ValidationIssue[]): void {
@@ -259,8 +308,22 @@ function validateArgs(value: unknown, path: string, errors: ValidationIssue[]): 
       continue;
     }
     checkUnknownKeys(arg, ARG_KEYS, argPath, errors);
-    if (!["string", "number", "boolean"].includes(String(arg.type))) errors.push({ path: `${argPath}.type`, code: "INVALID_ARG_TYPE", message: "arg type must be string, number, or boolean." });
+    if (!["string", "number", "boolean", "object_array"].includes(String(arg.type))) errors.push({ path: `${argPath}.type`, code: "INVALID_ARG_TYPE", message: "arg type must be string, number, boolean, or object_array." });
     if (arg.description !== undefined && !isNonEmptyString(arg.description)) errors.push({ path: `${argPath}.description`, code: "INVALID_ARG_DESCRIPTION", message: "arg description must be a non-empty string." });
+    if (arg.type === "object_array") {
+      if (!Number.isSafeInteger(arg.max_items) || Number(arg.max_items) < 1 || Number(arg.max_items) > SET_MAX_ROWS_HARD_CEILING) errors.push({ path: `${argPath}.max_items`, code: "INVALID_OBJECT_ARRAY_MAX_ITEMS", message: `object_array max_items must be 1 through ${SET_MAX_ROWS_HARD_CEILING}.` });
+      if (!isRecord(arg.fields) || Object.keys(arg.fields).length === 0 || Object.keys(arg.fields).length > 64) {
+        errors.push({ path: `${argPath}.fields`, code: "OBJECT_ARRAY_FIELDS_REQUIRED", message: "object_array fields must define 1 through 64 typed item fields." });
+      } else {
+        validateArgs(arg.fields, `${argPath}.fields`, errors);
+        for (const [fieldName, field] of Object.entries(arg.fields)) {
+          if (isRecord(field) && field.type === "object_array") errors.push({ path: `${argPath}.fields.${fieldName}`, code: "NESTED_OBJECT_ARRAY_FORBIDDEN", message: "object_array item fields must be scalar." });
+        }
+      }
+      for (const key of ["max_length", "minimum", "maximum", "enum"]) if (arg[key] !== undefined) errors.push({ path: `${argPath}.${key}`, code: "OBJECT_ARRAY_SCALAR_OPTION_FORBIDDEN", message: `${key} is valid only on scalar arguments or item fields.` });
+      continue;
+    }
+    if (arg.max_items !== undefined || arg.fields !== undefined) errors.push({ path: argPath, code: "OBJECT_ARRAY_OPTIONS_REQUIRE_OBJECT_ARRAY", message: "max_items and fields require type object_array." });
     if (arg.max_length !== undefined && (!Number.isInteger(arg.max_length) || Number(arg.max_length) <= 0)) errors.push({ path: `${argPath}.max_length`, code: "INVALID_MAX_LENGTH", message: "max_length must be a positive integer." });
     if ((arg.minimum !== undefined || arg.maximum !== undefined) && arg.type !== "number") errors.push({ path: argPath, code: "NUMERIC_BOUNDS_REQUIRE_NUMBER", message: "minimum/maximum can only be used with number args." });
     if (arg.minimum !== undefined && !isFiniteNumber(arg.minimum)) errors.push({ path: `${argPath}.minimum`, code: "INVALID_MINIMUM", message: "minimum must be a finite number." });
@@ -315,7 +378,8 @@ function validateProposalAction(value: unknown, subject: unknown, path: string, 
         continue;
       }
       checkUnknownKeys(patch, PATCH_KEYS, patchPath, errors);
-      if (patch.fixed === undefined && !isSafeIdentifier(patch.from_arg)) errors.push({ path: patchPath, code: "PATCH_BINDING_REQUIRED", message: "patch binding must include fixed or from_arg." });
+      const bindingCount = [patch.fixed !== undefined, isSafeIdentifier(patch.from_arg), isSafeIdentifier(patch.from_item)].filter(Boolean).length;
+      if (bindingCount !== 1) errors.push({ path: patchPath, code: "PATCH_BINDING_REQUIRED", message: "patch binding must include exactly one of fixed, from_arg, or from_item." });
     }
   }
   validateNumericBounds(value.numeric_bounds, value.patch, `${path}.numeric_bounds`, errors);
@@ -352,6 +416,12 @@ function validateProposalAction(value: unknown, subject: unknown, path: string, 
       errors.push({ path: `${path}.approval.mode`, code: "HARD_DELETE_HUMAN_APPROVAL_REQUIRED", message: "Direct hard DELETE must require human/operator approval and cannot use policy auto-approval." });
     }
   }
+  if (isRecord(value.operation) && value.operation.cardinality === "set") {
+    const approvalMode = isRecord(value.approval) ? value.approval.mode : undefined;
+    if (approvalMode !== "human" && approvalMode !== "operator") errors.push({ path: `${path}.approval.mode`, code: "SET_WRITE_HUMAN_APPROVAL_REQUIRED", message: "bounded set writes require human/operator approval in the first release." });
+    if (!isRecord(value.writeback) || value.writeback.mode !== "direct_sql") errors.push({ path: `${path}.writeback.mode`, code: "SET_WRITE_DIRECT_SQL_REQUIRED", message: "bounded set writes require Runner-owned direct_sql writeback." });
+    if (value.operation.kind === "update" && (!isRecord(value.operation.version_advance) || value.operation.version_advance.strategy !== "integer_increment")) errors.push({ path: `${path}.operation.version_advance`, code: "SET_INTEGER_VERSION_REQUIRED", message: "bounded set UPDATE requires integer_increment version advancement." });
+  }
 }
 
 function validateProposalOperation(
@@ -373,6 +443,17 @@ function validateProposalOperation(
     errors.push({ path: `${path}.kind`, code: "INVALID_OPERATION_KIND", message: "operation.kind must be update, insert, or delete." });
     return "update";
   }
+  const cardinality = value.cardinality ?? "single";
+  if (cardinality !== "single" && cardinality !== "set") {
+    errors.push({ path: `${path}.cardinality`, code: "INVALID_OPERATION_CARDINALITY", message: "operation.cardinality must be single or set." });
+  }
+  if (cardinality === "set") {
+    validateSetOperation(value, kind, path, errors);
+  } else {
+    for (const key of ["selection", "max_rows", "aggregate_bounds", "batch"]) {
+      if (value[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "SET_FIELD_REQUIRES_SET_CARDINALITY", message: `${key} requires operation.cardinality set.` });
+    }
+  }
   if (value.version_advance !== undefined) {
     if (!isRecord(value.version_advance)) {
       errors.push({ path: `${path}.version_advance`, code: "VERSION_ADVANCE_NOT_OBJECT", message: "version_advance must be an object." });
@@ -386,7 +467,7 @@ function validateProposalOperation(
     if (kind !== "update") errors.push({ path: `${path}.version_advance`, code: "VERSION_ADVANCE_UPDATE_ONLY", message: "version_advance is valid only for UPDATE." });
   }
   if (kind === "insert") {
-    validateDeduplication(value.deduplication, subject, patch, `${path}.deduplication`, errors);
+    validateDeduplication(value.deduplication, subject, patch, `${path}.deduplication`, errors, cardinality === "set");
   } else if (value.deduplication !== undefined) {
     errors.push({ path: `${path}.deduplication`, code: "DEDUPLICATION_INSERT_ONLY", message: "deduplication is valid only for INSERT." });
   }
@@ -396,7 +477,58 @@ function validateProposalOperation(
   return kind;
 }
 
-function validateDeduplication(value: unknown, subject: unknown, patch: unknown, path: string, errors: ValidationIssue[]): void {
+function validateSetOperation(value: JsonRecord, kind: "update" | "insert" | "delete", path: string, errors: ValidationIssue[]): void {
+  if (!Number.isSafeInteger(value.max_rows) || Number(value.max_rows) < 1 || Number(value.max_rows) > SET_MAX_ROWS_HARD_CEILING) {
+    errors.push({ path: `${path}.max_rows`, code: "SET_MAX_ROWS_REQUIRED", message: `bounded set writes require max_rows from 1 through ${SET_MAX_ROWS_HARD_CEILING}.` });
+  }
+  if (!Array.isArray(value.aggregate_bounds) || value.aggregate_bounds.length === 0 || value.aggregate_bounds.length > 8) {
+    errors.push({ path: `${path}.aggregate_bounds`, code: "SET_AGGREGATE_BOUND_REQUIRED", message: "bounded set writes require 1 through 8 aggregate value bounds." });
+  } else {
+    value.aggregate_bounds.forEach((bound, index) => {
+      const boundPath = `${path}.aggregate_bounds[${index}]`;
+      if (!isRecord(bound)) {
+        errors.push({ path: boundPath, code: "AGGREGATE_BOUND_NOT_OBJECT", message: "aggregate bound must be an object." });
+        return;
+      }
+      checkUnknownKeys(bound, AGGREGATE_BOUND_KEYS, boundPath, errors);
+      if (!isSafeIdentifier(bound.column)) errors.push({ path: `${boundPath}.column`, code: "INVALID_AGGREGATE_BOUND_COLUMN", message: "aggregate bound column must be a fixed safe identifier." });
+      if (!["before", "after", "absolute_delta"].includes(String(bound.measure))) errors.push({ path: `${boundPath}.measure`, code: "INVALID_AGGREGATE_BOUND_MEASURE", message: "aggregate bound measure must be before, after, or absolute_delta." });
+      if (!isFiniteNumber(bound.maximum) || Number(bound.maximum) < 0) errors.push({ path: `${boundPath}.maximum`, code: "INVALID_AGGREGATE_BOUND_MAXIMUM", message: "aggregate bound maximum must be a finite non-negative number." });
+    });
+  }
+  if (kind === "insert") {
+    if (value.selection !== undefined) errors.push({ path: `${path}.selection`, code: "BATCH_INSERT_SELECTION_FORBIDDEN", message: "batch INSERT reviews explicit items and cannot use a selection predicate." });
+    if (!isRecord(value.batch)) errors.push({ path: `${path}.batch`, code: "BATCH_INSERT_ITEMS_REQUIRED", message: "batch INSERT requires batch.items_from_arg." });
+    else {
+      checkUnknownKeys(value.batch, BATCH_KEYS, `${path}.batch`, errors);
+      if (!isSafeIdentifier(value.batch.items_from_arg)) errors.push({ path: `${path}.batch.items_from_arg`, code: "INVALID_BATCH_ITEMS_ARG", message: "batch.items_from_arg must be a fixed argument name." });
+    }
+    return;
+  }
+  if (value.batch !== undefined) errors.push({ path: `${path}.batch`, code: "BATCH_INSERT_ONLY", message: "batch is valid only for set INSERT." });
+  if (!isRecord(value.selection)) {
+    errors.push({ path: `${path}.selection`, code: "SET_FIXED_SELECTION_REQUIRED", message: "set UPDATE/DELETE requires a contract-fixed typed selection." });
+    return;
+  }
+  checkUnknownKeys(value.selection, SELECTION_KEYS, `${path}.selection`, errors);
+  if (!Array.isArray(value.selection.all) || value.selection.all.length === 0 || value.selection.all.length > 8) {
+    errors.push({ path: `${path}.selection.all`, code: "INVALID_FIXED_SELECTION", message: "selection.all must contain 1 through 8 fixed predicate terms." });
+    return;
+  }
+  value.selection.all.forEach((term, index) => {
+    const termPath = `${path}.selection.all[${index}]`;
+    if (!isRecord(term)) {
+      errors.push({ path: termPath, code: "PREDICATE_TERM_NOT_OBJECT", message: "predicate term must be an object." });
+      return;
+    }
+    checkUnknownKeys(term, PREDICATE_TERM_KEYS, termPath, errors);
+    if (!isSafeIdentifier(term.column)) errors.push({ path: `${termPath}.column`, code: "INVALID_PREDICATE_COLUMN", message: "predicate column must be a fixed safe identifier." });
+    if (term.operator !== "eq") errors.push({ path: `${termPath}.operator`, code: "INVALID_PREDICATE_OPERATOR", message: "the first bounded-set release supports only literal equality predicates." });
+    if (!("value" in term) || !isJsonScalar(term.value)) errors.push({ path: `${termPath}.value`, code: "FIXED_PREDICATE_VALUE_REQUIRED", message: "predicate value must be a contract literal." });
+  });
+}
+
+function validateDeduplication(value: unknown, subject: unknown, patch: unknown, path: string, errors: ValidationIssue[], batch = false): void {
   if (!isRecord(value)) {
     errors.push({ path, code: "INSERT_DEDUPLICATION_REQUIRED", message: "INSERT requires source-enforced deduplication components." });
     return;
@@ -408,6 +540,7 @@ function validateDeduplication(value: unknown, subject: unknown, patch: unknown,
   }
   const seen = new Set<string>();
   let hasProposalId = false;
+  let hasItemField = false;
   let hasTrustedTenant = false;
   const patchFields = isRecord(patch) ? new Set(Object.keys(patch)) : new Set<string>();
   const tenantKey = isRecord(subject) ? subject.tenant_key : undefined;
@@ -422,16 +555,21 @@ function validateDeduplication(value: unknown, subject: unknown, patch: unknown,
     else if (seen.has(component.column)) errors.push({ path: `${componentPath}.column`, code: "DUPLICATE_DEDUPLICATION_COLUMN", message: "deduplication columns must be unique." });
     else seen.add(component.column);
     if (patchFields.has(String(component.column))) errors.push({ path: `${componentPath}.column`, code: "DEDUPLICATION_COLUMN_MODEL_CONTROLLED", message: "deduplication columns are Runner-supplied and must not also be patch fields." });
-    if (component.source !== "proposal_id" && component.source !== "trusted_tenant" && component.source !== "fixed") errors.push({ path: `${componentPath}.source`, code: "INVALID_DEDUPLICATION_SOURCE", message: "deduplication source must be proposal_id, trusted_tenant, or fixed." });
+    if (component.source !== "proposal_id" && component.source !== "trusted_tenant" && component.source !== "fixed" && component.source !== "item_field") errors.push({ path: `${componentPath}.source`, code: "INVALID_DEDUPLICATION_SOURCE", message: "deduplication source must be proposal_id, trusted_tenant, fixed, or item_field." });
     if (component.source === "proposal_id") hasProposalId = true;
+    if (component.source === "item_field") {
+      hasItemField = true;
+      if (!isSafeIdentifier(component.item_field)) errors.push({ path: `${componentPath}.item_field`, code: "DEDUPLICATION_ITEM_FIELD_REQUIRED", message: "item_field deduplication requires a fixed item field name." });
+    }
     if (component.source === "trusted_tenant") {
       if (isSafeIdentifier(tenantKey) && component.column === tenantKey) hasTrustedTenant = true;
       else errors.push({ path: `${componentPath}.column`, code: "DEDUPLICATION_TENANT_MISMATCH", message: "trusted_tenant deduplication must map to subject.tenant_key." });
     }
     if (component.source === "fixed" && component.fixed === undefined) errors.push({ path: `${componentPath}.fixed`, code: "DEDUPLICATION_FIXED_VALUE_REQUIRED", message: "fixed deduplication components require fixed." });
     if (component.source !== "fixed" && component.fixed !== undefined) errors.push({ path: `${componentPath}.fixed`, code: "DEDUPLICATION_FIXED_VALUE_FORBIDDEN", message: "fixed is valid only when source is fixed." });
+    if (component.source !== "item_field" && component.item_field !== undefined) errors.push({ path: `${componentPath}.item_field`, code: "DEDUPLICATION_ITEM_FIELD_FORBIDDEN", message: "item_field is valid only when source is item_field." });
   });
-  if (!hasProposalId) errors.push({ path: `${path}.components`, code: "PROPOSAL_DEDUPLICATION_REQUIRED", message: "INSERT deduplication must include a proposal_id component so retries are source-identifiable." });
+  if (batch ? !hasItemField : !hasProposalId) errors.push({ path: `${path}.components`, code: batch ? "ITEM_DEDUPLICATION_REQUIRED" : "PROPOSAL_DEDUPLICATION_REQUIRED", message: batch ? "batch INSERT deduplication must include a source-unique item_field component." : "INSERT deduplication must include a proposal_id component so retries are source-identifiable." });
   if (!hasTrustedTenant) errors.push({ path: `${path}.components`, code: "TRUSTED_TENANT_DEDUPLICATION_REQUIRED", message: "INSERT deduplication must include subject.tenant_key from trusted_tenant so retries cannot cross tenant scope." });
 }
 
@@ -839,4 +977,8 @@ function isPositiveInteger(value: unknown): boolean {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function isJsonScalar(value: unknown): value is JsonScalar {
+  return value === null || typeof value === "string" || typeof value === "boolean" || isFiniteNumber(value);
 }

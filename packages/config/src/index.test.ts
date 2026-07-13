@@ -164,8 +164,63 @@ describe("runner capability config validation", () => {
       default: { requests: 120, window_seconds: 60 },
       capabilities: { "billing.propose_late_fee_waiver": { requests: 20, window_seconds: 60 } },
     };
+    const boundedSet = structuredClone(safeConfig) as any;
+    boundedSet.capabilities = [{
+      ...boundedSet.capabilities[1],
+      name: "billing.close_overdue_invoices",
+      visible_columns: ["id", "tenant_id", "status", "balance_cents", "version"],
+      patch: { status: { fixed: "closed" } },
+      allowed_columns: ["status"],
+      conflict_guard: { column: "version" },
+      operation: {
+        kind: "update",
+        cardinality: "set",
+        selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+        max_rows: 10,
+        aggregate_bounds: [{ column: "balance_cents", measure: "before", maximum: 50000 }],
+        version_advance: { column: "version", strategy: "integer_increment" },
+      },
+      approval: { mode: "human", required_role: "billing_reviewer" },
+      writeback: { mode: "direct_sql" },
+    }];
+    const batchInsert = structuredClone(safeConfig) as any;
+    batchInsert.capabilities = [{
+      ...batchInsert.capabilities[1],
+      name: "billing.create_credits",
+      target: { schema: "public", table: "account_credits", primary_key: "id", tenant_key: "tenant_id" },
+      args: {
+        items: {
+          type: "object_array",
+          required: true,
+          max_items: 10,
+          fields: {
+            id: { type: "string", required: true, max_length: 128 },
+            amount_cents: { type: "number", required: true, minimum: 1, maximum: 2500 },
+          },
+        },
+      },
+      lookup: { id_from_arg: "items" },
+      visible_columns: ["id", "tenant_id", "amount_cents"],
+      patch: { amount_cents: { from_item: "amount_cents" } },
+      allowed_columns: ["amount_cents"],
+      numeric_bounds: { amount_cents: { minimum: 1, maximum: 2500 } },
+      conflict_guard: undefined,
+      operation: {
+        kind: "insert",
+        cardinality: "set",
+        batch: { items_from_arg: "items" },
+        max_rows: 10,
+        aggregate_bounds: [{ column: "amount_cents", measure: "after", maximum: 25000 }],
+        deduplication: { components: [
+          { column: "tenant_id", source: "trusted_tenant" },
+          { column: "id", source: "item_field", item_field: "id" },
+        ] },
+      },
+      approval: { mode: "human", required_role: "billing_reviewer" },
+      writeback: { mode: "direct_sql" },
+    }];
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded, boundedSet, batchInsert]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }

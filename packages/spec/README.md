@@ -72,7 +72,8 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - evidence/query-audit requirements;
 - proposal action shape, explicit INSERT/UPDATE/DELETE operation, source-unique
   INSERT deduplication, UPDATE version advancement, numeric bounds, transition
-  guards, and guarded writeback intent;
+  guards, optional bounded-set cardinality/fixed selection/row and aggregate
+  caps/exact batch items, and guarded writeback intent;
 - workflow allowed capabilities and replay requirements;
 - policy references and 0.1 policy metadata.
 
@@ -169,6 +170,10 @@ Current additive safety fields:
   key;
 - UPDATE `operation.version_advance`: reviewed integer increment or
   database-generated advancement of the exact conflict guard.
+- bounded-set `operation.cardinality = "set"`, fixed typed `selection`,
+  `max_rows` (hard ceiling 100), aggregate bounds, exact batch item source, and
+  source-unique per-item deduplication. Runner 1.3 requires human/operator
+  approval and freezes the exact set before apply.
 
 Receipt authority, receipt-table provisioning, credentials, and Runner ledger
 topology are deliberately not canonical fields. They remain deployment choices
@@ -176,7 +181,9 @@ in `synapsor.runner.json`.
 
 These are not `x-runner-*` extensions because they are part of the reviewed
 contract. A Cloud importer may choose when to enforce them, but it must not
-silently drop or reject them as unknown runner-only metadata.
+silently drop or reject them as unknown runner-only metadata. This OSS release
+proves bounded-set execution in Runner only; it does not claim proprietary
+Cloud/C++ execution support for the new fields until independently verified.
 
 ## Stability
 

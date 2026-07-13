@@ -98,8 +98,9 @@ different capability design.
 `ALLOW READ` is required and becomes the visible-field allowlist. `KEEP OUT`
 records fields that must remain outside the model/evidence surface. Keep-out
 fields must not also be visible. `REQUIRE EVIDENCE` records the scoped read and
-query audit. `MAX ROWS n` bounds the result; local 0.1 capabilities are designed
-around one primary-key row.
+query audit. For ordinary read/single-row proposal capabilities, `MAX ROWS 1`
+keeps primary-key lookup exact. Bounded set proposals use the separate guarded
+form below.
 
 ## Proposal and patch
 
@@ -152,6 +153,52 @@ Runner-ledger UPDATE must explicitly advance its exact conflict guard:
 ```
 
 Use one strategy, and make its column match `CONFLICT GUARD`.
+
+## Bounded set proposals
+
+Add `SET` after the operation to opt into the bounded set model. Existing-row
+UPDATE/DELETE requires a contract-fixed selection, mandatory row and aggregate
+bounds, exact version guards, and human/operator approval:
+
+```sql
+  PROPOSE ACTION close_overdue UPDATE SET
+  SELECT WHERE status = 'overdue'
+  MAX ROWS 10
+  MAX TOTAL balance_cents BEFORE 50000
+  ALLOW WRITE status
+  PATCH status = 'closed'
+  ADVANCE VERSION version USING INTEGER INCREMENT
+  APPROVAL ROLE billing_reviewer
+  WRITEBACK DIRECT SQL
+```
+
+`SELECT WHERE` accepts one or more literal equality terms joined by `AND`.
+Columns, operators, values, ordering, ranges, and raw SQL cannot come from a
+model argument. Runner reads `MAX ROWS + 1` and rejects overflow rather than
+truncating. `MAX TOTAL column BEFORE|AFTER|ABSOLUTE DELTA maximum` is a
+reviewer-visible aggregate value bound.
+
+Batch INSERT takes a complete typed item array:
+
+```sql
+  ARG items ROWS MAX 10 REQUIRED
+  ITEM FIELD items.id STRING REQUIRED MAX LENGTH 128
+  ITEM FIELD items.amount_cents NUMBER REQUIRED MIN 1 MAX 2500
+  PROPOSE ACTION create_credits INSERT SET
+  BATCH ITEMS FROM ARG items
+  MAX ROWS 10
+  MAX TOTAL amount_cents AFTER 25000
+  DEDUP KEY tenant_id = TRUSTED TENANT, id = ITEM id
+  ALLOW WRITE amount_cents
+  PATCH amount_cents = ITEM amount_cents
+  APPROVAL ROLE billing_reviewer
+  WRITEBACK DIRECT SQL
+```
+
+The first release caps every set at 100 members and forbids `AUTO APPROVE`.
+Set hard DELETE is trigger/cascade checked and soft delete is preferred. See
+[Bounded Set Writeback](bounded-set-writeback.md) for transaction, receipt,
+reconciliation, and executor boundaries.
 
 ## Bounds and transitions
 
