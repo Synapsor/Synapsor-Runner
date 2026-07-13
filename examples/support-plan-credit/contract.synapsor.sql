@@ -51,10 +51,36 @@ CREATE CAPABILITY support.propose_plan_credit
   WRITEBACK DIRECT SQL
 END
 
+CREATE CAPABILITY support.propose_plan_credit_record
+  DESCRIPTION 'Propose creating one bounded plan-credit record with source-enforced deduplication.'
+  RETURNS HINT 'Returns a proposal id for one new account_credits row; source database unchanged until human approval and guarded apply.'
+  USING CONTEXT support_agent_context
+  SOURCE local_postgres
+  ON public.account_credits
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ARG customer_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Customer id such as CUS-3001.'
+  ARG credit_cents NUMBER REQUIRED MIN 1 MAX 50000 DESCRIPTION 'Requested plan credit in cents.'
+  ARG reason TEXT REQUIRED MAX LENGTH 500 DESCRIPTION 'Business reason tied to support evidence.'
+  ALLOW READ id, tenant_id, request_id, customer_id, amount_cents, reason, created_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+  PROPOSE ACTION create_plan_credit INSERT
+  DEDUP KEY tenant_id = TRUSTED TENANT, request_id = PROPOSAL ID
+  ALLOW WRITE customer_id, amount_cents, reason
+  PATCH customer_id = ARG customer_id
+  PATCH amount_cents = ARG credit_cents
+  PATCH reason = ARG reason
+  BOUND amount_cents 1..50000
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+END
+
 CREATE AGENT WORKFLOW support.plan_credit_request
   USING CONTEXT support_agent_context
   ALLOW CAPABILITY support.inspect_customer
   ALLOW CAPABILITY support.propose_plan_credit
+  ALLOW CAPABILITY support.propose_plan_credit_record
   REQUIRE EVIDENCE
   APPROVAL REQUIRED ROLE support_reviewer
   CHECKPOINT PROPOSAL ONLY

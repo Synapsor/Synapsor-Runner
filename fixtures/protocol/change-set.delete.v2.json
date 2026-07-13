@@ -1,0 +1,31 @@
+{
+  "schema_version": "synapsor.change-set.v2",
+  "proposal_id": "wrp_delete_2003",
+  "proposal_version": 1,
+  "action": "support.propose_pending_task_delete",
+  "operation": "single_row_delete",
+  "mode": "review_required",
+  "principal": { "id": "operator_demo", "source": "trusted_session" },
+  "scope": { "tenant_id": "tenant_demo", "business_object": "pending_task", "object_id": "task_2003" },
+  "source": {
+    "kind": "external_mysql",
+    "source_id": "src_support_demo",
+    "schema": "support",
+    "table": "pending_tasks",
+    "primary_key": { "column": "id", "value": "task_2003" }
+  },
+  "before": { "id": "task_2003", "tenant_id": "tenant_demo", "status": "pending", "version": 4 },
+  "patch": {},
+  "after": {},
+  "guards": {
+    "tenant": { "column": "tenant_id", "value": "tenant_demo" },
+    "allowed_columns": [],
+    "expected_version": { "column": "version", "value": 4 }
+  },
+  "evidence": { "bundle_id": "ev_delete_2003", "query_fingerprint": "sha256:delete-evidence", "items": [] },
+  "approval": { "status": "pending", "required_role": "support_reviewer" },
+  "writeback": { "status": "not_applied", "mode": "trusted_worker_required" },
+  "source_database_mutated": false,
+  "integrity": { "proposal_hash": "sha256:delete-proposal" },
+  "created_at": "2026-07-13T18:02:00Z"
+}

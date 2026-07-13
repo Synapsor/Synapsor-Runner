@@ -46,8 +46,10 @@ const SOURCE_KEYS = new Set([
   "statement_timeout_ms",
   "ssl",
   "pool",
+  "receipts",
 ]);
 const SOURCE_POOL_KEYS = new Set(["max_connections", "connection_timeout_ms", "idle_timeout_ms", "queue_timeout_ms", "queue_limit"]);
+const SOURCE_RECEIPT_KEYS = new Set(["authority", "provisioning", "schema", "table"]);
 const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values"]);
 const CONTEXT_KEYS = TRUSTED_CONTEXT_KEYS;
 const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "signing_secret_env", "timeout_ms", "command_env"]);
@@ -73,6 +75,7 @@ const CAPABILITY_KEYS = new Set([
   "conflict_guard",
   "approval",
   "writeback",
+  "operation",
   "single_tenant_dev_ack",
 ]);
 const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "single_tenant_dev"]);
@@ -88,6 +91,10 @@ const APPROVAL_POLICY_RULE_KEYS = new Set(["field", "max"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor"]);
 const WRITEBACK_MODES = new Set(["direct_sql", "app_handler", "cloud_worker", "none"]);
+const OPERATION_KEYS = new Set(["kind", "deduplication", "version_advance"]);
+const DEDUPLICATION_KEYS = new Set(["components"]);
+const DEDUPLICATION_COMPONENT_KEYS = new Set(["column", "source", "fixed"]);
+const VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
 
 const MODEL_CONTROLLED_TRUST_FIELDS = new Set([
   "tenant_id",
@@ -169,6 +176,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   const hasContracts = validateContracts(input.contracts, errors);
   validateCloud(input.cloud, input.mode, strict, errors);
   validateSources(input.sources, input.mode, strict, errors, warnings);
+  validateReceiptTopology(input.sources, input.storage, errors);
   validateContexts(input.contexts, strict, errors, warnings);
   validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings, hasContracts);
   validateExecutors(input.executors, input.mode, strict, errors);
@@ -424,6 +432,44 @@ function validateSources(
       errors.push({ path: `${path}.read_only`, code: "INVALID_SOURCE_READ_ONLY", message: "read_only must be true or false when provided." });
     }
     validateSourcePool(source.pool, `${path}.pool`, strict, errors);
+    validateSourceReceipts(source.receipts, `${path}.receipts`, strict, errors);
+  }
+}
+
+function validateSourceReceipts(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "SOURCE_RECEIPTS_NOT_OBJECT", message: "source.receipts must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SOURCE_RECEIPT_KEYS, path, errors);
+  if (value.authority !== "source_db" && value.authority !== "runner_ledger") {
+    errors.push({ path: `${path}.authority`, code: "INVALID_RECEIPT_AUTHORITY", message: "receipts.authority must be source_db or runner_ledger." });
+  }
+  if (value.authority === "source_db") {
+    if (value.provisioning !== "precreated" && value.provisioning !== "auto_migrate") {
+      errors.push({ path: `${path}.provisioning`, code: "INVALID_RECEIPT_PROVISIONING", message: "source_db receipts require provisioning precreated or auto_migrate." });
+    }
+  } else if (value.provisioning !== undefined || value.schema !== undefined || value.table !== undefined) {
+    errors.push({ path, code: "RUNNER_LEDGER_SOURCE_RECEIPT_FIELDS", message: "runner_ledger does not use source receipt provisioning, schema, or table." });
+  }
+  if (value.schema !== undefined && !isSafeIdentifier(value.schema)) errors.push({ path: `${path}.schema`, code: "INVALID_RECEIPT_SCHEMA", message: "receipt schema must be a fixed safe identifier." });
+  if (value.table !== undefined && !isSafeIdentifier(value.table)) errors.push({ path: `${path}.table`, code: "INVALID_RECEIPT_TABLE", message: "receipt table must be a fixed safe identifier." });
+}
+
+function validateReceiptTopology(sources: unknown, storage: unknown, errors: ConfigIssue[]): void {
+  if (!isRecord(sources)) return;
+  const runnerLedgerSources = Object.entries(sources).filter(([, source]) => isRecord(source) && isRecord(source.receipts) && source.receipts.authority === "runner_ledger");
+  if (runnerLedgerSources.length === 0) return;
+  if (!isRecord(storage)) {
+    errors.push({ path: "$.storage", code: "RUNNER_LEDGER_REQUIRES_AUTHORITATIVE_STORE", message: "runner_ledger requires local SQLite for one process or shared_postgres.mode runtime_store for a fleet." });
+    return;
+  }
+  const shared = isRecord(storage.shared_postgres) ? storage.shared_postgres : undefined;
+  if (shared && shared.mode !== "runtime_store") {
+    errors.push({ path: "$.storage.shared_postgres.mode", code: "RUNNER_LEDGER_REQUIRES_RUNTIME_STORE", message: "runner_ledger cannot use mirror mode because intent durability must be authoritative before source mutation; use runtime_store." });
+  } else if (!shared && storage.sqlite_path === undefined) {
+    errors.push({ path: "$.storage.shared_postgres.mode", code: "RUNNER_LEDGER_REQUIRES_AUTHORITATIVE_STORE", message: "runner_ledger requires local SQLite for one process or shared_postgres.mode runtime_store for a fleet." });
   }
 }
 
@@ -475,6 +521,49 @@ function validateWritebackReadiness(
         code: "WRITEBACK_DISABLED",
         message: "No write_url_env is configured; direct SQL review-mode proposal execution cannot apply external DB changes.",
       });
+    }
+    const operation = isRecord(capability.operation) && typeof capability.operation.kind === "string"
+      ? capability.operation.kind
+      : "update";
+    const receipts = isRecord(source.receipts) ? source.receipts : undefined;
+    if (receipts?.authority === "runner_ledger") {
+      if (operation === "update") {
+        const conflictGuard = isRecord(capability.conflict_guard) ? capability.conflict_guard : undefined;
+        const versionAdvance = isRecord(capability.operation) && isRecord(capability.operation.version_advance)
+          ? capability.operation.version_advance
+          : undefined;
+        if (!conflictGuard || !isSafeIdentifier(conflictGuard.column) || conflictGuard.weak_guard_ack === true) {
+          errors.push({
+            path: `$.capabilities[${index}].conflict_guard`,
+            code: "RUNNER_LEDGER_EXACT_VERSION_GUARD_REQUIRED",
+            message: "runner_ledger UPDATE requires an exact source version column; a weak guard cannot prevent duplicate effects across the ledger/source crash window.",
+          });
+        }
+        if (!versionAdvance) {
+          errors.push({
+            path: `$.capabilities[${index}].operation.version_advance`,
+            code: "RUNNER_LEDGER_VERSION_ADVANCE_REQUIRED",
+            message: "runner_ledger UPDATE must advance its exact version guard in the same source transaction.",
+          });
+        }
+      }
+      if (operation === "insert" && (!isRecord(capability.operation) || !isRecord(capability.operation.deduplication))) {
+        errors.push({
+          path: `$.capabilities[${index}].operation.deduplication`,
+          code: "RUNNER_LEDGER_INSERT_SOURCE_DEDUP_REQUIRED",
+          message: "runner_ledger INSERT requires a reviewed source-enforced dedup identity.",
+        });
+      }
+      if (operation === "delete") {
+        const conflictGuard = isRecord(capability.conflict_guard) ? capability.conflict_guard : undefined;
+        if (!conflictGuard || !isSafeIdentifier(conflictGuard.column)) {
+          errors.push({
+            path: `$.capabilities[${index}].conflict_guard`,
+            code: "RUNNER_LEDGER_DELETE_VERSION_GUARD_REQUIRED",
+            message: "runner_ledger DELETE requires an exact source version guard.",
+          });
+        }
+      }
     }
   });
 }
@@ -1176,8 +1265,11 @@ function validateProposalCapability(
   strict: boolean,
   errors: ConfigIssue[],
 ): void {
-  if (!isRecord(capability.patch) || Object.keys(capability.patch).length === 0) {
-    errors.push({ path: `${path}.patch`, code: "PATCH_REQUIRED", message: "Proposal capabilities must declare a fixed patch mapping." });
+  const operation = validateCapabilityOperation(capability, path, strict, errors);
+  if (!isRecord(capability.patch) || (operation !== "delete" && Object.keys(capability.patch).length === 0)) {
+    errors.push({ path: `${path}.patch`, code: "PATCH_REQUIRED", message: "UPDATE and INSERT capabilities must declare a fixed patch mapping." });
+  } else if (operation === "delete" && Object.keys(capability.patch).length > 0) {
+    errors.push({ path: `${path}.patch`, code: "DELETE_PATCH_FORBIDDEN", message: "DELETE capabilities must not declare patch values." });
   } else {
     for (const [column, binding] of Object.entries(capability.patch)) {
       const bindingPath = `${path}.patch.${column}`;
@@ -1201,7 +1293,7 @@ function validateProposalCapability(
   }
   validateNumericBounds(capability, path, strict, errors);
   validateTransitionGuards(capability, path, strict, errors);
-  if (!Array.isArray(capability.allowed_columns) || capability.allowed_columns.length === 0) {
+  if (!Array.isArray(capability.allowed_columns) || (operation !== "delete" && capability.allowed_columns.length === 0)) {
     errors.push({ path: `${path}.allowed_columns`, code: "ALLOWED_COLUMNS_REQUIRED", message: "Proposal capabilities must list allowed_columns." });
   } else {
     for (const [index, column] of capability.allowed_columns.entries()) {
@@ -1210,15 +1302,15 @@ function validateProposalCapability(
       }
     }
   }
-  if (!isRecord(capability.conflict_guard)) {
+  if (operation !== "insert" && !isRecord(capability.conflict_guard)) {
     errors.push({
       path: `${path}.conflict_guard`,
       code: "CONFLICT_GUARD_REQUIRED",
       message: "Proposal capabilities must declare a row-version conflict guard unless a visible weak-guard exception is approved.",
     });
   } else {
-    if (strict) checkUnknownKeys(capability.conflict_guard, CONFLICT_GUARD_KEYS, `${path}.conflict_guard`, errors);
-    if (!isSafeIdentifier(capability.conflict_guard.column) && capability.conflict_guard.weak_guard_ack !== true) {
+    if (isRecord(capability.conflict_guard) && strict) checkUnknownKeys(capability.conflict_guard, CONFLICT_GUARD_KEYS, `${path}.conflict_guard`, errors);
+    if (isRecord(capability.conflict_guard) && !isSafeIdentifier(capability.conflict_guard.column) && (operation === "delete" || capability.conflict_guard.weak_guard_ack !== true)) {
       errors.push({
         path: `${path}.conflict_guard.column`,
         code: "CONFLICT_GUARD_COLUMN_REQUIRED",
@@ -1231,6 +1323,9 @@ function validateProposalCapability(
       errors.push({ path: `${path}.approval`, code: "APPROVAL_NOT_OBJECT", message: "approval must be an object." });
     } else {
       if (strict) checkUnknownKeys(capability.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+      if (capability.approval.mode !== undefined && capability.approval.mode !== "human" && capability.approval.mode !== "operator" && capability.approval.mode !== "policy") {
+        errors.push({ path: `${path}.approval.mode`, code: "INVALID_APPROVAL_MODE", message: "approval.mode must be human, operator, or policy." });
+      }
       if (capability.approval.required_approvals !== undefined
         && (!Number.isSafeInteger(capability.approval.required_approvals)
           || Number(capability.approval.required_approvals) < 1
@@ -1243,6 +1338,81 @@ function validateProposalCapability(
       }
     }
   }
+  if (operation === "delete" && capabilityWritebackMode(capability) === "direct_sql") {
+    const approval = isRecord(capability.approval) ? capability.approval : undefined;
+    if (!approval || (approval.mode !== "human" && approval.mode !== "operator")) {
+      errors.push({
+        path: `${path}.approval.mode`,
+        code: "HARD_DELETE_HUMAN_APPROVAL_REQUIRED",
+        message: "Direct hard DELETE must require human/operator approval and cannot use policy auto-approval.",
+      });
+    }
+  }
+}
+
+function validateCapabilityOperation(capability: JsonRecord, path: string, strict: boolean, errors: ConfigIssue[]): "update" | "insert" | "delete" {
+  if (capability.operation === undefined) return "update";
+  if (!isRecord(capability.operation)) {
+    errors.push({ path: `${path}.operation`, code: "OPERATION_NOT_OBJECT", message: "operation must be an object." });
+    return "update";
+  }
+  const operation = capability.operation;
+  if (strict) checkUnknownKeys(operation, OPERATION_KEYS, `${path}.operation`, errors);
+  const kind = operation.kind;
+  if (kind !== "update" && kind !== "insert" && kind !== "delete") {
+    errors.push({ path: `${path}.operation.kind`, code: "INVALID_OPERATION_KIND", message: "operation.kind must be update, insert, or delete." });
+    return "update";
+  }
+  if (operation.version_advance !== undefined) {
+    if (!isRecord(operation.version_advance)) errors.push({ path: `${path}.operation.version_advance`, code: "VERSION_ADVANCE_NOT_OBJECT", message: "version_advance must be an object." });
+    else {
+      if (strict) checkUnknownKeys(operation.version_advance, VERSION_ADVANCE_KEYS, `${path}.operation.version_advance`, errors);
+      if (!isSafeIdentifier(operation.version_advance.column)) errors.push({ path: `${path}.operation.version_advance.column`, code: "INVALID_VERSION_ADVANCE_COLUMN", message: "version advance column must be a fixed safe identifier." });
+      if (operation.version_advance.strategy !== "integer_increment" && operation.version_advance.strategy !== "database_generated") errors.push({ path: `${path}.operation.version_advance.strategy`, code: "INVALID_VERSION_ADVANCE_STRATEGY", message: "version advance strategy must be integer_increment or database_generated." });
+      if (isRecord(capability.conflict_guard) && operation.version_advance.column !== capability.conflict_guard.column) errors.push({ path: `${path}.operation.version_advance.column`, code: "VERSION_ADVANCE_GUARD_MISMATCH", message: "version advance column must match conflict_guard.column." });
+    }
+    if (kind !== "update") errors.push({ path: `${path}.operation.version_advance`, code: "VERSION_ADVANCE_UPDATE_ONLY", message: "version advancement is valid only for UPDATE." });
+  }
+  if (kind === "insert") validateCapabilityDeduplication(capability, operation.deduplication, path, strict, errors);
+  else if (operation.deduplication !== undefined) errors.push({ path: `${path}.operation.deduplication`, code: "DEDUPLICATION_INSERT_ONLY", message: "deduplication is valid only for INSERT." });
+  if (kind === "delete" && (!isRecord(capability.conflict_guard) || !isSafeIdentifier(capability.conflict_guard.column))) errors.push({ path: `${path}.conflict_guard.column`, code: "DELETE_CONFLICT_GUARD_REQUIRED", message: "DELETE requires an exact conflict guard column." });
+  return kind;
+}
+
+function validateCapabilityDeduplication(capability: JsonRecord, value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  const dedupPath = `${path}.operation.deduplication`;
+  if (!isRecord(value)) {
+    errors.push({ path: dedupPath, code: "INSERT_DEDUPLICATION_REQUIRED", message: "INSERT requires source-enforced deduplication components." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, DEDUPLICATION_KEYS, dedupPath, errors);
+  if (!Array.isArray(value.components) || value.components.length < 1 || value.components.length > 8) {
+    errors.push({ path: `${dedupPath}.components`, code: "INVALID_DEDUPLICATION_COMPONENTS", message: "deduplication must contain 1 through 8 components." });
+    return;
+  }
+  const patch = isRecord(capability.patch) ? capability.patch : {};
+  const target = isRecord(capability.target) ? capability.target : {};
+  const seen = new Set<string>();
+  let proposalId = false;
+  value.components.forEach((component, index) => {
+    const componentPath = `${dedupPath}.components[${index}]`;
+    if (!isRecord(component)) {
+      errors.push({ path: componentPath, code: "DEDUPLICATION_COMPONENT_NOT_OBJECT", message: "deduplication component must be an object." });
+      return;
+    }
+    if (strict) checkUnknownKeys(component, DEDUPLICATION_COMPONENT_KEYS, componentPath, errors);
+    if (!isSafeIdentifier(component.column)) errors.push({ path: `${componentPath}.column`, code: "INVALID_DEDUPLICATION_COLUMN", message: "deduplication column must be a fixed safe identifier." });
+    else if (seen.has(component.column)) errors.push({ path: `${componentPath}.column`, code: "DUPLICATE_DEDUPLICATION_COLUMN", message: "deduplication columns must be unique." });
+    else seen.add(component.column);
+    if (Object.prototype.hasOwnProperty.call(patch, String(component.column))) errors.push({ path: `${componentPath}.column`, code: "DEDUPLICATION_COLUMN_MODEL_CONTROLLED", message: "Runner-supplied deduplication columns must not be patch fields." });
+    if (component.source === "proposal_id") proposalId = true;
+    else if (component.source === "trusted_tenant") {
+      if (component.column !== target.tenant_key) errors.push({ path: `${componentPath}.column`, code: "DEDUPLICATION_TENANT_MISMATCH", message: "trusted_tenant must map to target.tenant_key." });
+    } else if (component.source === "fixed") {
+      if (component.fixed === undefined) errors.push({ path: `${componentPath}.fixed`, code: "DEDUPLICATION_FIXED_VALUE_REQUIRED", message: "fixed deduplication source requires fixed." });
+    } else errors.push({ path: `${componentPath}.source`, code: "INVALID_DEDUPLICATION_SOURCE", message: "deduplication source must be proposal_id, trusted_tenant, or fixed." });
+  });
+  if (!proposalId) errors.push({ path: `${dedupPath}.components`, code: "PROPOSAL_DEDUPLICATION_REQUIRED", message: "INSERT deduplication must include proposal_id." });
 }
 
 function validateNumericBounds(

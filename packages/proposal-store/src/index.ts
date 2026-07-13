@@ -5,11 +5,15 @@ import {
   parseChangeSet,
   parseExecutionReceipt,
   parseWritebackJob,
+  parseWritebackResult,
   protocolVersions,
-  type ChangeSetV1,
-  type ExecutionReceiptV1,
+  type ChangeSet,
+  type ExecutionReceipt,
+  type ExecutionReceiptV2,
   type WritebackJob,
   type WritebackJobV1,
+  type WritebackJobV2,
+  type WritebackResult,
 } from "@synapsor-runner/protocol";
 
 export type LocalProposalState =
@@ -20,7 +24,8 @@ export type LocalProposalState =
   | "pending_worker"
   | "applied"
   | "conflict"
-  | "failed";
+  | "failed"
+  | "reconciliation_required";
 
 export type StoredProposal = {
   proposal_id: string;
@@ -40,7 +45,7 @@ export type StoredProposal = {
   source_schema: string;
   source_table: string;
   source_database_mutated: boolean;
-  change_set: ChangeSetV1;
+  change_set: ChangeSet;
   created_at: string;
   updated_at: string;
 };
@@ -56,7 +61,7 @@ export type ProposalEvent = {
 
 export type OperatorDecision = {
   schema_version: "synapsor.operator-decision.v1";
-  action: "approve" | "reject" | "apply" | "worker_requeue" | "worker_discard";
+  action: "approve" | "reject" | "apply" | "reconcile" | "worker_requeue" | "worker_discard";
   proposal_id: string;
   proposal_version: number;
   proposal_hash: string;
@@ -110,7 +115,7 @@ export type StoredWritebackReceipt = {
   status: string;
   idempotency_key: string;
   source_database_mutated: boolean;
-  receipt: ExecutionReceiptV1;
+  receipt: ExecutionReceipt;
   created_at: string;
   tenant_id?: string;
   principal?: string;
@@ -119,6 +124,46 @@ export type StoredWritebackReceipt = {
   object_id?: string;
   source_id?: string;
   source_table?: string;
+};
+
+export type WritebackIntentStatus =
+  | "intent_recorded"
+  | "applying"
+  | "applied"
+  | "already_applied"
+  | "conflict"
+  | "failed"
+  | "reconciliation_required";
+
+export type StoredWritebackIntent = {
+  intent_id: string;
+  idempotency_key: string;
+  writeback_job_id: string;
+  proposal_id: string;
+  proposal_hash: string;
+  runner_id: string;
+  operation: "single_row_update" | "single_row_insert" | "single_row_delete";
+  status: WritebackIntentStatus;
+  intent: WritebackJob;
+  result?: WritebackResult;
+  reconciliation_reason?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WritebackIntentClaim =
+  | { decision: "proceed"; intent_id: string }
+  | { decision: "existing_result"; intent_id: string; result: WritebackResult }
+  | { decision: "reconciliation_required"; intent_id: string; reason: string };
+
+export type ReconcileWritebackIntentInput = {
+  intent_id: string;
+  receipt: ExecutionReceiptV2;
+  actor: string;
+  reason: string;
+  observation: Record<string, unknown>;
+  identity?: OperatorIdentityProof;
+  require_verified_identity?: boolean;
 };
 
 export type ProposalReplayRecord = {
@@ -257,6 +302,7 @@ export type StoreStats = {
   query_audit: number;
   writeback_receipts: number;
   writeback_jobs: number;
+  writeback_intents: number;
   idempotency_receipts: number;
   replay_records: number;
   approvals: number;
@@ -420,6 +466,10 @@ export type ProposalRuntimeStore = {
   receipts(proposalId: string): MaybePromise<StoredWritebackReceipt[]>;
   getEvidenceBundle(evidenceBundleId: string): MaybePromise<StoredEvidenceBundle | undefined>;
   replay(proposalId: string): MaybePromise<ProposalReplayRecord>;
+  claimWritebackIntent?(job: WritebackJob, runnerId: string): MaybePromise<WritebackIntentClaim>;
+  markWritebackIntentApplying?(intentId: string, runnerId: string): MaybePromise<void>;
+  completeWritebackIntent?(intentId: string, result: WritebackResult): MaybePromise<void>;
+  requireWritebackReconciliation?(intentId: string, reason: string): MaybePromise<void>;
 };
 
 export type PostgresRuntimeQueryResult = {
@@ -445,6 +495,163 @@ export type PostgresProposalRuntimeStoreOptions = {
   closePool?: boolean;
   maxEntries?: number;
 };
+
+export type PostgresWritebackIntentStoreOptions = {
+  pool: PostgresRuntimePool;
+  schema?: string;
+  autoMigrate?: boolean;
+  closePool?: boolean;
+};
+
+/**
+ * Durable intent authority for fleet applies. It writes the intent ledger entry
+ * before touching the source database and does not depend on the CLI's final
+ * runtime-store bridge sync.
+ */
+export class PostgresWritebackIntentStore {
+  private readonly pool: PostgresRuntimePool;
+  private readonly schema: string;
+  private readonly autoMigrate: boolean;
+  private readonly closePool: boolean;
+  private migrationPromise?: Promise<void>;
+
+  constructor(options: PostgresWritebackIntentStoreOptions) {
+    this.pool = options.pool;
+    this.schema = options.schema ?? "synapsor_runner";
+    assertSafePostgresIdentifier(this.schema, "schema");
+    this.autoMigrate = options.autoMigrate === true;
+    this.closePool = options.closePool === true;
+  }
+
+  async close(): Promise<void> {
+    if (this.closePool) await this.pool.end?.();
+  }
+
+  async claimWritebackIntent(jobInput: unknown, runnerId: string): Promise<WritebackIntentClaim> {
+    const job = parseWritebackJob(jobInput);
+    return await this.withIntent(job.job_id, async (client, existing) => {
+      const intentId = `wbi:${job.job_id}`;
+      if (existing) {
+        assertIntentMatchesJob(existing, job);
+        if (["applied", "already_applied", "conflict", "failed"].includes(existing.status)) {
+          if (!existing.result) return { decision: "reconciliation_required", intent_id: intentId, reason: "terminal intent is missing its durable result" };
+          return { decision: "existing_result", intent_id: intentId, result: existing.result };
+        }
+        if (existing.status === "applying" || existing.status === "reconciliation_required") {
+          return { decision: "reconciliation_required", intent_id: intentId, reason: existing.reconciliation_reason ?? "a previous apply crossed the source mutation boundary without a durable terminal result" };
+        }
+        return { decision: "proceed", intent_id: intentId };
+      }
+      const now = new Date().toISOString();
+      await this.writeIntent(client, {
+        intent_id: intentId,
+        idempotency_key: job.idempotency_key,
+        writeback_job_id: job.job_id,
+        proposal_id: job.proposal_id,
+        proposal_hash: job.approval_id,
+        runner_id: runnerId,
+        operation: job.operation ?? "single_row_update",
+        status: "intent_recorded",
+        intent: job,
+        created_at: now,
+        updated_at: now,
+      });
+      return { decision: "proceed", intent_id: intentId };
+    });
+  }
+
+  async markWritebackIntentApplying(intentId: string, runnerId: string): Promise<void> {
+    await this.withIntent(intentJobId(intentId), async (client, existing) => {
+      if (!existing) throw new ProposalStoreError("WRITEBACK_INTENT_NOT_FOUND", `writeback intent not found: ${intentId}`);
+      if (existing.status !== "intent_recorded") throw new ProposalStoreError("WRITEBACK_INTENT_NOT_CLAIMABLE", `writeback intent ${intentId} is ${existing.status}`);
+      await this.writeIntent(client, { ...existing, runner_id: runnerId, status: "applying", reconciliation_reason: undefined, updated_at: new Date().toISOString() });
+    });
+  }
+
+  async completeWritebackIntent(intentId: string, resultInput: WritebackResult): Promise<void> {
+    const result = parseWritebackResult(resultInput);
+    await this.withIntent(intentJobId(intentId), async (client, existing) => {
+      if (!existing) throw new ProposalStoreError("WRITEBACK_INTENT_NOT_FOUND", `writeback intent not found: ${intentId}`);
+      if (existing.writeback_job_id !== result.job_id) throw new ProposalStoreError("WRITEBACK_INTENT_RESULT_MISMATCH", `result ${result.job_id} does not belong to ${intentId}`);
+      if (existing.result && JSON.stringify(existing.result) === JSON.stringify(result)) return;
+      if (existing.status !== "applying" && existing.status !== "reconciliation_required") throw new ProposalStoreError("WRITEBACK_INTENT_COMPLETION_CONFLICT", `writeback intent ${intentId} is ${existing.status}`);
+      await this.writeIntent(client, {
+        ...existing,
+        status: result.status as WritebackIntentStatus,
+        result,
+        reconciliation_reason: result.status === "reconciliation_required" ? "source outcome requires operator reconciliation" : undefined,
+        updated_at: new Date().toISOString(),
+      });
+    });
+  }
+
+  async requireWritebackReconciliation(intentId: string, reason: string): Promise<void> {
+    await this.withIntent(intentJobId(intentId), async (client, existing) => {
+      if (!existing) throw new ProposalStoreError("WRITEBACK_INTENT_NOT_FOUND", `writeback intent not found: ${intentId}`);
+      if (existing.status === "applied" || existing.status === "already_applied") return;
+      await this.writeIntent(client, { ...existing, status: "reconciliation_required", reconciliation_reason: String(reason).slice(0, 500), updated_at: new Date().toISOString() });
+    });
+  }
+
+  private async withIntent<T>(jobId: string, callback: (client: PostgresRuntimeClient, intent: StoredWritebackIntent | undefined) => Promise<T>): Promise<T> {
+    await this.ensureMigrated();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`synapsor-writeback-intent:${this.schema}:${jobId}`]);
+      const qualified = `${quotePostgresIdentifier(this.schema)}.ledger_entries`;
+      const selected = await client.query(`SELECT payload_json FROM ${qualified} WHERE entry_key = $1 FOR UPDATE`, [`writeback_intents:wbi:${jobId}`]);
+      const intent = selected.rows[0] ? writebackIntentFromPayload(parseJsonRecord(selected.rows[0].payload_json)) : undefined;
+      const result = await callback(client, intent);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async ensureMigrated(): Promise<void> {
+    if (!this.autoMigrate) return;
+    if (!this.migrationPromise) {
+      const attempt = this.migrateUnderLock();
+      this.migrationPromise = attempt.catch((error) => {
+        this.migrationPromise = undefined;
+        throw error;
+      });
+    }
+    await this.migrationPromise;
+  }
+
+  private async migrateUnderLock(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`synapsor-writeback-intent:${this.schema}:migration`]);
+      await client.query(sharedPostgresRuntimeStoreMigration(this.schema));
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async writeIntent(client: PostgresRuntimeClient, intent: StoredWritebackIntent): Promise<void> {
+    const payload = writebackIntentPayload(intent);
+    assertNoSecretMaterial(payload, "shared_ledger.writeback_intent");
+    const qualified = `${quotePostgresIdentifier(this.schema)}.ledger_entries`;
+    await client.query(
+      `INSERT INTO ${qualified} (entry_key, kind, proposal_id, payload_json, created_at)
+VALUES ($1, 'writeback_intent', $2, $3::jsonb, $4::timestamptz)
+ON CONFLICT (entry_key) DO UPDATE SET kind = EXCLUDED.kind, proposal_id = EXCLUDED.proposal_id, payload_json = EXCLUDED.payload_json, created_at = EXCLUDED.created_at`,
+      [`writeback_intents:${intent.intent_id}`, intent.proposal_id, JSON.stringify(payload), intent.created_at],
+    );
+  }
+}
 
 export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
   private readonly pool: PostgresRuntimePool;
@@ -521,6 +728,22 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
 
   async replay(proposalId: string): Promise<ProposalReplayRecord> {
     return await this.withWrite("replay", (store) => store.replay(proposalId));
+  }
+
+  async claimWritebackIntent(job: unknown, runnerId: string): Promise<WritebackIntentClaim> {
+    return await this.withWrite("claimWritebackIntent", (store) => store.claimWritebackIntent(job, runnerId));
+  }
+
+  async markWritebackIntentApplying(intentId: string, runnerId: string): Promise<void> {
+    await this.withWrite("markWritebackIntentApplying", (store) => store.markWritebackIntentApplying(intentId, runnerId));
+  }
+
+  async completeWritebackIntent(intentId: string, result: WritebackResult): Promise<void> {
+    await this.withWrite("completeWritebackIntent", (store) => store.completeWritebackIntent(intentId, result));
+  }
+
+  async requireWritebackReconciliation(intentId: string, reason: string): Promise<void> {
+    await this.withWrite("requireWritebackReconciliation", (store) => store.requireWritebackReconciliation(intentId, reason));
   }
 
   private async withRead<T>(callback: (store: ProposalStore) => T): Promise<T> {
@@ -768,6 +991,7 @@ export class ProposalStore {
       query_audit: this.countTable("query_audit"),
       writeback_receipts: this.countTable("writeback_receipts"),
       writeback_jobs: this.countTable("writeback_jobs"),
+      writeback_intents: this.countTable("writeback_intents"),
       idempotency_receipts: this.countTable("idempotency_receipts"),
       replay_records: this.countTable("replay_records"),
       approvals: this.countTable("approvals"),
@@ -804,13 +1028,14 @@ export class ProposalStore {
         run("idempotency_receipts", proposalWhere.sql, proposalWhere.params);
         run("writeback_receipts", proposalWhere.sql, proposalWhere.params);
         run("writeback_jobs", proposalWhere.sql, proposalWhere.params);
+        run("writeback_intents", proposalWhere.sql, proposalWhere.params);
         run("approvals", proposalWhere.sql, proposalWhere.params);
         run("proposal_events", proposalWhere.sql, proposalWhere.params);
         run("shadow_human_actions", proposalWhere.sql, proposalWhere.params);
         run("worker_queue", proposalWhere.sql, proposalWhere.params);
         run("replay_records", proposalWhere.sql, proposalWhere.params);
       } else {
-        for (const table of ["idempotency_receipts", "writeback_receipts", "writeback_jobs", "approvals", "proposal_events", "shadow_human_actions", "worker_queue", "replay_records"]) {
+        for (const table of ["idempotency_receipts", "writeback_receipts", "writeback_jobs", "writeback_intents", "approvals", "proposal_events", "shadow_human_actions", "worker_queue", "replay_records"]) {
           deleted[table] = 0;
         }
       }
@@ -961,6 +1186,23 @@ export class ProposalStore {
         FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
       );
 
+      CREATE TABLE IF NOT EXISTS writeback_intents (
+        intent_id TEXT PRIMARY KEY,
+        idempotency_key TEXT UNIQUE NOT NULL,
+        writeback_job_id TEXT UNIQUE NOT NULL,
+        proposal_id TEXT NOT NULL,
+        proposal_hash TEXT NOT NULL,
+        runner_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        status TEXT NOT NULL,
+        intent_json TEXT NOT NULL,
+        result_json TEXT,
+        reconciliation_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
       CREATE TABLE IF NOT EXISTS replay_records (
         replay_id TEXT PRIMARY KEY,
         proposal_id TEXT NOT NULL,
@@ -1002,6 +1244,8 @@ export class ProposalStore {
       CREATE INDEX IF NOT EXISTS idx_proposal_events_proposal_id ON proposal_events(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_query_audit_proposal_id ON query_audit(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_writeback_receipts_proposal_id ON writeback_receipts(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_writeback_intents_proposal_id ON writeback_intents(proposal_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_writeback_intents_status_updated ON writeback_intents(status, updated_at);
       CREATE INDEX IF NOT EXISTS idx_replay_records_proposal_id ON replay_records(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_shadow_human_actions_proposal_id ON shadow_human_actions(proposal_id);
 
@@ -1632,57 +1876,8 @@ export class ProposalStore {
     const receipt = parseExecutionReceipt(input);
     const proposal = this.requireProposal(receipt.proposal_id);
     assertWritebackAllowed(proposal, "recorded with an execution receipt");
-    const state = stateFromReceipt(receipt);
-    const now = receipt.executed_at || new Date().toISOString();
     this.transaction(() => {
-      this.db.prepare(`
-        INSERT OR IGNORE INTO writeback_receipts (
-          writeback_job_id,
-          proposal_id,
-          runner_id,
-          status,
-          idempotency_key,
-          source_database_mutated,
-          receipt_json,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        receipt.writeback_job_id,
-        receipt.proposal_id,
-        receipt.runner_id,
-        receipt.status,
-        receipt.idempotency_key,
-        receipt.source_database_mutated ? 1 : 0,
-        JSON.stringify(receipt),
-        now,
-      );
-      this.db.prepare("UPDATE proposals SET state = ?, source_database_mutated = ?, updated_at = ? WHERE proposal_id = ?")
-        .run(state, receipt.source_database_mutated ? 1 : proposal.source_database_mutated ? 1 : 0, now, receipt.proposal_id);
-      this.db.prepare(`
-        INSERT OR REPLACE INTO idempotency_receipts (
-          idempotency_key,
-          writeback_job_id,
-          proposal_id,
-          receipt_status,
-          receipt_json,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `).run(
-        receipt.idempotency_key,
-        receipt.writeback_job_id,
-        receipt.proposal_id,
-        receipt.status,
-        JSON.stringify(receipt),
-        now,
-      );
-      this.db.prepare("UPDATE writeback_jobs SET status = ?, updated_at = ? WHERE writeback_job_id = ?")
-        .run(receipt.status, now, receipt.writeback_job_id);
-      this.appendEvent(receipt.proposal_id, `writeback_${receipt.status}`, receipt.runner_id, {
-        writeback_job_id: receipt.writeback_job_id,
-        rows_affected: receipt.rows_affected,
-        source_database_mutated: receipt.source_database_mutated,
-        receipt_hash: receipt.receipt_hash,
-      });
+      this.recordExecutionReceiptRows(receipt, proposal);
     });
     return this.requireProposal(receipt.proposal_id);
   }
@@ -1717,6 +1912,230 @@ export class ProposalStore {
       });
     });
     return job;
+  }
+
+  claimWritebackIntent(jobInput: unknown, runnerId: string): WritebackIntentClaim {
+    const job = parseWritebackJob(jobInput);
+    const proposal = this.requireProposal(job.proposal_id);
+    assertWritebackAllowed(proposal, "recorded with a writeback intent");
+    assertProposalIdentity(proposal, job.approval_id, proposal.proposal_version);
+    const intentId = `wbi:${job.job_id}`;
+    const existing = this.getWritebackIntent(intentId);
+    if (existing) {
+      if (
+        existing.idempotency_key !== job.idempotency_key
+        || existing.writeback_job_id !== job.job_id
+        || existing.proposal_id !== job.proposal_id
+        || existing.proposal_hash !== job.approval_id
+      ) {
+        throw new ProposalStoreError("WRITEBACK_INTENT_IDENTITY_MISMATCH", `writeback intent ${intentId} does not match the immutable job identity`);
+      }
+      if (["applied", "already_applied", "conflict", "failed"].includes(existing.status)) {
+        if (!existing.result) {
+          return { decision: "reconciliation_required", intent_id: intentId, reason: "terminal intent is missing its durable result" };
+        }
+        return { decision: "existing_result", intent_id: intentId, result: existing.result };
+      }
+      if (existing.status === "applying" || existing.status === "reconciliation_required") {
+        return {
+          decision: "reconciliation_required",
+          intent_id: intentId,
+          reason: existing.reconciliation_reason ?? "a previous apply crossed the source mutation boundary without a durable terminal result",
+        };
+      }
+      return { decision: "proceed", intent_id: intentId };
+    }
+
+    const now = new Date().toISOString();
+    this.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO writeback_intents (
+          intent_id, idempotency_key, writeback_job_id, proposal_id, proposal_hash,
+          runner_id, operation, status, intent_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'intent_recorded', ?, ?, ?)
+      `).run(
+        intentId,
+        job.idempotency_key,
+        job.job_id,
+        job.proposal_id,
+        job.approval_id,
+        runnerId,
+        job.operation ?? "single_row_update",
+        JSON.stringify(job),
+        now,
+        now,
+      );
+      this.appendEvent(job.proposal_id, "writeback_intent_recorded", runnerId, {
+        intent_id: intentId,
+        writeback_job_id: job.job_id,
+        operation: job.operation ?? "single_row_update",
+      });
+    });
+    return { decision: "proceed", intent_id: intentId };
+  }
+
+  markWritebackIntentApplying(intentId: string, runnerId: string): void {
+    const intent = this.requireWritebackIntent(intentId);
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`
+      UPDATE writeback_intents
+      SET status = 'applying', runner_id = ?, reconciliation_reason = NULL, updated_at = ?
+      WHERE intent_id = ? AND status = 'intent_recorded'
+    `).run(runnerId, now, intentId);
+    if (Number(result.changes) !== 1) {
+      throw new ProposalStoreError(
+        "WRITEBACK_INTENT_NOT_CLAIMABLE",
+        `writeback intent ${intentId} is ${intent.status}; its source outcome must be reconciled before another apply`,
+      );
+    }
+    this.appendEvent(intent.proposal_id, "writeback_intent_applying", runnerId, {
+      intent_id: intentId,
+      writeback_job_id: intent.writeback_job_id,
+      operation: intent.operation,
+    });
+  }
+
+  completeWritebackIntent(intentId: string, resultInput: WritebackResult): void {
+    const result = parseWritebackResult(resultInput);
+    const intent = this.requireWritebackIntent(intentId);
+    if (result.job_id !== intent.writeback_job_id) {
+      throw new ProposalStoreError("WRITEBACK_INTENT_RESULT_MISMATCH", `result ${result.job_id} does not belong to intent ${intentId}`);
+    }
+    if (!["applied", "already_applied", "conflict", "failed", "reconciliation_required"].includes(result.status)) {
+      throw new ProposalStoreError("WRITEBACK_INTENT_RESULT_NOT_TERMINAL", `result for ${intentId} is not terminal`);
+    }
+    const now = new Date().toISOString();
+    const reconciliationReason = result.status === "reconciliation_required"
+      ? "source outcome requires operator reconciliation"
+      : null;
+    const updated = this.db.prepare(`
+      UPDATE writeback_intents
+      SET status = ?, result_json = ?, reconciliation_reason = ?, updated_at = ?
+      WHERE intent_id = ? AND status IN ('applying', 'reconciliation_required')
+    `).run(result.status, JSON.stringify(result), reconciliationReason, now, intentId);
+    if (Number(updated.changes) !== 1) {
+      const latest = this.requireWritebackIntent(intentId);
+      if (latest.result && JSON.stringify(latest.result) === JSON.stringify(result)) return;
+      throw new ProposalStoreError("WRITEBACK_INTENT_COMPLETION_CONFLICT", `writeback intent ${intentId} cannot move from ${latest.status} to ${result.status}`);
+    }
+    this.appendEvent(intent.proposal_id, `writeback_intent_${result.status}`, result.runner_id, {
+      intent_id: intentId,
+      writeback_job_id: intent.writeback_job_id,
+      operation: intent.operation,
+      result_hash: result.result_hash,
+    });
+  }
+
+  requireWritebackReconciliation(intentId: string, reason: string): void {
+    const intent = this.requireWritebackIntent(intentId);
+    if (intent.status === "applied" || intent.status === "already_applied") return;
+    const safeReason = String(reason || "source outcome is unknown").slice(0, 500);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE writeback_intents
+      SET status = 'reconciliation_required', reconciliation_reason = ?, updated_at = ?
+      WHERE intent_id = ?
+    `).run(safeReason, now, intentId);
+    this.appendEvent(intent.proposal_id, "writeback_reconciliation_required", intent.runner_id, {
+      intent_id: intentId,
+      writeback_job_id: intent.writeback_job_id,
+      operation: intent.operation,
+      reason: safeReason,
+    });
+  }
+
+  getWritebackIntent(intentId: string): StoredWritebackIntent | undefined {
+    return rowToWritebackIntent(this.db.prepare("SELECT * FROM writeback_intents WHERE intent_id = ?").get(intentId));
+  }
+
+  listWritebackIntents(options: { status?: WritebackIntentStatus; proposal_id?: string; limit?: number } = {}): StoredWritebackIntent[] {
+    const clauses: string[] = [];
+    const values: SQLInputValue[] = [];
+    if (options.status) { clauses.push("status = ?"); values.push(options.status); }
+    if (options.proposal_id) { clauses.push("proposal_id = ?"); values.push(options.proposal_id); }
+    const limit = Math.min(Math.max(options.limit ?? 100, 1), 1000);
+    return this.db.prepare(`SELECT * FROM writeback_intents${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY updated_at DESC LIMIT ?`)
+      .all(...values, limit)
+      .map(rowToWritebackIntent)
+      .filter((intent): intent is StoredWritebackIntent => Boolean(intent));
+  }
+
+  reconcileWritebackIntent(input: ReconcileWritebackIntentInput): StoredWritebackIntent {
+    const intent = this.requireWritebackIntent(input.intent_id);
+    const proposal = this.requireProposal(intent.proposal_id);
+    const receipt = parseExecutionReceipt(input.receipt);
+    if (receipt.schema_version !== protocolVersions.executionReceiptV2) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "reconciliation requires an execution-receipt v2");
+    if (!input.reason.trim()) throw new ProposalStoreError("RECONCILIATION_REASON_REQUIRED", "reconciliation requires an operator reason");
+    if (intent.status !== "reconciliation_required" && intent.status !== "applying") {
+      throw new ProposalStoreError("WRITEBACK_INTENT_NOT_RECONCILABLE", `writeback intent ${intent.intent_id} is ${intent.status}`);
+    }
+    if (receipt.receipt_authority !== "runner_ledger"
+      || receipt.writeback_job_id !== intent.writeback_job_id
+      || receipt.proposal_id !== intent.proposal_id
+      || receipt.proposal_hash !== intent.proposal_hash
+      || receipt.operation !== intent.operation
+      || !["applied", "conflict", "failed"].includes(receipt.status)) {
+      throw new ProposalStoreError("RECONCILIATION_RECEIPT_MISMATCH", `reconciliation receipt does not match intent ${intent.intent_id}`);
+    }
+    assertOperatorDecision(proposal, "reconcile", input.actor, input.identity, input.require_verified_identity === true);
+    assertNoSecretMaterial(input.observation, "writeback_reconciliation_observation");
+    const reason = input.reason.trim().slice(0, 500);
+    this.transaction(() => {
+      const updated = this.db.prepare(`
+        UPDATE writeback_intents
+        SET status = ?, result_json = ?, reconciliation_reason = ?, updated_at = ?
+        WHERE intent_id = ? AND status IN ('applying', 'reconciliation_required')
+      `).run(receipt.status, JSON.stringify(receiptToWritebackResult(receipt)), reason, receipt.executed_at, intent.intent_id);
+      if (Number(updated.changes) !== 1) throw new ProposalStoreError("WRITEBACK_INTENT_RECONCILIATION_CONFLICT", `writeback intent ${intent.intent_id} changed during reconciliation`);
+      this.appendEvent(intent.proposal_id, "writeback_reconciled", input.actor, {
+        intent_id: intent.intent_id,
+        writeback_job_id: intent.writeback_job_id,
+        operation: intent.operation,
+        outcome: receipt.status,
+        reason,
+        observation: input.observation,
+        identity: publicIdentitySummary(input.identity),
+        decision_hash: input.identity?.decision_hash,
+      });
+      this.recordExecutionReceiptRows(receipt, proposal);
+    });
+    return this.requireWritebackIntent(intent.intent_id);
+  }
+
+  private requireWritebackIntent(intentId: string): StoredWritebackIntent {
+    const intent = this.getWritebackIntent(intentId);
+    if (!intent) throw new ProposalStoreError("WRITEBACK_INTENT_NOT_FOUND", `writeback intent not found: ${intentId}`);
+    return intent;
+  }
+
+  private recordExecutionReceiptRows(receipt: ExecutionReceipt, proposal: StoredProposal): void {
+    const state = stateFromReceipt(receipt);
+    const now = receipt.executed_at || new Date().toISOString();
+    this.db.prepare(`
+      INSERT OR IGNORE INTO writeback_receipts (
+        writeback_job_id, proposal_id, runner_id, status, idempotency_key,
+        source_database_mutated, receipt_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      receipt.writeback_job_id, receipt.proposal_id, receipt.runner_id, receipt.status,
+      receipt.idempotency_key, receipt.source_database_mutated ? 1 : 0,
+      JSON.stringify(receipt), now,
+    );
+    this.db.prepare("UPDATE proposals SET state = ?, source_database_mutated = ?, updated_at = ? WHERE proposal_id = ?")
+      .run(state, receipt.source_database_mutated ? 1 : proposal.source_database_mutated ? 1 : 0, now, receipt.proposal_id);
+    this.db.prepare(`
+      INSERT OR REPLACE INTO idempotency_receipts (
+        idempotency_key, writeback_job_id, proposal_id, receipt_status, receipt_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(receipt.idempotency_key, receipt.writeback_job_id, receipt.proposal_id, receipt.status, JSON.stringify(receipt), now);
+    this.db.prepare("UPDATE writeback_jobs SET status = ?, updated_at = ? WHERE writeback_job_id = ?")
+      .run(receipt.status, now, receipt.writeback_job_id);
+    this.appendEvent(receipt.proposal_id, `writeback_${receipt.status}`, receipt.runner_id, {
+      writeback_job_id: receipt.writeback_job_id,
+      rows_affected: receipt.rows_affected,
+      source_database_mutated: receipt.source_database_mutated,
+      receipt_hash: receipt.receipt_hash,
+    });
   }
 
   recordHandlerWritebackJob(input: RecordHandlerWritebackJobInput): void {
@@ -1764,7 +2183,7 @@ export class ProposalStore {
     });
   }
 
-  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 {
+  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 {
     const proposal = this.requireProposal(proposalId);
     assertWritebackAllowed(proposal, "converted into a writeback job");
     if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
@@ -1785,34 +2204,39 @@ export class ProposalStore {
     const leaseSeconds = Math.max(15, Math.min(Number(options.lease_seconds ?? 300), 3600));
     const attempt = Math.max(1, Math.min(Number(options.attempt ?? 1), 100));
     const now = Date.now();
-    const job: WritebackJobV1 = {
-      schema_version: protocolVersions.writebackJob,
-      writeback_job_id: `wbj_${proposal.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}${attempt > 1 ? `_a${attempt}` : ""}`,
+    const writebackJobId = `wbj_${proposal.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}${attempt > 1 ? `_a${attempt}` : ""}`;
+    const lease = {
+      lease_id: options.lease_id ?? `lease_${proposal.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}_a${attempt}`,
+      attempt,
+      expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
+    };
+    const common = {
+      writeback_job_id: writebackJobId,
       proposal_id: proposal.proposal_id,
       proposal_version: proposal.proposal_version,
       proposal_hash: proposal.proposal_hash,
-      runner_scope: {
-        project_id: options.project_id ?? "local",
-        source_id: proposal.source_id,
-      },
+      runner_scope: { project_id: options.project_id ?? "local", source_id: proposal.source_id },
       engine,
-      operation: "single_row_update",
-      target: {
-        schema: proposal.source_schema,
-        table: proposal.source_table,
-        primary_key: changeSet.source.primary_key,
-      },
       tenant_guard: changeSet.guards.tenant,
       allowed_columns: changeSet.guards.allowed_columns,
-      patch: changeSet.patch,
-      conflict_guard: conflictGuardFromChangeSet(changeSet),
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
-      lease: {
-        lease_id: options.lease_id ?? `lease_${proposal.proposal_id.replace(/[^A-Za-z0-9_:-]/g, "_")}_a${attempt}`,
-        attempt,
-        expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
-      },
-    };
+      lease,
+    } as const;
+    const job: WritebackJobV1 | WritebackJobV2 = changeSet.schema_version === protocolVersions.changeSet
+      ? {
+        schema_version: protocolVersions.writebackJob,
+        ...common,
+        operation: "single_row_update",
+        target: { schema: proposal.source_schema, table: proposal.source_table, primary_key: changeSet.source.primary_key },
+        patch: changeSet.patch,
+        conflict_guard: conflictGuardFromChangeSet(changeSet),
+      }
+      : {
+        schema_version: protocolVersions.writebackJobV2,
+        ...common,
+        target: { schema: proposal.source_schema, table: proposal.source_table, primary_key: changeSet.source.primary_key },
+        mutation: writebackMutationFromChangeSet(changeSet),
+      };
     this.transaction(() => {
       if (proposal.state === "approved") {
         this.db.prepare("UPDATE proposals SET state = ?, updated_at = ? WHERE proposal_id = ?").run("pending_worker", new Date().toISOString(), proposalId);
@@ -2373,6 +2797,7 @@ export class ProposalStore {
       { table: "proposal_events", kind: "proposal_event", key: "event_id", created: "created_at", proposal: "proposal_id" },
       { table: "approvals", kind: "approval", key: "approval_id", created: "created_at", proposal: "proposal_id" },
       { table: "writeback_jobs", kind: "writeback_job", key: "writeback_job_id", created: "created_at", proposal: "proposal_id" },
+      { table: "writeback_intents", kind: "writeback_intent", key: "intent_id", created: "created_at", proposal: "proposal_id" },
       { table: "idempotency_receipts", kind: "idempotency_receipt", key: "idempotency_key", created: "created_at", proposal: "proposal_id" },
       { table: "writeback_receipts", kind: "writeback_receipt", key: "receipt_id", created: "created_at", proposal: "proposal_id" },
       { table: "evidence_bundles", kind: "evidence_bundle", key: "evidence_bundle_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id", capability: "capability" },
@@ -2700,7 +3125,7 @@ export class ProposalStore {
   }
 }
 
-function stateFromChangeSet(changeSet: ChangeSetV1): LocalProposalState {
+function stateFromChangeSet(changeSet: ChangeSet): LocalProposalState {
   if (changeSet.approval.status === "approved") return "approved";
   if (changeSet.approval.status === "rejected") return "rejected";
   if (changeSet.approval.status === "canceled") return "canceled";
@@ -2937,15 +3362,62 @@ function lastIdentifier(value: string): string {
   return parts[parts.length - 1] ?? value;
 }
 
-function stateFromReceipt(receipt: ExecutionReceiptV1): LocalProposalState {
+function stateFromReceipt(receipt: ExecutionReceipt): LocalProposalState {
   if (receipt.status === "applied" || receipt.status === "already_applied") return "applied";
   if (receipt.status === "conflict") return "conflict";
   if (receipt.status === "canceled") return "canceled";
+  if (receipt.status === "reconciliation_required") return "reconciliation_required";
   return "failed";
 }
 
-function conflictGuardFromChangeSet(changeSet: ChangeSetV1): WritebackJobV1["conflict_guard"] {
+function receiptToWritebackResult(receipt: ExecutionReceiptV2): WritebackResult {
+  return parseWritebackResult({
+    protocol_version: protocolVersions.normalizedWritebackJobV2,
+    job_id: receipt.writeback_job_id,
+    runner_id: receipt.runner_id,
+    operation: receipt.operation,
+    receipt_authority: receipt.receipt_authority,
+    status: receipt.status,
+    affected_rows: receipt.rows_affected,
+    target_identity: receipt.target.identity,
+    before_digest: receipt.before_digest,
+    after_digest: receipt.after_digest,
+    tombstone_digest: receipt.tombstone_digest,
+    result_hash: receipt.receipt_hash,
+    completed_at: receipt.executed_at,
+    error_code: receipt.safe_error_code,
+    intent_id: receipt.reconciliation?.intent_id,
+  });
+}
+
+function writebackMutationFromChangeSet(changeSet: Extract<ChangeSet, { schema_version: "synapsor.change-set.v2" }>): WritebackJobV2["mutation"] {
+  if (changeSet.operation === "single_row_insert") {
+    if (!changeSet.guards.deduplication) throw new ProposalStoreError("INSERT_DEDUPLICATION_REQUIRED", `proposal ${changeSet.proposal_id} has no resolved deduplication identity`);
+    return {
+      kind: "single_row_insert",
+      values: changeSet.patch,
+      deduplication: changeSet.guards.deduplication,
+    };
+  }
   const guard = changeSet.guards.expected_version;
+  if (!guard) throw new ProposalStoreError("CONFLICT_GUARD_REQUIRED", `proposal ${changeSet.proposal_id} has no exact version guard`);
+  if (changeSet.operation === "single_row_delete") {
+    return {
+      kind: "single_row_delete",
+      conflict_guard: { kind: "column", column: guard.column, expected_value: guard.value },
+    };
+  }
+  return {
+    kind: "single_row_update",
+    values: changeSet.patch,
+    conflict_guard: { kind: "column", column: guard.column, expected_value: guard.value },
+    ...(changeSet.guards.version_advance ? { version_advance: changeSet.guards.version_advance } : {}),
+  };
+}
+
+function conflictGuardFromChangeSet(changeSet: ChangeSet): WritebackJobV1["conflict_guard"] {
+  const guard = changeSet.guards.expected_version;
+  if (!guard) return { kind: "none" };
   if (guard.column === "__row_hash") {
     return { kind: "row_hash", expected_hash: String(guard.value) };
   }
@@ -3106,6 +3578,93 @@ function rowToReceipt(row: unknown): StoredWritebackReceipt | undefined {
   };
 }
 
+function rowToWritebackIntent(row: unknown): StoredWritebackIntent | undefined {
+  if (!isRecord(row)) return undefined;
+  const status = String(row.status);
+  if (![
+    "intent_recorded",
+    "applying",
+    "applied",
+    "already_applied",
+    "conflict",
+    "failed",
+    "reconciliation_required",
+  ].includes(status)) return undefined;
+  const operation = String(row.operation);
+  if (!["single_row_update", "single_row_insert", "single_row_delete"].includes(operation)) return undefined;
+  return {
+    intent_id: String(row.intent_id),
+    idempotency_key: String(row.idempotency_key),
+    writeback_job_id: String(row.writeback_job_id),
+    proposal_id: String(row.proposal_id),
+    proposal_hash: String(row.proposal_hash),
+    runner_id: String(row.runner_id),
+    operation: operation as StoredWritebackIntent["operation"],
+    status: status as WritebackIntentStatus,
+    intent: parseWritebackJob(JSON.parse(String(row.intent_json))),
+    result: row.result_json == null ? undefined : parseWritebackResult(JSON.parse(String(row.result_json))),
+    reconciliation_reason: row.reconciliation_reason == null ? undefined : String(row.reconciliation_reason),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+function writebackIntentPayload(intent: StoredWritebackIntent): Record<string, unknown> {
+  return {
+    table: "writeback_intents",
+    intent_id: intent.intent_id,
+    idempotency_key: intent.idempotency_key,
+    writeback_job_id: intent.writeback_job_id,
+    proposal_id: intent.proposal_id,
+    proposal_hash: intent.proposal_hash,
+    runner_id: intent.runner_id,
+    operation: intent.operation,
+    status: intent.status,
+    intent: intent.intent,
+    ...(intent.result ? { result: intent.result } : {}),
+    ...(intent.reconciliation_reason ? { reconciliation_reason: intent.reconciliation_reason } : {}),
+    created_at: intent.created_at,
+    updated_at: intent.updated_at,
+  };
+}
+
+function writebackIntentFromPayload(payload: Record<string, unknown>): StoredWritebackIntent | undefined {
+  const operation = String(payload.operation ?? "");
+  const status = String(payload.status ?? "");
+  if (!["single_row_update", "single_row_insert", "single_row_delete"].includes(operation)) return undefined;
+  if (!["intent_recorded", "applying", "applied", "already_applied", "conflict", "failed", "reconciliation_required"].includes(status)) return undefined;
+  if (!isRecord(payload.intent)) return undefined;
+  return {
+    intent_id: String(payload.intent_id),
+    idempotency_key: String(payload.idempotency_key),
+    writeback_job_id: String(payload.writeback_job_id),
+    proposal_id: String(payload.proposal_id),
+    proposal_hash: String(payload.proposal_hash),
+    runner_id: String(payload.runner_id),
+    operation: operation as StoredWritebackIntent["operation"],
+    status: status as WritebackIntentStatus,
+    intent: parseWritebackJob(payload.intent),
+    result: isRecord(payload.result) ? parseWritebackResult(payload.result) : undefined,
+    reconciliation_reason: payload.reconciliation_reason == null ? undefined : String(payload.reconciliation_reason),
+    created_at: String(payload.created_at),
+    updated_at: String(payload.updated_at),
+  };
+}
+
+function assertIntentMatchesJob(intent: StoredWritebackIntent, job: WritebackJob): void {
+  if (
+    intent.idempotency_key !== job.idempotency_key
+    || intent.writeback_job_id !== job.job_id
+    || intent.proposal_id !== job.proposal_id
+    || intent.proposal_hash !== job.approval_id
+  ) throw new ProposalStoreError("WRITEBACK_INTENT_IDENTITY_MISMATCH", `writeback intent ${intent.intent_id} does not match the immutable job identity`);
+}
+
+function intentJobId(intentId: string): string {
+  if (!intentId.startsWith("wbi:") || intentId.length <= 4) throw new ProposalStoreError("INVALID_WRITEBACK_INTENT_ID", "writeback intent id must use wbi:<job_id>");
+  return intentId.slice(4);
+}
+
 function rowToQueryAudit(row: unknown): Record<string, unknown> | undefined {
   if (!isRecord(row)) return undefined;
   return {
@@ -3144,6 +3703,8 @@ const sharedLedgerJsonColumns = new Set([
   "payload_json",
   "identity_json",
   "job_json",
+  "intent_json",
+  "result_json",
   "receipt_json",
   "item_json",
   "value_json",
@@ -3155,6 +3716,7 @@ const sharedLedgerKindToTable: Record<string, string> = {
   proposal_event: "proposal_events",
   approval: "approvals",
   writeback_job: "writeback_jobs",
+  writeback_intent: "writeback_intents",
   idempotency_receipt: "idempotency_receipts",
   writeback_receipt: "writeback_receipts",
   evidence_bundle: "evidence_bundles",
@@ -3182,6 +3744,7 @@ const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> = {
   proposal_events: restoreSpec("event_id", ["event_id", "proposal_id", "kind", "actor", "payload_json", "created_at"], ["event_id", "proposal_id", "kind", "actor", "payload_json", "created_at"]),
   approvals: restoreSpec("approval_id", ["approval_id", "proposal_id", "proposal_version", "proposal_hash", "approver", "status", "reason", "identity_json", "decision_hash", "signature", "integrity_hash", "created_at"], ["approval_id", "proposal_id", "proposal_version", "proposal_hash", "approver", "status", "created_at"]),
   writeback_jobs: restoreSpec("writeback_job_id", ["writeback_job_id", "proposal_id", "proposal_hash", "status", "job_json", "created_at", "updated_at"], ["writeback_job_id", "proposal_id", "proposal_hash", "status", "job_json", "created_at", "updated_at"]),
+  writeback_intents: restoreSpec("intent_id", ["intent_id", "idempotency_key", "writeback_job_id", "proposal_id", "proposal_hash", "runner_id", "operation", "status", "intent_json", "result_json", "reconciliation_reason", "created_at", "updated_at"], ["intent_id", "idempotency_key", "writeback_job_id", "proposal_id", "proposal_hash", "runner_id", "operation", "status", "intent_json", "created_at", "updated_at"]),
   idempotency_receipts: restoreSpec("idempotency_key", ["idempotency_key", "writeback_job_id", "proposal_id", "receipt_status", "receipt_json", "created_at"], ["idempotency_key", "writeback_job_id", "proposal_id", "receipt_status", "receipt_json", "created_at"]),
   writeback_receipts: restoreSpec("receipt_id", ["receipt_id", "writeback_job_id", "proposal_id", "runner_id", "status", "idempotency_key", "source_database_mutated", "receipt_json", "created_at"], ["receipt_id", "writeback_job_id", "proposal_id", "runner_id", "status", "idempotency_key", "source_database_mutated", "receipt_json", "created_at"]),
   evidence_bundles: restoreSpec("evidence_bundle_id", ["evidence_bundle_id", "proposal_id", "tenant_id", "principal", "capability", "source_id", "source_table", "business_object", "object_id", "query_fingerprint", "payload_json", "created_at"], ["evidence_bundle_id", "tenant_id", "payload_json", "created_at"]),
@@ -3229,6 +3792,7 @@ function sharedLedgerRestoreRank(entry: SharedLedgerEntry): number {
     "query_audit",
     "approvals",
     "writeback_jobs",
+    "writeback_intents",
     "idempotency_receipts",
     "writeback_receipts",
     "replay_records",

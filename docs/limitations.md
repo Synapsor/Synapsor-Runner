@@ -1,7 +1,8 @@
 # Limitations
 
-Synapsor Runner is intentionally narrow. Version 1.1 adds a bounded small-fleet
-shape; it does not claim Synapsor Cloud scale or an enterprise SLA.
+Synapsor Runner is intentionally narrow. Version 1.2 adds guarded single-row
+CRUD and explicit receipt authority; it does not claim Synapsor Cloud scale or
+an enterprise SLA.
 
 ## Supported
 
@@ -20,8 +21,11 @@ shape; it does not claim Synapsor Cloud scale or an enterprise SLA.
   - `synapsor.change-set.v1`
   - `synapsor.writeback-job.v1`
   - `synapsor.execution-receipt.v1`
+  - backward-compatible operation-aware v2 change sets, jobs, and receipts
   - `synapsor.runner-registration.v1`
-- Guarded single-row `UPDATE` for Postgres and MySQL.
+- Guarded single-row `INSERT`, `UPDATE`, and `DELETE` for Postgres and MySQL.
+- Atomic source receipts with precreated or auto-migrated tables, or
+  zero-source-schema Runner-ledger receipts with explicit reconciliation.
 - App/API handler writeback through approved `http_handler` executors.
 - Local script writeback through approved `command_handler` executors.
 - Primary-key guard.
@@ -49,17 +53,16 @@ truth for the model-facing tools.
 - Arbitrary SQL.
 - Model-generated SQL.
 - DDL.
-- INSERT.
-- DELETE.
 - UPSERT.
 - Multi-row UPDATE.
+- Multi-row INSERT or DELETE.
 - Stored procedures.
 - Cross-database transactions.
 - Physical branching of Postgres/MySQL.
 - Full Synapsor workflow/DAG execution.
 - `CREATE AGENT WORKFLOW` or hosted Synapsor SQL generation.
 - Auto-merge or settlement policy semantics.
-- Automatic rollback of external database writes.
+- Automatic rollback or time travel for external database writes.
 - Model-callable approval or commit tools.
 - Generic MCP firewall behavior.
 - Prompt-injection prevention.
@@ -92,8 +95,9 @@ not a hosted central evidence service, organization RBAC/SSO, compliance
 retention system, or unbounded search engine. Each bridge operation serializes
 through an advisory lock and fails above configured `max_entries`.
 
-Only homogeneous 1.1 fleet operation is currently verified. Mixed 1.0/1.1
-rolling operation is not claimed. See [Running A Small Runner
+Only homogeneous 1.2 fleet operation is currently verified for the new
+operation-aware intent path. Mixed 1.1/1.2 rolling operation is not claimed.
+See [Running A Small Runner
 Fleet](running-a-runner-fleet.md).
 
 Use this wording:
@@ -108,3 +112,7 @@ Do not describe external approval as merge.
 ## Weak Conflict Guards
 
 A version/timestamp column is the preferred conflict guard. A weak row-hash guard can be acknowledged for local/dev use, but it should not be presented as equivalent to a durable version column.
+
+Runner-ledger UPDATE and DELETE require an exact guard; UPDATE must advance it
+inside the source transaction. INSERT requires a reviewed source-unique dedup
+identity. See [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).

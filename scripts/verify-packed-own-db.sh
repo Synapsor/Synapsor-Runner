@@ -71,6 +71,7 @@ npx synapsor-runner onboard db \
   --patch late_fee_cents=fixed:0,waiver_reason=arg:reason \
   --patch-bounds late_fee_cents=0:5500 \
   --write-url-env SYNAPSOR_DATABASE_WRITE_URL \
+  --receipt-mode source_precreated \
   --yes \
   --output synapsor.runner.json > init.out
 

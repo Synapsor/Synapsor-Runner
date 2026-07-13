@@ -86,6 +86,7 @@ database.
     "approval_required": true,
     "writeback": {
       "mode": "direct_update",
+      "operation": "update",
       "applied": false
     },
     "next": "A human must approve outside this model-facing tool surface; nothing is committed yet."
@@ -101,7 +102,11 @@ database.
 }
 ```
 
-For app-owned executors, `proposal.writeback.mode` is `app_handler`.
+For app-owned executors, `proposal.writeback.mode` is `app_handler`. Native
+guarded proposals use `direct_insert`, `direct_update`, or `direct_delete`, and
+`proposal.writeback.operation` is `insert`, `update`, or `delete`. Every
+proposal result still reports `source_database_changed: false` until external
+apply.
 
 ## Error Result
 

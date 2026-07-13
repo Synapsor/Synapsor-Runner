@@ -72,14 +72,15 @@ to inspect or propose bounded changes to Postgres/MySQL-backed state.
 The model sees semantic capabilities such as support.inspect_customer and
 support.propose_plan_credit. Tenant/principal scope comes from trusted runtime
 context. A proposal records the exact diff and evidence without mutating the
-source row. Approval and apply stay outside MCP; the supported direct path is a
-guarded single-row UPDATE with version, tenant, column, affected-row, and
-idempotency checks. Receipt and replay remain local.
+source row. Approval and apply stay outside MCP; the supported direct path is
+guarded single-row INSERT/UPDATE/DELETE with tenant, allowlist,
+version/deduplication, affected-row, and receipt checks. Receipt and replay
+remain local.
 
 The public contract spec and SQL-like DSL are separate packages, so capability
 definitions can be reviewed in Git and run locally. The project deliberately
 does not claim safe arbitrary SQL, prompt-injection prevention, or direct
-INSERT/DELETE/multi-row writes.
+UPSERT/DDL/multi-row writes.
 
 Quick demo and source:
 https://github.com/Synapsor/Synapsor-Runner

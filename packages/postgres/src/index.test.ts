@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPostgresJobWithClient,
+  buildPostgresDelete,
+  buildPostgresInsert,
+  buildPostgresReconciliationRead,
   buildPostgresUpdate,
   normalizeVersionValue,
   postgresPoolConfig,
   versionValuesMatch,
   type PostgresApplyClient
 } from "./index.js";
+import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -55,6 +59,32 @@ describe("postgres adapter", () => {
     expect(() => buildPostgresUpdate({ ...job, allowed_columns: ["id", "status"] })).toThrow(/primary key/i);
     expect(() => buildPostgresUpdate({ ...job, allowed_columns: ["tenant_id", "status"] })).toThrow(/tenant guard/i);
     expect(() => buildPostgresUpdate({ ...job, patch: {} })).toThrow(/must not be empty/i);
+  });
+
+  it("builds parameterized v2 INSERT and guarded DELETE statements", () => {
+    const insertion = buildPostgresInsert(v2InsertJob);
+    expect(insertion.sql).toContain('INSERT INTO "public"."credits"');
+    expect(insertion.sql).not.toContain("acme");
+    expect(insertion.sql).not.toContain("wrp_insert");
+    expect(insertion.values).toEqual([2500, "acme", "wrp_insert"]);
+
+    const deletion = buildPostgresDelete(v2DeleteJob);
+    expect(deletion.sql).toContain('DELETE FROM "public"."credits"');
+    expect(deletion.sql).toContain('"version" = $3');
+    expect(deletion.values).toEqual(["CR-1", "acme", 7]);
+  });
+
+  it("builds reconciliation reads from reviewed columns and trusted identity only", () => {
+    const update = buildPostgresReconciliationRead(v2UpdateJob);
+    expect(update.sql).toContain('SELECT "id", "tenant_id", "amount_cents", "version"');
+    expect(update.sql).not.toContain("SELECT *");
+    expect(update.sql).not.toContain("private_note");
+    expect(update.values).toEqual(["CR-1", "acme"]);
+
+    const insert = buildPostgresReconciliationRead(v2InsertJob);
+    expect(insert.sql).toContain('"tenant_id" = $1 AND "request_id" = $2');
+    expect(insert.sql).not.toContain("SELECT *");
+    expect(insert.values).toEqual(["acme", "wrp_insert"]);
   });
 
   it("compares timestamp guards at microsecond precision", () => {
@@ -168,6 +198,23 @@ describe("postgres adapter", () => {
     expect(client.sqlLog).toContain("COMMIT");
   });
 
+  it("atomically applies source-receipted single-row INSERT and DELETE", async () => {
+    const insertClient = new CrudPostgresClient("insert");
+    const inserted = await applyPostgresJobWithClient(v2InsertJob, config, insertClient);
+    expect(inserted).toMatchObject({ protocol_version: "2.0", operation: "single_row_insert", status: "applied", affected_rows: 1, receipt_authority: "source_db" });
+    expect(insertClient.sqlLog).toContain("COMMIT");
+    expect(insertClient.sqlLog.some((sql) => sql.startsWith('INSERT INTO "public"."credits"'))).toBe(true);
+    expect(insertClient.recordedReceiptStatus).toBe("applied");
+
+    const deleteClient = new CrudPostgresClient("delete");
+    const deleted = await applyPostgresJobWithClient(v2DeleteJob, config, deleteClient);
+    expect(deleted).toMatchObject({ protocol_version: "2.0", operation: "single_row_delete", status: "applied", affected_rows: 1, receipt_authority: "source_db" });
+    expect(deleteClient.sqlLog).toContain("COMMIT");
+    expect(deleteClient.sqlLog.some((sql) => sql.startsWith('DELETE FROM "public"."credits"'))).toBe(true);
+    expect(deleteClient.sqlLog.some((sql) => /SELECT\s+\*/i.test(sql))).toBe(false);
+    expect(deleteClient.recordedReceiptStatus).toBe("applied");
+  });
+
   it("treats multi-row updates as fatal and rolls back", async () => {
     const client = new FakePostgresClient({
       businessRow: { __synapsor_conflict_value: "2026-05-16 00:00:00.123456" },
@@ -197,11 +244,200 @@ describe("postgres adapter", () => {
         config,
         client
       )
-    ).rejects.toThrow(/IDEMPOTENCY_RECEIPT_UNAVAILABLE/);
+    ).rejects.toThrow(/SOURCE_RECEIPT_UNAVAILABLE/);
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(true);
     expect(client.sqlLog).toContain("ROLLBACK");
   });
+
+  it("uses the Runner ledger without source receipt DDL or DML", async () => {
+    const client = new V2PostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v2UpdateJob, {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+    }, client);
+
+    expect(result).toMatchObject({ protocol_version: "2.0", status: "applied", affected_rows: 1, result_version: "8", receipt_authority: "runner_ledger" });
+    expect(intents.calls).toEqual(["claim", "applying", "complete"]);
+    expect(client.sqlLog.some((sql) => sql.includes("synapsor_writeback_receipts"))).toBe(false);
+    expect(client.sqlLog.some((sql) => /SELECT\s+\*/i.test(sql))).toBe(false);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("requires reconciliation when execution stops after source COMMIT", async () => {
+    const client = new V2PostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v2UpdateJob, {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "after_source_commit") throw new Error("simulated process death");
+      },
+    }, client);
+
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "RECONCILIATION_REQUIRED", intent_id: "wbi:test" });
+    expect(intents.calls).toEqual(["claim", "applying", "reconciliation"]);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("rolls back a known pre-COMMIT failure and terminally records it", async () => {
+    const client = new V2PostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v2UpdateJob, {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "before_source_commit") throw new Error("simulated pre-commit stop");
+      },
+    }, client);
+
+    expect(result).toMatchObject({ status: "failed", error_code: "TRANSACTION_FAILED" });
+    expect(intents.calls).toEqual(["claim", "applying", "complete"]);
+    expect(client.sqlLog).toContain("ROLLBACK");
+    expect(client.sqlLog).not.toContain("COMMIT");
+  });
+
+  it("requires reconciliation when rollback acknowledgement is lost", async () => {
+    const client = new RollbackUnknownPostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v2UpdateJob, {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "after_source_mutation") throw new Error("simulated connection loss");
+      },
+    }, client);
+
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "RECONCILIATION_REQUIRED" });
+    expect(intents.calls).toEqual(["claim", "applying", "reconciliation"]);
+  });
 });
+
+const v2UpdateJob = {
+  protocol_version: "2.0" as const,
+  job_id: "wbj_v2_update",
+  proposal_id: "wrp_update",
+  approval_id: "sha256:approval",
+  source_id: "src_1",
+  engine: "postgres" as const,
+  operation: "single_row_update" as const,
+  target: {
+    schema: "public",
+    table: "credits",
+    primary_key: { column: "id", value: "CR-1" },
+    tenant_guard: { column: "tenant_id", value: "acme" },
+  },
+  allowed_columns: ["amount_cents"],
+  patch: { amount_cents: 2500 },
+  conflict_guard: { kind: "version_column" as const, column: "version", expected_value: 7 },
+  version_advance: { column: "version", strategy: "integer_increment" as const },
+  idempotency_key: "wrp_update:CR-1",
+  lease_expires_at: "2026-07-13T12:00:00Z",
+  attempt_count: 1,
+};
+
+const v2InsertJob = {
+  protocol_version: "2.0" as const,
+  job_id: "wbj_v2_insert",
+  proposal_id: "wrp_insert",
+  approval_id: "sha256:approval",
+  source_id: "src_1",
+  engine: "postgres" as const,
+  operation: "single_row_insert" as const,
+  target: {
+    schema: "public",
+    table: "credits",
+    primary_key: { column: "id" },
+    tenant_guard: { column: "tenant_id", value: "acme" },
+  },
+  allowed_columns: ["amount_cents"],
+  patch: { amount_cents: 2500 },
+  conflict_guard: { kind: "none" as const },
+  deduplication: { components: [
+    { column: "tenant_id", value: "acme", source: "trusted_tenant" as const },
+    { column: "request_id", value: "wrp_insert", source: "proposal_id" as const },
+  ] },
+  idempotency_key: "wrp_insert:credits",
+  lease_expires_at: "2026-07-13T12:00:00Z",
+  attempt_count: 1,
+};
+
+const v2DeleteJob = {
+  protocol_version: "2.0" as const,
+  job_id: "wbj_v2_delete",
+  proposal_id: "wrp_delete",
+  approval_id: "sha256:approval",
+  source_id: "src_1",
+  engine: "postgres" as const,
+  operation: "single_row_delete" as const,
+  target: {
+    schema: "public",
+    table: "credits",
+    primary_key: { column: "id", value: "CR-1" },
+    tenant_guard: { column: "tenant_id", value: "acme" },
+  },
+  allowed_columns: [],
+  patch: {},
+  conflict_guard: { kind: "version_column" as const, column: "version", expected_value: 7 },
+  idempotency_key: "wrp_delete:CR-1",
+  lease_expires_at: "2026-07-13T12:00:00Z",
+  attempt_count: 1,
+};
+
+class V2PostgresClient implements PostgresApplyClient {
+  readonly sqlLog: string[] = [];
+  async query(sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    this.sqlLog.push(sql);
+    if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: null };
+    if (sql.startsWith('SELECT "id"::text AS "__synapsor_primary_key"')) return { rows: [{ __synapsor_primary_key: "CR-1", __synapsor_conflict_value: "7" }], rowCount: 1 };
+    if (sql.startsWith('UPDATE "public"."credits"')) return { rows: [{ __synapsor_result_version: "8" }], rowCount: 1 };
+    throw new Error(`unexpected v2 query: ${sql}`);
+  }
+}
+
+class RollbackUnknownPostgresClient extends V2PostgresClient {
+  override async query(sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    if (sql === "ROLLBACK") throw new Error("connection lost during rollback");
+    return super.query(sql);
+  }
+}
+
+class CrudPostgresClient implements PostgresApplyClient {
+  readonly sqlLog: string[] = [];
+  recordedReceiptStatus?: string;
+
+  constructor(private readonly operation: "insert" | "delete") {}
+
+  async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    this.sqlLog.push(sql);
+    if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: null };
+    if (sql.startsWith("INSERT INTO synapsor_writeback_receipts")) return { rows: [{ status: "in_progress" }], rowCount: 1 };
+    if (sql.startsWith("UPDATE synapsor_writeback_receipts")) {
+      this.recordedReceiptStatus = String(values?.[1]);
+      return { rows: [], rowCount: 1 };
+    }
+    if (this.operation === "insert" && sql.startsWith('SELECT "id"::text AS "__synapsor_primary_key" FROM')) return { rows: [], rowCount: 0 };
+    if (this.operation === "insert" && sql.startsWith('INSERT INTO "public"."credits"')) return { rows: [{ __synapsor_primary_key: "CR-NEW" }], rowCount: 1 };
+    if (this.operation === "delete" && sql.startsWith('SELECT "id"::text AS "__synapsor_primary_key"')) {
+      return { rows: [{ __synapsor_primary_key: "CR-1", __synapsor_conflict_value: "7" }], rowCount: 1 };
+    }
+    if (this.operation === "delete" && sql.startsWith("SELECT EXISTS")) return { rows: [{ has_user_trigger: false, has_widening_fk: false }], rowCount: 1 };
+    if (this.operation === "delete" && sql.startsWith('DELETE FROM "public"."credits"')) return { rows: [], rowCount: 1 };
+    throw new Error(`unexpected CRUD query: ${sql}`);
+  }
+}
+
+class FakeIntentStore implements WritebackIntentStore {
+  readonly calls: string[] = [];
+  claimWritebackIntent() { this.calls.push("claim"); return { decision: "proceed" as const, intent_id: "wbi:test" }; }
+  markWritebackIntentApplying() { this.calls.push("applying"); }
+  completeWritebackIntent() { this.calls.push("complete"); }
+  requireWritebackReconciliation() { this.calls.push("reconciliation"); }
+}
 
 const config = {
   controlPlaneUrl: "http://127.0.0.1",
@@ -239,7 +475,7 @@ class FakePostgresClient implements PostgresApplyClient {
     if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
       return { rows: this.options.receiptRow ? [this.options.receiptRow] : [], rowCount: this.options.receiptRow ? 1 : 0 };
     }
-    if (sql.startsWith("SELECT *")) {
+    if (sql.startsWith("SELECT") && sql.includes('FROM "public"."tickets"') && sql.includes("FOR UPDATE")) {
       return { rows: this.options.businessRow ? [this.options.businessRow] : [], rowCount: this.options.businessRow ? 1 : 0 };
     }
     if (sql.startsWith('UPDATE "public"."tickets"')) {
@@ -294,7 +530,7 @@ class ConcurrentPostgresClient implements PostgresApplyClient {
         rowCount: 1
       };
     }
-    if (sql.startsWith("SELECT *")) {
+    if (sql.startsWith("SELECT") && sql.includes('FROM "public"."tickets"') && sql.includes("FOR UPDATE")) {
       return { rows: [{ __synapsor_conflict_value: "2026-05-16 00:00:00.123456" }], rowCount: 1 };
     }
     if (sql.startsWith('UPDATE "public"."tickets"')) {

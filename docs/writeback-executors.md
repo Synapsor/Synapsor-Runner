@@ -42,19 +42,19 @@ For `synapsor-runner apply --job ... --config ...`, set the env var named by
 `write_url_env`. `SYNAPSOR_DATABASE_URL` is only a legacy fallback for direct
 worker flows that do not pass a local config.
 
-Direct SQL writeback also stores idempotency receipts in the source database.
-By default it runs:
+Direct SQL writeback uses the receipt authority selected under the source
+config. `source_db` can use an administrator-precreated table or explicitly run
+an idempotent migration:
 
 ```sql
 CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (...);
 ```
 
-That means the writer needs permission to create and write that receipt table in
-the target schema/database, or the table must be pre-created by an administrator
-and granted to the writer. If you do not want Runner to create a table in the
-application schema, create a dedicated schema/database for receipts where your
-database policy allows it, or use `http_handler`/`command_handler` so your
-application owns receipt storage and business writes.
+`precreated` needs only receipt-table DML; `auto_migrate` also needs bounded
+`CREATE`. `runner_ledger` creates no source receipt table and uses a durable
+Runner intent plus operator reconciliation for ambiguous post-commit crashes.
+It does not claim distributed exactly-once. See
+[Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
 
 Use the helper commands before enabling direct SQL writeback:
 
@@ -65,9 +65,10 @@ npx -y -p @synapsor/runner synapsor-runner writeback grants --engine postgres --
 ```
 
 `writeback doctor --check-db` connects with the configured writer credential and
-checks the pre-created receipt table path in a rolled-back transaction. Apply
-the printed migration as an administrator first; the steady-state writer needs
-table `SELECT`/`INSERT`/`UPDATE`, not schema `CREATE`.
+checks the selected receipt authority plus operation-specific target guards in
+a rolled-back transaction. In `precreated` mode, apply the printed migration as
+an administrator first; the steady-state writer needs table
+`SELECT`/`INSERT`/`UPDATE`, not schema `CREATE`.
 
 ## `http_handler`
 

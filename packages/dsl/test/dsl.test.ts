@@ -190,6 +190,73 @@ END
 `))).toThrow(/AUTO_APPROVAL_LIMIT_UNSUPPORTED/);
   });
 
+  it("compiles explicit UPDATE version advancement", () => {
+    const contract = compileAgentDsl(planCreditSource(`
+  PROPOSE ACTION grant_plan_credit UPDATE
+  ALLOW WRITE plan_credit_cents, credit_reason
+  PATCH plan_credit_cents = ARG credit_cents
+  PATCH credit_reason = ARG reason
+  BOUND plan_credit_cents 1..50000
+  ADVANCE VERSION updated_at USING DATABASE GENERATED
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`, true));
+
+    expect(contract.capabilities[0]?.proposal?.operation).toEqual({
+      kind: "update",
+      version_advance: { column: "updated_at", strategy: "database_generated" },
+    });
+  });
+
+  it("compiles guarded INSERT deduplication and guarded DELETE", () => {
+    const insert = compileAgentDsl(crudSource(`
+  PROPOSE ACTION create_credit INSERT
+  DEDUP KEY tenant_id = TRUSTED TENANT, request_id = PROPOSAL ID
+  ALLOW WRITE amount_cents, reason
+  PATCH amount_cents = ARG amount_cents
+  PATCH reason = ARG reason
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`));
+    expect(insert.capabilities[0]?.proposal?.operation).toEqual({
+      kind: "insert",
+      deduplication: {
+        components: [
+          { column: "tenant_id", source: "trusted_tenant" },
+          { column: "request_id", source: "proposal_id" },
+        ],
+      },
+    });
+
+    const deletion = compileAgentDsl(crudSource(`
+  PROPOSE ACTION delete_credit DELETE
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`));
+    expect(deletion.capabilities[0]?.proposal).toMatchObject({
+      operation: { kind: "delete" },
+      allowed_fields: [],
+      patch: {},
+    });
+  });
+
+  it("rejects unsafe INSERT and DELETE operation syntax", () => {
+    expect(() => compileAgentDsl(crudSource(`
+  PROPOSE ACTION create_credit INSERT
+  ALLOW WRITE amount_cents
+  PATCH amount_cents = ARG amount_cents
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`))).toThrow(/INSERT_DEDUP_KEY_REQUIRED/);
+    expect(() => compileAgentDsl(crudSource(`
+  PROPOSE ACTION delete_credit DELETE
+  ALLOW WRITE reason
+  PATCH reason = ARG reason
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`))).toThrow(/DELETE_PATCH_FORBIDDEN/);
+  });
+
   it("rejects AUTO APPROVE WHEN before APPROVAL ROLE", () => {
     expect(() => compileAgentDsl(planCreditSource(`
   AUTO APPROVE WHEN plan_credit_cents <= 2500
@@ -319,7 +386,7 @@ END
   });
 });
 
-function planCreditSource(proposalTail: string): string {
+function planCreditSource(proposalTail: string, replaceProposal = false): string {
   return `
 CREATE AGENT CONTEXT support_agent_context
   BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
@@ -344,12 +411,40 @@ CREATE CAPABILITY support.propose_plan_credit
   ALLOW READ id, tenant_id, plan_credit_cents, credit_reason, updated_at
   REQUIRE EVIDENCE
   MAX ROWS 1
-  PROPOSE ACTION grant_plan_credit
+${replaceProposal ? "" : `  PROPOSE ACTION grant_plan_credit
   ALLOW WRITE plan_credit_cents, credit_reason
   PATCH plan_credit_cents = ARG credit_cents
   PATCH credit_reason = ARG reason
-  BOUND plan_credit_cents 1..50000
+  BOUND plan_credit_cents 1..50000`}
 ${proposalTail.trimEnd()}
+END
+`;
+}
+
+function crudSource(proposalBody: string): string {
+  return `
+CREATE AGENT CONTEXT support_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY support.mutate_credit
+  USING CONTEXT support_operator
+  SOURCE local_postgres
+  ON public.credits
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
+  LOOKUP credit_id BY id
+  ARG credit_id STRING REQUIRED MAX LENGTH 128
+  ARG amount_cents NUMBER REQUIRED MIN 1 MAX 50000
+  ARG reason TEXT REQUIRED MAX LENGTH 500
+  ALLOW READ id, tenant_id, amount_cents, reason, updated_at
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+${proposalBody.trimEnd()}
 END
 `;
 }

@@ -10,6 +10,7 @@ export type ColumnInfo = {
   nullable: boolean;
   default?: string;
   generated: boolean;
+  identity?: boolean;
   ordinal_position: number;
   suggestions: {
     tenant: boolean;
@@ -31,6 +32,23 @@ export type ForeignKeyInfo = {
   referenced_schema: string;
   referenced_table: string;
   referenced_columns: string[];
+  delete_rule: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT" | string;
+};
+
+export type ReferencingForeignKeyInfo = {
+  name: string;
+  schema: string;
+  table: string;
+  columns: string[];
+  referenced_columns: string[];
+  delete_rule: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT" | string;
+};
+
+export type TriggerInfo = {
+  name: string;
+  timing: string;
+  orientation: string;
+  events: string[];
 };
 
 export type IndexInfo = {
@@ -49,6 +67,9 @@ export type TableInfo = {
   primary_key: string[];
   unique_constraints: UniqueConstraintInfo[];
   foreign_keys: ForeignKeyInfo[];
+  referenced_by?: ReferencingForeignKeyInfo[];
+  write_triggers?: TriggerInfo[];
+  row_level_security?: boolean | "unknown";
   indexes: IndexInfo[];
   suggestions: {
     tenant_columns: string[];
@@ -57,6 +78,97 @@ export type TableInfo = {
     default_visible_columns: string[];
   };
 };
+
+export type DirectWriteAssessmentInput = {
+  operation: "update" | "insert" | "delete";
+  primary_key: string;
+  tenant_key?: string;
+  allowed_columns: string[];
+  patch_columns: string[];
+  conflict_column?: string;
+  version_advance?: { column: string; strategy: "integer_increment" | "database_generated" };
+  dedup_columns?: string[];
+};
+
+export type DirectWritePrerequisite = {
+  code: string;
+  level: "pass" | "warn" | "fail";
+  message: string;
+};
+
+/** Assess only source-enforced facts visible in inspected metadata. */
+export function assessDirectWritePrerequisites(table: TableInfo, input: DirectWriteAssessmentInput): DirectWritePrerequisite[] {
+  const checks: DirectWritePrerequisite[] = [];
+  const columns = new Map(table.columns.map((column) => [column.name, column]));
+  const fail = (code: string, message: string) => checks.push({ code, level: "fail", message } as const);
+  const pass = (code: string, message: string) => checks.push({ code, level: "pass", message } as const);
+  const warn = (code: string, message: string) => checks.push({ code, level: "warn", message } as const);
+
+  if (!table.writable || table.type !== "table") fail("TARGET_NOT_WRITABLE_TABLE", "Direct writeback requires an inspected writable base table.");
+  if (table.primary_key.length !== 1 || table.primary_key[0] !== input.primary_key) {
+    fail("PRIMARY_KEY_NOT_EXACT", `Configured primary key ${input.primary_key} must match the table's single-column primary key.`);
+  } else pass("PRIMARY_KEY_EXACT", `Primary key ${input.primary_key} is source-enforced.`);
+  if (!input.tenant_key || !columns.has(input.tenant_key)) fail("TENANT_COLUMN_MISSING", "Direct writeback requires a reviewed tenant column present in the target table.");
+  else pass("TENANT_COLUMN_PRESENT", `Trusted tenant is forced through ${input.tenant_key}.`);
+
+  for (const columnName of new Set([...input.allowed_columns, ...input.patch_columns])) {
+    const column = columns.get(columnName);
+    if (!column) {
+      fail("WRITE_COLUMN_MISSING", `Reviewed write column ${columnName} does not exist in the target table.`);
+      continue;
+    }
+    if (column.generated || column.identity) fail("GENERATED_COLUMN_WRITE_BLOCKED", `Reviewed write column ${columnName} is generated or identity-managed by the database.`);
+  }
+
+  if (input.operation === "update" || input.operation === "delete") {
+    const conflict = input.conflict_column ? columns.get(input.conflict_column) : undefined;
+    if (!conflict) fail("CONFLICT_COLUMN_MISSING", "UPDATE and DELETE require an inspected exact conflict/version column.");
+    else pass("CONFLICT_COLUMN_PRESENT", `Conflict guard ${input.conflict_column} exists in the target table.`);
+  }
+
+  if (input.operation === "update" && input.version_advance) {
+    const versionColumn = columns.get(input.version_advance.column);
+    if (!versionColumn) fail("VERSION_ADVANCE_COLUMN_MISSING", `Version advancement column ${input.version_advance.column} does not exist.`);
+    else if (input.version_advance.strategy === "integer_increment" && !/int|numeric|decimal|number/i.test(versionColumn.data_type)) {
+      fail("VERSION_INCREMENT_NOT_NUMERIC", `Version column ${input.version_advance.column} is not an inspected numeric type.`);
+    } else if (input.version_advance.strategy === "database_generated") {
+      const updateTriggers = (table.write_triggers ?? []).filter((trigger) => trigger.events.includes("UPDATE"));
+      if (!versionColumn.generated && updateTriggers.length === 0) {
+        fail("DATABASE_VERSION_ADVANCE_UNPROVEN", `Database-generated advancement for ${input.version_advance.column} requires an inspected generated column or UPDATE trigger.`);
+      } else pass("DATABASE_VERSION_ADVANCE_PRESENT", `Database metadata can produce a new value for ${input.version_advance.column}; apply still verifies it changed before commit.`);
+    } else pass("INTEGER_VERSION_ADVANCE_PRESENT", `Runner will increment ${input.version_advance.column} in the guarded transaction.`);
+  }
+
+  if (input.operation === "insert") {
+    const dedupColumns = input.dedup_columns ?? [];
+    const sourceUniqueSets = [
+      ...(table.primary_key.length ? [{ name: "PRIMARY", columns: table.primary_key }] : []),
+      ...table.unique_constraints,
+      ...table.indexes.filter((index) => index.unique && index.columns?.length).map((index) => ({ name: index.name, columns: index.columns ?? [] })),
+    ];
+    const dedupSet = new Set(dedupColumns);
+    const matchingUnique = sourceUniqueSets.find((constraint) => constraint.columns.length > 0 && constraint.columns.every((column) => dedupSet.has(column)));
+    if (!matchingUnique) fail("INSERT_DEDUP_NOT_SOURCE_UNIQUE", `INSERT dedup columns ${dedupColumns.join(", ") || "(none)"} must fully supply an inspected PRIMARY KEY or UNIQUE constraint.`);
+    else pass("INSERT_DEDUP_SOURCE_UNIQUE", `INSERT dedup identity is source-enforced by ${matchingUnique.name}.`);
+
+    const supplied = new Set([...input.patch_columns, ...dedupColumns]);
+    const missingRequired = table.columns.filter((column) => !column.nullable && column.default === undefined && !column.generated && !column.identity && !supplied.has(column.name));
+    if (missingRequired.length > 0) fail("INSERT_REQUIRED_COLUMNS_MISSING", `INSERT does not supply required columns: ${missingRequired.map((column) => column.name).join(", ")}.`);
+    else pass("INSERT_REQUIRED_COLUMNS_SATISFIED", "All inspected required columns are supplied or database-generated/defaulted.");
+  }
+
+  if (input.operation === "delete") {
+    const hiddenEffects = (table.referenced_by ?? []).filter((foreignKey) => !["NO ACTION", "RESTRICT"].includes(foreignKey.delete_rule.toUpperCase()));
+    if (hiddenEffects.length > 0) fail("DELETE_REFERENTIAL_EFFECT_BLOCKED", `Hard DELETE has hidden referential effects through: ${hiddenEffects.map((item) => `${item.schema}.${item.table}:${item.delete_rule}`).join(", ")}.`);
+    else pass("DELETE_NO_CASCADE", "No inspected incoming cascade/set-null/set-default delete effects were found.");
+    const deleteTriggers = (table.write_triggers ?? []).filter((trigger) => trigger.events.includes("DELETE"));
+    if (deleteTriggers.length > 0) fail("DELETE_TRIGGER_BLOCKED", `Hard DELETE has write triggers: ${deleteTriggers.map((trigger) => trigger.name).join(", ")}.`);
+    else pass("DELETE_NO_WRITE_TRIGGER", "No inspected DELETE trigger can expand the reviewed effect.");
+  }
+
+  if (table.row_level_security === true) warn("ROW_LEVEL_SECURITY_ENABLED", "Row-level security is enabled; writer policy behavior must be verified with the exact production role.");
+  return checks;
+}
 
 export type SchemaInspection = {
   engine: SourceEngine;
@@ -102,6 +214,20 @@ export type OnboardingSelectionSpec = {
   lookup_arg?: string;
   result_format?: 1 | 2;
   visible_columns: string[];
+  operation?: "update" | "insert" | "delete";
+  deduplication?: {
+    components: Array<{ column: string; source: "proposal_id" | "trusted_tenant" | "fixed"; fixed?: string | number | boolean | null }>;
+  };
+  version_advance?: {
+    column: string;
+    strategy: "integer_increment" | "database_generated";
+  };
+  receipts?: {
+    authority: "source_db" | "runner_ledger";
+    provisioning?: "precreated" | "auto_migrate";
+    schema?: string;
+    table?: string;
+  };
   allowed_columns?: string[];
   patch?: Record<string, { fixed?: string | number | boolean | null; from_arg?: string }>;
   patch_args?: Record<string, { type?: "string" | "number" | "boolean"; required?: boolean; max_length?: number; minimum?: number; maximum?: number; enum?: Array<string | number | boolean | null> }>;
@@ -193,9 +319,10 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
   const tenantEnv = spec.trusted_context?.tenant_id_env ?? "SYNAPSOR_TENANT_ID";
   const principalEnv = spec.trusted_context?.principal_env ?? "SYNAPSOR_PRINCIPAL";
   const objectName = spec.object_name ?? singularize(safeName(spec.table));
+  const operation = spec.operation ?? "update";
   const lookupArg = spec.lookup_arg ?? `${objectName}_id`;
   const inspectToolName = spec.inspect_tool_name ?? `${spec.namespace}.inspect_${objectName}`;
-  const proposalToolName = spec.proposal_tool_name ?? `${spec.namespace}.propose_${objectName}_update`;
+  const proposalToolName = spec.proposal_tool_name ?? `${spec.namespace}.propose_${objectName}_${operation}`;
   const objectLabel = objectName.replace(/_/g, " ");
   const visibleColumns = unique([spec.primary_key, spec.tenant_key, spec.conflict_column, ...spec.visible_columns].filter((value): value is string => Boolean(value)));
   const readCapability = {
@@ -215,12 +342,13 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
     max_rows: 1,
   };
   const capabilities: Array<Record<string, unknown>> = [readCapability];
-  if (mode !== "read_only" && spec.patch && Object.keys(spec.patch).length > 0) {
-    const patchArgs = inferPatchArgs(spec.patch, spec.patch_args, spec.numeric_bounds, spec.transition_guards);
+  if (mode !== "read_only" && (operation === "delete" || (spec.patch && Object.keys(spec.patch).length > 0))) {
+    const proposalPatch = operation === "delete" ? {} : (spec.patch ?? {});
+    const patchArgs = inferPatchArgs(proposalPatch, spec.patch_args, spec.numeric_bounds, spec.transition_guards);
     capabilities.push({
       name: proposalToolName,
       kind: "proposal",
-      description: spec.proposal_description ?? `Create a review-required proposal to update one ${objectLabel}. The source database remains unchanged until approval and writeback.`,
+      description: spec.proposal_description ?? `Create a review-required proposal to ${operation} one ${objectLabel}. The source database remains unchanged until approval and writeback.`,
       returns_hint: spec.proposal_returns_hint ?? "Returns a proposal id, exact before/after diff, evidence handle, approval status, and source_database_changed:false.",
       source: sourceName,
       context: "local_operator",
@@ -234,8 +362,15 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
       visible_columns: visibleColumns,
       evidence: "required",
       max_rows: 1,
-      patch: spec.patch,
-      allowed_columns: spec.allowed_columns ?? Object.keys(spec.patch),
+      patch: proposalPatch,
+      allowed_columns: operation === "delete" ? [] : (spec.allowed_columns ?? Object.keys(proposalPatch)),
+      ...(operation !== "update" || spec.deduplication || spec.version_advance ? {
+        operation: {
+          kind: operation,
+          ...(spec.deduplication ? { deduplication: spec.deduplication } : {}),
+          ...(spec.version_advance ? { version_advance: spec.version_advance } : {}),
+        },
+      } : {}),
       ...(spec.numeric_bounds ? { numeric_bounds: spec.numeric_bounds } : {}),
       ...(spec.transition_guards ? { transition_guards: spec.transition_guards } : {}),
       conflict_guard: spec.conflict_column ? { column: spec.conflict_column } : { weak_guard_ack: true },
@@ -255,6 +390,7 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
         ...(mode === "review" && writeUrlEnv ? { write_url_env: writeUrlEnv } : {}),
         ...(mode === "review" && writeback.executor !== "sql_update" && !writeUrlEnv ? { read_only: true } : {}),
         statement_timeout_ms: spec.statement_timeout_ms ?? 3000,
+        ...(mode === "review" && writeback.executor === "sql_update" && spec.receipts ? { receipts: spec.receipts } : {}),
       },
     },
     trusted_context: {
@@ -341,7 +477,7 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
     const columns = await client.query<RawColumn>(
       `SELECT table_schema AS schema, table_name AS table_name, column_name AS name,
               data_type, udt_name, is_nullable, column_default AS column_default,
-              is_generated, ordinal_position
+              is_generated, is_identity, ordinal_position
        FROM information_schema.columns
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
@@ -349,36 +485,70 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       [options.schema ?? null],
     );
     const keyColumns = await client.query<RawKeyColumn>(
-      `SELECT tc.table_schema AS schema, tc.table_name, tc.constraint_name, tc.constraint_type,
-              kcu.column_name, kcu.ordinal_position
-       FROM information_schema.table_constraints tc
-       JOIN information_schema.key_column_usage kcu
-         ON tc.constraint_schema = kcu.constraint_schema
-        AND tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-        AND tc.table_name = kcu.table_name
-       WHERE tc.table_schema NOT IN ('pg_catalog', 'information_schema')
-         AND ($1::text IS NULL OR tc.table_schema = $1)
-         AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
-       ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
+      `SELECT n.nspname AS schema, c.relname AS table_name, con.conname AS constraint_name,
+              CASE con.contype WHEN 'p' THEN 'PRIMARY KEY' ELSE 'UNIQUE' END AS constraint_type,
+              a.attname AS column_name, key_column.ordinal_position
+       FROM pg_catalog.pg_constraint con
+       JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS key_column(attnum, ordinal_position) ON TRUE
+       JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = key_column.attnum
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR n.nspname = $1)
+         AND con.contype IN ('p', 'u')
+       ORDER BY n.nspname, c.relname, con.conname, key_column.ordinal_position`,
       [options.schema ?? null],
     );
     const foreignKeys = await client.query<RawForeignKey>(
-      `SELECT tc.table_schema AS schema, tc.table_name, tc.constraint_name,
-              kcu.column_name, ccu.table_schema AS referenced_schema,
-              ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
-              kcu.ordinal_position
-       FROM information_schema.table_constraints tc
-       JOIN information_schema.key_column_usage kcu
-         ON tc.constraint_schema = kcu.constraint_schema
-        AND tc.constraint_name = kcu.constraint_name
-       JOIN information_schema.constraint_column_usage ccu
-         ON ccu.constraint_schema = tc.constraint_schema
-        AND ccu.constraint_name = tc.constraint_name
-       WHERE tc.constraint_type = 'FOREIGN KEY'
-         AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
-         AND ($1::text IS NULL OR tc.table_schema = $1)
-       ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
+      `SELECT source_ns.nspname AS schema, source.relname AS table_name,
+              con.conname AS constraint_name, source_attr.attname AS column_name,
+              target_ns.nspname AS referenced_schema, target.relname AS referenced_table,
+              target_attr.attname AS referenced_column, key_column.ordinal_position,
+              CASE con.confdeltype
+                WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+                WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL'
+                WHEN 'd' THEN 'SET DEFAULT'
+              END AS delete_rule
+       FROM pg_catalog.pg_constraint con
+       JOIN pg_catalog.pg_class source ON source.oid = con.conrelid
+       JOIN pg_catalog.pg_namespace source_ns ON source_ns.oid = source.relnamespace
+       JOIN pg_catalog.pg_class target ON target.oid = con.confrelid
+       JOIN pg_catalog.pg_namespace target_ns ON target_ns.oid = target.relnamespace
+       JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS key_column(source_attnum, target_attnum, ordinal_position) ON TRUE
+       JOIN pg_catalog.pg_attribute source_attr ON source_attr.attrelid = source.oid AND source_attr.attnum = key_column.source_attnum
+       JOIN pg_catalog.pg_attribute target_attr ON target_attr.attrelid = target.oid AND target_attr.attnum = key_column.target_attnum
+       WHERE con.contype = 'f'
+         AND source_ns.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR source_ns.nspname = $1 OR target_ns.nspname = $1)
+       ORDER BY source_ns.nspname, source.relname, con.conname, key_column.ordinal_position`,
+      [options.schema ?? null],
+    );
+    const triggers = await client.query<RawTrigger>(
+      `SELECT n.nspname AS schema, c.relname AS table_name, t.tgname AS name,
+              CASE WHEN (t.tgtype & 64) <> 0 THEN 'INSTEAD OF'
+                   WHEN (t.tgtype & 2) <> 0 THEN 'BEFORE' ELSE 'AFTER' END AS timing,
+              CASE WHEN (t.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END AS orientation,
+              event.event
+       FROM pg_catalog.pg_trigger t
+       JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       JOIN LATERAL (VALUES
+         ('INSERT', 4), ('DELETE', 8), ('UPDATE', 16), ('TRUNCATE', 32)
+       ) AS event(event, mask) ON (t.tgtype & event.mask) <> 0
+       WHERE NOT t.tgisinternal
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR n.nspname = $1)
+       ORDER BY n.nspname, c.relname, t.tgname, event.event`,
+      [options.schema ?? null],
+    );
+    const rowSecurity = await client.query<RawRowSecurity>(
+      `SELECT n.nspname AS schema, c.relname AS table_name, c.relrowsecurity AS enabled
+       FROM pg_catalog.pg_class c
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relkind IN ('r', 'p')
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR n.nspname = $1)
+       ORDER BY n.nspname, c.relname`,
       [options.schema ?? null],
     );
     const indexes = await client.query<RawIndex>(
@@ -400,6 +570,8 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       keyColumns: keyColumns.rows,
       foreignKeys: foreignKeys.rows,
       indexes: indexes.rows,
+      triggers: triggers.rows,
+      rowSecurity: rowSecurity.rows,
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -434,7 +606,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     const [columnRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, column_name AS name,
               data_type, column_type AS udt_name, is_nullable,
-              column_default, extra AS is_generated, ordinal_position AS ordinal_position
+              column_default, extra AS is_generated, extra AS is_identity, ordinal_position AS ordinal_position
        FROM information_schema.columns
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
@@ -461,17 +633,30 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
               kcu.column_name AS column_name, kcu.referenced_table_schema AS referenced_schema,
               kcu.referenced_table_name AS referenced_table,
               kcu.referenced_column_name AS referenced_column,
-              kcu.ordinal_position AS ordinal_position
+              kcu.ordinal_position AS ordinal_position, rc.delete_rule AS delete_rule
        FROM information_schema.table_constraints tc
        JOIN information_schema.key_column_usage kcu
          ON tc.constraint_schema = kcu.constraint_schema
         AND tc.constraint_name = kcu.constraint_name
         AND tc.table_schema = kcu.table_schema
         AND tc.table_name = kcu.table_name
+       JOIN information_schema.referential_constraints rc
+         ON rc.constraint_schema = tc.constraint_schema
+        AND rc.constraint_name = tc.constraint_name
        WHERE tc.constraint_type = 'FOREIGN KEY'
          AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-         AND (? IS NULL OR tc.table_schema = ?)
+         AND (? IS NULL OR tc.table_schema = ? OR kcu.referenced_table_schema = ?)
        ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
+      [schemaParam, schemaParam, schemaParam],
+    );
+    const [triggerRows] = await connection.query<mysql.RowDataPacket[]>(
+      `SELECT trigger_schema AS \`schema\`, event_object_table AS table_name,
+              trigger_name AS name, action_timing AS timing,
+              action_orientation AS orientation, event_manipulation AS event
+       FROM information_schema.triggers
+       WHERE trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+         AND (? IS NULL OR trigger_schema = ?)
+       ORDER BY trigger_schema, event_object_table, trigger_name, event_manipulation`,
       [schemaParam, schemaParam],
     );
     const [indexRows] = await connection.query<mysql.RowDataPacket[]>(
@@ -502,6 +687,8 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
         columns: typeof row.columns === "string" ? row.columns.split(",") : undefined,
         unique: Number(row.non_unique) === 0,
       })),
+      triggers: triggerRows as RawTrigger[],
+      rowSecurity: [],
     });
   } catch (error) {
     await connection.query("ROLLBACK").catch(() => undefined);
@@ -521,6 +708,7 @@ type RawColumn = {
   is_nullable: string;
   column_default?: string | null;
   is_generated?: string | null;
+  is_identity?: string | null;
   ordinal_position: number;
 };
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
@@ -533,8 +721,11 @@ type RawForeignKey = {
   referenced_table: string;
   referenced_column: string;
   ordinal_position: number;
+  delete_rule?: string;
 };
 type RawIndex = { schema: string; table_name: string; name: string; definition?: string; columns?: string[]; unique?: boolean };
+type RawTrigger = { schema: string; table_name: string; name: string; timing: string; orientation: string; event: string };
+type RawRowSecurity = { schema: string; table_name: string; enabled: boolean };
 
 function normalizeInspection(input: {
   engine: SourceEngine;
@@ -546,11 +737,16 @@ function normalizeInspection(input: {
   keyColumns: RawKeyColumn[];
   foreignKeys: RawForeignKey[];
   indexes: RawIndex[];
+  triggers: RawTrigger[];
+  rowSecurity: RawRowSecurity[];
 }): SchemaInspection {
   const columnsByTable = groupBy(input.columns, (row) => tableKey(row.schema, row.table_name));
   const keysByTable = groupBy(input.keyColumns, (row) => tableKey(row.schema, row.table_name));
   const fksByTable = groupBy(input.foreignKeys, (row) => tableKey(row.schema, row.table_name));
+  const incomingFksByTable = groupBy(input.foreignKeys, (row) => tableKey(row.referenced_schema, row.referenced_table));
   const indexesByTable = groupBy(input.indexes, (row) => tableKey(row.schema, row.table_name));
+  const triggersByTable = groupBy(input.triggers, (row) => tableKey(row.schema, row.table_name));
+  const rowSecurityByTable = new Map(input.rowSecurity.map((row) => [tableKey(row.schema, row.table_name), Boolean(row.enabled)]));
   const tables = input.tables.map((raw): TableInfo => {
     const key = tableKey(raw.schema, raw.name);
     const rawColumns = columnsByTable.get(key) ?? [];
@@ -570,6 +766,9 @@ function normalizeInspection(input: {
       primary_key,
       unique_constraints,
       foreign_keys: normalizeForeignKeys(fksByTable.get(key) ?? []),
+      referenced_by: normalizeReferencingForeignKeys(incomingFksByTable.get(key) ?? []),
+      write_triggers: normalizeTriggers(triggersByTable.get(key) ?? []),
+      row_level_security: input.engine === "postgres" ? (rowSecurityByTable.get(key) ?? false) : false,
       indexes: (indexesByTable.get(key) ?? []).map((index) => ({
         name: index.name,
         columns: index.columns,
@@ -605,6 +804,7 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
     nullable: String(column.is_nullable).toUpperCase() === "YES",
     default: column.column_default ?? undefined,
     generated: /always|stored|virtual|generated/i.test(String(column.is_generated ?? "")),
+    identity: /yes|identity|auto_increment/i.test(String(column.is_identity ?? "")),
     ordinal_position: Number(column.ordinal_position),
     suggestions: {
       tenant: TENANT_COLUMNS.has(lower),
@@ -634,8 +834,34 @@ function normalizeForeignKeys(rows: RawForeignKey[]): ForeignKeyInfo[] {
       referenced_schema: sorted[0]?.referenced_schema ?? "",
       referenced_table: sorted[0]?.referenced_table ?? "",
       referenced_columns: sorted.map((item) => item.referenced_column),
+      delete_rule: sorted[0]?.delete_rule ?? "NO ACTION",
     };
   });
+}
+
+function normalizeReferencingForeignKeys(rows: RawForeignKey[]): ReferencingForeignKeyInfo[] {
+  const grouped = groupBy(rows, (row) => `${row.schema}.${row.table_name}.${row.constraint_name}`);
+  return Array.from(grouped.values()).map((items) => {
+    const sorted = items.sort((a, b) => Number(a.ordinal_position) - Number(b.ordinal_position));
+    return {
+      name: sorted[0]?.constraint_name ?? "",
+      schema: sorted[0]?.schema ?? "",
+      table: sorted[0]?.table_name ?? "",
+      columns: sorted.map((item) => item.column_name),
+      referenced_columns: sorted.map((item) => item.referenced_column),
+      delete_rule: sorted[0]?.delete_rule ?? "NO ACTION",
+    };
+  });
+}
+
+function normalizeTriggers(rows: RawTrigger[]): TriggerInfo[] {
+  const grouped = groupBy(rows, (row) => row.name);
+  return Array.from(grouped.entries()).map(([name, items]) => ({
+    name,
+    timing: String(items[0]?.timing ?? "unknown").toUpperCase(),
+    orientation: String(items[0]?.orientation ?? "unknown").toUpperCase(),
+    events: unique(items.map((item) => String(item.event).toUpperCase())),
+  }));
 }
 
 function target(spec: OnboardingSelectionSpec): Record<string, unknown> {
@@ -771,6 +997,8 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
   if (spec.engine !== "postgres" && spec.engine !== "mysql") throw new Error("selection engine must be postgres or mysql.");
   if (!["read_only", "shadow", "review", undefined].includes(spec.mode)) throw new Error("selection mode must be read_only, shadow, or review.");
   if (spec.result_format !== undefined && spec.result_format !== 1 && spec.result_format !== 2) throw new Error("selection result_format must be 1 or 2.");
+  const operation = spec.operation ?? "update";
+  if (!["update", "insert", "delete"].includes(operation)) throw new Error("selection operation must be update, insert, or delete.");
   if (spec.writeback?.executor && !["sql_update", "http_handler", "command_handler"].includes(spec.writeback.executor)) {
     throw new Error("selection writeback.executor must be sql_update, http_handler, or command_handler.");
   }
@@ -790,6 +1018,24 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
   }
   if (!spec.tenant_key && !spec.single_tenant_dev) throw new Error("selection requires tenant_key or explicit single_tenant_dev.");
   if (!Array.isArray(spec.visible_columns) || spec.visible_columns.length === 0) throw new Error("selection visible_columns must not be empty.");
+  if (spec.mode !== "read_only" && operation !== "delete" && (!spec.patch || Object.keys(spec.patch).length === 0)) {
+    throw new Error("selection UPDATE/INSERT proposal requires at least one reviewed patch mapping.");
+  }
+  if (operation === "delete" && spec.patch && Object.keys(spec.patch).length > 0) throw new Error("selection DELETE proposal must not define patch mappings.");
+  if (operation === "insert") {
+    if (!spec.deduplication?.components?.length) throw new Error("selection INSERT requires source-enforced deduplication components.");
+    if (!spec.deduplication.components.some((component) => component.source === "proposal_id")) throw new Error("selection INSERT deduplication requires proposal_id.");
+    if (spec.tenant_key && !spec.deduplication.components.some((component) => component.source === "trusted_tenant" && component.column === spec.tenant_key)) throw new Error("selection INSERT deduplication requires trusted_tenant on tenant_key.");
+  }
+  if (operation === "delete" && !spec.conflict_column) throw new Error("selection DELETE requires an exact conflict_column.");
+  if (spec.version_advance && operation !== "update") throw new Error("selection version_advance is valid only for UPDATE.");
+  if (spec.version_advance && spec.version_advance.column !== spec.conflict_column) throw new Error("selection version_advance column must match conflict_column.");
+  if (spec.receipts) {
+    if (spec.receipts.authority !== "source_db" && spec.receipts.authority !== "runner_ledger") throw new Error("selection receipts.authority must be source_db or runner_ledger.");
+    if (spec.receipts.authority === "source_db" && spec.receipts.provisioning !== "precreated" && spec.receipts.provisioning !== "auto_migrate") throw new Error("selection source_db receipts require precreated or auto_migrate provisioning.");
+    if (spec.receipts.authority === "runner_ledger" && (spec.receipts.provisioning || spec.receipts.schema || spec.receipts.table)) throw new Error("selection runner_ledger receipts do not use source provisioning/schema/table.");
+    if (spec.receipts.authority === "runner_ledger" && operation === "update" && !spec.version_advance) throw new Error("selection runner_ledger UPDATE requires version_advance.");
+  }
   if (spec.mode !== "read_only" && spec.patch && Object.keys(spec.patch).length > 0) {
     const allowed = new Set(spec.allowed_columns ?? Object.keys(spec.patch));
     for (const column of Object.keys(spec.patch)) {

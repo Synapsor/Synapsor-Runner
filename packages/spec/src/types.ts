@@ -90,8 +90,27 @@ export type PatchBindingSpec = ExtensionFields & {
   from_arg?: string;
 };
 
+export type ProposalOperationKind = "update" | "insert" | "delete";
+export type DeduplicationComponentSpec = ExtensionFields & {
+  column: string;
+  source: "proposal_id" | "trusted_tenant" | "fixed";
+  fixed?: JsonScalar;
+};
+export type ProposalOperationSpec = ExtensionFields & {
+  kind: ProposalOperationKind;
+  deduplication?: {
+    components: DeduplicationComponentSpec[];
+  };
+  version_advance?: {
+    column: string;
+    strategy: "integer_increment" | "database_generated";
+  };
+};
+
 export type ProposalActionSpec = ExtensionFields & {
   action: string;
+  /** Omitted by legacy contracts and interpreted as guarded single-row UPDATE. */
+  operation?: ProposalOperationSpec;
   allowed_fields: string[];
   patch: Record<string, PatchBindingSpec>;
   numeric_bounds?: Record<string, { minimum?: number; maximum?: number }>;

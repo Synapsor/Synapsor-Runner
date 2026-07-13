@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Client } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js";
 import { StdioClientTransport } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js";
+import mysql from "../packages/mysql/node_modules/mysql2/promise.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tmpRoot = process.env.SYNAPSOR_RUNNER_TMP_ROOT
@@ -155,6 +156,8 @@ const scenarios = [
     autoApprovedProposalArgs: { customer_id: "CUS-3001", credit_cents: 2500, reason: "SLA outage ticket SUP-481" },
     reviewRequiredProposalArgs: { customer_id: "CUS-3001", credit_cents: 10000, reason: "larger support credit needs review" },
     outOfBoundsProposalArgs: { customer_id: "CUS-3001", credit_cents: 100000, reason: "too large" },
+    insertTool: "support.propose_plan_credit_record",
+    insertArgs: { customer_id: "CUS-3001", credit_cents: 2500, reason: "native guarded insert" },
     diffColumn: "plan_credit_cents",
     expectedBefore: 0,
     expectedProposed: 10000,
@@ -162,7 +165,7 @@ const scenarios = [
     autoApprovedExpectedProposed: 2500,
     unchangedSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
     expectedUnchanged: "0|",
-    resetSql: "UPDATE public.customers SET plan_credit_cents = 0, credit_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'CUS-3001'; DELETE FROM public.synapsor_writeback_receipts;",
+    resetSql: "UPDATE public.customers SET plan_credit_cents = 0, credit_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'CUS-3001'; DELETE FROM public.account_credits; DELETE FROM public.synapsor_writeback_receipts;",
     staleMutateSql: "UPDATE public.customers SET updated_at = '2026-06-20T15:00:00Z' WHERE id = 'CUS-3001';",
     successorSql: "SELECT plan_credit_cents::text FROM public.customers WHERE id = 'CUS-3001'",
     finalSql: "SELECT plan_credit_cents || '|' || COALESCE(credit_reason, '') FROM public.customers WHERE id = 'CUS-3001'",
@@ -295,9 +298,12 @@ async function waitForDatabase(scenario) {
         ],
         { capture: true, allowFailure: true },
     );
-    if (result.status === 0 && await canConnect(endpoint.hostname, Number(endpoint.port))) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return;
+    const externallyReady = scenario.engine === "mysql"
+      ? await canQueryMysql(scenario.readUrl)
+      : await canConnect(endpoint.hostname, Number(endpoint.port));
+    if (result.status === 0 && externallyReady) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (scenario.engine !== "mysql" || await canQueryMysql(scenario.readUrl)) return;
     }
     last = result.status === 0
       ? `published database port ${endpoint.hostname}:${endpoint.port} is not accepting connections yet`
@@ -305,6 +311,19 @@ async function waitForDatabase(scenario) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(`${scenario.label} database did not become ready: ${last}`);
+}
+
+async function canQueryMysql(databaseUrl) {
+  let connection;
+  try {
+    connection = await mysql.createConnection({ uri: databaseUrl, connectTimeout: 1000 });
+    await connection.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await connection?.end().catch(() => undefined);
+  }
 }
 
 function canConnect(host, port) {
@@ -420,6 +439,7 @@ async function exerciseMcpScenario(scenario) {
 
     if (scenario.autoApprovedProposalArgs) {
       await exerciseSupportPlanCreditPolicyChecks(scenario);
+      await exerciseSupportPlanCreditInsert(scenario);
       resetScenario(scenario);
       resetLocalStore(scenario);
     }
@@ -669,6 +689,40 @@ async function exerciseSupportPlanCreditPolicyChecks(scenario) {
 
   resetScenario(scenario);
   resetLocalStore(scenario);
+}
+
+async function exerciseSupportPlanCreditInsert(scenario) {
+  resetScenario(scenario);
+  resetLocalStore(scenario);
+  console.log(`== ${scenario.label}: native guarded INSERT ==`);
+  let proposalId = "";
+  await withMcpClient(scenario, async (client) => {
+    const tools = await client.listTools();
+    assert(tools.tools.some((tool) => tool.name === scenario.insertTool), "Native INSERT capability missing", tools.tools);
+    const proposed = structured(await client.callTool({
+      name: scenario.insertTool,
+      arguments: scenario.insertArgs,
+    }));
+    assert(proposed.status === "review_required", "Native INSERT should require human review", proposed);
+    assert(proposed.source_database_mutated === false, "Native INSERT proposal mutated source", proposed);
+    proposalId = String(proposed.proposal_id);
+  });
+  assert(dockerSql(scenario, "SELECT count(*) FROM public.account_credits") === "0", "INSERT proposal changed source before approval");
+  runner(scenario, ["proposals", "approve", proposalId, "--store", scenario.storePath, "--actor", "local_reviewer", "--yes"]);
+  const jobPath = path.join(scenario.tmpDir, "insert-job.json");
+  runner(scenario, ["proposals", "writeback-job", proposalId, "--store", scenario.storePath, "--output", jobPath, "--project", "local", "--runner", "local_runner"]);
+  const applied = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--config", scenario.configPath, "--store", scenario.storePath]));
+  assert(applied.status === "applied" && applied.operation === "single_row_insert" && applied.affected_rows === 1, "Native guarded INSERT did not apply", applied);
+  const inserted = dockerSql(scenario, "SELECT tenant_id || '|' || customer_id || '|' || amount_cents || '|' || reason FROM public.account_credits");
+  assert(inserted === "acme|CUS-3001|2500|native guarded insert", "Native INSERT wrote unexpected values", inserted);
+  const retry = parseCliJson(runner(scenario, ["apply", "--job", jobPath, "--config", scenario.configPath, "--store", scenario.storePath]));
+  assert(retry.affected_rows === 0 && ["applied", "already_applied"].includes(retry.status), "Native INSERT retry was not idempotent", retry);
+  assert(dockerSql(scenario, "SELECT count(*) FROM public.account_credits") === "1", "Native INSERT retry duplicated the row");
+  const replayPath = path.join(scenario.tmpDir, "insert-replay.json");
+  runner(scenario, ["replay", "export", proposalId, "--store", scenario.storePath, "--output", replayPath]);
+  const replay = JSON.parse(fs.readFileSync(replayPath, "utf8"));
+  assert(replay.receipts?.some((receipt) => receipt.receipt?.operation === "single_row_insert"), "INSERT replay is missing operation-aware receipt", replay);
+  console.log("ACCEPT native single-row INSERT is tenant-bound, approved, deduplicated, and replayable");
 }
 
 function resetScenario(scenario) {

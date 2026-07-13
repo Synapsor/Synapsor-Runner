@@ -148,10 +148,10 @@ synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/lo
 ```
 
 For proposal capabilities and writes, follow the
-[complete own-database guide](docs/getting-started-own-database.md). One-row
-updates can use Runner's guarded direct writeback. Inserts, multiple tables, or
-external effects go through an [app-owned executor](docs/writeback-executors.md)
-after approval.
+[complete own-database guide](docs/getting-started-own-database.md). Reviewed
+single-row INSERT, UPDATE, and DELETE can use Runner's guarded direct
+writeback. Multi-row/multi-table work and external effects go through an
+[app-owned executor](docs/writeback-executors.md) after approval.
 
 ## Trust And Verification
 
@@ -168,6 +168,9 @@ trust boundaries, covered threats, non-goals, and required operator controls.
   It proves source rows stay unchanged before approval, guarded writeback
   applies once, idempotent retry does not duplicate the effect, and a stale row
   returns a conflict.
+- `corepack pnpm test:guarded-crud` proves native single-row INSERT, UPDATE,
+  and DELETE across both databases and all receipt modes, including the
+  zero-source-schema Runner-ledger path and fail-closed reconciliation.
 - The C++/Cloud round-trip verifier exports normalized contracts, validates
   them with `@synapsor/spec`, and loads them in Runner. The shared contract and
   verification commands are documented in [Conformance](docs/conformance.md).

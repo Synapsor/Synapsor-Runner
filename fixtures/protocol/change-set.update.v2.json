@@ -1,0 +1,32 @@
+{
+  "schema_version": "synapsor.change-set.v2",
+  "proposal_id": "wrp_update_2001",
+  "proposal_version": 1,
+  "action": "billing.propose_plan_credit_update",
+  "operation": "single_row_update",
+  "mode": "review_required",
+  "principal": { "id": "operator_demo", "source": "trusted_session" },
+  "scope": { "tenant_id": "tenant_demo", "business_object": "account_credit", "object_id": "credit_2001" },
+  "source": {
+    "kind": "external_postgres",
+    "source_id": "src_billing_demo",
+    "schema": "public",
+    "table": "account_credits",
+    "primary_key": { "column": "id", "value": "credit_2001" }
+  },
+  "before": { "id": "credit_2001", "tenant_id": "tenant_demo", "amount_cents": 1000, "version": 7 },
+  "patch": { "amount_cents": 2500 },
+  "after": { "id": "credit_2001", "tenant_id": "tenant_demo", "amount_cents": 2500, "version": 8 },
+  "guards": {
+    "tenant": { "column": "tenant_id", "value": "tenant_demo" },
+    "allowed_columns": ["amount_cents"],
+    "expected_version": { "column": "version", "value": 7 },
+    "version_advance": { "column": "version", "strategy": "integer_increment" }
+  },
+  "evidence": { "bundle_id": "ev_update_2001", "query_fingerprint": "sha256:update-evidence", "items": [] },
+  "approval": { "status": "pending", "required_role": "billing_reviewer" },
+  "writeback": { "status": "not_applied", "mode": "trusted_worker_required" },
+  "source_database_mutated": false,
+  "integrity": { "proposal_hash": "sha256:update-proposal" },
+  "created_at": "2026-07-13T18:00:00Z"
+}

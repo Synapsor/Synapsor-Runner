@@ -112,7 +112,13 @@ not print database URLs or create the schema.
       "read_url_env": "BILLING_POSTGRES_READ_URL",
       "write_url_env": "BILLING_POSTGRES_WRITE_URL",
       "read_only": false,
-      "statement_timeout_ms": 3000
+      "statement_timeout_ms": 3000,
+      "receipts": {
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "synapsor",
+        "table": "writeback_receipts"
+      }
     }
   }
 }
@@ -136,6 +142,25 @@ connection failures are model-facing `TEMPORARILY_UNAVAILABLE` errors with
 `retryable: true` and a bounded `retry_after_ms`. Operational logs retain only
 a normalized safe runtime code, not the driver message, host, or credentials.
 One-shot CLI commands close their pools.
+
+### Source receipts
+
+`sources.<name>.receipts.authority` is `source_db` or `runner_ledger`.
+
+- `source_db` requires `provisioning: "precreated"` or `"auto_migrate"`.
+  Optional fixed `schema` and `table` identifiers select the receipt table.
+  The source mutation and receipt share one transaction.
+- `runner_ledger` forbids `provisioning`, `schema`, and `table`. It creates no
+  source receipt table. Local SQLite is permitted for one process;
+  networked/multi-Runner use requires authoritative shared Postgres
+  `runtime_store` and rejects mirror mode.
+
+Existing configs without `receipts` retain the compatibility source-receipt
+behavior. New onboarding asks explicitly. Runner-ledger UPDATE requires exact
+version advancement; INSERT requires source-enforced deduplication; DELETE
+requires an exact version guard. Ambiguous post-commit outcomes stop at
+`reconciliation_required`. See
+[Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
 
 ## Trusted context
 
@@ -251,7 +276,10 @@ guard, approval, and writeback mode.
 }
 ```
 
-Types are `sql_update`, `http_handler`, and `command_handler`. HTTP handlers use
+Types are `sql_update`, `http_handler`, and `command_handler`. The legacy
+`sql_update` executor identifier now dispatches the reviewed native operation
+(`insert`, `update`, or `delete`) and remains named for config compatibility.
+HTTP handlers use
 `url_env`, optional `POST|PUT|PATCH`, bearer auth, signing secret, and timeout.
 Command handlers use `command_env` and timeout. Secrets stay in the environment.
 See [Writeback Executors](writeback-executors.md).
@@ -386,9 +414,10 @@ capability permissions, and trusted session metadata.
 
 ## Direct SQL readiness
 
-An administrator must apply `writeback migration` once. The steady-state writer
-needs target-table SELECT/allowed UPDATE plus receipt-table
-SELECT/INSERT/UPDATE; it does not need schema CREATE.
+For `source_db` + `precreated`, an administrator applies `writeback migration`
+once. The steady-state writer needs target-table `SELECT` and only the reviewed
+operation DML plus receipt-table `SELECT`/`INSERT`/`UPDATE`; it does not need
+schema `CREATE`.
 
 ```bash
 synapsor-runner writeback migration --engine postgres --schema synapsor
@@ -397,5 +426,8 @@ synapsor-runner writeback grants --engine postgres \
 synapsor-runner doctor --config ./synapsor.runner.json --check-writeback
 ```
 
-The doctor probe uses a rolled-back receipt insert and target-table check. It
-does not mutate business rows.
+`source_db` + `auto_migrate` runs that fixed migration idempotently and needs
+bounded `CREATE`. `runner_ledger` skips source receipt DDL/DML and validates its
+authoritative ledger topology. Doctor uses rollback-only receipt and target
+checks and does not mutate business rows. See
+[Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).

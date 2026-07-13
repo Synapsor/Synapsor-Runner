@@ -44,8 +44,8 @@ Idempotency-Key
 
 ## Direct SQL Writeback Checks
 
-For direct `sql_update` writeback, add `--check-writeback` only after reviewing
-the receipt-table DDL/grants:
+For direct guarded INSERT/UPDATE/DELETE, add `--check-writeback` after reviewing
+the selected receipt mode and operation-specific grants:
 
 ```bash
 synapsor-runner doctor --config synapsor.runner.json --check-writeback
@@ -55,17 +55,18 @@ This connects with the trusted writer env var named by `write_url_env` and
 checks:
 
 - writer database connectivity;
-- `synapsor_writeback_receipts` permission through the adapter doctor;
+- source receipt migration/permissions when authority is `source_db`;
+- no source receipt DDL/DML when authority is `runner_ledger`;
 - rollback-only access to each configured proposal target table;
-- rollback-only update permission for configured allowed write columns.
+- operation-specific version, unique/dedup, generated-column, trigger,
+  cascade, RLS, and DML prerequisites.
 
 The target-table probe uses fixed schema/table/column identifiers from the
 reviewed config. It does not accept model SQL, user SQL, arbitrary table names,
 or arbitrary column names. It runs inside a transaction and rolls back.
 
-An administrator must pre-create `synapsor_writeback_receipts` and grant the
-steady-state writer access. The doctor probe does not execute DDL or require
-schema `CREATE`:
+For `source_db` + `precreated`, an administrator creates the receipt table and
+grants steady-state access. Doctor never executes DDL in this mode:
 
 ```bash
 synapsor-runner writeback migration --engine postgres --schema synapsor
@@ -78,6 +79,11 @@ For MySQL:
 synapsor-runner writeback migration --engine mysql --schema appdb
 synapsor-runner writeback grants --engine mysql --schema appdb --writer-role "'app_writer'@'%'"
 ```
+
+Use `source_db` + `auto_migrate` only when the writer may create the fixed
+receipt table. Use `runner_ledger` for no source receipt table; doctor then
+checks the local/small-fleet topology and crash-reconciliation prerequisites.
+See [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
 
 Use an app-owned `http_handler` or `command_handler` executor when your
 application should own richer business writes or receipt storage.

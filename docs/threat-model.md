@@ -76,8 +76,8 @@ Runner does not claim to solve:
 - IdP compromise, malicious administrator-approved contracts, or compromised
   ledger/source database servers;
 - physical branching of external Postgres/MySQL;
-- generic safe execution of arbitrary SQL, DDL, INSERT, DELETE, UPSERT, or
-  multi-row writes.
+- generic safe execution of arbitrary SQL, DDL, UPSERT, model-generated
+  predicates, or multi-row writes.
 
 ## App-Owned Handler Responsibility
 

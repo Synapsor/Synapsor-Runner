@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { generateRunnerConfigFromSpec, summarizeInspection, type SchemaInspection } from "./index.js";
+import {
+  assessDirectWritePrerequisites,
+  generateRunnerConfigFromSpec,
+  summarizeInspection,
+  type SchemaInspection,
+  type TableInfo,
+} from "./index.js";
 
 describe("schema inspector helpers", () => {
   it("generates a reviewed local runner config without secrets", () => {
@@ -234,6 +240,113 @@ describe("schema inspector helpers", () => {
     })).toThrow(/numeric bound column credit_cents is not in patch/i);
   });
 
+  it("generates native INSERT and Runner-ledger UPDATE semantics without source receipt configuration drift", () => {
+    const insert = generateRunnerConfigFromSpec({
+      engine: "postgres",
+      mode: "review",
+      schema: "public",
+      table: "credits",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      namespace: "billing",
+      object_name: "credit",
+      visible_columns: ["id", "tenant_id", "amount_cents", "reason"],
+      operation: "insert",
+      deduplication: {
+        components: [
+          { column: "id", source: "proposal_id" },
+          { column: "tenant_id", source: "trusted_tenant" },
+        ],
+      },
+      allowed_columns: ["amount_cents", "reason"],
+      patch: {
+        amount_cents: { from_arg: "amount_cents" },
+        reason: { from_arg: "reason" },
+      },
+      receipts: { authority: "runner_ledger" },
+    });
+    const insertProposal = (insert.config.capabilities as any[])[1];
+    expect(insertProposal.operation).toEqual({
+      kind: "insert",
+      deduplication: {
+        components: [
+          { column: "id", source: "proposal_id" },
+          { column: "tenant_id", source: "trusted_tenant" },
+        ],
+      },
+    });
+    expect((insert.config.sources as any).local_postgres.receipts).toEqual({ authority: "runner_ledger" });
+
+    const update = generateRunnerConfigFromSpec({
+      engine: "mysql",
+      mode: "review",
+      schema: "app",
+      table: "parts",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      conflict_column: "version",
+      namespace: "parts",
+      visible_columns: ["id", "tenant_id", "price_cents", "version"],
+      operation: "update",
+      version_advance: { column: "version", strategy: "integer_increment" },
+      allowed_columns: ["price_cents"],
+      patch: { price_cents: { from_arg: "price_cents" } },
+      receipts: { authority: "runner_ledger" },
+    });
+    expect((update.config.capabilities as any[])[1].operation).toEqual({
+      kind: "update",
+      version_advance: { column: "version", strategy: "integer_increment" },
+    });
+  });
+
+  it("requires source-enforced INSERT identity and complete required fields", () => {
+    const table = directWriteTable();
+    const checks = assessDirectWritePrerequisites(table, {
+      operation: "insert",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      allowed_columns: ["amount_cents", "reason"],
+      patch_columns: ["amount_cents", "reason"],
+      dedup_columns: ["id", "tenant_id"],
+    });
+    expect(checks).toContainEqual(expect.objectContaining({ code: "INSERT_DEDUP_SOURCE_UNIQUE", level: "pass" }));
+    expect(checks).toContainEqual(expect.objectContaining({ code: "INSERT_REQUIRED_COLUMNS_SATISFIED", level: "pass" }));
+
+    const unsafe = assessDirectWritePrerequisites(table, {
+      operation: "insert",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      allowed_columns: ["amount_cents"],
+      patch_columns: ["amount_cents"],
+      dedup_columns: ["tenant_id"],
+    });
+    expect(unsafe).toContainEqual(expect.objectContaining({ code: "INSERT_DEDUP_NOT_SOURCE_UNIQUE", level: "fail" }));
+    expect(unsafe).toContainEqual(expect.objectContaining({ code: "INSERT_REQUIRED_COLUMNS_MISSING", level: "fail" }));
+  });
+
+  it("blocks hard DELETE when inspected cascades or triggers can widen the reviewed effect", () => {
+    const table = directWriteTable();
+    table.referenced_by = [{
+      name: "ticket_events_ticket_fk",
+      schema: "public",
+      table: "ticket_events",
+      columns: ["ticket_id"],
+      referenced_columns: ["id"],
+      delete_rule: "CASCADE",
+    }];
+    table.write_triggers = [{ name: "delete_audit", timing: "AFTER", orientation: "ROW", events: ["DELETE"] }];
+    const checks = assessDirectWritePrerequisites(table, {
+      operation: "delete",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      allowed_columns: [],
+      patch_columns: [],
+      conflict_column: "version",
+    });
+    expect(checks).toContainEqual(expect.objectContaining({ code: "DELETE_REFERENTIAL_EFFECT_BLOCKED", level: "fail" }));
+    expect(checks).toContainEqual(expect.objectContaining({ code: "DELETE_TRIGGER_BLOCKED", level: "fail" }));
+  });
+
   it("summarizes inspections without row data", () => {
     const inspection: SchemaInspection = {
       engine: "postgres",
@@ -266,3 +379,30 @@ describe("schema inspector helpers", () => {
     expect(summarizeInspection(inspection)).toContain("tenant=tenant_id");
   });
 });
+
+function directWriteTable(): TableInfo {
+  const suggestions = { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false };
+  return {
+    schema: "public",
+    name: "credits",
+    type: "table",
+    writable: true,
+    columns: [
+      { name: "id", data_type: "text", nullable: false, generated: false, ordinal_position: 1, suggestions: { ...suggestions, immutable: true } },
+      { name: "tenant_id", data_type: "text", nullable: false, generated: false, ordinal_position: 2, suggestions: { ...suggestions, tenant: true, immutable: true } },
+      { name: "amount_cents", data_type: "integer", nullable: false, generated: false, ordinal_position: 3, suggestions },
+      { name: "reason", data_type: "text", nullable: false, generated: false, ordinal_position: 4, suggestions },
+      { name: "version", data_type: "integer", nullable: false, default: "0", generated: false, ordinal_position: 5, suggestions: { ...suggestions, conflict: true } },
+    ],
+    primary_key: ["id"],
+    unique_constraints: [],
+    foreign_keys: [],
+    indexes: [],
+    suggestions: {
+      tenant_columns: ["tenant_id"],
+      conflict_columns: ["version"],
+      sensitive_columns: [],
+      default_visible_columns: ["id", "tenant_id", "amount_cents", "reason", "version"],
+    },
+  };
+}

@@ -49,6 +49,20 @@ export type AgentDslCapabilityAst = {
       scope: "tenant_policy" | "tenant_policy_object";
       line: number;
     }>;
+    operation?: {
+      kind: "update" | "insert" | "delete";
+      deduplication?: {
+        components: Array<{
+          column: string;
+          source: "proposal_id" | "trusted_tenant" | "fixed";
+          fixed?: string | number | boolean | null;
+        }>;
+      };
+      version_advance?: {
+        column: string;
+        strategy: "integer_increment" | "database_generated";
+      };
+    };
     writebackMode?: "direct_sql" | "app_handler" | "cloud_worker" | "none";
     executor?: string;
   };
@@ -156,6 +170,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
       }
       spec.proposal = {
         action: capability.proposal.action,
+        ...(capability.proposal.operation ? { operation: capability.proposal.operation } : {}),
         allowed_fields: capability.proposal.allowedFields,
         patch: capability.proposal.patch,
         ...(capability.proposal.numericBounds ? { numeric_bounds: capability.proposal.numericBounds } : {}),
@@ -369,10 +384,37 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       capability.maxRows = Number(maxRows[1]);
       continue;
     }
-    const propose = item.text.match(/^PROPOSE\s+ACTION\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
+    const propose = item.text.match(/^PROPOSE\s+ACTION\s+([A-Za-z_][A-Za-z0-9_.]*)(?:\s+(UPDATE|INSERT|DELETE))?$/i);
     if (propose?.[1]) {
       capability.kind = "proposal";
-      capability.proposal = { action: propose[1], allowedFields: [], patch: {} };
+      capability.proposal = {
+        action: propose[1],
+        allowedFields: [],
+        patch: {},
+        ...(propose[2] ? { operation: { kind: propose[2].toLowerCase() as "update" | "insert" | "delete" } } : {}),
+      };
+      continue;
+    }
+    const dedup = item.text.match(/^DEDUP\s+KEY\s+(.+)$/i);
+    if (dedup?.[1]) {
+      ensureProposal(capability, item);
+      if (capability.proposal.operation?.kind !== "insert") {
+        throw dslError(item.line, 1, "DEDUP_KEY_INSERT_ONLY", "DEDUP KEY requires PROPOSE ACTION ... INSERT");
+      }
+      capability.proposal.operation.deduplication = { components: parseDedupComponents(dedup[1], item.line) };
+      continue;
+    }
+    const versionAdvance = item.text.match(/^ADVANCE\s+VERSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+USING\s+(INTEGER\s+INCREMENT|DATABASE\s+GENERATED)$/i);
+    if (versionAdvance?.[1] && versionAdvance[2]) {
+      ensureProposal(capability, item);
+      if ((capability.proposal.operation?.kind ?? "update") !== "update") {
+        throw dslError(item.line, 1, "VERSION_ADVANCE_UPDATE_ONLY", "ADVANCE VERSION is valid only for UPDATE");
+      }
+      capability.proposal.operation ??= { kind: "update" };
+      capability.proposal.operation.version_advance = {
+        column: versionAdvance[1],
+        strategy: /^INTEGER/i.test(versionAdvance[2]) ? "integer_increment" : "database_generated",
+      };
       continue;
     }
     const allowWrite = item.text.match(/^ALLOW\s+WRITE\s+(.+)$/i);
@@ -462,7 +504,35 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   if (capability.visibleFields.length === 0) throw dslError(block.line, 1, "CAPABILITY_VISIBLE_FIELDS_REQUIRED", `${block.name} requires ALLOW READ`);
   if (Object.keys(capability.args).length === 0 && capability.lookup) capability.args[capability.lookup.arg] = { type: "string", required: true, max_length: 128 };
   if (Object.keys(capability.args).length === 0) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
-  if (capability.kind === "proposal" && (!capability.proposal || Object.keys(capability.proposal.patch).length === 0)) throw dslError(block.line, 1, "PROPOSAL_PATCH_REQUIRED", `${block.name} proposal requires at least one PATCH line`);
+  if (capability.kind === "proposal") {
+    if (!capability.proposal) throw dslError(block.line, 1, "PROPOSAL_ACTION_REQUIRED", `${block.name} requires PROPOSE ACTION`);
+    const operation = capability.proposal.operation?.kind ?? "update";
+    if (operation !== "delete" && Object.keys(capability.proposal.patch).length === 0) {
+      throw dslError(block.line, 1, "PROPOSAL_PATCH_REQUIRED", `${block.name} ${operation.toUpperCase()} proposal requires at least one PATCH line`);
+    }
+    if (operation === "delete" && Object.keys(capability.proposal.patch).length > 0) {
+      throw dslError(block.line, 1, "DELETE_PATCH_FORBIDDEN", `${block.name} DELETE proposal must not contain PATCH lines`);
+    }
+    if (operation === "delete" && capability.proposal.allowedFields.length > 0) {
+      throw dslError(block.line, 1, "DELETE_ALLOW_WRITE_FORBIDDEN", `${block.name} DELETE proposal must not contain ALLOW WRITE`);
+    }
+    if (operation === "delete" && !capability.conflictKey) {
+      throw dslError(block.line, 1, "DELETE_CONFLICT_GUARD_REQUIRED", `${block.name} DELETE requires CONFLICT GUARD`);
+    }
+    if (operation === "insert" && !capability.proposal.operation?.deduplication) {
+      throw dslError(block.line, 1, "INSERT_DEDUP_KEY_REQUIRED", `${block.name} INSERT requires DEDUP KEY backed by an inspected source UNIQUE constraint`);
+    }
+    if (operation === "insert" && capability.proposal.operation?.deduplication) {
+      const tenantKey = capability.tenantKey;
+      const hasTrustedTenant = capability.proposal.operation.deduplication.components.some((component) => component.source === "trusted_tenant" && component.column === tenantKey);
+      const hasProposalId = capability.proposal.operation.deduplication.components.some((component) => component.source === "proposal_id");
+      if (!hasTrustedTenant) throw dslError(block.line, 1, "INSERT_TRUSTED_TENANT_DEDUP_REQUIRED", `${block.name} INSERT DEDUP KEY must bind ${tenantKey ?? "the tenant key"} from TRUSTED TENANT`);
+      if (!hasProposalId) throw dslError(block.line, 1, "INSERT_PROPOSAL_ID_DEDUP_REQUIRED", `${block.name} INSERT DEDUP KEY must include a PROPOSAL ID component`);
+    }
+    if (operation === "delete" && capability.proposal.autoApprovalRules?.length) {
+      throw dslError(block.line, 1, "DELETE_AUTO_APPROVAL_FORBIDDEN", `${block.name} DELETE cannot use AUTO APPROVE`);
+    }
+  }
   return capability;
 }
 
@@ -636,6 +706,30 @@ function parsePatchBinding(raw: string): { fixed?: string | number | boolean | n
   const quoted = trimmed.match(/^'(.*)'$/);
   if (quoted) return { fixed: quoted[1] ?? "" };
   return { fixed: trimmed };
+}
+
+function parseDedupComponents(
+  raw: string,
+  line: number,
+): Array<{ column: string; source: "proposal_id" | "trusted_tenant" | "fixed"; fixed?: string | number | boolean | null }> {
+  const components = raw.split(",").map((item) => item.trim()).filter(Boolean).map((item) => {
+    const match = item.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(PROPOSAL\s+ID|TRUSTED\s+TENANT|FIXED\s+.+)$/i);
+    if (!match?.[1] || !match[2]) {
+      throw dslError(line, 1, "DEDUP_COMPONENT_INVALID", `DEDUP KEY component must use column = PROPOSAL ID, TRUSTED TENANT, or FIXED <value>: ${item}`);
+    }
+    const source = match[2].toUpperCase();
+    if (source === "PROPOSAL ID") return { column: match[1], source: "proposal_id" as const };
+    if (source === "TRUSTED TENANT") return { column: match[1], source: "trusted_tenant" as const };
+    const binding = parsePatchBinding(match[2].replace(/^FIXED\s+/i, ""));
+    return { column: match[1], source: "fixed" as const, fixed: binding.fixed ?? null };
+  });
+  if (components.length === 0 || components.length > 8) {
+    throw dslError(line, 1, "DEDUP_COMPONENT_COUNT", "DEDUP KEY requires 1 through 8 components");
+  }
+  if (new Set(components.map((component) => component.column)).size !== components.length) {
+    throw dslError(line, 1, "DEDUP_COMPONENT_DUPLICATE", "DEDUP KEY component columns must be unique");
+  }
+  return components;
 }
 
 function parseArgSpec(

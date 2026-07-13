@@ -70,7 +70,9 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - model-facing capability descriptions and returns hints;
 - visible and kept-out fields;
 - evidence/query-audit requirements;
-- proposal action shape, numeric bounds, transition guards, and guarded writeback intent;
+- proposal action shape, explicit INSERT/UPDATE/DELETE operation, source-unique
+  INSERT deduplication, UPDATE version advancement, numeric bounds, transition
+  guards, and guarded writeback intent;
 - workflow allowed capabilities and replay requirements;
 - policy references and 0.1 policy metadata.
 
@@ -160,6 +162,17 @@ Current additive safety fields:
   integer patched fields. A rule field is numeric when the proposal declares
   `numeric_bounds` for it, patches it from a `NUMBER` arg, or patches it from
   an integer literal.
+- proposal `operation.kind`: `update`, `insert`, or `delete`; omission preserves
+  the legacy single-row UPDATE meaning;
+- INSERT `operation.deduplication`: reviewed components supplied from trusted
+  tenant, proposal identity, or a fixed value and enforced by a source unique
+  key;
+- UPDATE `operation.version_advance`: reviewed integer increment or
+  database-generated advancement of the exact conflict guard.
+
+Receipt authority, receipt-table provisioning, credentials, and Runner ledger
+topology are deliberately not canonical fields. They remain deployment choices
+in `synapsor.runner.json`.
 
 These are not `x-runner-*` extensions because they are part of the reviewed
 contract. A Cloud importer may choose when to enforce them, but it must not

@@ -45,6 +45,9 @@ no-database demo, wire your database, then read deeper concepts.
   links to the canonical own-database guide.
 - [Doctor](doctor.md): redacted setup checks, handler probes, direct SQL
   writeback probes, and receipt-table guidance.
+- [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md): native
+  INSERT/UPDATE/DELETE, receipt modes, crash semantics, privileges, and
+  reconciliation.
 
 ## 05 Generate Capabilities
 
@@ -144,8 +147,8 @@ getting-started path.
   database.
 - Writeback: execution of an approved proposal outside the model-facing MCP
   surface.
-- Executor: Runner's guarded one-row updater or an app-owned handler for richer
-  approved business transactions.
+- Executor: Runner's guarded one-row CRUD adapter or an app-owned handler for
+  richer approved business transactions.
 
 ## Repository Map
 

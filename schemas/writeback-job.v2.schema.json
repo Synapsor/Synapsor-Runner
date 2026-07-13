@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.writeback-job.v2.schema.json",
+  "title": "Synapsor Writeback Job v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "writeback_job_id",
+    "proposal_id",
+    "proposal_version",
+    "proposal_hash",
+    "runner_scope",
+    "engine",
+    "target",
+    "tenant_guard",
+    "allowed_columns",
+    "mutation",
+    "idempotency_key",
+    "lease"
+  ],
+  "properties": {
+    "schema_version": { "const": "synapsor.writeback-job.v2" },
+    "writeback_job_id": { "type": "string", "minLength": 1 },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "proposal_hash": { "$ref": "#/$defs/sha256" },
+    "runner_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "source_id"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "engine": { "enum": ["postgres", "mysql"] },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "table", "primary_key"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "primary_key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["column"],
+          "properties": {
+            "column": { "$ref": "#/$defs/safeIdentifier" },
+            "value": { "$ref": "#/$defs/scalar" }
+          }
+        }
+      }
+    },
+    "tenant_guard": { "$ref": "#/$defs/columnValue" },
+    "allowed_columns": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/safeIdentifier" },
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "mutation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "values", "conflict_guard"],
+          "properties": {
+            "kind": { "const": "single_row_update" },
+            "values": { "$ref": "#/$defs/nonEmptyScalarRecord" },
+            "conflict_guard": { "$ref": "#/$defs/conflictGuard" },
+            "version_advance": { "$ref": "#/$defs/versionAdvance" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "values", "deduplication"],
+          "properties": {
+            "kind": { "const": "single_row_insert" },
+            "values": { "$ref": "#/$defs/nonEmptyScalarRecord" },
+            "deduplication": {
+              "allOf": [
+                { "$ref": "#/$defs/deduplication" },
+                {
+                  "properties": {
+                    "components": {
+                      "allOf": [
+                        { "contains": { "properties": { "source": { "const": "proposal_id" } }, "required": ["source"] } },
+                        { "contains": { "properties": { "source": { "const": "trusted_tenant" } }, "required": ["source"] } }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "conflict_guard"],
+          "properties": {
+            "kind": { "const": "single_row_delete" },
+            "conflict_guard": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "column", "expected_value"],
+              "properties": {
+                "kind": { "const": "column" },
+                "column": { "$ref": "#/$defs/safeIdentifier" },
+                "expected_value": { "$ref": "#/$defs/scalar" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lease_id", "attempt", "expires_at"],
+      "properties": {
+        "lease_id": { "type": "string", "minLength": 1 },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mutation": { "properties": { "kind": { "const": "single_row_update" } }, "required": ["kind"] } } },
+      "then": {
+        "properties": {
+          "target": { "properties": { "primary_key": { "required": ["value"] } } },
+          "allowed_columns": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "mutation": { "properties": { "kind": { "const": "single_row_insert" } }, "required": ["kind"] } } },
+      "then": { "properties": { "allowed_columns": { "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "mutation": { "properties": { "kind": { "const": "single_row_delete" } }, "required": ["kind"] } } },
+      "then": {
+        "properties": {
+          "target": { "properties": { "primary_key": { "required": ["value"] } } },
+          "allowed_columns": { "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "sha256": { "type": "string", "pattern": "^sha256:.+" },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "nonEmptyScalarRecord": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/safeIdentifier" },
+      "additionalProperties": { "$ref": "#/$defs/scalar" },
+      "minProperties": 1,
+      "maxProperties": 256
+    },
+    "columnValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    },
+    "conflictGuard": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "column", "expected_value"],
+          "properties": {
+            "kind": { "const": "column" },
+            "column": { "$ref": "#/$defs/safeIdentifier" },
+            "expected_value": { "$ref": "#/$defs/scalar" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "expected_hash"],
+          "properties": {
+            "kind": { "const": "row_hash" },
+            "expected_hash": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        }
+      ]
+    },
+    "versionAdvance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "strategy"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "strategy": { "enum": ["integer_increment", "database_generated"] }
+      }
+    },
+    "deduplicationComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value", "source"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" },
+        "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] }
+      }
+    },
+    "deduplication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["components"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deduplicationComponent" },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      }
+    }
+  }
+}

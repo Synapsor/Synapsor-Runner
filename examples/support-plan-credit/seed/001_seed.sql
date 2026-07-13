@@ -24,6 +24,17 @@ CREATE TABLE IF NOT EXISTS public.synapsor_writeback_receipts (
   completed_at timestamptz
 );
 
+CREATE TABLE IF NOT EXISTS public.account_credits (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id text NOT NULL,
+  request_id text NOT NULL,
+  customer_id text NOT NULL,
+  amount_cents integer NOT NULL CHECK (amount_cents BETWEEN 1 AND 50000),
+  reason text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT account_credits_tenant_request_unique UNIQUE (tenant_id, request_id)
+);
+
 INSERT INTO public.customers (
   id,
   tenant_id,
@@ -97,6 +108,8 @@ $$;
 
 GRANT CONNECT ON DATABASE synapsor_runner_plan_credit TO synapsor_reader, synapsor_writer;
 GRANT USAGE ON SCHEMA public TO synapsor_reader, synapsor_writer;
-GRANT SELECT ON public.customers TO synapsor_reader, synapsor_writer;
+GRANT SELECT ON public.customers, public.account_credits TO synapsor_reader, synapsor_writer;
 GRANT UPDATE (plan_credit_cents, credit_reason, updated_at) ON public.customers TO synapsor_writer;
+GRANT INSERT (tenant_id, request_id, customer_id, amount_cents, reason) ON public.account_credits TO synapsor_writer;
+GRANT USAGE, SELECT ON SEQUENCE public.account_credits_id_seq TO synapsor_writer;
 GRANT SELECT, INSERT, UPDATE ON public.synapsor_writeback_receipts TO synapsor_writer;

@@ -106,7 +106,7 @@ around one primary-key row.
 Read capabilities end after the read clauses. A proposal capability adds:
 
 ```sql
-  PROPOSE ACTION waive_late_fee
+  PROPOSE ACTION waive_late_fee UPDATE
   ALLOW WRITE late_fee_cents, waiver_reason
   PATCH late_fee_cents = 0
   PATCH waiver_reason = ARG reason
@@ -115,7 +115,8 @@ Read capabilities end after the read clauses. A proposal capability adds:
   PATCH obsolete_note = NULL
 ```
 
-`PROPOSE ACTION` must precede proposal-only clauses. `ALLOW WRITE` is the exact
+`PROPOSE ACTION name [UPDATE|INSERT|DELETE]` must precede proposal-only clauses.
+The operation defaults to `UPDATE` for compatibility. `ALLOW WRITE` is the exact
 patch-column allowlist. Each `PATCH` uses one of:
 
 - `ARG name`: value comes from a validated model argument;
@@ -125,6 +126,32 @@ patch-column allowlist. Each `PATCH` uses one of:
 
 Fixed strings such as `PATCH status = 'approved'` are supported. The patch is
 saved as a proposal; it is not executed by the model-facing tool.
+
+`INSERT` requires a source-enforced deduplication identity:
+
+```sql
+  PROPOSE ACTION create_credit INSERT
+  DEDUP KEY tenant_id = TRUSTED TENANT, request_id = PROPOSAL ID
+  ALLOW WRITE customer_id, amount_cents
+  PATCH customer_id = ARG customer_id
+  PATCH amount_cents = ARG amount_cents
+```
+
+Dedup components are `column = TRUSTED TENANT`, `column = PROPOSAL ID`, or
+`column = FIXED value`. The key must include both trusted tenant and proposal
+identity and must map to an inspected source primary/unique constraint.
+
+`DELETE` contains no `ALLOW WRITE` or `PATCH`, requires `CONFLICT GUARD`, and
+cannot use `AUTO APPROVE`. Hard delete always requires human/operator review.
+
+Runner-ledger UPDATE must explicitly advance its exact conflict guard:
+
+```sql
+  ADVANCE VERSION version USING INTEGER INCREMENT
+  ADVANCE VERSION updated_at USING DATABASE GENERATED
+```
+
+Use one strategy, and make its column match `CONFLICT GUARD`.
 
 ## Bounds and transitions
 
@@ -189,7 +216,7 @@ Writeback forms:
 
 | Clause | Meaning |
 | --- | --- |
-| `WRITEBACK DIRECT SQL` | Runner performs one guarded single-row update after approval. |
+| `WRITEBACK DIRECT SQL` | Runner performs one guarded single-row INSERT, UPDATE, or DELETE after approval. Runtime receipt authority stays in `synapsor.runner.json`. |
 | `WRITEBACK APP HANDLER EXECUTOR name` | Runner calls a configured app-owned executor after approval. URL/token wiring stays outside the contract. |
 | `WRITEBACK CLOUD WORKER` | Delegates approved execution to Cloud worker infrastructure. |
 | `WRITEBACK NONE` | Proposal-only; local apply is intentionally unavailable. |
@@ -217,6 +244,9 @@ not execute arbitrary Cloud workflow DAGs, settlement, branching, or auto-merge.
 Unknown clauses fail instead of being ignored. Cloud-generated concepts such as
 `ROOT EXTERNAL`, `JOIN EXTERNAL`, `RETURN ANSWER WITH CITATIONS`, `AUTO BRANCH`,
 and `AUTO MERGE` are not local DSL 0.1 clauses.
+
+Bounded multi-row direct writes and reversible change sets are not part of the
+1.2 DSL. Use an app-owned executor until their separate safety gates ship.
 
 The canonical JSON output, not parser implementation details, is the portable
 contract. Validate generated JSON with `synapsor-runner contract validate`.

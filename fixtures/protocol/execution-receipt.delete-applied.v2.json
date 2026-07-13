@@ -1,0 +1,25 @@
+{
+  "schema_version": "synapsor.execution-receipt.v2",
+  "writeback_job_id": "wbj_delete_2003",
+  "proposal_id": "wrp_delete_2003",
+  "proposal_hash": "sha256:delete-proposal",
+  "approval_id": "approval_delete_2003",
+  "runner_id": "runner_demo",
+  "operation": "single_row_delete",
+  "receipt_authority": "runner_ledger",
+  "status": "applied",
+  "target": {
+    "source_id": "src_support_demo",
+    "schema": "support",
+    "table": "pending_tasks",
+    "identity": [{ "column": "id", "value": "task_2003" }, { "column": "tenant_id", "value": "tenant_demo" }]
+  },
+  "rows_affected": 1,
+  "idempotency_key": "idem_delete_2003",
+  "before_digest": "sha256:delete-before",
+  "tombstone_digest": "sha256:delete-tombstone",
+  "source_database_mutated": true,
+  "safe_outcome_code": "APPLIED",
+  "executed_at": "2026-07-13T18:12:00Z",
+  "receipt_hash": "sha256:delete-receipt"
+}

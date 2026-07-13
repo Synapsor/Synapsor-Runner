@@ -683,6 +683,7 @@ describe("local Synapsor MCP runtime", () => {
           approval_required: true,
           writeback: {
             mode: "direct_update",
+            operation: "update",
             applied: false,
           },
         },
@@ -698,6 +699,42 @@ describe("local Synapsor MCP runtime", () => {
       });
     } finally {
       runtime.close();
+    }
+  });
+
+  it("reports operation-aware direct writeback modes in result envelope v2", async () => {
+    for (const [operation, expectedMode] of [["insert", "direct_insert"], ["delete", "direct_delete"]] as const) {
+      const operationConfig = structuredClone(config);
+      const capability = operationConfig.capabilities?.[1];
+      if (!capability) throw new Error("proposal fixture missing");
+      capability.operation = operation === "insert"
+        ? { kind: "insert", deduplication: { components: [
+          { column: "tenant_id", source: "trusted_tenant" },
+          { column: "request_id", source: "proposal_id" },
+        ] } }
+        : { kind: "delete" };
+      if (operation === "insert") {
+        capability.target = { ...capability.target, table: "credits" };
+        capability.lookup = { id_from_arg: "invoice_id" };
+      } else {
+        capability.patch = {};
+        capability.allowed_columns = [];
+        capability.approval = { mode: "human", required_role: "billing_reviewer" };
+      }
+      const runtime = createMcpRuntime({ ...operationConfig, result_format: 2 }, {
+        readRow: async () => operation === "insert" ? { row: {}, rowCount: 0 } : { row: fixtureRow, rowCount: 1 },
+      });
+      try {
+        const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+          invoice_id: "INV-3001",
+          reason: "reviewed operation",
+        });
+        expect(result.proposal).toMatchObject({
+          writeback: { mode: expectedMode, operation, applied: false },
+        });
+      } finally {
+        await runtime.close();
+      }
     }
   });
 
@@ -949,6 +986,78 @@ describe("local Synapsor MCP runtime", () => {
       expect(replay).toHaveProperty("replay_id", result.replay_resource?.toString().replace("synapsor://replay/", ""));
     } finally {
       runtime.close();
+    }
+  });
+
+  it("creates a v2 INSERT proposal with Runner-supplied tenant and dedup identity", async () => {
+    const insertConfig = structuredClone(config);
+    insertConfig.capabilities = [{
+      name: "billing.propose_credit_insert",
+      kind: "proposal",
+      source: "app_postgres",
+      target: { schema: "public", table: "credits", primary_key: "id", tenant_key: "tenant_id" },
+      args: { amount_cents: { type: "number", required: true, minimum: 1, maximum: 2500 } },
+      lookup: { id_from_arg: "amount_cents" },
+      visible_columns: ["id", "tenant_id", "request_id", "amount_cents", "version"],
+      evidence: "required",
+      max_rows: 1,
+      patch: { amount_cents: { from_arg: "amount_cents" } },
+      allowed_columns: ["amount_cents"],
+      numeric_bounds: { amount_cents: { minimum: 1, maximum: 2500 } },
+      operation: {
+        kind: "insert",
+        deduplication: { components: [
+          { column: "tenant_id", source: "trusted_tenant" },
+          { column: "request_id", source: "proposal_id" },
+        ] },
+      },
+      approval: { mode: "human", required_role: "support_lead" },
+      writeback: { mode: "direct_sql" },
+    }];
+    const readRow = vi.fn(async () => ({ row: {}, rowCount: 0 }));
+    const runtime = createMcpRuntime(insertConfig, { readRow });
+    try {
+      const result = await runtime.callTool("billing.propose_credit_insert", { amount_cents: 500 });
+      expect(readRow).not.toHaveBeenCalled();
+      const proposal = await runtime.store.getProposal(String(result.proposal_id));
+      expect(proposal?.change_set).toMatchObject({
+        schema_version: "synapsor.change-set.v2",
+        operation: "single_row_insert",
+        before: {},
+        patch: { amount_cents: 500 },
+        guards: { deduplication: { components: [
+          { column: "tenant_id", source: "trusted_tenant", value: "acme" },
+          { column: "request_id", source: "proposal_id", value: result.proposal_id },
+        ] } },
+      });
+      expect(result.source_database_mutated).toBe(false);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("creates a v2 DELETE tombstone proposal that requires human approval", async () => {
+    const deleteConfig = structuredClone(config);
+    const capability = deleteConfig.capabilities?.[1];
+    if (!capability) throw new Error("proposal fixture missing");
+    capability.operation = { kind: "delete" };
+    capability.patch = {};
+    capability.allowed_columns = [];
+    capability.approval = { mode: "human", required_role: "support_lead" };
+    const runtime = createMcpRuntime(deleteConfig, { readRow: async () => ({ row: fixtureRow, rowCount: 1 }) });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", { invoice_id: "INV-3001", reason: "unused" });
+      const proposal = await runtime.store.getProposal(String(result.proposal_id));
+      expect(proposal?.state).toBe("pending_review");
+      expect(proposal?.change_set).toMatchObject({
+        schema_version: "synapsor.change-set.v2",
+        operation: "single_row_delete",
+        patch: {},
+        after: {},
+      });
+      expect(result.diff).toMatchObject({ id: { before: "INV-3001", proposed: null } });
+    } finally {
+      await runtime.close();
     }
   });
 

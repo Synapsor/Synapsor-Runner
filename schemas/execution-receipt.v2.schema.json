@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.execution-receipt.v2.schema.json",
+  "title": "Synapsor Execution Receipt v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "writeback_job_id",
+    "proposal_id",
+    "proposal_hash",
+    "approval_id",
+    "runner_id",
+    "operation",
+    "receipt_authority",
+    "status",
+    "target",
+    "rows_affected",
+    "idempotency_key",
+    "source_database_mutated",
+    "safe_outcome_code",
+    "executed_at",
+    "receipt_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "synapsor.execution-receipt.v2" },
+    "writeback_job_id": { "type": "string", "minLength": 1 },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_hash": { "$ref": "#/$defs/sha256" },
+    "approval_id": { "type": "string", "minLength": 1 },
+    "runner_id": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["single_row_update", "single_row_insert", "single_row_delete"] },
+    "receipt_authority": { "enum": ["source_db", "runner_ledger"] },
+    "status": { "enum": ["applied", "conflict", "failed", "canceled", "already_applied", "reconciliation_required"] },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "schema", "table", "identity"],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "identity": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/columnValue" },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      }
+    },
+    "rows_affected": { "type": "integer", "minimum": 0, "maximum": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "before_digest": { "$ref": "#/$defs/sha256" },
+    "after_digest": { "$ref": "#/$defs/sha256" },
+    "tombstone_digest": { "$ref": "#/$defs/sha256" },
+    "source_database_mutated": { "type": "boolean" },
+    "safe_outcome_code": { "$ref": "#/$defs/code" },
+    "safe_error_code": { "$ref": "#/$defs/code" },
+    "executed_at": { "type": "string", "format": "date-time" },
+    "receipt_hash": { "$ref": "#/$defs/sha256" },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent_id", "reason"],
+      "properties": {
+        "intent_id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "reconciliation_required" } } },
+      "then": { "required": ["reconciliation"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": { "const": "single_row_delete" },
+          "status": { "enum": ["applied", "already_applied"] }
+        },
+        "required": ["operation", "status"]
+      },
+      "then": { "required": ["tombstone_digest"] }
+    },
+    {
+      "if": { "properties": { "rows_affected": { "minimum": 1 } } },
+      "then": { "properties": { "source_database_mutated": { "const": true } } }
+    }
+  ],
+  "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "sha256": { "type": "string", "pattern": "^sha256:.+" },
+    "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "columnValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    }
+  }
+}

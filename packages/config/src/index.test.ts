@@ -361,6 +361,20 @@ describe("runner capability config validation", () => {
     expect(result.errors.map((error) => error.code)).toContain("CONFLICT_GUARD_REQUIRED");
   });
 
+  it("rejects policy auto-approval for direct hard DELETE", () => {
+    const config = mutableConfig();
+    config.capabilities[1].operation = { kind: "delete" };
+    config.capabilities[1].patch = {};
+    config.capabilities[1].allowed_columns = [];
+    config.capabilities[1].approval = {
+      mode: "policy",
+      required_role: "support_lead",
+      policy: "low_risk_waiver",
+    };
+
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("HARD_DELETE_HUMAN_APPROVAL_REQUIRED");
+  });
+
   it("accepts reviewed numeric bounds and status transitions", () => {
     const config = mutableConfig();
     config.capabilities[1].args.next_status = {

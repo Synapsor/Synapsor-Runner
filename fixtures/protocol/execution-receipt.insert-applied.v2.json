@@ -1,0 +1,24 @@
+{
+  "schema_version": "synapsor.execution-receipt.v2",
+  "writeback_job_id": "wbj_insert_2002",
+  "proposal_id": "wrp_insert_2002",
+  "proposal_hash": "sha256:insert-proposal",
+  "approval_id": "approval_insert_2002",
+  "runner_id": "runner_demo",
+  "operation": "single_row_insert",
+  "receipt_authority": "source_db",
+  "status": "applied",
+  "target": {
+    "source_id": "src_billing_demo",
+    "schema": "public",
+    "table": "account_credits",
+    "identity": [{ "column": "tenant_id", "value": "tenant_demo" }, { "column": "request_id", "value": "wrp_insert_2002" }]
+  },
+  "rows_affected": 1,
+  "idempotency_key": "idem_insert_2002",
+  "after_digest": "sha256:insert-after",
+  "source_database_mutated": true,
+  "safe_outcome_code": "APPLIED",
+  "executed_at": "2026-07-13T18:11:00Z",
+  "receipt_hash": "sha256:insert-receipt"
+}
