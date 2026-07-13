@@ -1,0 +1,12 @@
+{
+  "revert_creates_proposal_only": true,
+  "compensation_requires_new_approval": true,
+  "compensation_has_fresh_conflict_guards": true,
+  "inverse_contains_allowlisted_fields_only": true,
+  "inverse_excludes_internal_note": true,
+  "set_compensation_reuses_exact_members_and_caps": true,
+  "stale_member_aborts_entire_transaction": true,
+  "inverse_of_inverse_is_available": true,
+  "maximum_lineage_depth": 16,
+  "model_facing_revert_tool_exposed": false
+}

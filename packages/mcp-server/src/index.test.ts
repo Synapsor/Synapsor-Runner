@@ -1343,6 +1343,60 @@ describe("local Synapsor MCP runtime", () => {
       await expect(owner.readResource(String(result.evidence_resource))).resolves.toHaveProperty("evidence_bundle_id", result.evidence_bundle_id);
       await expect(owner.readResource(String(result.replay_resource))).resolves.toHaveProperty("proposal.proposal_id", result.proposal_id);
       expect(replay).toHaveBeenCalledTimes(1);
+
+      const compensation = JSON.parse(fs.readFileSync(
+        path.resolve(testDir, "../../../fixtures/protocol/compensation-change-set.update.v1.json"),
+        "utf8",
+      ));
+      compensation.proposal_id = "wrp_revert_authorized";
+      compensation.action = "billing.propose_late_fee_waiver";
+      compensation.principal = { id: "alice", source: "trusted_session" };
+      compensation.scope = { tenant_id: "acme", business_object: "invoices", object_id: "INV-REVERT" };
+      compensation.source = {
+        kind: "external_postgres",
+        source_id: "app_postgres",
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id", value: "INV-REVERT" },
+      };
+      compensation.compensation.descriptor.target = {
+        source_id: "app_postgres",
+        schema: "public",
+        table: "invoices",
+        primary_key_column: "id",
+      };
+      compensation.compensation.descriptor.tenant_guard = { column: "tenant_id", value: "acme" };
+      compensation.compensation.descriptor.allowed_columns = ["late_fee_cents"];
+      compensation.compensation.descriptor.members = [{
+        primary_key: { column: "id", value: "INV-REVERT" },
+        expected_state: { late_fee_cents: 0, version: 8 },
+        restore_values: { late_fee_cents: 5500 },
+      }];
+      compensation.guards = { tenant: { column: "tenant_id", value: "acme" }, allowed_columns: ["late_fee_cents"] };
+      compensation.evidence = { bundle_id: "ev_revert_authorized", query_fingerprint: "sha256:revert-authorization", items: [] };
+      compensation.integrity = { proposal_hash: "sha256:revert-authorization" };
+      backing.createProposal(compensation);
+      backing.recordEvidenceBundle({
+        evidence_bundle_id: "ev_revert_authorized",
+        proposal_id: compensation.proposal_id,
+        tenant_id: "acme",
+        payload: { source_database_changed: false },
+      });
+
+      const compensationResources = [
+        "synapsor://proposals/wrp_revert_authorized",
+        "synapsor://evidence/ev_revert_authorized",
+        "synapsor://replay/replay_wrp_revert_authorized",
+      ];
+      for (const uri of compensationResources) {
+        await expect(wrongTenant.readResource(uri)).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
+        await expect(wrongPrincipal.readResource(uri)).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
+        await expect(owner.readResource(uri)).resolves.toBeDefined();
+      }
+      expect(owner.listTools().map((tool) => tool.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_late_fee_waiver",
+      ]);
     } finally {
       await owner.close();
       await wrongTenant.close();

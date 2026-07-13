@@ -1,0 +1,98 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "reviewed-reversible-change-sets",
+    "version": "1.4.0"
+  },
+  "contexts": [
+    {
+      "name": "trusted_operator",
+      "bindings": [
+        { "name": "tenant_id", "source": "environment", "key": "SYNAPSOR_TENANT_ID", "required": true },
+        { "name": "principal", "source": "environment", "key": "SYNAPSOR_PRINCIPAL", "required": true }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "billing.adjust_credit",
+      "kind": "proposal",
+      "context": "trusted_operator",
+      "source": "local_postgres",
+      "subject": {
+        "schema": "public",
+        "table": "account_credits",
+        "primary_key": "id",
+        "tenant_key": "tenant_id",
+        "conflict_key": "version"
+      },
+      "args": {
+        "credit_id": { "type": "string", "required": true, "max_length": 128 },
+        "amount_cents": { "type": "number", "required": true, "minimum": 0, "maximum": 2500 }
+      },
+      "lookup": { "id_from_arg": "credit_id" },
+      "visible_fields": ["id", "tenant_id", "amount_cents", "version"],
+      "kept_out_fields": ["internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "proposal": {
+        "action": "adjust_credit",
+        "operation": {
+          "kind": "update",
+          "cardinality": "single",
+          "version_advance": { "column": "version", "strategy": "integer_increment" }
+        },
+        "allowed_fields": ["amount_cents"],
+        "patch": { "amount_cents": { "from_arg": "amount_cents" } },
+        "numeric_bounds": { "amount_cents": { "minimum": 0, "maximum": 2500 } },
+        "reversibility": { "mode": "reviewed_inverse" },
+        "conflict_guard": { "column": "version" },
+        "approval": { "mode": "human", "required_role": "billing_reviewer", "required_approvals": 2 },
+        "writeback": { "mode": "direct_sql" }
+      }
+    },
+    {
+      "name": "billing.create_credit",
+      "kind": "proposal",
+      "context": "trusted_operator",
+      "source": "local_postgres",
+      "subject": {
+        "schema": "public",
+        "table": "account_credits",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "amount_cents": { "type": "number", "required": true, "minimum": 1, "maximum": 2500 },
+        "reason": { "type": "string", "required": true, "max_length": 500 }
+      },
+      "visible_fields": ["id", "tenant_id", "amount_cents", "reason"],
+      "kept_out_fields": ["internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "proposal": {
+        "action": "create_credit",
+        "operation": {
+          "kind": "insert",
+          "cardinality": "single",
+          "deduplication": {
+            "components": [
+              { "column": "tenant_id", "source": "trusted_tenant" },
+              { "column": "id", "source": "proposal_id" }
+            ]
+          }
+        },
+        "allowed_fields": ["amount_cents", "reason"],
+        "patch": {
+          "amount_cents": { "from_arg": "amount_cents" },
+          "reason": { "from_arg": "reason" }
+        },
+        "numeric_bounds": { "amount_cents": { "minimum": 1, "maximum": 2500 } },
+        "reversibility": { "mode": "reviewed_inverse" },
+        "approval": { "mode": "human", "required_role": "billing_reviewer" },
+        "writeback": { "mode": "direct_sql" }
+      }
+    }
+  ]
+}

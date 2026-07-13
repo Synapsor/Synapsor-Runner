@@ -156,6 +156,12 @@ InnoDB foreign-key metadata. If those privileges are unacceptable, use a soft
 delete capability or an app-owned executor; Runner fails closed rather than
 claiming an unverified one-row effect.
 
+The same MySQL metadata visibility is required when reviewed compensation may
+delete a row, including reversal of an INSERT. See [Reviewed Reversible Change
+Sets](reversible-change-sets.md). App-owned executors are not automatically
+reversible; they need an application-defined, separately reviewed compensation
+capability.
+
 Generate or inspect source-receipt SQL without exposing credentials:
 
 ```bash

@@ -28,7 +28,7 @@ const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "ten
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const EVIDENCE_KEYS = new Set(["required", "sources", "query_audit", "handle_prefix"]);
-const PROPOSAL_KEYS = new Set(["action", "operation", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "conflict_guard", "approval", "writeback"]);
+const PROPOSAL_KEYS = new Set(["action", "operation", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "reversibility", "conflict_guard", "approval", "writeback"]);
 const OPERATION_KEYS = new Set(["kind", "cardinality", "selection", "max_rows", "aggregate_bounds", "batch", "deduplication", "version_advance"]);
 const SELECTION_KEYS = new Set(["all"]);
 const PREDICATE_TERM_KEYS = new Set(["column", "operator", "value"]);
@@ -44,6 +44,7 @@ const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
+const REVERSIBILITY_KEYS = new Set(["mode"]);
 const WORKFLOW_KEYS = new Set(["name", "description", "context", "allowed_capabilities", "required_evidence", "approval", "settlement", "replay"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
@@ -384,6 +385,16 @@ function validateProposalAction(value: unknown, subject: unknown, path: string, 
   }
   validateNumericBounds(value.numeric_bounds, value.patch, `${path}.numeric_bounds`, errors);
   validateTransitionGuards(value.transition_guards, value.patch, `${path}.transition_guards`, errors);
+  if (value.reversibility !== undefined) {
+    if (!isRecord(value.reversibility)) {
+      errors.push({ path: `${path}.reversibility`, code: "REVERSIBILITY_NOT_OBJECT", message: "reversibility must be an object." });
+    } else {
+      checkUnknownKeys(value.reversibility, REVERSIBILITY_KEYS, `${path}.reversibility`, errors);
+      if (value.reversibility.mode !== "reviewed_inverse") {
+        errors.push({ path: `${path}.reversibility.mode`, code: "INVALID_REVERSIBILITY_MODE", message: "reversibility.mode must be reviewed_inverse." });
+      }
+    }
+  }
   if (value.conflict_guard !== undefined) {
     if (!isRecord(value.conflict_guard)) errors.push({ path: `${path}.conflict_guard`, code: "CONFLICT_GUARD_NOT_OBJECT", message: "conflict_guard must be an object." });
     else {
@@ -421,6 +432,33 @@ function validateProposalAction(value: unknown, subject: unknown, path: string, 
     if (approvalMode !== "human" && approvalMode !== "operator") errors.push({ path: `${path}.approval.mode`, code: "SET_WRITE_HUMAN_APPROVAL_REQUIRED", message: "bounded set writes require human/operator approval in the first release." });
     if (!isRecord(value.writeback) || value.writeback.mode !== "direct_sql") errors.push({ path: `${path}.writeback.mode`, code: "SET_WRITE_DIRECT_SQL_REQUIRED", message: "bounded set writes require Runner-owned direct_sql writeback." });
     if (value.operation.kind === "update" && (!isRecord(value.operation.version_advance) || value.operation.version_advance.strategy !== "integer_increment")) errors.push({ path: `${path}.operation.version_advance`, code: "SET_INTEGER_VERSION_REQUIRED", message: "bounded set UPDATE requires integer_increment version advancement." });
+  }
+  if (isRecord(value.reversibility) && value.reversibility.mode === "reviewed_inverse") {
+    const writebackMode = isRecord(value.writeback) ? value.writeback.mode : undefined;
+    const approvalMode = isRecord(value.approval) ? value.approval.mode : undefined;
+    if (writebackMode !== "direct_sql") {
+      errors.push({ path: `${path}.writeback.mode`, code: "REVERSIBILITY_DIRECT_SQL_REQUIRED", message: "reviewed inverse capture is supported only for Runner-owned direct_sql writeback." });
+    }
+    if (approvalMode !== "human" && approvalMode !== "operator") {
+      errors.push({ path: `${path}.approval.mode`, code: "REVERSIBILITY_HUMAN_APPROVAL_REQUIRED", message: "reversible writes require human/operator approval; policy auto-approval is not allowed." });
+    }
+    if (operation === "update") {
+      if (!isRecord(value.conflict_guard) || !isSafeIdentifier(value.conflict_guard.column)) {
+        errors.push({ path: `${path}.conflict_guard.column`, code: "REVERSIBILITY_CONFLICT_GUARD_REQUIRED", message: "reversible UPDATE requires an exact conflict_guard.column." });
+      }
+      if (!isRecord(value.operation) || !isRecord(value.operation.version_advance) || value.operation.version_advance.strategy !== "integer_increment") {
+        errors.push({ path: `${path}.operation.version_advance`, code: "REVERSIBILITY_INTEGER_VERSION_REQUIRED", message: "reversible UPDATE requires integer_increment version advancement so compensation advances rather than rewinds concurrency state." });
+      }
+    }
+    if (operation === "insert" && isRecord(subject)) {
+      const primaryKey = subject.primary_key;
+      const components = isRecord(value.operation) && isRecord(value.operation.deduplication) && Array.isArray(value.operation.deduplication.components)
+        ? value.operation.deduplication.components
+        : [];
+      if (!isSafeIdentifier(primaryKey) || !components.some((component) => isRecord(component) && component.column === primaryKey)) {
+        errors.push({ path: `${path}.operation.deduplication.components`, code: "REVERSIBILITY_PRIMARY_KEY_DEDUP_REQUIRED", message: "reversible INSERT requires a deterministic primary-key component in its reviewed deduplication key." });
+      }
+    }
   }
 }
 

@@ -268,6 +268,15 @@ Writeback forms:
 | `WRITEBACK CLOUD WORKER` | Delegates approved execution to Cloud worker infrastructure. |
 | `WRITEBACK NONE` | Proposal-only; local apply is intentionally unavailable. |
 
+`REVERSIBLE` opts a direct SQL proposal into reviewed inverse capture. It does
+not add an MCP tool or automatic rollback. UPDATE requires an exact conflict
+guard and `ADVANCE VERSION ... USING INTEGER INCREMENT`; INSERT requires a
+deterministic primary-key dedup component; policy auto-approval and app-owned
+handlers are rejected. After an unambiguous apply, an operator may run
+`synapsor-runner revert <proposal_id>` to create a separately reviewed
+compensation proposal. See [Reviewed Reversible Change
+Sets](reversible-change-sets.md).
+
 ## Workflow declarations
 
 ```sql

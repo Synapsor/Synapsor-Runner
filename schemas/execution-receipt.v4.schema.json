@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.execution-receipt.v4.schema.json",
+  "title": "Synapsor Compensation Execution Receipt v4",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "writeback_job_id", "proposal_id", "proposal_hash", "approval_id", "runner_id", "operation", "receipt_authority", "status", "target", "rows_affected", "idempotency_key", "forward_receipt_hash", "member_effects", "source_database_mutated", "safe_outcome_code", "executed_at", "receipt_hash"],
+  "properties": {
+    "schema_version": { "const": "synapsor.execution-receipt.v4" }, "writeback_job_id": { "type": "string", "minLength": 1 }, "proposal_id": { "type": "string", "minLength": 1 }, "proposal_hash": { "$ref": "#/$defs/sha256" }, "approval_id": { "type": "string", "minLength": 1 }, "runner_id": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["restore_update", "remove_insert", "restore_insert"] }, "receipt_authority": { "enum": ["source_db", "runner_ledger"] }, "status": { "enum": ["applied", "conflict", "failed", "canceled", "already_applied", "reconciliation_required"] },
+    "target": { "type": "object", "additionalProperties": false, "required": ["source_id", "schema", "table", "identities"], "properties": { "source_id": { "type": "string", "minLength": 1 }, "schema": { "$ref": "#/$defs/identifier" }, "table": { "$ref": "#/$defs/identifier" }, "identities": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/$defs/columnValue" } } } },
+    "rows_affected": { "type": "integer", "minimum": 0, "maximum": 100 }, "idempotency_key": { "type": "string", "minLength": 1 }, "forward_receipt_hash": { "$ref": "#/$defs/sha256" },
+    "member_effects": { "type": "array", "maxItems": 100, "items": { "type": "object", "additionalProperties": false, "required": ["primary_key"], "properties": { "primary_key": { "$ref": "#/$defs/columnValue" }, "before_digest": { "$ref": "#/$defs/sha256" }, "after_digest": { "$ref": "#/$defs/sha256" }, "tombstone_digest": { "$ref": "#/$defs/sha256" } } } },
+    "inverse": { "$ref": "inverse-descriptor.v1.schema.json" }, "source_database_mutated": { "type": "boolean" }, "safe_outcome_code": { "$ref": "#/$defs/code" }, "safe_error_code": { "$ref": "#/$defs/code" }, "executed_at": { "type": "string", "format": "date-time" }, "receipt_hash": { "$ref": "#/$defs/sha256" },
+    "reconciliation": { "type": "object", "additionalProperties": false, "required": ["intent_id", "reason"], "properties": { "intent_id": { "type": "string", "minLength": 1 }, "reason": { "type": "string", "minLength": 1 } } }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "enum": ["applied", "already_applied"] } } }, "then": { "required": ["inverse"] } },
+    { "if": { "properties": { "status": { "const": "reconciliation_required" } } }, "then": { "required": ["reconciliation"] } },
+    { "if": { "properties": { "rows_affected": { "minimum": 1 } } }, "then": { "properties": { "source_database_mutated": { "const": true } } } }
+  ],
+  "$defs": { "identifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }, "sha256": { "type": "string", "pattern": "^sha256:.+" }, "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }, "scalar": { "type": ["string", "number", "boolean", "null"] }, "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/scalar" } } } }
+}

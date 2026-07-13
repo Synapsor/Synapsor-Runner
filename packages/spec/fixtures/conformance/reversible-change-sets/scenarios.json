@@ -1,0 +1,30 @@
+{
+  "update_forward_apply": {
+    "before": { "id": "CR-1", "tenant_id": "acme", "amount_cents": 100, "version": 7, "internal_note": "kept out" },
+    "after": { "id": "CR-1", "tenant_id": "acme", "amount_cents": 2500, "version": 8 },
+    "expected_inverse_operation": "restore_update"
+  },
+  "insert_forward_apply": {
+    "after": { "id": "wrp_create_credit", "tenant_id": "acme", "amount_cents": 500, "reason": "service recovery" },
+    "expected_inverse_operation": "remove_insert"
+  },
+  "soft_delete": {
+    "modeled_as": "single_row_update",
+    "patch": { "deleted_at": "2026-07-13T00:00:00Z" },
+    "expected_inverse_operation": "restore_update"
+  },
+  "hard_delete": {
+    "operation": "single_row_delete",
+    "expected_availability": "best_effort_unavailable",
+    "expected_reason_codes": ["HARD_DELETE_RESTORE_UNSAFE"]
+  },
+  "stale_compensation": {
+    "intervening_version": 9,
+    "expected": "VERSION_CONFLICT",
+    "expected_source_changes": 0
+  },
+  "ambiguous_forward_apply": {
+    "receipt_status": "reconciliation_required",
+    "expected": "REVERSAL_RECONCILIATION_REQUIRED"
+  }
+}

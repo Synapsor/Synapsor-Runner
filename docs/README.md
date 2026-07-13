@@ -51,6 +51,8 @@ no-database demo, wire your database, then read deeper concepts.
 - [Bounded Set Writeback](bounded-set-writeback.md): fixed-predicate set
   UPDATE/DELETE, exact-review batch INSERT, mandatory caps, atomicity, and
   exact receipts.
+- [Reviewed Reversible Change Sets](reversible-change-sets.md): opt-in bounded
+  inverse capture and the separate operator proposal/approval/apply flow.
 
 ## 05 Generate Capabilities
 
@@ -97,6 +99,9 @@ no-database demo, wire your database, then read deeper concepts.
   `ok`/`summary`/`data`/`proposal`/`error` MCP tool results.
 - [Result Envelope v3](result-envelope-v3.md): frozen-set jobs and receipts
   with every bounded member identity and safe digest.
+- [Compensation Protocol v4](result-envelope-v4.md): reviewed inverse
+  descriptors, compensation proposals/jobs/receipts, lineage, and
+  reconciliation semantics.
 - [Store Lifecycle](store-lifecycle.md): active-store leases, prune safety,
   deleted-store behavior, and concurrent server guardrails.
 - `synapsor-runner activity search`, `evidence`, `query-audit`, `receipts`,
@@ -140,7 +145,8 @@ no-database demo, wire your database, then read deeper concepts.
   [002 handler helper](rfcs/002-app-owned-handler-helper.md),
   [003 integrator teardown](rfcs/003-integrator-feedback-teardown.md),
   [004 guarded CRUD and receipt authority](rfcs/004-guarded-crud-receipt-authority.md),
-  [005 bounded set writeback](rfcs/005-bounded-set-writeback.md).
+  [005 bounded set writeback](rfcs/005-bounded-set-writeback.md), and
+  [006 reviewed reversible change sets](rfcs/006-reviewed-reversible-change-sets.md).
 
 The public docs intentionally stay task-first. Historical implementation
 reports, release checklists, and internal planning notes are not part of the

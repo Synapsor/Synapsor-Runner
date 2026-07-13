@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.writeback-job.v4.schema.json",
+  "title": "Synapsor Compensation Writeback Job v4",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "writeback_job_id", "proposal_id", "proposal_version", "proposal_hash", "runner_scope", "engine", "operation", "target", "tenant_guard", "allowed_columns", "patch", "compensation", "forward_receipt_hash", "idempotency_key", "lease"],
+  "properties": {
+    "schema_version": { "const": "synapsor.writeback-job.v4" }, "writeback_job_id": { "type": "string", "minLength": 1 }, "proposal_id": { "type": "string", "minLength": 1 }, "proposal_version": { "type": "integer", "minimum": 1 }, "proposal_hash": { "$ref": "#/$defs/sha256" },
+    "runner_scope": { "type": "object", "additionalProperties": false, "required": ["project_id", "source_id"], "properties": { "project_id": { "type": "string", "minLength": 1 }, "source_id": { "type": "string", "minLength": 1 } } },
+    "engine": { "enum": ["postgres", "mysql"] }, "operation": { "enum": ["restore_update", "remove_insert", "restore_insert"] },
+    "target": { "type": "object", "additionalProperties": false, "required": ["schema", "table", "primary_key"], "properties": { "schema": { "$ref": "#/$defs/identifier" }, "table": { "$ref": "#/$defs/identifier" }, "primary_key": { "type": "object", "additionalProperties": false, "required": ["column"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/scalar" } } } } },
+    "tenant_guard": { "$ref": "#/$defs/columnValue" }, "allowed_columns": { "type": "array", "items": { "$ref": "#/$defs/identifier" }, "maxItems": 256, "uniqueItems": true }, "patch": { "type": "object", "maxProperties": 0 },
+    "compensation": { "$ref": "inverse-descriptor.v1.schema.json" }, "forward_receipt_hash": { "$ref": "#/$defs/sha256" }, "idempotency_key": { "type": "string", "minLength": 1 },
+    "lease": { "type": "object", "additionalProperties": false, "required": ["lease_id", "attempt", "expires_at"], "properties": { "lease_id": { "type": "string", "minLength": 1 }, "attempt": { "type": "integer", "minimum": 1 }, "expires_at": { "type": "string", "format": "date-time" } } }
+  },
+  "$defs": { "identifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }, "sha256": { "type": "string", "pattern": "^sha256:.+" }, "scalar": { "type": ["string", "number", "boolean", "null"] }, "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/scalar" } } } }
+}

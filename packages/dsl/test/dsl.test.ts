@@ -240,6 +240,43 @@ END
     });
   });
 
+  it("compiles REVERSIBLE into reviewed inverse authority", () => {
+    const contract = compileAgentDsl(crudSource(`
+  PROPOSE ACTION adjust_credit UPDATE
+  ALLOW WRITE amount_cents, reason
+  PATCH amount_cents = ARG amount_cents
+  PATCH reason = ARG reason
+  ADVANCE VERSION updated_at USING INTEGER INCREMENT
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+  REVERSIBLE
+`));
+
+    expect(contract.capabilities[0]?.proposal?.reversibility).toEqual({ mode: "reviewed_inverse" });
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("rejects REVERSIBLE when writeback, approval, or version guards are weaker", () => {
+    expect(() => compileAgentDsl(crudSource(`
+  PROPOSE ACTION adjust_credit UPDATE
+  ALLOW WRITE amount_cents
+  PATCH amount_cents = ARG amount_cents
+  ADVANCE VERSION updated_at USING DATABASE GENERATED
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+  REVERSIBLE
+`))).toThrow(/REVERSIBILITY_INTEGER_VERSION_REQUIRED/);
+    expect(() => compileAgentDsl(crudSource(`
+  PROPOSE ACTION adjust_credit UPDATE
+  ALLOW WRITE amount_cents
+  PATCH amount_cents = ARG amount_cents
+  ADVANCE VERSION updated_at USING INTEGER INCREMENT
+  APPROVAL ROLE support_reviewer
+  WRITEBACK APP HANDLER EXECUTOR app_handler
+  REVERSIBLE
+`))).toThrow(/REVERSIBILITY_DIRECT_SQL_REQUIRED/);
+  });
+
   it("rejects unsafe INSERT and DELETE operation syntax", () => {
     expect(() => compileAgentDsl(crudSource(`
   PROPOSE ACTION create_credit INSERT

@@ -234,6 +234,83 @@ describe("postgres adapter", () => {
     expect(client.sqlLog).toContain("COMMIT");
   });
 
+  it("applies a reviewed compensation with a fresh guard and emits a revert-of-revert inverse", async () => {
+    const client = new CompensationPostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+    }, client);
+
+    expect(result).toMatchObject({
+      protocol_version: "4.0",
+      operation: "restore_update",
+      status: "applied",
+      affected_rows: 1,
+      inverse: { operation: "restore_update", lineage: { depth: 2 } },
+    });
+    expect(client.sqlLog.some((sql) => sql.startsWith('UPDATE "public"."credits"'))).toBe(true);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("fails a stale compensation closed before mutation", async () => {
+    const client = new CompensationPostgresClient(true);
+    const result = await applyPostgresJobWithClient(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: new FakeIntentStore(),
+    }, client);
+
+    expect(result).toMatchObject({ protocol_version: "4.0", status: "conflict", error_code: "ROW_CHANGED_AFTER_FORWARD_WRITE", affected_rows: 0 });
+    expect(client.sqlLog.some((sql) => sql.startsWith('UPDATE "public"."credits"'))).toBe(false);
+  });
+
+  it("requires reconciliation when a compensation stops after source COMMIT", async () => {
+    const client = new CompensationPostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "after_source_commit") throw new Error("simulated compensation process death");
+      },
+    }, client);
+
+    expect(result).toMatchObject({
+      protocol_version: "4.0",
+      operation: "restore_update",
+      status: "reconciliation_required",
+      error_code: "RECONCILIATION_REQUIRED",
+      intent_id: "wbi:test",
+    });
+    expect(result).not.toHaveProperty("inverse");
+    expect(intents.calls).toEqual(["claim", "applying", "reconciliation"]);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("requires reconciliation when compensation rollback acknowledgement is lost", async () => {
+    const client = new RollbackUnknownCompensationPostgresClient();
+    const intents = new FakeIntentStore();
+    const result = await applyPostgresJobWithClient(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "after_source_mutation") throw new Error("simulated compensation connection loss");
+      },
+    }, client);
+
+    expect(result).toMatchObject({
+      protocol_version: "4.0",
+      status: "reconciliation_required",
+      error_code: "RECONCILIATION_REQUIRED",
+    });
+    expect(result).not.toHaveProperty("inverse");
+    expect(intents.calls).toEqual(["claim", "applying", "reconciliation"]);
+  });
+
   it("bounds direct write statements and lock waits inside the transaction", async () => {
     const client = new SetPostgresClient();
     const result = await applyPostgresJobWithClient(v3SetUpdateJob(), { ...config, statementTimeoutMs: 2500 }, client);
@@ -453,6 +530,43 @@ const v2DeleteJob = {
   attempt_count: 1,
 };
 
+function v4CompensationUpdateJob() {
+  return {
+    protocol_version: "4.0" as const,
+    job_id: "wbj_revert_update",
+    proposal_id: "wrp_revert_update",
+    approval_id: "sha256:revert-approval",
+    source_id: "src_1",
+    engine: "postgres" as const,
+    operation: "restore_update" as const,
+    target: { schema: "public", table: "credits", primary_key: { column: "id", value: "CR-1" }, tenant_guard: { column: "tenant_id", value: "acme" } },
+    allowed_columns: ["amount_cents"],
+    patch: {},
+    conflict_guard: { kind: "none" as const },
+    compensation: {
+      schema_version: "synapsor.inverse-descriptor.v1" as const,
+      availability: "available" as const,
+      reason_codes: [],
+      operation: "restore_update" as const,
+      cardinality: "single" as const,
+      forward_proposal_id: "wrp_forward_update",
+      forward_writeback_job_id: "wbj_forward_update",
+      target: { source_id: "src_1", schema: "public", table: "credits", primary_key_column: "id" },
+      tenant_guard: { column: "tenant_id", value: "acme" },
+      allowed_columns: ["amount_cents"],
+      members: [{ primary_key: { column: "id", value: "CR-1" }, expected_state: { amount_cents: 2500, version: 8 }, restore_values: { amount_cents: 100 } }],
+      max_rows: 1,
+      aggregate_bounds: [],
+      version_advance: { column: "version", strategy: "integer_increment" as const },
+      lineage: { root_proposal_id: "wrp_forward_update", parent_proposal_id: "wrp_forward_update", reverts_proposal_id: "wrp_forward_update", depth: 1 },
+    },
+    forward_receipt_hash: "sha256:forward-receipt",
+    idempotency_key: "revert:wrp_forward_update",
+    lease_expires_at: 1,
+    attempt_count: 1,
+  };
+}
+
 class V2PostgresClient implements PostgresApplyClient {
   readonly sqlLog: string[] = [];
   async query(sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
@@ -461,6 +575,27 @@ class V2PostgresClient implements PostgresApplyClient {
     if (sql.startsWith('SELECT "id"::text AS "__synapsor_primary_key"')) return { rows: [{ __synapsor_primary_key: "CR-1", __synapsor_conflict_value: "7" }], rowCount: 1 };
     if (sql.startsWith('UPDATE "public"."credits"')) return { rows: [{ __synapsor_result_version: "8" }], rowCount: 1 };
     throw new Error(`unexpected v2 query: ${sql}`);
+  }
+}
+
+class CompensationPostgresClient implements PostgresApplyClient {
+  readonly sqlLog: string[] = [];
+  constructor(private readonly stale = false) {}
+  async query(sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    this.sqlLog.push(sql.trim());
+    if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: null };
+    if (sql.startsWith("SELECT") && sql.includes('FROM "public"."credits"') && sql.includes("FOR UPDATE")) {
+      return { rows: [{ id: "CR-1", tenant_id: "acme", amount_cents: this.stale ? 2600 : 2500, version: 8 }], rowCount: 1 };
+    }
+    if (sql.startsWith('UPDATE "public"."credits"')) return { rows: [], rowCount: 1 };
+    throw new Error(`unexpected compensation query: ${sql}`);
+  }
+}
+
+class RollbackUnknownCompensationPostgresClient extends CompensationPostgresClient {
+  override async query(sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    if (sql === "ROLLBACK") throw new Error("connection lost during compensation rollback");
+    return super.query(sql);
   }
 }
 

@@ -148,6 +148,9 @@ export type ProposalActionSpec = ExtensionFields & {
   patch: Record<string, PatchBindingSpec>;
   numeric_bounds?: Record<string, { minimum?: number; maximum?: number }>;
   transition_guards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
+  reversibility?: {
+    mode: "reviewed_inverse";
+  };
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: {
     mode?: "human" | "operator" | "policy";

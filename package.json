@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -24,6 +24,7 @@
     "test:live-apply": "node scripts/smoke-mcp-local-examples.mjs",
     "test:guarded-crud": "corepack pnpm build && node scripts/verify-guarded-crud.mjs",
     "test:bounded-set": "corepack pnpm build && node scripts/verify-bounded-set-writeback.mjs",
+    "test:reversible": "corepack pnpm build:runner-package && node scripts/verify-reversible-writeback.mjs",
     "test:fleet": "corepack pnpm build && node scripts/verify-runner-fleet.mjs",
     "test:mcp-cloud-linked": "tsc -b --pretty false && node scripts/smoke-mcp-cloud-linked.mjs",
     "test:onboarding-generated": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",

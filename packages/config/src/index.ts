@@ -72,6 +72,7 @@ const CAPABILITY_KEYS = new Set([
   "allowed_columns",
   "numeric_bounds",
   "transition_guards",
+  "reversibility",
   "conflict_guard",
   "approval",
   "writeback",
@@ -84,6 +85,7 @@ const ARG_KEYS = new Set(["type", "description", "required", "max_length", "mini
 const PATCH_BINDING_KEYS = new Set(["fixed", "from_arg", "from_item"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
+const REVERSIBILITY_KEYS = new Set(["mode"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
@@ -1107,6 +1109,7 @@ function validateCapability(
     }
   }
   validateCapabilityWriteback(value, path, executorNames, strict, errors);
+  validateCapabilityReversibility(value, path, strict, errors);
   validateTarget(value.target, `${path}.target`, strict, errors, warnings);
   validateArgs(value.args, `${path}.args`, strict, errors);
   validateLookup(value.lookup, `${path}.lookup`, strict, errors);
@@ -1118,6 +1121,33 @@ function validateCapability(
     validateProposalCapability(value, path, strict, errors);
   } else if (value.writeback !== undefined) {
     errors.push({ path: `${path}.writeback`, code: "WRITEBACK_ONLY_FOR_PROPOSAL", message: "writeback is only valid on proposal capabilities." });
+  }
+}
+
+function validateCapabilityReversibility(value: JsonRecord, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value.reversibility === undefined) return;
+  if (!isRecord(value.reversibility)) {
+    errors.push({ path: `${path}.reversibility`, code: "REVERSIBILITY_NOT_OBJECT", message: "reversibility must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value.reversibility, REVERSIBILITY_KEYS, `${path}.reversibility`, errors);
+  if (value.reversibility.mode !== "reviewed_inverse") errors.push({ path: `${path}.reversibility.mode`, code: "INVALID_REVERSIBILITY_MODE", message: "reversibility.mode must be reviewed_inverse." });
+  const writebackMode = isRecord(value.writeback) ? value.writeback.mode : undefined;
+  if (writebackMode !== "direct_sql") errors.push({ path: `${path}.writeback.mode`, code: "REVERSIBILITY_DIRECT_SQL_REQUIRED", message: "reviewed inverse capture requires direct_sql writeback." });
+  const approvalMode = isRecord(value.approval) ? value.approval.mode : undefined;
+  if (approvalMode !== "human" && approvalMode !== "operator") errors.push({ path: `${path}.approval.mode`, code: "REVERSIBILITY_HUMAN_APPROVAL_REQUIRED", message: "reversible writes require human/operator approval." });
+  const operation = isRecord(value.operation) ? value.operation : undefined;
+  const kind = operation?.kind ?? "update";
+  if (kind === "update") {
+    const conflict = isRecord(value.conflict_guard) ? value.conflict_guard : undefined;
+    const advance = operation && isRecord(operation.version_advance) ? operation.version_advance : undefined;
+    if (!isSafeIdentifier(conflict?.column)) errors.push({ path: `${path}.conflict_guard.column`, code: "REVERSIBILITY_CONFLICT_GUARD_REQUIRED", message: "reversible UPDATE requires an exact conflict guard." });
+    if (advance?.strategy !== "integer_increment" || advance.column !== conflict?.column) errors.push({ path: `${path}.operation.version_advance`, code: "REVERSIBILITY_INTEGER_VERSION_REQUIRED", message: "reversible UPDATE requires matching integer_increment version advancement." });
+  }
+  if (kind === "insert") {
+    const target = isRecord(value.target) ? value.target : undefined;
+    const dedup = operation && isRecord(operation.deduplication) && Array.isArray(operation.deduplication.components) ? operation.deduplication.components : [];
+    if (!isSafeIdentifier(target?.primary_key) || !dedup.some((component) => isRecord(component) && component.column === target?.primary_key)) errors.push({ path: `${path}.operation.deduplication.components`, code: "REVERSIBILITY_PRIMARY_KEY_DEDUP_REQUIRED", message: "reversible INSERT requires deterministic primary-key deduplication." });
   }
 }
 

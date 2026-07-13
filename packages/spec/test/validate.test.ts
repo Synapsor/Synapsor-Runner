@@ -173,6 +173,44 @@ describe("@synapsor/spec validation", () => {
     expect(validateContract(contract).errors.map((error) => error.code)).toContain("VERSION_ADVANCE_GUARD_MISMATCH");
   });
 
+  it("accepts reviewed reversible UPDATE and rejects weakened compensation authority", () => {
+    const contract = writeContract();
+    const capability = contract.capabilities[1];
+    capability.subject.conflict_key = "version";
+    capability.visible_fields = [...capability.visible_fields.filter((field: string) => field !== "updated_at"), "version"];
+    capability.proposal.conflict_guard = { column: "version" };
+    capability.proposal.operation = { kind: "update", version_advance: { column: "version", strategy: "integer_increment" } };
+    capability.proposal.reversibility = { mode: "reviewed_inverse" };
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    capability.proposal.approval = { mode: "policy", policy: "small_credit" };
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("REVERSIBILITY_HUMAN_APPROVAL_REQUIRED");
+    capability.proposal.approval = { mode: "human", required_role: "reviewer" };
+    capability.proposal.writeback = { mode: "app_handler", executor: "billing_handler" };
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("REVERSIBILITY_DIRECT_SQL_REQUIRED");
+  });
+
+  it("requires deterministic primary-key authority for reversible INSERT", () => {
+    const contract = writeContract();
+    const capability = contract.capabilities[1];
+    capability.proposal.action = "billing.create_credit";
+    capability.proposal.allowed_fields = ["late_fee_cents", "waiver_reason"];
+    capability.proposal.conflict_guard = undefined;
+    capability.proposal.operation = {
+      kind: "insert",
+      deduplication: { components: [
+        { column: "tenant_id", source: "trusted_tenant" },
+        { column: "request_id", source: "proposal_id" },
+      ] },
+    };
+    capability.proposal.reversibility = { mode: "reviewed_inverse" };
+
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("REVERSIBILITY_PRIMARY_KEY_DEDUP_REQUIRED");
+    capability.proposal.operation.deduplication.components.push({ column: "id", source: "proposal_id" });
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("accepts policy-based auto-approval contracts", () => {
     const result = validateContract(readJson("fixtures/conformance/auto-approval/contract.json"));
 

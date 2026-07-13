@@ -10,6 +10,24 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.4.0 (prepared, not published)
+
+### Reviewed Reversible Change Sets
+
+- Adds canonical and DSL opt-in reversibility for direct SQL operations with
+  human/operator approval and exact version/dedup guards.
+- Records only bounded, allowlisted inverse data after an unambiguous apply.
+- Adds operator-only `revert`, which creates a new independently reviewed
+  proposal and never writes, approves, or becomes model-facing.
+- Proves UPDATE, INSERT, soft-delete, and exact bounded-set compensation on
+  PostgreSQL and MySQL, including stale-state refusal, atomic set rollback,
+  crash reconciliation, inverse redaction, receipts, and replay.
+- Keeps hard DELETE restoration, app-owned handlers, payments, messages, and
+  other external effects outside Runner's automatic compensation claim.
+
+Prepared package versions: `@synapsor/spec@1.4.0`,
+`@synapsor/dsl@1.4.0`, and `@synapsor/runner@1.4.0`.
+
 ## 1.3.0 (prepared, not published)
 
 ### Bounded Set Writeback

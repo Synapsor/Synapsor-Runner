@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.3` scope:
+Current `1.4` scope:
 
 - local semantic MCP tools for Postgres/MySQL-backed business actions;
 - schema inspection and guided config generation;
@@ -13,6 +13,8 @@ Current `1.3` scope:
 - fixed-predicate set `UPDATE`/`DELETE` and exact-review batch `INSERT`, with
   mandatory row/value caps, frozen members, human approval, atomic execution,
   and protocol-v3 exact receipts;
+- opt-in reviewed compensation for direct SQL UPDATE, INSERT, soft-delete, and
+  exact frozen sets, using a separate operator proposal and protocol-v4 receipt;
 - app-owned `http_handler` and `command_handler` executors for richer approved
   business transactions;
 - stdio MCP, Streamable HTTP MCP, and a small JSON-RPC bridge.
@@ -32,6 +34,8 @@ Out of scope:
 - UPSERT, DDL, model-generated predicates, or unguarded INSERT/DELETE;
 - model-generated, unbounded, or cross-table set writeback;
 - physical branching of external Postgres/MySQL;
+- automatic rollback/time travel and inferred compensation for app-owned or
+  external effects;
 - self-hosted Synapsor Cloud;
 - unbounded or multi-region shared-ledger scale and a managed Runner fleet;
 - production SLA or compliance certification.
