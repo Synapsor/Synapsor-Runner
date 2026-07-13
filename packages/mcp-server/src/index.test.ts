@@ -786,6 +786,99 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it.each([
+    {
+      name: "PostgreSQL connection saturation",
+      error: () => new Error("query failed", {
+        cause: Object.assign(new Error("too many clients already at db.internal:5432"), { code: "53300" }),
+      }),
+      runtimeCode: "POSTGRES_53300",
+      retryAfterMs: 1000,
+    },
+    {
+      name: "MySQL connection saturation",
+      error: () => Object.assign(new Error("too many connections at mysql.internal:3306"), {
+        code: "ER_CON_COUNT_ERROR",
+        errno: 1040,
+        sqlState: "08004",
+      }),
+      runtimeCode: "MYSQL_ER_CON_COUNT_ERROR",
+      retryAfterMs: 1000,
+    },
+    {
+      name: "Runner source pool timeout",
+      error: () => new McpRuntimeError("SOURCE_POOL_TIMEOUT", "source connection queue timed out", { retry_after_ms: 2750 }),
+      runtimeCode: "SOURCE_POOL_TIMEOUT",
+      retryAfterMs: 2750,
+    },
+  ])("classifies $name as safely retryable", async ({ error, runtimeCode, retryAfterMs }) => {
+    const logs: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      logs.push(String(chunk));
+      return true;
+    });
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, {
+      readRow: async () => { throw error(); },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: false,
+        error: {
+          code: "TEMPORARILY_UNAVAILABLE",
+          retryable: true,
+          retry_after_ms: retryAfterMs,
+        },
+        source_database_changed: false,
+      });
+      expect(logs).toHaveLength(1);
+      expect(JSON.parse(logs[0] ?? "{}")).toMatchObject({
+        event: "tool_rejected",
+        error_code: "TEMPORARILY_UNAVAILABLE",
+        runtime_code: runtimeCode,
+        retry_after_ms: retryAfterMs,
+        retryable: true,
+        source_database_changed: false,
+      });
+      expect(`${JSON.stringify(result)}${logs.join("")}`).not.toMatch(/db\.internal|mysql\.internal|too many clients|too many connections/i);
+    } finally {
+      runtime.close();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("keeps non-transient database failures non-retryable and redacted", async () => {
+    const logs: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      logs.push(String(chunk));
+      return true;
+    });
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, {
+      readRow: async () => {
+        throw Object.assign(new Error("database constraint violation at db.internal containing secret-row-value"), { code: "23505" });
+      },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: false,
+        error: {
+          code: "INTERNAL",
+          retryable: false,
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.parse(logs[0] ?? "{}")).toMatchObject({
+        runtime_code: "UNCLASSIFIED",
+        retryable: false,
+      });
+      expect(`${JSON.stringify(result)}${logs.join("")}`).not.toMatch(/db\.internal|secret-row-value|23505/i);
+    } finally {
+      runtime.close();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("returns a safe unavailable envelope when the local store disappears while active", async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-mcp-store-missing-"));
     const storePath = path.join(tempDir, "local.db");

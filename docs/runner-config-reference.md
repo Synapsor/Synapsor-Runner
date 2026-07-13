@@ -131,6 +131,10 @@ Long-running servers reuse native driver pools. Optional `pool` keys are
 `idle_timeout_ms` (30000), `queue_timeout_ms` (5000), and `queue_limit`
 (default `max(10, max_connections * 4)`). Queue overflow returns
 `SOURCE_POOL_QUEUE_FULL`; acquisition timeout returns `SOURCE_POOL_TIMEOUT`.
+With result envelope v2, these conditions and recognized transient driver
+connection failures are model-facing `TEMPORARILY_UNAVAILABLE` errors with
+`retryable: true` and a bounded `retry_after_ms`. Operational logs retain only
+a normalized safe runtime code, not the driver message, host, or credentials.
 One-shot CLI commands close their pools.
 
 ## Trusted context

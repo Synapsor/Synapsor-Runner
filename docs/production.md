@@ -336,9 +336,12 @@ synapsor-runner apply --all-approved --yes \
 ```
 
 Each proposal is independent: a stale-row conflict does not abort later jobs.
-The final summary reports applied, conflict, and skipped IDs. Re-running is
-idempotent through durable receipts. Do not schedule batch apply for a policy
-that has no reviewed aggregate limits.
+In `runtime_store` mode, the batch holds one authoritative bridge while every
+selected item applies, then syncs the resulting states, receipts, and events
+back together. The final summary reports applied, conflict, and skipped IDs;
+every skipped item includes a safe reason. Re-running is idempotent through
+durable receipts. Do not schedule batch apply for a policy that has no reviewed
+aggregate limits.
 
 Runner writes newline-delimited JSON events to stderr for model-facing tool
 rejections, operator decisions, and terminal writeback outcomes. These events

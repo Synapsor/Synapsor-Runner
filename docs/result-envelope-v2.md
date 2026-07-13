@@ -105,8 +105,9 @@ For app-owned executors, `proposal.writeback.mode` is `app_handler`.
 
 ## Error Result
 
-Model-facing errors are safe and stable. Raw driver details stay in local logs
-or ledger inspection, not in the MCP result.
+Model-facing errors are safe and stable. Structured tool-rejection logs also
+omit raw driver messages, hosts, and credentials; use operator-controlled
+readiness and database diagnostics to investigate the underlying dependency.
 
 ```json
 {
@@ -119,7 +120,8 @@ or ledger inspection, not in the MCP result.
   "error": {
     "code": "TEMPORARILY_UNAVAILABLE",
     "message": "The database is temporarily unavailable. Retry later.",
-    "retryable": true
+    "retryable": true,
+    "retry_after_ms": 1000
   },
   "evidence": null,
   "source_database_changed": false,
@@ -143,8 +145,10 @@ TEMPORARILY_UNAVAILABLE
 INTERNAL
 ```
 
-Current alpha implementation redacts raw connection and driver messages from v2
-MCP results. New `init` and `onboard db` configs write `result_format: 2` by
+Runner redacts raw connection and driver messages from v2 MCP results and
+structured operational logs. Recognized transient pool, PostgreSQL, MySQL, and
+network failures include a bounded `retry_after_ms`; unrelated database errors
+remain non-retryable. New `init` and `onboard db` configs write `result_format: 2` by
 default. Existing hand-written configs without `result_format` keep the legacy
 runtime default for compatibility; pass `--result-format v2` when serving an
 older config to force the v2 envelope, or `--result-format v1` for an older

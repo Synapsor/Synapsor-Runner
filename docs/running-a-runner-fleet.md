@@ -89,7 +89,8 @@ worker termination during an open write transaction rolls back and recovers
 worker termination after commit recovers as already-applied
 source-down, read-only-ledger, and timeout readiness failures recover without restart
 shared dead letters requeue or discard with receipts and events preserved
-Postgres and MySQL pool queues fail fast at configured bounds
+Postgres and MySQL pool queues fail fast at configured bounds with retry hints
+shared runtime-store batch apply preserves one authoritative bridge and durable receipts
 backup digest and clean restore match
 retention archives before delete and preserves active proposals
 ```

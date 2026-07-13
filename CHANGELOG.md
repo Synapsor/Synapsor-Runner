@@ -1,6 +1,23 @@
 # Changelog
 
-## 1.1.1 (prepared, not published)
+## 1.1.2 (prepared, not published)
+
+### Fleet Error And Batch Apply Correctness
+
+- Classifies bounded source-pool saturation and recognized transient
+  PostgreSQL, MySQL, and network failures as `TEMPORARILY_UNAVAILABLE` with
+  `retryable: true` and a bounded `retry_after_ms`, while keeping raw driver
+  details out of MCP results and operational logs.
+- Keeps non-transient database failures fail-closed as non-retryable
+  `INTERNAL` errors.
+- Preserves the existing shared `runtime_store` bridge while
+  `apply --all-approved` applies each selected proposal, preventing stale
+  bridge state from silently skipping policy- or human-approved proposals.
+- Adds policy-approved unit coverage and a two-Runner synthetic Postgres fleet
+  check for durable batch results and receipts.
+- Stages only `@synapsor/runner@1.1.2`; canonical Spec and DSL remain `1.1.0`.
+
+## 1.1.1
 
 ### Resource Read Authorization
 
