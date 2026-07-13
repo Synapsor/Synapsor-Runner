@@ -21,7 +21,7 @@ and investigation surfaces for enabled design-partner deployments.
 | Capabilities | Local semantic MCP tools | Registry, version history, and capability inspection |
 | Evidence and replay | Local SQLite ledger by default; optional shared Postgres runtime store | Shared activity and evidence surfaces where enabled |
 | Approval | Local CLI or localhost UI | Team approval surfaces where enabled |
-| Writeback | Guarded one-row INSERT/UPDATE/DELETE or app-owned executor | Cloud-linked jobs with local execution; managed production orchestration is future work |
+| Writeback | Guarded one-row CRUD, fixed/frozen bounded sets, or app-owned executor | Cloud-linked jobs with local execution; managed production orchestration is future work |
 | MCP risk audit | Static local audit | Organization-wide continuous audit is future work |
 | Identity | Local operator boundary | Workspace RBAC where configured; SAML and SCIM are future work |
 | Operations | Customer-operated single node or bounded small fleet | Managed fleet remains Cloud work; no enterprise SLA in the current beta |

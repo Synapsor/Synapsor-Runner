@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.3.0 (prepared, not published)
+
+### Bounded Set Writeback
+
+- Adds canonical and DSL semantics for fixed-predicate set `UPDATE`/`DELETE`
+  and exact-review batch `INSERT`, with mandatory `MAX ROWS`, aggregate value
+  bounds, and a hard 100-row implementation ceiling.
+- Freezes ordered primary keys, tenant scope, reviewed before/after values,
+  exact versions, per-member digests, and a set digest before approval. Apply
+  locks only that frozen set and never reruns a broad selection predicate.
+- Applies every member in one source transaction. Cap overflow, aggregate
+  overflow, stale/missing members, anomalous affected counts, dedup conflicts,
+  triggers, or widening delete cascades fail closed without partial effects.
+- Requires human/operator approval for all bounded sets in this release;
+  policy auto-approval is rejected. Hard set delete remains exceptional and
+  soft delete is preferred.
+- Adds protocol-v3 change-set, writeback-job, result, and receipt envelopes
+  with exact member identities and bounded safe digests, plus reconciliation
+  support for Runner-ledger crash ambiguity.
+- Adds executable R1-R7 conformance coverage and a disposable PostgreSQL/MySQL
+  live gate for cap/aggregate rejection, atomic rollback, exact receipts,
+  batch deduplication, delete hazards, reconciliation, and 1/10/100-row bounds.
+- Stages `@synapsor/spec@1.3.0`, `@synapsor/dsl@1.3.0`, and
+  `@synapsor/runner@1.3.0`. No npm package is published by this change.
+
 ## 1.2.0 (prepared, not published)
 
 ### Guarded CRUD And Receipt Authority

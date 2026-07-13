@@ -58,7 +58,7 @@ export type AgentContextSpec = ExtensionFields & {
 };
 
 export type CapabilityKind = "read" | "proposal" | "external_action" | "answer_with_evidence";
-export type ArgumentSpec = ExtensionFields & {
+export type ScalarArgumentSpec = ExtensionFields & {
   type: "string" | "number" | "boolean";
   description?: string;
   required?: boolean;
@@ -67,6 +67,16 @@ export type ArgumentSpec = ExtensionFields & {
   maximum?: number;
   enum?: JsonScalar[];
 };
+
+export type ObjectArrayArgumentSpec = ExtensionFields & {
+  type: "object_array";
+  description?: string;
+  required?: boolean;
+  max_items: number;
+  fields: Record<string, ScalarArgumentSpec>;
+};
+
+export type ArgumentSpec = ScalarArgumentSpec | ObjectArrayArgumentSpec;
 
 export type CapabilitySubjectSpec = ExtensionFields & {
   resource?: string;
@@ -88,16 +98,39 @@ export type EvidenceRequirementSpec = ExtensionFields & {
 export type PatchBindingSpec = ExtensionFields & {
   fixed?: JsonScalar;
   from_arg?: string;
+  from_item?: string;
 };
 
 export type ProposalOperationKind = "update" | "insert" | "delete";
 export type DeduplicationComponentSpec = ExtensionFields & {
   column: string;
-  source: "proposal_id" | "trusted_tenant" | "fixed";
+  source: "proposal_id" | "trusted_tenant" | "fixed" | "item_field";
   fixed?: JsonScalar;
+  item_field?: string;
+};
+export type FixedPredicateTermSpec = ExtensionFields & {
+  column: string;
+  operator: "eq";
+  value: JsonScalar;
+};
+export type AggregateBoundSpec = ExtensionFields & {
+  column: string;
+  measure: "before" | "after" | "absolute_delta";
+  maximum: number;
+};
+export type SetOperationSpec = ExtensionFields & {
+  all: FixedPredicateTermSpec[];
+};
+export type BatchInsertSpec = ExtensionFields & {
+  items_from_arg: string;
 };
 export type ProposalOperationSpec = ExtensionFields & {
   kind: ProposalOperationKind;
+  cardinality?: "single" | "set";
+  selection?: SetOperationSpec;
+  max_rows?: number;
+  aggregate_bounds?: AggregateBoundSpec[];
+  batch?: BatchInsertSpec;
   deduplication?: {
     components: DeduplicationComponentSpec[];
   };

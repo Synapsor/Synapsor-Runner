@@ -123,7 +123,7 @@ through the `1.x` line unless a release note marks a deprecation first:
 
 Stable does not promise production SLA, hosted Cloud features, compliance
 certification, physical Postgres/MySQL branching, generic SQL writeback,
-generic multi-row writes, or compatibility for undocumented local SQLite
+free-form/unbounded set writes, or compatibility for undocumented local SQLite
 internals. Local store migrations may happen inside `1.x` and later minor
 versions, but documented CLI inspection commands should remain the supported way
 to read the store.

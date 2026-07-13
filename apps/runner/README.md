@@ -150,8 +150,12 @@ synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/lo
 For proposal capabilities and writes, follow the
 [complete own-database guide](docs/getting-started-own-database.md). Reviewed
 single-row INSERT, UPDATE, and DELETE can use Runner's guarded direct
-writeback. Multi-row/multi-table work and external effects go through an
-[app-owned executor](docs/writeback-executors.md) after approval.
+writeback. Runner also supports tightly [bounded set
+writes](docs/bounded-set-writeback.md): fixed-predicate UPDATE/DELETE and
+exact-review batch INSERT, with human approval, a hard 100-row ceiling, atomic
+apply, and exact receipts. Free-form predicates, unbounded or cross-table work,
+and external effects go through an [app-owned
+executor](docs/writeback-executors.md) after approval.
 
 ## Trust And Verification
 
@@ -171,6 +175,10 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 - `corepack pnpm test:guarded-crud` proves native single-row INSERT, UPDATE,
   and DELETE across both databases and all receipt modes, including the
   zero-source-schema Runner-ledger path and fail-closed reconciliation.
+- `corepack pnpm test:bounded-set` proves proposal-time cap and aggregate
+  rejection, frozen-set drift checks, all-or-nothing set UPDATE/DELETE and
+  batch INSERT, delete-side-effect refusal, exact receipts, and 1/10/100-row
+  bounds on disposable PostgreSQL and MySQL.
 - The C++/Cloud round-trip verifier exports normalized contracts, validates
   them with `@synapsor/spec`, and loads them in Runner. The shared contract and
   verification commands are documented in [Conformance](docs/conformance.md).

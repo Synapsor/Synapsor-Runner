@@ -319,8 +319,11 @@ Runner rejects model-facing trust-scope arguments.
 
 ## Direct SQL Writeback
 
-Use direct SQL writeback only for reviewed bounded single-row INSERT, UPDATE,
-or DELETE proposals.
+Use direct SQL writeback for reviewed guarded single-row INSERT, UPDATE, or
+DELETE proposals. Version 1.3 also supports the narrower [bounded set
+form](bounded-set-writeback.md): fixed-predicate UPDATE/DELETE or complete-item
+batch INSERT with mandatory row/value caps, a frozen exact set, human approval,
+atomic apply, and exact receipts.
 Runner validates:
 
 - fixed table and column names;
@@ -335,8 +338,9 @@ Runner validates:
 INSERT additionally requires a source-unique dedup key. DELETE requires an exact
 version guard and fails closed on widening cascades or write triggers.
 
-Runner does not expose generic SQL, model-generated SQL, DDL, UPSERT, or
-multi-row writes.
+Runner does not expose generic/model-generated SQL, DDL, UPSERT, a model-chosen
+predicate, unbounded writes, or cross-table transactions. Set writes that
+cannot meet every bounded-set invariant stay on the app-owned executor path.
 
 Direct SQL writeback uses the source `write_url_env`, such as
 `SYNAPSOR_DATABASE_WRITE_URL`. Select atomic `source_db` receipts (precreated or

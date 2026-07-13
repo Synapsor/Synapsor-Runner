@@ -19,6 +19,8 @@ export type {
   ReceiptSpec,
   ReplaySpec,
   ResourceSpec,
+  ScalarArgumentSpec,
+  ObjectArrayArgumentSpec,
   SynapsorContract,
   ValidationIssue,
   ValidationResult,

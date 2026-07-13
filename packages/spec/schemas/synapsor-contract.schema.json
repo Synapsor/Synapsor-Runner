@@ -144,13 +144,15 @@
         "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
       },
       "properties": {
-        "type": { "enum": ["string", "number", "boolean"] },
+        "type": { "enum": ["string", "number", "boolean", "object_array"] },
         "description": { "type": "string" },
         "required": { "type": "boolean" },
         "max_length": { "type": "integer", "minimum": 1 },
         "minimum": { "type": "number" },
         "maximum": { "type": "number" },
-        "enum": { "type": "array", "items": { "$ref": "#/$defs/scalar" } }
+        "enum": { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+        "max_items": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "fields": { "type": "object", "minProperties": 1, "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/arg" } }
       }
     },
     "subject": {
@@ -191,7 +193,8 @@
       },
       "properties": {
         "fixed": { "$ref": "#/$defs/scalar" },
-        "from_arg": { "$ref": "#/$defs/safeIdentifier" }
+        "from_arg": { "$ref": "#/$defs/safeIdentifier" },
+        "from_item": { "$ref": "#/$defs/safeIdentifier" }
       }
     },
     "proposalAction": {
@@ -253,6 +256,23 @@
       },
       "properties": {
         "kind": { "enum": ["update", "insert", "delete"] },
+        "cardinality": { "enum": ["single", "set"] },
+        "selection": {
+          "type": "object",
+          "required": ["all"],
+          "additionalProperties": false,
+          "properties": {
+            "all": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/fixedPredicateTerm" } }
+          }
+        },
+        "max_rows": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "aggregate_bounds": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/aggregateBound" } },
+        "batch": {
+          "type": "object",
+          "required": ["items_from_arg"],
+          "additionalProperties": false,
+          "properties": { "items_from_arg": { "$ref": "#/$defs/safeIdentifier" } }
+        },
         "deduplication": {
           "type": "object",
           "required": ["components"],
@@ -286,8 +306,29 @@
       },
       "properties": {
         "column": { "$ref": "#/$defs/safeIdentifier" },
-        "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] },
-        "fixed": { "$ref": "#/$defs/scalar" }
+        "source": { "enum": ["proposal_id", "trusted_tenant", "fixed", "item_field"] },
+        "fixed": { "$ref": "#/$defs/scalar" },
+        "item_field": { "$ref": "#/$defs/safeIdentifier" }
+      }
+    },
+    "fixedPredicateTerm": {
+      "type": "object",
+      "required": ["column", "operator", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "operator": { "const": "eq" },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    },
+    "aggregateBound": {
+      "type": "object",
+      "required": ["column", "measure", "maximum"],
+      "additionalProperties": false,
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "measure": { "enum": ["before", "after", "absolute_delta"] },
+        "maximum": { "type": "number", "minimum": 0 }
       }
     },
     "numericBound": {

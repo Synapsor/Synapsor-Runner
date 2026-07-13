@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.change-set.v3.schema.json",
+  "title": "Synapsor Bounded Change Set v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "proposal_id", "proposal_version", "action", "operation", "mode", "principal", "scope", "source", "before", "patch", "after", "guards", "frozen_set", "evidence", "approval", "writeback", "source_database_mutated", "integrity", "created_at"],
+  "properties": {
+    "schema_version": { "const": "synapsor.change-set.v3" },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "operation": { "$ref": "#/$defs/setOperation" },
+    "mode": { "enum": ["read_only", "shadow", "review_required", "approved_for_writeback"] },
+    "principal": {
+      "type": "object", "additionalProperties": false, "required": ["id", "source"],
+      "properties": { "id": { "type": "string", "minLength": 1 }, "source": { "enum": ["trusted_session", "cloud_session", "environment", "static_dev"] } }
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false, "required": ["tenant_id", "business_object", "object_id"],
+      "properties": { "tenant_id": { "type": "string", "minLength": 1 }, "business_object": { "type": "string", "minLength": 1 }, "object_id": { "type": "string", "minLength": 1 } }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "source_id", "schema", "table", "primary_key"],
+      "properties": {
+        "kind": { "enum": ["external_postgres", "external_mysql", "synapsor_table"] },
+        "source_id": { "type": "string", "minLength": 1 },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "primary_key": { "type": "object", "additionalProperties": false, "required": ["column"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" } } }
+      }
+    },
+    "before": { "$ref": "#/$defs/scalarRecord" },
+    "patch": { "$ref": "#/$defs/scalarRecord" },
+    "after": { "$ref": "#/$defs/scalarRecord" },
+    "guards": {
+      "type": "object", "additionalProperties": false, "required": ["tenant", "allowed_columns"],
+      "properties": {
+        "tenant": { "$ref": "#/$defs/columnValue" },
+        "allowed_columns": { "type": "array", "items": { "$ref": "#/$defs/safeIdentifier" }, "maxItems": 256, "uniqueItems": true },
+        "version_advance": { "$ref": "#/$defs/versionAdvance" }
+      }
+    },
+    "frozen_set": { "$ref": "#/$defs/frozenSet" },
+    "evidence": {
+      "type": "object", "additionalProperties": true, "required": ["bundle_id", "query_fingerprint", "items"],
+      "properties": { "bundle_id": { "type": "string", "minLength": 1 }, "query_fingerprint": { "$ref": "#/$defs/sha256" }, "items": { "type": "array", "maxItems": 100 } }
+    },
+    "approval": {
+      "type": "object", "additionalProperties": true, "required": ["status", "mode"],
+      "properties": { "status": { "enum": ["pending", "approved", "rejected", "canceled"] }, "mode": { "enum": ["human", "operator"] }, "required_role": { "type": "string", "minLength": 1 }, "required_approvals": { "type": "integer", "minimum": 1, "maximum": 10 } }
+    },
+    "writeback": {
+      "type": "object", "additionalProperties": true, "required": ["status", "mode", "executor"],
+      "properties": { "status": { "enum": ["not_applied", "pending_worker", "applied", "conflict", "failed", "canceled", "reconciliation_required"] }, "mode": { "const": "trusted_worker_required" }, "executor": { "const": "sql_update" } }
+    },
+    "source_database_mutated": { "type": "boolean" },
+    "integrity": { "type": "object", "additionalProperties": false, "required": ["proposal_hash"], "properties": { "proposal_hash": { "$ref": "#/$defs/sha256" } } },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "set_update" } }, "required": ["operation"] },
+      "then": {
+        "properties": {
+          "patch": { "minProperties": 1 },
+          "guards": { "required": ["version_advance"], "properties": { "allowed_columns": { "minItems": 1 }, "version_advance": { "properties": { "strategy": { "const": "integer_increment" } } } } },
+          "frozen_set": { "properties": { "members": { "items": { "required": ["expected_version", "before_digest", "after_digest"], "not": { "anyOf": [{ "required": ["tombstone_digest"] }, { "required": ["deduplication"] }] } } } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "set_delete" } }, "required": ["operation"] },
+      "then": {
+        "properties": {
+          "patch": { "maxProperties": 0 },
+          "guards": { "not": { "required": ["version_advance"] }, "properties": { "allowed_columns": { "maxItems": 0 } } },
+          "frozen_set": { "properties": { "members": { "items": { "required": ["expected_version", "before_digest", "tombstone_digest"], "properties": { "after": { "maxProperties": 0 } }, "not": { "anyOf": [{ "required": ["after_digest"] }, { "required": ["deduplication"] }] } } } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "batch_insert" } }, "required": ["operation"] },
+      "then": {
+        "properties": {
+          "guards": { "not": { "required": ["version_advance"] }, "properties": { "allowed_columns": { "minItems": 1 } } },
+          "frozen_set": { "properties": { "members": { "items": { "required": ["after_digest", "deduplication"], "properties": { "before": { "maxProperties": 0 }, "after": { "minProperties": 1 } }, "not": { "anyOf": [{ "required": ["expected_version"] }, { "required": ["before_digest"] }, { "required": ["tombstone_digest"] }] } } } } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "sha256": { "type": "string", "pattern": "^sha256:.+" },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "scalarRecord": { "type": "object", "propertyNames": { "$ref": "#/$defs/safeIdentifier" }, "additionalProperties": { "$ref": "#/$defs/scalar" }, "maxProperties": 256 },
+    "setOperation": { "enum": ["set_update", "set_delete", "batch_insert"] },
+    "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "value": { "$ref": "#/$defs/scalar" } } },
+    "versionAdvance": { "type": "object", "additionalProperties": false, "required": ["column", "strategy"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "strategy": { "enum": ["integer_increment", "database_generated"] } } },
+    "deduplicationComponent": { "type": "object", "additionalProperties": false, "required": ["column", "value", "source"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "value": { "$ref": "#/$defs/scalar" }, "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] } } },
+    "deduplication": { "type": "object", "additionalProperties": false, "required": ["components"], "properties": { "components": { "type": "array", "items": { "$ref": "#/$defs/deduplicationComponent" }, "minItems": 1, "maxItems": 8 } } },
+    "aggregateBound": { "type": "object", "additionalProperties": false, "required": ["column", "measure", "maximum", "actual"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "measure": { "enum": ["before", "after", "absolute_delta"] }, "maximum": { "type": "number", "minimum": 0 }, "actual": { "type": "number", "minimum": 0 } } },
+    "frozenMember": {
+      "type": "object", "additionalProperties": false, "required": ["primary_key", "before", "after"],
+      "properties": { "primary_key": { "$ref": "#/$defs/columnValue" }, "expected_version": { "$ref": "#/$defs/columnValue" }, "before": { "$ref": "#/$defs/scalarRecord" }, "after": { "$ref": "#/$defs/scalarRecord" }, "before_digest": { "$ref": "#/$defs/sha256" }, "after_digest": { "$ref": "#/$defs/sha256" }, "tombstone_digest": { "$ref": "#/$defs/sha256" }, "deduplication": { "$ref": "#/$defs/deduplication" } }
+    },
+    "frozenSet": {
+      "type": "object", "additionalProperties": false, "required": ["max_rows", "row_count", "aggregate_bounds", "members", "set_digest"],
+      "properties": { "max_rows": { "type": "integer", "minimum": 1, "maximum": 100 }, "row_count": { "type": "integer", "minimum": 1, "maximum": 100 }, "aggregate_bounds": { "type": "array", "items": { "$ref": "#/$defs/aggregateBound" }, "minItems": 1, "maxItems": 8 }, "members": { "type": "array", "items": { "$ref": "#/$defs/frozenMember" }, "minItems": 1, "maxItems": 100 }, "set_digest": { "$ref": "#/$defs/sha256" } }
+    }
+  }
+}

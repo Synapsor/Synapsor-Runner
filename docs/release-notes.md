@@ -10,6 +10,27 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.3.0 (prepared, not published)
+
+### Bounded Set Writeback
+
+- Adds fixed-predicate set UPDATE/DELETE and exact-review batch INSERT for
+  PostgreSQL and MySQL, capped at 100 rows.
+- Requires mandatory row and aggregate-value bounds, a frozen exact target set,
+  integer version guards for set UPDATE, human/operator approval, atomic apply,
+  and per-member receipt/replay evidence.
+- Rejects cap overflow instead of truncating, rolls back the full transaction
+  on any stale or failing member, and refuses hard set DELETE when hidden
+  triggers or widening cascades are present.
+- Keeps model-generated predicates, policy auto-approval for sets, unbounded
+  batches, UPSERT, cross-table transactions, and external effects on the
+  app-owned executor path.
+- Adds `corepack pnpm test:bounded-set`, which runs the safety matrix and local
+  1/10/100-row measurements against disposable PostgreSQL and MySQL.
+
+Prepared package versions: `@synapsor/spec@1.3.0`,
+`@synapsor/dsl@1.3.0`, and `@synapsor/runner@1.3.0`.
+
 ## 1.2.0 (prepared, not published)
 
 ### Guarded CRUD And Receipt Authority

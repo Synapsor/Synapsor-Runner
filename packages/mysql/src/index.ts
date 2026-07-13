@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import mysql from "mysql2/promise";
 import type { WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
-import type { ApplyAdapter, ReconciliationObservation, RunnerConfig } from "@synapsor-runner/worker-core";
+import { assertFrozenSetJobIntegrity, classifyFrozenSetReconciliation, type ApplyAdapter, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
 
 export const mysqlReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
   idempotency_key varchar(255) PRIMARY KEY,
@@ -20,7 +20,8 @@ export type MysqlApplyConnection = {
   query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]>;
 };
 
-type Operation = "single_row_update" | "single_row_insert" | "single_row_delete";
+type Operation = "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert";
+type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
 type ColumnValue = { column: string; value: string | number | boolean | null };
 type MutationOutcome = {
   status: "applied" | "already_applied" | "conflict" | "failed";
@@ -31,6 +32,7 @@ type MutationOutcome = {
   beforeDigest?: `sha256:${string}`;
   afterDigest?: `sha256:${string}`;
   tombstoneDigest?: `sha256:${string}`;
+  memberEffects?: Array<{ primary_key: ColumnValue; before_digest?: string; after_digest?: string; tombstone_digest?: string }>;
 };
 
 export function quoteMysqlIdentifier(identifier: string): string {
@@ -120,6 +122,7 @@ function insertValues(job: Extract<WritebackJob, { protocol_version: "2.0" }>): 
 }
 
 function identityForJob(job: WritebackJob, insertedPrimaryKey?: unknown): ColumnValue[] {
+  if (job.protocol_version === "3.0") return job.frozen_set.members.map((member) => member.primary_key);
   const identity: ColumnValue[] = [];
   if (insertedPrimaryKey !== undefined && insertedPrimaryKey !== null && insertedPrimaryKey !== 0) identity.push({ column: job.target.primary_key.column, value: scalar(insertedPrimaryKey) });
   else if (job.target.primary_key.value !== undefined) identity.push({ column: job.target.primary_key.column, value: job.target.primary_key.value });
@@ -138,6 +141,12 @@ function resultHash(job: WritebackJob, status: string, version?: unknown): `sha2
 
 function reconciliationProjection(job: WritebackJob): string[] {
   const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column, ...job.allowed_columns]);
+  if (job.protocol_version === "3.0") {
+    for (const member of job.frozen_set.members) {
+      for (const column of Object.keys(member.before)) columns.add(column);
+      for (const column of Object.keys(member.after)) columns.add(column);
+    }
+  }
   if (job.conflict_guard.kind === "version_column") columns.add(job.conflict_guard.column);
   if (job.protocol_version === "2.0" && job.deduplication) {
     for (const component of job.deduplication.components) columns.add(component.column);
@@ -147,6 +156,13 @@ function reconciliationProjection(job: WritebackJob): string[] {
 
 export function buildMysqlReconciliationRead(job: WritebackJob): { sql: string; values: unknown[] } {
   const projection = reconciliationProjection(job).map(quoteMysqlIdentifier).join(", ");
+  if (job.protocol_version === "3.0") {
+    const identities = job.frozen_set.members.map(() => "?").join(", ");
+    return {
+      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${identities})\nORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC`,
+      values: [job.target.tenant_guard.value, ...job.frozen_set.members.map((member) => member.primary_key.value)],
+    };
+  }
   if (operationOf(job) === "single_row_insert" && job.protocol_version === "2.0" && job.deduplication) {
     return {
       sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${job.deduplication.components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`).join(" AND ")}\nLIMIT 2`,
@@ -166,6 +182,7 @@ export async function inspectMysqlWritebackSource(job: WritebackJob, databaseUrl
   try {
     const query = buildMysqlReconciliationRead(job);
     const [rows] = await connection.query<mysql.RowDataPacket[]>(query.sql, query.values);
+    if (job.protocol_version === "3.0") return classifyFrozenSetReconciliation(job, rows, versionValuesMatch);
     if (rows.length > 1) throw new Error("RECONCILIATION_IDENTITY_NOT_UNIQUE");
     return reconciliationObservation(job, rows[0]);
   } catch (error) {
@@ -240,8 +257,13 @@ class SourceOutcomeUnknownError extends Error { constructor(public readonly caus
 async function sourceTransaction<T>(
   connection: MysqlApplyConnection,
   fn: () => Promise<T>,
+  statementTimeoutMs?: number,
   hooks: { afterBegin?: () => Promise<void>; afterMutation?: () => Promise<void>; beforeCommit?: () => Promise<void> } = {},
 ): Promise<T> {
+  if (statementTimeoutMs !== undefined) {
+    await connection.query("SET SESSION max_execution_time = ?", [statementTimeoutMs]);
+    await connection.query("SET SESSION innodb_lock_wait_timeout = ?", [Math.max(1, Math.ceil(statementTimeoutMs / 1000))]);
+  }
   await connection.beginTransaction();
   try {
     await hooks.afterBegin?.();
@@ -279,7 +301,7 @@ export async function applyMysqlJobWithConnection(job: WritebackJob, config: Run
     const result = resultFromOutcome(job, config, outcome);
     await recordSourceReceipt(connection, job, config, outcome.status, resultHashFromResult(job, result));
     return result;
-  });
+  }, config.statementTimeoutMs);
 }
 
 async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
@@ -297,7 +319,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, co
   await config.testFailpoint?.("after_intent_applying");
   let result: WritebackResult;
   try {
-    const outcome = await sourceTransaction(connection, () => mutateMysql(job, connection), {
+    const outcome = await sourceTransaction(connection, () => mutateMysql(job, connection), config.statementTimeoutMs, {
       afterBegin: () => Promise.resolve(config.testFailpoint?.("after_source_begin")),
       afterMutation: () => Promise.resolve(config.testFailpoint?.("after_source_mutation")),
       beforeCommit: () => Promise.resolve(config.testFailpoint?.("before_source_commit")),
@@ -323,12 +345,14 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, co
 }
 
 function validateOperation(job: WritebackJob): void {
+  if (job.protocol_version === "3.0") return validateSetJob(job);
   if (operationOf(job) === "single_row_update") buildMysqlUpdate(job);
   else if (operationOf(job) === "single_row_insert") buildMysqlInsert(job);
   else buildMysqlDelete(job);
 }
 
 async function mutateMysql(job: WritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+  if (job.protocol_version === "3.0") return await mutateMysqlSet(job, connection);
   const operation = operationOf(job);
   if (operation === "single_row_insert") return await insertMysql(job, connection);
   const row = await lockTargetRow(job, connection);
@@ -376,6 +400,116 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
     verifyVersionAdvanced(job, resultVersion);
   }
   return { status: "applied", affectedRows: 1, targetIdentity: identityForJob(job), resultVersion, beforeDigest, afterDigest: digest({ identity: identityForJob(job), patch: job.patch, version: resultVersion }) };
+}
+
+function validateSetJob(job: SetWritebackJob): void {
+  assertFrozenSetJobIntegrity(job);
+  if (job.frozen_set.row_count !== job.frozen_set.members.length || job.frozen_set.row_count > job.frozen_set.max_rows || job.frozen_set.max_rows > 100) throw new Error("SET_ROW_CAP_EXCEEDED");
+  if (job.operation === "set_update") {
+    validatePatch(job, "mysql");
+    if (!job.version_advance || job.version_advance.strategy !== "integer_increment") throw new Error("SET_INTEGER_VERSION_REQUIRED");
+    for (const member of job.frozen_set.members) if (!member.expected_version || member.expected_version.column !== job.version_advance.column) throw new Error("SET_VERSION_GUARD_REQUIRED");
+  } else if (job.operation === "set_delete") {
+    if (job.allowed_columns.length || Object.keys(job.patch).length) throw new Error("SET_DELETE_PATCH_FORBIDDEN");
+    for (const member of job.frozen_set.members) if (!member.expected_version) throw new Error("SET_VERSION_GUARD_REQUIRED");
+  } else {
+    for (const member of job.frozen_set.members) {
+      if (!member.deduplication?.components.length) throw new Error("BATCH_DEDUP_REQUIRED");
+      validateBatchInsertMember(job, member);
+    }
+  }
+}
+
+async function mutateMysqlSet(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+  validateSetJob(job);
+  if (job.operation === "batch_insert") return await insertMysqlBatch(job, connection);
+  const locked = await lockMysqlFrozenMembers(job, connection);
+  if (!locked) return { status: "conflict", affectedRows: 0, code: "SET_DRIFT_CONFLICT", targetIdentity: identityForJob(job) };
+  if (job.operation === "set_delete") {
+    const safetyCode = await mysqlDeleteSafetyCode(job, connection);
+    if (safetyCode) return { status: "failed", affectedRows: 0, code: safetyCode, targetIdentity: identityForJob(job) };
+  }
+  const memberEffects: NonNullable<MutationOutcome["memberEffects"]> = [];
+  for (const member of job.frozen_set.members) {
+    const expected = member.expected_version!;
+    if (job.operation === "set_update") {
+      const assignments = Object.keys(job.patch).map((column) => `${quoteMysqlIdentifier(column)} = ?`);
+      assignments.push(`${quoteMysqlIdentifier(job.version_advance!.column)} = ${quoteMysqlIdentifier(job.version_advance!.column)} + 1`);
+      const [updated] = await connection.query<Record<string, unknown>>(
+        `UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ? AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(expected.column)} = ?`,
+        [...Object.values(job.patch), member.primary_key.value, job.target.tenant_guard.value, expected.value],
+      );
+      if (affectedRows(updated) !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
+      memberEffects.push({ primary_key: member.primary_key, before_digest: member.before_digest, after_digest: member.after_digest });
+    } else {
+      const [deleted] = await connection.query<Record<string, unknown>>(
+        `DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ? AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(expected.column)} = ?`,
+        [member.primary_key.value, job.target.tenant_guard.value, expected.value],
+      );
+      if (affectedRows(deleted) !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
+      memberEffects.push({ primary_key: member.primary_key, before_digest: member.before_digest, tombstone_digest: member.tombstone_digest });
+    }
+  }
+  return { status: "applied", affectedRows: job.frozen_set.row_count, targetIdentity: identityForJob(job), memberEffects };
+}
+
+async function lockMysqlFrozenMembers(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<boolean> {
+  const columns = new Set<string>([job.target.primary_key.column]);
+  for (const member of job.frozen_set.members) for (const column of Object.keys(member.before)) columns.add(column);
+  const [rows] = await connection.query<Record<string, unknown>[]>(
+    `SELECT ${[...columns].map(quoteMysqlIdentifier).join(", ")} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.frozen_set.members.map(() => "?").join(", ")}) ORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
+    [job.target.tenant_guard.value, ...job.frozen_set.members.map((member) => member.primary_key.value)],
+  );
+  if (rows.length !== job.frozen_set.row_count) return false;
+  const byIdentity = new Map(rows.map((row) => [JSON.stringify(scalar(row[job.target.primary_key.column])), row]));
+  return job.frozen_set.members.every((member) => {
+    const row = byIdentity.get(JSON.stringify(member.primary_key.value));
+    return row !== undefined && Object.entries(member.before).every(([column, value]) => versionValuesMatch(row[column], value));
+  });
+}
+
+async function mysqlDeleteSafetyCode(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<string | undefined> {
+  const [visibilityRows] = await connection.query<Record<string, unknown>[]>(`SELECT (
+  EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND PRIVILEGE_TYPE = 'TRIGGER')
+  OR EXISTS (SELECT 1 FROM information_schema.SCHEMA_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND TABLE_SCHEMA = ? AND PRIVILEGE_TYPE = 'TRIGGER')
+  OR EXISTS (SELECT 1 FROM information_schema.TABLE_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND TABLE_SCHEMA = ? AND TABLE_NAME = ? AND PRIVILEGE_TYPE = 'TRIGGER')
+) AS has_trigger_visibility,
+EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND PRIVILEGE_TYPE = 'PROCESS') AS has_fk_visibility`, [job.target.schema, job.target.schema, job.target.table]);
+  if (!(visibilityRows[0]?.has_trigger_visibility === true || Number(visibilityRows[0]?.has_trigger_visibility) === 1)) return "DELETE_TRIGGER_VISIBILITY_REQUIRED";
+  if (!(visibilityRows[0]?.has_fk_visibility === true || Number(visibilityRows[0]?.has_fk_visibility) === 1)) return "DELETE_FK_VISIBILITY_REQUIRED";
+  const [triggerRows] = await connection.query<Record<string, unknown>[]>("SELECT 1 AS found FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ? LIMIT 1", [job.target.schema, job.target.table]);
+  if (triggerRows[0]) return "DELETE_TRIGGER_BLOCKED";
+  const [cascadeRows] = await connection.query<Record<string, unknown>[]>("SELECT 1 AS found FROM information_schema.INNODB_FOREIGN WHERE REF_NAME = CONCAT(?, '/', ?) AND (TYPE & 5) <> 0 LIMIT 1", [job.target.schema, job.target.table]);
+  if (cascadeRows[0]) return "DELETE_CASCADE_BLOCKED";
+  return undefined;
+}
+
+function validateBatchInsertMember(job: SetWritebackJob, member: SetWritebackJob["frozen_set"]["members"][number]): void {
+  const dedupColumns = new Set(member.deduplication?.components.map((component) => component.column));
+  for (const column of Object.keys(member.after)) if (!job.allowed_columns.includes(column) && !dedupColumns.has(column)) throw new Error("BATCH_COLUMN_NOT_ALLOWED");
+  if (!dedupColumns.has(job.target.primary_key.column) || !dedupColumns.has(job.target.tenant_guard.column)) throw new Error("BATCH_DEDUP_REQUIRED");
+}
+
+async function insertMysqlBatch(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+  for (const member of job.frozen_set.members) {
+    const components = member.deduplication!.components;
+    const [existing] = await connection.query<Record<string, unknown>[]>(
+      `SELECT 1 AS found FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`).join(" AND ")} LIMIT 1 FOR UPDATE`,
+      components.map((component) => component.value),
+    );
+    if (existing[0]) return { status: "conflict", affectedRows: 0, code: "INSERT_DEDUP_CONFLICT", targetIdentity: identityForJob(job) };
+  }
+  const memberEffects: NonNullable<MutationOutcome["memberEffects"]> = [];
+  for (const member of job.frozen_set.members) {
+    const columns = Object.keys(member.after);
+    const [inserted] = await connection.query<Record<string, unknown>>(
+      `INSERT INTO ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} (${columns.map(quoteMysqlIdentifier).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+      columns.map((column) => member.after[column]),
+    );
+    if (affectedRows(inserted) !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
+    memberEffects.push({ primary_key: member.primary_key, after_digest: member.after_digest });
+  }
+  return { status: "applied", affectedRows: job.frozen_set.row_count, targetIdentity: identityForJob(job), memberEffects };
 }
 
 async function lockTargetRow(job: WritebackJob, connection: MysqlApplyConnection): Promise<Record<string, unknown> | undefined> {
@@ -439,13 +573,15 @@ function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, stat
 
 function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: MutationOutcome, overrideCode?: string, overrideHash?: `sha256:${string}`): WritebackResult {
   const hash = overrideHash ?? resultHash(job, outcome.status, outcome.resultVersion);
+  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: outcome.memberEffects ?? [], result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
   if (job.protocol_version !== "2.0") return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: outcome.status, affected_rows: outcome.affectedRows, result_version: outcome.resultVersion == null ? undefined : String(outcome.resultVersion), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
-  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: operationOf(job), receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identity: outcome.targetIdentity, result_version: outcome.resultVersion, before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, tombstone_digest: outcome.tombstoneDigest, result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
+  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identity: outcome.targetIdentity, result_version: outcome.resultVersion, before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, tombstone_digest: outcome.tombstoneDigest, result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
 }
 function failedResult(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult { return resultFromOutcome(job, config, { status: "failed", affectedRows: 0, code, targetIdentity: identityForJob(job) }); }
 function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string): WritebackResult {
+  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
   if (job.protocol_version !== "2.0") return failedResult(job, config, "RECONCILIATION_REQUIRED");
-  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: operationOf(job), receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
+  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
 }
 function asAlreadyApplied(result: WritebackResult, job: WritebackJob, config: RunnerConfig): WritebackResult {
   if (result.status !== "applied" && result.status !== "already_applied") return result;
@@ -457,7 +593,7 @@ function safeErrorCode(error: unknown): string {
   const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   const message = error instanceof Error ? error.message : String(error);
   if (code === "ER_DUP_ENTRY" || code === "1062") return "INSERT_DEDUP_CONFLICT";
-  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE"]) if (message.includes(known)) return known;
+  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED"]) if (message.includes(known)) return known;
   return "TRANSACTION_FAILED";
 }
 

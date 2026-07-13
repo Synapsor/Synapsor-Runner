@@ -6,8 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpRuntime, loadRuntimeConfigFromFile, type DbRowReader } from "@synapsor-runner/mcp-server";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { main, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
+import { ProposalStore, type StoredWritebackIntent } from "@synapsor-runner/proposal-store";
+import { parseExecutionReceipt } from "@synapsor-runner/protocol";
+import { main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
+import type { ReconciliationObservation } from "@synapsor-runner/worker-core";
 
 function workspacePath(...segments: string[]): string {
   for (const candidate of [process.cwd(), path.resolve(process.cwd(), "../..")]) {
@@ -68,6 +70,87 @@ const contractFixtureRow = {
   waiver_reason: null,
   updated_at: "2026-06-20T14:31:08Z",
 };
+
+function boundedSetIntent(operation: "set_update" | "set_delete" | "batch_insert" = "set_update"): StoredWritebackIntent {
+  const members = ["INV-1", "INV-2"].map((id, index) => {
+    const before = { id, tenant_id: "acme", version: 1, credit_cents: 0 };
+    const after = operation === "set_delete" ? {} : { ...before, version: operation === "set_update" ? 2 : 1, credit_cents: 500 + index };
+    return {
+      primary_key: { column: "id", value: id },
+      ...(operation === "batch_insert" ? {} : { expected_version: { column: "version", value: 1 } }),
+      before: operation === "batch_insert" ? {} : before,
+      after,
+      ...(operation === "batch_insert" ? {} : { before_digest: `sha256:before-${index}` }),
+      ...(operation === "set_delete" ? { tombstone_digest: `sha256:tombstone-${index}` } : { after_digest: `sha256:after-${index}` }),
+      ...(operation === "batch_insert" ? { deduplication: { components: [{ column: "id", value: id, source: "fixed" as const }] } } : {}),
+    };
+  });
+  return {
+    intent_id: "wbi:wbj_set_cli",
+    idempotency_key: "set-cli-key",
+    writeback_job_id: "wbj_set_cli",
+    proposal_id: "wrp_set_cli",
+    proposal_hash: "sha256:proposal-set-cli",
+    runner_id: "runner_a",
+    operation,
+    status: "reconciliation_required",
+    intent: {
+      protocol_version: "3.0",
+      job_id: "wbj_set_cli",
+      proposal_id: "wrp_set_cli",
+      approval_id: "sha256:proposal-set-cli",
+      source_id: "src_pg_acme",
+      engine: "postgres",
+      operation,
+      target: {
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id" },
+        tenant_guard: { column: "tenant_id", value: "acme" },
+      },
+      allowed_columns: operation === "set_update" ? ["credit_cents"] : operation === "batch_insert" ? ["id", "credit_cents"] : [],
+      patch: operation === "set_update" ? { credit_cents: 500 } : {},
+      conflict_guard: { kind: "none" },
+      ...(operation === "set_update" ? { version_advance: { column: "version", strategy: "integer_increment" as const } } : {}),
+      frozen_set: {
+        max_rows: 2,
+        row_count: 2,
+        aggregate_bounds: [{ column: "credit_cents", measure: "absolute_delta", maximum: 1000, actual: 1000 }],
+        members,
+        set_digest: "sha256:set-cli",
+      },
+      idempotency_key: "set-cli-key",
+      lease_expires_at: "2026-07-13T12:00:00.000Z",
+      attempt_count: 1,
+    },
+    reconciliation_reason: "source acknowledgement was lost",
+    created_at: "2026-07-13T11:00:00.000Z",
+    updated_at: "2026-07-13T11:01:00.000Z",
+  } as StoredWritebackIntent;
+}
+
+function boundedSetObservation(operation: "set_update" | "set_delete" | "batch_insert", classification: ReconciliationObservation["classification"]): ReconciliationObservation {
+  return {
+    operation,
+    classification,
+    target_identity: [
+      { column: "id", value: "INV-1" },
+      { column: "id", value: "INV-2" },
+    ],
+    expected: { row_count: 2, max_rows: 2, set_digest: "sha256:set-cli" },
+    observed: { row_count: classification === "target_absent" || classification === "not_observed" ? 0 : 2, set_digest: "sha256:observed-set" },
+    observed_digest: "sha256:observed-set",
+    member_observations: ["INV-1", "INV-2"].map((id) => {
+      const observed: Record<string, string | number | boolean | null> = classification === "target_absent" || classification === "not_observed" ? {} : { id };
+      return {
+        primary_key: { column: "id", value: id },
+        classification,
+        observed,
+        observed_digest: `sha256:observed-${id}`,
+      };
+    }),
+  };
+}
 
 async function writeContractApplyFixture(
   tempDir: string,
@@ -249,7 +332,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.2.0");
+      expect(output.join("").trim()).toBe("1.3.0");
     }
   });
 
@@ -1059,9 +1142,9 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.2.0",
-        "@synapsor/dsl": "1.2.0",
-        "@synapsor/runner": "1.2.0",
+        "@synapsor/spec": "1.3.0",
+        "@synapsor/dsl": "1.3.0",
+        "@synapsor/runner": "1.3.0",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -3901,6 +3984,52 @@ END
     output.length = 0;
     await expect(main(["writeback", "--help"])).resolves.toBe(0);
     expect(output.join("")).toContain("writeback reconcile inspect latest");
+  });
+
+  it("emits an exact v3 receipt when a frozen set is reconciled as applied", () => {
+    const intent = boundedSetIntent("set_update");
+    const observation = boundedSetObservation("set_update", "matches_proposed");
+
+    expect(reconciliationSupportedOutcome(observation)).toBe("applied");
+    const receipt = parseExecutionReceipt(reconciliationReceipt(intent, observation, "applied", "operator:alice", "verified source state"));
+
+    expect(receipt).toMatchObject({
+      schema_version: "synapsor.execution-receipt.v3",
+      operation: "set_update",
+      receipt_authority: "runner_ledger",
+      status: "applied",
+      rows_affected: 2,
+      source_database_mutated: true,
+      target: {
+        identities: [
+          { column: "id", value: "INV-1" },
+          { column: "id", value: "INV-2" },
+        ],
+        set_digest: "sha256:set-cli",
+      },
+      member_effects: [
+        { primary_key: { column: "id", value: "INV-1" }, before_digest: "sha256:before-0", after_digest: "sha256:after-0" },
+        { primary_key: { column: "id", value: "INV-2" }, before_digest: "sha256:before-1", after_digest: "sha256:after-1" },
+      ],
+      reconciliation: { intent_id: "wbi:wbj_set_cli", reason: "verified source state" },
+    });
+  });
+
+  it("treats an entirely absent frozen DELETE set as applied and mixed state as conflict", () => {
+    const absent = boundedSetObservation("set_delete", "target_absent");
+    expect(reconciliationSupportedOutcome(absent)).toBe("applied");
+    const receipt = parseExecutionReceipt(reconciliationReceipt(boundedSetIntent("set_delete"), absent, "applied", "operator:alice", "all reviewed rows are absent"));
+    expect(receipt).toMatchObject({
+      schema_version: "synapsor.execution-receipt.v3",
+      operation: "set_delete",
+      rows_affected: 2,
+      member_effects: [
+        { primary_key: { column: "id", value: "INV-1" }, tombstone_digest: "sha256:tombstone-0" },
+        { primary_key: { column: "id", value: "INV-2" }, tombstone_digest: "sha256:tombstone-1" },
+      ],
+    });
+
+    expect(reconciliationSupportedOutcome(boundedSetObservation("set_delete", "drifted"))).toBe("conflict");
   });
 
   it("creates app-owned writeback handler templates without package-relative paths", async () => {

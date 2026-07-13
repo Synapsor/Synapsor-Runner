@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   applyPostgresJobWithClient,
@@ -213,6 +214,70 @@ describe("postgres adapter", () => {
     expect(deleteClient.sqlLog.some((sql) => sql.startsWith('DELETE FROM "public"."credits"'))).toBe(true);
     expect(deleteClient.sqlLog.some((sql) => /SELECT\s+\*/i.test(sql))).toBe(false);
     expect(deleteClient.recordedReceiptStatus).toBe("applied");
+  });
+
+  it("atomically applies an exact frozen set and emits per-member effects", async () => {
+    const client = new SetPostgresClient();
+    const result = await applyPostgresJobWithClient(v3SetUpdateJob(), config, client);
+
+    expect(result).toMatchObject({
+      protocol_version: "3.0",
+      operation: "set_update",
+      status: "applied",
+      affected_rows: 2,
+      member_effects: [
+        { primary_key: { column: "id", value: "INV-1" } },
+        { primary_key: { column: "id", value: "INV-2" } },
+      ],
+    });
+    expect(client.sqlLog.filter((sql) => sql.startsWith('UPDATE "public"."invoices"'))).toHaveLength(2);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("bounds direct write statements and lock waits inside the transaction", async () => {
+    const client = new SetPostgresClient();
+    const result = await applyPostgresJobWithClient(v3SetUpdateJob(), { ...config, statementTimeoutMs: 2500 }, client);
+
+    expect(result.status).toBe("applied");
+    expect(client.sqlLog.slice(0, 3)).toEqual([
+      "BEGIN",
+      "SET LOCAL statement_timeout = 2500",
+      "SET LOCAL lock_timeout = 2500",
+    ]);
+  });
+
+  it("fails a stale frozen member closed before any set mutation", async () => {
+    const client = new SetPostgresClient({ staleSecond: true });
+    const result = await applyPostgresJobWithClient(v3SetUpdateJob(), config, client);
+
+    expect(result).toMatchObject({ protocol_version: "3.0", status: "conflict", affected_rows: 0, error_code: "SET_DRIFT_CONFLICT" });
+    expect(client.sqlLog.some((sql) => sql.startsWith('UPDATE "public"."invoices"'))).toBe(false);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("rolls back the whole frozen set when any member mutation is anomalous", async () => {
+    const client = new SetPostgresClient({ failMutationAt: 2 });
+    await expect(applyPostgresJobWithClient(v3SetUpdateJob(), config, client)).rejects.toThrow(/SET_ATOMICITY_VIOLATION/);
+    expect(client.sqlLog.filter((sql) => sql.startsWith('UPDATE "public"."invoices"'))).toHaveLength(2);
+    expect(client.sqlLog).toContain("ROLLBACK");
+    expect(client.sqlLog).not.toContain("COMMIT");
+  });
+
+  it("preflights every batch identity before INSERT and blocks duplicates atomically", async () => {
+    const client = new SetPostgresClient({ duplicateBatchAt: 2 });
+    const result = await applyPostgresJobWithClient(v3BatchInsertJob(), config, client);
+
+    expect(result).toMatchObject({ protocol_version: "3.0", status: "conflict", affected_rows: 0, error_code: "INSERT_DEDUP_CONFLICT" });
+    expect(client.sqlLog.some((sql) => sql.startsWith('INSERT INTO "public"."account_credits"'))).toBe(false);
+    expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("blocks frozen-set hard DELETE when hidden trigger effects are present", async () => {
+    const client = new SetPostgresClient({ deleteTrigger: true });
+    const result = await applyPostgresJobWithClient(v3SetDeleteJob(), config, client);
+
+    expect(result).toMatchObject({ protocol_version: "3.0", status: "failed", affected_rows: 0, error_code: "DELETE_TRIGGER_BLOCKED" });
+    expect(client.sqlLog.some((sql) => sql.startsWith('DELETE FROM "public"."invoices"'))).toBe(false);
   });
 
   it("treats multi-row updates as fatal and rolls back", async () => {
@@ -431,6 +496,55 @@ class CrudPostgresClient implements PostgresApplyClient {
   }
 }
 
+class SetPostgresClient implements PostgresApplyClient {
+  readonly sqlLog: string[] = [];
+  private mutations = 0;
+  private batchPreflights = 0;
+  private batchInserts = 0;
+
+  constructor(private readonly options: {
+    staleSecond?: boolean;
+    failMutationAt?: number;
+    duplicateBatchAt?: number;
+    deleteTrigger?: boolean;
+  } = {}) {}
+
+  async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    this.sqlLog.push(sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK" ? sql : sql.trim());
+    if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: null };
+    if (sql.startsWith("SET LOCAL ")) return { rows: [], rowCount: null };
+    if (sql.startsWith("INSERT INTO synapsor_writeback_receipts")) return { rows: [{ status: "in_progress" }], rowCount: 1 };
+    if (sql.startsWith("UPDATE synapsor_writeback_receipts")) return { rows: [], rowCount: 1 };
+    if (sql.startsWith("SELECT") && sql.includes('FROM "public"."invoices"') && sql.includes("ORDER BY") && sql.includes("FOR UPDATE")) {
+      return {
+        rows: [
+          { id: "INV-1", tenant_id: "acme", status: "overdue", balance_cents: 1000, version: 1 },
+          { id: "INV-2", tenant_id: "acme", status: "overdue", balance_cents: 2000, version: this.options.staleSecond ? 99 : 2 },
+        ],
+        rowCount: 2,
+      };
+    }
+    if (sql.startsWith('UPDATE "public"."invoices"')) {
+      this.mutations += 1;
+      return { rows: [], rowCount: this.options.failMutationAt === this.mutations ? 0 : 1 };
+    }
+    if (sql.startsWith("SELECT EXISTS") && sql.includes("pg_trigger")) {
+      return { rows: [{ has_user_trigger: this.options.deleteTrigger === true, has_widening_fk: false }], rowCount: 1 };
+    }
+    if (sql.startsWith('DELETE FROM "public"."invoices"')) return { rows: [], rowCount: 1 };
+    if (sql.startsWith("SELECT 1") && sql.includes('FROM "public"."account_credits"')) {
+      this.batchPreflights += 1;
+      const duplicate = this.options.duplicateBatchAt === this.batchPreflights;
+      return { rows: duplicate ? [{ exists: 1 }] : [], rowCount: duplicate ? 1 : 0 };
+    }
+    if (sql.startsWith('INSERT INTO "public"."account_credits"')) {
+      this.batchInserts += 1;
+      return { rows: [{ __synapsor_primary_key: `CR-${this.batchInserts}` }], rowCount: 1 };
+    }
+    throw new Error(`unexpected set query: ${sql} ${JSON.stringify(values ?? [])}`);
+  }
+}
+
 class FakeIntentStore implements WritebackIntentStore {
   readonly calls: string[] = [];
   claimWritebackIntent() { this.calls.push("claim"); return { decision: "proceed" as const, intent_id: "wbi:test" }; }
@@ -451,6 +565,103 @@ const config = {
   dryRun: false,
   stateDir: ".synapsor"
 };
+
+function v3SetUpdateJob() {
+  const members = [
+    setUpdateMember("INV-1", 1, 1_000),
+    setUpdateMember("INV-2", 2, 2_000),
+  ];
+  const aggregateBounds = [{ column: "balance_cents", measure: "before" as const, maximum: 10_000, actual: 3_000 }];
+  return {
+    protocol_version: "3.0" as const,
+    job_id: "wbj_set_update",
+    proposal_id: "wrp_set_update",
+    approval_id: sha({ approval: "set-update" }),
+    source_id: "src_1",
+    engine: "postgres" as const,
+    operation: "set_update" as const,
+    target: { schema: "public", table: "invoices", primary_key: { column: "id" }, tenant_guard: { column: "tenant_id", value: "acme" } },
+    allowed_columns: ["status"],
+    patch: { status: "closed" },
+    conflict_guard: { kind: "none" as const },
+    version_advance: { column: "version", strategy: "integer_increment" as const },
+    frozen_set: { max_rows: 2, row_count: 2, aggregate_bounds: aggregateBounds, members, set_digest: sha({ operation: "set_update", members, aggregate_bounds: aggregateBounds }) },
+    idempotency_key: "idem-set-update",
+    lease_expires_at: 1,
+    attempt_count: 1,
+  };
+}
+
+function v3SetDeleteJob() {
+  const members = [
+    setDeleteMember("INV-1", 1, 1_000),
+    setDeleteMember("INV-2", 2, 2_000),
+  ];
+  const aggregateBounds = [{ column: "balance_cents", measure: "before" as const, maximum: 10_000, actual: 3_000 }];
+  return {
+    ...v3SetUpdateJob(),
+    job_id: "wbj_set_delete",
+    proposal_id: "wrp_set_delete",
+    approval_id: sha({ approval: "set-delete" }),
+    operation: "set_delete" as const,
+    allowed_columns: [],
+    patch: {},
+    version_advance: undefined,
+    frozen_set: { max_rows: 2, row_count: 2, aggregate_bounds: aggregateBounds, members, set_digest: sha({ operation: "set_delete", members, aggregate_bounds: aggregateBounds }) },
+    idempotency_key: "idem-set-delete",
+  };
+}
+
+function v3BatchInsertJob() {
+  const members = [batchInsertMember("CR-1", "ext-1", 500), batchInsertMember("CR-2", "ext-2", 1_500)];
+  const aggregateBounds = [{ column: "amount_cents", measure: "after" as const, maximum: 5_000, actual: 2_000 }];
+  return {
+    protocol_version: "3.0" as const,
+    job_id: "wbj_batch_insert",
+    proposal_id: "wrp_batch_insert",
+    approval_id: sha({ approval: "batch-insert" }),
+    source_id: "src_1",
+    engine: "postgres" as const,
+    operation: "batch_insert" as const,
+    target: { schema: "public", table: "account_credits", primary_key: { column: "id" }, tenant_guard: { column: "tenant_id", value: "acme" } },
+    allowed_columns: ["amount_cents", "reason"],
+    patch: {},
+    conflict_guard: { kind: "none" as const },
+    frozen_set: { max_rows: 2, row_count: 2, aggregate_bounds: aggregateBounds, members, set_digest: sha({ operation: "batch_insert", members, aggregate_bounds: aggregateBounds }) },
+    idempotency_key: "idem-batch-insert",
+    lease_expires_at: 1,
+    attempt_count: 1,
+  };
+}
+
+function setUpdateMember(id: string, version: number, balance: number) {
+  const before = { id, tenant_id: "acme", status: "overdue", balance_cents: balance, version };
+  const after = { ...before, status: "closed", version: version + 1 };
+  return { primary_key: { column: "id", value: id }, expected_version: { column: "version", value: version }, before, after, before_digest: sha({ primary_key: id, before }), after_digest: sha({ primary_key: id, after }) };
+}
+
+function setDeleteMember(id: string, version: number, balance: number) {
+  const before = { id, tenant_id: "acme", status: "overdue", balance_cents: balance, version };
+  const expectedVersion = { column: "version", value: version };
+  return { primary_key: { column: "id", value: id }, expected_version: expectedVersion, before, after: {}, before_digest: sha({ primary_key: id, before }), tombstone_digest: sha({ primary_key: id, expected_version: expectedVersion }) };
+}
+
+function batchInsertMember(id: string, externalId: string, amount: number) {
+  const after = { amount_cents: amount, reason: "reviewed", tenant_id: "acme", id, external_id: externalId };
+  return {
+    primary_key: { column: "id", value: id }, before: {}, after,
+    after_digest: sha({ primary_key: id, after }),
+    deduplication: { components: [
+      { column: "tenant_id", value: "acme", source: "trusted_tenant" as const },
+      { column: "id", value: id, source: "fixed" as const },
+      { column: "external_id", value: externalId, source: "fixed" as const },
+    ] },
+  };
+}
+
+function sha(value: unknown): `sha256:${string}` {
+  return `sha256:${crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
 
 class FakePostgresClient implements PostgresApplyClient {
   readonly sqlLog: string[] = [];

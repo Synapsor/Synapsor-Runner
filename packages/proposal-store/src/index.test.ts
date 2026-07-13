@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseWritebackJob } from "@synapsor-runner/protocol";
 import {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,
@@ -81,6 +82,45 @@ const writebackJob = {
   idempotency_key: "wrp_123:INV-3001",
   lease: { lease_id: "lease_123", attempt: 1, expires_at: "2026-06-20T14:36:00Z" }
 };
+
+function boundedSetWritebackJob() {
+  return parseWritebackJob({
+    protocol_version: "3.0",
+    job_id: "wbj_set_shared",
+    proposal_id: "wrp_set_shared",
+    approval_id: "sha256:proposal-set-shared",
+    source_id: "src_pg_acme",
+    engine: "postgres",
+    operation: "set_update",
+    target: {
+      schema: "public",
+      table: "invoices",
+      primary_key: { column: "id" },
+      tenant_guard: { column: "tenant_id", value: "acme" },
+    },
+    allowed_columns: ["credit_cents"],
+    patch: { credit_cents: 500 },
+    conflict_guard: { kind: "none" },
+    version_advance: { column: "version", strategy: "integer_increment" },
+    frozen_set: {
+      max_rows: 1,
+      row_count: 1,
+      aggregate_bounds: [{ column: "credit_cents", measure: "absolute_delta", maximum: 500, actual: 500 }],
+      members: [{
+        primary_key: { column: "id", value: "INV-1" },
+        expected_version: { column: "version", value: 1 },
+        before: { id: "INV-1", tenant_id: "acme", version: 1, credit_cents: 0 },
+        after: { id: "INV-1", tenant_id: "acme", version: 2, credit_cents: 500 },
+        before_digest: "sha256:before-set-shared",
+        after_digest: "sha256:after-set-shared",
+      }],
+      set_digest: "sha256:set-shared",
+    },
+    idempotency_key: "set-shared-key",
+    lease_expires_at: "2026-07-13T12:00:00.000Z",
+    attempt_count: 1,
+  });
+}
 
 function shadowChangeSet() {
   return {
@@ -397,6 +437,28 @@ describe("proposal store", () => {
     } finally {
       normalizedJob.close();
       await store.close();
+    }
+  });
+
+  it("round-trips protocol-v3 writeback intents through the shared ledger", async () => {
+    const pool = new FakePostgresRuntimePool();
+    const first = new PostgresWritebackIntentStore({ pool, autoMigrate: true });
+    const job = boundedSetWritebackJob();
+    try {
+      await expect(first.claimWritebackIntent(job, "runner_a")).resolves.toEqual({ decision: "proceed", intent_id: "wbi:wbj_set_shared" });
+      await first.markWritebackIntentApplying("wbi:wbj_set_shared", "runner_a");
+
+      const second = new PostgresWritebackIntentStore({ pool, autoMigrate: true });
+      try {
+        await expect(second.claimWritebackIntent(job, "runner_b")).resolves.toMatchObject({
+          decision: "reconciliation_required",
+          intent_id: "wbi:wbj_set_shared",
+        });
+      } finally {
+        await second.close();
+      }
+    } finally {
+      await first.close();
     }
   });
 

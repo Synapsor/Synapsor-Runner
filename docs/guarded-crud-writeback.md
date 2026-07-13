@@ -16,9 +16,12 @@ validated contract and must preserve these invariants:
 - durable intent, receipt, events, and replay;
 - ambiguous outcomes fail closed for operator reconciliation.
 
-Use an [app-owned executor](writeback-executors.md) for multi-row or
+Use [bounded set writeback](bounded-set-writeback.md) only when a fixed
+predicate or complete reviewed item list can satisfy its stronger caps,
+freezing, atomicity, and receipt rules. Use an [app-owned
+executor](writeback-executors.md) for free-form/unbounded multi-row or
 multi-table transactions, UPSERT, DDL, external effects, or business logic that
-does not fit this boundary.
+does not fit either direct boundary.
 
 ## Operation guarantees
 

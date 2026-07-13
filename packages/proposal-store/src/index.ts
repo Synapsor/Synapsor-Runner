@@ -10,9 +10,11 @@ import {
   type ChangeSet,
   type ExecutionReceipt,
   type ExecutionReceiptV2,
+  type ExecutionReceiptV3,
   type WritebackJob,
   type WritebackJobV1,
   type WritebackJobV2,
+  type WritebackJobV3,
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 
@@ -142,7 +144,7 @@ export type StoredWritebackIntent = {
   proposal_id: string;
   proposal_hash: string;
   runner_id: string;
-  operation: "single_row_update" | "single_row_insert" | "single_row_delete";
+  operation: "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert";
   status: WritebackIntentStatus;
   intent: WritebackJob;
   result?: WritebackResult;
@@ -158,7 +160,7 @@ export type WritebackIntentClaim =
 
 export type ReconcileWritebackIntentInput = {
   intent_id: string;
-  receipt: ExecutionReceiptV2;
+  receipt: ExecutionReceiptV2 | ExecutionReceiptV3;
   actor: string;
   reason: string;
   observation: Record<string, unknown>;
@@ -2064,7 +2066,7 @@ export class ProposalStore {
     const intent = this.requireWritebackIntent(input.intent_id);
     const proposal = this.requireProposal(intent.proposal_id);
     const receipt = parseExecutionReceipt(input.receipt);
-    if (receipt.schema_version !== protocolVersions.executionReceiptV2) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "reconciliation requires an execution-receipt v2");
+    if (receipt.schema_version !== protocolVersions.executionReceiptV2 && receipt.schema_version !== protocolVersions.executionReceiptV3) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "reconciliation requires an execution-receipt v2 or v3");
     if (!input.reason.trim()) throw new ProposalStoreError("RECONCILIATION_REASON_REQUIRED", "reconciliation requires an operator reason");
     if (intent.status !== "reconciliation_required" && intent.status !== "applying") {
       throw new ProposalStoreError("WRITEBACK_INTENT_NOT_RECONCILABLE", `writeback intent ${intent.intent_id} is ${intent.status}`);
@@ -2183,7 +2185,7 @@ export class ProposalStore {
     });
   }
 
-  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 {
+  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 {
     const proposal = this.requireProposal(proposalId);
     assertWritebackAllowed(proposal, "converted into a writeback job");
     if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
@@ -2222,7 +2224,7 @@ export class ProposalStore {
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
       lease,
     } as const;
-    const job: WritebackJobV1 | WritebackJobV2 = changeSet.schema_version === protocolVersions.changeSet
+    const job: WritebackJobV1 | WritebackJobV2 | WritebackJobV3 = changeSet.schema_version === protocolVersions.changeSet
       ? {
         schema_version: protocolVersions.writebackJob,
         ...common,
@@ -2231,11 +2233,19 @@ export class ProposalStore {
         patch: changeSet.patch,
         conflict_guard: conflictGuardFromChangeSet(changeSet),
       }
-      : {
+      : changeSet.schema_version === protocolVersions.changeSetV2 ? {
         schema_version: protocolVersions.writebackJobV2,
         ...common,
         target: { schema: proposal.source_schema, table: proposal.source_table, primary_key: changeSet.source.primary_key },
         mutation: writebackMutationFromChangeSet(changeSet),
+      } : {
+        schema_version: protocolVersions.writebackJobV3,
+        ...common,
+        operation: changeSet.operation,
+        target: { schema: proposal.source_schema, table: proposal.source_table, primary_key: changeSet.source.primary_key },
+        patch: changeSet.patch,
+        ...(changeSet.guards.version_advance ? { version_advance: changeSet.guards.version_advance } : {}),
+        frozen_set: changeSet.frozen_set,
       };
     this.transaction(() => {
       if (proposal.state === "approved") {
@@ -3062,7 +3072,9 @@ export class ProposalStore {
         capability: input.proposal.action,
         business_object: input.proposal.business_object,
         object_id: input.proposal.object_id,
-        primary_key_value: String(input.proposal.change_set.source.primary_key.value),
+        primary_key_value: "value" in input.proposal.change_set.source.primary_key
+          ? String(input.proposal.change_set.source.primary_key.value)
+          : input.proposal.object_id,
       };
     }
     const firstItem = input.evidence?.items.find((item) => isRecord(item.item))?.item as Record<string, unknown> | undefined;
@@ -3370,7 +3382,25 @@ function stateFromReceipt(receipt: ExecutionReceipt): LocalProposalState {
   return "failed";
 }
 
-function receiptToWritebackResult(receipt: ExecutionReceiptV2): WritebackResult {
+function receiptToWritebackResult(receipt: ExecutionReceiptV2 | ExecutionReceiptV3): WritebackResult {
+  if (receipt.schema_version === protocolVersions.executionReceiptV3) {
+    return parseWritebackResult({
+      protocol_version: protocolVersions.normalizedWritebackJobV3,
+      job_id: receipt.writeback_job_id,
+      runner_id: receipt.runner_id,
+      operation: receipt.operation,
+      receipt_authority: receipt.receipt_authority,
+      status: receipt.status,
+      affected_rows: receipt.rows_affected,
+      target_identities: receipt.target.identities,
+      set_digest: receipt.target.set_digest,
+      member_effects: receipt.member_effects,
+      result_hash: receipt.receipt_hash,
+      completed_at: receipt.executed_at,
+      error_code: receipt.safe_error_code,
+      intent_id: receipt.reconciliation?.intent_id,
+    });
+  }
   return parseWritebackResult({
     protocol_version: protocolVersions.normalizedWritebackJobV2,
     job_id: receipt.writeback_job_id,
@@ -3416,6 +3446,7 @@ function writebackMutationFromChangeSet(changeSet: Extract<ChangeSet, { schema_v
 }
 
 function conflictGuardFromChangeSet(changeSet: ChangeSet): WritebackJobV1["conflict_guard"] {
+  if (changeSet.schema_version === protocolVersions.changeSetV3) return { kind: "none" };
   const guard = changeSet.guards.expected_version;
   if (!guard) return { kind: "none" };
   if (guard.column === "__row_hash") {
@@ -3591,7 +3622,7 @@ function rowToWritebackIntent(row: unknown): StoredWritebackIntent | undefined {
     "reconciliation_required",
   ].includes(status)) return undefined;
   const operation = String(row.operation);
-  if (!["single_row_update", "single_row_insert", "single_row_delete"].includes(operation)) return undefined;
+  if (!isStoredWritebackOperation(operation)) return undefined;
   return {
     intent_id: String(row.intent_id),
     idempotency_key: String(row.idempotency_key),
@@ -3631,7 +3662,7 @@ function writebackIntentPayload(intent: StoredWritebackIntent): Record<string, u
 function writebackIntentFromPayload(payload: Record<string, unknown>): StoredWritebackIntent | undefined {
   const operation = String(payload.operation ?? "");
   const status = String(payload.status ?? "");
-  if (!["single_row_update", "single_row_insert", "single_row_delete"].includes(operation)) return undefined;
+  if (!isStoredWritebackOperation(operation)) return undefined;
   if (!["intent_recorded", "applying", "applied", "already_applied", "conflict", "failed", "reconciliation_required"].includes(status)) return undefined;
   if (!isRecord(payload.intent)) return undefined;
   return {
@@ -3649,6 +3680,10 @@ function writebackIntentFromPayload(payload: Record<string, unknown>): StoredWri
     created_at: String(payload.created_at),
     updated_at: String(payload.updated_at),
   };
+}
+
+function isStoredWritebackOperation(operation: string): operation is StoredWritebackIntent["operation"] {
+  return ["single_row_update", "single_row_insert", "single_row_delete", "set_update", "set_delete", "batch_insert"].includes(operation);
 }
 
 function assertIntentMatchesJob(intent: StoredWritebackIntent, job: WritebackJob): void {

@@ -340,7 +340,7 @@
           "type": "boolean"
         },
         "statement_timeout_ms": {
-          "description": "Per-read database statement timeout in milliseconds.",
+          "description": "Operator-controlled timeout for source reads and direct-write statement/lock waits, in milliseconds.",
           "type": "integer",
           "minimum": 1
         },
@@ -607,7 +607,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["string", "number", "boolean"]
+          "enum": ["string", "number", "boolean", "object_array"]
         },
         "description": {
           "type": "string",
@@ -631,6 +631,19 @@
           "items": {
             "$ref": "#/$defs/scalar"
           }
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "additionalProperties": {
+            "$ref": "#/$defs/arg"
+          }
         }
       }
     },
@@ -643,6 +656,9 @@
         },
         {
           "required": ["from_arg"]
+        },
+        {
+          "required": ["from_item"]
         }
       ],
       "properties": {
@@ -652,6 +668,9 @@
         "from_arg": {
           "type": "string",
           "minLength": 1
+        },
+        "from_item": {
+          "$ref": "#/$defs/identifier"
         }
       }
     },
@@ -661,6 +680,53 @@
       "required": ["kind"],
       "properties": {
         "kind": { "enum": ["update", "insert", "delete"] },
+        "cardinality": { "enum": ["single", "set"] },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["all"],
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["column", "operator", "value"],
+                "properties": {
+                  "column": { "$ref": "#/$defs/identifier" },
+                  "operator": { "const": "eq" },
+                  "value": { "$ref": "#/$defs/scalar" }
+                }
+              }
+            }
+          }
+        },
+        "max_rows": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "aggregate_bounds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["column", "measure", "maximum"],
+            "properties": {
+              "column": { "$ref": "#/$defs/identifier" },
+              "measure": { "enum": ["before", "after", "absolute_delta"] },
+              "maximum": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "batch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items_from_arg"],
+          "properties": {
+            "items_from_arg": { "$ref": "#/$defs/identifier" }
+          }
+        },
         "deduplication": {
           "type": "object",
           "additionalProperties": false,
@@ -676,8 +742,9 @@
                 "required": ["column", "source"],
                 "properties": {
                   "column": { "$ref": "#/$defs/identifier" },
-                  "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] },
-                  "fixed": { "$ref": "#/$defs/scalar" }
+                  "source": { "enum": ["proposal_id", "trusted_tenant", "fixed", "item_field"] },
+                  "fixed": { "$ref": "#/$defs/scalar" },
+                  "item_field": { "$ref": "#/$defs/identifier" }
                 }
               }
             }

@@ -16,7 +16,7 @@ import {
 } from "@synapsor-runner/control-plane-client";
 import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2 } from "@synapsor-runner/protocol";
+import { protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3 } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { z } from "zod";
@@ -63,7 +63,7 @@ export type RuntimeSourcePoolConfig = {
   queue_limit?: number;
 };
 
-export type RuntimeArgConfig = {
+export type RuntimeScalarArgConfig = {
   type: "string" | "number" | "boolean";
   description?: string;
   required?: boolean;
@@ -71,6 +71,14 @@ export type RuntimeArgConfig = {
   minimum?: number;
   maximum?: number;
   enum?: Scalar[];
+};
+
+export type RuntimeArgConfig = RuntimeScalarArgConfig | {
+  type: "object_array";
+  description?: string;
+  required?: boolean;
+  max_items: number;
+  fields: Record<string, RuntimeScalarArgConfig>;
 };
 
 export type RuntimeNumericBoundConfig = {
@@ -103,13 +111,13 @@ export type RuntimeCapabilityConfig = {
   visible_columns: string[];
   evidence?: "required" | "optional" | string;
   max_rows?: number;
-  patch?: Record<string, { fixed?: Scalar; from_arg?: string }>;
+  patch?: Record<string, { fixed?: Scalar; from_arg?: string; from_item?: string }>;
   allowed_columns?: string[];
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
   transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
   operation?: NonNullable<ProposalActionSpec["operation"]>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
-  approval?: { mode?: "human" | "policy" | string; required_role?: string; required_approvals?: number; policy?: string };
+  approval?: { mode?: "human" | "operator" | "policy" | string; required_role?: string; required_approvals?: number; policy?: string };
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
 };
 
@@ -224,7 +232,7 @@ export type DbRowReader = (input: {
   args: Record<string, unknown>;
   context: TrustedContext;
   env: NodeJS.ProcessEnv;
-}) => Promise<{ row: Record<string, unknown>; rowCount: number }>;
+}) => Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }>;
 
 export type McpRuntimeOptions = {
   env?: NodeJS.ProcessEnv;
@@ -1862,8 +1870,11 @@ async function callConfiguredTool(input: {
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
   const context = resolveTrustedContext(input.config, input.env, capability, input.trustedContext);
   const operation = capability.kind === "proposal" ? capability.operation?.kind ?? "update" : "update";
+  const setOperation = isSetCapability(capability);
+  const batchInsert = setOperation && operation === "insert";
+  const batchItems = batchInsert ? batchItemsFromArgs(capability, input.args) : [];
   const current = capability.kind === "proposal" && operation === "insert"
-    ? { row: {}, rowCount: 0 }
+    ? { row: {}, rows: [] as Record<string, unknown>[], rowCount: batchItems.length }
     : await input.readRow({
       sourceName: capability.source,
       source,
@@ -1872,20 +1883,33 @@ async function callConfiguredTool(input: {
       context,
       env: input.env,
     });
-  if ((capability.kind !== "proposal" || operation !== "insert") && current.rowCount !== 1) {
+  const currentRows = setOperation
+    ? batchInsert ? [] : current.rows ?? (current.rowCount === 1 ? [current.row] : [])
+    : current.rowCount === 1 ? [current.row] : [];
+  if (setOperation) {
+    const maxRows = capability.operation?.max_rows ?? 0;
+    const reviewedCount = batchInsert ? batchItems.length : current.rowCount;
+    if (reviewedCount > maxRows) throw new McpRuntimeError("SET_ROW_CAP_EXCEEDED", `Reviewed set exceeds MAX ROWS ${maxRows}; no proposal was created.`);
+    if (reviewedCount < 1) throw new McpRuntimeError("SET_EMPTY", "The reviewed set is empty; no proposal was created.");
+  } else if ((capability.kind !== "proposal" || operation !== "insert") && current.rowCount !== 1) {
     throw new McpRuntimeError("ROW_NOT_FOUND", "The scoped capability read did not find exactly one authorized row.");
   }
 
-  const patch = capability.kind !== "proposal" || operation === "delete" ? {} : buildPatch(capability, input.args);
+  const patch = capability.kind !== "proposal" || operation === "delete" || batchInsert ? {} : buildPatch(capability, input.args);
+  const itemPatches = batchInsert ? batchItems.map((item) => buildItemPatch(capability, item, input.args)) : [];
   const before = scalarRecord(current.row);
-  if (capability.kind === "proposal") enforcePatchGuards(capability, before, patch);
+  if (capability.kind === "proposal") {
+    if (setOperation && !batchInsert) currentRows.forEach((row) => enforcePatchGuards(capability, scalarRecord(row), patch));
+    else if (batchInsert) itemPatches.forEach((itemPatch) => enforcePatchGuards(capability, {}, itemPatch));
+    else enforcePatchGuards(capability, before, patch);
+  }
   const createdAt = new Date().toISOString();
   const proposalId = stableId("wrp", capability.operation ? {
     action: capability.name,
     operation,
     tenant: context.tenant_id,
-    before,
-    patch,
+    before: setOperation ? currentRows.map(scalarRecord) : before,
+    patch: batchInsert ? itemPatches : patch,
     created_at: createdAt,
   } : {
     action: capability.name,
@@ -1895,11 +1919,17 @@ async function callConfiguredTool(input: {
     patch,
     created_at: createdAt,
   });
-  const resolvedDeduplication = capability.kind === "proposal" && operation === "insert"
+  const resolvedDeduplication = capability.kind === "proposal" && operation === "insert" && !batchInsert
     ? resolveDeduplication(capability, proposalId, context)
     : undefined;
   const primaryDedup = resolvedDeduplication?.components.find((component) => component.column === capability.target.primary_key);
-  const objectId = capability.kind === "proposal" && operation === "insert"
+  const objectId = setOperation
+    ? stableId("set", {
+      capability: capability.name,
+      tenant: context.tenant_id,
+      identities: batchInsert ? batchItems : currentRows.map((row) => row[capability.target.primary_key]),
+    })
+    : capability.kind === "proposal" && operation === "insert"
     ? String(primaryDedup?.value ?? proposalId)
     : String(current.row[capability.target.primary_key] ?? input.args[capability.lookup.id_from_arg]);
 
@@ -1907,11 +1937,30 @@ async function callConfiguredTool(input: {
     capability: capability.name,
     source: capability.source,
     tenant: context.tenant_id,
-    row: capability.kind === "proposal" && operation === "insert" ? undefined : current.row,
-    patch: capability.kind === "proposal" && operation === "insert" ? patch : undefined,
+    row: capability.kind === "proposal" && operation === "insert" ? undefined : setOperation ? currentRows : current.row,
+    patch: capability.kind === "proposal" && operation === "insert" ? (batchInsert ? itemPatches : patch) : undefined,
     at: createdAt,
   });
   const queryFingerprint = queryFingerprintFor(capability, context);
+  const changeSet = capability.kind === "proposal" ? buildChangeSet({
+    config: input.config,
+    capability,
+    args: input.args,
+    context,
+    sourceName: capability.source,
+    source,
+    currentRow: current.row,
+    currentRows,
+    batchItems,
+    itemPatches,
+    patch,
+    proposalId,
+    createdAt,
+    resolvedDeduplication,
+    evidenceBundleId,
+    queryFingerprint,
+    objectId,
+  }) : undefined;
   await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
     tenant_id: context.tenant_id,
@@ -1924,8 +1973,9 @@ async function callConfiguredTool(input: {
       source_database_changed: false,
       binding_provenance: context.provenance,
     },
-    items: [
-      {
+    items: setOperation
+      ? boundedSetEvidenceItems(capability, context, operation, currentRows, itemPatches, batchItems)
+      : [{
         kind: capability.kind === "proposal" && operation === "insert" ? "reviewed_insert_intent" : "external_row",
         source_id: capability.source,
         table: `${capability.target.schema}.${capability.target.table}`,
@@ -1933,8 +1983,7 @@ async function callConfiguredTool(input: {
         tenant: capability.target.tenant_key ? { column: capability.target.tenant_key, value: context.tenant_id } : undefined,
         visible_row: capability.kind === "proposal" && operation === "insert" ? patch : scalarRecord(current.row),
         ...(resolvedDeduplication ? { deduplication: resolvedDeduplication } : {}),
-      },
-    ],
+      }],
   });
   if (capability.kind !== "proposal" || operation !== "insert") {
     await input.store.recordQueryAudit({
@@ -1975,22 +2024,7 @@ async function callConfiguredTool(input: {
     };
   }
 
-  const changeSet = buildChangeSet({
-    config: input.config,
-    capability,
-    args: input.args,
-    context,
-    sourceName: capability.source,
-    source,
-    currentRow: current.row,
-    patch,
-    proposalId,
-    createdAt,
-    resolvedDeduplication,
-    evidenceBundleId,
-    queryFingerprint,
-    objectId,
-  });
+  if (!changeSet) throw new McpRuntimeError("PROPOSAL_CHANGE_SET_MISSING", "Proposal change set was not constructed.");
   const activeProposal = await input.store.findActiveProposal({
     tenant_id: context.tenant_id,
     action: capability.name,
@@ -2264,6 +2298,7 @@ async function maybeAutoApproveProposal(input: {
 }> {
   if (input.config.mode !== "review") return { proposal: input.proposal, approved: false };
   if (input.config.approvals?.disable_auto_approval === true) return { proposal: input.proposal, approved: false };
+  if (isSetCapability(input.capability)) return { proposal: input.proposal, approved: false };
   if (input.capability.operation?.kind === "delete") return { proposal: input.proposal, approved: false };
   if (input.capability.approval?.mode !== "policy" || !input.capability.approval.policy) return { proposal: input.proposal, approved: false };
   if (input.proposal.state === "approved") return { proposal: input.proposal, approved: true, policy: input.capability.approval.policy };
@@ -2379,6 +2414,7 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
   if (runtimeCode && (
     runtimeCode.startsWith("ARGUMENT_")
     || runtimeCode === "LOOKUP_ARG_MISSING"
+    || runtimeCode === "MODEL_PREDICATE_REJECTED"
     || runtimeCode === "MODEL_CANNOT_OVERRIDE_BINDING"
     || runtimeCode === "TRUSTED_BINDING_MISSING"
     || runtimeCode === "TRUSTED_CONTEXT_MISSING"
@@ -2387,6 +2423,8 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
   }
   if (runtimeCode && (
     runtimeCode.startsWith("PATCH_")
+    || runtimeCode.startsWith("SET_")
+    || runtimeCode.startsWith("BATCH_")
     || runtimeCode === "CONFLICT_GUARD_MISSING"
   )) {
     return { code: "POLICY_VIOLATION", message: "The requested change is outside the reviewed capability policy.", retryable: false };
@@ -2574,6 +2612,9 @@ function buildChangeSet(input: {
   sourceName: string;
   source: RuntimeSourceConfig;
   currentRow: Record<string, unknown>;
+  currentRows: Record<string, unknown>[];
+  batchItems: Record<string, unknown>[];
+  itemPatches: Record<string, Scalar>[];
   patch: Record<string, Scalar>;
   proposalId: string;
   createdAt: string;
@@ -2584,6 +2625,7 @@ function buildChangeSet(input: {
 }): ChangeSet {
   const patch = input.patch;
   const before = scalarRecord(input.currentRow);
+  if (isSetCapability(input.capability)) return buildBoundedSetChangeSet(input);
   enforcePatchGuards(input.capability, before, patch);
   const operation = input.capability.operation?.kind ?? "update";
   const after = operation === "delete" ? {} : operation === "insert" ? { ...patch } : { ...before, ...patch };
@@ -2718,6 +2760,186 @@ function buildChangeSet(input: {
   };
 }
 
+function buildBoundedSetChangeSet(input: {
+  config: RuntimeConfig;
+  capability: RuntimeCapabilityConfig;
+  args: Record<string, unknown>;
+  context: TrustedContext;
+  sourceName: string;
+  source: RuntimeSourceConfig;
+  currentRow: Record<string, unknown>;
+  currentRows: Record<string, unknown>[];
+  batchItems: Record<string, unknown>[];
+  itemPatches: Record<string, Scalar>[];
+  patch: Record<string, Scalar>;
+  proposalId: string;
+  createdAt: string;
+  evidenceBundleId: string;
+  queryFingerprint: string;
+  objectId: string;
+}): ChangeSetV3 {
+  const operation = input.capability.operation;
+  if (!operation || operation.cardinality !== "set" || !operation.max_rows || !operation.aggregate_bounds?.length) {
+    throw new McpRuntimeError("SET_GUARDS_REQUIRED", `Bounded set capability ${input.capability.name} is missing reviewed set guards.`);
+  }
+  const kind = operation.kind === "update" ? "set_update" : operation.kind === "delete" ? "set_delete" : "batch_insert";
+  if (kind !== "batch_insert" && operation.version_advance?.strategy !== "integer_increment" && kind === "set_update") {
+    throw new McpRuntimeError("SET_VERSION_ADVANCE_UNSUPPORTED", "Bounded set UPDATE currently requires integer_increment version advancement.");
+  }
+  const rawMembers = kind === "batch_insert"
+    ? input.itemPatches.map((itemPatch, index) => {
+      const deduplication = resolveBatchDeduplication(input.capability, input.batchItems[index] ?? {}, input.proposalId, input.context, index);
+      const primary = deduplication.components.find((component) => component.column === input.capability.target.primary_key);
+      if (!primary) throw new McpRuntimeError("BATCH_PRIMARY_KEY_REQUIRED", `Batch INSERT must derive ${input.capability.target.primary_key} from a reviewed item field.`);
+      const after = { ...itemPatch };
+      for (const component of deduplication.components) {
+        if (Object.prototype.hasOwnProperty.call(after, component.column)) throw new McpRuntimeError("BATCH_DEDUP_COLUMN_COLLISION", `Batch deduplication column ${component.column} collides with a patch column.`);
+        after[component.column] = component.value;
+      }
+      return {
+        primary_key: { column: input.capability.target.primary_key, value: primary.value },
+        before: {},
+        after,
+        after_digest: hashJson({ primary_key: primary.value, after }),
+        deduplication,
+      };
+    })
+    : input.currentRows.map((rawRow) => {
+      const before = scalarRecord(rawRow);
+      const expectedVersion = expectedVersionGuard(input.capability, before);
+      if (expectedVersion.column === "__row_hash") throw new McpRuntimeError("SET_WEAK_GUARD_FORBIDDEN", "Bounded set writes require an exact conflict-guard column.");
+      const primaryValue = scalar(before[input.capability.target.primary_key]);
+      if (primaryValue === null) throw new McpRuntimeError("SET_PRIMARY_KEY_MISSING", "A frozen set member is missing its reviewed primary key.");
+      if (kind === "set_delete") {
+        return {
+          primary_key: { column: input.capability.target.primary_key, value: primaryValue },
+          expected_version: expectedVersion,
+          before,
+          after: {},
+          before_digest: hashJson({ primary_key: primaryValue, before }),
+          tombstone_digest: hashJson({ primary_key: primaryValue, expected_version: expectedVersion }),
+        };
+      }
+      const after = { ...before, ...input.patch };
+      const versionAdvance = operation.version_advance;
+      if (!versionAdvance || versionAdvance.strategy !== "integer_increment" || typeof expectedVersion.value !== "number") {
+        throw new McpRuntimeError("SET_INTEGER_VERSION_REQUIRED", "Bounded set UPDATE requires a numeric integer_increment conflict guard.");
+      }
+      after[versionAdvance.column] = expectedVersion.value + 1;
+      return {
+        primary_key: { column: input.capability.target.primary_key, value: primaryValue },
+        expected_version: expectedVersion,
+        before,
+        after,
+        before_digest: hashJson({ primary_key: primaryValue, before }),
+        after_digest: hashJson({ primary_key: primaryValue, after }),
+      };
+    });
+  const members = rawMembers.sort((left, right) => JSON.stringify(left.primary_key.value).localeCompare(JSON.stringify(right.primary_key.value)));
+  if (new Set(members.map((member) => JSON.stringify(member.primary_key.value))).size !== members.length) {
+    throw new McpRuntimeError("SET_IDENTITY_NOT_UNIQUE", "Every frozen set member must have a unique primary-key identity.");
+  }
+  const aggregateBounds = operation.aggregate_bounds.map((bound) => ({ ...bound, actual: aggregateValue(members, bound) }));
+  for (const bound of aggregateBounds) {
+    if (bound.actual > bound.maximum) throw new McpRuntimeError("SET_AGGREGATE_BOUND_EXCEEDED", `${bound.measure} aggregate for ${bound.column} exceeds the reviewed maximum ${bound.maximum}.`);
+  }
+  const frozenSet = {
+    max_rows: operation.max_rows,
+    row_count: members.length,
+    aggregate_bounds: aggregateBounds,
+    members,
+    set_digest: hashJson({ operation: kind, members, aggregate_bounds: aggregateBounds }),
+  };
+  const approvalMode = input.capability.approval?.mode === "operator" ? "operator" : "human";
+  const proposalCore = {
+    schema_version: protocolVersions.changeSetV3,
+    proposal_id: input.proposalId,
+    proposal_version: 1,
+    action: input.capability.name,
+    operation: kind,
+    mode: input.config.mode === "shadow" ? "shadow" : "review_required",
+    principal: {
+      id: input.context.principal,
+      source: input.context.provenance === "environment" ? "environment" : input.context.provenance === "cloud_session" ? "cloud_session" : input.context.provenance === "static_dev" ? "static_dev" : "trusted_session",
+    },
+    scope: { tenant_id: input.context.tenant_id, business_object: input.capability.target.table, object_id: input.objectId },
+    source: {
+      kind: input.source.engine === "postgres" ? "external_postgres" : "external_mysql",
+      source_id: input.sourceName,
+      schema: input.capability.target.schema,
+      table: input.capability.target.table,
+      primary_key: { column: input.capability.target.primary_key },
+    },
+    before: { row_count: kind === "batch_insert" ? 0 : members.length },
+    patch: kind === "set_update" ? input.patch : {},
+    after: { row_count: kind === "set_delete" ? 0 : members.length },
+    guards: {
+      tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+      allowed_columns: kind === "set_delete" ? [] : input.capability.allowed_columns ?? Object.keys(input.patch),
+      ...(kind === "set_update" && operation.version_advance ? { version_advance: operation.version_advance } : {}),
+    },
+    frozen_set: frozenSet,
+    evidence: { bundle_id: input.evidenceBundleId, query_fingerprint: input.queryFingerprint, items: [] },
+    approval: {
+      status: "pending",
+      mode: approvalMode,
+      required_role: input.capability.approval?.required_role,
+      ...(input.capability.approval?.required_approvals ? { required_approvals: input.capability.approval.required_approvals } : {}),
+    },
+    writeback: { status: "not_applied", mode: "trusted_worker_required", executor: "sql_update" },
+    source_database_mutated: false,
+    created_at: input.createdAt,
+  } satisfies Omit<ChangeSetV3, "integrity">;
+  return { ...proposalCore, integrity: { proposal_hash: hashJson(proposalCore) } };
+}
+
+function resolveBatchDeduplication(
+  capability: RuntimeCapabilityConfig,
+  item: Record<string, unknown>,
+  proposalId: string,
+  context: TrustedContext,
+  index: number,
+): NonNullable<ChangeSetV3["frozen_set"]["members"][number]["deduplication"]> {
+  const declared = capability.operation?.deduplication?.components;
+  if (!declared?.length) throw new McpRuntimeError("BATCH_DEDUPLICATION_REQUIRED", "Batch INSERT requires reviewed per-item deduplication.");
+  const components = declared.map((component) => ({
+    column: component.column,
+    source: component.source === "item_field" ? "fixed" as const : component.source,
+    value: component.source === "item_field"
+      ? scalar(item[component.item_field ?? ""])
+      : component.source === "proposal_id"
+        ? `${proposalId}:${index}`
+        : component.source === "trusted_tenant"
+          ? context.tenant_id
+          : scalar(component.fixed ?? null),
+  }));
+  if (!components.some((component) => component.column === capability.target.primary_key && component.value !== null)) {
+    throw new McpRuntimeError("BATCH_PRIMARY_KEY_REQUIRED", `Batch INSERT must bind primary key ${capability.target.primary_key} from an item field.`);
+  }
+  if (capability.target.tenant_key && !components.some((component) => component.column === capability.target.tenant_key && component.value === context.tenant_id)) {
+    throw new McpRuntimeError("BATCH_TRUSTED_TENANT_REQUIRED", "Batch INSERT deduplication must include the trusted tenant key.");
+  }
+  return { components };
+}
+
+function aggregateValue(
+  members: ChangeSetV3["frozen_set"]["members"],
+  bound: { column: string; measure: "before" | "after" | "absolute_delta" },
+): number {
+  return members.reduce((total, member) => {
+    const before = member.before[bound.column];
+    const after = member.after[bound.column];
+    if (bound.measure === "before") return total + Math.abs(numericAggregateValue(before, bound.column));
+    if (bound.measure === "after") return total + Math.abs(numericAggregateValue(after, bound.column));
+    return total + Math.abs(numericAggregateValue(after, bound.column) - numericAggregateValue(before, bound.column));
+  }, 0);
+}
+
+function numericAggregateValue(value: Scalar | undefined, column: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new McpRuntimeError("SET_AGGREGATE_VALUE_INVALID", `Aggregate column ${column} must contain finite reviewed numbers.`);
+  return value;
+}
+
 function expectedVersionGuard(capability: RuntimeCapabilityConfig, row: Record<string, Scalar>): { column: string; value: Scalar } {
   const column = capability.conflict_guard?.column;
   if (column && row[column] !== undefined) return { column, value: conflictGuardScalar(row[column]) };
@@ -2828,7 +3050,7 @@ class RuntimeDatabasePools {
 
   constructor(private readonly env: NodeJS.ProcessEnv) {}
 
-  async read(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
+  async read(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }> {
     const databaseUrl = envValue(this.env, input.source.read_url_env);
     if (!databaseUrl) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
     const poolConfig = input.source.pool ?? {};
@@ -2863,7 +3085,7 @@ class RuntimeDatabasePools {
           if (input.source.statement_timeout_ms) await client.query(`SET LOCAL statement_timeout = ${Number(input.source.statement_timeout_ms)}`);
           const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
           await client.query("COMMIT");
-          return { row: result.rows[0] ?? {}, rowCount: result.rowCount ?? 0 };
+          return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
         } catch (error) {
           await client.query("ROLLBACK").catch(() => undefined);
           throw error;
@@ -2901,7 +3123,7 @@ class RuntimeDatabasePools {
         const values = queryValues(input.capability, input.args, input.context).map(scalar);
         const [rows] = await connection.execute(query.sql, values);
         const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-        return { row: list[0] ?? {}, rowCount: list.length };
+        return { row: list[0] ?? {}, rows: list, rowCount: list.length };
       } finally {
         counter.active -= 1;
         connection.release();
@@ -2953,7 +3175,7 @@ async function withPoolAcquireTimeout<T>(
   }
 }
 
-async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
+async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }> {
   const connectionString = envValue(input.env, input.source.read_url_env);
   if (!connectionString) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const pool = createPostgresPool(connectionString);
@@ -2966,7 +3188,7 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
     }
     const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
     await client.query("COMMIT");
-    return { row: result.rows[0] ?? {}, rowCount: result.rowCount ?? 0 };
+    return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -2976,7 +3198,7 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
   }
 }
 
-async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rowCount: number }> {
+async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }> {
   const uri = envValue(input.env, input.source.read_url_env);
   if (!uri) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const connection = await mysql.createConnection({ uri, dateStrings: true });
@@ -2988,7 +3210,7 @@ async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: R
     const values: Array<string | number | boolean | null> = queryValues(input.capability, input.args, input.context).map(scalar);
     const [rows] = await connection.execute(query.sql, values);
     const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-    return { row: list[0] ?? {}, rowCount: list.length };
+    return { row: list[0] ?? {}, rows: list, rowCount: list.length };
   } finally {
     await connection.end();
   }
@@ -2996,6 +3218,18 @@ async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: R
 
 function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" | "?"): { sql: string } {
   const columns = readColumns(capability).map((column) => quoteIdentifier(column, placeholderStyle)).join(", ");
+  if (isSetSelectionCapability(capability)) {
+    const fixedTerms = capability.operation?.selection?.all ?? [];
+    const where = fixedTerms.map((term, index) => `${quoteIdentifier(term.column, placeholderStyle)} = ${placeholderStyle === "$" ? `$${index + 1}` : "?"}`);
+    if (capability.target.tenant_key) {
+      const tenantIndex = fixedTerms.length + 1;
+      where.push(`${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${placeholderStyle === "$" ? `$${tenantIndex}` : "?"}`);
+    }
+    const maxRows = capability.operation?.max_rows ?? 0;
+    return {
+      sql: `SELECT ${columns} FROM ${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} WHERE ${where.join(" AND ")} ORDER BY ${quoteIdentifier(capability.target.primary_key, placeholderStyle)} ASC LIMIT ${maxRows + 1}`,
+    };
+  }
   const placeholders = placeholderStyle === "$" ? ["$1", "$2"] : ["?", "?"];
   const where = [
     `${quoteIdentifier(capability.target.primary_key, placeholderStyle)} = ${placeholders[0]}`,
@@ -3008,6 +3242,12 @@ function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" 
 }
 
 function queryValues(capability: RuntimeCapabilityConfig, args: Record<string, unknown>, context: TrustedContext): unknown[] {
+  if (isSetSelectionCapability(capability)) {
+    return [
+      ...(capability.operation?.selection?.all ?? []).map((term) => term.value),
+      ...(capability.target.tenant_key ? [context.tenant_id] : []),
+    ];
+  }
   const pkValue = args[capability.lookup.id_from_arg];
   if (pkValue === undefined) throw new McpRuntimeError("LOOKUP_ARG_MISSING", `${capability.lookup.id_from_arg} is required.`);
   return capability.target.tenant_key ? [pkValue, context.tenant_id] : [pkValue];
@@ -3018,7 +3258,17 @@ function readColumns(capability: RuntimeCapabilityConfig): string[] {
   columns.add(capability.target.primary_key);
   if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
   if (capability.conflict_guard?.column) columns.add(capability.conflict_guard.column);
+  for (const term of capability.operation?.selection?.all ?? []) columns.add(term.column);
+  for (const bound of capability.operation?.aggregate_bounds ?? []) columns.add(bound.column);
   return Array.from(columns);
+}
+
+function isSetCapability(capability: RuntimeCapabilityConfig): boolean {
+  return capability.kind === "proposal" && capability.operation?.cardinality === "set";
+}
+
+function isSetSelectionCapability(capability: RuntimeCapabilityConfig): boolean {
+  return isSetCapability(capability) && capability.operation?.kind !== "insert";
 }
 
 function quoteIdentifier(identifier: string, style: "$" | "?"): string {
@@ -3082,10 +3332,34 @@ function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
 }
 
 function validateToolArgs(capability: RuntimeCapabilityConfig, args: Record<string, unknown>): void {
+  for (const name of Object.keys(args)) {
+    if (Object.prototype.hasOwnProperty.call(capability.args, name)) continue;
+    if (isSetCapability(capability)) {
+      throw new McpRuntimeError("MODEL_PREDICATE_REJECTED", `bounded-set argument ${name} is not reviewed; selection, ordering, columns, operators, and row caps are contract-fixed.`);
+    }
+    throw new McpRuntimeError("ARGUMENT_NOT_ALLOWED", `${name} is not a reviewed capability argument.`);
+  }
   for (const [name, spec] of Object.entries(capability.args)) {
     const value = args[name];
     if (spec.required !== false && value === undefined) throw new McpRuntimeError("ARGUMENT_REQUIRED", `${name} is required.`);
     if (value === undefined) continue;
+    if (spec.type === "object_array") {
+      if (!Array.isArray(value)) throw new McpRuntimeError("ARGUMENT_TYPE_INVALID", `${name} must be an array of reviewed objects.`);
+      if (value.length < 1 || value.length > spec.max_items) throw new McpRuntimeError("ARGUMENT_ITEM_COUNT_INVALID", `${name} must contain 1 through ${spec.max_items} items.`);
+      for (const [index, item] of value.entries()) {
+        if (!isRecord(item)) throw new McpRuntimeError("ARGUMENT_ITEM_TYPE_INVALID", `${name}[${index}] must be an object.`);
+        for (const key of Object.keys(item)) if (!Object.prototype.hasOwnProperty.call(spec.fields, key)) throw new McpRuntimeError("ARGUMENT_ITEM_FIELD_NOT_ALLOWED", `${name}[${index}].${key} is not a reviewed item field.`);
+        for (const [fieldName, fieldSpec] of Object.entries(spec.fields)) validateScalarArg(`${name}[${index}].${fieldName}`, fieldSpec, item[fieldName]);
+      }
+      continue;
+    }
+    validateScalarArg(name, spec, value);
+  }
+}
+
+function validateScalarArg(name: string, spec: RuntimeScalarArgConfig, value: unknown): void {
+    if (spec.required !== false && value === undefined) throw new McpRuntimeError("ARGUMENT_REQUIRED", `${name} is required.`);
+    if (value === undefined) return;
     if (spec.type === "string" && typeof value !== "string") throw new McpRuntimeError("ARGUMENT_TYPE_INVALID", `${name} must be a string.`);
     if (spec.type === "number" && typeof value !== "number") throw new McpRuntimeError("ARGUMENT_TYPE_INVALID", `${name} must be a number.`);
     if (spec.type === "boolean" && typeof value !== "boolean") throw new McpRuntimeError("ARGUMENT_TYPE_INVALID", `${name} must be a boolean.`);
@@ -3093,7 +3367,6 @@ function validateToolArgs(capability: RuntimeCapabilityConfig, args: Record<stri
     if (typeof value === "number" && spec.minimum !== undefined && value < spec.minimum) throw new McpRuntimeError("ARGUMENT_BELOW_MINIMUM", `${name} must be at least ${spec.minimum}.`);
     if (typeof value === "number" && spec.maximum !== undefined && value > spec.maximum) throw new McpRuntimeError("ARGUMENT_ABOVE_MAXIMUM", `${name} must be at most ${spec.maximum}.`);
     if (spec.enum && !spec.enum.includes(value as Scalar)) throw new McpRuntimeError("ARGUMENT_NOT_ALLOWED", `${name} is not an allowed value.`);
-  }
 }
 
 function rejectTrustedArgOverrides(args: Record<string, unknown>): void {
@@ -3107,15 +3380,23 @@ function rejectTrustedArgOverrides(args: Record<string, unknown>): void {
 function zodInputShape(capability: RuntimeCapabilityConfig): Record<string, z.ZodTypeAny> {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const [name, spec] of Object.entries(capability.args)) {
-    let schema: z.ZodTypeAny = spec.type === "number" ? z.number() : spec.type === "boolean" ? z.boolean() : z.string();
-    if (spec.type === "string" && spec.max_length) schema = (schema as z.ZodString).max(spec.max_length);
-    if (spec.type === "number" && spec.minimum !== undefined) schema = (schema as z.ZodNumber).min(spec.minimum);
-    if (spec.type === "number" && spec.maximum !== undefined) schema = (schema as z.ZodNumber).max(spec.maximum);
-    if (spec.enum && spec.enum.length > 0) schema = schema.refine((value) => spec.enum?.includes(value as Scalar), "value is not allowlisted");
+    let schema: z.ZodTypeAny = spec.type === "object_array"
+      ? z.array(z.object(Object.fromEntries(Object.entries(spec.fields).map(([field, fieldSpec]) => [field, zodScalarArg(fieldSpec)]))).strict()).min(1).max(spec.max_items)
+      : zodScalarArg(spec);
     if (spec.required === false) schema = schema.optional();
     shape[name] = schema.describe(spec.description ?? `${name} business argument`);
   }
   return shape;
+}
+
+function zodScalarArg(spec: RuntimeScalarArgConfig): z.ZodTypeAny {
+  let schema: z.ZodTypeAny = spec.type === "number" ? z.number() : spec.type === "boolean" ? z.boolean() : z.string();
+  if (spec.type === "string" && spec.max_length) schema = (schema as z.ZodString).max(spec.max_length);
+  if (spec.type === "number" && spec.minimum !== undefined) schema = (schema as z.ZodNumber).min(spec.minimum);
+  if (spec.type === "number" && spec.maximum !== undefined) schema = (schema as z.ZodNumber).max(spec.maximum);
+  if (spec.enum && spec.enum.length > 0) schema = schema.refine((value) => spec.enum?.includes(value as Scalar), "value is not allowlisted");
+  if (spec.required === false) schema = schema.optional();
+  return schema;
 }
 
 function toolMetadata(capability: RuntimeCapabilityConfig): LocalToolMetadata {
@@ -3125,13 +3406,15 @@ function toolMetadata(capability: RuntimeCapabilityConfig): LocalToolMetadata {
     description: capabilityDescription(capability),
     kind: capability.kind,
     input_schema: Object.fromEntries(Object.entries(capability.args).map(([name, spec]) => [name, {
-      type: spec.type,
+      type: spec.type === "object_array" ? "array" : spec.type,
       required: spec.required !== false,
       ...(spec.description !== undefined ? { description: spec.description } : {}),
-      ...(spec.max_length !== undefined ? { max_length: spec.max_length } : {}),
-      ...(spec.minimum !== undefined ? { minimum: spec.minimum } : {}),
-      ...(spec.maximum !== undefined ? { maximum: spec.maximum } : {}),
-      ...(spec.enum !== undefined ? { enum: spec.enum } : {}),
+      ...(spec.type === "object_array" ? { max_items: spec.max_items, fields: spec.fields } : {
+        ...(spec.max_length !== undefined ? { max_length: spec.max_length } : {}),
+        ...(spec.minimum !== undefined ? { minimum: spec.minimum } : {}),
+        ...(spec.maximum !== undefined ? { maximum: spec.maximum } : {}),
+        ...(spec.enum !== undefined ? { enum: spec.enum } : {}),
+      }),
     }])),
     annotations: {
       readOnlyHint: capability.kind === "read",
@@ -3173,6 +3456,59 @@ function buildPatch(capability: RuntimeCapabilityConfig, args: Record<string, un
   return patch;
 }
 
+function batchItemsFromArgs(capability: RuntimeCapabilityConfig, args: Record<string, unknown>): Record<string, unknown>[] {
+  const argumentName = capability.operation?.batch?.items_from_arg;
+  const value = argumentName ? args[argumentName] : undefined;
+  if (!argumentName || !Array.isArray(value) || value.some((item) => !isRecord(item))) {
+    throw new McpRuntimeError("BATCH_ITEMS_REQUIRED", `Bounded INSERT capability ${capability.name} requires its reviewed object-array argument.`);
+  }
+  return value as Record<string, unknown>[];
+}
+
+function buildItemPatch(
+  capability: RuntimeCapabilityConfig,
+  item: Record<string, unknown>,
+  args: Record<string, unknown>,
+): Record<string, Scalar> {
+  if (!capability.patch) throw new McpRuntimeError("PATCH_REQUIRED", "Proposal capability has no patch mapping.");
+  const patch: Record<string, Scalar> = {};
+  for (const [column, binding] of Object.entries(capability.patch)) {
+    if (binding.from_item) patch[column] = scalar(item[binding.from_item]);
+    else if (binding.from_arg) patch[column] = scalar(args[binding.from_arg]);
+    else patch[column] = scalar(binding.fixed ?? null);
+  }
+  return patch;
+}
+
+function boundedSetEvidenceItems(
+  capability: RuntimeCapabilityConfig,
+  context: TrustedContext,
+  operation: "update" | "insert" | "delete",
+  currentRows: Record<string, unknown>[],
+  itemPatches: Record<string, Scalar>[],
+  batchItems: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  if (operation === "insert") {
+    return itemPatches.map((patch, index) => ({
+      kind: "reviewed_batch_insert_intent",
+      source_id: capability.source,
+      table: `${capability.target.schema}.${capability.target.table}`,
+      item_index: index,
+      reviewed_item: scalarRecord(batchItems[index] ?? {}),
+      visible_row: patch,
+      tenant: capability.target.tenant_key ? { column: capability.target.tenant_key, value: context.tenant_id } : undefined,
+    }));
+  }
+  return currentRows.map((row) => ({
+    kind: "external_row",
+    source_id: capability.source,
+    table: `${capability.target.schema}.${capability.target.table}`,
+    primary_key: { column: capability.target.primary_key, value: scalar(row[capability.target.primary_key]) },
+    tenant: capability.target.tenant_key ? { column: capability.target.tenant_key, value: context.tenant_id } : undefined,
+    visible_row: scalarRecord(row),
+  }));
+}
+
 function resolveDeduplication(
   capability: RuntimeCapabilityConfig,
   proposalId: string,
@@ -3180,9 +3516,10 @@ function resolveDeduplication(
 ): NonNullable<ChangeSetV2["guards"]["deduplication"]> {
   const declared = capability.operation?.kind === "insert" ? capability.operation.deduplication?.components : undefined;
   if (!declared?.length) throw new McpRuntimeError("INSERT_DEDUPLICATION_REQUIRED", `INSERT capability ${capability.name} requires source-enforced deduplication.`);
+  if (declared.some((component) => component.source === "item_field")) throw new McpRuntimeError("INSERT_ITEM_DEDUP_SINGLE_ROW_FORBIDDEN", "item_field deduplication is valid only for batch INSERT.");
   const components = declared.map((component) => ({
     column: component.column,
-    source: component.source,
+    source: component.source as "proposal_id" | "trusted_tenant" | "fixed",
     value: component.source === "proposal_id"
       ? proposalId
       : component.source === "trusted_tenant"
@@ -3231,6 +3568,14 @@ function enforcePatchGuards(
 
 function diffFromChangeSet(changeSet: ChangeSet): Record<string, { before: Scalar; proposed: Scalar }> {
   const diff: Record<string, { before: Scalar; proposed: Scalar }> = {};
+  if (changeSet.schema_version === protocolVersions.changeSetV3) {
+    diff.affected_rows = {
+      before: changeSet.operation === "batch_insert" ? 0 : changeSet.frozen_set.row_count,
+      proposed: changeSet.operation === "set_delete" ? 0 : changeSet.frozen_set.row_count,
+    };
+    for (const [column, proposed] of Object.entries(changeSet.patch)) diff[column] = { before: null, proposed };
+    return diff;
+  }
   if (changeSet.schema_version === protocolVersions.changeSetV2 && changeSet.operation === "single_row_delete") {
     for (const [column, value] of Object.entries(changeSet.before)) diff[column] = { before: value, proposed: null };
     return diff;
@@ -3326,6 +3671,8 @@ function queryFingerprintFor(capability: RuntimeCapabilityConfig, context: Trust
   return hashJson({
     source: capability.source,
     target: capability.target,
+    selection: capability.operation?.selection,
+    max_rows: capability.operation?.max_rows,
     columns: readColumns(capability),
     tenant_bound: Boolean(capability.target.tenant_key),
     tenant: context.tenant_id,
@@ -3333,6 +3680,11 @@ function queryFingerprintFor(capability: RuntimeCapabilityConfig, context: Trust
 }
 
 function selectTemplate(capability: RuntimeCapabilityConfig): string {
+  if (isSetSelectionCapability(capability)) {
+    const terms = (capability.operation?.selection?.all ?? []).map((term) => `${term.column} = <fixed>`);
+    if (capability.target.tenant_key) terms.push(`${capability.target.tenant_key} = <trusted tenant>`);
+    return `SELECT ${readColumns(capability).join(", ")} FROM ${capability.target.schema}.${capability.target.table} WHERE ${terms.join(" AND ")} ORDER BY ${capability.target.primary_key} ASC LIMIT ${(capability.operation?.max_rows ?? 0) + 1}`;
+  }
   const where = capability.target.tenant_key
     ? `${capability.target.primary_key} = ? AND ${capability.target.tenant_key} = ?`
     : `${capability.target.primary_key} = ?`;

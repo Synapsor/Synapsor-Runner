@@ -1,0 +1,43 @@
+{
+  "schema_version": "synapsor.writeback-job.v3",
+  "writeback_job_id": "wbj_set_1",
+  "proposal_id": "wrp_set_1",
+  "proposal_version": 1,
+  "proposal_hash": "sha256:proposal-set-1",
+  "runner_scope": { "project_id": "acme-support", "source_id": "src_pg_acme" },
+  "engine": "postgres",
+  "operation": "set_update",
+  "target": { "schema": "public", "table": "invoices", "primary_key": { "column": "id" } },
+  "tenant_guard": { "column": "tenant_id", "value": "acme" },
+  "allowed_columns": ["status"],
+  "patch": { "status": "closed" },
+  "version_advance": { "column": "version", "strategy": "integer_increment" },
+  "frozen_set": {
+    "max_rows": 10,
+    "row_count": 2,
+    "aggregate_bounds": [
+      { "column": "balance_cents", "measure": "before", "maximum": 20000, "actual": 15000 }
+    ],
+    "members": [
+      {
+        "primary_key": { "column": "id", "value": "INV-1" },
+        "expected_version": { "column": "version", "value": 1 },
+        "before": { "id": "INV-1", "tenant_id": "acme", "status": "overdue", "balance_cents": 5000, "version": 1 },
+        "after": { "id": "INV-1", "tenant_id": "acme", "status": "closed", "balance_cents": 5000, "version": 2 },
+        "before_digest": "sha256:121a4e4a3b4a17b0512be105da24c3d862f58954a562fccf35ef0448eef4c1cc",
+        "after_digest": "sha256:e4a7190be97c2900e5c2b21c074034600071556d83c6db102b7a6e8151e2245d"
+      },
+      {
+        "primary_key": { "column": "id", "value": "INV-2" },
+        "expected_version": { "column": "version", "value": 2 },
+        "before": { "id": "INV-2", "tenant_id": "acme", "status": "overdue", "balance_cents": 10000, "version": 2 },
+        "after": { "id": "INV-2", "tenant_id": "acme", "status": "closed", "balance_cents": 10000, "version": 3 },
+        "before_digest": "sha256:ba8de5489184141d739c2242d441b23e32eaa7b410031612d0abd77dd1b00b94",
+        "after_digest": "sha256:3ac87d24b7b683bacdc3d2ef923b89e82fdf2c0c25265cea7750989c7ae06397"
+      }
+    ],
+    "set_digest": "sha256:125f9d6d6feca7f26371ce9bb29933d6904828bc6c98ec5a231efbe07af0212f"
+  },
+  "idempotency_key": "wrp_set_1:set_125f9d6d",
+  "lease": { "lease_id": "lease_set_1", "attempt": 1, "expires_at": "2026-07-13T00:05:00Z" }
+}
