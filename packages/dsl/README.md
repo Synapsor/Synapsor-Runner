@@ -126,6 +126,8 @@ try {
 - `PROPOSE ACTION`
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE` (operation defaults to `UPDATE`)
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE SET` for bounded-set authoring
+- `REVERSIBLE` for opt-in, direct-SQL reviewed compensation; it creates no
+  model-facing revert or automatic rollback path
 - fixed literal `SELECT WHERE term [AND term]` for set UPDATE/DELETE
 - `MAX ROWS n` plus `MAX TOTAL column BEFORE|AFTER|ABSOLUTE DELTA maximum`
 - `ARG name ROWS MAX n` and typed `ITEM FIELD` declarations for batch INSERT
@@ -150,6 +152,11 @@ Bounded sets have a hard 100-row ceiling, freeze exact members before review,
 and require human/operator approval. The compiler rejects policy auto-approval,
 missing fixed selection, missing aggregate bounds, and model-supplied
 predicates. See the [bounded-set guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/bounded-set-writeback.md).
+
+Reviewed reversible writes require direct SQL, human/operator approval, and
+operation-specific exact guards. After apply, `synapsor-runner revert` creates
+a separate proposal. See the [reviewed compensation
+guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/reversible-change-sets.md).
 
 Unsupported Cloud-generated clauses such as `ROOT EXTERNAL`,
 `JOIN EXTERNAL`, `RETURN ANSWER WITH CITATIONS`, `AUTO BRANCH`, or `AUTO MERGE`

@@ -74,9 +74,9 @@ evidence -> proposal -> approval -> receipt -> replay
 ```
 
 The model can inspect scoped data and propose an exact change. It cannot call
-approval or apply tools. A human or trusted operator approves outside MCP, then
-Runner either performs one guarded row update or routes the approved proposal
-to an app-owned executor.
+approval, apply, or revert tools. A human or trusted operator approves outside
+MCP, then Runner performs a guarded write or routes the proposal to an
+app-owned executor.
 
 The distinction is the complete boundary, not a read-only toggle or a generic
 approve/reject prompt:
@@ -157,6 +157,12 @@ apply, and exact receipts. Free-form predicates, unbounded or cross-table work,
 and external effects go through an [app-owned
 executor](docs/writeback-executors.md) after approval.
 
+Direct writes can use [reviewed
+compensation](docs/reversible-change-sets.md). Receipts capture a
+bounded inverse; `synapsor-runner revert <proposal_id>` creates a separately
+approved proposal. This is not rollback, time travel, or app-owned
+compensation.
+
 ## Trust And Verification
 
 Start with the **[Threat Model](THREAT_MODEL.md)**. It defines protected assets,
@@ -179,6 +185,8 @@ trust boundaries, covered threats, non-goals, and required operator controls.
   rejection, frozen-set drift checks, all-or-nothing set UPDATE/DELETE and
   batch INSERT, delete-side-effect refusal, exact receipts, and 1/10/100-row
   bounds on disposable PostgreSQL and MySQL.
+- `corepack pnpm test:reversible` proves approval, conflict guards, redaction,
+  receipts, and replay on PostgreSQL and MySQL.
 - The C++/Cloud round-trip verifier exports normalized contracts, validates
   them with `@synapsor/spec`, and loads them in Runner. The shared contract and
   verification commands are documented in [Conformance](docs/conformance.md).

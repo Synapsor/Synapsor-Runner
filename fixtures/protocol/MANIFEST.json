@@ -1,14 +1,14 @@
 {
   "schema_version": "synapsor.protocol-manifest.v1",
   "protocol_set": "database-mcp-writeback",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "hash_algorithm": "sha256",
   "note": "This manifest is copied in Synapsor main protocol/MANIFEST.json and synapsor-runner fixtures/protocol/MANIFEST.json. Hashes are over the checked-in JSON artifact bytes.",
   "artifacts": [
     {
       "kind": "fixture",
-      "name": "change-set.late-fee-waiver.v1.json",
-      "sha256": "7112d0f28832e61b4ac5846d169666c0476ba92eb68c6790c10ac614ee3f2b33"
+      "name": "change-set.bounded-update.v3.json",
+      "sha256": "9d60a96cd5f14b9cf36f635214398437676bd90fbb180b3befe1596f982a2f02"
     },
     {
       "kind": "fixture",
@@ -22,18 +22,33 @@
     },
     {
       "kind": "fixture",
+      "name": "change-set.late-fee-waiver.v1.json",
+      "sha256": "7112d0f28832e61b4ac5846d169666c0476ba92eb68c6790c10ac614ee3f2b33"
+    },
+    {
+      "kind": "fixture",
       "name": "change-set.update.v2.json",
       "sha256": "65000de0fdf12504de7a63044efa65a8d2a405a1730a1faee43756a8783b02d3"
     },
     {
       "kind": "fixture",
-      "name": "change-set.bounded-update.v3.json",
-      "sha256": "9d60a96cd5f14b9cf36f635214398437676bd90fbb180b3befe1596f982a2f02"
+      "name": "compensation-change-set.update.v1.json",
+      "sha256": "905742980c71ddbff9dbae07ecd0ae6a00a853a690e3f4f43b1faa7089195bda"
     },
     {
       "kind": "fixture",
       "name": "execution-receipt.applied.v1.json",
       "sha256": "5af8be1b72b03d5a4c7af22748d9ade9f0febbf5e9503931054361ef998b5870"
+    },
+    {
+      "kind": "fixture",
+      "name": "execution-receipt.bounded-update-applied.v3.json",
+      "sha256": "bb403094605cfd1edc9d30f7ecfacce2e6eafe39d36f6b63d0cbf6baa32491cd"
+    },
+    {
+      "kind": "fixture",
+      "name": "execution-receipt.compensation-update-applied.v4.json",
+      "sha256": "997670312f06cf66ad74adbd51041129ded1ea2fe849e3be2432b7684361af2a"
     },
     {
       "kind": "fixture",
@@ -62,18 +77,18 @@
     },
     {
       "kind": "fixture",
-      "name": "execution-receipt.bounded-update-applied.v3.json",
-      "sha256": "bb403094605cfd1edc9d30f7ecfacce2e6eafe39d36f6b63d0cbf6baa32491cd"
-    },
-    {
-      "kind": "fixture",
       "name": "runner-registration.v1.json",
       "sha256": "3eaf844cdc94a4274601cedfed7252d65dd837a345c8c3b0f17ab6bbdf7f75da"
     },
     {
       "kind": "fixture",
-      "name": "writeback-job.late-fee-waiver.v1.json",
-      "sha256": "577e7987427031b55134c3d7296e644b1c8b7adec495758d4cff3665e954dbc8"
+      "name": "writeback-job.bounded-update.v3.json",
+      "sha256": "7c69131f08a74d2f33548738685c836aecfb7d0fee46d9f0284611ad09a4a84d"
+    },
+    {
+      "kind": "fixture",
+      "name": "writeback-job.compensation-update.v4.json",
+      "sha256": "ea2af749dc64dc4cf8bbdd1faf12e22545d851f3c9091faa9d2f632528bd95ff"
     },
     {
       "kind": "fixture",
@@ -87,13 +102,13 @@
     },
     {
       "kind": "fixture",
-      "name": "writeback-job.update.v2.json",
-      "sha256": "c9517aac1c12ba43c163ff648b45dd507b41921bdb27fcd7ddef86b92e4777e9"
+      "name": "writeback-job.late-fee-waiver.v1.json",
+      "sha256": "577e7987427031b55134c3d7296e644b1c8b7adec495758d4cff3665e954dbc8"
     },
     {
       "kind": "fixture",
-      "name": "writeback-job.bounded-update.v3.json",
-      "sha256": "7c69131f08a74d2f33548738685c836aecfb7d0fee46d9f0284611ad09a4a84d"
+      "name": "writeback-job.update.v2.json",
+      "sha256": "c9517aac1c12ba43c163ff648b45dd507b41921bdb27fcd7ddef86b92e4777e9"
     },
     {
       "kind": "schema",
@@ -112,6 +127,11 @@
     },
     {
       "kind": "schema",
+      "name": "compensation-change-set.v1.schema.json",
+      "sha256": "24585f9c53bd89119bf7a7ea92a587d37fe7dccbf1517d6736b5ecdeff2b9ebc"
+    },
+    {
+      "kind": "schema",
       "name": "execution-receipt.v1.schema.json",
       "sha256": "69504ce51fa66440e42d57ef6cb36cc6d8543427d8d385c9ccff954ecae5ec83"
     },
@@ -124,6 +144,16 @@
       "kind": "schema",
       "name": "execution-receipt.v3.schema.json",
       "sha256": "11f75532683151a38b2ca21baa45877d39b4aeb6712289961784bf4434853a00"
+    },
+    {
+      "kind": "schema",
+      "name": "execution-receipt.v4.schema.json",
+      "sha256": "1f75e88da8340a71fba5c8dd16f19bc38a89615134b36d235c74122e2adea499"
+    },
+    {
+      "kind": "schema",
+      "name": "inverse-descriptor.v1.schema.json",
+      "sha256": "ae3aa626896bdc114f5368fee4803994852bb5263a24c234f456e05f1d875fd0"
     },
     {
       "kind": "schema",
@@ -144,6 +174,11 @@
       "kind": "schema",
       "name": "writeback-job.v3.schema.json",
       "sha256": "9ee7992ada437f5df9e1f551e0a16a00db0e98ab5dd745f78848b3e4cdb11cfa"
+    },
+    {
+      "kind": "schema",
+      "name": "writeback-job.v4.schema.json",
+      "sha256": "5031e2476ddaf96042c596e76626d8ce8bce2eb51f7167c92bef44d1676a0487"
     }
   ]
 }

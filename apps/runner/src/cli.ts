@@ -36,7 +36,7 @@ import {
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ChangeSet, type ChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type ChangeSet, type ChangeSetV1, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
@@ -51,6 +51,7 @@ import {
 } from "@synapsor-runner/schema-inspector";
 import {
   auditMcpManifest,
+  compensationInverseFromJob,
   createLogger,
   doctorChecks,
   formatMcpAuditReport,
@@ -420,6 +421,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "doctor") return doctor(rest);
   if (command === "validate") return validate(rest);
   if (command === "apply") return apply(rest);
+  if (command === "revert") return revert(rest);
   if (command === "propose") return propose(rest);
   if (command === "audit") return audit(rest);
   if (command === "start") return start(rest);
@@ -2365,6 +2367,32 @@ function proposalApprovalPolicyResolutionDoctorCheck(config: RuntimeConfig, capa
   }
 }
 
+function proposalReversibilityDoctorCheck(capability: RunnerCapabilityConfig): DoctorCheck {
+  const operation = capabilityOperation(capability);
+  if (capability.reversibility?.mode !== "reviewed_inverse") {
+    return {
+      name: `capability:${capability.name}:reversibility`,
+      ok: true,
+      level: "warn",
+      message: "Direct writeback is not configured for reviewed compensation. Revert proposals will be unavailable for its receipts.",
+    };
+  }
+  if (operation === "delete") {
+    return {
+      name: `capability:${capability.name}:reversibility`,
+      ok: true,
+      level: "warn",
+      message: "Hard DELETE records a specific best-effort-unavailable inverse; hidden columns, triggers, cascades, and external effects cannot be reconstructed safely.",
+    };
+  }
+  return {
+    name: `capability:${capability.name}:reversibility`,
+    ok: true,
+    level: "pass",
+    message: `Reviewed compensation enabled for ${capability.operation?.cardinality === "set" ? "bounded-set" : "single-row"} ${operation.toUpperCase()}; revert creates a new approval-required proposal and never writes directly.`,
+  };
+}
+
 async function sharedPostgresLedgerDoctorChecks(config: RuntimeConfig): Promise<DoctorCheck[]> {
   const configured = config.storage?.shared_postgres;
   if (configured?.mode !== "mirror" && configured?.mode !== "runtime_store") return [];
@@ -3086,6 +3114,7 @@ async function localDoctor(args: string[]): Promise<number> {
     for (const capability of (parsed.capabilities ?? []).filter((item) => item.kind === "proposal")) {
       checks.push(proposalWritebackResolutionDoctorCheck(parsed, capability));
       checks.push(proposalApprovalPolicyResolutionDoctorCheck(parsed, capability));
+      if (capabilityWritebackMode(capability) === "direct_sql") checks.push(proposalReversibilityDoctorCheck(capability));
       if (capability.operation?.cardinality === "set") {
         const selection = capability.operation.selection?.all
           .map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`)
@@ -3520,6 +3549,176 @@ async function validate(args: string[]): Promise<number> {
   parseWritebackJob(job);
   process.stdout.write("job valid\n");
   return 0;
+}
+
+async function revert(args: string[]): Promise<number> {
+  const requested = positional(args, 0);
+  if (!requested) throw new Error("revert requires an applied proposal id or latest");
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `revert ${requested}`, (bridgeStorePath) => revert(argsWithRuntimeStoreBridge([...args, "--store", bridgeStorePath], bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "revert", args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, `revert ${requested}`, () => revert(withoutSharedPostgresLedgerMirror(args)), config);
+  }
+  if (config.mode !== "review") throw new Error(`revert requires review mode, got ${config.mode}`);
+  if (storePath !== ":memory:") await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
+  const store = new ProposalStore(storePath);
+  try {
+    const proposalId = resolveProposalIdFromStore(requested, store);
+    const forward = requireLocalProposal(store, proposalId);
+    const capability = findProposalCapability(config, forward);
+    if (capabilityWritebackMode(capability) !== "direct_sql") throw new Error(`REVERSAL_APP_EXECUTOR_UNSUPPORTED: ${capability.name} does not use Runner-owned direct SQL writeback`);
+    if (capability.reversibility?.mode !== "reviewed_inverse") throw new Error(`REVERSIBILITY_NOT_REVIEWED: capability ${capability.name} does not declare reviewed inverse authority`);
+    const trusted = trustedCliContext(config, capability, process.env);
+    if (trusted.tenant_id !== forward.tenant_id) throw new Error("REVERSAL_TENANT_MISMATCH: current trusted tenant does not own the forward proposal");
+    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal: forward, action: "revert", reason: optionalArg(args, "--reason") });
+    const receipt = [...store.receipts(forward.proposal_id)].reverse().find((item) => item.status === "applied" || item.status === "already_applied");
+    if (!receipt) {
+      if (forward.state === "reconciliation_required") throw new Error("REVERSAL_RECONCILIATION_REQUIRED: reconcile the ambiguous forward write before creating a revert proposal");
+      throw new Error(`REVERSAL_APPLIED_RECEIPT_REQUIRED: proposal ${forward.proposal_id} has no successful writeback receipt`);
+    }
+    const inverse = inverseFromStoredReceipt(receipt);
+    if (!inverse) throw new Error("REVERSAL_INVERSE_MISSING: the applied receipt predates or did not request reviewed inverse capture");
+    if (inverse.availability !== "available") throw new Error(`REVERSAL_UNAVAILABLE: ${inverse.reason_codes.join(", ") || "the receipt has no safe inverse"}`);
+    if (inverse.lineage.depth > 16) throw new Error("REVERSAL_CHAIN_DEPTH_EXHAUSTED");
+    if (!receipt.receipt.receipt_hash.startsWith("sha256:")) throw new Error("REVERSAL_RECEIPT_INTEGRITY_REQUIRED");
+    const forwardReceiptHash = receipt.receipt.receipt_hash as `sha256:${string}`;
+    const duplicate = store.listProposals().find((candidate) => candidate.change_set.schema_version === protocolVersions.compensationChangeSet
+      && candidate.change_set.compensation.forward_receipt_hash === forwardReceiptHash);
+    if (duplicate) throw new Error(`REVERSAL_ALREADY_PROPOSED: ${duplicate.proposal_id} already compensates receipt ${forwardReceiptHash}`);
+    const created = createCompensationProposal({ store, forward, receiptHash: forwardReceiptHash, inverse, actor: identity.subject, identity });
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(created, null, 2)}\n`);
+    else {
+      process.stdout.write([
+        `Revert proposal created: ${created.proposal_id}`,
+        `Forward proposal: ${forward.proposal_id}`,
+        `Forward receipt: ${forwardReceiptHash}`,
+        `Operation: ${inverse.operation}`,
+        `Rows bounded: ${inverse.members.length} of ${inverse.max_rows}`,
+        "Source database changed: no",
+        "Approval: required outside MCP",
+        "",
+        "Next:",
+        `  ${cliCommandName()} proposals show ${created.proposal_id} --details --store ${storePath}`,
+        `  ${cliCommandName()} proposals approve ${created.proposal_id} --yes --config ${configPath} --store ${storePath}`,
+        `  ${cliCommandName()} apply ${created.proposal_id} --config ${configPath} --store ${storePath}`,
+        "",
+      ].join("\n"));
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+function inverseFromStoredReceipt(receipt: StoredWritebackReceipt): InverseDescriptorV1 | undefined {
+  const value = receipt.receipt;
+  if (value.schema_version === protocolVersions.executionReceiptV2
+    || value.schema_version === protocolVersions.executionReceiptV3
+    || value.schema_version === protocolVersions.executionReceiptV4) return value.inverse;
+  return undefined;
+}
+
+function trustedCliContext(config: RuntimeConfig, capability: RunnerCapabilityConfig, env: NodeJS.ProcessEnv): { tenant_id: string; principal: string } {
+  const context = capability.context ? config.contexts?.[capability.context] : config.trusted_context;
+  if (!context) throw new Error(`TRUSTED_CONTEXT_MISSING: capability ${capability.name} has no trusted context`);
+  const values = context.values ?? {};
+  if (context.provider !== "environment" && context.provider !== "static_dev") throw new Error(`TRUSTED_CONTEXT_UNAVAILABLE: ${context.provider} requires a verified MCP/Cloud session and cannot authorize a local CLI revert`);
+  const tenantEnv = String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
+  const principalEnv = String(values.principal_env ?? "SYNAPSOR_PRINCIPAL");
+  const tenant = context.provider === "environment"
+    ? envValue(env, tenantEnv)
+    : envValue(env, tenantEnv) ?? (typeof values.tenant_id === "string" ? values.tenant_id.trim() : undefined);
+  const principal = context.provider === "environment"
+    ? envValue(env, principalEnv)
+    : envValue(env, principalEnv) ?? (typeof values.principal === "string" ? values.principal.trim() : undefined);
+  if (!tenant || !principal) throw new Error(`TRUSTED_BINDING_MISSING: ${tenantEnv} and ${principalEnv} must resolve before creating a revert proposal`);
+  return { tenant_id: tenant, principal };
+}
+
+function createCompensationProposal(input: {
+  store: ProposalStore;
+  forward: StoredProposal;
+  receiptHash: `sha256:${string}`;
+  inverse: InverseDescriptorV1;
+  actor: string;
+  identity: { provider: string; verified: boolean; subject: string; roles: string[]; decision_hash: string };
+}): StoredProposal {
+  const proposalId = `wrp_revert_${crypto.randomBytes(10).toString("hex")}`;
+  const evidenceId = `ev_revert_${crypto.randomBytes(10).toString("hex")}`;
+  const createdAt = new Date().toISOString();
+  const one = input.inverse.members.length === 1 ? input.inverse.members[0] : undefined;
+  const before = one ? one.expected_state : { row_count: input.inverse.members.length };
+  const patch = one?.restore_values ?? { operation: input.inverse.operation, row_count: input.inverse.members.length };
+  const after = input.inverse.operation === "remove_insert"
+    ? { row_count: 0 }
+    : one?.restore_values ?? { row_count: input.inverse.members.length };
+  const evidenceItems = input.inverse.members.map((member) => ({
+    schema_version: "synapsor.revert-evidence.v1",
+    primary_key: member.primary_key,
+    expected_state_digest: hashReceipt(member.expected_state),
+    restore_values_digest: hashReceipt(member.restore_values ?? {}),
+  }));
+  const queryFingerprint = hashReceipt({ forward_receipt_hash: input.receiptHash, inverse: input.inverse });
+  const originalApproval = input.forward.change_set.approval;
+  const core = {
+    schema_version: protocolVersions.compensationChangeSet,
+    proposal_id: proposalId,
+    proposal_version: 1,
+    action: input.forward.action,
+    mode: "review_required" as const,
+    principal: { id: input.actor, source: input.identity.verified ? "trusted_session" as const : "environment" as const },
+    scope: { tenant_id: input.forward.tenant_id, business_object: input.forward.business_object, object_id: input.forward.object_id },
+    source: {
+      kind: input.forward.source_kind === "external_mysql" ? "external_mysql" as const : "external_postgres" as const,
+      source_id: input.forward.source_id,
+      schema: input.forward.source_schema,
+      table: input.forward.source_table,
+      primary_key: {
+        column: input.inverse.target.primary_key_column,
+        ...(one ? { value: one.primary_key.value } : {}),
+      },
+    },
+    before,
+    patch,
+    after,
+    compensation: { descriptor: input.inverse, forward_receipt_hash: input.receiptHash },
+    guards: { tenant: input.inverse.tenant_guard, allowed_columns: input.inverse.allowed_columns },
+    evidence: { bundle_id: evidenceId, query_fingerprint: queryFingerprint, items: evidenceItems },
+    approval: {
+      status: "pending" as const,
+      mode: originalApproval.mode === "operator" ? "operator" as const : "human" as const,
+      ...(originalApproval.required_role ? { required_role: originalApproval.required_role } : {}),
+      ...(originalApproval.required_approvals ? { required_approvals: originalApproval.required_approvals } : {}),
+    },
+    writeback: { status: "not_applied" as const, mode: "trusted_worker_required" as const, executor: "sql_update" as const },
+    source_database_mutated: false as const,
+    created_at: createdAt,
+  };
+  const changeSet: CompensationChangeSetV1 = { ...core, integrity: { proposal_hash: hashReceipt(core) } };
+  const proposal = input.store.createProposal(changeSet);
+  input.store.recordEvidenceBundle({
+    evidence_bundle_id: evidenceId,
+    proposal_id: proposalId,
+    tenant_id: input.forward.tenant_id,
+    payload: {
+      schema_version: "synapsor.revert-evidence.v1",
+      capability: input.forward.action,
+      principal: input.actor,
+      business_object: input.forward.business_object,
+      object_id: input.forward.object_id,
+      forward_proposal_id: input.forward.proposal_id,
+      forward_receipt_hash: input.receiptHash,
+      requested_by: { provider: input.identity.provider, verified: input.identity.verified, subject: input.identity.subject, roles: input.identity.roles, decision_hash: input.identity.decision_hash },
+    },
+    items: evidenceItems,
+  });
+  input.store.replay(proposalId);
+  return proposal;
 }
 
 async function apply(args: string[]): Promise<number> {
@@ -4603,6 +4802,19 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
   if (capability.target.primary_key !== job.target.primary_key.column) return false;
   if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
   const reviewedOperation = capability.operation?.kind ?? "update";
+  if (job.protocol_version === protocolVersions.normalizedWritebackJobV4) {
+    if (capability.reversibility?.mode !== "reviewed_inverse") return false;
+    const originalOperation = job.operation === "restore_update" ? "update" : "insert";
+    if (reviewedOperation !== originalOperation) return false;
+    if ((capability.operation?.cardinality ?? "single") !== job.compensation.cardinality) return false;
+    if (job.compensation.cardinality === "set" && capability.operation?.max_rows !== job.compensation.max_rows) return false;
+    if (reviewedOperation === "update" && (
+      capability.operation?.version_advance?.column !== job.compensation.version_advance?.column
+      || capability.operation?.version_advance?.strategy !== job.compensation.version_advance?.strategy
+    )) return false;
+    const reviewedAllowed = new Set(capability.allowed_columns ?? []);
+    return job.allowed_columns.every((column) => reviewedAllowed.has(column));
+  }
   const setJob = job.protocol_version === protocolVersions.normalizedWritebackJobV3;
   const jobOperation = (job.operation ?? "single_row_update").replace("single_row_", "").replace("set_", "").replace("batch_", "");
   if (reviewedOperation !== jobOperation) return false;
@@ -4836,7 +5048,8 @@ function formatUpWritebackLines(config: RuntimeConfig): string[] {
       const cardinality = capability.operation?.cardinality === "set"
         ? `bounded-set ${capabilityOperation(capability).toUpperCase()} (max ${capability.operation.max_rows}; fixed selection; human/operator approval)`
         : `one-row ${capabilityOperation(capability).toUpperCase()}`;
-      return `  - ${capability.name}: direct guarded ${cardinality} via ${envName} (${envValue(process.env, envName) ? "set" : "missing"}); receipts ${formatSourceReceiptMode(source)}`;
+      const reversibility = capability.reversibility?.mode === "reviewed_inverse" ? "; reviewed compensation enabled" : "; compensation not configured";
+      return `  - ${capability.name}: direct guarded ${cardinality} via ${envName} (${envValue(process.env, envName) ? "set" : "missing"}); receipts ${formatSourceReceiptMode(source)}${reversibility}`;
     }
     const executorName = capabilityWritebackExecutor(capability) ?? "missing_executor";
     const executor = config.executors?.[executorName] as Record<string, unknown> | undefined;
@@ -5337,8 +5550,42 @@ export function reconciliationReceipt(
   outcome: "applied" | "conflict" | "failed",
   runnerId: string,
   reason: string,
-): ExecutionReceiptV2 | ExecutionReceiptV3 {
+): ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4 {
   const job = intent.intent;
+  if (job.protocol_version === protocolVersions.normalizedWritebackJobV4) {
+    const executedAt = new Date().toISOString();
+    const memberEffects: ExecutionReceiptV4["member_effects"] = outcome === "applied"
+      ? job.compensation.members.map((member) => ({
+        primary_key: member.primary_key,
+        ...(job.operation === "remove_insert"
+          ? { before_digest: hashReceipt(member.expected_state), tombstone_digest: hashReceipt({ primary_key: member.primary_key, deleted: true }) }
+          : { before_digest: hashReceipt(member.expected_state), after_digest: hashReceipt(job.operation === "restore_insert" ? member.restore_values : { ...member.restore_values, [job.compensation.version_advance!.column]: Number(member.expected_state[job.compensation.version_advance!.column]) + 1 }) }),
+      }))
+      : [];
+    const base = {
+      schema_version: protocolVersions.executionReceiptV4,
+      writeback_job_id: intent.writeback_job_id,
+      proposal_id: intent.proposal_id,
+      proposal_hash: intent.proposal_hash as `sha256:${string}`,
+      approval_id: job.approval_id,
+      runner_id: runnerId,
+      operation: job.operation,
+      receipt_authority: "runner_ledger" as const,
+      status: outcome,
+      target: { source_id: job.source_id, schema: job.target.schema, table: job.target.table, identities: job.compensation.members.map((member) => member.primary_key) },
+      rows_affected: outcome === "applied" ? job.compensation.members.length : 0,
+      idempotency_key: intent.idempotency_key,
+      forward_receipt_hash: job.forward_receipt_hash,
+      member_effects: memberEffects,
+      ...(outcome === "applied" ? { inverse: compensationInverseFromJob(job) } : {}),
+      source_database_mutated: outcome === "applied",
+      safe_outcome_code: `RECONCILED_${outcome.toUpperCase()}`,
+      ...(outcome === "applied" ? {} : { safe_error_code: `RECONCILED_${outcome.toUpperCase()}` }),
+      executed_at: executedAt,
+      reconciliation: { intent_id: intent.intent_id, reason: reason.slice(0, 500) },
+    };
+    return { ...base, receipt_hash: hashReceipt(base) };
+  }
   if (intent.operation === "set_update" || intent.operation === "set_delete" || intent.operation === "batch_insert") {
     if (job.protocol_version !== protocolVersions.normalizedWritebackJobV3) throw new Error("bounded-set reconciliation requires a writeback-job v3");
     const executedAt = new Date().toISOString();
@@ -5387,6 +5634,7 @@ export function reconciliationReceipt(
       receipt_hash: `sha256:${crypto.createHash("sha256").update(JSON.stringify(base)).digest("hex")}`,
     };
   }
+  if (job.protocol_version !== protocolVersions.normalizedWritebackJobV2) throw new Error("single-row reconciliation requires a writeback-job v2");
   const executedAt = new Date().toISOString();
   const base = {
     schema_version: protocolVersions.executionReceiptV2,
@@ -5395,7 +5643,7 @@ export function reconciliationReceipt(
     proposal_hash: intent.proposal_hash as `sha256:${string}`,
     approval_id: job.approval_id,
     runner_id: runnerId,
-    operation: intent.operation,
+    operation: job.operation,
     receipt_authority: "runner_ledger" as const,
     status: outcome,
     target: { source_id: job.source_id, schema: job.target.schema, table: job.target.table, identity: observation.target_identity },
@@ -6934,6 +7182,7 @@ type ToolPreviewCapabilityDetail = {
   version_guard?: string;
   version_advance?: string;
   receipt_mode?: string;
+  reversibility?: string;
   approval: string;
   max_rows: number;
 };
@@ -6961,6 +7210,13 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
         ? `${capability.operation.version_advance.column}:${capability.operation.version_advance.strategy}`
         : undefined,
       receipt_mode: capability.kind === "proposal" ? formatSourceReceiptMode(config.sources?.[capability.source]) : undefined,
+      reversibility: capability.kind === "proposal"
+        ? capability.reversibility?.mode === "reviewed_inverse"
+          ? capabilityOperation(capability) === "delete"
+            ? "best-effort unavailable for hard DELETE"
+            : "reviewed compensation proposal available after an unambiguous applied receipt"
+          : "not configured"
+        : undefined,
       approval: capability.kind === "proposal"
         ? `${capability.approval?.mode ?? "human"}${capability.approval?.required_role ? ` role=${capability.approval.required_role}` : ""} quorum=${capability.approval?.required_approvals ?? 1}`
         : "not applicable",
@@ -6985,6 +7241,7 @@ function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail
       ] : []),
       `    version guard: ${detail.version_guard ?? "not applicable"}${detail.version_advance ? `; advance: ${detail.version_advance}` : ""}`,
       `    receipts: ${detail.receipt_mode ?? "not configured"}; approval: ${detail.approval}`,
+      `    reversibility: ${detail.reversibility ?? "not applicable"}`,
     ] : []),
   ]);
 }
@@ -7962,6 +8219,8 @@ function formatPrometheusMetrics(rows: OperationalMetricRow[]): string {
     ["synapsor_applies_total", "applies", "Successful or idempotently completed writebacks."],
     ["synapsor_conflicts_total", "conflicts", "Guarded writeback conflicts."],
     ["synapsor_writeback_failures_total", "failures", "Failed writeback outcomes."],
+    ["synapsor_revert_proposals_total", "revert_proposals", "Reviewed compensation proposals created."],
+    ["synapsor_revert_applies_total", "revert_applies", "Successfully applied reviewed compensations."],
   ] as const;
   const lines: string[] = [];
   for (const [name, field, help] of definitions) {
@@ -10009,7 +10268,7 @@ async function operatorIdentityForDecision(input: {
   config: RuntimeConfig | undefined;
   configPath: string;
   proposal: StoredProposal;
-  action: "approve" | "reject" | "apply" | "reconcile" | "worker_requeue" | "worker_discard";
+  action: "approve" | "reject" | "apply" | "revert" | "reconcile" | "worker_requeue" | "worker_discard";
   reason?: string;
 }) {
   const applyAuthorityAction = ["apply", "reconcile", "worker_requeue", "worker_discard"].includes(input.action);
@@ -10437,7 +10696,7 @@ function formatProposalFirstLook(proposal: StoredProposal, storedEvidenceItemCou
 
 function formatProposalDetail(proposal: StoredProposal, storedEvidenceItemCount?: number): string {
   const changeSet = proposal.change_set;
-  const conflictGuard = changeSet.guards.expected_version;
+  const conflictGuard = "expected_version" in changeSet.guards ? changeSet.guards.expected_version : undefined;
   const evidenceItems = storedEvidenceItemCount ?? changeSet.evidence.items?.length ?? 0;
   const approvalStatus = currentApprovalStatus(proposal);
   const writebackStatus = currentWritebackStatus(proposal);
@@ -11326,6 +11585,39 @@ function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: 
       affected_rows: affectedRows,
       error_code: result.error_code ?? null,
     })).digest("hex")}`;
+  if (result.protocol_version === protocolVersions.normalizedWritebackJobV4) {
+    if (job.protocol_version !== protocolVersions.normalizedWritebackJobV4) throw new Error("compensation result does not match writeback job v4");
+    const compensationStatus = dryRun ? "canceled" : terminalStatus;
+    const safeOutcomeCode = dryRun
+      ? "DRY_RUN"
+      : compensationStatus === "applied" ? "APPLIED"
+        : compensationStatus === "already_applied" ? "ALREADY_APPLIED"
+          : compensationStatus === "conflict" ? "CONFLICT"
+            : compensationStatus === "reconciliation_required" ? "RECONCILIATION_REQUIRED" : "FAILED";
+    return {
+      schema_version: protocolVersions.executionReceiptV4,
+      writeback_job_id: job.job_id,
+      proposal_id: job.proposal_id,
+      proposal_hash: job.approval_id,
+      approval_id: job.approval_id,
+      runner_id: result.runner_id,
+      operation: result.operation,
+      receipt_authority: result.receipt_authority,
+      status: compensationStatus,
+      target: { source_id: job.source_id, schema: job.target.schema, table: job.target.table, identities: result.target_identities },
+      rows_affected: dryRun ? 0 : affectedRows,
+      idempotency_key: job.idempotency_key,
+      forward_receipt_hash: job.forward_receipt_hash,
+      member_effects: dryRun ? [] : result.member_effects,
+      ...(!dryRun && result.inverse ? { inverse: result.inverse } : {}),
+      source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
+      safe_outcome_code: safeOutcomeCode,
+      safe_error_code: result.error_code,
+      executed_at: result.completed_at,
+      receipt_hash: receiptHash,
+      ...(result.status === "reconciliation_required" ? { reconciliation: { intent_id: result.intent_id, reason: "source outcome requires operator reconciliation" } } : {}),
+    };
+  }
   if (result.protocol_version === protocolVersions.normalizedWritebackJobV3) {
     const setStatus = dryRun ? "canceled" : terminalStatus;
     const safeOutcomeCode = dryRun
@@ -11354,6 +11646,7 @@ function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: 
       rows_affected: dryRun ? 0 : affectedRows,
       idempotency_key: job.idempotency_key,
       member_effects: dryRun ? [] : result.member_effects,
+      ...(!dryRun && result.inverse ? { inverse: result.inverse } : {}),
       source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
       safe_outcome_code: safeOutcomeCode,
       safe_error_code: result.error_code,
@@ -11397,6 +11690,7 @@ function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: 
       before_digest: result.before_digest,
       after_digest: result.after_digest,
       tombstone_digest: result.tombstone_digest,
+      ...(!dryRun && result.inverse ? { inverse: result.inverse } : {}),
       source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
       safe_outcome_code: safeOutcomeCode,
       safe_error_code: result.error_code,
@@ -11419,7 +11713,7 @@ function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: 
     rows_affected: affectedRows,
     idempotency_key: job.idempotency_key,
     previous_version: previousVersion,
-    new_version: result.result_version,
+    new_version: "result_version" in result ? result.result_version : undefined,
     source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,
     executed_at: result.completed_at ?? new Date().toISOString(),
     safe_error_code: result.error_code,
@@ -11542,6 +11836,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "doctor",
     "validate",
     "apply",
+    "revert",
     "propose",
     "audit",
     "start",
@@ -11630,6 +11925,7 @@ Commands:
   worker      Run or inspect the supervised local writeback queue
   store       Inspect and maintain the local SQLite ledger
   apply        Apply an approved proposal with guarded writeback
+  revert       Create a reviewed compensation proposal for an applied write
   replay       Show what happened
   demo         Start the local commit-safety demo
   ui           Open the local review UI
@@ -12003,6 +12299,20 @@ Shared-ledger mirror mode is opt-in. It restores from Postgres before the local
 mutation and syncs back after while holding a schema-scoped Postgres advisory
 lock. For MCP serving with Postgres as the primary proposal/evidence/replay
 store, configure storage.shared_postgres.mode = "runtime_store".
+`,
+    revert: `Usage:
+  ${cmd} revert <applied-proposal-id> --config ./synapsor.runner.json --store ./.synapsor/local.db --reason "..."
+  ${cmd} revert latest --config ./synapsor.runner.json --store ./.synapsor/local.db --reason "..."
+
+Create a new review-required compensation proposal from an unambiguous applied
+receipt with an available bounded inverse. This command never approves or
+mutates the source database. The new proposal inherits the original reviewer
+role/quorum and must pass normal approval and guarded apply.
+
+Only opt-in direct SQL capabilities are supported. Hard DELETE, app-owned
+executors, external effects, stale rows, ambiguous outcomes, duplicate active
+compensations, and invalid lineage fail closed. Revert is operator-only and is
+never exposed as a model-facing MCP tool.
 `,
     replay: `Usage:
   ${cmd} replay list [--tenant acme] [--object invoice:INV-3001]

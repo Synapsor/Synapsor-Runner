@@ -89,6 +89,14 @@ locks, one atomic source transaction, and per-member receipt digests. The
 model cannot supply the predicate or cap. See [Bounded Set
 Writeback](bounded-set-writeback.md).
 
+When a direct SQL capability opts into reviewed reversibility, an applied
+receipt may carry a bounded inverse containing only trusted identity, version,
+and reviewed writable values. `revert` is operator-only and creates a new
+proposal; it never mutates or approves. Compensation rechecks the exact forward
+result under the trusted tenant and uses the normal approval, receipt,
+reconciliation, and replay boundaries. See [Reviewed Reversible Change
+Sets](reversible-change-sets.md).
+
 When a capability uses an `http_handler` or `command_handler` executor, the
 same approval boundary applies. The runner sends a structured proposal/job
 payload to the configured handler after approval. Handler URLs, commands, bearer

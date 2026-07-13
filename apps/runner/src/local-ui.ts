@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { ProposalStore, type LocalProposalState, type StoredProposal, type StoredWritebackReceipt } from "@synapsor-runner/proposal-store";
 import { protocolVersions } from "@synapsor-runner/protocol";
 
 type JsonRecord = Record<string, unknown>;
@@ -135,13 +135,14 @@ async function handleRequest(input: {
     const proposalId = decodeURIComponent(proposalDetailMatch[1] ?? "");
     await storeAccess("read", "proposal-show", (store) => {
       const proposal = requireProposal(store, proposalId);
+      const receipts = store.receipts(proposalId);
       sendJson(response, 200, {
         ok: true,
         proposal,
         approval_progress: store.approvalProgress(proposalId),
-        review_view: proposalReviewView(proposal),
+        review_view: proposalReviewView(proposal, receipts),
         events: store.events(proposalId),
-        receipts: store.receipts(proposalId),
+        receipts,
         evidence: store.getEvidenceBundle(proposal.change_set.evidence.bundle_id),
       });
     });
@@ -255,6 +256,7 @@ function buildSummary(config: JsonRecord, configPath: string, storePath: string)
       max_rows: item.max_rows,
       context: item.context,
       executor: item.executor ?? "sql_update",
+      reversibility: item.reversibility,
     };
   }) : [];
   const forbiddenTools = capabilities
@@ -297,6 +299,7 @@ function buildTools(config: JsonRecord): JsonRecord {
       operation: item.operation,
       conflict_guard: item.conflict_guard,
       executor: item.executor ?? "sql_update",
+      reversibility: item.reversibility,
       no_raw_sql_exposed: !/execute_sql|run_query/i.test(String(item.name ?? "")),
       approval_or_commit_exposed: /approve|commit|apply_writeback/i.test(String(item.name ?? "")),
     };
@@ -330,7 +333,7 @@ function summarizeProposal(proposal: StoredProposal): JsonRecord {
     },
     approval: changeSet.approval,
     source_database_changed: proposal.source_database_mutated,
-    expected_version: changeSet.guards.expected_version,
+    expected_version: "expected_version" in changeSet.guards ? changeSet.guards.expected_version : undefined,
     evidence: changeSet.evidence,
     writeback_status: changeSet.writeback.status,
     writeback_mode: changeSet.writeback.mode,
@@ -345,7 +348,7 @@ function summarizeProposal(proposal: StoredProposal): JsonRecord {
   };
 }
 
-function proposalReviewView(proposal: StoredProposal): JsonRecord {
+function proposalReviewView(proposal: StoredProposal, receipts: StoredWritebackReceipt[] = []): JsonRecord {
   const changeSet = proposal.change_set;
   const boundedSet = changeSet.schema_version === protocolVersions.changeSetV3 ? {
     operation: changeSet.operation,
@@ -363,6 +366,43 @@ function proposalReviewView(proposal: StoredProposal): JsonRecord {
       tombstone_digest: member.tombstone_digest,
     })),
   } : undefined;
+  const appliedReceipt = [...receipts].reverse().find((stored) => stored.status === "applied" || stored.status === "already_applied");
+  const inverse = asRecord(asRecord(appliedReceipt?.receipt).inverse);
+  const requested = changeSet.schema_version !== protocolVersions.compensationChangeSet
+    && "reversibility" in changeSet
+    && asRecord(changeSet.reversibility).mode === "reviewed_inverse";
+  const compensation = changeSet.schema_version === protocolVersions.compensationChangeSet
+    ? changeSet.compensation.descriptor
+    : undefined;
+  const reversibility = compensation ? {
+    status: "compensation_proposal",
+    message: "This is a reviewed compensation proposal. It does not change the source until separately approved and applied.",
+    operation: compensation.operation,
+    cardinality: compensation.cardinality,
+    member_count: compensation.members.length,
+    root_proposal_id: compensation.lineage.root_proposal_id,
+    parent_proposal_id: compensation.lineage.parent_proposal_id,
+    reverts_proposal_id: compensation.lineage.reverts_proposal_id,
+    depth: compensation.lineage.depth,
+  } : inverse.availability === "available" ? {
+    status: "available",
+    message: "A trusted apply receipt captured an allowlisted inverse. Revert creates another approval-required proposal; it does not write immediately.",
+    operation: inverse.operation,
+    cardinality: inverse.cardinality,
+    member_count: Array.isArray(inverse.members) ? inverse.members.length : undefined,
+    lineage: inverse.lineage,
+    command: `synapsor-runner revert ${proposal.proposal_id}`,
+  } : inverse.availability === "best_effort_unavailable" ? {
+    status: "unavailable",
+    message: "The trusted receipt could not produce a safe reviewed inverse for this operation.",
+    reason_codes: inverse.reason_codes,
+  } : requested ? {
+    status: "requested",
+    message: "Reviewed compensation is requested. Availability is decided only after an unambiguous trusted apply receipt captures the inverse.",
+  } : {
+    status: "not_configured",
+    message: "This capability did not request reviewed compensation.",
+  };
   return {
     message: proposal.source_database_mutated
       ? "Commit executed by trusted runner."
@@ -382,7 +422,7 @@ function proposalReviewView(proposal: StoredProposal): JsonRecord {
       tenant_guard: changeSet.guards.tenant,
       allowed_columns: changeSet.guards.allowed_columns,
       primary_key: changeSet.source.primary_key,
-      conflict_version: changeSet.guards.expected_version,
+      conflict_version: "expected_version" in changeSet.guards ? changeSet.guards.expected_version : undefined,
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
       affected_row_count_required: boundedSet?.row_count ?? 1,
       ...(boundedSet ? {
@@ -398,6 +438,7 @@ function proposalReviewView(proposal: StoredProposal): JsonRecord {
       executor: (changeSet.writeback as { executor?: unknown }).executor ?? "sql_update",
     },
     evidence: changeSet.evidence,
+    reversibility,
     ...(boundedSet ? { bounded_set: boundedSet } : {}),
   };
 }
@@ -714,6 +755,9 @@ function shellQuote(value) {
 function trustedApplyCommand(proposalId) {
   return "synapsor-runner apply " + shellQuote(proposalId) + " --config " + shellQuote(configPath) + " --store " + shellQuote(storePath);
 }
+function trustedRevertCommand(proposalId) {
+  return "synapsor-runner revert " + shellQuote(proposalId) + " --config " + shellQuote(configPath) + " --store " + shellQuote(storePath);
+}
 async function loadSummary() {
   const payload = await api("/api/summary");
   const root = byId("summary"); root.replaceChildren(text("h2", "Setup summary"));
@@ -736,7 +780,7 @@ async function loadTools() {
     box.append(text("strong", tool.name), text("div", tool.target_business_object, "pitem-target"));
     box.append(chip(tool.kind, tool.kind === "read" ? "ok" : "wait"));
     box.append(chip(tool.no_raw_sql_exposed ? "No raw SQL" : "RAW SQL EXPOSED", tool.no_raw_sql_exposed ? "ok" : "bad"));
-    box.append(rawJson("View reviewed boundary", { target: tool.target_business_object, operation: tool.operation, input_schema: tool.input_schema, hidden_trusted_bindings: tool.hidden_trusted_bindings, allowed_patch_columns: tool.allowed_patch_columns, conflict_guard: tool.conflict_guard }));
+    box.append(rawJson("View reviewed boundary", { target: tool.target_business_object, operation: tool.operation, input_schema: tool.input_schema, hidden_trusted_bindings: tool.hidden_trusted_bindings, allowed_patch_columns: tool.allowed_patch_columns, conflict_guard: tool.conflict_guard, reversibility: tool.reversibility }));
     root.append(box);
   }
 }
@@ -850,7 +894,31 @@ function buildStory(payload) {
   if (rv.guard_checklist) commitBody.push(guardDrawer(rv.guard_checklist));
   story.append(stepCard("6", "Commit result", cr.tone, commitBody));
 
-  // 7. Replay
+  // 7. Reviewed compensation, when configured or captured
+  const reversibility = rv.reversibility || {};
+  let replayStep = "7";
+  if (reversibility.status && reversibility.status !== "not_configured") {
+    const reverseBody = [el("p", { text: reversibility.message })];
+    if (reversibility.status === "available") {
+      reverseBody.push(el("div", { class: "mono", text: trustedRevertCommand(proposal.proposal_id), style: "display:block;margin-top:8px" }));
+      reverseBody.push(el("div", { class: "callout", text: "Run this from a trusted terminal. It creates a new proposal and performs no immediate write." }));
+    }
+    if (reversibility.status === "unavailable" && reversibility.reason_codes) {
+      reverseBody.push(el("div", { class: "status-line", text: "Reason: " + reversibility.reason_codes.join(", ") }));
+    }
+    if (reversibility.status === "compensation_proposal") {
+      reverseBody.push(el("div", { class: "kv" }, [
+        el("dt", { text: "Reverts proposal" }), el("dd", { text: reversibility.reverts_proposal_id }),
+        el("dt", { text: "Lineage depth" }), el("dd", { text: String(reversibility.depth) }),
+        el("dt", { text: "Exact members" }), el("dd", { text: String(reversibility.member_count) }),
+      ]));
+    }
+    const reverseTone = reversibility.status === "unavailable" ? "warn" : (reversibility.status === "available" ? "ok" : "info");
+    story.append(stepCard("7", "Reviewed compensation", reverseTone, reverseBody));
+    replayStep = "8";
+  }
+
+  // Final step. Replay
   const tl = el("div", { class: "timeline" });
   if (!events.length) {
     tl.append(el("p", { text: "No replay events recorded yet." }));
@@ -879,7 +947,7 @@ function buildStory(payload) {
       replayDrawer.append(el("p", { text: error.message }));
     }
   });
-  story.append(stepCard("7", "Replay saved what happened", "info", [tl, replayDrawer]));
+  story.append(stepCard(replayStep, "Replay saved what happened", "info", [tl, replayDrawer]));
 
   return story;
 }

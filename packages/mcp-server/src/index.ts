@@ -115,6 +115,7 @@ export type RuntimeCapabilityConfig = {
   allowed_columns?: string[];
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
   transition_guards?: Record<string, RuntimeTransitionGuardConfig>;
+  reversibility?: { mode: "reviewed_inverse" };
   operation?: NonNullable<ProposalActionSpec["operation"]>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: { mode?: "human" | "operator" | "policy" | string; required_role?: string; required_approvals?: number; policy?: string };
@@ -538,6 +539,7 @@ function runtimeCapabilityFromSpec(
     runtime.allowed_columns = capability.proposal.allowed_fields;
     runtime.numeric_bounds = capability.proposal.numeric_bounds;
     runtime.transition_guards = capability.proposal.transition_guards;
+    runtime.reversibility = capability.proposal.reversibility;
     runtime.operation = capability.proposal.operation;
     runtime.conflict_guard = capability.proposal.conflict_guard;
     runtime.approval = capability.proposal.approval;
@@ -2630,6 +2632,14 @@ function buildChangeSet(input: {
   const operation = input.capability.operation?.kind ?? "update";
   const after = operation === "delete" ? {} : operation === "insert" ? { ...patch } : { ...before, ...patch };
   const guard = operation === "insert" ? undefined : expectedVersionGuard(input.capability, before);
+  if (operation === "update" && input.capability.operation?.version_advance?.strategy === "integer_increment") {
+    const column = input.capability.operation.version_advance.column;
+    if (typeof guard?.value !== "number") throw new McpRuntimeError("VERSION_ADVANCE_REQUIRES_NUMBER", `Integer version advancement requires numeric ${column}.`);
+    after[column] = guard.value + 1;
+  }
+  if (operation === "insert" && input.resolvedDeduplication) {
+    for (const component of input.resolvedDeduplication.components) after[component.column] = component.value;
+  }
   const writebackMode = capabilityWritebackMode(input.capability);
   const changeSetWritebackMode = writebackMode === "none" ? "read_only" : "trusted_worker_required";
   const writebackExecutor = writebackMode === "none"
@@ -2667,7 +2677,11 @@ function buildChangeSet(input: {
           column: input.capability.target.primary_key,
           ...(operation === "insert" && !input.resolvedDeduplication?.components.some((component) => component.column === input.capability.target.primary_key)
             ? {}
-            : { value: scalar(input.currentRow[input.capability.target.primary_key] ?? input.objectId) }),
+            : {
+              value: operation === "insert"
+                ? scalar(input.resolvedDeduplication?.components.find((component) => component.column === input.capability.target.primary_key)?.value)
+                : scalar(input.currentRow[input.capability.target.primary_key] ?? input.objectId),
+            }),
         },
       },
       before,
@@ -2680,6 +2694,17 @@ function buildChangeSet(input: {
         ...(input.capability.operation.version_advance ? { version_advance: input.capability.operation.version_advance } : {}),
         ...(input.resolvedDeduplication ? { deduplication: input.resolvedDeduplication } : {}),
       },
+      ...(input.capability.reversibility ? {
+        reversibility: {
+          mode: "reviewed_inverse" as const,
+          lineage: {
+            root_proposal_id: input.proposalId,
+            parent_proposal_id: input.proposalId,
+            reverts_proposal_id: input.proposalId,
+            depth: 1,
+          },
+        },
+      } : {}),
       evidence: {
         bundle_id: input.evidenceBundleId,
         query_fingerprint: input.queryFingerprint,
@@ -2879,6 +2904,17 @@ function buildBoundedSetChangeSet(input: {
       ...(kind === "set_update" && operation.version_advance ? { version_advance: operation.version_advance } : {}),
     },
     frozen_set: frozenSet,
+    ...(input.capability.reversibility ? {
+      reversibility: {
+        mode: "reviewed_inverse" as const,
+        lineage: {
+          root_proposal_id: input.proposalId,
+          parent_proposal_id: input.proposalId,
+          reverts_proposal_id: input.proposalId,
+          depth: 1,
+        },
+      },
+    } : {}),
     evidence: { bundle_id: input.evidenceBundleId, query_fingerprint: input.queryFingerprint, items: [] },
     approval: {
       status: "pending",

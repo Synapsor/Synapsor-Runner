@@ -1,0 +1,40 @@
+{
+  "schema_version": "synapsor.compensation-change-set.v1",
+  "proposal_id": "wrp_revert_1",
+  "proposal_version": 1,
+  "action": "billing.revert_plan_credit",
+  "mode": "review_required",
+  "principal": { "id": "operator_1", "source": "trusted_session" },
+  "scope": { "tenant_id": "acme", "business_object": "customers", "object_id": "CUS-1" },
+  "source": { "kind": "external_postgres", "source_id": "src_1", "schema": "public", "table": "customers", "primary_key": { "column": "id", "value": "CUS-1" } },
+  "before": { "plan_credit_cents": 2500, "version": 8 },
+  "patch": { "plan_credit_cents": 0 },
+  "after": { "plan_credit_cents": 0, "version": 9 },
+  "compensation": {
+    "forward_receipt_hash": "sha256:forward-receipt",
+    "descriptor": {
+      "schema_version": "synapsor.inverse-descriptor.v1",
+      "availability": "available",
+      "reason_codes": [],
+      "operation": "restore_update",
+      "cardinality": "single",
+      "forward_proposal_id": "wrp_forward_1",
+      "forward_writeback_job_id": "wbj_forward_1",
+      "target": { "source_id": "src_1", "schema": "public", "table": "customers", "primary_key_column": "id" },
+      "tenant_guard": { "column": "tenant_id", "value": "acme" },
+      "allowed_columns": ["plan_credit_cents"],
+      "members": [{ "primary_key": { "column": "id", "value": "CUS-1" }, "expected_state": { "plan_credit_cents": 2500, "version": 8 }, "restore_values": { "plan_credit_cents": 0 } }],
+      "max_rows": 1,
+      "aggregate_bounds": [],
+      "version_advance": { "column": "version", "strategy": "integer_increment" },
+      "lineage": { "root_proposal_id": "wrp_forward_1", "parent_proposal_id": "wrp_forward_1", "reverts_proposal_id": "wrp_forward_1", "depth": 1 }
+    }
+  },
+  "guards": { "tenant": { "column": "tenant_id", "value": "acme" }, "allowed_columns": ["plan_credit_cents"] },
+  "evidence": { "bundle_id": "ev_revert_1", "query_fingerprint": "sha256:revert-query", "items": [] },
+  "approval": { "status": "pending", "mode": "human", "required_role": "reviewer", "required_approvals": 1 },
+  "writeback": { "status": "not_applied", "mode": "trusted_worker_required", "executor": "sql_update" },
+  "source_database_mutated": false,
+  "integrity": { "proposal_hash": "sha256:revert-proposal" },
+  "created_at": "2026-07-13T00:00:00Z"
+}

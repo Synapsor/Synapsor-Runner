@@ -6,10 +6,11 @@ import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { startLocalUiServer } from "./local-ui.js";
 
 const changeSet = {
-  schema_version: "synapsor.change-set.v1",
+  schema_version: "synapsor.change-set.v2",
   proposal_id: "wrp_ui",
   proposal_version: 1,
   action: "billing.waive_late_fee",
+  operation: "single_row_update",
   mode: "review_required",
   principal: { id: "support_agent_17", source: "trusted_session" },
   scope: { tenant_id: "acme", business_object: "invoice", object_id: "INV-UI" },
@@ -35,16 +36,26 @@ const changeSet = {
     tenant: { column: "tenant_id", value: "acme" },
     allowed_columns: ["late_fee_cents", "waiver_reason"],
     expected_version: { column: "updated_at", value: "2026-06-20T14:31:08Z" },
+    version_advance: { column: "updated_at", strategy: "database_generated" },
+  },
+  reversibility: {
+    mode: "reviewed_inverse",
+    lineage: {
+      root_proposal_id: "wrp_ui",
+      parent_proposal_id: "wrp_ui",
+      reverts_proposal_id: "wrp_ui",
+      depth: 1,
+    },
   },
   evidence: {
     bundle_id: "ev_ui",
-    query_fingerprint: "sha256:evidence",
+    query_fingerprint: `sha256:${"e".repeat(64)}`,
     items: [{ type: "row", handle: "row://invoices/INV-UI" }],
   },
   approval: { status: "pending", required_role: "support_lead" },
   writeback: { status: "not_applied", mode: "trusted_worker_required" },
   source_database_mutated: false,
-  integrity: { proposal_hash: "sha256:proposal" },
+  integrity: { proposal_hash: `sha256:${"a".repeat(64)}` },
   created_at: "2026-06-20T14:31:09Z",
 };
 
@@ -100,6 +111,9 @@ describe("local UI", () => {
           patch: { late_fee_cents: { fixed: 0 }, waiver_reason: { from_arg: "reason" } },
           allowed_columns: ["late_fee_cents", "waiver_reason"],
           conflict_guard: { column: "updated_at" },
+          operation: "update",
+          version_advance: { column: "updated_at", strategy: "database_generated" },
+          reversibility: { mode: "reviewed_inverse" },
           approval: { mode: "human", required_role: "support_lead" },
         },
       ],
@@ -147,6 +161,7 @@ describe("local UI", () => {
       expect(html).toContain("Source database changed:");
       expect(html).toContain("Approval boundary");
       expect(html).toContain("Replay saved what happened");
+      expect(html).toContain("Reviewed compensation");
       expect(html).toContain("Apply guarded writeback from a trusted terminal");
       expect(html).toContain("Copy guarded apply command");
       expect(html).toContain("synapsor-runner apply ");
@@ -169,6 +184,7 @@ describe("local UI", () => {
         "billing.inspect_invoice",
         "billing.propose_invoice_update",
       ]);
+      expect(tools.tools[1].reversibility).toEqual({ mode: "reviewed_inverse" });
       expect(JSON.stringify(tools)).not.toMatch(/execute_sql|approve_proposal|commit_proposal/i);
 
       const proposals = await getJson(`${baseUrl}/api/proposals`, headers);
@@ -192,6 +208,10 @@ describe("local UI", () => {
         late_fee_cents: { before: 5500, proposed: 0 },
       });
       expect(detail.review_view.writeback.executor).toBe("sql_update");
+      expect(detail.review_view.reversibility).toMatchObject({
+        status: "requested",
+      });
+      expect(detail.review_view.reversibility.message).toContain("unambiguous trusted apply receipt");
       expect(JSON.stringify(detail)).toContain("<redacted>");
       expect(JSON.stringify(detail)).not.toMatch(/postgres(?:ql)?:\/\/|reader_secret|should_not_leak/i);
 

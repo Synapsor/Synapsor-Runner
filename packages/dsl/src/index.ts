@@ -41,6 +41,7 @@ export type AgentDslCapabilityAst = {
     patch: Record<string, { fixed?: string | number | boolean | null; from_arg?: string; from_item?: string }>;
     numericBounds?: Record<string, { minimum?: number; maximum?: number }>;
     transitionGuards?: Record<string, { from_column?: string; allowed: Record<string, string[]> }>;
+    reversible?: boolean;
     approvalRole?: string;
     requiredApprovals?: number;
     autoApprovalRules?: Array<{ field: string; max: number; line: number }>;
@@ -184,6 +185,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
         patch: capability.proposal.patch,
         ...(capability.proposal.numericBounds ? { numeric_bounds: capability.proposal.numericBounds } : {}),
         ...(capability.proposal.transitionGuards ? { transition_guards: capability.proposal.transitionGuards } : {}),
+        ...(capability.proposal.reversible ? { reversibility: { mode: "reviewed_inverse" as const } } : {}),
         conflict_guard: capability.conflictKey ? { column: capability.conflictKey } : { weak_guard_ack: true },
         approval: autoApprovalPolicyName
           ? {
@@ -509,6 +511,11 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       };
       continue;
     }
+    if (/^REVERSIBLE$/i.test(item.text)) {
+      ensureProposal(capability, item);
+      capability.proposal.reversible = true;
+      continue;
+    }
     const approval = item.text.match(/^APPROVAL\s+ROLE\s+([A-Za-z_][A-Za-z0-9_.-]*)$/i);
     if (approval?.[1]) {
       ensureProposal(capability, item);
@@ -601,6 +608,25 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
         if (arg.max_items > set.max_rows) throw dslError(block.line, 1, "BATCH_ITEMS_EXCEED_MAX_ROWS", `${block.name} rows argument MAX must not exceed MAX ROWS`);
       } else if (!set.selection?.all.length) {
         throw dslError(block.line, 1, "SET_FIXED_SELECTION_REQUIRED", `${block.name} bounded ${operation.toUpperCase()} requires one or more SELECT WHERE <column> = <literal> clauses`);
+      }
+    }
+    if (capability.proposal.reversible) {
+      if ((capability.proposal.writebackMode ?? "direct_sql") !== "direct_sql") {
+        throw dslError(block.line, 1, "REVERSIBILITY_DIRECT_SQL_REQUIRED", `${block.name} REVERSIBLE requires WRITEBACK DIRECT SQL`);
+      }
+      if (capability.proposal.autoApprovalRules?.length) {
+        throw dslError(block.line, 1, "REVERSIBILITY_AUTO_APPROVAL_FORBIDDEN", `${block.name} REVERSIBLE requires independent human/operator approval`);
+      }
+      if (operation === "update") {
+        if (!capability.conflictKey) throw dslError(block.line, 1, "REVERSIBILITY_CONFLICT_GUARD_REQUIRED", `${block.name} reversible UPDATE requires CONFLICT GUARD`);
+        if (capability.proposal.operation?.version_advance?.strategy !== "integer_increment") {
+          throw dslError(block.line, 1, "REVERSIBILITY_INTEGER_VERSION_REQUIRED", `${block.name} reversible UPDATE requires ADVANCE VERSION <column> USING INTEGER INCREMENT`);
+        }
+      }
+      if (operation === "insert") {
+        const primaryKey = capability.primaryKey;
+        const hasPrimaryDedup = capability.proposal.operation?.deduplication?.components.some((component) => component.column === primaryKey);
+        if (!hasPrimaryDedup) throw dslError(block.line, 1, "REVERSIBILITY_PRIMARY_KEY_DEDUP_REQUIRED", `${block.name} reversible INSERT requires DEDUP KEY to derive PRIMARY KEY ${primaryKey}`);
       }
     }
   }

@@ -138,6 +138,7 @@ reviewed runner JSON capabilities. Current parity:
 | proposal `approval` | `APPROVAL ROLE billing_lead` | 0.1 | Local mode records the required role; enforcement is still outside the model-facing MCP tool. |
 | proposal `approval.required_approvals` | `REQUIRE 2 APPROVALS` | 1.1 | Optional 1..10 distinct-reviewer quorum; defaults to 1. |
 | proposal `writeback` | `WRITEBACK DIRECT SQL`, `WRITEBACK APP HANDLER EXECUTOR name`, `WRITEBACK CLOUD WORKER`, `WRITEBACK NONE` | 0.1.7 | Handler URLs/tokens stay in `synapsor.runner.json`; contracts carry only the handler name. |
+| proposal `reversibility` | `REVERSIBLE` | 1.4 | Direct SQL only. Captures a bounded inverse after unambiguous apply; operator `revert` creates a new independently approved proposal. |
 | evidence options | `REQUIRE EVIDENCE` | 0.1 | Detailed evidence sources/handle prefixes are not expressible in DSL yet; use embedded JSON or generated contract JSON for those. |
 
 ## Direct Runner Config Path

@@ -617,6 +617,24 @@ describe("runner capability config validation", () => {
     expect(result.errors.map((error) => error.code)).toContain("TRANSITION_FROM_COLUMN_NOT_VISIBLE");
   });
 
+  it("requires reviewed direct SQL and monotonic versions for reversible capabilities", () => {
+    const config = mutableConfig();
+    const capability = config.capabilities[1];
+    capability.visible_columns = [...capability.visible_columns.filter((field: string) => field !== "updated_at"), "version"];
+    capability.conflict_guard = { column: "version" };
+    capability.operation = { kind: "update", version_advance: { column: "version", strategy: "integer_increment" } };
+    capability.writeback = { mode: "direct_sql" };
+    capability.reversibility = { mode: "reviewed_inverse" };
+
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    capability.operation.version_advance.strategy = "database_generated";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("REVERSIBILITY_INTEGER_VERSION_REQUIRED");
+    capability.operation.version_advance.strategy = "integer_increment";
+    capability.approval = { mode: "policy", policy: "small_credit" };
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("REVERSIBILITY_HUMAN_APPROVAL_REQUIRED");
+  });
+
   it("requires a tenant guard unless single-tenant dev mode is explicit", () => {
     const config = mutableConfig();
     delete config.capabilities[0].target.tenant_key;

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseWritebackJob } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
 import {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,
@@ -174,6 +174,26 @@ function operationChangeSet(operation: "single_row_update" | "single_row_insert"
     integrity: { proposal_hash: `sha256:${suffix}` },
     created_at: "2026-07-13T00:00:00Z",
   };
+}
+
+function reversibleOperationChangeSet(operation: "single_row_update" | "single_row_insert" | "single_row_delete", suffix: string): any {
+  const input = operationChangeSet(operation, suffix) as any;
+  input.reversibility = {
+    mode: "reviewed_inverse",
+    lineage: {
+      root_proposal_id: input.proposal_id,
+      parent_proposal_id: input.proposal_id,
+      reverts_proposal_id: input.proposal_id,
+      depth: 1,
+    },
+  };
+  if (operation === "single_row_insert") {
+    const identity = `credit_${suffix}`;
+    input.source.primary_key.value = identity;
+    input.after.id = identity;
+    input.guards.deduplication.components.push({ column: "id", value: identity, source: "proposal_id" });
+  }
+  return input;
 }
 
 function verifiedWorkerIdentity(action: "worker_requeue" | "worker_discard", subject = "fleet_operator"): OperatorIdentityProof {
@@ -743,6 +763,8 @@ describe("proposal store", () => {
         applies: 1,
         conflicts: 0,
         failures: 0,
+        revert_proposals: 0,
+        revert_applies: 0,
       }]);
       expect(store.operationalMetrics({ tenant: "other" })).toEqual([]);
     } finally {
@@ -1158,6 +1180,157 @@ describe("proposal store", () => {
       } finally {
         store.close();
       }
+    }
+  });
+
+  it("captures reviewed inverse authority for reversible CRUD without hidden fields", () => {
+    for (const [operation, suffix, expectedInverse] of [
+      ["single_row_update", "reversible_update", "restore_update"],
+      ["single_row_insert", "reversible_insert", "remove_insert"],
+      ["single_row_delete", "reversible_delete", "restore_insert"],
+    ] as const) {
+      const store = new ProposalStore();
+      try {
+        const input = reversibleOperationChangeSet(operation, suffix);
+        if (operation === "single_row_update") {
+          input.before.internal_note = "kept-out";
+          input.after.internal_note = "kept-out";
+        }
+        store.createProposal(input);
+        store.approveProposal(input.proposal_id, { approver: "reviewer", proposal_hash: input.integrity.proposal_hash, proposal_version: 1 });
+        const job = store.createWritebackJobFromProposal(input.proposal_id);
+        expect(job.schema_version).toBe(protocolVersions.writebackJobV2);
+        if (job.schema_version !== protocolVersions.writebackJobV2) throw new Error("expected v2 job");
+        expect(job.inverse_capture?.operation).toBe(expectedInverse);
+        expect(JSON.stringify(job.inverse_capture)).not.toContain("internal_note");
+        if (operation === "single_row_delete") {
+          expect(job.inverse_capture).toMatchObject({ availability: "best_effort_unavailable" });
+        } else {
+          expect(job.inverse_capture).toMatchObject({ availability: "available", cardinality: "single" });
+        }
+      } finally {
+        store.close();
+      }
+    }
+  });
+
+  it("creates a v4 compensation job from a separately approved revert proposal", () => {
+    const store = new ProposalStore();
+    try {
+      const forward = reversibleOperationChangeSet("single_row_update", "forward_revert");
+      store.createProposal(forward);
+      store.approveProposal(forward.proposal_id, { approver: "reviewer_a", proposal_hash: forward.integrity.proposal_hash, proposal_version: 1 });
+      const forwardJob = store.createWritebackJobFromProposal(forward.proposal_id);
+      if (forwardJob.schema_version !== protocolVersions.writebackJobV2 || !forwardJob.inverse_capture) throw new Error("expected reversible forward job");
+
+      const compensation: any = {
+        schema_version: protocolVersions.compensationChangeSet,
+        proposal_id: "wrp_compensation_1",
+        proposal_version: 1,
+        action: "billing.revert_single_row_update",
+        mode: "review_required",
+        principal: forward.principal,
+        scope: forward.scope,
+        source: forward.source,
+        before: forward.after,
+        patch: forward.before,
+        after: forward.before,
+        compensation: { descriptor: forwardJob.inverse_capture, forward_receipt_hash: "sha256:forward-receipt" },
+        guards: { tenant: forward.guards.tenant, allowed_columns: forward.guards.allowed_columns },
+        evidence: { bundle_id: "ev_compensation", query_fingerprint: "sha256:compensation", items: [] },
+        approval: { status: "pending", mode: "human", required_role: "support_lead", required_approvals: 1 },
+        writeback: { status: "not_applied", mode: "trusted_worker_required", executor: "sql_update" },
+        source_database_mutated: false,
+        integrity: { proposal_hash: "sha256:compensation-proposal" },
+        created_at: "2026-07-13T01:00:00Z",
+      };
+      store.createProposal(compensation);
+      store.approveProposal(compensation.proposal_id, { approver: "reviewer_b", proposal_hash: compensation.integrity.proposal_hash, proposal_version: 1 });
+      const job = store.createWritebackJobFromProposal(compensation.proposal_id);
+      expect(job).toMatchObject({
+        schema_version: protocolVersions.writebackJobV4,
+        operation: "restore_update",
+        forward_receipt_hash: "sha256:forward-receipt",
+      });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("preserves inverse receipts and compensation lineage through shared-ledger backup and restore", () => {
+    const source = new ProposalStore();
+    const restored = new ProposalStore();
+    try {
+      const forward = reversibleOperationChangeSet("single_row_update", "shared_restore_forward");
+      source.createProposal(forward);
+      source.approveProposal(forward.proposal_id, { approver: "reviewer_a", proposal_hash: forward.integrity.proposal_hash, proposal_version: 1 });
+      const forwardJob = source.createWritebackJobFromProposal(forward.proposal_id);
+      if (forwardJob.schema_version !== protocolVersions.writebackJobV2 || !forwardJob.inverse_capture) throw new Error("expected reversible forward job");
+      source.recordExecutionReceipt({
+        schema_version: protocolVersions.executionReceiptV2,
+        writeback_job_id: forwardJob.writeback_job_id,
+        proposal_id: forward.proposal_id,
+        proposal_hash: forward.integrity.proposal_hash,
+        approval_id: "approval_shared_restore",
+        runner_id: "runner_shared_restore",
+        operation: "single_row_update",
+        receipt_authority: "runner_ledger",
+        status: "applied",
+        target: { source_id: forward.source.source_id, schema: forward.source.schema, table: forward.source.table, identity: [{ column: "id", value: forward.source.primary_key.value }] },
+        rows_affected: 1,
+        idempotency_key: forwardJob.idempotency_key,
+        before_digest: "sha256:shared-before",
+        after_digest: "sha256:shared-after",
+        inverse: forwardJob.inverse_capture,
+        source_database_mutated: true,
+        safe_outcome_code: "APPLIED",
+        executed_at: "2026-07-13T01:00:00Z",
+        receipt_hash: "sha256:shared-forward-receipt",
+      });
+      const compensation: any = {
+        schema_version: protocolVersions.compensationChangeSet,
+        proposal_id: "wrp_shared_restore_compensation",
+        proposal_version: 1,
+        action: forward.action,
+        mode: "review_required",
+        principal: forward.principal,
+        scope: forward.scope,
+        source: forward.source,
+        before: forward.after,
+        patch: forward.before,
+        after: forward.before,
+        compensation: { descriptor: forwardJob.inverse_capture, forward_receipt_hash: "sha256:shared-forward-receipt" },
+        guards: { tenant: forward.guards.tenant, allowed_columns: forward.guards.allowed_columns },
+        evidence: { bundle_id: "ev_shared_restore_compensation", query_fingerprint: "sha256:shared-restore", items: [] },
+        approval: { status: "pending", mode: "human", required_role: "support_lead" },
+        writeback: { status: "not_applied", mode: "trusted_worker_required", executor: "sql_update" },
+        source_database_mutated: false,
+        integrity: { proposal_hash: "sha256:shared-restore-compensation" },
+        created_at: "2026-07-13T01:01:00Z",
+      };
+      source.createProposal(compensation);
+      source.approveProposal(compensation.proposal_id, { approver: "reviewer_b", proposal_hash: compensation.integrity.proposal_hash, proposal_version: 1 });
+
+      const entries = source.sharedLedgerEntries();
+      expect(restored.importSharedLedgerEntries(entries)).toMatchObject({ imported: entries.length, skipped: 0 });
+      const restoredReceipt = restored.receipts(forward.proposal_id)[0]?.receipt;
+      expect(restoredReceipt).toMatchObject({
+        schema_version: protocolVersions.executionReceiptV2,
+        inverse: { availability: "available", operation: "restore_update" },
+      });
+      const restoredCompensation = restored.getProposal(compensation.proposal_id);
+      expect(restoredCompensation?.change_set).toMatchObject({
+        schema_version: protocolVersions.compensationChangeSet,
+        compensation: {
+          forward_receipt_hash: "sha256:shared-forward-receipt",
+          descriptor: { lineage: { root_proposal_id: forward.proposal_id, depth: 1 } },
+        },
+      });
+      const restoredJob = restored.createWritebackJobFromProposal(compensation.proposal_id);
+      expect(restoredJob).toMatchObject({ schema_version: protocolVersions.writebackJobV4, operation: "restore_update" });
+    } finally {
+      source.close();
+      restored.close();
     }
   });
 

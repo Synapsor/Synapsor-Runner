@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import mysql from "mysql2/promise";
-import type { WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
-import { assertFrozenSetJobIntegrity, classifyFrozenSetReconciliation, type ApplyAdapter, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
+import type { InverseDescriptorV1, WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
+import { assertCompensationJobIntegrity, assertFrozenSetJobIntegrity, classifyFrozenSetReconciliation, compensationInverseFromJob, type ApplyAdapter, type CompensationWritebackJob, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
 
 export const mysqlReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
   idempotency_key varchar(255) PRIMARY KEY,
@@ -20,11 +20,11 @@ export type MysqlApplyConnection = {
   query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]>;
 };
 
-type Operation = "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert";
+type Operation = NonNullable<WritebackJob["operation"]>;
 type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
 type ColumnValue = { column: string; value: string | number | boolean | null };
 type MutationOutcome = {
-  status: "applied" | "already_applied" | "conflict" | "failed";
+  status: "applied" | "already_applied" | "conflict" | "failed" | "canceled";
   affectedRows: number;
   code?: string;
   targetIdentity: ColumnValue[];
@@ -33,6 +33,7 @@ type MutationOutcome = {
   afterDigest?: `sha256:${string}`;
   tombstoneDigest?: `sha256:${string}`;
   memberEffects?: Array<{ primary_key: ColumnValue; before_digest?: string; after_digest?: string; tombstone_digest?: string }>;
+  inverse?: InverseDescriptorV1;
 };
 
 export function quoteMysqlIdentifier(identifier: string): string {
@@ -123,6 +124,7 @@ function insertValues(job: Extract<WritebackJob, { protocol_version: "2.0" }>): 
 
 function identityForJob(job: WritebackJob, insertedPrimaryKey?: unknown): ColumnValue[] {
   if (job.protocol_version === "3.0") return job.frozen_set.members.map((member) => member.primary_key);
+  if (job.protocol_version === "4.0") return job.compensation.members.map((member) => member.primary_key);
   const identity: ColumnValue[] = [];
   if (insertedPrimaryKey !== undefined && insertedPrimaryKey !== null && insertedPrimaryKey !== 0) identity.push({ column: job.target.primary_key.column, value: scalar(insertedPrimaryKey) });
   else if (job.target.primary_key.value !== undefined) identity.push({ column: job.target.primary_key.column, value: job.target.primary_key.value });
@@ -147,6 +149,12 @@ function reconciliationProjection(job: WritebackJob): string[] {
       for (const column of Object.keys(member.after)) columns.add(column);
     }
   }
+  if (job.protocol_version === "4.0") {
+    for (const member of job.compensation.members) {
+      for (const column of Object.keys(member.expected_state)) columns.add(column);
+      for (const column of Object.keys(member.restore_values ?? {})) columns.add(column);
+    }
+  }
   if (job.conflict_guard.kind === "version_column") columns.add(job.conflict_guard.column);
   if (job.protocol_version === "2.0" && job.deduplication) {
     for (const component of job.deduplication.components) columns.add(component.column);
@@ -156,6 +164,12 @@ function reconciliationProjection(job: WritebackJob): string[] {
 
 export function buildMysqlReconciliationRead(job: WritebackJob): { sql: string; values: unknown[] } {
   const projection = reconciliationProjection(job).map(quoteMysqlIdentifier).join(", ");
+  if (job.protocol_version === "4.0") {
+    return {
+      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map(() => "?").join(", ")})\nORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC`,
+      values: [job.target.tenant_guard.value, ...job.compensation.members.map((member) => member.primary_key.value)],
+    };
+  }
   if (job.protocol_version === "3.0") {
     const identities = job.frozen_set.members.map(() => "?").join(", ");
     return {
@@ -183,6 +197,7 @@ export async function inspectMysqlWritebackSource(job: WritebackJob, databaseUrl
     const query = buildMysqlReconciliationRead(job);
     const [rows] = await connection.query<mysql.RowDataPacket[]>(query.sql, query.values);
     if (job.protocol_version === "3.0") return classifyFrozenSetReconciliation(job, rows, versionValuesMatch);
+    if (job.protocol_version === "4.0") return classifyCompensationReconciliation(job, rows);
     if (rows.length > 1) throw new Error("RECONCILIATION_IDENTITY_NOT_UNIQUE");
     return reconciliationObservation(job, rows[0]);
   } catch (error) {
@@ -212,6 +227,39 @@ function reconciliationObservation(job: WritebackJob, row: Record<string, unknow
   else if (versionStillExpected(job, row)) classification = "matches_reviewed_before";
   else classification = "drifted";
   return { operation, classification, target_identity: targetIdentity, expected, observed, observed_digest: digest(observed) };
+}
+
+function classifyCompensationReconciliation(job: CompensationWritebackJob, rows: Record<string, unknown>[]): ReconciliationObservation {
+  const byIdentity = rowsByCompensationIdentity(job, rows);
+  const memberObservations = job.compensation.members.map((member) => {
+    const row = byIdentity.get(JSON.stringify(member.primary_key.value));
+    const expectedAfter = compensationExpectedAfter(job, member);
+    const beforeMatches = row !== undefined && compensationMemberMatches(row, member.expected_state);
+    const afterMatches = row !== undefined && compensationMemberMatches(row, expectedAfter);
+    const classification: ReconciliationObservation["classification"] = job.operation === "remove_insert"
+      ? !row ? "matches_proposed" : beforeMatches ? "matches_reviewed_before" : "drifted"
+      : job.operation === "restore_insert"
+        ? !row ? "not_observed" : afterMatches ? "matches_proposed" : "drifted"
+        : !row ? "not_observed" : afterMatches ? "matches_proposed" : beforeMatches ? "matches_reviewed_before" : "drifted";
+    const observed = row ? Object.fromEntries(compensationProjection(job).map((column) => [column, scalar(row[column])])) : {};
+    return { primary_key: member.primary_key, classification, observed, observed_digest: digest(observed) };
+  });
+  const classifications = memberObservations.map((member) => member.classification);
+  const classification: ReconciliationObservation["classification"] = classifications.every((item) => item === "matches_proposed")
+    ? "matches_proposed"
+    : classifications.every((item) => item === "matches_reviewed_before" || (job.operation === "restore_insert" && item === "not_observed"))
+      ? job.operation === "restore_insert" ? "not_observed" : "matches_reviewed_before"
+      : "drifted";
+  const observedDigest = digest(memberObservations.map((member) => ({ primary_key: member.primary_key, observed: member.observed })));
+  const observed = { row_count: rows.length, member_digest: observedDigest };
+  return { operation: job.operation, classification, target_identity: identityForJob(job), expected: { row_count: job.compensation.members.length }, observed, observed_digest: digest(observed), member_observations: memberObservations };
+}
+
+function compensationExpectedAfter(job: CompensationWritebackJob, member: CompensationWritebackJob["compensation"]["members"][number]): Record<string, string | number | boolean | null> {
+  if (job.operation === "remove_insert") return {};
+  if (job.operation === "restore_insert") return member.restore_values ?? {};
+  const version = job.compensation.version_advance!;
+  return { ...member.restore_values!, [version.column]: Number(member.expected_state[version.column]) + 1 };
 }
 
 function valuesMatch(row: Record<string, unknown>, expected: Record<string, unknown>): boolean {
@@ -282,7 +330,7 @@ async function sourceTransaction<T>(
 }
 
 export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Promise<WritebackResult> {
-  if (config.dryRun) { validateOperation(job); return resultFromOutcome(job, config, { status: "applied", affectedRows: 0, targetIdentity: identityForJob(job) }); }
+  if (config.dryRun) { validateOperation(job); return resultFromOutcome(job, config, { status: job.protocol_version === "4.0" ? "canceled" : "applied", affectedRows: 0, targetIdentity: identityForJob(job) }); }
   if (!config.databaseUrl) return failedResult(job, config, "DATABASE_UNAVAILABLE");
   const connection = await mysql.createConnection({ uri: config.databaseUrl, dateStrings: true });
   try { return await applyMysqlJobWithConnection(job, config, connection); }
@@ -345,6 +393,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, co
 }
 
 function validateOperation(job: WritebackJob): void {
+  if (job.protocol_version === "4.0") return assertCompensationJobIntegrity(job);
   if (job.protocol_version === "3.0") return validateSetJob(job);
   if (operationOf(job) === "single_row_update") buildMysqlUpdate(job);
   else if (operationOf(job) === "single_row_insert") buildMysqlInsert(job);
@@ -352,6 +401,7 @@ function validateOperation(job: WritebackJob): void {
 }
 
 async function mutateMysql(job: WritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+  if (job.protocol_version === "4.0") return await mutateMysqlCompensation(job, connection);
   if (job.protocol_version === "3.0") return await mutateMysqlSet(job, connection);
   const operation = operationOf(job);
   if (operation === "single_row_insert") return await insertMysql(job, connection);
@@ -362,6 +412,12 @@ async function mutateMysql(job: WritebackJob, connection: MysqlApplyConnection):
     : undefined;
   if (job.conflict_guard.kind === "version_column" && !versionValuesMatch(conflictValue, job.conflict_guard.expected_value)) {
     return { status: "conflict", affectedRows: 0, code: "VERSION_CONFLICT", targetIdentity: identityForJob(job), resultVersion: scalar(conflictValue) };
+  }
+  if (job.protocol_version === "2.0" && job.inverse_capture?.operation === "restore_update") {
+    const reviewedBefore = job.inverse_capture.members[0]?.restore_values ?? {};
+    if (!Object.entries(reviewedBefore).every(([column, value]) => versionValuesMatch(row[column], value))) {
+      return { status: "conflict", affectedRows: 0, code: "ROW_CHANGED_AFTER_PROPOSAL", targetIdentity: identityForJob(job) };
+    }
   }
   const beforeDigest = digest({ identity: identityForJob(job), reviewed: job.patch, expected: job.conflict_guard });
   if (operation === "single_row_delete") {
@@ -400,6 +456,108 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
     verifyVersionAdvanced(job, resultVersion);
   }
   return { status: "applied", affectedRows: 1, targetIdentity: identityForJob(job), resultVersion, beforeDigest, afterDigest: digest({ identity: identityForJob(job), patch: job.patch, version: resultVersion }) };
+}
+
+function compensationProjection(job: CompensationWritebackJob): string[] {
+  const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column]);
+  for (const member of job.compensation.members) {
+    for (const column of Object.keys(member.expected_state)) columns.add(column);
+    for (const column of Object.keys(member.restore_values ?? {})) columns.add(column);
+  }
+  if (job.compensation.version_advance) columns.add(job.compensation.version_advance.column);
+  return [...columns].sort();
+}
+
+async function lockMysqlCompensationMembers(job: CompensationWritebackJob, connection: MysqlApplyConnection): Promise<Record<string, unknown>[]> {
+  const [rows] = await connection.query<Record<string, unknown>[]>(
+    `SELECT ${compensationProjection(job).map(quoteMysqlIdentifier).join(", ")} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map(() => "?").join(", ")}) ORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
+    [job.target.tenant_guard.value, ...job.compensation.members.map((member) => member.primary_key.value)],
+  );
+  return rows;
+}
+
+function rowsByCompensationIdentity(job: CompensationWritebackJob, rows: Record<string, unknown>[]): Map<string, Record<string, unknown>> {
+  return new Map(rows.map((row) => [JSON.stringify(scalar(row[job.target.primary_key.column])), row]));
+}
+
+function compensationMemberMatches(row: Record<string, unknown>, expected: Record<string, unknown>): boolean {
+  return Object.entries(expected).every(([column, value]) => versionValuesMatch(row[column], value));
+}
+
+async function mysqlCompensationSafetyCode(job: CompensationWritebackJob, connection: MysqlApplyConnection): Promise<string | undefined> {
+  const [visibilityRows] = await connection.query<Record<string, unknown>[]>(`SELECT (
+  EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND PRIVILEGE_TYPE = 'TRIGGER')
+  OR EXISTS (SELECT 1 FROM information_schema.SCHEMA_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND TABLE_SCHEMA = ? AND PRIVILEGE_TYPE = 'TRIGGER')
+  OR EXISTS (SELECT 1 FROM information_schema.TABLE_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND TABLE_SCHEMA = ? AND TABLE_NAME = ? AND PRIVILEGE_TYPE = 'TRIGGER')
+) AS has_trigger_visibility,
+EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, CHAR(39), '') = CURRENT_USER() AND PRIVILEGE_TYPE = 'PROCESS') AS has_fk_visibility`, [job.target.schema, job.target.schema, job.target.table]);
+  const triggerVisibility = visibilityRows[0]?.has_trigger_visibility;
+  if (!(triggerVisibility === true || Number(triggerVisibility) === 1)) return "COMPENSATION_TRIGGER_VISIBILITY_REQUIRED";
+  const [triggerRows] = await connection.query<Record<string, unknown>[]>("SELECT 1 AS found FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ? LIMIT 1", [job.target.schema, job.target.table]);
+  if (triggerRows[0]) return "COMPENSATION_TRIGGER_BLOCKED";
+  if (job.operation === "remove_insert") {
+    const fkVisibility = visibilityRows[0]?.has_fk_visibility;
+    if (!(fkVisibility === true || Number(fkVisibility) === 1)) return "COMPENSATION_FK_VISIBILITY_REQUIRED";
+    const [cascadeRows] = await connection.query<Record<string, unknown>[]>("SELECT 1 AS found FROM information_schema.INNODB_FOREIGN WHERE REF_NAME = CONCAT(?, '/', ?) AND (TYPE & 5) <> 0 LIMIT 1", [job.target.schema, job.target.table]);
+    if (cascadeRows[0]) return "COMPENSATION_CASCADE_BLOCKED";
+  }
+  return undefined;
+}
+
+async function mutateMysqlCompensation(job: CompensationWritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+  assertCompensationJobIntegrity(job);
+  const rows = await lockMysqlCompensationMembers(job, connection);
+  const byIdentity = rowsByCompensationIdentity(job, rows);
+  if (job.operation === "restore_insert") {
+    if (rows.length !== 0) return { status: "conflict", affectedRows: 0, code: "COMPENSATION_TARGET_PRESENT", targetIdentity: identityForJob(job) };
+  } else if (rows.length !== job.compensation.members.length) {
+    return { status: "conflict", affectedRows: 0, code: "COMPENSATION_TARGET_MISSING", targetIdentity: identityForJob(job) };
+  }
+  if (job.operation !== "restore_insert") {
+    for (const member of job.compensation.members) {
+      const row = byIdentity.get(JSON.stringify(member.primary_key.value));
+      if (!row || !compensationMemberMatches(row, member.expected_state)) return { status: "conflict", affectedRows: 0, code: "ROW_CHANGED_AFTER_FORWARD_WRITE", targetIdentity: identityForJob(job) };
+    }
+  }
+  if (job.operation === "remove_insert" || job.operation === "restore_insert") {
+    const safetyCode = await mysqlCompensationSafetyCode(job, connection);
+    if (safetyCode) return { status: "failed", affectedRows: 0, code: safetyCode, targetIdentity: identityForJob(job) };
+  }
+  const memberEffects: NonNullable<MutationOutcome["memberEffects"]> = [];
+  if (job.operation === "restore_insert") {
+    for (const member of job.compensation.members) {
+      const values = { ...member.restore_values!, [job.target.primary_key.column]: member.primary_key.value, [job.target.tenant_guard.column]: job.target.tenant_guard.value };
+      const columns = Object.keys(values).sort();
+      const [inserted] = await connection.query<Record<string, unknown>>(`INSERT INTO ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} (${columns.map(quoteMysqlIdentifier).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`, columns.map((column) => values[column]));
+      if (affectedRows(inserted) !== 1) throw new Error("COMPENSATION_ATOMICITY_VIOLATION");
+      memberEffects.push({ primary_key: member.primary_key, after_digest: digest({ primary_key: member.primary_key, after: values }) });
+    }
+  } else if (job.operation === "remove_insert") {
+    for (const member of job.compensation.members) {
+      const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} <=> ?`, `${quoteMysqlIdentifier(job.target.primary_key.column)} <=> ?`];
+      const values: unknown[] = [job.target.tenant_guard.value, member.primary_key.value];
+      for (const [column, value] of Object.entries(member.expected_state)) { where.push(`${quoteMysqlIdentifier(column)} <=> ?`); values.push(value); }
+      const [deleted] = await connection.query<Record<string, unknown>>(`DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")}`, values);
+      if (affectedRows(deleted) !== 1) throw new Error("COMPENSATION_ATOMICITY_VIOLATION");
+      memberEffects.push({ primary_key: member.primary_key, before_digest: digest({ primary_key: member.primary_key, before: member.expected_state }), tombstone_digest: digest({ primary_key: member.primary_key, deleted: true }) });
+    }
+  } else {
+    const version = job.compensation.version_advance!;
+    for (const member of job.compensation.members) {
+      const restoreValues = member.restore_values!;
+      const columns = Object.keys(restoreValues).sort();
+      const assignments = columns.map((column) => `${quoteMysqlIdentifier(column)} = ?`);
+      assignments.push(`${quoteMysqlIdentifier(version.column)} = ${quoteMysqlIdentifier(version.column)} + 1`);
+      const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} <=> ?`, `${quoteMysqlIdentifier(job.target.primary_key.column)} <=> ?`];
+      const values: unknown[] = [...columns.map((column) => restoreValues[column]), job.target.tenant_guard.value, member.primary_key.value];
+      for (const [column, value] of Object.entries(member.expected_state)) { where.push(`${quoteMysqlIdentifier(column)} <=> ?`); values.push(value); }
+      const [updated] = await connection.query<Record<string, unknown>>(`UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${where.join(" AND ")}`, values);
+      if (affectedRows(updated) !== 1) throw new Error("COMPENSATION_ATOMICITY_VIOLATION");
+      const nextVersion = Number(member.expected_state[version.column]) + 1;
+      memberEffects.push({ primary_key: member.primary_key, before_digest: digest({ primary_key: member.primary_key, before: member.expected_state }), after_digest: digest({ primary_key: member.primary_key, after: { ...restoreValues, [version.column]: nextVersion } }) });
+    }
+  }
+  return { status: "applied", affectedRows: job.compensation.members.length, targetIdentity: identityForJob(job), memberEffects, inverse: compensationInverseFromJob(job) };
 }
 
 function validateSetJob(job: SetWritebackJob): void {
@@ -514,11 +672,15 @@ async function insertMysqlBatch(job: SetWritebackJob, connection: MysqlApplyConn
 
 async function lockTargetRow(job: WritebackJob, connection: MysqlApplyConnection): Promise<Record<string, unknown> | undefined> {
   if (job.target.primary_key.value === undefined) return undefined;
+  const inverseColumns = job.protocol_version === "2.0" && job.inverse_capture?.operation === "restore_update"
+    ? Object.keys(job.inverse_capture.members[0]?.restore_values ?? {})
+    : [];
   const projection = [
     `${quoteMysqlIdentifier(job.target.primary_key.column)} AS __synapsor_primary_key`,
     ...(job.conflict_guard.kind === "version_column"
       ? [`${quoteMysqlIdentifier(job.conflict_guard.column)} AS __synapsor_conflict_value`]
       : []),
+    ...inverseColumns.filter((column) => job.conflict_guard.kind !== "version_column" || column !== job.conflict_guard.column).map(quoteMysqlIdentifier),
   ].join(", ");
   const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\nFOR UPDATE`, [job.target.primary_key.value, job.target.tenant_guard.value]);
   return rows[0];
@@ -573,27 +735,29 @@ function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, stat
 
 function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: MutationOutcome, overrideCode?: string, overrideHash?: `sha256:${string}`): WritebackResult {
   const hash = overrideHash ?? resultHash(job, outcome.status, outcome.resultVersion);
-  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: outcome.memberEffects ?? [], result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
+  if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), member_effects: outcome.memberEffects ?? [], ...((outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: outcome.inverse ?? compensationInverseFromJob(job) } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
+  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: outcome.memberEffects ?? [], ...(job.inverse_capture && (outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: job.inverse_capture } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
   if (job.protocol_version !== "2.0") return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: outcome.status, affected_rows: outcome.affectedRows, result_version: outcome.resultVersion == null ? undefined : String(outcome.resultVersion), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
-  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identity: outcome.targetIdentity, result_version: outcome.resultVersion, before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, tombstone_digest: outcome.tombstoneDigest, result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
+  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identity: outcome.targetIdentity, result_version: outcome.resultVersion, before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, tombstone_digest: outcome.tombstoneDigest, ...(job.inverse_capture && (outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: job.inverse_capture } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() };
 }
 function failedResult(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult { return resultFromOutcome(job, config, { status: "failed", affectedRows: 0, code, targetIdentity: identityForJob(job) }); }
 function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string): WritebackResult {
+  if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
   if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
   if (job.protocol_version !== "2.0") return failedResult(job, config, "RECONCILIATION_REQUIRED");
   return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
 }
 function asAlreadyApplied(result: WritebackResult, job: WritebackJob, config: RunnerConfig): WritebackResult {
   if (result.status !== "applied" && result.status !== "already_applied") return result;
-  return resultFromOutcome(job, config, { status: "already_applied", affectedRows: 0, targetIdentity: identityForJob(job), resultVersion: result.result_version }, undefined, result.result_hash as `sha256:${string}` | undefined);
+  return resultFromOutcome(job, config, { status: "already_applied", affectedRows: 0, targetIdentity: identityForJob(job), resultVersion: "result_version" in result ? result.result_version : undefined }, undefined, result.result_hash as `sha256:${string}` | undefined);
 }
-function resultHashFromResult(job: WritebackJob, result: WritebackResult): `sha256:${string}` { return typeof result.result_hash === "string" && result.result_hash.startsWith("sha256:") ? result.result_hash as `sha256:${string}` : resultHash(job, result.status, result.result_version); }
+function resultHashFromResult(job: WritebackJob, result: WritebackResult): `sha256:${string}` { return typeof result.result_hash === "string" && result.result_hash.startsWith("sha256:") ? result.result_hash as `sha256:${string}` : resultHash(job, result.status, "result_version" in result ? result.result_version : undefined); }
 function safeErrorCode(error: unknown): string {
   if (error instanceof SourceOutcomeUnknownError) return "OUTCOME_UNKNOWN";
   const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   const message = error instanceof Error ? error.message : String(error);
   if (code === "ER_DUP_ENTRY" || code === "1062") return "INSERT_DEDUP_CONFLICT";
-  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED"]) if (message.includes(known)) return known;
+  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_VISIBILITY_REQUIRED", "COMPENSATION_FK_VISIBILITY_REQUIRED", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
   return "TRANSACTION_FAILED";
 }
 

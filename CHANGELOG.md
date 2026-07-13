@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.0 (prepared, not published)
+
+### Reviewed Reversible Change Sets
+
+- Adds opt-in canonical `reversibility.mode = reviewed_inverse` and DSL
+  `REVERSIBLE` for direct SQL capabilities with human/operator approval and
+  operation-specific exact guards.
+- Captures bounded inverse descriptors only after an unambiguous successful
+  source transaction. Inverses retain trusted identity, version metadata, and
+  reviewed writable values; kept-out data is excluded.
+- Adds operator-only `revert <proposal-id>`, which creates a new proposal and
+  never writes or approves. Compensation inherits reviewer role/quorum and
+  passes normal approval, guarded apply, receipt, reconciliation, and replay.
+- Supports reviewed UPDATE, INSERT, soft-delete, and exact frozen-set
+  compensation on PostgreSQL and MySQL. Fresh-state conflicts and one stale set
+  member fail closed without partial effects.
+- Reports hard DELETE and app-owned/external effects as specifically
+  unavailable instead of claiming rollback or time travel. Successful
+  compensation captures its own bounded inverse with linear lineage capped at
+  16.
+- Adds compensation change-set and protocol-v4 job/receipt schemas,
+  conformance fixtures, owner-authorized resources, local UI/doctor/preview
+  state, bounded metrics, crash-reconciliation tests, and the disposable
+  `corepack pnpm test:reversible` gate.
+- Stages `@synapsor/spec@1.4.0`, `@synapsor/dsl@1.4.0`, and
+  `@synapsor/runner@1.4.0`. No npm package is published by this change.
+
 ## 1.3.0 (prepared, not published)
 
 ### Bounded Set Writeback

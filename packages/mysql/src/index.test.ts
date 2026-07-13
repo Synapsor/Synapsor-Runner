@@ -221,6 +221,82 @@ describe("mysql adapter", () => {
     expect(connection.sqlLog).toContain("COMMIT");
   });
 
+  it("applies a reviewed compensation with a fresh guard and emits a revert-of-revert inverse", async () => {
+    const connection = new CompensationMysqlConnection();
+    const result = await applyMysqlJobWithConnection(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: new FakeIntentStore(),
+    }, connection);
+
+    expect(result).toMatchObject({
+      protocol_version: "4.0",
+      operation: "restore_update",
+      status: "applied",
+      affected_rows: 1,
+      inverse: { operation: "restore_update", lineage: { depth: 2 } },
+    });
+    expect(connection.sqlLog.some((sql) => sql.startsWith("UPDATE `appdb`.`credits`"))).toBe(true);
+    expect(connection.sqlLog).toContain("COMMIT");
+  });
+
+  it("fails a stale compensation closed before mutation", async () => {
+    const connection = new CompensationMysqlConnection(true);
+    const result = await applyMysqlJobWithConnection(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: new FakeIntentStore(),
+    }, connection);
+
+    expect(result).toMatchObject({ protocol_version: "4.0", status: "conflict", error_code: "ROW_CHANGED_AFTER_FORWARD_WRITE", affected_rows: 0 });
+    expect(connection.sqlLog.some((sql) => sql.startsWith("UPDATE `appdb`.`credits`"))).toBe(false);
+  });
+
+  it("requires reconciliation when a compensation stops after source COMMIT", async () => {
+    const connection = new CompensationMysqlConnection();
+    const intents = new FakeIntentStore();
+    const result = await applyMysqlJobWithConnection(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "after_source_commit") throw new Error("simulated compensation process death");
+      },
+    }, connection);
+
+    expect(result).toMatchObject({
+      protocol_version: "4.0",
+      operation: "restore_update",
+      status: "reconciliation_required",
+      error_code: "RECONCILIATION_REQUIRED",
+      intent_id: "wbi:test",
+    });
+    expect(result).not.toHaveProperty("inverse");
+    expect(intents.calls).toEqual(["claim", "applying", "reconciliation"]);
+    expect(connection.sqlLog).toContain("COMMIT");
+  });
+
+  it("requires reconciliation when compensation rollback acknowledgement is lost", async () => {
+    const connection = new RollbackUnknownCompensationMysqlConnection();
+    const intents = new FakeIntentStore();
+    const result = await applyMysqlJobWithConnection(v4CompensationUpdateJob(), {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+      testFailpoint(name) {
+        if (name === "after_source_mutation") throw new Error("simulated compensation connection loss");
+      },
+    }, connection);
+
+    expect(result).toMatchObject({
+      protocol_version: "4.0",
+      status: "reconciliation_required",
+      error_code: "RECONCILIATION_REQUIRED",
+    });
+    expect(result).not.toHaveProperty("inverse");
+    expect(intents.calls).toEqual(["claim", "applying", "reconciliation"]);
+  });
+
   it("bounds direct write preflight execution and lock waits for the session", async () => {
     const connection = new SetMysqlConnection();
     const result = await applyMysqlJobWithConnection(v3SetUpdateJob(), { ...config, statementTimeoutMs: 2500 }, connection);
@@ -391,6 +467,43 @@ const v2DeleteJob = {
   idempotency_key: "wrp_delete:CR-1", lease_expires_at: "2026-07-13T12:00:00Z", attempt_count: 1,
 };
 
+function v4CompensationUpdateJob() {
+  return {
+    protocol_version: "4.0" as const,
+    job_id: "wbj_revert_update",
+    proposal_id: "wrp_revert_update",
+    approval_id: "sha256:revert-approval",
+    source_id: "src_1",
+    engine: "mysql" as const,
+    operation: "restore_update" as const,
+    target: { schema: "appdb", table: "credits", primary_key: { column: "id", value: "CR-1" }, tenant_guard: { column: "tenant_id", value: "acme" } },
+    allowed_columns: ["amount_cents"],
+    patch: {},
+    conflict_guard: { kind: "none" as const },
+    compensation: {
+      schema_version: "synapsor.inverse-descriptor.v1" as const,
+      availability: "available" as const,
+      reason_codes: [],
+      operation: "restore_update" as const,
+      cardinality: "single" as const,
+      forward_proposal_id: "wrp_forward_update",
+      forward_writeback_job_id: "wbj_forward_update",
+      target: { source_id: "src_1", schema: "appdb", table: "credits", primary_key_column: "id" },
+      tenant_guard: { column: "tenant_id", value: "acme" },
+      allowed_columns: ["amount_cents"],
+      members: [{ primary_key: { column: "id", value: "CR-1" }, expected_state: { amount_cents: 2500, version: 8 }, restore_values: { amount_cents: 100 } }],
+      max_rows: 1,
+      aggregate_bounds: [],
+      version_advance: { column: "version", strategy: "integer_increment" as const },
+      lineage: { root_proposal_id: "wrp_forward_update", parent_proposal_id: "wrp_forward_update", reverts_proposal_id: "wrp_forward_update", depth: 1 },
+    },
+    forward_receipt_hash: "sha256:forward-receipt",
+    idempotency_key: "revert:wrp_forward_update",
+    lease_expires_at: 1,
+    attempt_count: 1,
+  };
+}
+
 class V2MysqlConnection implements MysqlApplyConnection {
   readonly sqlLog: string[] = [];
   async beginTransaction() { this.sqlLog.push("BEGIN"); }
@@ -402,6 +515,27 @@ class V2MysqlConnection implements MysqlApplyConnection {
     if (sql.startsWith("UPDATE `appdb`.`credits`")) return [{ affectedRows: 1 } as T, undefined];
     if (sql.startsWith("SELECT `version` AS __synapsor_result_version")) return [[{ __synapsor_result_version: 8 }] as T, undefined];
     throw new Error(`unexpected v2 query: ${sql}`);
+  }
+}
+
+class CompensationMysqlConnection implements MysqlApplyConnection {
+  readonly sqlLog: string[] = [];
+  constructor(private readonly stale = false) {}
+  async beginTransaction() { this.sqlLog.push("BEGIN"); }
+  async commit() { this.sqlLog.push("COMMIT"); }
+  async rollback() { this.sqlLog.push("ROLLBACK"); }
+  async query<T = unknown>(sql: string): Promise<[T, unknown]> {
+    this.sqlLog.push(sql.trim());
+    if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`credits`") && sql.includes("FOR UPDATE")) {
+      return [[{ id: "CR-1", tenant_id: "acme", amount_cents: this.stale ? 2600 : 2500, version: 8 }] as T, undefined];
+    }
+    if (sql.startsWith("UPDATE `appdb`.`credits`")) return [{ affectedRows: 1 } as T, undefined];
+    throw new Error(`unexpected compensation query: ${sql}`);
+  }
+}
+class RollbackUnknownCompensationMysqlConnection extends CompensationMysqlConnection {
+  override async rollback() {
+    throw new Error("connection lost during compensation rollback");
   }
 }
 class RollbackUnknownMysqlConnection extends V2MysqlConnection {

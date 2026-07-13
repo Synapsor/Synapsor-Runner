@@ -63,6 +63,9 @@ Production-candidate OSS scope:
 - fixed-predicate set `UPDATE`/`DELETE` and exact-review batch `INSERT`, with
   human approval, mandatory row/value caps, a hard 100-row ceiling, frozen
   members, atomic execution, and exact per-member receipts;
+- opt-in reviewed compensation for direct SQL UPDATE, INSERT, soft-delete, and
+  exact frozen sets, using a separate operator proposal, fresh guards, and
+  protocol-v4 receipts;
 - app-owned `http_handler` or `command_handler` executors for richer approved
   business transactions;
 - stdio MCP and Streamable HTTP MCP.
@@ -74,6 +77,8 @@ Out of scope:
   cross-table transactions, or INSERT/DELETE whose source constraints cannot
   prove the reviewed effect;
 - physical branching of external Postgres/MySQL;
+- automatic rollback/time travel, hard-delete restoration, and inferred
+  compensation for app-owned or external effects;
 - workflow DAGs, auto-merge/settlement, hosted team administration, SSO/SCIM,
   multi-region ledger replication, or compliance retention;
 - making prompt injection impossible.

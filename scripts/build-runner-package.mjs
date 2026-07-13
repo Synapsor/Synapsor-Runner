@@ -124,6 +124,8 @@ const publicDocs = [
   "release-notes.md",
   "release-policy.md",
   "result-envelope-v2.md",
+  "result-envelope-v4.md",
+  "reversible-change-sets.md",
   "runner-config-reference.md",
   "runner-bundles.md",
   "running-a-runner-fleet.md",

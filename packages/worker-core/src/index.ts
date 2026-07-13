@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
-import { parseWritebackJob, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type InverseDescriptorV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
 export * from "./mcp-audit.js";
 
@@ -57,7 +57,7 @@ export type ReconciliationClassification =
   | "drifted";
 
 export type ReconciliationObservation = {
-  operation: "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert";
+  operation: "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert" | "restore_update" | "remove_insert" | "restore_insert";
   classification: ReconciliationClassification;
   target_identity: Array<{ column: string; value: string | number | boolean | null }>;
   expected: Record<string, string | number | boolean | null>;
@@ -72,7 +72,98 @@ export type ReconciliationObservation = {
 };
 
 type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
+export type CompensationWritebackJob = Extract<WritebackJob, { protocol_version: "4.0" }>;
 type Scalar = string | number | boolean | null;
+
+export function assertCompensationJobIntegrity(job: CompensationWritebackJob): void {
+  const descriptor = job.compensation;
+  if (descriptor.availability !== "available") throw new Error("COMPENSATION_UNAVAILABLE");
+  if (descriptor.operation !== job.operation) throw new Error("COMPENSATION_OPERATION_MISMATCH");
+  if (descriptor.target.source_id !== job.source_id
+    || descriptor.target.schema !== job.target.schema
+    || descriptor.target.table !== job.target.table
+    || descriptor.target.primary_key_column !== job.target.primary_key.column) throw new Error("COMPENSATION_TARGET_MISMATCH");
+  if (descriptor.tenant_guard.column !== job.target.tenant_guard.column
+    || descriptor.tenant_guard.value !== job.target.tenant_guard.value) throw new Error("COMPENSATION_TENANT_MISMATCH");
+  if (descriptor.members.length < 1 || descriptor.members.length > descriptor.max_rows || descriptor.max_rows > 100) throw new Error("COMPENSATION_ROW_CAP_EXCEEDED");
+  const identities = descriptor.members.map((member) => JSON.stringify(member.primary_key.value));
+  if (new Set(identities).size !== identities.length) throw new Error("COMPENSATION_IDENTITY_NOT_UNIQUE");
+  if (identities.some((identity, index) => index > 0 && identities[index - 1]!.localeCompare(identity) > 0)) throw new Error("COMPENSATION_IDENTITY_ORDER_INVALID");
+  const allowed = new Set(job.allowed_columns);
+  if (descriptor.allowed_columns.length !== allowed.size || descriptor.allowed_columns.some((column) => !allowed.has(column))) throw new Error("COMPENSATION_ALLOWLIST_MISMATCH");
+  for (const member of descriptor.members) {
+    if (member.primary_key.column !== job.target.primary_key.column) throw new Error("COMPENSATION_PRIMARY_KEY_MISMATCH");
+    if (job.operation === "restore_update") {
+      if (!descriptor.version_advance || descriptor.version_advance.strategy !== "integer_increment") throw new Error("COMPENSATION_VERSION_GUARD_REQUIRED");
+      const expectedVersion = member.expected_state[descriptor.version_advance.column];
+      if (typeof expectedVersion !== "number") throw new Error("COMPENSATION_VERSION_GUARD_REQUIRED");
+      if (!member.restore_values || Object.keys(member.restore_values).length === 0) throw new Error("COMPENSATION_RESTORE_VALUES_REQUIRED");
+      for (const column of Object.keys(member.restore_values)) if (!allowed.has(column)) throw new Error("COMPENSATION_COLUMN_NOT_ALLOWED");
+    } else if (job.operation === "remove_insert") {
+      if (Object.keys(member.expected_state).length === 0 || member.restore_values) throw new Error("COMPENSATION_EXPECTED_STATE_REQUIRED");
+    } else if (Object.keys(member.expected_state).length !== 0 || !member.restore_values || Object.keys(member.restore_values).length === 0) {
+      throw new Error("COMPENSATION_RESTORE_VALUES_REQUIRED");
+    }
+  }
+}
+
+/** Build the reviewed inverse of a successful compensation without reading new columns. */
+export function compensationInverseFromJob(job: CompensationWritebackJob): InverseDescriptorV1 {
+  assertCompensationJobIntegrity(job);
+  const descriptor = job.compensation;
+  const depthExhausted = descriptor.lineage.depth >= 16;
+  const lineage = depthExhausted
+    ? descriptor.lineage
+    : {
+      root_proposal_id: descriptor.lineage.root_proposal_id,
+      parent_proposal_id: job.proposal_id,
+      reverts_proposal_id: job.proposal_id,
+      depth: descriptor.lineage.depth + 1,
+    };
+  const common = {
+    schema_version: protocolVersions.inverseDescriptor,
+    availability: depthExhausted ? "best_effort_unavailable" as const : "available" as const,
+    reason_codes: depthExhausted ? ["REVERSAL_CHAIN_DEPTH_EXHAUSTED"] : [],
+    cardinality: descriptor.cardinality,
+    forward_proposal_id: job.proposal_id,
+    forward_writeback_job_id: job.job_id,
+    target: descriptor.target,
+    tenant_guard: descriptor.tenant_guard,
+    allowed_columns: descriptor.allowed_columns,
+    max_rows: descriptor.max_rows,
+    aggregate_bounds: descriptor.aggregate_bounds,
+    lineage,
+  };
+  if (job.operation === "restore_update") {
+    const version = descriptor.version_advance!;
+    return {
+      ...common,
+      operation: "restore_update",
+      members: descriptor.members.map((member) => {
+        const expectedVersion = member.expected_state[version.column];
+        const nextVersion = Number(expectedVersion) + 1;
+        return {
+          primary_key: member.primary_key,
+          expected_state: { ...member.restore_values!, [version.column]: nextVersion },
+          restore_values: Object.fromEntries(Object.entries(member.expected_state).filter(([column]) => descriptor.allowed_columns.includes(column))),
+        };
+      }),
+      version_advance: version,
+    };
+  }
+  if (job.operation === "remove_insert") {
+    return {
+      ...common,
+      operation: "restore_insert",
+      members: descriptor.members.map((member) => ({ primary_key: member.primary_key, expected_state: {}, restore_values: member.expected_state })),
+    };
+  }
+  return {
+    ...common,
+    operation: "remove_insert",
+    members: descriptor.members.map((member) => ({ primary_key: member.primary_key, expected_state: member.restore_values! })),
+  };
+}
 
 export function classifyFrozenSetReconciliation(
   job: SetWritebackJob,

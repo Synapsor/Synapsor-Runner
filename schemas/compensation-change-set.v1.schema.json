@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.compensation-change-set.v1.schema.json",
+  "title": "Synapsor Reviewed Compensation Change Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "proposal_id", "proposal_version", "action", "mode", "principal", "scope", "source", "before", "patch", "after", "compensation", "guards", "evidence", "approval", "writeback", "source_database_mutated", "integrity", "created_at"],
+  "properties": {
+    "schema_version": { "const": "synapsor.compensation-change-set.v1" },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_version": { "type": "integer", "minimum": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "mode": { "const": "review_required" },
+    "principal": { "type": "object", "additionalProperties": false, "required": ["id", "source"], "properties": { "id": { "type": "string", "minLength": 1 }, "source": { "enum": ["trusted_session", "cloud_session", "environment", "static_dev"] } } },
+    "scope": { "type": "object", "additionalProperties": false, "required": ["tenant_id", "business_object", "object_id"], "properties": { "tenant_id": { "type": "string", "minLength": 1 }, "business_object": { "type": "string", "minLength": 1 }, "object_id": { "type": "string", "minLength": 1 } } },
+    "source": { "type": "object", "additionalProperties": false, "required": ["kind", "source_id", "schema", "table", "primary_key"], "properties": { "kind": { "enum": ["external_postgres", "external_mysql"] }, "source_id": { "type": "string", "minLength": 1 }, "schema": { "$ref": "#/$defs/identifier" }, "table": { "$ref": "#/$defs/identifier" }, "primary_key": { "type": "object", "additionalProperties": false, "required": ["column"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/scalar" } } } } },
+    "before": { "$ref": "#/$defs/record" }, "patch": { "$ref": "#/$defs/record" }, "after": { "$ref": "#/$defs/record" },
+    "compensation": { "type": "object", "additionalProperties": false, "required": ["descriptor", "forward_receipt_hash"], "properties": { "descriptor": { "$ref": "inverse-descriptor.v1.schema.json" }, "forward_receipt_hash": { "$ref": "#/$defs/sha256" } } },
+    "guards": { "type": "object", "additionalProperties": false, "required": ["tenant", "allowed_columns"], "properties": { "tenant": { "$ref": "#/$defs/columnValue" }, "allowed_columns": { "type": "array", "items": { "$ref": "#/$defs/identifier" }, "maxItems": 256, "uniqueItems": true } } },
+    "evidence": { "type": "object", "required": ["bundle_id", "query_fingerprint", "items"], "properties": { "bundle_id": { "type": "string", "minLength": 1 }, "query_fingerprint": { "$ref": "#/$defs/sha256" }, "items": { "type": "array", "maxItems": 100 } } },
+    "approval": { "type": "object", "required": ["status", "mode"], "properties": { "status": { "enum": ["pending", "approved", "rejected", "canceled"] }, "mode": { "enum": ["human", "operator"] }, "required_role": { "type": "string", "minLength": 1 }, "required_approvals": { "type": "integer", "minimum": 1, "maximum": 10 } } },
+    "writeback": { "type": "object", "additionalProperties": false, "required": ["status", "mode", "executor"], "properties": { "status": { "const": "not_applied" }, "mode": { "const": "trusted_worker_required" }, "executor": { "const": "sql_update" } } },
+    "source_database_mutated": { "const": false },
+    "integrity": { "type": "object", "additionalProperties": false, "required": ["proposal_hash"], "properties": { "proposal_hash": { "$ref": "#/$defs/sha256" } } },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }, "sha256": { "type": "string", "pattern": "^sha256:.+" }, "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "record": { "type": "object", "propertyNames": { "$ref": "#/$defs/identifier" }, "additionalProperties": { "$ref": "#/$defs/scalar" }, "maxProperties": 256 },
+    "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/scalar" } } }
+  }
+}

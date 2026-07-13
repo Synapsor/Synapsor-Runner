@@ -537,6 +537,16 @@
             "$ref": "#/$defs/transition_guard"
           }
         },
+        "reversibility": {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "reviewed_inverse"
+            }
+          }
+        },
         "conflict_guard": {
           "type": "object",
           "additionalProperties": false,

@@ -1,8 +1,9 @@
 # Limitations
 
-Synapsor Runner is intentionally narrow. Version 1.3 adds guarded bounded-set
-writeback on top of single-row CRUD and explicit receipt authority; it does not
-claim Synapsor Cloud scale or an enterprise SLA.
+Synapsor Runner is intentionally narrow. Version 1.4 adds opt-in reviewed
+compensation on top of guarded bounded-set writeback, single-row CRUD, and
+explicit receipt authority; it does not claim Synapsor Cloud scale or an
+enterprise SLA.
 
 ## Supported
 
@@ -23,11 +24,16 @@ claim Synapsor Cloud scale or an enterprise SLA.
   - `synapsor.execution-receipt.v1`
   - backward-compatible operation-aware v2 change sets, jobs, and receipts
   - bounded-set v3 change sets, jobs, and receipts
+  - compensation change sets and protocol-v4 jobs/receipts with bounded inverse
+    descriptors
   - `synapsor.runner-registration.v1`
 - Guarded single-row `INSERT`, `UPDATE`, and `DELETE` for Postgres and MySQL.
 - Fixed-predicate set `UPDATE`/`DELETE` and exact-review batch `INSERT` with
   mandatory row/value caps, a hard 100-row ceiling, human approval, frozen
   members, atomic apply, and exact receipts.
+- Opt-in reviewed compensation for direct SQL UPDATE, INSERT, soft-delete, and
+  exact frozen sets. Revert is a new operator proposal with independent
+  approval and a fresh conflict guard.
 - Atomic source receipts with precreated or auto-migrated tables, or
   zero-source-schema Runner-ledger receipts with explicit reconciliation.
 - App/API handler writeback through approved `http_handler` executors.
@@ -67,7 +73,9 @@ truth for the model-facing tools.
 - Full Synapsor workflow/DAG execution.
 - `CREATE AGENT WORKFLOW` or hosted Synapsor SQL generation.
 - Auto-merge or settlement policy semantics.
-- Automatic rollback or time travel for external database writes.
+- Automatic rollback, database time travel, or model-facing revert.
+- Inferred compensation for app-owned handlers or external effects.
+- General restoration of hard-deleted rows, cascades, or trigger side effects.
 - Model-callable approval or commit tools.
 - Generic MCP firewall behavior.
 - Prompt-injection prevention.
@@ -100,8 +108,8 @@ not a hosted central evidence service, organization RBAC/SSO, compliance
 retention system, or unbounded search engine. Each bridge operation serializes
 through an advisory lock and fails above configured `max_entries`.
 
-Only homogeneous 1.3 fleet operation is claimed for protocol-v3 bounded-set
-jobs. Mixed-minor v2/v3 rolling writeback is not claimed.
+Only homogeneous 1.4 fleet operation is claimed for protocol-v4 compensation
+jobs. Mixed-minor v3/v4 rolling compensation is not claimed.
 See [Running A Small Runner
 Fleet](running-a-runner-fleet.md).
 

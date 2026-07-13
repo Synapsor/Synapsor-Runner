@@ -303,6 +303,11 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("uploads to the authenticated Cloud registry");
     expect(output.join("")).not.toContain("until a real Cloud registry endpoint is wired");
 
+    output.length = 0;
+    await expect(main(["revert", "--help"])).resolves.toBe(0);
+    expect(output.join("")).toContain("Create a new review-required compensation proposal");
+    expect(output.join("")).toContain("never exposed as a model-facing MCP tool");
+
     const errors: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
       errors.push(String(chunk));
@@ -332,7 +337,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.3.0");
+      expect(output.join("").trim()).toBe("1.4.0");
     }
   });
 
@@ -1142,9 +1147,9 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.3.0",
-        "@synapsor/dsl": "1.3.0",
-        "@synapsor/runner": "1.3.0",
+        "@synapsor/spec": "1.4.0",
+        "@synapsor/dsl": "1.4.0",
+        "@synapsor/runner": "1.4.0",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -4632,6 +4637,127 @@ END
     expect(text).toContain("synapsor-runner replay wrp_cli");
   });
 
+  it("creates a pending compensation proposal without mutating the source", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-revert-"));
+    const storePath = path.join(tempDir, "local.db");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const forward: any = {
+      schema_version: "synapsor.change-set.v2",
+      proposal_id: "wrp_reversible_cli",
+      proposal_version: 1,
+      action: "billing.adjust_credit",
+      operation: "single_row_update",
+      mode: "review_required",
+      principal: { id: "support_agent_17", source: "trusted_session" },
+      scope: { tenant_id: "acme", business_object: "credits", object_id: "CR-1" },
+      source: { kind: "external_postgres", source_id: "src_pg_acme", schema: "public", table: "credits", primary_key: { column: "id", value: "CR-1" } },
+      before: { amount_cents: 100, version: 7 },
+      patch: { amount_cents: 2500 },
+      after: { amount_cents: 2500, version: 8 },
+      guards: {
+        tenant: { column: "tenant_id", value: "acme" },
+        allowed_columns: ["amount_cents"],
+        expected_version: { column: "version", value: 7 },
+        version_advance: { column: "version", strategy: "integer_increment" },
+      },
+      reversibility: {
+        mode: "reviewed_inverse",
+        lineage: { root_proposal_id: "wrp_reversible_cli", parent_proposal_id: "wrp_reversible_cli", reverts_proposal_id: "wrp_reversible_cli", depth: 1 },
+      },
+      evidence: { bundle_id: "ev_reversible_cli", query_fingerprint: "sha256:forward", items: [] },
+      approval: { status: "pending", mode: "human", required_role: "support_lead", required_approvals: 2 },
+      writeback: { status: "not_applied", mode: "trusted_worker_required", executor: "sql_update" },
+      source_database_mutated: false,
+      integrity: { proposal_hash: "sha256:reversible-cli" },
+      created_at: "2026-07-13T00:00:00Z",
+    };
+    const store = new ProposalStore(storePath);
+    store.createProposal(forward);
+    store.approveProposal(forward.proposal_id, { approver: "reviewer_a", proposal_hash: forward.integrity.proposal_hash, proposal_version: 1 });
+    store.approveProposal(forward.proposal_id, { approver: "reviewer_b", proposal_hash: forward.integrity.proposal_hash, proposal_version: 1 });
+    const job = store.createWritebackJobFromProposal(forward.proposal_id);
+    if (job.schema_version !== "synapsor.writeback-job.v2" || !job.inverse_capture) throw new Error("expected reversible v2 job");
+    store.recordExecutionReceipt({
+      schema_version: "synapsor.execution-receipt.v2",
+      writeback_job_id: job.writeback_job_id,
+      proposal_id: forward.proposal_id,
+      proposal_hash: forward.integrity.proposal_hash,
+      approval_id: "approval_forward",
+      runner_id: "runner_test",
+      operation: "single_row_update",
+      receipt_authority: "source_db",
+      status: "applied",
+      target: { source_id: "src_pg_acme", schema: "public", table: "credits", identity: [{ column: "id", value: "CR-1" }] },
+      rows_affected: 1,
+      idempotency_key: job.idempotency_key,
+      before_digest: "sha256:before",
+      after_digest: "sha256:after",
+      inverse: job.inverse_capture,
+      source_database_mutated: true,
+      safe_outcome_code: "APPLIED",
+      executed_at: "2026-07-13T00:01:00Z",
+      receipt_hash: "sha256:forward-receipt",
+    });
+    store.close();
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: storePath },
+      sources: { src_pg_acme: { engine: "postgres", read_url_env: "READ_URL", write_url_env: "WRITE_URL" } },
+      trusted_context: { provider: "static_dev", values: { tenant_id: "acme", principal: "local_operator" } },
+      capabilities: [{
+        name: "billing.adjust_credit",
+        kind: "proposal",
+        source: "src_pg_acme",
+        target: { schema: "public", table: "credits", primary_key: "id", tenant_key: "tenant_id" },
+        args: { credit_id: { type: "string", required: true }, amount_cents: { type: "number", required: true } },
+        lookup: { id_from_arg: "credit_id" },
+        visible_columns: ["id", "tenant_id", "amount_cents", "version"],
+        patch: { amount_cents: { from_arg: "amount_cents" } },
+        allowed_columns: ["amount_cents"],
+        conflict_guard: { column: "version" },
+        operation: { kind: "update", version_advance: { column: "version", strategy: "integer_increment" } },
+        approval: { mode: "human", required_role: "support_lead", required_approvals: 2 },
+        writeback: { mode: "direct_sql" },
+        reversibility: { mode: "reviewed_inverse" },
+      }],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => { output.push(String(chunk)); return true; });
+
+    await expect(main(["tools", "preview", "--config", configPath, "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("reversibility: reviewed compensation proposal available after an unambiguous applied receipt");
+
+    output.length = 0;
+    await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+    const doctor = JSON.parse(output.join(""));
+    expect(doctor.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "capability:billing.adjust_credit:reversibility",
+        level: "pass",
+        message: expect.stringContaining("revert creates a new approval-required proposal"),
+      }),
+    ]));
+
+    output.length = 0;
+    await expect(main(["revert", forward.proposal_id, "--actor", "support_lead", "--config", configPath, "--store", storePath, "--json"])).resolves.toBe(0);
+
+    const reopened = new ProposalStore(storePath);
+    const compensation = reopened.listProposals().find((proposal) => proposal.change_set.schema_version === "synapsor.compensation-change-set.v1");
+    expect(compensation).toMatchObject({ state: "pending_review", source_database_mutated: false });
+    expect(compensation?.change_set.approval).toMatchObject({ required_role: "support_lead", required_approvals: 2 });
+    expect(reopened.receipts(compensation!.proposal_id)).toEqual([]);
+    expect(reopened.replay(compensation!.proposal_id).evidence).toHaveLength(1);
+    expect(reopened.operationalMetrics({ capability: "billing.adjust_credit" })).toEqual([
+      expect.objectContaining({ proposals: 2, applies: 1, revert_proposals: 1, revert_applies: 0 }),
+    ]);
+    reopened.close();
+    expect(output.join("")).toContain("synapsor.compensation-change-set.v1");
+
+    await expect(main(["revert", forward.proposal_id, "--actor", "support_lead", "--config", configPath, "--store", storePath])).rejects.toThrow(/REVERSAL_ALREADY_PROPOSED/);
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
   it("enforces a signed approver role and binds the verified identity into approval and apply history", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-signed-identity-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -4958,6 +5084,8 @@ END
         applies: 1,
         conflicts: 0,
         failures: 0,
+        revert_proposals: 0,
+        revert_applies: 0,
       }],
     });
   });

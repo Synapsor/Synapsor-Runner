@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Synapsor writeback job v1",
+  "title": "Synapsor legacy writeback job v1",
+  "description": "Compatibility schema for protocol_version 1.0 only. Current guarded CRUD, bounded-set, and compensation schemas are versioned under the repository root schemas/ directory.",
   "type": "object",
   "required": ["protocol_version", "job_id", "proposal_id", "approval_id", "source_id", "engine", "target", "allowed_columns", "patch", "conflict_guard", "idempotency_key", "lease_expires_at"],
   "properties": {
@@ -41,4 +42,3 @@
     "lease_expires_at": {}
   }
 }
-

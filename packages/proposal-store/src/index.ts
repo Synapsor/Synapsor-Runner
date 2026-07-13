@@ -11,10 +11,13 @@ import {
   type ExecutionReceipt,
   type ExecutionReceiptV2,
   type ExecutionReceiptV3,
+  type ExecutionReceiptV4,
+  type InverseDescriptorV1,
   type WritebackJob,
   type WritebackJobV1,
   type WritebackJobV2,
   type WritebackJobV3,
+  type WritebackJobV4,
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 
@@ -63,7 +66,7 @@ export type ProposalEvent = {
 
 export type OperatorDecision = {
   schema_version: "synapsor.operator-decision.v1";
-  action: "approve" | "reject" | "apply" | "reconcile" | "worker_requeue" | "worker_discard";
+  action: "approve" | "reject" | "apply" | "revert" | "reconcile" | "worker_requeue" | "worker_discard";
   proposal_id: string;
   proposal_version: number;
   proposal_hash: string;
@@ -144,7 +147,7 @@ export type StoredWritebackIntent = {
   proposal_id: string;
   proposal_hash: string;
   runner_id: string;
-  operation: "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert";
+  operation: "single_row_update" | "single_row_insert" | "single_row_delete" | "set_update" | "set_delete" | "batch_insert" | "restore_update" | "remove_insert" | "restore_insert";
   status: WritebackIntentStatus;
   intent: WritebackJob;
   result?: WritebackResult;
@@ -160,7 +163,7 @@ export type WritebackIntentClaim =
 
 export type ReconcileWritebackIntentInput = {
   intent_id: string;
-  receipt: ExecutionReceiptV2 | ExecutionReceiptV3;
+  receipt: ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4;
   actor: string;
   reason: string;
   observation: Record<string, unknown>;
@@ -331,6 +334,8 @@ export type OperationalMetricRow = {
   applies: number;
   conflicts: number;
   failures: number;
+  revert_proposals: number;
+  revert_applies: number;
 };
 
 export type FleetEventMetricRow = {
@@ -2066,7 +2071,7 @@ export class ProposalStore {
     const intent = this.requireWritebackIntent(input.intent_id);
     const proposal = this.requireProposal(intent.proposal_id);
     const receipt = parseExecutionReceipt(input.receipt);
-    if (receipt.schema_version !== protocolVersions.executionReceiptV2 && receipt.schema_version !== protocolVersions.executionReceiptV3) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "reconciliation requires an execution-receipt v2 or v3");
+    if (receipt.schema_version !== protocolVersions.executionReceiptV2 && receipt.schema_version !== protocolVersions.executionReceiptV3 && receipt.schema_version !== protocolVersions.executionReceiptV4) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "reconciliation requires an execution-receipt v2, v3, or v4");
     if (!input.reason.trim()) throw new ProposalStoreError("RECONCILIATION_REASON_REQUIRED", "reconciliation requires an operator reason");
     if (intent.status !== "reconciliation_required" && intent.status !== "applying") {
       throw new ProposalStoreError("WRITEBACK_INTENT_NOT_RECONCILABLE", `writeback intent ${intent.intent_id} is ${intent.status}`);
@@ -2185,7 +2190,7 @@ export class ProposalStore {
     });
   }
 
-  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 {
+  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 {
     const proposal = this.requireProposal(proposalId);
     assertWritebackAllowed(proposal, "converted into a writeback job");
     if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
@@ -2224,7 +2229,8 @@ export class ProposalStore {
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
       lease,
     } as const;
-    const job: WritebackJobV1 | WritebackJobV2 | WritebackJobV3 = changeSet.schema_version === protocolVersions.changeSet
+    const inverseCapture = inverseCaptureFromChangeSet(changeSet, writebackJobId);
+    const job: WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 = changeSet.schema_version === protocolVersions.changeSet
       ? {
         schema_version: protocolVersions.writebackJob,
         ...common,
@@ -2238,7 +2244,8 @@ export class ProposalStore {
         ...common,
         target: { schema: proposal.source_schema, table: proposal.source_table, primary_key: changeSet.source.primary_key },
         mutation: writebackMutationFromChangeSet(changeSet),
-      } : {
+        ...(inverseCapture ? { inverse_capture: inverseCapture } : {}),
+      } : changeSet.schema_version === protocolVersions.changeSetV3 ? {
         schema_version: protocolVersions.writebackJobV3,
         ...common,
         operation: changeSet.operation,
@@ -2246,6 +2253,31 @@ export class ProposalStore {
         patch: changeSet.patch,
         ...(changeSet.guards.version_advance ? { version_advance: changeSet.guards.version_advance } : {}),
         frozen_set: changeSet.frozen_set,
+        ...(inverseCapture ? { inverse_capture: inverseCapture } : {}),
+      } : {
+        schema_version: protocolVersions.writebackJobV4,
+        writeback_job_id: writebackJobId,
+        proposal_id: proposal.proposal_id,
+        proposal_version: proposal.proposal_version,
+        proposal_hash: proposal.proposal_hash,
+        runner_scope: { project_id: options.project_id ?? "local", source_id: proposal.source_id },
+        engine,
+        operation: changeSet.compensation.descriptor.operation,
+        target: {
+          schema: proposal.source_schema,
+          table: proposal.source_table,
+          primary_key: {
+            column: changeSet.source.primary_key.column,
+            ...(changeSet.compensation.descriptor.members.length === 1 ? { value: changeSet.compensation.descriptor.members[0]!.primary_key.value } : {}),
+          },
+        },
+        tenant_guard: changeSet.guards.tenant,
+        allowed_columns: changeSet.guards.allowed_columns,
+        patch: {},
+        compensation: changeSet.compensation.descriptor,
+        forward_receipt_hash: changeSet.compensation.forward_receipt_hash,
+        idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
+        lease,
       };
     this.transaction(() => {
       if (proposal.state === "approved") {
@@ -2680,13 +2712,15 @@ export class ProposalStore {
       const key = `${tenantId}\u0000${capability}`;
       let row = rows.get(key);
       if (!row) {
-        row = { tenant_id: tenantId, capability, proposals: 0, approvals: 0, rejections: 0, applies: 0, conflicts: 0, failures: 0 };
+        row = { tenant_id: tenantId, capability, proposals: 0, approvals: 0, rejections: 0, applies: 0, conflicts: 0, failures: 0, revert_proposals: 0, revert_applies: 0 };
         rows.set(key, row);
       }
       return row;
     };
     for (const proposal of this.listProposals({ tenant: filters.tenant, capability: filters.capability })) {
-      ensure(proposal.tenant_id, proposal.action).proposals += 1;
+      const row = ensure(proposal.tenant_id, proposal.action);
+      row.proposals += 1;
+      if (proposal.change_set.schema_version === protocolVersions.compensationChangeSet) row.revert_proposals += 1;
     }
     const approvalRows = this.db.prepare(`
       SELECT p.tenant_id, p.action, a.status, COUNT(*) AS count
@@ -2701,7 +2735,8 @@ export class ProposalStore {
       if (raw.status === "rejected") row.rejections += Number(raw.count);
     }
     const receiptRows = this.db.prepare(`
-      SELECT p.tenant_id, p.action, r.status, COUNT(*) AS count
+      SELECT p.tenant_id, p.action, r.status, COUNT(*) AS count,
+        SUM(CASE WHEN json_extract(p.change_set_json, '$.schema_version') = 'synapsor.compensation-change-set.v1' THEN 1 ELSE 0 END) AS revert_count
       FROM writeback_receipts r JOIN proposals p ON p.proposal_id = r.proposal_id
       WHERE (? IS NULL OR p.tenant_id = ?) AND (? IS NULL OR p.action = ?)
       GROUP BY p.tenant_id, p.action, r.status
@@ -2713,6 +2748,7 @@ export class ProposalStore {
       if (raw.status === "applied" || raw.status === "already_applied") row.applies += count;
       else if (raw.status === "conflict") row.conflicts += count;
       else if (raw.status === "failed") row.failures += count;
+      if (raw.status === "applied" || raw.status === "already_applied") row.revert_applies += Number(raw.revert_count ?? 0);
     }
     return [...rows.values()].sort((left, right) => left.tenant_id.localeCompare(right.tenant_id) || left.capability.localeCompare(right.capability));
   }
@@ -3382,7 +3418,25 @@ function stateFromReceipt(receipt: ExecutionReceipt): LocalProposalState {
   return "failed";
 }
 
-function receiptToWritebackResult(receipt: ExecutionReceiptV2 | ExecutionReceiptV3): WritebackResult {
+function receiptToWritebackResult(receipt: ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4): WritebackResult {
+  if (receipt.schema_version === protocolVersions.executionReceiptV4) {
+    return parseWritebackResult({
+      protocol_version: protocolVersions.normalizedWritebackJobV4,
+      job_id: receipt.writeback_job_id,
+      runner_id: receipt.runner_id,
+      operation: receipt.operation,
+      receipt_authority: receipt.receipt_authority,
+      status: receipt.status,
+      affected_rows: receipt.rows_affected,
+      target_identities: receipt.target.identities,
+      member_effects: receipt.member_effects,
+      inverse: receipt.inverse,
+      result_hash: receipt.receipt_hash,
+      completed_at: receipt.executed_at,
+      error_code: receipt.safe_error_code,
+      intent_id: receipt.reconciliation?.intent_id,
+    });
+  }
   if (receipt.schema_version === protocolVersions.executionReceiptV3) {
     return parseWritebackResult({
       protocol_version: protocolVersions.normalizedWritebackJobV3,
@@ -3395,6 +3449,7 @@ function receiptToWritebackResult(receipt: ExecutionReceiptV2 | ExecutionReceipt
       target_identities: receipt.target.identities,
       set_digest: receipt.target.set_digest,
       member_effects: receipt.member_effects,
+      inverse: receipt.inverse,
       result_hash: receipt.receipt_hash,
       completed_at: receipt.executed_at,
       error_code: receipt.safe_error_code,
@@ -3413,11 +3468,127 @@ function receiptToWritebackResult(receipt: ExecutionReceiptV2 | ExecutionReceipt
     before_digest: receipt.before_digest,
     after_digest: receipt.after_digest,
     tombstone_digest: receipt.tombstone_digest,
+    inverse: receipt.inverse,
     result_hash: receipt.receipt_hash,
     completed_at: receipt.executed_at,
     error_code: receipt.safe_error_code,
     intent_id: receipt.reconciliation?.intent_id,
   });
+}
+
+function inverseCaptureFromChangeSet(changeSet: ChangeSet, writebackJobId: string): InverseDescriptorV1 | undefined {
+  if (changeSet.schema_version !== protocolVersions.changeSetV2 && changeSet.schema_version !== protocolVersions.changeSetV3) return undefined;
+  if (!changeSet.reversibility || changeSet.reversibility.mode !== "reviewed_inverse") return undefined;
+  const base = {
+    schema_version: protocolVersions.inverseDescriptor,
+    cardinality: changeSet.schema_version === protocolVersions.changeSetV3 ? "set" as const : "single" as const,
+    forward_proposal_id: changeSet.proposal_id,
+    forward_writeback_job_id: writebackJobId,
+    target: {
+      source_id: changeSet.source.source_id,
+      schema: changeSet.source.schema,
+      table: changeSet.source.table,
+      primary_key_column: changeSet.source.primary_key.column,
+    },
+    tenant_guard: changeSet.guards.tenant,
+    allowed_columns: changeSet.guards.allowed_columns,
+    lineage: changeSet.reversibility.lineage,
+  } as const;
+  if (changeSet.schema_version === protocolVersions.changeSetV2) {
+    const primaryValue = changeSet.source.primary_key.value;
+    if (primaryValue === undefined) throw new ProposalStoreError("REVERSIBILITY_PRIMARY_KEY_REQUIRED", `reversible proposal ${changeSet.proposal_id} has no deterministic primary-key identity`);
+    if (changeSet.operation === "single_row_delete") {
+      return {
+        ...base,
+        availability: "best_effort_unavailable",
+        reason_codes: ["HARD_DELETE_HIDDEN_STATE_NOT_RESTORABLE", "HARD_DELETE_SIDE_EFFECTS_NOT_REVERSIBLE"],
+        operation: "restore_insert",
+        members: [{ primary_key: { column: changeSet.source.primary_key.column, value: primaryValue }, expected_state: {} }],
+        max_rows: 1,
+        aggregate_bounds: [],
+      };
+    }
+    if (changeSet.operation === "single_row_insert") {
+      return {
+        ...base,
+        availability: "available",
+        reason_codes: [],
+        operation: "remove_insert",
+        members: [{
+          primary_key: { column: changeSet.source.primary_key.column, value: primaryValue },
+          expected_state: selectReviewedState(changeSet.after, [changeSet.source.primary_key.column, changeSet.guards.tenant.column, ...changeSet.guards.allowed_columns]),
+        }],
+        max_rows: 1,
+        aggregate_bounds: [],
+      };
+    }
+    const versionAdvance = changeSet.guards.version_advance;
+    if (!versionAdvance || versionAdvance.strategy !== "integer_increment") throw new ProposalStoreError("REVERSIBILITY_INTEGER_VERSION_REQUIRED", `reversible proposal ${changeSet.proposal_id} requires integer version advancement`);
+    return {
+      ...base,
+      availability: "available",
+      reason_codes: [],
+      operation: "restore_update",
+      members: [{
+        primary_key: { column: changeSet.source.primary_key.column, value: primaryValue },
+        expected_state: selectReviewedState(changeSet.after, [...changeSet.guards.allowed_columns, versionAdvance.column]),
+        restore_values: selectReviewedState(changeSet.before, changeSet.guards.allowed_columns),
+      }],
+      max_rows: 1,
+      aggregate_bounds: [],
+      version_advance: versionAdvance,
+    };
+  }
+  if (changeSet.operation === "set_delete") {
+    return {
+      ...base,
+      availability: "best_effort_unavailable",
+      reason_codes: ["HARD_DELETE_HIDDEN_STATE_NOT_RESTORABLE", "HARD_DELETE_SIDE_EFFECTS_NOT_REVERSIBLE"],
+      operation: "restore_insert",
+      members: changeSet.frozen_set.members.map((member) => ({ primary_key: member.primary_key, expected_state: {} })),
+      max_rows: changeSet.frozen_set.max_rows,
+      aggregate_bounds: changeSet.frozen_set.aggregate_bounds,
+    };
+  }
+  if (changeSet.operation === "batch_insert") {
+    return {
+      ...base,
+      availability: "available",
+      reason_codes: [],
+      operation: "remove_insert",
+      members: changeSet.frozen_set.members.map((member) => ({
+        primary_key: member.primary_key,
+        expected_state: selectReviewedState(member.after, [changeSet.source.primary_key.column, changeSet.guards.tenant.column, ...changeSet.guards.allowed_columns]),
+      })),
+      max_rows: changeSet.frozen_set.max_rows,
+      aggregate_bounds: changeSet.frozen_set.aggregate_bounds,
+    };
+  }
+  const versionAdvance = changeSet.guards.version_advance;
+  if (!versionAdvance || versionAdvance.strategy !== "integer_increment") throw new ProposalStoreError("REVERSIBILITY_INTEGER_VERSION_REQUIRED", `reversible proposal ${changeSet.proposal_id} requires integer version advancement`);
+  return {
+    ...base,
+    availability: "available",
+    reason_codes: [],
+    operation: "restore_update",
+    members: changeSet.frozen_set.members.map((member) => ({
+      primary_key: member.primary_key,
+      expected_state: selectReviewedState(member.after, [...changeSet.guards.allowed_columns, versionAdvance.column]),
+      restore_values: selectReviewedState(member.before, changeSet.guards.allowed_columns),
+    })),
+    max_rows: changeSet.frozen_set.max_rows,
+    aggregate_bounds: changeSet.frozen_set.aggregate_bounds,
+    version_advance: versionAdvance,
+  };
+}
+
+function selectReviewedState(value: Record<string, unknown>, columns: string[]): Record<string, string | number | boolean | null> {
+  const selected: Record<string, string | number | boolean | null> = {};
+  for (const column of [...new Set(columns)].sort()) {
+    const item = value[column];
+    if (item === null || typeof item === "string" || typeof item === "number" || typeof item === "boolean") selected[column] = item;
+  }
+  return selected;
 }
 
 function writebackMutationFromChangeSet(changeSet: Extract<ChangeSet, { schema_version: "synapsor.change-set.v2" }>): WritebackJobV2["mutation"] {
@@ -3446,8 +3617,8 @@ function writebackMutationFromChangeSet(changeSet: Extract<ChangeSet, { schema_v
 }
 
 function conflictGuardFromChangeSet(changeSet: ChangeSet): WritebackJobV1["conflict_guard"] {
-  if (changeSet.schema_version === protocolVersions.changeSetV3) return { kind: "none" };
-  const guard = changeSet.guards.expected_version;
+  if (changeSet.schema_version === protocolVersions.changeSetV3 || changeSet.schema_version === protocolVersions.compensationChangeSet) return { kind: "none" };
+  const guard = "expected_version" in changeSet.guards ? changeSet.guards.expected_version : undefined;
   if (!guard) return { kind: "none" };
   if (guard.column === "__row_hash") {
     return { kind: "row_hash", expected_hash: String(guard.value) };

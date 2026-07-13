@@ -188,7 +188,7 @@ describe("public protocol fixtures", () => {
     };
     expect(manifest.schema_version).toBe("synapsor.protocol-manifest.v1");
     expect(manifest.hash_algorithm).toBe("sha256");
-    expect(manifest.artifacts).toHaveLength(28);
+    expect(manifest.artifacts).toHaveLength(35);
     for (const artifact of manifest.artifacts) {
       const file = artifact.kind === "schema"
         ? path.resolve(here, "../../../schemas", artifact.name)
@@ -327,6 +327,43 @@ describe("public protocol fixtures", () => {
     const incompleteReceipt = v3Receipt();
     incompleteReceipt.member_effects.pop();
     expect(() => parseExecutionReceipt(incompleteReceipt)).toThrow(/identify every affected member/i);
+  });
+
+  it("parses reviewed compensation proposals, v4 jobs, and receipts", () => {
+    const changeSet = parseChangeSet(fixture("compensation-change-set.update.v1.json"));
+    expect(changeSet).toMatchObject({
+      schema_version: protocolVersions.compensationChangeSet,
+      source_database_mutated: false,
+      compensation: { descriptor: { operation: "restore_update", cardinality: "single" } },
+    });
+
+    const job = parseWritebackJob(fixture("writeback-job.compensation-update.v4.json"));
+    expect(job).toMatchObject({
+      protocol_version: protocolVersions.normalizedWritebackJobV4,
+      operation: "restore_update",
+      compensation: { lineage: { depth: 1 } },
+    });
+
+    const receipt = parseExecutionReceipt(fixture("execution-receipt.compensation-update-applied.v4.json"));
+    expect(receipt).toMatchObject({
+      schema_version: protocolVersions.executionReceiptV4,
+      status: "applied",
+      inverse: { lineage: { depth: 2 } },
+    });
+  });
+
+  it("rejects compensation authority drift and successful receipts without an inverse", () => {
+    const mismatched = fixture("writeback-job.compensation-update.v4.json") as Record<string, unknown>;
+    expect(() => parseWritebackJob({ ...mismatched, operation: "remove_insert" })).toThrow(/operation mismatch|must match descriptor/i);
+
+    const receipt = fixture("execution-receipt.compensation-update-applied.v4.json") as Record<string, unknown>;
+    const { inverse: _inverse, ...withoutInverse } = receipt;
+    expect(() => parseExecutionReceipt(withoutInverse)).toThrow(/requires its own inverse/i);
+
+    const descriptor = (mismatched.compensation as { members: Array<{ primary_key: { value: string } }> });
+    const duplicate = structuredClone(mismatched) as typeof mismatched;
+    (duplicate.compensation as typeof descriptor).members.push(structuredClone(descriptor.members[0]!));
+    expect(() => parseWritebackJob(duplicate)).toThrow(/primary keys must be unique/i);
   });
 
   it("keeps credentials and unrestricted SQL out of protocol fixtures", () => {
