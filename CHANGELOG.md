@@ -1,6 +1,19 @@
 # Changelog
 
-## 1.1.0 (prepared, not published)
+## 1.1.1 (prepared, not published)
+
+### Resource Read Authorization
+
+- Reauthorizes local MCP proposal, evidence, and replay reads against the
+  owning capability's trusted tenant and principal before returning content.
+- Returns the same generic `RESOURCE_NOT_FOUND` result for missing resources,
+  cross-tenant access, cross-principal access, and incomplete legacy ownership
+  metadata so a leaked handle does not become bearer authority.
+- Adds shared-store and Streamable HTTP regressions proving owner access still
+  works while cross-session resource reads fail closed.
+- Stages only `@synapsor/runner@1.1.1`; canonical Spec and DSL remain `1.1.0`.
+
+## 1.1.0
 
 ### Fleet Safety And Operations
 

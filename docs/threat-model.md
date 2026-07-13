@@ -22,7 +22,10 @@ Runner is designed to protect the model-facing database boundary:
   receipt/replay recording;
 - app-owned executors are called only after approval outside MCP;
 - local evidence, query audit, proposal, receipt, and replay records are
-  inspectable without rerunning side effects.
+  inspectable without rerunning side effects;
+- model-facing proposal, evidence, and replay resource reads re-resolve the
+  owning capability context and require the same trusted tenant and principal;
+  opaque handles are identifiers, not authorization.
 - shared-ledger mutations, reviewer decisions, worker claims, and fleet-wide
   rate buckets are serialized/atomic within one configured Postgres schema.
 

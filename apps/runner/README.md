@@ -161,6 +161,9 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 - [Conformance fixtures](docs/conformance.md) prove trusted context, scoped
   reads, kept-out fields, proposal boundaries, approval, receipts, and replay
   behavior rather than only validating JSON shape.
+- MCP proposal, evidence, and replay handles are references rather than bearer
+  authority: resource reads re-check the owning tenant and principal against
+  the current trusted session.
 - `corepack pnpm test:live-apply` runs disposable Postgres and MySQL scenarios.
   It proves source rows stay unchanged before approval, guarded writeback
   applies once, idempotent retry does not duplicate the effect, and a stale row

@@ -59,6 +59,10 @@ idempotency boundary for effects.
 - Model-callable approval: approval/commit tools are not exposed to MCP clients by default.
 - Claims/environment confusion: an `http_claims` server fails before serving
   if a capability resolves an environment/static contract context.
+- Leaked local resource handle: proposal, evidence, and replay reads resolve
+  the owning capability context again and require the same trusted tenant and
+  principal; missing or mismatched ownership returns the same generic
+  `RESOURCE_NOT_FOUND` response.
 - JWT algorithm/key confusion: networked sessions use an explicit RS256/ES256
   allowlist, issuer/audience/time checks, `kid`, and bounded public-key/JWKS
   loading.
@@ -98,6 +102,8 @@ idempotency boundary for effects.
   configured `max_entries` safety bound.
 - Use verified `signed_key` or `jwt_oidc` reviewers for production-like shared
   queues; `dev_env` is unverified.
+- Treat proposal/evidence/replay handles as identifiers, not authorization;
+  preserve verified per-session context on every networked resource read.
 
 ## Release Blockers
 

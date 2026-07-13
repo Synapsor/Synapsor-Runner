@@ -859,6 +859,75 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("reauthorizes proposal, evidence, and replay resources by tenant and principal", async () => {
+    const claimsConfig = structuredClone(config);
+    claimsConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    claimsConfig.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+    };
+    const backing = new ProposalStore();
+    const sharedStore = runtimeStoreAdapter(backing);
+    const replay = vi.spyOn(sharedStore, "replay");
+    const owner = createMcpRuntime(claimsConfig, {
+      store: sharedStore,
+      trustedContext: { tenant_id: "acme", principal: "alice", provenance: "http_claims" },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const wrongTenant = createMcpRuntime(claimsConfig, {
+      store: sharedStore,
+      trustedContext: { tenant_id: "globex", principal: "alice", provenance: "http_claims" },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const wrongPrincipal = createMcpRuntime(claimsConfig, {
+      store: sharedStore,
+      trustedContext: { tenant_id: "acme", principal: "mallory", provenance: "http_claims" },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      const result = await owner.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        reason: "approved support waiver",
+      });
+      const resources = [
+        String(result.proposal_resource),
+        String(result.evidence_resource),
+        String(result.replay_resource),
+      ];
+
+      for (const uri of resources) {
+        await expect(wrongTenant.readResource(uri)).rejects.toMatchObject({
+          code: "RESOURCE_NOT_FOUND",
+          message: "Synapsor resource not found.",
+        });
+        await expect(wrongPrincipal.readResource(uri)).rejects.toMatchObject({
+          code: "RESOURCE_NOT_FOUND",
+          message: "Synapsor resource not found.",
+        });
+      }
+      await expect(owner.readResource("synapsor://evidence/ev_missing")).rejects.toMatchObject({
+        code: "RESOURCE_NOT_FOUND",
+        message: "Synapsor resource not found.",
+      });
+      expect(replay).not.toHaveBeenCalled();
+
+      await expect(owner.readResource(String(result.proposal_resource))).resolves.toHaveProperty("proposal");
+      await expect(owner.readResource(String(result.evidence_resource))).resolves.toHaveProperty("evidence_bundle_id", result.evidence_bundle_id);
+      await expect(owner.readResource(String(result.replay_resource))).resolves.toHaveProperty("proposal.proposal_id", result.proposal_id);
+      expect(replay).toHaveBeenCalledTimes(1);
+    } finally {
+      await owner.close();
+      await wrongTenant.close();
+      await wrongPrincipal.close();
+      backing.close();
+    }
+  });
+
   it("runs proposal flow through the runtime store contract, not the concrete SQLite store type", async () => {
     const backing = new ProposalStore();
     const runtime = createMcpRuntime(config, {
@@ -1648,14 +1717,18 @@ describe("local Synapsor MCP runtime", () => {
     const expires = Math.floor(Date.now() / 1000) + 600;
     const acmeToken = signedSessionToken(secret, { sub: "alice", tenant_id: "acme", iss: "https://identity.example", aud: "synapsor-runner", exp: expires });
     const globexToken = signedSessionToken(secret, { sub: "bob", tenant_id: "globex", iss: "https://identity.example", aud: "synapsor-runner", exp: expires });
+    const acmeOtherToken = signedSessionToken(secret, { sub: "mallory", tenant_id: "acme", iss: "https://identity.example", aud: "synapsor-runner", exp: expires });
     const acmeTransport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${acmeToken}` } } });
     const globexTransport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${globexToken}` } } });
+    const acmeOtherTransport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${acmeOtherToken}` } } });
     const acmeClient = new Client({ name: "acme-agent", version: "0.0.0" });
     const globexClient = new Client({ name: "globex-agent", version: "0.0.0" });
+    const acmeOtherClient = new Client({ name: "acme-other-agent", version: "0.0.0" });
     try {
       await acmeClient.connect(acmeTransport);
       const acme = await acmeClient.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-A" } });
       expect(acme.structuredContent).toMatchObject({ trusted_context: { tenant_id: "acme", principal: "alice", provenance: "http_claims" } });
+      const acmeEvidenceUri = String((acme.structuredContent as Record<string, unknown>).evidence_resource);
 
       const mismatch = await fetch(server.url, {
         method: "POST",
@@ -1672,6 +1745,10 @@ describe("local Synapsor MCP runtime", () => {
       await globexClient.connect(globexTransport);
       const globex = await globexClient.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-B" } });
       expect(globex.structuredContent).toMatchObject({ trusted_context: { tenant_id: "globex", principal: "bob", provenance: "http_claims" } });
+      await expect(globexClient.readResource({ uri: acmeEvidenceUri })).rejects.toThrow(/Synapsor resource not found/i);
+
+      await acmeOtherClient.connect(acmeOtherTransport);
+      await expect(acmeOtherClient.readResource({ uri: acmeEvidenceUri })).rejects.toThrow(/Synapsor resource not found/i);
       expect(seen).toEqual([
         { tenant_id: "acme", principal: "alice" },
         { tenant_id: "globex", principal: "bob" },
@@ -1679,6 +1756,7 @@ describe("local Synapsor MCP runtime", () => {
     } finally {
       await acmeClient.close().catch(() => undefined);
       await globexClient.close().catch(() => undefined);
+      await acmeOtherClient.close().catch(() => undefined);
       await server.close();
     }
   });

@@ -588,7 +588,7 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
     },
     readResource: async (uri) => {
       assertStoreAvailable();
-      return readLocalResource(store, uri);
+      return readLocalResource(store, uri, config, env, trustedContext);
     },
     poolMetrics: () => resources.poolMetrics(),
     rateLimitMetrics: () => resources.rateLimitMetrics(),
@@ -2979,7 +2979,13 @@ function diffFromChangeSet(changeSet: ChangeSetV1): Record<string, { before: Sca
   return diff;
 }
 
-async function readLocalResource(store: ProposalRuntimeStore, uri: string): Promise<Record<string, unknown>> {
+async function readLocalResource(
+  store: ProposalRuntimeStore,
+  uri: string,
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  trustedContext?: TrustedContext,
+): Promise<Record<string, unknown>> {
   const parsed = new URL(uri);
   const parts = parsed.pathname.split("/").filter(Boolean);
   const collection = parsed.hostname;
@@ -2987,19 +2993,55 @@ async function readLocalResource(store: ProposalRuntimeStore, uri: string): Prom
   if (!id) throw new McpRuntimeError("RESOURCE_ID_MISSING", `Resource id missing in ${uri}.`);
   if (collection === "proposals") {
     const proposal = await store.getProposal(id);
-    if (!proposal) throw new McpRuntimeError("RESOURCE_NOT_FOUND", `Proposal not found: ${id}`);
+    if (!proposal) throw localResourceNotFound();
+    assertLocalResourceAccess(config, env, trustedContext, {
+      tenant_id: proposal.tenant_id,
+      principal: proposal.principal ?? proposal.change_set.principal.id,
+      capability: proposal.capability ?? proposal.action,
+    });
     return { proposal, events: await store.events(id), receipts: await store.receipts(id) };
   }
   if (collection === "evidence") {
     const evidence = await store.getEvidenceBundle(id);
-    if (!evidence) throw new McpRuntimeError("RESOURCE_NOT_FOUND", `Evidence bundle not found: ${id}`);
+    if (!evidence) throw localResourceNotFound();
+    assertLocalResourceAccess(config, env, trustedContext, {
+      tenant_id: evidence.tenant_id,
+      principal: evidence.principal,
+      capability: evidence.capability,
+    });
     return evidence;
   }
   if (collection === "replay") {
     const proposalId = id.startsWith("replay_") ? id.slice("replay_".length) : id;
+    const proposal = await store.getProposal(proposalId);
+    if (!proposal) throw localResourceNotFound();
+    assertLocalResourceAccess(config, env, trustedContext, {
+      tenant_id: proposal.tenant_id,
+      principal: proposal.principal ?? proposal.change_set.principal.id,
+      capability: proposal.capability ?? proposal.action,
+    });
     return await store.replay(proposalId);
   }
-  throw new McpRuntimeError("RESOURCE_NOT_FOUND", `Unsupported Synapsor resource: ${uri}`);
+  throw localResourceNotFound();
+}
+
+function assertLocalResourceAccess(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  trustedContext: TrustedContext | undefined,
+  owner: { tenant_id: string; principal?: string; capability?: string },
+): void {
+  if (!owner.tenant_id || !owner.principal || !owner.capability) throw localResourceNotFound();
+  const capability = localCapabilities(config).find((item) => item.name === owner.capability);
+  if (!capability) throw localResourceNotFound();
+  const context = resolveTrustedContext(config, env, capability, trustedContext);
+  if (context.tenant_id !== owner.tenant_id || context.principal !== owner.principal) {
+    throw localResourceNotFound();
+  }
+}
+
+function localResourceNotFound(): McpRuntimeError {
+  return new McpRuntimeError("RESOURCE_NOT_FOUND", "Synapsor resource not found.");
 }
 
 async function resourceResult(uri: string, reader: (uri: string) => Promise<Record<string, unknown>>) {
