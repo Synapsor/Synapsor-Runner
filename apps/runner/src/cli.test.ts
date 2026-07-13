@@ -249,7 +249,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.0.0");
+      expect(output.join("").trim()).toBe("1.1.0");
     }
   });
 
@@ -355,7 +355,7 @@ describe("runner cli", () => {
       await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--dry-run", "--json"])).resolves.toBe(0);
       const dryRun = JSON.parse(output.join(""));
       expect(dryRun.dry_run).toBe(true);
-      expect(dryRun.deleted.proposals).toBe(1);
+      expect(dryRun.deleted.proposals).toBe(0);
 
       output.length = 0;
       await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
@@ -383,7 +383,7 @@ describe("runner cli", () => {
       expect(output.join("")).toContain("vacuumed local store");
       output.length = 0;
       await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
-      expect(JSON.parse(output.join("")).proposals).toBe(0);
+      expect(JSON.parse(output.join("")).proposals).toBe(1);
     } finally {
       process.chdir(oldCwd);
     }
@@ -449,6 +449,31 @@ describe("runner cli", () => {
       "--schema", "synapsor_runner",
       "--url-env", "SYNAPSOR_LEDGER_DATABASE_URL",
     ])).rejects.toThrow(/requires --yes/);
+
+    const archivePath = path.join(tempDir, "ledger-backup.json");
+    const entries: unknown[] = [];
+    const digest = `sha256:${crypto.createHash("sha256").update(JSON.stringify({
+      schema_version: "synapsor.shared-ledger-archive.v1",
+      entries,
+    })).digest("hex")}`;
+    await fs.writeFile(archivePath, JSON.stringify({
+      schema_version: "synapsor.shared-ledger-archive.v1",
+      created_at: "2026-07-12T00:00:00.000Z",
+      source: { engine: "postgres", schema: "synapsor_runner" },
+      entries,
+      manifest: { entries: 0, digest },
+    }), "utf8");
+    output.length = 0;
+    await expect(main(["store", "shared-postgres", "verify-backup", "--input", archivePath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({ ok: true, entries: 0, digest });
+    await fs.writeFile(archivePath, JSON.stringify({
+      schema_version: "synapsor.shared-ledger-archive.v1",
+      created_at: "2026-07-12T00:00:00.000Z",
+      source: { engine: "postgres", schema: "synapsor_runner" },
+      entries: [{ entry_key: "tampered" }],
+      manifest: { entries: 0, digest },
+    }), "utf8");
+    await expect(main(["store", "shared-postgres", "verify-backup", "--input", archivePath])).rejects.toThrow(/manifest digest mismatch/);
   });
 
   it("keeps shared Postgres ledger mirroring explicit and bounded", async () => {
@@ -1034,9 +1059,9 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.0.0",
-        "@synapsor/dsl": "1.0.0",
-        "@synapsor/runner": "1.0.0",
+        "@synapsor/spec": "1.1.0",
+        "@synapsor/dsl": "1.1.0",
+        "@synapsor/runner": "1.1.0",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -4393,17 +4418,21 @@ END
     await fs.writeFile(publicPath, publicKey.export({ type: "spki", format: "pem" }).toString(), "utf8");
     await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), { mode: 0o600 });
     const config = httpHandlerConfig() as any;
+    config.capabilities.find((capability: any) => capability.kind === "proposal").approval.required_approvals = 2;
     config.operator_identity = {
       provider: "signed_key",
       apply_roles: ["writeback_operator"],
       operators: {
         alice: { public_key_path: "./alice.pub.pem", roles: ["support_lead", "writeback_operator"] },
         bob: { public_key_path: "./alice.pub.pem", roles: ["observer"] },
+        carol: { public_key_path: "./alice.pub.pem", roles: ["support_lead"] },
       },
     };
     await fs.writeFile(configPath, JSON.stringify(config), "utf8");
     const store = new ProposalStore(storePath);
-    store.createProposal(changeSet);
+    const quorumChangeSet = structuredClone(changeSet) as typeof changeSet & { approval: typeof changeSet.approval & { required_approvals: number } };
+    quorumChangeSet.approval.required_approvals = 2;
+    store.createProposal(quorumChangeSet);
     store.close();
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -4435,6 +4464,27 @@ END
       "--identity", "alice",
       "--identity-key", privatePath,
       "--reason", "reviewed evidence",
+    ])).resolves.toBe(0);
+
+    const awaitingQuorum = new ProposalStore(storePath);
+    expect(awaitingQuorum.getProposal("wrp_cli")?.state).toBe("pending_review");
+    expect(awaitingQuorum.approvalProgress("wrp_cli")).toMatchObject({ approved: 1, required: 2, complete: false });
+    awaitingQuorum.close();
+    expect(output.join("")).toContain("(1/2)");
+    await expect(main([
+      "apply", "wrp_cli", "--dry-run",
+      "--config", configPath,
+      "--store", storePath,
+      "--identity", "alice",
+      "--identity-key", privatePath,
+    ])).rejects.toThrow(/not approved|pending_review/i);
+    await expect(main([
+      "proposals", "approve", "wrp_cli", "--yes",
+      "--config", configPath,
+      "--store", storePath,
+      "--identity", "carol",
+      "--identity-key", privatePath,
+      "--reason", "second reviewer confirmed evidence",
     ])).resolves.toBe(0);
 
     vi.stubEnv("SYNAPSOR_TEST_HANDLER_URL", "https://handler.internal/writeback");
@@ -4469,6 +4519,8 @@ END
     });
     expect(approval?.signature).toMatch(/\S+/);
     expect(approval?.decision_hash).toMatch(/^sha256:/);
+    expect(verified.approvals("wrp_cli").map((decision) => decision.approver)).toEqual(["alice", "carol"]);
+    expect(verified.approvalProgress("wrp_cli")).toMatchObject({ approved: 2, required: 2, complete: true });
     expect(verified.events("wrp_cli")).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "writeback_authorized", actor: "alice" }),
     ]));
@@ -4480,6 +4532,66 @@ END
       expect.objectContaining({ event: "writeback_outcome", status: "applied", capability: "billing.waive_late_fee", tenant: "acme" }),
     ]));
     expect(logs.join("")).not.toMatch(/handler-secret-token|handler-signing-secret|BEGIN PRIVATE KEY|https:\/\/handler\.internal/i);
+  });
+
+  it("enforces signed apply roles through batch and supervised worker paths", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-apply-role-paths-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    const publicPath = path.join(tempDir, "reviewer.pub.pem");
+    const privatePath = path.join(tempDir, "reviewer.pem");
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    await fs.writeFile(publicPath, publicKey.export({ type: "spki", format: "pem" }).toString(), "utf8");
+    await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), { mode: 0o600 });
+    const config = httpHandlerConfig() as any;
+    config.operator_identity = {
+      provider: "signed_key",
+      apply_roles: ["writeback_operator"],
+      operators: {
+        reviewer: { public_key_path: "./reviewer.pub.pem", roles: ["support_lead"] },
+      },
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+    const store = new ProposalStore(storePath);
+    for (const [proposalId, objectId] of [["wrp_batch_role", "INV-BATCH-ROLE"], ["wrp_worker_role", "INV-WORKER-ROLE"]]) {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = proposalId;
+      proposal.scope.object_id = objectId;
+      proposal.source.primary_key.value = objectId;
+      proposal.integrity.proposal_hash = `sha256:${proposalId}`;
+      store.createProposal(proposal);
+    }
+    store.close();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    for (const proposalId of ["wrp_batch_role", "wrp_worker_role"]) {
+      await expect(main([
+        "proposals", "approve", proposalId, "--yes", "--config", configPath, "--store", storePath,
+        "--identity", "reviewer", "--identity-key", privatePath,
+      ])).resolves.toBe(0);
+    }
+
+    await expect(main([
+      "apply", "--all-approved", "--yes", "--max", "1", "--config", configPath, "--store", storePath,
+      "--identity", "reviewer", "--identity-key", privatePath, "--json",
+    ])).resolves.toBe(1);
+    const afterBatch = new ProposalStore(storePath);
+    expect(afterBatch.getProposal("wrp_batch_role")?.state).toBe("approved");
+    expect(afterBatch.receipts("wrp_batch_role")).toEqual([]);
+    afterBatch.close();
+
+    await expect(main([
+      "worker", "run", "--once", "--yes", "--max-attempts", "1", "--config", configPath, "--store", storePath,
+      "--worker-id", "role_worker", "--identity", "reviewer", "--identity-key", privatePath,
+    ])).resolves.toBe(0);
+    const afterWorker = new ProposalStore(storePath);
+    const deadLetters = afterWorker.listWorkerQueue("dead_letter");
+    expect(deadLetters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ proposal_id: expect.any(String), status: "dead_letter" }),
+    ]));
+    expect(afterWorker.receipts("wrp_batch_role")).toEqual([]);
+    expect(afterWorker.receipts("wrp_worker_role")).toEqual([]);
+    afterWorker.close();
   });
 
   it("refuses writeback when a stored signed approval record was tampered", async () => {
@@ -4518,6 +4630,57 @@ END
       "--identity", "alice", "--identity-key", privatePath,
     ])).rejects.toThrow(/failed integrity checks/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requires verified operator identity for dead-letter requeue and discard", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dead-letter-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    const publicPath = path.join(tempDir, "operator.pub.pem");
+    const privatePath = path.join(tempDir, "operator.pem");
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    await fs.writeFile(publicPath, publicKey.export({ type: "spki", format: "pem" }).toString(), "utf8");
+    await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), { mode: 0o600 });
+    const config = httpHandlerConfig() as any;
+    config.operator_identity = {
+      provider: "signed_key",
+      apply_roles: ["writeback_operator"],
+      operators: { alice: { public_key_path: "./operator.pub.pem", roles: ["writeback_operator"] } },
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+    const store = new ProposalStore(storePath);
+    store.createProposal(changeSet);
+    store.approveProposal("wrp_cli", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
+    store.enqueueApprovedForWorker({ maxAttempts: 1 });
+    store.claimWorkerItem({ workerId: "worker_a" });
+    store.deadLetterWorkerItem({ proposalId: "wrp_cli", workerId: "worker_a", errorCode: "HANDLER_TIMEOUT" });
+    store.close();
+
+    await expect(main([
+      "worker", "dead-letter", "requeue", "wrp_cli", "--retry-budget", "2", "--yes",
+      "--config", configPath, "--store", storePath,
+    ])).rejects.toThrow(/signed operator identity|verified signed_key or jwt_oidc/);
+    await expect(main([
+      "worker", "dead-letter", "requeue", "wrp_cli", "--retry-budget", "2", "--yes",
+      "--config", configPath, "--store", storePath, "--identity", "alice", "--identity-key", privatePath,
+    ])).resolves.toBe(0);
+
+    const requeued = new ProposalStore(storePath);
+    expect(requeued.getWorkerQueueItem("wrp_cli")).toMatchObject({ status: "queued", max_attempts: 2 });
+    requeued.claimWorkerItem({ workerId: "worker_b" });
+    requeued.deadLetterWorkerItem({ proposalId: "wrp_cli", workerId: "worker_b", errorCode: "POLICY_REJECTED" });
+    requeued.close();
+    await expect(main([
+      "worker", "dead-letter", "discard", "wrp_cli", "--reason", "operator closed terminal item", "--yes",
+      "--config", configPath, "--store", storePath, "--identity", "alice", "--identity-key", privatePath,
+    ])).resolves.toBe(0);
+    const discarded = new ProposalStore(storePath);
+    expect(discarded.getWorkerQueueItem("wrp_cli")?.status).toBe("discarded");
+    expect(discarded.events("wrp_cli").map((event) => event.kind)).toEqual(expect.arrayContaining([
+      "writeback_dead_letter_requeued",
+      "writeback_dead_letter_discarded",
+    ]));
+    discarded.close();
   });
 
   it("exports durable operational counters by trusted tenant and capability", async () => {
@@ -4573,6 +4736,69 @@ END
         failures: 0,
       }],
     });
+  });
+
+  it("keeps object-filtered activity receipts scoped to the requested business object", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-activity-object-"));
+    const storePath = path.join(tempDir, "local.db");
+    const store = new ProposalStore(storePath);
+    const seedApplied = (proposalId: string, objectType: string, objectId: string, tenant: string, action: string) => {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = proposalId;
+      proposal.action = action;
+      proposal.scope = { tenant_id: tenant, business_object: objectType, object_id: objectId };
+      proposal.source.table = objectType;
+      proposal.source.primary_key.value = objectId;
+      proposal.guards.tenant.value = tenant;
+      proposal.integrity.proposal_hash = `sha256:${proposalId}`;
+      proposal.evidence.bundle_id = `ev_${proposalId}`;
+      store.createProposal(proposal);
+      store.approveProposal(proposalId, { approver: "reviewer", proposal_hash: proposal.integrity.proposal_hash, proposal_version: 1 });
+      const job = store.createWritebackJobFromProposal(proposalId);
+      store.recordExecutionReceipt({
+        schema_version: "synapsor.execution-receipt.v1",
+        writeback_job_id: job.writeback_job_id,
+        proposal_id: proposalId,
+        runner_id: "runner_activity",
+        status: "applied",
+        rows_affected: 1,
+        idempotency_key: job.idempotency_key,
+        source_database_mutated: true,
+        executed_at: "2026-07-12T04:00:00.000Z",
+        receipt_hash: `sha256:receipt-${proposalId}`,
+      });
+    };
+    seedApplied("wrp_wo_1001", "work_orders", "wo_1001", "acme", "fleet.propose_repair");
+    seedApplied("wrp_wo_1002", "work_orders", "wo_1002", "acme", "fleet.propose_repair");
+    seedApplied("wrp_part_101", "parts", "part_101", "acme", "inventory.propose_restock");
+    seedApplied("wrp_part_103", "parts", "part_103", "globex", "inventory.propose_restock");
+    store.close();
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main(["activity", "search", "--object", "work_orders:wo_1002", "--store", storePath, "--json"])).resolves.toBe(0);
+    const interactions = JSON.parse(output.join("")).interactions as Array<Record<string, unknown>>;
+    expect(interactions.length).toBeGreaterThan(0);
+    expect(interactions.every((item) => item.object === "work_orders:wo_1002")).toBe(true);
+    expect(interactions.every((item) => item.proposal === "wrp_wo_1002")).toBe(true);
+
+    output.length = 0;
+    await expect(main(["activity", "search", "--object", "work_orders:wo_1002", "--store", storePath])).resolves.toBe(0);
+    const text = output.join("");
+    expect(text).toContain("wrp_wo_1002");
+    expect(text).not.toMatch(/wrp_wo_1001|wrp_part_101|wrp_part_103/);
+
+    output.length = 0;
+    await expect(main([
+      "activity", "search", "--tenant", "globex", "--capability", "inventory.propose_restock",
+      "--object", "parts:part_103", "--store", storePath, "--json",
+    ])).resolves.toBe(0);
+    const combined = JSON.parse(output.join("")).interactions as Array<Record<string, unknown>>;
+    expect(combined.length).toBeGreaterThan(0);
+    expect(combined.every((item) => item.object === "parts:part_103" && item.tenant === "globex" && item.capability === "inventory.propose_restock")).toBe(true);
   });
 
   it("explains how to create or pass a local store when latest cannot resolve", async () => {

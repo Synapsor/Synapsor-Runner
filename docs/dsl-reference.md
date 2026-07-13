@@ -148,6 +148,7 @@ patched column. Values may be identifiers or quoted strings.
 
 ```sql
   APPROVAL ROLE billing_lead
+  REQUIRE 2 APPROVALS
   AUTO APPROVE WHEN amount_cents <= 2500
   LIMIT 20 PER DAY
   LIMIT TOTAL 100000 PER DAY
@@ -157,6 +158,12 @@ patched column. Values may be identifiers or quoted strings.
 `APPROVAL ROLE role` records the required local reviewer role. Local OSS
 approval identity is operator-provided; enterprise identity/RBAC belongs to the
 Cloud boundary.
+
+`REQUIRE n APPROVALS` is optional and accepts 1 through 10. It compiles to the
+canonical `approval.required_approvals` field. The default is 1. Each slot
+requires a distinct verified subject; duplicate subjects fail with
+`APPROVER_ALREADY_COUNTED`. Apply/workers remain blocked until `n/N`, rejection
+is terminal, and policy auto-approval is deferred when `n > 1`.
 
 `AUTO APPROVE WHEN field <= non_negative_integer` is supported only for a
 numeric patched field and must follow `APPROVAL ROLE`. Its maximum cannot exceed

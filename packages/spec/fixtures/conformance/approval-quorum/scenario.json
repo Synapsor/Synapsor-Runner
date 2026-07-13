@@ -1,0 +1,7 @@
+{
+  "proposal_id": "wrp_INV_3001_late_fee_waiver",
+  "decisions": [
+    { "operator": "billing_lead_a", "roles": ["billing_lead"], "decision": "approved" },
+    { "operator": "billing_lead_b", "roles": ["billing_lead"], "decision": "approved" }
+  ]
+}

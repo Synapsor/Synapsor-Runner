@@ -10,6 +10,7 @@ import {
   type PostgresRuntimeClient,
   type PostgresRuntimePool,
   type PostgresRuntimeQueryResult,
+  type OperatorIdentityProof,
 } from "./index.js";
 
 const changeSet = {
@@ -89,6 +90,29 @@ function shadowChangeSet() {
   };
 }
 
+function verifiedWorkerIdentity(action: "worker_requeue" | "worker_discard", subject = "fleet_operator"): OperatorIdentityProof {
+  return {
+    provider: "signed_key",
+    verified: true,
+    subject,
+    roles: ["runner_operator"],
+    key_id: "fleet-key-1",
+    algorithm: "ed25519",
+    decision: {
+      schema_version: "synapsor.operator-decision.v1",
+      action,
+      proposal_id: "wrp_123",
+      proposal_version: 1,
+      proposal_hash: "sha256:proposal",
+      subject,
+      issued_at: "2026-07-12T00:00:03.000Z",
+    },
+    decision_hash: `sha256:${action}`,
+    signature: `signature-${action}`,
+    integrity_hash: `sha256:integrity-${action}`,
+  };
+}
+
 describe("proposal store", () => {
   it("creates the parent directory for file-backed stores", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-parent-"));
@@ -144,6 +168,28 @@ describe("proposal store", () => {
         business_object: "invoice",
         object_id: "INV-3001",
       })?.proposal_id).toBe("wrp_successor");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("retention never prunes active or retryable proposal state", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      const terminal = structuredClone(changeSet);
+      terminal.proposal_id = "wrp_terminal";
+      terminal.scope.object_id = "INV-2999";
+      terminal.source.primary_key.value = "INV-2999";
+      terminal.integrity.proposal_hash = "sha256:terminal";
+      store.createProposal(terminal);
+      store.db.prepare("UPDATE proposals SET state = 'rejected' WHERE proposal_id = ?").run("wrp_terminal");
+
+      const dryRun = store.pruneBefore("2026-06-21T00:00:00.000Z");
+      expect(dryRun.deleted.proposals).toBe(1);
+      store.pruneBefore("2026-06-21T00:00:00.000Z", { dryRun: false });
+      expect(store.getProposal("wrp_123")?.state).toBe("pending_review");
+      expect(store.getProposal("wrp_terminal")).toBeUndefined();
     } finally {
       store.close();
     }
@@ -280,6 +326,24 @@ describe("proposal store", () => {
     expect(pool.ended).toBe(true);
   });
 
+  it("fails closed before copying an over-capacity shared runtime ledger", async () => {
+    const pool = new FakePostgresRuntimePool();
+    for (let index = 0; index < 101; index += 1) {
+      pool.rows.set(`entry:${index}`, {
+        entry_id: index + 1,
+        entry_key: `entry:${index}`,
+        kind: "event",
+        proposal_id: null,
+        tenant_id: "acme",
+        capability: "billing.inspect_invoice",
+        payload_json: { index },
+        created_at: "2026-07-12T00:00:00.000Z",
+      });
+    }
+    const store = new PostgresProposalRuntimeStore({ pool, maxEntries: 100 });
+    await expect(store.getProposal("missing")).rejects.toMatchObject({ code: "POSTGRES_RUNTIME_STORE_CAPACITY_EXCEEDED" });
+  });
+
   it("enforces aggregate policy limits atomically and records human-review fallback", () => {
     const store = new ProposalStore();
     const limits = [
@@ -386,6 +450,92 @@ describe("proposal store", () => {
     }
   });
 
+  it("requires distinct reviewers to satisfy a portable approval quorum", () => {
+    const store = new ProposalStore();
+    try {
+      const quorumChangeSet = structuredClone(changeSet);
+      (quorumChangeSet.approval as typeof quorumChangeSet.approval & { required_approvals: number }).required_approvals = 2;
+      store.createProposal(quorumChangeSet);
+
+      const first = store.approveProposal("wrp_123", {
+        approver: "reviewer_a",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      expect(first.state).toBe("pending_review");
+      expect(store.approvalProgress("wrp_123")).toEqual({
+        approved: 1,
+        required: 2,
+        remaining: 1,
+        rejected: false,
+        complete: false,
+      });
+      expect(() => store.createWritebackJobFromProposal("wrp_123")).toThrowError(expect.objectContaining({
+        code: "PROPOSAL_NOT_APPROVED",
+      }));
+      expect(() => store.approveProposal("wrp_123", {
+        approver: "reviewer_a",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      })).toThrowError(expect.objectContaining({ code: "APPROVER_ALREADY_COUNTED" }));
+
+      const second = store.approveProposal("wrp_123", {
+        approver: "reviewer_b",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      expect(second.state).toBe("approved");
+      expect(store.approvalProgress("wrp_123")).toMatchObject({ approved: 2, required: 2, remaining: 0, complete: true });
+      expect(store.createWritebackJobFromProposal("wrp_123").proposal_id).toBe("wrp_123");
+      expect(store.events("wrp_123").map((event) => event.kind)).toEqual(expect.arrayContaining([
+        "proposal_approval_recorded",
+        "proposal_approved",
+      ]));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("defers policy auto-approval for multi-reviewer quorum and preserves rejection", () => {
+    const store = new ProposalStore();
+    try {
+      const quorumChangeSet = structuredClone(changeSet);
+      (quorumChangeSet.approval as typeof quorumChangeSet.approval & { required_approvals: number }).required_approvals = 2;
+      store.createProposal(quorumChangeSet);
+
+      const policy = store.approveProposalByPolicy("wrp_123", {
+        policy: "small_credit",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+        reason: "qualified",
+      });
+      expect(policy.approved).toBe(false);
+      expect(policy.proposal.state).toBe("pending_review");
+      expect(store.approvals("wrp_123")).toEqual([]);
+
+      store.approveProposal("wrp_123", {
+        approver: "reviewer_a",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      const rejected = store.rejectProposal("wrp_123", {
+        actor: "reviewer_b",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+        reason: "insufficient evidence",
+      });
+      expect(rejected.state).toBe("rejected");
+      expect(store.approvalProgress("wrp_123")).toMatchObject({ approved: 1, required: 2, rejected: true, complete: false });
+      expect(() => store.approveProposal("wrp_123", {
+        approver: "reviewer_c",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      })).toThrowError(expect.objectContaining({ code: "PROPOSAL_NOT_PENDING_REVIEW" }));
+    } finally {
+      store.close();
+    }
+  });
+
   it("leases supervised worker items and dead-letters after the retry budget", () => {
     const store = new ProposalStore();
     try {
@@ -420,6 +570,48 @@ describe("proposal store", () => {
         expect.objectContaining({ kind: "writeback_retry_scheduled" }),
         expect.objectContaining({ kind: "writeback_dead_lettered" }),
       ]));
+
+      expect(store.requeueDeadLetter({
+        proposalId: "wrp_123",
+        retryBudget: 3,
+        identity: verifiedWorkerIdentity("worker_requeue"),
+        reason: "dependency recovered",
+        now: "2026-07-12T00:01:01.000Z",
+      })).toMatchObject({ status: "queued", attempts: 0, max_attempts: 3 });
+      const reclaimed = store.claimWorkerItem({ workerId: "worker_d", now: "2026-07-12T00:01:02.000Z" });
+      expect(reclaimed).toMatchObject({ status: "leased", attempts: 1 });
+      store.deadLetterWorkerItem({ proposalId: "wrp_123", workerId: "worker_d", errorCode: "POLICY_REJECTED" });
+      expect(store.discardDeadLetter({
+        proposalId: "wrp_123",
+        identity: verifiedWorkerIdentity("worker_discard"),
+        reason: "operator closed terminal work item",
+      })).toMatchObject({ status: "discarded" });
+      expect(store.receipts("wrp_123")).toEqual([]);
+      expect(store.events("wrp_123").map((event) => event.kind)).toEqual(expect.arrayContaining([
+        "writeback_dead_letter_requeued",
+        "writeback_dead_letter_discarded",
+      ]));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("refuses to requeue a dead letter after a receipt proves the effect", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet);
+      store.approveProposal("wrp_123", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
+      const job = store.createWritebackJobFromProposal("wrp_123");
+      store.enqueueApprovedForWorker({ maxAttempts: 2 });
+      store.claimWorkerItem({ workerId: "worker_a" });
+      store.recordExecutionReceipt({ ...appliedReceipt, writeback_job_id: job.writeback_job_id, idempotency_key: job.idempotency_key });
+      store.deadLetterWorkerItem({ proposalId: "wrp_123", workerId: "worker_a", errorCode: "WORKER_CRASH_AFTER_COMMIT" });
+
+      expect(() => store.requeueDeadLetter({
+        proposalId: "wrp_123",
+        retryBudget: 3,
+        identity: verifiedWorkerIdentity("worker_requeue"),
+      })).toThrowError(expect.objectContaining({ code: "DEAD_LETTER_EFFECT_ALREADY_RECORDED" }));
     } finally {
       store.close();
     }
@@ -816,12 +1008,27 @@ describe("proposal store", () => {
         writebackJob: "wbj_123",
         idempotencyKey: "wrp_123:INV-3001",
         status: "applied",
+        tenant: "acme",
+        principal: "support_agent_17",
+        capability: "billing.waive_late_fee",
+        objectType: "invoice",
+        objectId: "INV-3001",
+        source: "src_pg_acme",
+        table: "invoices",
       });
       expect(receipts).toHaveLength(1);
       const receipt = receipts[0];
       expect(receipt).toBeDefined();
       expect(receipt?.receipt_id).toBe(1);
+      expect(receipt).toMatchObject({
+        tenant_id: "acme",
+        capability: "billing.waive_late_fee",
+        business_object: "invoice",
+        object_id: "INV-3001",
+      });
       expect(store.getReceipt(1)?.idempotency_key).toBe("wrp_123:INV-3001");
+      expect(store.listReceipts({ objectType: "invoice", objectId: "INV-NOT-THIS" })).toHaveLength(0);
+      expect(store.listReceipts({ tenant: "otherco", objectType: "invoice", objectId: "INV-3001" })).toHaveLength(0);
 
       expect(store.getReplayByReplayId("replay_wrp_123").proposal.proposal_id).toBe("wrp_123");
       expect(store.proposalIdForEvidence("ev_456")).toBe("wrp_123");
@@ -847,6 +1054,67 @@ describe("proposal store", () => {
     try {
       expect(store.listEvidenceBundles({ tenant: "acme" }).map((bundle) => bundle.evidence_bundle_id)).toEqual(["ev_456"]);
       expect(store.listReceipts({ status: "applied" }).map((receipt) => receipt.receipt_id)).toEqual([1]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("filters receipts through their canonical proposal business object", () => {
+    const store = new ProposalStore();
+    const seedApplied = (input: {
+      proposalId: string;
+      objectType: string;
+      objectId: string;
+      tenant: string;
+      action: string;
+      sourceId: string;
+      table: string;
+    }) => {
+      const proposal = structuredClone(changeSet);
+      proposal.proposal_id = input.proposalId;
+      proposal.action = input.action;
+      proposal.scope = { tenant_id: input.tenant, business_object: input.objectType, object_id: input.objectId };
+      proposal.source.source_id = input.sourceId;
+      proposal.source.table = input.table;
+      proposal.source.primary_key.value = input.objectId;
+      proposal.guards.tenant.value = input.tenant;
+      proposal.integrity.proposal_hash = `sha256:${input.proposalId}`;
+      proposal.evidence.bundle_id = `ev_${input.proposalId}`;
+      store.createProposal(proposal);
+      store.approveProposal(input.proposalId, {
+        approver: "reviewer",
+        proposal_hash: proposal.integrity.proposal_hash,
+        proposal_version: 1,
+      });
+      store.markPendingWorker(input.proposalId, proposal.integrity.proposal_hash, 1);
+      const job = structuredClone(writebackJob);
+      job.writeback_job_id = `wbj_${input.proposalId}`;
+      job.proposal_id = input.proposalId;
+      job.proposal_hash = proposal.integrity.proposal_hash;
+      job.runner_scope.source_id = input.sourceId;
+      job.target.table = input.table;
+      job.target.primary_key.value = input.objectId;
+      job.tenant_guard.value = input.tenant;
+      job.idempotency_key = `${input.proposalId}:${input.objectId}`;
+      store.recordWritebackJob(job);
+      const receipt = structuredClone(appliedReceipt);
+      receipt.writeback_job_id = job.writeback_job_id;
+      receipt.proposal_id = input.proposalId;
+      receipt.idempotency_key = job.idempotency_key;
+      receipt.receipt_hash = `sha256:receipt-${input.proposalId}`;
+      store.recordExecutionReceipt(receipt);
+    };
+
+    try {
+      seedApplied({ proposalId: "wrp_wo_1001", objectType: "work_orders", objectId: "wo_1001", tenant: "acme", action: "fleet.propose_repair", sourceId: "fleet_pg", table: "work_orders" });
+      seedApplied({ proposalId: "wrp_wo_1002", objectType: "work_orders", objectId: "wo_1002", tenant: "acme", action: "fleet.propose_repair", sourceId: "fleet_pg", table: "work_orders" });
+      seedApplied({ proposalId: "wrp_part_101", objectType: "parts", objectId: "part_101", tenant: "acme", action: "inventory.propose_restock", sourceId: "parts_mysql", table: "parts" });
+      seedApplied({ proposalId: "wrp_part_103", objectType: "parts", objectId: "part_103", tenant: "globex", action: "inventory.propose_restock", sourceId: "parts_mysql", table: "parts" });
+
+      expect(store.listReceipts({ objectType: "work_orders", objectId: "wo_1002" }).map((item) => item.proposal_id)).toEqual(["wrp_wo_1002"]);
+      expect(store.listReceipts({ objectType: "parts", objectId: "part_101" }).map((item) => item.proposal_id)).toEqual(["wrp_part_101"]);
+      expect(store.listReceipts({ tenant: "globex", capability: "inventory.propose_restock", objectType: "parts", objectId: "part_103" }).map((item) => item.proposal_id)).toEqual(["wrp_part_103"]);
+      expect(store.listReceipts({ tenant: "acme", objectType: "parts", objectId: "part_103" })).toHaveLength(0);
     } finally {
       store.close();
     }

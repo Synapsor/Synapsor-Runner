@@ -64,7 +64,8 @@ export const changeSetV1Schema = z.object({
   }).passthrough(),
   approval: z.object({
     status: z.enum(["pending", "approved", "rejected", "canceled"]),
-    required_role: z.string().optional()
+    required_role: z.string().optional(),
+    required_approvals: z.number().int().min(1).max(10).optional()
   }).passthrough(),
   writeback: z.object({
     status: z.enum(["not_applied", "pending_worker", "applied", "conflict", "failed", "canceled"]),

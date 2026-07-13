@@ -129,6 +129,7 @@ try {
 - `BOUND`
 - `TRANSITION`
 - `APPROVAL ROLE`
+- `REQUIRE n APPROVALS` for a 1..10 distinct-reviewer quorum
 - `AUTO APPROVE WHEN field <= integer`
 - `LIMIT count PER DAY` after auto-approval
 - `LIMIT TOTAL integer PER DAY` after auto-approval

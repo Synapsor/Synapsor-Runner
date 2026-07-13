@@ -124,6 +124,26 @@ END
     expect(validateContract(contract).errors).toEqual([]);
   });
 
+  it("compiles small-team approval quorum into the canonical contract", () => {
+    const contract = compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  REQUIRE 2 APPROVALS
+  WRITEBACK DIRECT SQL
+`));
+
+    expect(contract.capabilities[0]?.proposal?.approval).toEqual({
+      mode: "human",
+      required_role: "support_reviewer",
+      required_approvals: 2,
+    });
+    expect(validateContract(contract).errors).toEqual([]);
+    expect(() => compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  REQUIRE 11 APPROVALS
+  WRITEBACK DIRECT SQL
+`))).toThrow(/INVALID_REQUIRED_APPROVALS/);
+  });
+
   it("compiles daily aggregate auto-approval limits into the canonical policy", () => {
     const contract = compileAgentDsl(planCreditSource(`
   APPROVAL ROLE support_reviewer

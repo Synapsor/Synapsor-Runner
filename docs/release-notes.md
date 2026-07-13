@@ -10,7 +10,25 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## Unreleased
+## 1.1.0 (prepared, not published)
+
+### Bounded Small-Fleet Runtime
+
+- Fixes claim/context authority conflicts before serving and keeps
+  object-filtered receipts/activity scoped to the requested object.
+- Adds asymmetric session/operator identity, readiness, protected HTTP
+  metrics, bounded native source pools, and shared fleet rate limits.
+- Adds portable distinct-reviewer quorum in the OSS canonical spec and DSL.
+  Existing 1.0 contracts still default to one approval. Cloud/C++ enforcement
+  of this optional field is not claimed until independently verified there.
+- Adds bounded shared-ledger CLI/UI review, startup-safe schema migration,
+  dead-letter recovery, backup/restore/retention, and tested worker recovery
+  before write and after durable commit.
+- Adds [Running A Small Runner Fleet](running-a-runner-fleet.md) and the
+  `corepack pnpm test:fleet` synthetic two-Runner verification.
+
+Prepared package versions: `@synapsor/spec@1.1.0`,
+`@synapsor/dsl@1.1.0`, and `@synapsor/runner@1.1.0`.
 
 ## 1.0.0
 

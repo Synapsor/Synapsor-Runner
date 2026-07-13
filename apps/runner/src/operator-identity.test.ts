@@ -2,9 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { SignJWT, exportSPKI, generateKeyPair } from "jose";
 import type { StoredProposal } from "@synapsor-runner/proposal-store";
-import { resolveOperatorIdentity, verifySignedOperatorProof } from "./operator-identity.js";
+import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 
 const proposal = {
   proposal_id: "wrp_identity",
@@ -82,5 +84,75 @@ describe("operator identity", () => {
       now: "2026-07-12T01:02:03.000Z",
     });
     expect(dev).toMatchObject({ provider: "dev_env", verified: false, subject: "dev-reviewer", roles: ["auditor", "fleet_manager"] });
+  });
+
+  it("verifies OIDC roles and attests the decision without retaining the bearer token", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
+    const token = await new SignJWT({ roles: ["fleet_manager", "auditor"] })
+      .setProtectedHeader({ alg: "RS256", kid: "operator-key-1" })
+      .setSubject("alice@example.com")
+      .setIssuer("https://identity.example")
+      .setAudience("synapsor-operators")
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 300)
+      .sign(privateKey);
+    const attestationSecret = "operator-attestation-secret-at-least-32-bytes";
+    const env = {
+      TEST_OPERATOR_TOKEN: token,
+      TEST_OPERATOR_PUBLIC_KEY: await exportSPKI(publicKey),
+      TEST_ATTESTATION_SECRET: attestationSecret,
+    };
+    const config = {
+      provider: "jwt_oidc" as const,
+      token_env: "TEST_OPERATOR_TOKEN",
+      roles_claim: "roles",
+      subject_claim: "sub",
+      attestation_secret_env: "TEST_ATTESTATION_SECRET",
+      algorithms: ["RS256" as const],
+      public_key_env: "TEST_OPERATOR_PUBLIC_KEY",
+      issuer: "https://identity.example",
+      audience: "synapsor-operators",
+    };
+    const proof = await resolveOperatorIdentity({
+      config,
+      proposal,
+      action: "approve",
+      requiredRole: "fleet_manager",
+      env,
+      now: "2026-07-12T01:02:03.000Z",
+    });
+    expect(proof).toMatchObject({
+      provider: "jwt_oidc",
+      verified: true,
+      subject: "alice@example.com",
+      roles: ["auditor", "fleet_manager"],
+      key_id: "operator-key-1",
+      algorithm: "RS256",
+      issuer: "https://identity.example",
+    });
+    expect(verifyJwtOperatorProof(proof, attestationSecret)).toBe(true);
+    expect(verifyJwtOperatorProof({ ...proof, roles: ["fleet_manager"] }, attestationSecret)).toBe(false);
+    expect(JSON.stringify(proof)).not.toContain(token);
+
+    const stdinProof = await resolveOperatorIdentity({
+      config: { ...config, token_env: undefined, token_stdin: true },
+      proposal,
+      action: "approve",
+      requiredRole: "fleet_manager",
+      env: {
+        TEST_OPERATOR_PUBLIC_KEY: env.TEST_OPERATOR_PUBLIC_KEY,
+        TEST_ATTESTATION_SECRET: attestationSecret,
+      },
+      tokenInput: Readable.from([`${token}\n`]),
+    });
+    expect(stdinProof).toMatchObject({ provider: "jwt_oidc", verified: true, subject: "alice@example.com" });
+    expect(JSON.stringify(stdinProof)).not.toContain(token);
+
+    await expect(resolveOperatorIdentity({
+      config,
+      proposal,
+      action: "approve",
+      requiredRole: "finance_lead",
+      env,
+    })).rejects.toThrow(/lacks required role finance_lead/);
   });
 });

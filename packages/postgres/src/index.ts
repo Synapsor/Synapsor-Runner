@@ -34,8 +34,8 @@ export function postgresPoolConfig(connectionString: string): PoolConfig {
   };
 }
 
-export function createPostgresPool(connectionString: string): Pool {
-  return new Pool(postgresPoolConfig(connectionString));
+export function createPostgresPool(connectionString: string, overrides: PoolConfig = {}): Pool {
+  return new Pool({ ...postgresPoolConfig(connectionString), ...overrides, connectionString });
 }
 
 export function quotePostgresIdentifier(identifier: string): string {

@@ -70,7 +70,9 @@ cors: disabled
 sessions: in-memory
 ```
 
-Use `/mcp` as the MCP endpoint. Health is available at `/healthz`.
+Use `/mcp` as the MCP endpoint. Cheap process liveness is available at
+`/healthz`; dependency readiness is available at `/readyz`. When separately
+enabled and authorized, OpenMetrics is available at `/metrics`.
 
 ## TLS And mTLS
 
@@ -147,6 +149,7 @@ variable name. It does not print token values or database URLs.
 ```bash
 curl -i http://127.0.0.1:8766/healthz
 curl -i http://127.0.0.1:8765/healthz
+curl -i http://127.0.0.1:8766/readyz
 ```
 
 The health endpoint is secret-free:

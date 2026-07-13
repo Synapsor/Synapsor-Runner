@@ -95,7 +95,8 @@
       "required": ["status"],
       "properties": {
         "status": { "enum": ["pending", "approved", "rejected", "canceled"] },
-        "required_role": { "type": "string" }
+        "required_role": { "type": "string" },
+        "required_approvals": { "type": "integer", "minimum": 1, "maximum": 10 }
       }
     },
     "writeback": {

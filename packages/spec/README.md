@@ -154,6 +154,8 @@ Current additive safety fields:
   string fields;
 - proposal approval `policy`: names a reviewed approval policy for
   policy-based local approval;
+- proposal approval `required_approvals`: optional distinct-reviewer quorum
+  from 1 through 10; omitted contracts retain the default of 1;
 - approval policy rules: `{ "field": "...", "max": 2500 }` thresholds for
   integer patched fields. A rule field is numeric when the proposal declares
   `numeric_bounds` for it, patches it from a `NUMBER` arg, or patches it from

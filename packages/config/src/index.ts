@@ -18,13 +18,25 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "cloud", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "rate_limits", "metrics", "cloud", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
-const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms"]);
+const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
-const OPERATOR_IDENTITY_KEYS = new Set(["provider", "actor_env", "roles_env", "apply_roles", "operators"]);
+const METRICS_KEYS = new Set(["enabled", "token_env"]);
+const OPERATOR_IDENTITY_KEYS = new Set([
+  "provider", "actor_env", "roles_env", "apply_roles", "operators", "token_env", "token_file_env", "token_stdin", "roles_claim",
+  "subject_claim", "attestation_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
+  "issuer", "audience", "clock_skew_seconds", "jwks_cache_seconds", "jwks_cooldown_seconds", "fetch_timeout_ms",
+  "max_response_bytes",
+]);
 const OPERATOR_KEYS = new Set(["public_key_path", "roles"]);
-const SESSION_AUTH_KEYS = new Set(["provider", "secret_env", "previous_secret_env", "issuer", "audience", "tenant_claim", "principal_claim", "clock_skew_seconds"]);
+const SESSION_AUTH_KEYS = new Set([
+  "provider", "secret_env", "previous_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
+  "issuer", "audience", "tenant_claim", "principal_claim", "clock_skew_seconds", "jwks_cache_seconds",
+  "jwks_cooldown_seconds", "fetch_timeout_ms", "max_response_bytes",
+]);
+const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
+const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const SOURCE_KEYS = new Set([
   "engine",
@@ -33,7 +45,9 @@ const SOURCE_KEYS = new Set([
   "read_only",
   "statement_timeout_ms",
   "ssl",
+  "pool",
 ]);
+const SOURCE_POOL_KEYS = new Set(["max_connections", "connection_timeout_ms", "idle_timeout_ms", "queue_timeout_ms", "queue_limit"]);
 const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values"]);
 const CONTEXT_KEYS = TRUSTED_CONTEXT_KEYS;
 const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "signing_secret_env", "timeout_ms", "command_env"]);
@@ -68,7 +82,7 @@ const PATCH_BINDING_KEYS = new Set(["fixed", "from_arg"]);
 const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
-const APPROVAL_KEYS = new Set(["mode", "required_role", "policy"]);
+const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
 const APPROVAL_POLICY_RULE_KEYS = new Set(["field", "max"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
@@ -161,12 +175,101 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validatePolicies(input.policies, strict, errors);
   validateOperatorIdentity(input.operator_identity, strict, errors);
   validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
+  validateRateLimits(input.rate_limits, strict, errors);
+  validateMetrics(input.metrics, strict, errors);
   validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
+  validateEffectiveContextCompatibility(input.trusted_context, input.contexts, input.capabilities, errors);
   validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
   validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateMetrics(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.metrics", code: "METRICS_NOT_OBJECT", message: "metrics must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, METRICS_KEYS, "$.metrics", errors);
+  if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+    errors.push({ path: "$.metrics.enabled", code: "INVALID_METRICS_ENABLED", message: "metrics.enabled must be true or false." });
+  }
+  if (value.token_env !== undefined && !isEnvName(value.token_env)) {
+    errors.push({ path: "$.metrics.token_env", code: "INVALID_METRICS_TOKEN_ENV", message: "metrics.token_env must name the environment variable containing the separate metrics bearer token." });
+  }
+}
+
+function validateRateLimits(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.rate_limits", code: "RATE_LIMITS_NOT_OBJECT", message: "rate_limits must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, RATE_LIMITS_KEYS, "$.rate_limits", errors);
+  if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+    errors.push({ path: "$.rate_limits.enabled", code: "INVALID_RATE_LIMITS_ENABLED", message: "enabled must be true or false." });
+  }
+  validateRateLimitRule(value.default, "$.rate_limits.default", strict, errors);
+  if (value.capabilities !== undefined) {
+    if (!isRecord(value.capabilities)) {
+      errors.push({ path: "$.rate_limits.capabilities", code: "RATE_LIMIT_CAPABILITIES_NOT_OBJECT", message: "capabilities must map reviewed capability names to rate-limit rules." });
+    } else {
+      for (const [name, rule] of Object.entries(value.capabilities)) {
+        if (!isQualifiedName(name)) errors.push({ path: `$.rate_limits.capabilities.${name}`, code: "INVALID_RATE_LIMIT_CAPABILITY", message: "rate-limit capability keys must be qualified capability names." });
+        validateRateLimitRule(rule, `$.rate_limits.capabilities.${name}`, strict, errors);
+      }
+    }
+  }
+  if (value.default === undefined && value.capabilities === undefined && value.enabled !== false) {
+    errors.push({ path: "$.rate_limits", code: "RATE_LIMIT_RULE_REQUIRED", message: "enabled rate_limits requires default and/or capability rules." });
+  }
+}
+
+function validateRateLimitRule(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "RATE_LIMIT_RULE_NOT_OBJECT", message: "rate-limit rule must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, RATE_LIMIT_RULE_KEYS, path, errors);
+  if (!Number.isSafeInteger(value.requests) || Number(value.requests) < 1 || Number(value.requests) > 1_000_000) {
+    errors.push({ path: `${path}.requests`, code: "INVALID_RATE_LIMIT_REQUESTS", message: "requests must be an integer from 1 to 1000000." });
+  }
+  if (!Number.isSafeInteger(value.window_seconds) || Number(value.window_seconds) < 1 || Number(value.window_seconds) > 86400) {
+    errors.push({ path: `${path}.window_seconds`, code: "INVALID_RATE_LIMIT_WINDOW", message: "window_seconds must be an integer from 1 to 86400." });
+  }
+}
+
+function validateEffectiveContextCompatibility(
+  trustedContext: unknown,
+  contexts: unknown,
+  capabilities: unknown,
+  errors: ConfigIssue[],
+): void {
+  const globalContext = isRecord(trustedContext) ? trustedContext : undefined;
+  const namedContexts = isRecord(contexts) ? contexts : undefined;
+  const usesHttpClaims = globalContext?.provider === "http_claims"
+    || Boolean(namedContexts && Object.values(namedContexts).some((context) => isRecord(context) && context.provider === "http_claims"));
+  if (!usesHttpClaims || !Array.isArray(capabilities)) return;
+
+  capabilities.forEach((capability, index) => {
+    if (!isRecord(capability) || !isNonEmptyString(capability.name)) return;
+    const contextName = isNonEmptyString(capability.context) ? capability.context : undefined;
+    const namedContext = contextName && namedContexts && isRecord(namedContexts[contextName])
+      ? namedContexts[contextName]
+      : undefined;
+    const effectiveContext = namedContext ?? globalContext;
+    if (!effectiveContext || effectiveContext.provider === "http_claims") return;
+    const effectiveName = contextName ?? "trusted_context";
+    const provider = typeof effectiveContext.provider === "string" ? effectiveContext.provider : "unknown";
+    errors.push({
+      path: contextName ? `$.contexts.${contextName}.provider` : "$.trusted_context.provider",
+      code: "TRUSTED_CONTEXT_PROVIDER_CONFLICT",
+      message: `Capability ${capability.name} resolves context ${effectiveName} from ${provider} while this catalog enables http_claims sessions. Bind tenant and principal with HTTP_CLAIM tenant_id and HTTP_CLAIM sub, or serve this capability from a separate non-claims Runner.`,
+    });
+  });
 }
 
 function validateApprovalPolicyReferences(capabilities: unknown, policies: unknown, errors: ConfigIssue[]): void {
@@ -269,6 +372,10 @@ function validateSharedPostgresStorage(value: unknown, strict: boolean, errors: 
   if (lockTimeoutMs !== undefined && (typeof lockTimeoutMs !== "number" || !Number.isSafeInteger(lockTimeoutMs) || lockTimeoutMs < 0)) {
     errors.push({ path: "$.storage.shared_postgres.lock_timeout_ms", code: "INVALID_SHARED_POSTGRES_LOCK_TIMEOUT", message: "storage.shared_postgres.lock_timeout_ms must be a non-negative integer." });
   }
+  const maxEntries = value.max_entries;
+  if (maxEntries !== undefined && (typeof maxEntries !== "number" || !Number.isSafeInteger(maxEntries) || maxEntries < 100 || maxEntries > 100_000)) {
+    errors.push({ path: "$.storage.shared_postgres.max_entries", code: "INVALID_SHARED_POSTGRES_MAX_ENTRIES", message: "storage.shared_postgres.max_entries must be a safe integer from 100 through 100000." });
+  }
 }
 
 function validateSources(
@@ -315,6 +422,27 @@ function validateSources(
     }
     if (source.read_only !== undefined && typeof source.read_only !== "boolean") {
       errors.push({ path: `${path}.read_only`, code: "INVALID_SOURCE_READ_ONLY", message: "read_only must be true or false when provided." });
+    }
+    validateSourcePool(source.pool, `${path}.pool`, strict, errors);
+  }
+}
+
+function validateSourcePool(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "SOURCE_POOL_NOT_OBJECT", message: "pool must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SOURCE_POOL_KEYS, path, errors);
+  for (const [key, minimum, maximum] of [
+    ["max_connections", 1, 1000],
+    ["connection_timeout_ms", 100, 300000],
+    ["idle_timeout_ms", 100, 3600000],
+    ["queue_timeout_ms", 100, 300000],
+    ["queue_limit", 0, 100000],
+  ] as const) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || Number(value[key]) < minimum || Number(value[key]) > maximum)) {
+      errors.push({ path: `${path}.${key}`, code: "INVALID_SOURCE_POOL_BOUND", message: `${key} must be an integer from ${minimum} to ${maximum}.` });
     }
   }
 }
@@ -638,8 +766,8 @@ function validateOperatorIdentity(value: unknown, strict: boolean, errors: Confi
     return;
   }
   if (strict) checkUnknownKeys(value, OPERATOR_IDENTITY_KEYS, "$.operator_identity", errors);
-  if (value.provider !== "dev_env" && value.provider !== "signed_key") {
-    errors.push({ path: "$.operator_identity.provider", code: "INVALID_OPERATOR_IDENTITY_PROVIDER", message: "operator_identity.provider must be dev_env or signed_key." });
+  if (value.provider !== "dev_env" && value.provider !== "signed_key" && value.provider !== "jwt_oidc") {
+    errors.push({ path: "$.operator_identity.provider", code: "INVALID_OPERATOR_IDENTITY_PROVIDER", message: "operator_identity.provider must be dev_env, signed_key, or jwt_oidc." });
   }
   for (const key of ["actor_env", "roles_env"] as const) {
     if (value[key] !== undefined && !isEnvName(value[key])) {
@@ -668,6 +796,45 @@ function validateOperatorIdentity(value: unknown, strict: boolean, errors: Confi
       }
     }
   }
+  if (value.provider === "jwt_oidc") {
+    if (!Array.isArray(value.algorithms) || value.algorithms.length === 0 || value.algorithms.some((algorithm) => algorithm !== "RS256" && algorithm !== "ES256")) {
+      errors.push({ path: "$.operator_identity.algorithms", code: "INVALID_OPERATOR_IDENTITY_ALGORITHMS", message: "jwt_oidc requires an explicit non-empty algorithms allowlist containing only RS256 and/or ES256." });
+    }
+    const keySources = [value.jwks_url_env, value.public_key_env, value.public_key_path].filter((source) => source !== undefined);
+    if (keySources.length !== 1) {
+      errors.push({ path: "$.operator_identity", code: "OPERATOR_PUBLIC_KEY_SOURCE_REQUIRED", message: "jwt_oidc requires exactly one of jwks_url_env, public_key_env, or public_key_path." });
+    }
+    if (value.token_stdin !== undefined && typeof value.token_stdin !== "boolean") {
+      errors.push({ path: "$.operator_identity.token_stdin", code: "INVALID_OPERATOR_TOKEN_STDIN", message: "token_stdin must be a boolean." });
+    }
+    const tokenSources = [value.token_env !== undefined, value.token_file_env !== undefined, value.token_stdin === true].filter(Boolean).length;
+    if (tokenSources > 1) {
+      errors.push({ path: "$.operator_identity", code: "OPERATOR_TOKEN_SOURCE_CONFLICT", message: "jwt_oidc must read the token from exactly one configured env, token-file env, or stdin source." });
+    }
+    for (const key of ["token_env", "token_file_env", "attestation_secret_env", "jwks_url_env", "public_key_env"] as const) {
+      if (value[key] !== undefined && !isEnvName(value[key])) errors.push({ path: `$.operator_identity.${key}`, code: "INVALID_OPERATOR_IDENTITY_ENV", message: `${key} must name an environment variable.` });
+    }
+    for (const key of ["roles_claim", "subject_claim"] as const) {
+      if (value[key] !== undefined && !isSafeIdentifier(value[key])) errors.push({ path: `$.operator_identity.${key}`, code: "INVALID_OPERATOR_IDENTITY_CLAIM", message: `${key} must be a safe top-level JWT claim name.` });
+    }
+    if (value.public_key_path !== undefined && !isNonEmptyString(value.public_key_path)) {
+      errors.push({ path: "$.operator_identity.public_key_path", code: "INVALID_OPERATOR_PUBLIC_KEY_PATH", message: "public_key_path must be a non-empty path." });
+    }
+    for (const key of ["issuer", "audience"] as const) {
+      if (value[key] !== undefined && !isNonEmptyString(value[key])) errors.push({ path: `$.operator_identity.${key}`, code: "INVALID_OPERATOR_IDENTITY_VALUE", message: `${key} must be a non-empty string.` });
+    }
+    for (const [key, minimum, maximum] of [
+      ["clock_skew_seconds", 0, 300],
+      ["jwks_cache_seconds", 1, 86400],
+      ["jwks_cooldown_seconds", 1, 3600],
+      ["fetch_timeout_ms", 100, 30000],
+      ["max_response_bytes", 1024, 10 * 1024 * 1024],
+    ] as const) {
+      if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || Number(value[key]) < minimum || Number(value[key]) > maximum)) {
+        errors.push({ path: `$.operator_identity.${key}`, code: "INVALID_OPERATOR_IDENTITY_BOUND", message: `${key} must be an integer from ${minimum} to ${maximum}.` });
+      }
+    }
+  }
 }
 
 function validateSessionAuth(
@@ -688,10 +855,38 @@ function validateSessionAuth(
     return;
   }
   if (strict) checkUnknownKeys(value, SESSION_AUTH_KEYS, "$.session_auth", errors);
-  if (value.provider !== "jwt_hs256") errors.push({ path: "$.session_auth.provider", code: "INVALID_SESSION_AUTH_PROVIDER", message: "session_auth.provider must be jwt_hs256." });
-  if (!isEnvName(value.secret_env)) errors.push({ path: "$.session_auth.secret_env", code: "SESSION_AUTH_SECRET_ENV_REQUIRED", message: "session_auth.secret_env must name the environment variable containing a 32-byte-or-longer HMAC secret." });
-  if (value.previous_secret_env !== undefined && !isEnvName(value.previous_secret_env)) {
-    errors.push({ path: "$.session_auth.previous_secret_env", code: "SESSION_AUTH_PREVIOUS_SECRET_ENV_INVALID", message: "session_auth.previous_secret_env must name the environment variable containing the previous HMAC secret during token rotation." });
+  if (value.provider !== "jwt_hs256" && value.provider !== "jwt_asymmetric") {
+    errors.push({ path: "$.session_auth.provider", code: "INVALID_SESSION_AUTH_PROVIDER", message: "session_auth.provider must be jwt_hs256 or jwt_asymmetric." });
+  }
+  if (value.provider === "jwt_hs256") {
+    if (!isEnvName(value.secret_env)) errors.push({ path: "$.session_auth.secret_env", code: "SESSION_AUTH_SECRET_ENV_REQUIRED", message: "jwt_hs256 requires secret_env naming an environment variable containing a 32-byte-or-longer HMAC secret." });
+    if (value.previous_secret_env !== undefined && !isEnvName(value.previous_secret_env)) {
+      errors.push({ path: "$.session_auth.previous_secret_env", code: "SESSION_AUTH_PREVIOUS_SECRET_ENV_INVALID", message: "previous_secret_env must name the previous HMAC secret during token rotation." });
+    }
+    if (value.algorithms !== undefined && (!Array.isArray(value.algorithms) || value.algorithms.length !== 1 || value.algorithms[0] !== "HS256")) {
+      errors.push({ path: "$.session_auth.algorithms", code: "INVALID_SESSION_AUTH_ALGORITHMS", message: "jwt_hs256 algorithms, when present, must be [\"HS256\"]." });
+    }
+    for (const forbidden of ["jwks_url_env", "public_key_env", "public_key_path"] as const) {
+      if (value[forbidden] !== undefined) errors.push({ path: `$.session_auth.${forbidden}`, code: "SESSION_AUTH_KEY_SOURCE_CONFLICT", message: `${forbidden} is only valid for jwt_asymmetric.` });
+    }
+  }
+  if (value.provider === "jwt_asymmetric") {
+    if (value.secret_env !== undefined || value.previous_secret_env !== undefined) {
+      errors.push({ path: "$.session_auth", code: "SESSION_AUTH_KEY_SOURCE_CONFLICT", message: "jwt_asymmetric must use public verification material, not HMAC secret_env fields." });
+    }
+    if (!Array.isArray(value.algorithms) || value.algorithms.length === 0 || value.algorithms.some((algorithm) => algorithm !== "RS256" && algorithm !== "ES256")) {
+      errors.push({ path: "$.session_auth.algorithms", code: "INVALID_SESSION_AUTH_ALGORITHMS", message: "jwt_asymmetric requires an explicit non-empty algorithms allowlist containing only RS256 and/or ES256." });
+    }
+    const sources = [value.jwks_url_env, value.public_key_env, value.public_key_path].filter((source) => source !== undefined);
+    if (sources.length !== 1) {
+      errors.push({ path: "$.session_auth", code: "SESSION_AUTH_PUBLIC_KEY_SOURCE_REQUIRED", message: "jwt_asymmetric requires exactly one of jwks_url_env, public_key_env, or public_key_path." });
+    }
+    for (const key of ["jwks_url_env", "public_key_env"] as const) {
+      if (value[key] !== undefined && !isEnvName(value[key])) errors.push({ path: `$.session_auth.${key}`, code: "INVALID_SESSION_AUTH_ENV", message: `${key} must name an environment variable.` });
+    }
+    if (value.public_key_path !== undefined && !isNonEmptyString(value.public_key_path)) {
+      errors.push({ path: "$.session_auth.public_key_path", code: "INVALID_SESSION_AUTH_PUBLIC_KEY_PATH", message: "public_key_path must be a non-empty path." });
+    }
   }
   for (const key of ["issuer", "audience"] as const) {
     if (value[key] !== undefined && !isNonEmptyString(value[key])) errors.push({ path: `$.session_auth.${key}`, code: "INVALID_SESSION_AUTH_VALUE", message: `${key} must be a non-empty string.` });
@@ -701,6 +896,16 @@ function validateSessionAuth(
   }
   if (value.clock_skew_seconds !== undefined && (!Number.isSafeInteger(value.clock_skew_seconds) || Number(value.clock_skew_seconds) < 0 || Number(value.clock_skew_seconds) > 300)) {
     errors.push({ path: "$.session_auth.clock_skew_seconds", code: "INVALID_SESSION_AUTH_CLOCK_SKEW", message: "clock_skew_seconds must be an integer from 0 to 300." });
+  }
+  for (const [key, minimum, maximum] of [
+    ["jwks_cache_seconds", 1, 86400],
+    ["jwks_cooldown_seconds", 1, 3600],
+    ["fetch_timeout_ms", 100, 30000],
+    ["max_response_bytes", 1024, 10 * 1024 * 1024],
+  ] as const) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || Number(value[key]) < minimum || Number(value[key]) > maximum)) {
+      errors.push({ path: `$.session_auth.${key}`, code: "INVALID_SESSION_AUTH_BOUND", message: `${key} must be an integer from ${minimum} to ${maximum}.` });
+    }
   }
 }
 
@@ -1024,8 +1229,18 @@ function validateProposalCapability(
   if (capability.approval !== undefined) {
     if (!isRecord(capability.approval)) {
       errors.push({ path: `${path}.approval`, code: "APPROVAL_NOT_OBJECT", message: "approval must be an object." });
-    } else if (strict) {
-      checkUnknownKeys(capability.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+    } else {
+      if (strict) checkUnknownKeys(capability.approval, APPROVAL_KEYS, `${path}.approval`, errors);
+      if (capability.approval.required_approvals !== undefined
+        && (!Number.isSafeInteger(capability.approval.required_approvals)
+          || Number(capability.approval.required_approvals) < 1
+          || Number(capability.approval.required_approvals) > 10)) {
+        errors.push({
+          path: `${path}.approval.required_approvals`,
+          code: "INVALID_REQUIRED_APPROVALS",
+          message: "approval.required_approvals must be a safe integer from 1 through 10.",
+        });
+      }
     }
   }
 }

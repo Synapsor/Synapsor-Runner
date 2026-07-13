@@ -65,6 +65,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
+      jose:
+        specifier: 6.2.3
+        version: 6.2.3
       mysql2:
         specifier: ^3.11.0
         version: 3.22.5(@types/node@22.19.21)
@@ -110,7 +113,7 @@ importers:
   packages/dsl:
     dependencies:
       '@synapsor/spec':
-        specifier: workspace:^1.0.0
+        specifier: workspace:^1.1.0
         version: link:../spec
     devDependencies:
       typescript:
@@ -165,6 +168,9 @@ importers:
       '@synapsor/spec':
         specifier: workspace:*
         version: link:../spec
+      jose:
+        specifier: 6.2.3
+        version: 6.2.3
       mysql2:
         specifier: ^3.11.0
         version: 3.22.5(@types/node@22.19.21)

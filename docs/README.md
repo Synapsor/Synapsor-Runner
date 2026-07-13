@@ -6,6 +6,16 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 01 Quickstart
 
+- Audit a deliberately risky database MCP surface without cloning the repo or
+  connecting a database:
+
+  ```bash
+  npx -y @synapsor/runner audit --example dangerous-db-mcp
+  ```
+
+  Then use [MCP Audit](mcp-audit.md) to inspect your own tool manifest, remote
+  MCP endpoint, or stdio server. The audit is useful independently of whether
+  you adopt Runner.
 - [README](../README.md): audit-first proof, no-database demo, safety diagram,
   and the shortest own-database path.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
@@ -98,9 +108,12 @@ no-database demo, wire your database, then read deeper concepts.
 
 - [Current Scope](current-scope.md): compact v0.1 scope summary.
 - [Current Limitations](limitations.md): intentional safety limits.
-- [Production-Candidate Guide](production.md): single-node OSS deployment
-  scope, database roles, receipt grants, local ledger backup, restart behavior,
-  Docker/systemd shapes, TLS, and release-gate expectations.
+- [Production-Candidate Guide](production.md): single-node and bounded-fleet
+  OSS deployment scope, database roles, receipt grants, restart
+  behavior, Docker/systemd shapes, TLS, and release-gate expectations.
+- [Running A Small Runner Fleet](running-a-runner-fleet.md): tested two-Runner
+  topology, claim-bound sessions, pools, fleet rate limits, quorum, metrics,
+  dead letters, backup/restore/retention, and kill/recovery evidence.
 - [Cloud Mode](cloud-mode.md): what stays local and what Cloud-linked mode adds.
 - [OSS Runner Vs Synapsor Cloud](oss-vs-cloud.md): detailed product and
   operational boundary.

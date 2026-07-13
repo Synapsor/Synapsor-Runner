@@ -10,7 +10,8 @@ It is not a general MCP security gateway, not a prompt-injection cure, not a rep
 - Business rows targeted by model-facing workflows.
 - Trusted tenant, principal, source, object, allowed-column, and version bindings.
 - Proposal diffs, evidence bundles, query audit, approvals, writeback jobs, receipts, and replay records.
-- Runner token and local SQLite proposal store.
+- Runner/session/operator tokens, local SQLite state, and optional shared
+  Postgres proposal/evidence/replay ledger.
 
 ## Trust Boundaries
 
@@ -38,6 +39,12 @@ MCP client/model
 
 The model-facing MCP tool call has request/proposal authority. The trusted runner has execution authority only for already-approved, scoped writeback jobs.
 
+In small-fleet mode, a TLS load balancer sends signed sessions to stateless
+Runner instances. Every effective capability context must bind tenant and
+principal from verified claims. Shared-ledger mutations serialize under a
+bounded Postgres advisory lock; source-side receipts remain the durable
+idempotency boundary for effects.
+
 ## Covered Threats
 
 - Model asks for arbitrary SQL: no generic SQL tool is exposed in the Synapsor path.
@@ -50,6 +57,16 @@ The model-facing MCP tool call has request/proposal authority. The trusted runne
 - Over-broad update: only single-row `UPDATE` is supported and success requires exactly one affected row.
 - Cloud credential leakage: database URLs and write credentials stay local and are not sent to Cloud.
 - Model-callable approval: approval/commit tools are not exposed to MCP clients by default.
+- Claims/environment confusion: an `http_claims` server fails before serving
+  if a capability resolves an environment/static contract context.
+- JWT algorithm/key confusion: networked sessions use an explicit RS256/ES256
+  allowlist, issuer/audience/time checks, `kid`, and bounded public-key/JWKS
+  loading.
+- Fleet races: shared proposal creation, distinct reviewer decisions, worker
+  claims, and fixed-window rate buckets are serialized/atomic in one ledger
+  schema.
+- Worker death around an effect: source receipts make retry before write safe
+  and recovery after commit return `already_applied` rather than duplicate.
 
 ## Not Covered
 
@@ -60,7 +77,12 @@ The model-facing MCP tool call has request/proposal authority. The trusted runne
 - Sensitive data already returned to a model.
 - Prompt injection itself.
 - Business invariants not represented in the capability config, proposal, application handler, or database constraints.
-- Multi-row business transactions, DDL, DELETE, INSERT, UPSERT, or cross-database atomicity in v0.1.
+- Generic multi-row business transactions, DDL, DELETE, INSERT, UPSERT, or
+  cross-database atomicity in the Runner direct-write path.
+- A compromised IdP/JWKS host, ledger database, source database, TLS
+  terminator, or administrator-approved contract.
+- Unbounded/high-throughput or multi-region ledger scale, compliance
+  certification, or production SLA.
 
 ## Required Operator Controls
 
@@ -71,6 +93,11 @@ The model-facing MCP tool call has request/proposal authority. The trusted runne
 - Prefer version/timestamp conflict guards over weak row-hash fallback.
 - Review proposal diffs and evidence before approval.
 - Monitor conflict/failed receipt rates.
+- Allowlist JWKS egress, keep `/metrics` separately authorized, budget source
+  pools across replicas, back up/verify the shared ledger, and retain the
+  configured `max_entries` safety bound.
+- Use verified `signed_key` or `jwt_oidc` reviewers for production-like shared
+  queues; `dev_env` is unverified.
 
 ## Release Blockers
 

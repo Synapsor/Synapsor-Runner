@@ -127,6 +127,27 @@ Then keep only local wiring in `synapsor.runner.json`.
 }
 ```
 
+## 1.1 Approval Quorum
+
+Existing contracts remain valid and require one approval. To require distinct
+verified reviewers, add the optional canonical field:
+
+```json
+{
+  "proposal": {
+    "approval": {
+      "mode": "human",
+      "required_role": "billing_lead",
+      "required_approvals": 2
+    }
+  }
+}
+```
+
+The equivalent DSL is `REQUIRE 2 APPROVALS` after `APPROVAL ROLE
+billing_lead`. Runner 1.0 does not understand this new optional semantic field;
+use Runner/spec/DSL 1.1 together. Omitted fields preserve 1.0 behavior.
+
 ## Validate
 
 ```bash

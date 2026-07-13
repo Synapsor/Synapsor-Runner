@@ -24,7 +24,7 @@ and investigation surfaces for enabled design-partner deployments.
 | Writeback | Guarded one-row update or app-owned executor | Cloud-linked jobs with local execution; managed production orchestration is future work |
 | MCP risk audit | Static local audit | Organization-wide continuous audit is future work |
 | Identity | Local operator boundary | Workspace RBAC where configured; SAML and SCIM are future work |
-| Operations | Customer-operated single node | Design-partner operation; no enterprise SLA in the current beta |
+| Operations | Customer-operated single node or bounded small fleet | Managed fleet remains Cloud work; no enterprise SLA in the current beta |
 
 ## What Stays Local
 

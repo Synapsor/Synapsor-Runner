@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "shared_postgres": {
+      "mode": "runtime_store",
+      "url_env": "SYNAPSOR_LEDGER_DATABASE_URL",
+      "schema": "synapsor_runner",
+      "lock_timeout_ms": 5000,
+      "max_entries": 5000
+    }
+  },
+  "sources": {
+    "fleet_postgres": {
+      "engine": "postgres",
+      "read_url_env": "FLEET_POSTGRES_READ_URL",
+      "write_url_env": "FLEET_POSTGRES_WRITE_URL",
+      "statement_timeout_ms": 3000,
+      "pool": {
+        "max_connections": 2,
+        "connection_timeout_ms": 2000,
+        "idle_timeout_ms": 30000,
+        "queue_timeout_ms": 1000,
+        "queue_limit": 8
+      }
+    }
+  },
+  "trusted_context": {
+    "provider": "http_claims",
+    "values": {
+      "tenant_id_key": "tenant_id",
+      "principal_key": "sub"
+    }
+  },
+  "session_auth": {
+    "provider": "jwt_hs256",
+    "secret_env": "SYNAPSOR_SESSION_JWT_SECRET",
+    "issuer": "https://fleet.example.invalid",
+    "audience": "synapsor-runner-fleet",
+    "tenant_claim": "tenant_id",
+    "principal_claim": "sub",
+    "clock_skew_seconds": 10
+  },
+  "rate_limits": {
+    "enabled": true,
+    "default": { "requests": 20, "window_seconds": 60 },
+    "capabilities": {
+      "billing.inspect_invoice": { "requests": 3, "window_seconds": 60 }
+    }
+  },
+  "metrics": {
+    "enabled": true,
+    "token_env": "SYNAPSOR_METRICS_TOKEN"
+  },
+  "capabilities": [
+    {
+      "name": "billing.inspect_invoice",
+      "kind": "read",
+      "source": "fleet_postgres",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_columns": ["id", "tenant_id", "status", "late_fee_cents", "waiver_reason", "updated_at"],
+      "evidence": "required",
+      "max_rows": 1
+    },
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "kind": "proposal",
+      "source": "fleet_postgres",
+      "target": {
+        "schema": "public",
+        "table": "invoices",
+        "primary_key": "id",
+        "tenant_key": "tenant_id"
+      },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 },
+        "reason": { "type": "string", "required": true, "max_length": 500 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_columns": ["id", "tenant_id", "status", "late_fee_cents", "waiver_reason", "updated_at"],
+      "evidence": "required",
+      "max_rows": 1,
+      "patch": {
+        "late_fee_cents": { "fixed": 0 },
+        "waiver_reason": { "from_arg": "reason" }
+      },
+      "allowed_columns": ["late_fee_cents", "waiver_reason"],
+      "conflict_guard": { "column": "updated_at" },
+      "approval": {
+        "mode": "human",
+        "required_role": "billing_lead",
+        "required_approvals": 2
+      }
+    }
+  ]
+}
