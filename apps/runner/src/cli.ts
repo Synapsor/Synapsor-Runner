@@ -921,6 +921,7 @@ export async function runInitWizard(
     stdout.write(`created ${generatedSmokeInputPath}\n`);
     const smoke = await maybeRunGeneratedSmokeCall({
       config: generated.config as RuntimeConfig,
+      configPath: outputPath,
       env: options.env ?? process.env,
       input: { [lookupArg]: smokeObjectId },
       readUrlEnv: configDatabaseUrlEnv,
@@ -1369,6 +1370,7 @@ async function writeGeneratedSmokeInputFile(lookupArg: string, objectId: string,
 
 async function maybeRunGeneratedSmokeCall(input: {
   config: RuntimeConfig;
+  configPath: string;
   env: NodeJS.ProcessEnv;
   input: Record<string, unknown>;
   readUrlEnv: string;
@@ -1388,14 +1390,18 @@ async function maybeRunGeneratedSmokeCall(input: {
       "",
     ].join("\n");
   }
-  const store = new ProposalStore(input.storePath);
-  const runtime = createMcpRuntime(input.config, { store, env: input.env, readRow: input.readRow });
+  const runtime = createMcpRuntime(input.config, { storePath: input.storePath, env: input.env, readRow: input.readRow });
   try {
     const result = await runtime.callTool(input.toolName, input.input);
     return [
-      "Smoke call ran successfully.",
+      result.ok === false ? "Smoke call attempted but did not pass." : "Smoke call ran successfully.",
       "",
-      formatSmokeCallResult(input.toolName, input.input, result, input.storePath),
+      formatSmokeCallResult(input.toolName, input.input, result, {
+        configPath: input.configPath,
+        storePath: input.storePath,
+        storeAuthority: "local_sqlite",
+        sharedPostgresSchema: "synapsor_runner",
+      }),
     ].join("\n");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -7021,8 +7027,7 @@ async function smokeCall(args: string[]): Promise<number> {
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? defaultStorePath;
   const config = await readRuntimeConfig(configPath);
   const env = envWithDemoDefaults(config, configPath);
-  const store = new ProposalStore(storePath);
-  const runtime = createMcpRuntime(config, { store, env });
+  const runtime = createMcpRuntime(config, { storePath, env });
   try {
     const tools = runtime.listTools();
     const requestedTool = firstPositional(args);
@@ -7034,12 +7039,29 @@ async function smokeCall(args: string[]): Promise<number> {
     if (!capability && config.mode !== "cloud") throw new Error(`capability not found in ${configPath}: ${toolName}`);
     const input = capability ? await smokeToolInput(args, capability) : await smokeInputFromArgs(args);
     const result = await runtime.callTool(toolName, input);
+    const ok = result.ok !== false;
+    const storeAuthority = config.storage?.shared_postgres?.mode === "runtime_store" ? "shared_postgres" : "local_sqlite";
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ ok: true, tool: toolName, input, result, store_path: storePath }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({
+        ok,
+        tool: toolName,
+        input,
+        result,
+        store_path: storePath,
+        store_authority: storeAuthority,
+        ...(storeAuthority === "shared_postgres"
+          ? { shared_postgres_schema: config.storage?.shared_postgres?.schema ?? "synapsor_runner" }
+          : {}),
+      }, null, 2)}\n`);
     } else {
-      process.stdout.write(formatSmokeCallResult(toolName, input, result, storePath));
+      process.stdout.write(formatSmokeCallResult(toolName, input, result, {
+        configPath,
+        storePath,
+        storeAuthority,
+        sharedPostgresSchema: config.storage?.shared_postgres?.schema ?? "synapsor_runner",
+      }));
     }
-    return 0;
+    return ok ? 0 : 1;
   } finally {
     await runtime.close();
   }
@@ -7324,13 +7346,37 @@ async function smokeInputFromArgs(args: string[], capability?: RuntimeCapability
   return {};
 }
 
-function formatSmokeCallResult(toolName: string, input: Record<string, unknown>, result: Record<string, unknown>, storePath: string): string {
-  const evidenceId = stringField(result, "evidence_bundle_id");
-  const proposalId = stringField(result, "proposal_id");
+function formatSmokeCallResult(
+  toolName: string,
+  input: Record<string, unknown>,
+  result: Record<string, unknown>,
+  topology: {
+    configPath: string;
+    storePath: string;
+    storeAuthority: "local_sqlite" | "shared_postgres";
+    sharedPostgresSchema: string;
+  },
+): string {
+  const proposal = isRecord(result.proposal) ? result.proposal : undefined;
+  const evidence = isRecord(result.evidence) ? result.evidence : undefined;
+  const error = isRecord(result.error) ? result.error : undefined;
+  const evidenceId = stringField(result, "evidence_bundle_id") ?? (evidence ? stringField(evidence, "bundle_id") : undefined);
+  const proposalId = stringField(result, "proposal_id") ?? (proposal ? stringField(proposal, "id") : undefined);
   const replayResource = stringField(result, "replay_resource");
   const sourceChanged = result.source_database_changed === true || result.source_database_mutated === true;
+  const ok = result.ok !== false;
+  const storeLines = topology.storeAuthority === "shared_postgres"
+    ? [
+      "Authoritative ledger:",
+      `shared Postgres (${topology.sharedPostgresSchema})`,
+      "",
+      "Local --store path:",
+      `${topology.storePath} (compatibility path only; no authoritative smoke records are written here)`,
+      "",
+    ]
+    : ["Local ledger:", topology.storePath, ""];
   const lines = [
-    "Synapsor smoke call: ok",
+    `Synapsor smoke call: ${ok ? "ok" : "failed"}`,
     "",
     "Tool:",
     toolName,
@@ -7344,19 +7390,32 @@ function formatSmokeCallResult(toolName: string, input: Record<string, unknown>,
     "Evidence:",
     evidenceId || "(not returned)",
     "",
+    ...storeLines,
   ];
+  if (!ok) {
+    lines.push("Error:", error ? stringField(error, "code") ?? "UNCLASSIFIED" : "UNCLASSIFIED");
+    if (error?.retryable === true) {
+      lines.push("Retryable:", "yes");
+      const retryAfter = error.retry_after_ms;
+      if (typeof retryAfter === "number") lines.push("Retry after:", `${retryAfter} ms`);
+    }
+    return `${lines.join("\n")}\n`;
+  }
   if (proposalId) {
     lines.push("Proposal:", proposalId, "", "Replay:", replayResource || `synapsor://replay/replay_${proposalId}`, "");
   }
+  const storeSuffix = topology.storeAuthority === "shared_postgres"
+    ? ` --config ${topology.configPath} --store ${topology.storePath}`
+    : ` --store ${topology.storePath}`;
   lines.push("Next:");
-  if (evidenceId) lines.push(`  ${cliCommandName()} evidence show ${evidenceId} --store ${storePath}`);
+  if (evidenceId) lines.push(`  ${cliCommandName()} evidence show ${evidenceId}${storeSuffix}`);
   if (proposalId) {
-    lines.push(`  ${cliCommandName()} proposals show ${proposalId} --store ${storePath}`);
-    lines.push(`  ${cliCommandName()} proposals approve ${proposalId} --store ${storePath}`);
-    lines.push(`  ${cliCommandName()} apply ${proposalId} --store ${storePath}`);
-    lines.push(`  ${cliCommandName()} replay show --proposal ${proposalId} --store ${storePath}`);
+    lines.push(`  ${cliCommandName()} proposals show ${proposalId}${storeSuffix}`);
+    lines.push(`  ${cliCommandName()} proposals approve ${proposalId}${storeSuffix}`);
+    lines.push(`  ${cliCommandName()} apply ${proposalId}${storeSuffix}`);
+    lines.push(`  ${cliCommandName()} replay show --proposal ${proposalId}${storeSuffix}`);
   } else if (evidenceId) {
-    lines.push(`  ${cliCommandName()} query-audit list --evidence ${evidenceId} --store ${storePath}`);
+    lines.push(`  ${cliCommandName()} query-audit list --evidence ${evidenceId}${storeSuffix}`);
   }
   return `${lines.join("\n")}\n`;
 }

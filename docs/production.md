@@ -340,6 +340,16 @@ from `url_env`, auto-runs the shared-ledger migration, and serializes runtime
 mutations with a transaction-scoped advisory lock. The MCP tools still expose no
 database URLs or write credentials to the model.
 
+`smoke call` uses the same runtime-store resolver as MCP serving. Its evidence,
+query audit, proposal, events, and replay records therefore land directly in
+the shared Postgres ledger and are immediately visible to another Runner using
+the same config. `--store` remains accepted so the printed follow-up CLI
+commands have a compatibility/bridge path, but that SQLite path is not an
+authoritative copy and normally is not created by the smoke call. Shared-ledger
+connection failure returns the safe availability error and a nonzero exit; it
+never causes a local fallback. This consistency fix is present in Runner
+`1.4.12` and later.
+
 `runtime_store` covers MCP serving, CLI approval/apply, and supervised worker
 runs. For CLI mutations, Runner restores the shared ledger into a temporary
 local store while holding the Postgres advisory lock, runs the existing local

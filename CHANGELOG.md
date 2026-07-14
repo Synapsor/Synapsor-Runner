@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.12 (prepared, not published)
+
+### Runtime-store smoke-call consistency
+
+- Fixes BUG-017: `smoke call` now lets the MCP runtime resolve storage from the
+  complete config instead of injecting a local SQLite `ProposalStore`.
+- In `runtime_store` mode, proposal, evidence, query-audit, event, and replay
+  records land in the authoritative shared Postgres ledger and are visible to
+  other Runner processes and normal approve/apply commands.
+- Shared-ledger failures return a redacted, retryable availability result with
+  a nonzero CLI status and never create a local fallback proposal.
+- Keeps local SQLite and mirror modes unchanged. The source database still
+  remains untouched until external approval and guarded apply.
+- Adds focused no-fallback coverage and a disposable two-process fleet proof
+  covering ownership, approval/apply, one source receipt, replay, and safe
+  ledger unavailability.
+- Stages only `@synapsor/runner@1.4.12`; `@synapsor/dsl` remains `1.4.1` and
+  `@synapsor/spec` remains `1.4.0`. Nothing is published by this change.
+
 ## 1.4.1 (prepared, not published)
 
 ### Canonical Bounded-Set Digest Verification

@@ -10,6 +10,24 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.4.12 (prepared, not published)
+
+### Runtime-store smoke-call consistency
+
+- Fixes BUG-017, where `smoke call` could put proposal artifacts in the
+  requested local SQLite path even though the config selected authoritative
+  shared Postgres `runtime_store` mode.
+- Smoke calls now use the same runtime storage resolver as MCP tool calls. A
+  second Runner can immediately inspect the proposal, evidence, query audit,
+  events, and replay from the shared ledger.
+- Shared-ledger unavailability fails closed with a safe retryable error,
+  nonzero exit status, no credential leakage, and no local orphan proposal.
+- Local SQLite and mirror modes retain their existing behavior; no source row
+  changes before the normal external approval/apply path.
+
+Prepared package version: `@synapsor/runner@1.4.12`.
+`@synapsor/dsl` remains `1.4.1`; `@synapsor/spec` remains `1.4.0`.
+
 ## 1.4.1 (prepared, not published)
 
 ### Bounded-set digest compatibility patch

@@ -191,6 +191,7 @@ async function sessionToken(session, tenant, subject) {
 
 async function writeRuntimeConfig(session, alice, bob) {
   const config = JSON.parse(await fsp.readFile(path.join(exampleDir, "synapsor.runner.json"), "utf8"));
+  config.storage.shared_postgres.lock_timeout_ms = 15000;
   config.session_auth = {
     provider: "jwt_asymmetric",
     algorithms: ["RS256"],
@@ -231,6 +232,25 @@ async function writeRuntimeConfig(session, alice, bob) {
   return configPath;
 }
 
+async function writeSmokeRuntimeConfig(configPath) {
+  const config = JSON.parse(await fsp.readFile(configPath, "utf8"));
+  config.result_format = 2;
+  config.trusted_context = {
+    provider: "static_dev",
+    values: { tenant_id: "acme", principal: "smoke-cli-owner" },
+  };
+  delete config.rate_limits;
+  delete config.metrics;
+  config.capabilities = config.capabilities
+    .filter((capability) => capability.name !== "billing.propose_handler_waiver")
+    .map((capability) => capability.name === "billing.propose_late_fee_waiver"
+      ? { ...capability, approval: { mode: "human", required_role: "billing_lead", required_approvals: 1 } }
+      : capability);
+  const smokeConfigPath = path.join(tempDir, "synapsor.smoke.runner.json");
+  await fsp.writeFile(smokeConfigPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  return smokeConfigPath;
+}
+
 async function connectClient(port, token, name) {
   const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${token}` } },
@@ -259,6 +279,135 @@ async function approve(configPath, proposalId, identity) {
 
 async function proposalFrom(client, capability, invoiceId, reason) {
   return structured(await client.callTool({ name: capability, arguments: { invoice_id: invoiceId, reason } }));
+}
+
+async function verifyRuntimeStoreSmokeCall(configPath, pool, identity) {
+  const bridgeA = path.join(tempDir, "smoke-runner-a.db");
+  const bridgeB = path.join(tempDir, "smoke-runner-b.db");
+  const statusBefore = parseCliJson(runner([
+    "store", "shared-postgres", "status", "--url-env", "SYNAPSOR_LEDGER_DATABASE_URL",
+    "--schema", "synapsor_runner", "--json",
+  ]));
+  const sourceBefore = await pool.query("SELECT late_fee_cents FROM public.invoices WHERE id = 'INV-SMOKE-CALL'");
+  assert(Number(sourceBefore.rows[0]?.late_fee_cents) === 2100, "runtime-store smoke fixture did not start unchanged", sourceBefore.rows);
+
+  const smokeProcess = runner([
+    "smoke", "call", "billing.propose_late_fee_waiver",
+    "--json", JSON.stringify({ invoice_id: "INV-SMOKE-CALL", reason: "runtime-store smoke call" }),
+    "--config", configPath,
+    "--store", bridgeA,
+  ]);
+  const smoke = parseCliJson(smokeProcess);
+  const proposalId = smoke.result?.proposal?.id;
+  const evidenceId = smoke.result?.evidence?.bundle_id;
+  assert(smoke.ok === true && smoke.store_authority === "shared_postgres" && typeof proposalId === "string" && typeof evidenceId === "string",
+    "runtime-store smoke call did not return the authoritative proposal/evidence envelope", smoke);
+  assert(!fs.existsSync(bridgeA), "runtime-store smoke call created an orphan local SQLite bridge", { bridgeA });
+
+  const listed = parseCliJson(runner(["proposals", "list", "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(listed.proposals.some((proposal) => proposal.proposal_id === proposalId), "Runner B could not list the smoke-call proposal", listed);
+  const shown = parseCliJson(runner(["proposals", "show", proposalId, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(shown.proposal?.proposal_id === proposalId && shown.evidence?.evidence_bundle_id === evidenceId && shown.events?.length > 0,
+    "Runner B could not show the smoke-call proposal, evidence, and events", shown);
+  const evidence = parseCliJson(runner(["evidence", "show", evidenceId, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(evidence.evidence_bundle_id === evidenceId && evidence.proposal_id === proposalId, "Runner B could not read smoke-call evidence", evidence);
+  const queryAudit = parseCliJson(runner(["query-audit", "list", "--proposal", proposalId, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(queryAudit.query_audit?.length > 0 && queryAudit.query_audit.every((entry) => entry.proposal_id === proposalId),
+    "Runner B could not read smoke-call query audit", queryAudit);
+  const replay = parseCliJson(runner(["replay", "show", "--proposal", proposalId, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(replay.proposal?.proposal_id === proposalId && replay.evidence?.some((entry) => entry.evidence_bundle_id === evidenceId),
+    "Runner B could not replay the smoke-call proposal", replay);
+  assert(!fs.existsSync(bridgeB), "runtime-store read commands persisted an authoritative local bridge", { bridgeB });
+
+  const statusAfter = parseCliJson(runner([
+    "store", "shared-postgres", "status", "--url-env", "SYNAPSOR_LEDGER_DATABASE_URL",
+    "--schema", "synapsor_runner", "--json",
+  ]));
+  assert(statusAfter.tables?.ledger_entries > statusBefore.tables?.ledger_entries,
+    "shared-ledger status did not reflect smoke-call records", { statusBefore, statusAfter });
+  const sourceStillUnchanged = await pool.query("SELECT late_fee_cents FROM public.invoices WHERE id = 'INV-SMOKE-CALL'");
+  assert(Number(sourceStillUnchanged.rows[0]?.late_fee_cents) === 2100,
+    "smoke call changed the source before external approval/apply", sourceStillUnchanged.rows);
+
+  const claimsConfig = JSON.parse(await fsp.readFile(configPath, "utf8"));
+  claimsConfig.trusted_context = { provider: "http_claims", values: { tenant_id_key: "tenant_id", principal_key: "sub" } };
+  const resources = [
+    `synapsor://proposals/${proposalId}`,
+    `synapsor://evidence/${evidenceId}`,
+    `synapsor://replay/replay_${proposalId}`,
+  ];
+  const owner = createMcpRuntime(claimsConfig, {
+    env: runnerEnv(),
+    trustedContext: { tenant_id: "acme", principal: "smoke-cli-owner", provenance: "http_claims" },
+  });
+  const wrongTenant = createMcpRuntime(claimsConfig, {
+    env: runnerEnv(),
+    trustedContext: { tenant_id: "globex", principal: "smoke-cli-owner", provenance: "http_claims" },
+  });
+  const wrongPrincipal = createMcpRuntime(claimsConfig, {
+    env: runnerEnv(),
+    trustedContext: { tenant_id: "acme", principal: "other-principal", provenance: "http_claims" },
+  });
+  try {
+    for (const uri of resources) {
+      await owner.readResource(uri);
+      for (const unauthorized of [wrongTenant, wrongPrincipal]) {
+        let rejected;
+        try { await unauthorized.readResource(uri); } catch (error) { rejected = error; }
+        assert(rejected?.code === "RESOURCE_NOT_FOUND" && rejected?.message === "Synapsor resource not found.",
+          "runtime-store resource ownership leaked existence", { uri, code: rejected?.code, message: rejected?.message });
+      }
+    }
+  } finally {
+    await owner.close();
+    await wrongTenant.close();
+    await wrongPrincipal.close();
+  }
+
+  const approved = await approve(configPath, proposalId, identity);
+  assert(approved.proposal?.state === "approved", "smoke-call proposal was not externally approved", approved);
+  const applied = parseCliJson(runner([
+    "apply", proposalId, "--yes", "--json", "--config", configPath,
+    "--identity", identity.name, "--identity-key", identity.privatePath,
+  ]));
+  assert(applied.status === "applied" && applied.affected_rows === 1, "smoke-call proposal did not apply exactly once", applied);
+  const retry = runner([
+    "apply", proposalId, "--yes", "--json", "--config", configPath,
+    "--identity", identity.name, "--identity-key", identity.privatePath,
+  ], { allowFailure: true });
+  assert(retry.status === 1 && `${retry.stdout}\n${retry.stderr}`.includes(`proposal ${proposalId} is applied`),
+    "smoke-call apply retry was not rejected as an already-applied proposal", { status: retry.status, stdout: retry.stdout, stderr: retry.stderr });
+  const sourceAfter = await pool.query("SELECT late_fee_cents FROM public.invoices WHERE id = 'INV-SMOKE-CALL'");
+  const sourceReceipts = await pool.query("SELECT count(*)::int AS count FROM public.synapsor_writeback_receipts WHERE proposal_id = $1", [proposalId]);
+  assert(Number(sourceAfter.rows[0]?.late_fee_cents) === 0 && Number(sourceReceipts.rows[0]?.count) === 1,
+    "smoke-call writeback duplicated or missed the guarded source effect", { sourceAfter: sourceAfter.rows, sourceReceipts: sourceReceipts.rows });
+  const appliedState = parseCliJson(runner(["proposals", "show", proposalId, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(appliedState.proposal?.state === "applied" && appliedState.receipts?.length === 1,
+    "smoke-call receipt/replay state was not durable in the shared ledger", appliedState);
+
+  const unavailableConfig = JSON.parse(await fsp.readFile(configPath, "utf8"));
+  unavailableConfig.storage.shared_postgres.url_env = "SYNAPSOR_UNAVAILABLE_LEDGER_URL";
+  unavailableConfig.storage.shared_postgres.schema = "synapsor_unavailable";
+  const unavailableConfigPath = path.join(tempDir, "synapsor.smoke.unavailable.runner.json");
+  const unavailableBridge = path.join(tempDir, "smoke-unavailable.db");
+  await fsp.writeFile(unavailableConfigPath, `${JSON.stringify(unavailableConfig, null, 2)}\n`, { mode: 0o600 });
+  const unavailable = runner([
+    "smoke", "call", "billing.propose_late_fee_waiver",
+    "--json", JSON.stringify({ invoice_id: "INV-SMOKE-CALL", reason: "ledger unavailable" }),
+    "--config", unavailableConfigPath,
+    "--store", unavailableBridge,
+  ], {
+    allowFailure: true,
+    env: { SYNAPSOR_UNAVAILABLE_LEDGER_URL: "postgresql://unavailable:never-print-this-password@127.0.0.1:1/unavailable?connect_timeout=1" },
+  });
+  const unavailablePayload = parseCliJson(unavailable);
+  assert(unavailable.status === 1 && unavailablePayload.ok === false
+    && unavailablePayload.result?.error?.code === "TEMPORARILY_UNAVAILABLE"
+    && unavailablePayload.result?.error?.retryable === true,
+  "unavailable shared ledger did not fail smoke call with a retryable safe envelope", unavailablePayload);
+  assert(!fs.existsSync(unavailableBridge), "unavailable shared ledger left a local orphan proposal store", { unavailableBridge });
+  assert(!`${unavailable.stdout}\n${unavailable.stderr}`.match(/never-print-this-password|postgres(?:ql)?:\/\//i),
+    "unavailable shared-ledger smoke output leaked a connection secret");
 }
 
 async function verifyReadinessFailureModes(configPath) {
@@ -569,14 +718,19 @@ async function main() {
   const alice = await makeKeyPair("alice");
   const bob = await makeKeyPair("bob");
   const configPath = await writeRuntimeConfig(session, alice, bob);
+  const smokeConfigPath = await writeSmokeRuntimeConfig(configPath);
   const validate = runner(["config", "validate", "--config", configPath]);
   assert(validate.status === 0, "fleet config validation failed", validate.stderr);
+  const smokeValidate = runner(["config", "validate", "--config", smokeConfigPath]);
+  assert(smokeValidate.status === 0, "runtime-store smoke config validation failed", smokeValidate.stderr);
   runner([
     "store", "shared-postgres", "apply-migration", "--yes",
     "--url-env", "SYNAPSOR_LEDGER_DATABASE_URL", "--schema", "synapsor_runner",
   ]);
   console.log("== prove dependency readiness failure modes and recovery ==");
   await verifyReadinessFailureModes(configPath);
+  console.log("== prove smoke call uses the authoritative shared runtime store ==");
+  await verifyRuntimeStoreSmokeCall(smokeConfigPath, pool, alice);
 
   const runnerA = startRunner(8871, configPath, "fleet-a");
   const runnerB = startRunner(8872, configPath, "fleet-b");

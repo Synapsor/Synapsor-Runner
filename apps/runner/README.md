@@ -215,6 +215,10 @@ remains the default. See
 [Production](docs/production.md) and the
 [Runner Config Reference](docs/runner-config-reference.md).
 
+`smoke call` honors `runtime_store`: artifacts go to shared Postgres; failures
+never fall back to SQLite. `--store` is compatibility plumbing. Requires
+`1.4.12`+.
+
 For a small multi-tenant fleet, bind every capability context to verified HTTP
 claims, use `jwt_asymmetric` session auth, and share a bounded Postgres
 `runtime_store`. Never assume a global `http_claims` setting overrides an

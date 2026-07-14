@@ -12,6 +12,26 @@ Use JSON for automation:
 npx -y -p @synapsor/runner synapsor-runner doctor --first-run --json
 ```
 
+## Smoke Proposal Missing From Another Runner
+
+What happened:
+
+`smoke call` returned a proposal id, but `proposals list --config ...` on a
+second Runner cannot find it.
+
+Fix:
+
+1. Verify `synapsor-runner --version` is `1.4.12` or later.
+2. Confirm both commands use a config whose
+   `storage.shared_postgres.mode` is `runtime_store` and whose `url_env` and
+   `schema` identify the same ledger.
+3. Run `store shared-postgres status --url-env <ENV> --schema <SCHEMA>`.
+
+In `runtime_store` mode, `--store` is not the authoritative ledger. Runner does
+not fall back to that SQLite path when shared Postgres is unavailable. Versions
+before `1.4.12` could orphan smoke-call artifacts locally; recreate that test
+proposal after upgrading.
+
 ## Docker Missing
 
 What happened:
