@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -13,12 +15,14 @@ import {
   applyMysqlJob,
   inspectMysqlWritebackSource,
 } from "../packages/mysql/dist/index.js";
-import { createMcpRuntime } from "../packages/mcp-server/dist/index.js";
+import { compileAgentDsl } from "../packages/dsl/dist/index.js";
+import { createMcpRuntime, loadRuntimeConfigFromFile } from "../packages/mcp-server/dist/index.js";
 import {
   PostgresWritebackIntentStore,
   ProposalStore,
 } from "../packages/proposal-store/dist/index.js";
 import { parseWritebackJob } from "../packages/protocol/dist/index.js";
+import { normalizeContract } from "../packages/spec/dist/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const composeFile = path.join(root, "examples", "runner-fleet", "docker-compose.yml");
@@ -83,6 +87,7 @@ function scalarRow(row) {
     tenant_id: String(row.tenant_id),
     request_id: String(row.request_id),
     status: String(row.status),
+    note: String(row.note),
     value_cents: Number(row.value_cents),
     version: Number(row.version),
   };
@@ -236,21 +241,23 @@ async function query(engine, admin, sql, values = []) {
 
 async function rowsByIds(engine, admin, ids) {
   if (engine === "postgres") {
-    return await query(engine, admin, "SELECT id, tenant_id, request_id, status, value_cents, version FROM public.bounded_set_items WHERE id = ANY($1::bigint[]) ORDER BY id", [ids]);
+    return await query(engine, admin, "SELECT id, tenant_id, request_id, status, note, value_cents, version FROM public.bounded_set_items WHERE id = ANY($1::bigint[]) ORDER BY id", [ids]);
   }
-  return await query(engine, admin, `SELECT id, tenant_id, request_id, status, value_cents, version FROM bounded_set_items WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
+  return await query(engine, admin, `SELECT id, tenant_id, request_id, status, note, value_cents, version FROM bounded_set_items WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
 }
 
 async function setupEngine(engine, admin) {
   if (engine === "postgres") {
     await query(engine, admin, "DROP TABLE IF EXISTS public.bounded_set_dependents");
     await query(engine, admin, "DROP TABLE IF EXISTS public.bounded_set_credits");
+    await query(engine, admin, "DROP TABLE IF EXISTS public.service_tickets");
     await query(engine, admin, "DROP TABLE IF EXISTS public.bounded_set_items");
     await query(engine, admin, `CREATE TABLE public.bounded_set_items (
       id bigint PRIMARY KEY,
       tenant_id text NOT NULL,
       request_id text NOT NULL,
       status text NOT NULL,
+      note text NOT NULL,
       value_cents integer NOT NULL,
       version bigint NOT NULL,
       UNIQUE (tenant_id, request_id)
@@ -263,11 +270,19 @@ async function setupEngine(engine, admin) {
       reason text NOT NULL,
       UNIQUE (tenant_id, external_id)
     )`);
-    await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON public.bounded_set_items, public.bounded_set_credits TO synapsor_crud_precreated, synapsor_crud_ledger");
+    await query(engine, admin, `CREATE TABLE public.service_tickets (
+      id bigint PRIMARY KEY,
+      tenant_id text NOT NULL,
+      status text NOT NULL,
+      cost_cents integer NOT NULL,
+      version integer NOT NULL
+    )`);
+    await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON public.bounded_set_items, public.bounded_set_credits, public.service_tickets TO synapsor_crud_precreated, synapsor_crud_ledger");
   } else {
     await query(engine, admin, "SET FOREIGN_KEY_CHECKS = 0");
     await query(engine, admin, "DROP TABLE IF EXISTS bounded_set_dependents");
     await query(engine, admin, "DROP TABLE IF EXISTS bounded_set_credits");
+    await query(engine, admin, "DROP TABLE IF EXISTS service_tickets");
     await query(engine, admin, "DROP TABLE IF EXISTS bounded_set_items");
     await query(engine, admin, "SET FOREIGN_KEY_CHECKS = 1");
     await query(engine, admin, `CREATE TABLE bounded_set_items (
@@ -275,6 +290,7 @@ async function setupEngine(engine, admin) {
       tenant_id varchar(128) NOT NULL,
       request_id varchar(128) NOT NULL,
       status varchar(64) NOT NULL,
+      note varchar(256) NOT NULL,
       value_cents integer NOT NULL,
       version bigint NOT NULL,
       UNIQUE KEY bounded_set_items_tenant_request (tenant_id, request_id)
@@ -287,31 +303,153 @@ async function setupEngine(engine, admin) {
       reason varchar(500) NOT NULL,
       UNIQUE KEY bounded_set_credits_tenant_external (tenant_id, external_id)
     )`);
+    await query(engine, admin, `CREATE TABLE service_tickets (
+      id bigint PRIMARY KEY,
+      tenant_id varchar(128) NOT NULL,
+      status varchar(64) NOT NULL,
+      cost_cents integer NOT NULL,
+      version integer NOT NULL
+    )`);
     await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.bounded_set_items TO 'synapsor_crud_precreated'@'%'");
     await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.bounded_set_items TO 'synapsor_crud_ledger'@'%'");
     await query(engine, admin, "GRANT TRIGGER ON synapsor_fleet.bounded_set_items TO 'synapsor_crud_precreated'@'%'");
     await query(engine, admin, "GRANT TRIGGER ON synapsor_fleet.bounded_set_items TO 'synapsor_crud_ledger'@'%'");
     await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.bounded_set_credits TO 'synapsor_crud_precreated'@'%'");
     await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.bounded_set_credits TO 'synapsor_crud_ledger'@'%'");
+    await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.service_tickets TO 'synapsor_crud_precreated'@'%'");
+    await query(engine, admin, "GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.service_tickets TO 'synapsor_crud_ledger'@'%'");
   }
 
   const ids = [
     3001, 3002, 3011, 3012, 3021, 3022, 3031, 3032,
-    3041, 3042, 3051, 3052, 3071, 3072,
+    3041, 3042, 3051, 3052, 3061, 3062, 3071, 3072,
+    3081, 3082, 3091, 3092, 3101, 3102, 3111, 3112,
     3301, 3302, 3303, 3311, 3312,
     ...Array.from({ length: 111 }, (_, index) => 4001 + index),
   ];
   for (const id of ids) {
     const value = id === 3311 || id === 3312 ? 600 : (id % 100) + 1;
     const sql = engine === "postgres"
-      ? "INSERT INTO public.bounded_set_items (id, tenant_id, request_id, status, value_cents, version) VALUES ($1, $2, $3, $4, $5, $6)"
-      : "INSERT INTO bounded_set_items (id, tenant_id, request_id, status, value_cents, version) VALUES (?, ?, ?, ?, ?, ?)";
-    await query(engine, admin, sql, [id, "acme", `req-${id}`, "open", value, 1]);
+      ? "INSERT INTO public.bounded_set_items (id, tenant_id, request_id, status, note, value_cents, version) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+      : "INSERT INTO bounded_set_items (id, tenant_id, request_id, status, note, value_cents, version) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    await query(engine, admin, sql, [id, "acme", `req-${id}`, "open", "original", value, 1]);
   }
   const wrongTenantSql = engine === "postgres"
-    ? "INSERT INTO public.bounded_set_items (id, tenant_id, request_id, status, value_cents, version) VALUES ($1, $2, $3, $4, $5, $6)"
-    : "INSERT INTO bounded_set_items (id, tenant_id, request_id, status, value_cents, version) VALUES (?, ?, ?, ?, ?, ?)";
-  await query(engine, admin, wrongTenantSql, [3999, "globex", "req-globex", "open", 9999, 1]);
+    ? "INSERT INTO public.bounded_set_items (id, tenant_id, request_id, status, note, value_cents, version) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+    : "INSERT INTO bounded_set_items (id, tenant_id, request_id, status, note, value_cents, version) VALUES (?, ?, ?, ?, ?, ?, ?)";
+  await query(engine, admin, wrongTenantSql, [3999, "globex", "req-globex", "open", "original", 9999, 1]);
+  const ticketInsert = engine === "postgres"
+    ? "INSERT INTO public.service_tickets (id, tenant_id, status, cost_cents, version) VALUES ($1, $2, $3, $4, $5)"
+    : "INSERT INTO service_tickets (id, tenant_id, status, cost_cents, version) VALUES (?, ?, ?, ?, ?)";
+  for (const row of [
+    [3, "acme", "closed", 8000, 1],
+    [4, "acme", "closed", 15000, 1],
+    [13, "acme", "closed", 8000, 1],
+    [14, "acme", "closed", 15000, 1],
+    [99, "globex", "overdue", 49000, 1],
+  ]) await query(engine, admin, ticketInsert, row);
+}
+
+async function serviceTickets(engine, admin, ids) {
+  if (engine === "postgres") return await query(engine, admin, "SELECT id, tenant_id, status, cost_cents, version FROM public.service_tickets WHERE id = ANY($1::bigint[]) ORDER BY id", [ids]);
+  return await query(engine, admin, `SELECT id, tenant_id, status, cost_cents, version FROM service_tickets WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
+}
+
+async function verifyContractAuthoredHappyPath(engine, admin, authority) {
+  const ids = authority === "source_db" ? [3, 4] : [13, 14];
+  const resetSql = engine === "postgres"
+    ? "UPDATE public.service_tickets SET status = CASE WHEN id = ANY($1::bigint[]) THEN 'overdue' ELSE 'closed' END, version = 1 WHERE tenant_id = 'acme'"
+    : `UPDATE service_tickets SET status = CASE WHEN id IN (${ids.map(() => "?").join(",")}) THEN 'overdue' ELSE 'closed' END, version = 1 WHERE tenant_id = 'acme'`;
+  await query(engine, admin, resetSql, engine === "postgres" ? [ids] : ids);
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `synapsor-bug-016-${engine}-${authority}-`));
+  const contractPath = path.join(tempDir, "synapsor.contract.json");
+  const configPath = path.join(tempDir, "synapsor.runner.json");
+  const schema = engines[engine].schema;
+  const contract = normalizeContract(compileAgentDsl(`
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY tickets.close_overdue
+  USING CONTEXT local_operator
+  SOURCE local_db
+  ON ${schema}.service_tickets
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD version
+  LOOKUP reason BY id
+  ARG reason STRING REQUIRED MAX LENGTH 100
+  ALLOW READ id, tenant_id, status, cost_cents, version
+  REQUIRE EVIDENCE
+  PROPOSE ACTION close_overdue UPDATE SET
+  SELECT WHERE status = 'overdue'
+  MAX ROWS 10
+  MAX TOTAL cost_cents BEFORE 50000
+  ALLOW WRITE status
+  PATCH status = 'closed'
+  ADVANCE VERSION version USING INTEGER INCREMENT
+  APPROVAL ROLE ops_manager
+  WRITEBACK DIRECT SQL
+END
+`));
+  const boundKeys = Object.keys(contract.capabilities[0].proposal.operation.aggregate_bounds[0]);
+  assert(boundKeys.join(",") === "column,maximum,measure", `${engine} normalized contract did not reproduce the 1.4.0 aggregate-key order`, boundKeys);
+  await fs.writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+  await fs.writeFile(configPath, `${JSON.stringify({
+    version: 1,
+    mode: "review",
+    storage: { sqlite_path: ":memory:" },
+    sources: { local_db: { engine, read_url_env: "SET_READ_URL", write_url_env: "SET_WRITE_URL", statement_timeout_ms: 3000, receipts: authority === "source_db" ? { authority: "source_db", provisioning: "precreated", schema: engine === "postgres" ? "synapsor_precreated" : "synapsor_fleet", table: engine === "postgres" ? "receipts" : "synapsor_receipts_precreated" } : { authority: "runner_ledger" } } },
+    contracts: ["./synapsor.contract.json"],
+  }, null, 2)}\n`);
+
+  const store = new ProposalStore();
+  const runtime = createMcpRuntime(await loadRuntimeConfigFromFile(configPath), {
+    env: {
+      ...process.env,
+      SET_READ_URL: authority === "source_db" ? engines[engine].writerUrl : engines[engine].ledgerWriterUrl,
+      SET_WRITE_URL: authority === "source_db" ? engines[engine].writerUrl : engines[engine].ledgerWriterUrl,
+      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_PRINCIPAL: "bounded_set_integrator",
+    },
+    store,
+  });
+  let intent;
+  try {
+    const proposed = await runtime.callTool("tickets.close_overdue", { reason: "clean-repro" });
+    const proposal = store.getProposal(String(proposed.proposal_id));
+    assert(proposal?.change_set?.schema_version === "synapsor.change-set.v3", `${engine} ${authority} did not create a v3 bounded-set proposal`, proposal);
+    assert(proposal.change_set.frozen_set.row_count === 2, `${engine} ${authority} did not freeze exactly two tenant members`, proposal.change_set.frozen_set);
+    const beforeApproval = await serviceTickets(engine, admin, ids);
+    assert(beforeApproval.every((row) => row.status === "overdue" && Number(row.version) === 1), `${engine} ${authority} changed source before approval`, beforeApproval);
+    store.approveProposal(proposal.proposal_id, { approver: "ops_manager", proposal_hash: proposal.proposal_hash, proposal_version: 1 });
+    const publicJob = store.createWritebackJobFromProposal(proposal.proposal_id, { project_id: "bounded-set-integrator", runner_id: `runner-${engine}-${authority}` });
+    const job = parseWritebackJob(publicJob);
+    assert(job.protocol_version === "3.0", `${engine} ${authority} did not produce a normalized v3 job`, job);
+    const applyConfig = sourceConfig(engine, {
+      databaseUrl: authority === "source_db" ? engines[engine].writerUrl : engines[engine].ledgerWriterUrl,
+      receipts: authority === "source_db"
+        ? sourceConfig(engine).receipts
+        : { authority: "runner_ledger" },
+      ...(authority === "runner_ledger" ? { writebackIntentStore: await intentStore(`bounded_${engine}_contract_happy`) } : {}),
+    });
+    intent = applyConfig.writebackIntentStore;
+    const applied = await engines[engine].apply(job, applyConfig);
+    assert(applied.status === "applied" && applied.affected_rows === 2, `${engine} ${authority} contract-authored bounded set did not apply`, applied);
+    const after = await serviceTickets(engine, admin, ids);
+    assert(after.every((row) => row.status === "closed" && Number(row.version) === 2), `${engine} ${authority} contract-authored bounded set changed the wrong state`, after);
+    const retry = await engines[engine].apply(job, applyConfig);
+    assert(retry.status === "already_applied", `${engine} ${authority} contract-authored retry was not idempotent`, retry);
+  } finally {
+    await runtime.close();
+    await store.close();
+    await intent?.close();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 async function verifyProposalBounds(engine, admin) {
@@ -397,6 +535,66 @@ async function verifyStaleSetRollback(engine, admin) {
   const after = await rowsByIds(engine, admin, [3011, 3012]);
   assert(after[0]?.status === "open" && Number(after[0]?.version) === 1, `${engine} stale-set conflict partially changed the first member`, after);
   assert(after[1]?.status === "open" && Number(after[1]?.version) === 2, `${engine} stale-set fixture was unexpectedly mutated`, after);
+}
+
+async function verifyReviewedStateDrift(engine, admin) {
+  const table = engine === "postgres" ? "public.bounded_set_items" : "bounded_set_items";
+  const scenarios = [
+    {
+      label: "predicate",
+      ids: [3081, 3082],
+      patch: { note: "reviewed" },
+      mutate: `UPDATE ${table} SET status = 'paused' WHERE id = 3082`,
+      assertDrift: (row) => row?.status === "paused" && row?.note === "original",
+    },
+    {
+      label: "aggregate",
+      ids: [3091, 3092],
+      patch: { note: "reviewed" },
+      mutate: `UPDATE ${table} SET value_cents = 999 WHERE id = 3092`,
+      assertDrift: (row) => Number(row?.value_cents) === 999 && row?.note === "original",
+    },
+    {
+      label: "writable-before",
+      ids: [3101, 3102],
+      patch: { note: "reviewed" },
+      mutate: `UPDATE ${table} SET note = 'changed-externally' WHERE id = 3102`,
+      assertDrift: (row) => row?.note === "changed-externally",
+    },
+    {
+      label: "missing-member",
+      ids: [3111, 3112],
+      patch: { note: "reviewed" },
+      mutate: `DELETE FROM ${table} WHERE id = 3112`,
+      assertDrift: (row) => row === undefined,
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const frozen = await rowsByIds(engine, admin, scenario.ids);
+    const job = setJob(engine, "set_update", `drift_${scenario.label}`, frozen, { patch: scenario.patch });
+    await query(engine, admin, scenario.mutate);
+    const result = await engines[engine].apply(job, sourceConfig(engine));
+    assert(result.status === "conflict" && result.error_code === "SET_DRIFT_CONFLICT", `${engine} ${scenario.label} drift did not fail closed`, result);
+    const after = await rowsByIds(engine, admin, scenario.ids);
+    const untouched = after.find((row) => Number(row.id) === scenario.ids[0]);
+    const drifted = after.find((row) => Number(row.id) === scenario.ids[1]);
+    assert(untouched?.note === "original" && untouched?.status === "open" && Number(untouched?.version) === 1, `${engine} ${scenario.label} drift partially applied the reviewed patch`, after);
+    assert(scenario.assertDrift(drifted), `${engine} ${scenario.label} drift was overwritten or misclassified`, after);
+  }
+}
+
+async function verifyTenantDrift(engine, admin) {
+  const ids = [3071, 3072];
+  const frozen = await rowsByIds(engine, admin, ids);
+  const job = setJob(engine, "set_update", "tenant_drift", frozen, { patch: { note: "reviewed" } });
+  const table = engine === "postgres" ? "public.bounded_set_items" : "bounded_set_items";
+  await query(engine, admin, `UPDATE ${table} SET tenant_id = 'globex' WHERE id = 3072`);
+  const result = await engines[engine].apply(job, sourceConfig(engine));
+  assert(result.status === "conflict" && result.error_code === "SET_DRIFT_CONFLICT", `${engine} tenant drift did not fail closed`, result);
+  const after = await rowsByIds(engine, admin, ids);
+  assert(after.every((row) => row.note === "original" && row.status === "open" && Number(row.version) === 1), `${engine} tenant drift partially applied the reviewed patch`, after);
+  assert(after.find((row) => Number(row.id) === 3072)?.tenant_id === "globex", `${engine} tenant drift fixture was overwritten`, after);
 }
 
 async function verifyMidSetRollback(engine, admin) {
@@ -507,7 +705,7 @@ async function verifyBatchInsert(engine, admin) {
 async function verifyRunnerLedgerAmbiguity(engine, admin) {
   const store = await intentStore(`bounded_${engine}_ambiguity`);
   try {
-    const rows = await rowsByIds(engine, admin, [3071, 3072]);
+    const rows = await rowsByIds(engine, admin, [3061, 3062]);
     const job = setJob(engine, "set_update", "ledger_ambiguity", rows);
     const config = sourceConfig(engine, {
       databaseUrl: engines[engine].ledgerWriterUrl,
@@ -519,7 +717,7 @@ async function verifyRunnerLedgerAmbiguity(engine, admin) {
     });
     const result = await engines[engine].apply(job, config);
     assert(result.status === "reconciliation_required" && result.error_code === "RECONCILIATION_REQUIRED", `${engine} post-COMMIT set ambiguity was not explicit`, result);
-    const after = await rowsByIds(engine, admin, [3071, 3072]);
+    const after = await rowsByIds(engine, admin, [3061, 3062]);
     assert(after.every((row) => row.status === "closed" && Number(row.version) === 2), `${engine} ambiguous set did not commit atomically`, after);
     const observation = await engines[engine].inspect(job, engines[engine].ledgerWriterUrl);
     assert(observation.classification === "matches_proposed" && observation.member_observations?.length === 2, `${engine} set reconciliation did not inspect every frozen member`, observation);
@@ -562,10 +760,15 @@ async function main() {
     for (const [engine, admin] of [["postgres", pgAdmin], ["mysql", mysqlAdmin]]) {
       console.log(`== ${engine}: setup and proposal-time bounds ==`);
       await setupEngine(engine, admin);
+      console.log(`== ${engine}: contract-authored BUG-016 happy path ==`);
+      await verifyContractAuthoredHappyPath(engine, admin, "source_db");
+      await verifyContractAuthoredHappyPath(engine, admin, "runner_ledger");
       await verifyProposalBounds(engine, admin);
       console.log(`== ${engine}: exact set UPDATE, drift, and rollback ==`);
       await verifySetUpdate(engine, admin);
       await verifyStaleSetRollback(engine, admin);
+      await verifyReviewedStateDrift(engine, admin);
+      await verifyTenantDrift(engine, admin);
       await verifyMidSetRollback(engine, admin);
       console.log(`== ${engine}: exact set DELETE and side-effect preflight ==`);
       await verifySetDelete(engine, admin);
@@ -578,7 +781,7 @@ async function main() {
       benchmarkResults[engine] = await benchmark(engine, admin);
     }
     console.log(JSON.stringify({ benchmark_environment: "local Docker; evidence only, not a throughput claim", results: benchmarkResults }, null, 2));
-    console.log("Bounded-set live verification passed: Postgres + MySQL, cap and aggregate rejection, frozen UPDATE/DELETE, batch INSERT, atomic rollback, hazards, exact receipts, reconciliation, and 1/10/100-row bounds.");
+    console.log("Bounded-set live verification passed: contract-authored PostgreSQL + MySQL apply under source_db and runner_ledger authority, canonical/legacy digest compatibility, cap and aggregate rejection, independent version/predicate/aggregate/writable-value/missing-member/tenant drift, frozen UPDATE/DELETE, batch INSERT, atomic rollback, hazards, exact receipts, reconciliation, and 1/10/100-row bounds.");
   } finally {
     await mysqlAdmin.end().catch(() => undefined);
     await pgAdmin.end().catch(() => undefined);

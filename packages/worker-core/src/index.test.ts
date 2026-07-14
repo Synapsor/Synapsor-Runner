@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MCP_AUDIT_DISCLAIMER,
+  assertFrozenSetJobIntegrity,
   auditMcpManifest,
   classifyFrozenSetReconciliation,
   doctorChecks,
@@ -77,6 +79,41 @@ describe("worker core", () => {
       { id: "INV-2", tenant_id: "acme", status: "overdue", version: 2 },
     ]);
     expect(partial.classification).toBe("drifted");
+  });
+
+  it("accepts a 1.4.0 contract-produced set digest after protocol key normalization", () => {
+    const input = v3SetJob();
+    const frozenSet = input.frozen_set as {
+      aggregate_bounds: Array<Record<string, unknown>>;
+      members: Array<Record<string, unknown>>;
+      set_digest: string;
+    };
+    for (const member of frozenSet.members) {
+      const primaryKey = (member.primary_key as { value: unknown }).value;
+      member.before = { ...(member.before as Record<string, unknown>), tenant_id: "acme" };
+      member.after = { ...(member.after as Record<string, unknown>), tenant_id: "acme" };
+      member.before_digest = legacyDigest({ primary_key: primaryKey, before: member.before });
+      member.after_digest = legacyDigest({ primary_key: primaryKey, after: member.after });
+    }
+    // normalizeContract alphabetizes contract keys before Runner appends actual.
+    const contractOrderedBounds = frozenSet.aggregate_bounds.map((bound) => ({
+      column: bound.column,
+      maximum: bound.maximum,
+      measure: bound.measure,
+      actual: bound.actual,
+    }));
+    frozenSet.aggregate_bounds = contractOrderedBounds;
+    frozenSet.set_digest = legacyDigest({
+      operation: input.operation,
+      members: frozenSet.members,
+      aggregate_bounds: contractOrderedBounds,
+    });
+
+    const parsed = validateJob(input);
+    if (parsed.protocol_version !== "3.0") throw new Error("v3 fixture did not parse");
+    expect(() => assertFrozenSetJobIntegrity(parsed)).not.toThrow();
+    parsed.frozen_set.set_digest = "sha256:tampered";
+    expect(() => assertFrozenSetJobIntegrity(parsed)).toThrow("SET_DIGEST_MISMATCH");
   });
 
   it("combines runner-token doctor and database doctor checks", async () => {
@@ -219,4 +256,8 @@ function v3SetJob(): Record<string, unknown> {
     runner_id: "runner-1",
     attempt_count: 1,
   };
+}
+
+function legacyDigest(value: unknown): `sha256:${string}` {
+  return `sha256:${crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }

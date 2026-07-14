@@ -1,7 +1,7 @@
 {
   "name": "@synapsor/dsl",
-  "version": "1.4.0",
-  "description": "Preview SQL-like Synapsor authoring DSL compiler for canonical @synapsor/spec contracts.",
+  "version": "1.4.1",
+  "description": "SQL-like Synapsor authoring frontend for canonical @synapsor/spec contracts.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",

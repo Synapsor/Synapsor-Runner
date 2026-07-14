@@ -10,6 +10,26 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.4.1 (prepared, not published)
+
+### Bounded-set digest compatibility patch
+
+- Contract-authored bounded-set proposals now use deterministic recursive
+  object-key ordering for member and set digest material.
+- Valid proposals created by `1.4.0` remain applyable; the compatibility path
+  accepts only the known deterministic `1.4.0` serializations reconstructed
+  from the complete stored reviewed data.
+- Genuine member, version, value, aggregate, membership, or tenant drift still
+  fails closed before source mutation on PostgreSQL and MySQL.
+- The Runner package now includes the linked bounded-set guide and validates
+  all shipped local Markdown links while packaging.
+- The DSL package description and README no longer label the current `1.4.x`
+  package as a `0.1 preview`. Canonical contract `spec_version: "0.1"` is
+  unchanged.
+
+Prepared package versions: `@synapsor/dsl@1.4.1` and
+`@synapsor/runner@1.4.1`. `@synapsor/spec` remains `1.4.0`.
+
 ## 1.4.0 (prepared, not published)
 
 ### Reviewed Reversible Change Sets

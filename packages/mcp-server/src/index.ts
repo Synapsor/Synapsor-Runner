@@ -16,7 +16,7 @@ import {
 } from "@synapsor-runner/control-plane-client";
 import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3 } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3 } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { z } from "zod";
@@ -2825,7 +2825,7 @@ function buildBoundedSetChangeSet(input: {
         primary_key: { column: input.capability.target.primary_key, value: primary.value },
         before: {},
         after,
-        after_digest: hashJson({ primary_key: primary.value, after }),
+        after_digest: canonicalJsonDigest({ primary_key: primary.value, after }),
         deduplication,
       };
     })
@@ -2841,8 +2841,8 @@ function buildBoundedSetChangeSet(input: {
           expected_version: expectedVersion,
           before,
           after: {},
-          before_digest: hashJson({ primary_key: primaryValue, before }),
-          tombstone_digest: hashJson({ primary_key: primaryValue, expected_version: expectedVersion }),
+          before_digest: canonicalJsonDigest({ primary_key: primaryValue, before }),
+          tombstone_digest: canonicalJsonDigest({ primary_key: primaryValue, expected_version: expectedVersion }),
         };
       }
       const after = { ...before, ...input.patch };
@@ -2856,15 +2856,20 @@ function buildBoundedSetChangeSet(input: {
         expected_version: expectedVersion,
         before,
         after,
-        before_digest: hashJson({ primary_key: primaryValue, before }),
-        after_digest: hashJson({ primary_key: primaryValue, after }),
+        before_digest: canonicalJsonDigest({ primary_key: primaryValue, before }),
+        after_digest: canonicalJsonDigest({ primary_key: primaryValue, after }),
       };
     });
   const members = rawMembers.sort((left, right) => JSON.stringify(left.primary_key.value).localeCompare(JSON.stringify(right.primary_key.value)));
   if (new Set(members.map((member) => JSON.stringify(member.primary_key.value))).size !== members.length) {
     throw new McpRuntimeError("SET_IDENTITY_NOT_UNIQUE", "Every frozen set member must have a unique primary-key identity.");
   }
-  const aggregateBounds = operation.aggregate_bounds.map((bound) => ({ ...bound, actual: aggregateValue(members, bound) }));
+  const aggregateBounds = operation.aggregate_bounds.map((bound) => ({
+    column: bound.column,
+    measure: bound.measure,
+    maximum: bound.maximum,
+    actual: aggregateValue(members, bound),
+  }));
   for (const bound of aggregateBounds) {
     if (bound.actual > bound.maximum) throw new McpRuntimeError("SET_AGGREGATE_BOUND_EXCEEDED", `${bound.measure} aggregate for ${bound.column} exceeds the reviewed maximum ${bound.maximum}.`);
   }
@@ -2873,7 +2878,7 @@ function buildBoundedSetChangeSet(input: {
     row_count: members.length,
     aggregate_bounds: aggregateBounds,
     members,
-    set_digest: hashJson({ operation: kind, members, aggregate_bounds: aggregateBounds }),
+    set_digest: canonicalJsonDigest({ operation: kind, members, aggregate_bounds: aggregateBounds }),
   };
   const approvalMode = input.capability.approval?.mode === "operator" ? "operator" : "human";
   const proposalCore = {

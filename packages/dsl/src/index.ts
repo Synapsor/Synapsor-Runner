@@ -957,7 +957,7 @@ function parseList(value: string): string[] {
 
 function unsupported(item: { text: string; line: number }, blockKind: string): never {
   if (/ROOT\s+EXTERNAL|JOIN\s+EXTERNAL|RETURN\s+ANSWER|AUTO\s+BRANCH|AUTO\s+MERGE/i.test(item.text)) {
-    throw dslError(item.line, 1, "UNSUPPORTED_PREVIEW_SYNTAX", `${blockKind} clause is not supported by @synapsor/dsl 0.1 preview: ${item.text}`);
+    throw dslError(item.line, 1, "UNSUPPORTED_PREVIEW_SYNTAX", `${blockKind} clause is not supported by the current @synapsor/dsl grammar: ${item.text}`);
   }
   throw dslError(item.line, 1, "UNSUPPORTED_DSL_CLAUSE", `unsupported ${blockKind} clause: ${item.text}`);
 }

@@ -12,6 +12,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   createMcpRuntime,
   createSynapsorMcpServer,
@@ -1207,6 +1208,12 @@ describe("local Synapsor MCP runtime", () => {
         source_database_mutated: false,
         diff: { affected_rows: { before: 2, proposed: 2 } },
       });
+      if (proposal?.change_set.schema_version !== "synapsor.change-set.v3") throw new Error("expected v3 bounded-set proposal");
+      expect(proposal.change_set.frozen_set.set_digest).toBe(canonicalJsonDigest({
+        operation: proposal.change_set.operation,
+        members: proposal.change_set.frozen_set.members,
+        aggregate_bounds: proposal.change_set.frozen_set.aggregate_bounds,
+      }));
     } finally {
       await runtime.close();
     }

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
-import { parseWritebackJob, protocolVersions, type InverseDescriptorV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
 export * from "./mcp-audit.js";
 
@@ -245,21 +245,21 @@ export function assertFrozenSetJobIntegrity(job: SetWritebackJob): void {
       if (member.before[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("SET_TENANT_GUARD_MISMATCH");
       const expectedAfter = { ...member.before, ...job.patch, [job.version_advance.column]: member.expected_version.value + 1 };
       if (!recordsEqual(member.after, expectedAfter)) throw new Error("SET_AFTER_STATE_MISMATCH");
-      if (member.before_digest !== reconciliationDigest({ primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
-      if (member.after_digest !== reconciliationDigest({ primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
+      if (!reviewedDigestMatches(member.before_digest, { primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
+      if (!reviewedDigestMatches(member.after_digest, { primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
     } else if (job.operation === "set_delete") {
       if (!member.expected_version || member.before[member.expected_version.column] !== member.expected_version.value) throw new Error("SET_VERSION_GUARD_MISMATCH");
       if (member.before[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("SET_TENANT_GUARD_MISMATCH");
       if (Object.keys(member.after).length !== 0) throw new Error("SET_DELETE_PATCH_FORBIDDEN");
-      if (member.before_digest !== reconciliationDigest({ primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
-      if (member.tombstone_digest !== reconciliationDigest({ primary_key: member.primary_key.value, expected_version: member.expected_version })) throw new Error("SET_TOMBSTONE_DIGEST_MISMATCH");
+      if (!reviewedDigestMatches(member.before_digest, { primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
+      if (!reviewedDigestMatches(member.tombstone_digest, { primary_key: member.primary_key.value, expected_version: member.expected_version })) throw new Error("SET_TOMBSTONE_DIGEST_MISMATCH");
     } else {
       const components = member.deduplication?.components ?? [];
       const primary = components.find((component) => component.column === job.target.primary_key.column);
       const tenant = components.find((component) => component.column === job.target.tenant_guard.column);
       if (!primary || primary.value !== member.primary_key.value || !tenant || tenant.source !== "trusted_tenant" || tenant.value !== job.target.tenant_guard.value) throw new Error("BATCH_DEDUP_REQUIRED");
       if (member.after[job.target.primary_key.column] !== member.primary_key.value || member.after[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("BATCH_IDENTITY_MISMATCH");
-      if (member.after_digest !== reconciliationDigest({ primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
+      if (!reviewedDigestMatches(member.after_digest, { primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
     }
   }
   for (const bound of set.aggregate_bounds) {
@@ -270,8 +270,27 @@ export function assertFrozenSetJobIntegrity(job: SetWritebackJob): void {
     }, 0);
     if (actual !== bound.actual || actual > bound.maximum) throw new Error("SET_AGGREGATE_BOUND_MISMATCH");
   }
-  const expectedSetDigest = reconciliationDigest({ operation: job.operation, members: set.members, aggregate_bounds: set.aggregate_bounds });
-  if (set.set_digest !== expectedSetDigest) throw new Error("SET_DIGEST_MISMATCH");
+  const setMaterial = { operation: job.operation, members: set.members, aggregate_bounds: set.aggregate_bounds };
+  // Runner 1.4.0 hashed normalized contract bounds before protocol parsing
+  // restored schema field order. Reconstruct only that complete legacy shape.
+  const legacyContractMaterial = {
+    operation: job.operation,
+    members: set.members,
+    aggregate_bounds: set.aggregate_bounds.map((bound) => ({
+      column: bound.column,
+      maximum: bound.maximum,
+      measure: bound.measure,
+      actual: bound.actual,
+    })),
+  };
+  if (!reviewedDigestMatches(set.set_digest, setMaterial, legacyContractMaterial)) throw new Error("SET_DIGEST_MISMATCH");
+}
+
+function reviewedDigestMatches(actual: string | undefined, current: unknown, legacyContract?: unknown): boolean {
+  if (!actual) return false;
+  const expected = new Set([canonicalJsonDigest(current), reconciliationDigest(current)]);
+  if (legacyContract) expected.add(reconciliationDigest(legacyContract));
+  return expected.has(actual as `sha256:${string}`);
 }
 
 function recordValuesMatch(
