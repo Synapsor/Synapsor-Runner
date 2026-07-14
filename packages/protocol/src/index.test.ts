@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  canonicalJsonDigest,
+  canonicalJsonStringify,
   parseChangeSet,
   parseExecutionReceipt,
   parseRunnerRegistration,
@@ -35,6 +37,38 @@ const validJob = {
 };
 
 describe("writeback job schema", () => {
+  it("canonicalizes reviewed JSON recursively without changing array order", () => {
+    const left = {
+      operation: "set_update",
+      members: [{ before: { version: 1, status: "overdue", enabled: true, note: null }, primary_key: "T-1" }],
+      aggregate_bounds: [{ column: "cost_cents", maximum: 50_000, measure: "before", actual: 23_000 }],
+    };
+    const right = {
+      aggregate_bounds: [{ actual: 23_000, measure: "before", maximum: 50_000, column: "cost_cents" }],
+      members: [{ primary_key: "T-1", before: { note: null, enabled: true, status: "overdue", version: 1 } }],
+      operation: "set_update",
+    };
+    expect(canonicalJsonStringify(left)).toBe(canonicalJsonStringify(right));
+    expect(canonicalJsonDigest(left)).toBe(canonicalJsonDigest(right));
+    expect(canonicalJsonDigest(["T-1", "T-2"])).not.toBe(canonicalJsonDigest(["T-2", "T-1"]));
+    expect(canonicalJsonDigest({
+      text: "caf\u00e9'; DROP TABLE tickets; --",
+      integer_as_text: "9007199254740993",
+      decimal: 12.5,
+      timestamp: "2026-07-14T06:00:00.000Z",
+    })).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("rejects values outside the reviewed JSON domain", () => {
+    expect(() => canonicalJsonStringify({ value: undefined })).toThrow(/undefined/);
+    expect(() => canonicalJsonStringify({ value: Number.NaN })).toThrow(/finite numbers/);
+    expect(() => canonicalJsonStringify({ value: 1n })).toThrow(/JSON values/);
+    expect(() => canonicalJsonStringify({ value: new Date() })).toThrow(/plain objects/);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => canonicalJsonStringify(circular)).toThrow(/circular/);
+  });
+
   it("accepts a guarded single-row update job", () => {
     expect(parseWritebackJob(validJob)).toMatchObject({ job_id: "wbj_1" });
   });

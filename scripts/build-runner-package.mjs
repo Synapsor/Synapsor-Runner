@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -100,6 +100,8 @@ await cp(resolve(root, "README.md"), resolve(packageRoot, "README.md"));
 const publicDocs = [
   "README.md",
   "app-owned-executors.md",
+  "benchmarks/bounded-set-local.md",
+  "bounded-set-writeback.md",
   "capability-authoring.md",
   "cloud-mode.md",
   "cloud-push.md",
@@ -124,6 +126,7 @@ const publicDocs = [
   "release-notes.md",
   "release-policy.md",
   "result-envelope-v2.md",
+  "result-envelope-v3.md",
   "result-envelope-v4.md",
   "reversible-change-sets.md",
   "runner-config-reference.md",
@@ -141,6 +144,7 @@ const releaseAssets = [
   ["CHANGELOG.md", "CHANGELOG.md"],
   ["AGENTS.md", "AGENTS.md"],
   ["CONTRIBUTING.md", "CONTRIBUTING.md"],
+  ["SECURITY.md", "SECURITY.md"],
   ["THREAT_MODEL.md", "THREAT_MODEL.md"],
   ["TRADEMARKS.md", "TRADEMARKS.md"],
   ...publicDocs.map((name) => [`docs/${name}`, `docs/${name}`]),
@@ -181,6 +185,58 @@ await cp(
 
 await removePythonBytecode(resolve(packageRoot, "examples"));
 await removeGeneratedRunnerStores(resolve(packageRoot, "examples"));
+await verifyPackagedMarkdownLinks(packageRoot);
+
+async function verifyPackagedMarkdownLinks(directory) {
+  const packageManifest = JSON.parse(await readFile(resolve(directory, "package.json"), "utf8"));
+  const packagedPatterns = Array.isArray(packageManifest.files) ? packageManifest.files : [];
+  const markdownFiles = [resolve(directory, "README.md"), ...await markdownFilesUnder(resolve(directory, "docs"))];
+  const missing = [];
+  for (const file of markdownFiles) {
+    const source = await readFile(file, "utf8");
+    for (const match of source.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+      let target = (match[1] ?? "").trim().replace(/^<|>$/g, "");
+      if (!target || /^(?:https?:|mailto:|app:|#|\/)/.test(target)) continue;
+      target = target.split("#", 1)[0]?.split("?", 1)[0] ?? "";
+      if (!target) continue;
+      const resolvedTarget = resolve(dirname(file), target);
+      try {
+        await access(resolvedTarget);
+      } catch {
+        missing.push(`${file.slice(directory.length + 1)} -> ${match[1]}`);
+        continue;
+      }
+      const relativeTarget = resolvedTarget.slice(directory.length + 1).replaceAll("\\", "/");
+      if (!packagedPatterns.some((pattern) => packagePatternIncludes(pattern, relativeTarget))) {
+        missing.push(`${file.slice(directory.length + 1)} -> ${match[1]} (excluded by package files)`);
+      }
+    }
+  }
+  if (missing.length) throw new Error(`packaged Markdown links reference omitted files:\n${missing.join("\n")}`);
+}
+
+function packagePatternIncludes(pattern, relativePath) {
+  if (pattern === relativePath) return true;
+  if (pattern.endsWith("/**/*.md")) {
+    const prefix = pattern.slice(0, -"**/*.md".length);
+    return relativePath.startsWith(prefix) && relativePath.endsWith(".md");
+  }
+  if (pattern.endsWith("/**")) {
+    const prefix = pattern.slice(0, -3);
+    return relativePath === prefix || relativePath.startsWith(`${prefix}/`);
+  }
+  return false;
+}
+
+async function markdownFilesUnder(directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = resolve(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await markdownFilesUnder(entryPath));
+    else if (entry.name.endsWith(".md")) files.push(entryPath);
+  }
+  return files;
+}
 
 async function removePythonBytecode(directory) {
   let entries;

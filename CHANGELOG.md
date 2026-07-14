@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.1 (prepared, not published)
+
+### Canonical Bounded-Set Digest Verification
+
+- Fixes contract-authored bounded-set proposals that could fail unchanged
+  apply with `SET_DIGEST_MISMATCH` after protocol parsing reordered aggregate
+  object fields.
+- Uses recursive canonical JSON key ordering for new member and set digests,
+  while narrowly accepting the deterministic raw representations emitted by
+  `1.4.0` so valid stored proposals remain applyable.
+- Keeps every frozen member, expected version, reviewed value, aggregate,
+  tenant guard, and atomic source check intact; malformed digests and genuine
+  source drift still fail closed.
+- Adds PostgreSQL/MySQL regression coverage for the exact DSL-to-contract path
+  under source-database and Runner-ledger receipt authority, plus independent
+  version, predicate, aggregate, writable-value, missing-member, and tenant
+  drift checks.
+- Ships the bounded-set guide and other linked public docs in the Runner
+  tarball, and fails package assembly when a shipped local Markdown link cannot
+  resolve.
+- Removes obsolete `0.1 preview` wording from the DSL package without changing
+  canonical Spec `spec_version: "0.1"`.
+- Stages `@synapsor/runner@1.4.1` and `@synapsor/dsl@1.4.1`;
+  `@synapsor/spec` remains `1.4.0` because the public contract schema did not
+  change. Nothing is published by this change.
+
 ## 1.4.0 (prepared, not published)
 
 ### Reviewed Reversible Change Sets

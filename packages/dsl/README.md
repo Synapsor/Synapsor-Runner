@@ -1,6 +1,6 @@
 # @synapsor/dsl
 
-`@synapsor/dsl` is a 0.1 preview authoring layer for Synapsor contracts.
+`@synapsor/dsl` is the SQL-like authoring frontend for canonical Synapsor contracts.
 
 The DSL is not the source of truth. It compiles to `@synapsor/spec` JSON, and
 the generated JSON is validated by `@synapsor/spec`.
