@@ -10,6 +10,26 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.4.121 (prepared, not published)
+
+### Bounded-set multi-term DSL correctness
+
+- Fixes BUG-018, where a documented fixed predicate containing multiple
+  equality terms joined by `AND` could compile as one string-valued term and
+  then fail closed with no matching source rows.
+- The DSL compiler now consumes the complete clause, keeps `AND` inside quoted
+  strings, preserves ordered typed literals, and rejects malformed or
+  unsupported expressions before serving or proposal creation.
+- This does not add free-form SQL predicates: only fixed literal equality terms
+  joined by `AND` are supported. `OR`, parentheses, inequalities, ranges, and
+  model-authored predicates remain unsupported.
+- PostgreSQL and MySQL live verification proves all terms are applied together
+  within trusted tenant scope, source rows remain unchanged before approval,
+  and guarded apply, receipt/replay, retry, caps, and drift checks remain green.
+
+Prepared package versions: `@synapsor/dsl@1.4.2` and
+`@synapsor/runner@1.4.121`. `@synapsor/spec` remains `1.4.0`.
+
 ## 1.4.12 (prepared, not published)
 
 ### Runtime-store smoke-call consistency

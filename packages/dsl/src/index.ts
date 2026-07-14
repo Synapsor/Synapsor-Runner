@@ -427,12 +427,18 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       };
       continue;
     }
-    const selection = item.text.match(/^SELECT\s+WHERE\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
-    if (selection?.[1] && selection[2]) {
+    const selection = item.text.match(/^SELECT\s+WHERE(?:\s+(.*))?$/i);
+    if (selection) {
       ensureSetProposal(capability, item);
       if (capability.proposal.operation.kind === "insert") throw dslError(item.line, 1, "BATCH_INSERT_SELECTION_FORBIDDEN", "batch INSERT reviews explicit items and cannot use SELECT WHERE");
       capability.proposal.operation.selection ??= { all: [] };
-      capability.proposal.operation.selection.all.push({ column: selection[1], operator: "eq", value: parseLiteral(selection[2]) });
+      const clause = selection[1] ?? "";
+      const prefix = item.text.match(/^SELECT\s+WHERE\s*/i)?.[0] ?? "SELECT WHERE ";
+      const terms = parseFixedSelection(clause, item.line, prefix.length + 1);
+      if (capability.proposal.operation.selection.all.length + terms.length > 8) {
+        throw dslError(item.line, prefix.length + 1, "SELECT_WHERE_TERM_COUNT", "SELECT WHERE supports at most 8 fixed equality terms per capability");
+      }
+      capability.proposal.operation.selection.all.push(...terms);
       continue;
     }
     const aggregate = item.text.match(/^MAX\s+TOTAL\s+([A-Za-z_][A-Za-z0-9_]*)\s+(BEFORE|AFTER|ABSOLUTE\s+DELTA)\s+(-?\d+(?:\.\d+)?)$/i);
@@ -806,7 +812,91 @@ function parsePatchBinding(raw: string): { fixed?: string | number | boolean | n
   return { fixed: parseLiteral(trimmed) };
 }
 
-function parseLiteral(raw: string): string | number | boolean | null {
+function parseFixedSelection(
+  raw: string,
+  line: number,
+  baseColumn: number,
+): Array<{ column: string; operator: "eq"; value: string | number | boolean | null }> {
+  const terms: Array<{ column: string; operator: "eq"; value: string | number | boolean | null }> = [];
+  let index = 0;
+
+  const columnAt = (offset = index): number => baseColumn + offset;
+  const skipWhitespace = (): void => {
+    while (index < raw.length && /\s/.test(raw[index] ?? "")) index += 1;
+  };
+  const fail = (code: string, message: string, offset = index): never => {
+    throw dslError(line, columnAt(offset), code, message);
+  };
+
+  skipWhitespace();
+  if (index >= raw.length) fail("SELECT_WHERE_SYNTAX", "SELECT WHERE requires <column> = <literal>");
+
+  while (index < raw.length) {
+    skipWhitespace();
+    const termStart = index;
+    const identifier = raw.slice(index).match(/^([A-Za-z_][A-Za-z0-9_]*)/);
+    const column = identifier?.[1];
+    if (!column) {
+      if (raw[index] === "=" || /^AND\b/i.test(raw.slice(index))) {
+        throw dslError(line, columnAt(termStart), "SELECT_WHERE_SYNTAX", "SELECT WHERE requires a column before =");
+      }
+      throw dslError(line, columnAt(termStart), "SELECT_WHERE_UNSUPPORTED", "SELECT WHERE supports only fixed literal equality terms joined by AND");
+    }
+    index += column.length;
+    skipWhitespace();
+    if (raw[index] !== "=") {
+      if (["!", "<", ">", "("].includes(raw[index] ?? "")) {
+        fail("SELECT_WHERE_UNSUPPORTED", "SELECT WHERE supports only the = operator", index);
+      }
+      fail("SELECT_WHERE_SYNTAX", `SELECT WHERE term ${column} requires = <literal>`, index);
+    }
+    index += 1;
+    if (raw[index] === "=") fail("SELECT_WHERE_UNSUPPORTED", "SELECT WHERE supports =, not ==", index - 1);
+    skipWhitespace();
+    if (index >= raw.length) fail("SELECT_WHERE_SYNTAX", `SELECT WHERE term ${column} requires a literal value`);
+
+    const literalStart = index;
+    if (raw[index] === "'") {
+      index += 1;
+      let closed = false;
+      while (index < raw.length) {
+        if (raw[index] !== "'") {
+          index += 1;
+          continue;
+        }
+        if (raw[index + 1] === "'") {
+          index += 2;
+          continue;
+        }
+        index += 1;
+        closed = true;
+        break;
+      }
+      if (!closed) fail("SELECT_WHERE_UNTERMINATED_STRING", `unterminated quoted literal for ${column}`, literalStart);
+    } else {
+      while (index < raw.length && !/\s/.test(raw[index] ?? "")) index += 1;
+    }
+
+    const literal = raw.slice(literalStart, index);
+    const value = parseLiteral(literal, line, columnAt(literalStart));
+    terms.push({ column, operator: "eq", value });
+    if (terms.length > 8) fail("SELECT_WHERE_TERM_COUNT", "SELECT WHERE supports at most 8 fixed equality terms per capability", termStart);
+
+    skipWhitespace();
+    if (index >= raw.length) break;
+    const separator = raw.slice(index).match(/^AND\b/i)?.[0];
+    if (!separator) {
+      throw dslError(line, columnAt(index), "SELECT_WHERE_UNSUPPORTED", "SELECT WHERE supports only fixed literal equality terms joined by AND");
+    }
+    index += separator.length;
+    skipWhitespace();
+    if (index >= raw.length) fail("SELECT_WHERE_SYNTAX", "SELECT WHERE cannot end with AND");
+  }
+
+  return terms;
+}
+
+function parseLiteral(raw: string, line = 1, column = 1): string | number | boolean | null {
   const trimmed = raw.trim();
   if (/^NULL$/i.test(trimmed)) return null;
   if (/^TRUE$/i.test(trimmed)) return true;
@@ -814,7 +904,7 @@ function parseLiteral(raw: string): string | number | boolean | null {
   if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
   const quoted = trimmed.match(/^'(.*)'$/);
   if (quoted) return quoted[1] ?? "";
-  throw dslError(1, 1, "FIXED_LITERAL_REQUIRED", `expected a quoted string, number, boolean, or NULL: ${trimmed}`);
+  throw dslError(line, column, "FIXED_LITERAL_REQUIRED", `expected a quoted string, number, boolean, or NULL: ${trimmed}`);
 }
 
 function parseDedupComponents(

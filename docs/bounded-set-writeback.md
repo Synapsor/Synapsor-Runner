@@ -129,19 +129,24 @@ CREATE CAPABILITY tickets.close_overdue
   CONFLICT GUARD version
   LOOKUP reason BY id
   ARG reason STRING REQUIRED MAX LENGTH 100
-  ALLOW READ id, tenant_id, status, cost_cents, version
+  ALLOW READ id, tenant_id, risk_level, case_status, cost_cents, version
   REQUIRE EVIDENCE
   PROPOSE ACTION close_overdue UPDATE SET
-  SELECT WHERE status = 'overdue'
+  SELECT WHERE risk_level = 'high' AND case_status = 'active'
   MAX ROWS 10
   MAX TOTAL cost_cents BEFORE 50000
-  ALLOW WRITE status
-  PATCH status = 'closed'
+  ALLOW WRITE case_status
+  PATCH case_status = 'closed'
   ADVANCE VERSION version USING INTEGER INCREMENT
   APPROVAL ROLE ops_manager
   WRITEBACK DIRECT SQL
 END
 ```
+
+Each `SELECT WHERE` term is a reviewer-fixed literal equality, and every term
+must match. Up to eight terms may be joined by `AND`; quoted `AND` text remains
+part of the value. `OR`, parentheses, inequalities, ranges, and free-form or
+model-authored predicates are not supported.
 
 Compile the contract and create `synapsor.runner.json`:
 

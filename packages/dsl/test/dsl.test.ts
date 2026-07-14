@@ -1,8 +1,9 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AgentDslError, compileAgentDsl, compileAgentDslWithWarnings, parseAgentDsl, validateAgentDsl } from "../src/index.js";
+import { AgentDslError, compileAgentDsl, compileAgentDslWithWarnings, formatAgentDsl, parseAgentDsl, validateAgentDsl } from "../src/index.js";
 import { validateContract } from "@synapsor/spec";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -357,6 +358,100 @@ END
     expect(batch.capabilities[0]?.proposal?.patch).toEqual({ amount_cents: { from_item: "amount_cents" }, reason: { from_item: "reason" } });
   });
 
+  it("compiles every reviewed SELECT WHERE equality term instead of swallowing AND into a value", () => {
+    const contract = compileAgentDsl(boundedSetSelectionSource("risk_level = 'high' AND case_status = 'active'"));
+    expect(contract.capabilities[0]?.proposal?.operation?.selection).toEqual({
+      all: [
+        { column: "risk_level", operator: "eq", value: "high" },
+        { column: "case_status", operator: "eq", value: "active" },
+      ],
+    });
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("preserves term order and supported mixed literal types", () => {
+    const contract = compileAgentDsl(boundedSetSelectionSource("risk_level = 'high' AND severity = 7 AND readmit_risk_score = 7.5 AND escalated = TRUE AND needs_review = FALSE AND archived_at = NULL"));
+    expect(contract.capabilities[0]?.proposal?.operation?.selection?.all).toEqual([
+      { column: "risk_level", operator: "eq", value: "high" },
+      { column: "severity", operator: "eq", value: 7 },
+      { column: "readmit_risk_score", operator: "eq", value: 7.5 },
+      { column: "escalated", operator: "eq", value: true },
+      { column: "needs_review", operator: "eq", value: false },
+      { column: "archived_at", operator: "eq", value: null },
+    ]);
+  });
+
+  it("compiles three equality terms in their reviewed order", () => {
+    const contract = compileAgentDsl(boundedSetSelectionSource("risk_level = 'high' AND case_status = 'active' AND escalated = TRUE"));
+    expect(contract.capabilities[0]?.proposal?.operation?.selection?.all).toEqual([
+      { column: "risk_level", operator: "eq", value: "high" },
+      { column: "case_status", operator: "eq", value: "active" },
+      { column: "escalated", operator: "eq", value: true },
+    ]);
+  });
+
+  it.each([
+    ["description = 'salt AND pepper'", "salt AND pepper"],
+    ["description = 'candy and spice'", "candy and spice"],
+    ["description = 'O''Brien AND active'", "O''Brien AND active"],
+  ])("keeps AND inside the quoted literal in %s", (selection, expected) => {
+    const contract = compileAgentDsl(boundedSetSelectionSource(selection));
+    expect(contract.capabilities[0]?.proposal?.operation?.selection?.all).toEqual([
+      { column: "description", operator: "eq", value: expected },
+    ]);
+  });
+
+  it("accepts legal whitespace and case-insensitive AND separators", () => {
+    const contract = compileAgentDsl(boundedSetSelectionSource("risk_level='high'   aNd   case_status = 'active'"));
+    expect(contract.capabilities[0]?.proposal?.operation?.selection?.all).toEqual([
+      { column: "risk_level", operator: "eq", value: "high" },
+      { column: "case_status", operator: "eq", value: "active" },
+    ]);
+  });
+
+  it("keeps multi-term semantics stable across formatting and equivalent whitespace", () => {
+    const source = boundedSetSelectionSource("risk_level = 'high' AND case_status = 'active'");
+    const compact = boundedSetSelectionSource("risk_level='high' aNd case_status='active'");
+    const expected = compileAgentDsl(source);
+    const formatted = compileAgentDsl(formatAgentDsl(source));
+    const compacted = compileAgentDsl(compact);
+    const digest = (contract: unknown) => crypto.createHash("sha256").update(JSON.stringify(contract)).digest("hex");
+    expect(formatted).toEqual(expected);
+    expect(compacted).toEqual(expected);
+    expect(digest(formatted)).toBe(digest(expected));
+    expect(digest(compacted)).toBe(digest(expected));
+  });
+
+  it.each([
+    ["risk_level = 'high' AND", "SELECT_WHERE_SYNTAX"],
+    ["AND risk_level = 'high'", "SELECT_WHERE_SYNTAX"],
+    ["risk_level = 'high' AND AND case_status = 'active'", "SELECT_WHERE_SYNTAX"],
+    ["risk_level = 'high", "SELECT_WHERE_UNTERMINATED_STRING"],
+    ["= 'high'", "SELECT_WHERE_SYNTAX"],
+    ["risk_level 'high'", "SELECT_WHERE_SYNTAX"],
+    ["risk_level =", "SELECT_WHERE_SYNTAX"],
+    ["risk_level = 'high' OR case_status = 'active'", "SELECT_WHERE_UNSUPPORTED"],
+    ["(risk_level = 'high')", "SELECT_WHERE_UNSUPPORTED"],
+    ["risk_level != 'high'", "SELECT_WHERE_UNSUPPORTED"],
+    ["severity >= 7", "SELECT_WHERE_UNSUPPORTED"],
+    ["risk_level = 'high' trailing", "SELECT_WHERE_UNSUPPORTED"],
+  ])("rejects malformed or unsupported SELECT WHERE clause: %s", (selection, code) => {
+    const result = validateAgentDsl(boundedSetSelectionSource(selection));
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]).toMatchObject({ code, line: 20 });
+    expect(result.errors[0]?.column).toBeGreaterThan(1);
+    expect(() => compileAgentDsl(boundedSetSelectionSource(selection))).toThrow(AgentDslError);
+  });
+
+  it("rejects more fixed terms than the canonical bounded-set ceiling", () => {
+    const selection = Array.from({ length: 9 }, (_, index) => `term_${index + 1} = ${index + 1}`).join(" AND ");
+    const result = validateAgentDsl(boundedSetSelectionSource(selection));
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ code: "SELECT_WHERE_TERM_COUNT", line: 20 })],
+    });
+  });
+
   it("rejects bounded sets without fixed selection, value cap, or human approval", () => {
     expect(() => compileAgentDsl(crudSource(`
   PROPOSE ACTION close_overdue UPDATE SET
@@ -569,6 +664,38 @@ CREATE CAPABILITY support.mutate_credit
   REQUIRE EVIDENCE
   MAX ROWS 1
 ${proposalBody.trimEnd()}
+END
+`;
+}
+
+function boundedSetSelectionSource(selection: string): string {
+  return `
+CREATE AGENT CONTEXT health_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY health.flag_cases
+  USING CONTEXT health_operator
+  SOURCE local_postgres
+  ON public.cases
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  CONFLICT GUARD version
+  ARG reason STRING REQUIRED MAX LENGTH 128
+  ALLOW READ id, tenant_id, risk_level, case_status, description, severity, readmit_risk_score, escalated, needs_review, archived_at, version
+  REQUIRE EVIDENCE
+  PROPOSE ACTION flag UPDATE SET
+  SELECT WHERE ${selection}
+  MAX ROWS 25
+  MAX TOTAL readmit_risk_score BEFORE 1000
+  ALLOW WRITE needs_review
+  PATCH needs_review = TRUE
+  ADVANCE VERSION version USING INTEGER INCREMENT
+  APPROVAL ROLE health_reviewer
+  WRITEBACK DIRECT SQL
 END
 `;
 }

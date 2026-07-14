@@ -337,7 +337,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.4.12");
+      expect(output.join("").trim()).toBe("1.4.121");
     }
   });
 
@@ -1075,6 +1075,24 @@ describe("runner cli", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("compiles every fixed AND term through the bundled Runner DSL path", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-multi-term-"));
+    const dslPath = workspacePath("packages/dsl/examples/bounded-set-multi-term.synapsor.sql");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+
+    await expect(main(["dsl", "validate", dslPath, "--strict"])).resolves.toBe(0);
+    await expect(main(["dsl", "compile", dslPath, "--out", contractPath, "--strict"])).resolves.toBe(0);
+    await expect(main(["contract", "validate", contractPath])).resolves.toBe(0);
+
+    const contract = JSON.parse(await fs.readFile(contractPath, "utf8"));
+    expect(contract.capabilities[0]?.proposal?.operation?.selection).toEqual({
+      all: [
+        { column: "risk_level", operator: "eq", value: "high" },
+        { column: "case_status", operator: "eq", value: "active" },
+      ],
+    });
+  });
+
   it("accepts both DSL source extensions and emits equivalent canonical JSON", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-extensions-"));
     const source = await fs.readFile(workspacePath("packages/dsl/examples/billing-late-fee.synapsor.sql"), "utf8");
@@ -1159,8 +1177,8 @@ describe("runner cli", () => {
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.4.0",
-        "@synapsor/dsl": "1.4.1",
-        "@synapsor/runner": "1.4.12",
+        "@synapsor/dsl": "1.4.2",
+        "@synapsor/runner": "1.4.121",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
