@@ -164,6 +164,7 @@ const releaseAssets = [
   ["examples/runner-fleet", "examples/runner-fleet"],
   ["examples/support-plan-credit", "examples/support-plan-credit"],
   ["examples/support-billing-agent", "examples/support-billing-agent"],
+  ["packages/dsl/examples/bounded-set-multi-term.synapsor.sql", "fixtures/dsl/bounded-set-multi-term.synapsor.sql"],
   ["fixtures", "fixtures"],
   ["schemas", "schemas"],
 ];

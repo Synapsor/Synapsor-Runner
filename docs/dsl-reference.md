@@ -162,7 +162,7 @@ bounds, exact version guards, and human/operator approval:
 
 ```sql
   PROPOSE ACTION close_overdue UPDATE SET
-  SELECT WHERE status = 'overdue'
+  SELECT WHERE risk_level = 'high' AND case_status = 'active'
   MAX ROWS 10
   MAX TOTAL balance_cents BEFORE 50000
   ALLOW WRITE status
@@ -172,11 +172,14 @@ bounds, exact version guards, and human/operator approval:
   WRITEBACK DIRECT SQL
 ```
 
-`SELECT WHERE` accepts one or more literal equality terms joined by `AND`.
-Columns, operators, values, ordering, ranges, and raw SQL cannot come from a
-model argument. Runner reads `MAX ROWS + 1` and rejects overflow rather than
-truncating. `MAX TOTAL column BEFORE|AFTER|ABSOLUTE DELTA maximum` is a
-reviewer-visible aggregate value bound.
+`SELECT WHERE` accepts one through eight literal equality terms joined by
+`AND`. The separator is recognized only outside quoted literals, so
+`description = 'salt AND pepper'` remains one term. `OR`, parentheses,
+inequalities, ranges, trailing expressions, and free-form or model-authored
+predicates are rejected during compilation. Runner reads `MAX ROWS + 1` and
+rejects overflow rather than truncating. `MAX TOTAL column
+BEFORE|AFTER|ABSOLUTE DELTA maximum` is a reviewer-visible aggregate value
+bound.
 
 Batch INSERT takes a complete typed item array:
 

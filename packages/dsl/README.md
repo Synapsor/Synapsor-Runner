@@ -153,6 +153,19 @@ and require human/operator approval. The compiler rejects policy auto-approval,
 missing fixed selection, missing aggregate bounds, and model-supplied
 predicates. See the [bounded-set guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/bounded-set-writeback.md).
 
+Multi-term selections are fixed equality clauses, not free-form SQL:
+
+```sql
+  SELECT WHERE risk_level = 'high' AND case_status = 'active'
+```
+
+`AND` may join up to eight literal equality terms. `OR`, parentheses,
+inequalities, ranges, and model-authored predicates are rejected explicitly.
+Quoted literals may contain the word `AND` without becoming another term. See
+the packaged
+[`bounded-set-multi-term.synapsor.sql`](examples/bounded-set-multi-term.synapsor.sql)
+example.
+
 Reviewed reversible writes require direct SQL, human/operator approval, and
 operation-specific exact guards. After apply, `synapsor-runner revert` creates
 a separate proposal. See the [reviewed compensation

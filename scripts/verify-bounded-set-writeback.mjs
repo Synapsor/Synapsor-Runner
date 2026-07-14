@@ -273,7 +273,8 @@ async function setupEngine(engine, admin) {
     await query(engine, admin, `CREATE TABLE public.service_tickets (
       id bigint PRIMARY KEY,
       tenant_id text NOT NULL,
-      status text NOT NULL,
+      risk_level text NOT NULL,
+      case_status text NOT NULL,
       cost_cents integer NOT NULL,
       version integer NOT NULL
     )`);
@@ -306,7 +307,8 @@ async function setupEngine(engine, admin) {
     await query(engine, admin, `CREATE TABLE service_tickets (
       id bigint PRIMARY KEY,
       tenant_id varchar(128) NOT NULL,
-      status varchar(64) NOT NULL,
+      risk_level varchar(64) NOT NULL,
+      case_status varchar(64) NOT NULL,
       cost_cents integer NOT NULL,
       version integer NOT NULL
     )`);
@@ -339,30 +341,44 @@ async function setupEngine(engine, admin) {
     : "INSERT INTO bounded_set_items (id, tenant_id, request_id, status, note, value_cents, version) VALUES (?, ?, ?, ?, ?, ?, ?)";
   await query(engine, admin, wrongTenantSql, [3999, "globex", "req-globex", "open", "original", 9999, 1]);
   const ticketInsert = engine === "postgres"
-    ? "INSERT INTO public.service_tickets (id, tenant_id, status, cost_cents, version) VALUES ($1, $2, $3, $4, $5)"
-    : "INSERT INTO service_tickets (id, tenant_id, status, cost_cents, version) VALUES (?, ?, ?, ?, ?)";
+    ? "INSERT INTO public.service_tickets (id, tenant_id, risk_level, case_status, cost_cents, version) VALUES ($1, $2, $3, $4, $5, $6)"
+    : "INSERT INTO service_tickets (id, tenant_id, risk_level, case_status, cost_cents, version) VALUES (?, ?, ?, ?, ?, ?)";
   for (const row of [
-    [3, "acme", "closed", 8000, 1],
-    [4, "acme", "closed", 15000, 1],
-    [13, "acme", "closed", 8000, 1],
-    [14, "acme", "closed", 15000, 1],
-    [99, "globex", "overdue", 49000, 1],
+    [3, "acme", "low", "closed", 8000, 1],
+    [4, "acme", "low", "closed", 15000, 1],
+    [5, "acme", "low", "closed", 7000, 1],
+    [6, "acme", "low", "closed", 6000, 1],
+    [13, "acme", "low", "closed", 8000, 1],
+    [14, "acme", "low", "closed", 15000, 1],
+    [15, "acme", "low", "closed", 7000, 1],
+    [16, "acme", "low", "closed", 6000, 1],
+    [99, "globex", "high", "active", 49000, 1],
   ]) await query(engine, admin, ticketInsert, row);
 }
 
 async function serviceTickets(engine, admin, ids) {
-  if (engine === "postgres") return await query(engine, admin, "SELECT id, tenant_id, status, cost_cents, version FROM public.service_tickets WHERE id = ANY($1::bigint[]) ORDER BY id", [ids]);
-  return await query(engine, admin, `SELECT id, tenant_id, status, cost_cents, version FROM service_tickets WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
+  if (engine === "postgres") return await query(engine, admin, "SELECT id, tenant_id, risk_level, case_status, cost_cents, version FROM public.service_tickets WHERE id = ANY($1::bigint[]) ORDER BY id", [ids]);
+  return await query(engine, admin, `SELECT id, tenant_id, risk_level, case_status, cost_cents, version FROM service_tickets WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
 }
 
 async function verifyContractAuthoredHappyPath(engine, admin, authority) {
   const ids = authority === "source_db" ? [3, 4] : [13, 14];
-  const resetSql = engine === "postgres"
-    ? "UPDATE public.service_tickets SET status = CASE WHEN id = ANY($1::bigint[]) THEN 'overdue' ELSE 'closed' END, version = 1 WHERE tenant_id = 'acme'"
-    : `UPDATE service_tickets SET status = CASE WHEN id IN (${ids.map(() => "?").join(",")}) THEN 'overdue' ELSE 'closed' END, version = 1 WHERE tenant_id = 'acme'`;
-  await query(engine, admin, resetSql, engine === "postgres" ? [ids] : ids);
+  const firstOnlyId = authority === "source_db" ? 5 : 15;
+  const secondOnlyId = authority === "source_db" ? 6 : 16;
+  const observedIds = [...ids, firstOnlyId, secondOnlyId, 99];
+  const table = engine === "postgres" ? "public.service_tickets" : "service_tickets";
+  await query(engine, admin, `UPDATE ${table} SET risk_level = 'low', case_status = 'closed', version = 1 WHERE tenant_id = 'acme'`);
+  if (engine === "postgres") {
+    await query(engine, admin, `UPDATE ${table} SET risk_level = 'high', case_status = 'active' WHERE id = ANY($1::bigint[])`, [ids]);
+    await query(engine, admin, `UPDATE ${table} SET risk_level = 'high', case_status = 'closed' WHERE id = $1`, [firstOnlyId]);
+    await query(engine, admin, `UPDATE ${table} SET risk_level = 'low', case_status = 'active' WHERE id = $1`, [secondOnlyId]);
+  } else {
+    await query(engine, admin, `UPDATE ${table} SET risk_level = 'high', case_status = 'active' WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+    await query(engine, admin, `UPDATE ${table} SET risk_level = 'high', case_status = 'closed' WHERE id = ?`, [firstOnlyId]);
+    await query(engine, admin, `UPDATE ${table} SET risk_level = 'low', case_status = 'active' WHERE id = ?`, [secondOnlyId]);
+  }
 
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `synapsor-bug-016-${engine}-${authority}-`));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `synapsor-bug-018-${engine}-${authority}-`));
   const contractPath = path.join(tempDir, "synapsor.contract.json");
   const configPath = path.join(tempDir, "synapsor.runner.json");
   const schema = engines[engine].schema;
@@ -383,19 +399,23 @@ CREATE CAPABILITY tickets.close_overdue
   CONFLICT GUARD version
   LOOKUP reason BY id
   ARG reason STRING REQUIRED MAX LENGTH 100
-  ALLOW READ id, tenant_id, status, cost_cents, version
+  ALLOW READ id, tenant_id, risk_level, case_status, cost_cents, version
   REQUIRE EVIDENCE
   PROPOSE ACTION close_overdue UPDATE SET
-  SELECT WHERE status = 'overdue'
+  SELECT WHERE risk_level = 'high' AND case_status = 'active'
   MAX ROWS 10
   MAX TOTAL cost_cents BEFORE 50000
-  ALLOW WRITE status
-  PATCH status = 'closed'
+  ALLOW WRITE case_status
+  PATCH case_status = 'closed'
   ADVANCE VERSION version USING INTEGER INCREMENT
   APPROVAL ROLE ops_manager
   WRITEBACK DIRECT SQL
 END
 `));
+  assert(JSON.stringify(contract.capabilities[0].proposal.operation.selection) === JSON.stringify({ all: [
+    { column: "risk_level", operator: "eq", value: "high" },
+    { column: "case_status", operator: "eq", value: "active" },
+  ] }), `${engine} ${authority} did not compile the exact BUG-018 predicate`, contract.capabilities[0].proposal.operation.selection);
   const boundKeys = Object.keys(contract.capabilities[0].proposal.operation.aggregate_bounds[0]);
   assert(boundKeys.join(",") === "column,maximum,measure", `${engine} normalized contract did not reproduce the 1.4.0 aggregate-key order`, boundKeys);
   await fs.writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
@@ -424,8 +444,14 @@ END
     const proposal = store.getProposal(String(proposed.proposal_id));
     assert(proposal?.change_set?.schema_version === "synapsor.change-set.v3", `${engine} ${authority} did not create a v3 bounded-set proposal`, proposal);
     assert(proposal.change_set.frozen_set.row_count === 2, `${engine} ${authority} did not freeze exactly two tenant members`, proposal.change_set.frozen_set);
-    const beforeApproval = await serviceTickets(engine, admin, ids);
-    assert(beforeApproval.every((row) => row.status === "overdue" && Number(row.version) === 1), `${engine} ${authority} changed source before approval`, beforeApproval);
+    const frozenIds = proposal.change_set.frozen_set.members.map((member) => String(member.primary_key.value)).sort();
+    assert(JSON.stringify(frozenIds) === JSON.stringify(ids.map(String).sort()), `${engine} ${authority} froze first-only, second-only, or wrong-tenant rows`, proposal.change_set.frozen_set);
+    const beforeApproval = await serviceTickets(engine, admin, observedIds);
+    const targetBefore = beforeApproval.filter((row) => ids.includes(Number(row.id)));
+    assert(targetBefore.every((row) => row.risk_level === "high" && row.case_status === "active" && Number(row.version) === 1), `${engine} ${authority} changed source before approval`, beforeApproval);
+    assert(beforeApproval.find((row) => Number(row.id) === firstOnlyId)?.case_status === "closed", `${engine} ${authority} first-only decoy changed before approval`, beforeApproval);
+    assert(beforeApproval.find((row) => Number(row.id) === secondOnlyId)?.risk_level === "low", `${engine} ${authority} second-only decoy changed before approval`, beforeApproval);
+    assert(beforeApproval.find((row) => Number(row.id) === 99)?.tenant_id === "globex", `${engine} ${authority} wrong-tenant fixture was not present`, beforeApproval);
     store.approveProposal(proposal.proposal_id, { approver: "ops_manager", proposal_hash: proposal.proposal_hash, proposal_version: 1 });
     const publicJob = store.createWritebackJobFromProposal(proposal.proposal_id, { project_id: "bounded-set-integrator", runner_id: `runner-${engine}-${authority}` });
     const job = parseWritebackJob(publicJob);
@@ -440,8 +466,38 @@ END
     intent = applyConfig.writebackIntentStore;
     const applied = await engines[engine].apply(job, applyConfig);
     assert(applied.status === "applied" && applied.affected_rows === 2, `${engine} ${authority} contract-authored bounded set did not apply`, applied);
-    const after = await serviceTickets(engine, admin, ids);
-    assert(after.every((row) => row.status === "closed" && Number(row.version) === 2), `${engine} ${authority} contract-authored bounded set changed the wrong state`, after);
+    const affectedIds = applied.target_identities.map((identity) => String(identity.value)).sort();
+    assert(JSON.stringify(affectedIds) === JSON.stringify(ids.map(String).sort()), `${engine} ${authority} receipt omitted or added affected identities`, applied);
+    assert(applied.set_digest === proposal.change_set.frozen_set.set_digest, `${engine} ${authority} receipt set digest differs from the reviewed proposal`, applied);
+    const after = await serviceTickets(engine, admin, observedIds);
+    const targetAfter = after.filter((row) => ids.includes(Number(row.id)));
+    assert(targetAfter.every((row) => row.case_status === "closed" && Number(row.version) === 2), `${engine} ${authority} contract-authored bounded set changed the wrong state`, after);
+    assert(after.find((row) => Number(row.id) === firstOnlyId)?.case_status === "closed" && Number(after.find((row) => Number(row.id) === firstOnlyId)?.version) === 1, `${engine} ${authority} changed the first-only decoy`, after);
+    assert(after.find((row) => Number(row.id) === secondOnlyId)?.case_status === "active" && Number(after.find((row) => Number(row.id) === secondOnlyId)?.version) === 1, `${engine} ${authority} changed the second-only decoy`, after);
+    assert(after.find((row) => Number(row.id) === 99)?.case_status === "active" && Number(after.find((row) => Number(row.id) === 99)?.version) === 1, `${engine} ${authority} changed the wrong-tenant row`, after);
+    store.recordExecutionReceipt({
+      schema_version: "synapsor.execution-receipt.v3",
+      writeback_job_id: job.job_id,
+      proposal_id: job.proposal_id,
+      proposal_hash: job.approval_id,
+      approval_id: job.approval_id,
+      runner_id: applied.runner_id,
+      operation: applied.operation,
+      receipt_authority: applied.receipt_authority,
+      status: applied.status,
+      target: { source_id: job.source_id, schema: job.target.schema, table: job.target.table, identities: applied.target_identities, set_digest: applied.set_digest },
+      rows_affected: applied.affected_rows,
+      idempotency_key: job.idempotency_key,
+      member_effects: applied.member_effects,
+      source_database_mutated: true,
+      safe_outcome_code: "APPLIED",
+      executed_at: applied.completed_at,
+      receipt_hash: applied.result_hash ?? sha({ job_id: job.job_id, status: applied.status, affected_rows: applied.affected_rows }),
+    });
+    const replay = store.replay(proposal.proposal_id);
+    assert(replay.receipts.length === 1, `${engine} ${authority} replay omitted the bounded-set receipt`, replay);
+    assert(replay.receipts[0]?.receipt.target.set_digest === proposal.change_set.frozen_set.set_digest, `${engine} ${authority} replay set digest differs from the reviewed proposal`, replay.receipts[0]);
+    assert(JSON.stringify(replay.receipts[0]?.receipt.target.identities.map((identity) => String(identity.value)).sort()) === JSON.stringify(ids.map(String).sort()), `${engine} ${authority} replay omitted or added affected identities`, replay.receipts[0]);
     const retry = await engines[engine].apply(job, applyConfig);
     assert(retry.status === "already_applied", `${engine} ${authority} contract-authored retry was not idempotent`, retry);
   } finally {
@@ -760,7 +816,7 @@ async function main() {
     for (const [engine, admin] of [["postgres", pgAdmin], ["mysql", mysqlAdmin]]) {
       console.log(`== ${engine}: setup and proposal-time bounds ==`);
       await setupEngine(engine, admin);
-      console.log(`== ${engine}: contract-authored BUG-016 happy path ==`);
+      console.log(`== ${engine}: contract-authored BUG-018 multi-term happy path ==`);
       await verifyContractAuthoredHappyPath(engine, admin, "source_db");
       await verifyContractAuthoredHappyPath(engine, admin, "runner_ledger");
       await verifyProposalBounds(engine, admin);
@@ -781,7 +837,7 @@ async function main() {
       benchmarkResults[engine] = await benchmark(engine, admin);
     }
     console.log(JSON.stringify({ benchmark_environment: "local Docker; evidence only, not a throughput claim", results: benchmarkResults }, null, 2));
-    console.log("Bounded-set live verification passed: contract-authored PostgreSQL + MySQL apply under source_db and runner_ledger authority, canonical/legacy digest compatibility, cap and aggregate rejection, independent version/predicate/aggregate/writable-value/missing-member/tenant drift, frozen UPDATE/DELETE, batch INSERT, atomic rollback, hazards, exact receipts, reconciliation, and 1/10/100-row bounds.");
+    console.log("Bounded-set live verification passed: contract-authored PostgreSQL + MySQL multi-term selection under source_db and runner_ledger authority, first-only/second-only/wrong-tenant exclusion, exact receipt/replay members, canonical/legacy digest compatibility, cap and aggregate rejection, independent version/predicate/aggregate/writable-value/missing-member/tenant drift, frozen UPDATE/DELETE, batch INSERT, atomic rollback, hazards, reconciliation, and 1/10/100-row bounds.");
   } finally {
     await mysqlAdmin.end().catch(() => undefined);
     await pgAdmin.end().catch(() => undefined);

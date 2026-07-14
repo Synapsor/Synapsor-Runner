@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.121 (prepared, not published)
+
+### Bounded-set multi-term DSL correctness
+
+- Fixes BUG-018: `SELECT WHERE risk_level = 'high' AND case_status =
+  'active'` now compiles into two ordered canonical equality terms instead of
+  silently folding the second term into the first string value.
+- Uses a quote-aware, full-clause parser. `AND` inside a quoted literal remains
+  literal content, while malformed terms, trailing tokens, `OR`, parentheses,
+  and non-equality operators fail during DSL compilation with location-aware
+  errors.
+- Keeps canonical `@synapsor/spec@1.4.0` unchanged and preserves existing
+  single-term contracts and literal types.
+- Adds standalone DSL and bundled Runner parity coverage plus PostgreSQL/MySQL
+  live proof under source-database and Runner-ledger receipt authority. The
+  proof excludes first-term-only, second-term-only, and wrong-tenant rows and
+  verifies exact receipt/replay membership.
+- Stages `@synapsor/dsl@1.4.2` and `@synapsor/runner@1.4.121`;
+  `@synapsor/spec` remains `1.4.0`. Nothing is published by this change.
+
 ## 1.4.12 (prepared, not published)
 
 ### Runtime-store smoke-call consistency
