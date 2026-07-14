@@ -77,6 +77,27 @@ if (/sslmode=no-verify/i.test(readme)) {
 if (!readme.includes("[Threat Model](THREAT_MODEL.md)")) {
   fail("README trust section must link the root threat model.");
 }
+if (!readme.includes("docs/why-synapsor-vs-app-guardrails.md")) {
+  fail("README must link the prompt/application guardrails decision guide.");
+}
+
+const guardrailsGuide = "docs/why-synapsor-vs-app-guardrails.md";
+if (!exists(guardrailsGuide)) {
+  fail(`${guardrailsGuide} is required for the adoption content gate.`);
+} else {
+  const guide = read(guardrailsGuide);
+  for (const required of [
+    "Prompt Instructions Are Not A Security Boundary",
+    "First Ask: Who Produces The SQL?",
+    "Build Or Adopt",
+    "Regulated And High-Consequence Data",
+    "approval outside MCP",
+    "receipts",
+    "replay",
+  ]) {
+    if (!guide.includes(required)) fail(`${guardrailsGuide} must include ${JSON.stringify(required)}.`);
+  }
+}
 
 for (const required of [
   "docs/licensing.md",

@@ -88,10 +88,26 @@ approve/reject prompt:
 - evidence, query audit, idempotency receipts, and replay preserve what was
   inspected, requested, approved, and applied.
 
-Runner supports bounded production deployments when its documented database,
-identity, ledger, backup, and operational controls are satisfied. It does not
-make arbitrary agent code, raw SQL tools, host infrastructure, or
-prompt-injection-prone clients safe by itself.
+Runner supports bounded deployments when its documented database, identity,
+ledger, backup, and operational controls are satisfied. It does not make raw
+SQL tools, host infrastructure, or prompt-injection-prone clients safe.
+
+## Why Not Just Use A Prompt And App Code?
+
+Prompt instructions can guide behavior, but prompt-only enforcement is not an
+authorization boundary. First ask who produces the SQL:
+
+- **The model produces SQL:** your validator must safely understand arbitrary
+  queries, scope, and side effects. That is `execute_sql` with an extra parser.
+- **Trusted app code produces fixed, parameterized SQL:** good. You have built
+  a semantic tool, and that may be enough for a small read-only application.
+
+Runner becomes useful when those tools also need one reviewed contract for
+trusted tenant scope, field controls, evidence, approval outside MCP, guarded
+and idempotent writeback, receipts, replay, and reviewed compensation. Use your
+own code when you do not need that lifecycle. Read the [full build-vs-adopt
+guide](docs/why-synapsor-vs-app-guardrails.md) for the decision table, public
+incident evidence, and regulated-data boundaries.
 
 ## Connect A Staging Database
 
@@ -109,11 +125,9 @@ creates trusted context, generates reviewed capabilities, previews the MCP tool
 surface, and prints the next smoke and serve commands. It stores environment
 variable names, not connection strings.
 
-The interesting part of the generated configuration is the capability entry: a
-reviewed, tenant-scoped read with an explicit column allowlist and required
-evidence. The storage, source, and trusted-context wiring around it (including
-statement timeouts) is generated for you; the full file is in the
-[own-database guide](docs/getting-started-own-database.md).
+The generated capability is a tenant-scoped read with an explicit column
+allowlist and required evidence. See the [own-database
+guide](docs/getting-started-own-database.md) for the full configuration.
 
 ```json
 {
@@ -174,19 +188,11 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 - MCP proposal, evidence, and replay handles are references rather than bearer
   authority: resource reads re-check the owning tenant and principal against
   the current trusted session.
-- `corepack pnpm test:live-apply` runs disposable Postgres and MySQL scenarios.
-  It proves source rows stay unchanged before approval, guarded writeback
-  applies once, idempotent retry does not duplicate the effect, and a stale row
-  returns a conflict.
-- `corepack pnpm test:guarded-crud` proves native single-row INSERT, UPDATE,
-  and DELETE across both databases and all receipt modes, including the
-  zero-source-schema Runner-ledger path and fail-closed reconciliation.
-- `corepack pnpm test:bounded-set` proves proposal-time cap and aggregate
-  rejection, frozen-set drift checks, all-or-nothing set UPDATE/DELETE and
-  batch INSERT, delete-side-effect refusal, exact receipts, and 1/10/100-row
-  bounds on disposable PostgreSQL and MySQL.
-- `corepack pnpm test:reversible` proves approval, conflict guards, redaction,
-  receipts, and replay on PostgreSQL and MySQL.
+- `test:live-apply`, `test:guarded-crud`, `test:bounded-set`, and
+  `test:reversible` run disposable PostgreSQL/MySQL scenarios. They prove no
+  pre-approval mutation, guarded single-row CRUD, idempotent retry,
+  fail-closed conflicts, bounded atomic sets, exact receipts, and reviewed
+  compensation.
 - The C++/Cloud round-trip verifier exports normalized contracts, validates
   them with `@synapsor/spec`, and loads them in Runner. The shared contract and
   verification commands are documented in [Conformance](docs/conformance.md).
@@ -198,12 +204,9 @@ See [Security Boundary](docs/security-boundary.md) and
 
 ## Operate The Approval Loop
 
-Reviewed policies can combine a per-proposal threshold with daily count and
-total ceilings. Exceeding a ceiling routes that proposal to human review; it
-never auto-applies. Operators can apply the bounded approved queue independently
-with `apply --all-approved --yes`, inspect Prometheus counters with `metrics
-show`, and consume safe newline-delimited JSON outcome logs from stderr. Signed
-operator keys can enforce contract reviewer roles and separate apply roles.
+Reviewed policies combine per-proposal and daily ceilings; exceeding one routes
+the proposal to human review. Operators use `apply --all-approved --yes`,
+Prometheus metrics, structured logs, and optional signed reviewer/apply roles.
 Shared Postgres ledger mirror mode is available for bounded operator handoffs,
 and `storage.shared_postgres.mode = "runtime_store"` lets MCP serving use
 Postgres as the primary proposal/evidence/replay store with bounded CLI
@@ -230,11 +233,10 @@ dead-letter, and rolling-upgrade rules are in
 | `@synapsor/spec` | Canonical portable contracts for contexts, capabilities, workflows, evidence, proposals, receipts, and replay. |
 | `@synapsor/dsl` | SQL-like authoring that compiles contexts, capabilities, and workflow declarations into canonical contract JSON. |
 
-Runner executes locally. The spec is the portable contract shared by Runner
-and Cloud/C++. The DSL gives that contract a reviewable source format. Start
-with [Capability Authoring](docs/capability-authoring.md). Use `.synapsor.sql`
-for DSL source files when you want editors to provide generic SQL highlighting;
-legacy `.synapsor` files remain supported and produce the same contract JSON.
+Runner executes locally. The spec is shared by Runner and Cloud/C++; the DSL
+is its reviewable source format. Start with [Capability
+Authoring](docs/capability-authoring.md). Use `.synapsor.sql` for generic SQL
+highlighting; legacy `.synapsor` files produce the same contract JSON.
 
 Use the [DSL Reference](docs/dsl-reference.md) for exact authoring grammar and
 the [Runner Config Reference](docs/runner-config-reference.md) for every wiring

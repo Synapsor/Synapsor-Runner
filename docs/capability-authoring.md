@@ -447,3 +447,9 @@ Commit authority stays outside the model:
 ```text
 human/operator approval -> guarded writeback or app-owned handler -> receipt/replay
 ```
+
+If your application already exposes fixed parameterized functions, that is a
+good foundation rather than an anti-pattern. Read [Why Synapsor Over Prompt And
+Application Guardrails](why-synapsor-vs-app-guardrails.md) to decide whether
+you also need Runner's shared contract, trusted context, evidence, approval,
+receipt, replay, and compensation lifecycle.

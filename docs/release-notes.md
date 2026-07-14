@@ -26,6 +26,9 @@ for the Synapsor Cloud CLI.
 - The DSL package description and README no longer label the current `1.4.x`
   package as a `0.1 preview`. Canonical contract `spec_version: "0.1"` is
   unchanged.
+- Adds an honest prompt-and-application-guardrails decision guide covering SQL
+  authority, hand-built semantic tools, structural enforcement, build-vs-adopt
+  fit, and regulated-data boundaries.
 
 Prepared package versions: `@synapsor/dsl@1.4.1` and
 `@synapsor/runner@1.4.1`. `@synapsor/spec` remains `1.4.0`.
