@@ -20,6 +20,13 @@ trusted context, evidence handles, query audit, local inspection, and
 proposal-first writes. Proposal workflows add full replay across evidence,
 approval, writeback receipts, and events.
 
+Prompt instructions and application validation are separate layers. Prompts
+can guide behavior but cannot supply authorization. A fixed, parameterized
+application tool can be a sound boundary for a small system; Runner adds a
+portable reviewed contract and a consistent proposal, approval, receipt,
+replay, and compensation lifecycle. See [Why Synapsor Over Prompt And
+Application Guardrails](why-synapsor-vs-app-guardrails.md).
+
 The model-facing MCP server exposes reviewed semantic tools such as
 `billing.inspect_invoice` and `billing.propose_late_fee_waiver`.
 

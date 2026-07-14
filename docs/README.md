@@ -24,6 +24,10 @@ no-database demo, wire your database, then read deeper concepts.
 ## 02 Why Raw SQL Is Dangerous
 
 - [Security Boundary](security-boundary.md): what the model can and cannot see.
+- [Why Synapsor Over Prompt And Application
+  Guardrails](why-synapsor-vs-app-guardrails.md): where SQL authority lives,
+  what a hand-built semantic tool already gets right, and when the shared
+  contract, approval, receipt, and replay layer is worth adopting.
 - [MCP Audit](mcp-audit.md): static review for risky database MCP tools such as
   `execute_sql`, broad query tools, model-controlled tenant filters, or
   model-facing approval/commit tools.

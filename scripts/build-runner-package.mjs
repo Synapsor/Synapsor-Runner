@@ -139,6 +139,7 @@ const publicDocs = [
   "troubleshooting-first-run.md",
   "writeback-executors.md",
   "use-your-own-database.md",
+  "why-synapsor-vs-app-guardrails.md",
 ];
 const releaseAssets = [
   ["CHANGELOG.md", "CHANGELOG.md"],

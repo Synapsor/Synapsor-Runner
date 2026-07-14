@@ -22,6 +22,11 @@
   resolve.
 - Removes obsolete `0.1 preview` wording from the DSL package without changing
   canonical Spec `spec_version: "0.1"`.
+- Adds a build-vs-adopt guide for teams already using prompts and custom
+  parameterized tools. It distinguishes behavioral instructions from
+  structural authorization, explains where SQL authority lives, and documents
+  the approval, receipt, replay, and compensation layer without claiming
+  prompt-injection prevention or compliance certification.
 - Stages `@synapsor/runner@1.4.1` and `@synapsor/dsl@1.4.1`;
   `@synapsor/spec` remains `1.4.0` because the public contract schema did not
   change. Nothing is published by this change.
