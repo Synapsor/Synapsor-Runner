@@ -337,7 +337,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.4.1");
+      expect(output.join("").trim()).toBe("1.4.12");
     }
   });
 
@@ -748,6 +748,17 @@ describe("runner cli", () => {
     delete process.env.SYNAPSOR_TEST_LEDGER_URL;
     try {
       await expect(main([
+        "smoke",
+        "call",
+        "billing.inspect_invoice",
+        "--sample",
+        "--config",
+        configPath,
+        "--store",
+        storePath,
+      ])).rejects.toThrow(/SYNAPSOR_TEST_LEDGER_URL is required/);
+      await expect(fs.stat(storePath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(main([
         "mcp",
         "serve-streamable-http",
         "--config",
@@ -1149,7 +1160,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.4.0",
         "@synapsor/dsl": "1.4.1",
-        "@synapsor/runner": "1.4.1",
+        "@synapsor/runner": "1.4.12",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {

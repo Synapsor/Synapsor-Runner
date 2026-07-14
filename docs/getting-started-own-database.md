@@ -368,7 +368,14 @@ npx -y -p @synapsor/runner synapsor-runner smoke call --config ./synapsor.runner
 
 `smoke call` uses the same runtime as the MCP server. It records evidence and
 query audit for read tools, or creates a proposal for proposal tools, then
-prints the commands to inspect evidence/proposals/replay from the local store.
+prints the commands to inspect evidence/proposals/replay. With the default
+storage topology those records are in local SQLite. With
+`storage.shared_postgres.mode = "runtime_store"`, Runner `1.4.12` and later
+write them to the authoritative shared Postgres ledger and include `--config`
+in follow-up commands. The supplied `--store` path is compatibility plumbing
+for those CLI commands; it does not receive an orphan proposal copy. If the
+shared ledger is unavailable, `smoke call` fails safely and does not fall back
+to SQLite.
 
 The snippets contain the local command and args. They must not contain database
 URLs, passwords, approval tools, commit tools, or write credentials.

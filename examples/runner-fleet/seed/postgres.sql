@@ -64,6 +64,7 @@ INSERT INTO public.invoices (id, tenant_id, status, late_fee_cents, waiver_reaso
   ('INV-ACME', 'acme', 'overdue', 2500, NULL, '2026-07-12T12:00:00Z'),
   ('INV-GLOBEX', 'globex', 'overdue', 3100, NULL, '2026-07-12T12:00:00Z'),
   ('INV-RATECO', 'rateco', 'overdue', 900, NULL, '2026-07-12T12:00:00Z'),
+  ('INV-SMOKE-CALL', 'acme', 'overdue', 2100, NULL, '2026-07-12T12:00:00Z'),
   ('INV-BATCH-A', 'acme', 'overdue', 1100, NULL, '2026-07-12T12:00:00Z'),
   ('INV-BATCH-B', 'acme', 'overdue', 1300, NULL, '2026-07-12T12:00:00Z'),
   ('INV-QUORUM-RACE', 'acme', 'overdue', 1400, NULL, '2026-07-12T12:00:00Z'),
