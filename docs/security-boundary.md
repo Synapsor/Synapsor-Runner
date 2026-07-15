@@ -40,6 +40,12 @@ The model does not receive:
 - commit/writeback tools;
 - trusted tenant or principal authority as ordinary model arguments.
 
+Reviewed aggregate tools expose one scalar only. Their function, column,
+tenant key, optional equality selection, and minimum-group threshold are fixed
+in the contract; the model receives no predicate arguments or member rows.
+Suppression reduces single-record inference but does not replace statistical
+privacy review. See [Bounded Aggregate Reads](aggregate-reads.md).
+
 Trusted context comes from local configuration, environment bindings, or Cloud
 session context in Cloud mode. Tenant, principal, and authorization scope must
 not be accepted from the model as authority.
@@ -120,6 +126,13 @@ review surface with a per-run session token and CSRF protection for
 approve/reject actions. It does not expose raw SQL, database URLs, write
 credentials, approval tools, commit tools, or controls that widen reviewed
 tables/columns.
+
+Contract lint and tests are review aids rather than a proof of complete
+security. Scoped report exports omit evidence rows and kept-out values and are
+tamper-evident when their digest/signature verifies; local SQLite is not an
+immutable compliance service. Graduated-trust evaluation is operator-only,
+disabled by default, and can recommend/export a separate artifact but cannot
+approve itself or activate policy.
 
 Synapsor Runner supports reviewed single-row CRUD and the narrowly bounded set
 path documented above. It does not support arbitrary SQL, DDL, UPSERT,

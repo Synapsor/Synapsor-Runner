@@ -66,7 +66,7 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 
 - contexts and trusted/session bindings;
 - resources and subject identity;
-- read/proposal/external-action capabilities;
+- read/aggregate-read/proposal/external-action capabilities;
 - model-facing capability descriptions and returns hints;
 - visible and kept-out fields;
 - evidence/query-audit requirements;
@@ -178,6 +178,12 @@ Current additive safety fields:
   to capture a bounded inverse for direct SQL and create a separately approved
   compensation proposal. It does not authorize automatic or model-facing
   rollback.
+- scalar argument `enum`: 1 through 64 deterministic, same-type string,
+  number, or boolean values enforced by every Runner transport;
+- capability `kind = "aggregate_read"` plus a fixed `aggregate` definition for
+  reviewed count/sum/avg, optional contract-fixed equality selection, mandatory
+  minimum-group suppression, required evidence/query audit, and no row-facing
+  arguments or visible fields.
 
 Receipt authority, receipt-table provisioning, credentials, and Runner ledger
 topology are deliberately not canonical fields. They remain deployment choices

@@ -177,6 +177,23 @@ bounded inverse; `synapsor-runner revert <proposal_id>` creates a separately
 approved proposal. This is not rollback, time travel, or app-owned
 compensation.
 
+## Review And Prove Your Contract
+
+Before serving a contract, use `contract explain` for a reviewer-readable
+boundary, `contract lint --strict` for deterministic CI checks, and `contract
+test` for adopter-owned allow/deny/redaction cases. The built-in language
+server supplies diagnostics, completion, hover, and formatting for
+`.synapsor.sql` and legacy `.synapsor` files. See [Contract
+Review](docs/contract-review.md) and [Contract
+Testing](docs/contract-testing.md).
+
+Runner also supports reviewed [aggregate reads](docs/aggregate-reads.md),
+tenant-scoped tamper-evident [ledger reports](docs/compliance-reports.md), and
+opt-in [graduated-trust recommendations](docs/graduated-trust.md). Aggregate
+tools return one scalar and no source rows. Graduated trust is disabled by
+default, remains operator-only, and can export a reviewable artifact but never
+activate it.
+
 ## Trust And Verification
 
 Start with the **[Threat Model](THREAT_MODEL.md)**. It defines protected assets,
@@ -185,6 +202,9 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 - [Conformance fixtures](docs/conformance.md) prove trusted context, scoped
   reads, kept-out fields, proposal boundaries, approval, receipts, and replay
   behavior rather than only validating JSON shape.
+- `contract test` lets adopters encode the same boundary checks for their own
+  synthetic fixtures; it never invokes an LLM and refuses remote live targets
+  by default.
 - MCP proposal, evidence, and replay handles are references rather than bearer
   authority: resource reads re-check the owning tenant and principal against
   the current trusted session.

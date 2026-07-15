@@ -70,6 +70,12 @@ no-database demo, wire your database, then read deeper concepts.
 - [Recipes](recipes.md): starter business-capability templates.
 - [JSON Schema](../schemas/synapsor.runner.schema.json): editor validation for
   `synapsor.runner.json`.
+- [Contract Review](contract-review.md): LSP setup, plain-language explanation,
+  and deterministic lint/SARIF output.
+- [Contract Testing](contract-testing.md): adopter-owned static and disposable
+  PostgreSQL/MySQL allow/deny/redaction assertions.
+- [Bounded Aggregate Reads](aggregate-reads.md): fixed scalar count/sum/avg,
+  tenant scope, suppression, and no-row evidence.
 
 ## 06 Serve MCP
 
@@ -113,6 +119,10 @@ no-database demo, wire your database, then read deeper concepts.
   and lifecycle inspection.
 - `examples/mysql-refund-agent/`: MySQL order/refund review example using the
   same proposal, approval, guarded writeback, and replay loop.
+- [Scoped Ledger Reports](compliance-reports.md): object/principal JSON,
+  Markdown, and PDF exports with digest/signature verification.
+- [Graduated Trust](graduated-trust.md): off-by-default operator
+  recommendations that never auto-activate a policy.
 
 ## 09 App-Owned Handlers
 
