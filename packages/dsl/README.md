@@ -119,10 +119,13 @@ try {
 - `ARG ... DESCRIPTION`
 - `ARG ... MIN ... MAX ...` for `NUMBER`
 - `ARG ... MAX LENGTH ...` for `STRING`/`TEXT`
+- `ARG ... ENUM(...)` for reviewed string, number, or boolean choices
 - `LOOKUP`
 - `ALLOW READ`
 - `KEEP OUT`
 - `REQUIRE EVIDENCE`
+- `AGGREGATE READ COUNT ROWS|COUNT NON NULL column|SUM column|AVG column`
+- `MIN GROUP SIZE n` for mandatory aggregate suppression
 - `PROPOSE ACTION`
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE` (operation defaults to `UPDATE`)
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE SET` for bounded-set authoring

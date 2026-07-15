@@ -49,6 +49,12 @@ enterprise SLA.
 - Static MCP database risk review.
 - Local indexed search for proposals, evidence bundles, query audit, writeback
   receipts, and proposal replay.
+- DSL enum arguments and fixed, tenant-scoped aggregate count/sum/avg tools
+  with mandatory minimum-group suppression and no source-row output.
+- Contract LSP, explanation, deterministic lint, adopter-owned contract tests,
+  and scoped tamper-evident JSON/Markdown/PDF ledger reports.
+- Off-by-default graduated-trust recommendations that require verified operator
+  review and explicit artifact export without activation.
 
 ## Runtime Contract
 
@@ -81,6 +87,10 @@ truth for the model-facing tools.
 - Prompt-injection prevention.
 - Unbounded/high-throughput or multi-region ledger scale.
 - Managed fleet, SLA, compliance certification, or production support guarantee.
+- Arbitrary aggregate expressions, joins, grouping, dynamic columns,
+  model-controlled aggregate predicates, or a statistical privacy guarantee.
+- Automatic policy widening or activation from graduated-trust metrics.
+- Immutable/WORM compliance storage from the local report exporter.
 
 ## Important External Database Semantics
 

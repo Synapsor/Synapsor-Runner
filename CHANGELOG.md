@@ -2,7 +2,7 @@
 
 ## 1.4.121 (prepared, not published)
 
-### Bounded-set multi-term DSL correctness
+### Contract trust surface and bounded-set parser correctness
 
 - Fixes BUG-018: `SELECT WHERE risk_level = 'high' AND case_status =
   'active'` now compiles into two ordered canonical equality terms instead of
@@ -17,8 +17,26 @@
   live proof under source-database and Runner-ledger receipt authority. The
   proof excludes first-term-only, second-term-only, and wrong-tenant rows and
   verifies exact receipt/replay membership.
-- Stages `@synapsor/dsl@1.4.2` and `@synapsor/runner@1.4.121`;
-  `@synapsor/spec` remains `1.4.0`. Nothing is published by this change.
+- Adds a real stdio contract language server plus canonical `contract explain`
+  and deterministic text/JSON/SARIF lint for review before serving.
+- Adds adopter-owned static/live contract tests with a public manifest schema,
+  generic operator-boundary checks, and disposable PostgreSQL/MySQL coverage.
+- Adds tenant-scoped object/principal ledger reports in JSON, Markdown, and PDF
+  with redaction, canonical digests, optional operator signatures, and tamper
+  verification.
+- Adds typed DSL enums and canonical fixed aggregate reads for COUNT/SUM/AVG.
+  Aggregate tools use trusted tenant scope, fixed equality selection, mandatory
+  minimum-group suppression, one scalar result, and evidence/query audit with
+  no member rows or IDs.
+- Adds disabled-by-default graduated-trust recommendations. Evaluation uses
+  scoped human-reviewed outcomes, excludes auto-approval as independent
+  evidence, requires verified operator review, and exports a separate
+  digest-bound contract artifact without activating it.
+- Proves additive Spec/DSL/Runner/C++ aggregate and enum parity, shared Postgres
+  recommendation durability, and transient PostgreSQL/MySQL timeout
+  classification.
+- Stages `@synapsor/spec@1.4.1`, `@synapsor/dsl@1.4.2`, and
+  `@synapsor/runner@1.4.121`. Nothing is published by this change.
 
 ## 1.4.12 (prepared, not published)
 

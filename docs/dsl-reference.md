@@ -71,6 +71,7 @@ END
   ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id.'
   ARG amount_cents NUMBER REQUIRED MIN 1 MAX 2500 DESCRIPTION 'Amount in cents.'
   ARG confirmed BOOLEAN REQUIRED
+  ARG risk_level STRING ENUM('low', 'medium', 'high') REQUIRED
 ```
 
 Argument types are `STRING`/`TEXT`, `NUMBER`, and `BOOLEAN`/`BOOL`.
@@ -80,11 +81,40 @@ Argument types are `STRING`/`TEXT`, `NUMBER`, and `BOOLEAN`/`BOOL`.
 - `MIN n` and `MAX n` are numeric bounds for `NUMBER`.
 - `MAX LENGTH n` bounds `STRING`/`TEXT`. Legacy text `MAX n` remains accepted.
 - `LOOKUP arg BY column` binds one argument to the target row lookup.
+- `ENUM(value, ...)` restricts an argument to reviewed string, numeric, or
+  boolean values of the declared type. Enums contain 1 through 64 unique,
+  non-null values and preserve declared order.
 
 In spec 0.1, lookup is primary-key-only. The `BY` column must equal the declared
 `PRIMARY KEY`. A different column fails with `LOOKUP_COLUMN_UNSUPPORTED`; Runner
 never silently rewrites it. List/filter queries require a reviewed view or a
 different capability design.
+
+## Aggregate read
+
+An aggregate capability returns one scalar and no source rows:
+
+```sql
+CREATE CAPABILITY billing.overdue_balance_total
+  DESCRIPTION 'Return overdue balance for the trusted tenant.'
+  USING CONTEXT local_operator
+  SOURCE billing_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  AGGREGATE READ SUM balance_cents
+  SELECT WHERE status = 'overdue'
+  MIN GROUP SIZE 5
+  REQUIRE EVIDENCE
+END
+```
+
+Use `COUNT ROWS`, `COUNT NON NULL column`, `SUM column`, or `AVG column`.
+`SELECT WHERE` is the same contract-fixed equality AST used by reviewed set
+operations. `MIN GROUP SIZE` is mandatory and must be 2 through 1,000,000.
+Aggregate reads cannot declare model arguments, lookup, visible row fields,
+proposal clauses, joins, grouping, or arbitrary expressions. See [Bounded
+Aggregate Reads](aggregate-reads.md).
 
 ## Read surface and evidence
 

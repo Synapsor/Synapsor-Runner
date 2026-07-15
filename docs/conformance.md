@@ -28,6 +28,7 @@ Current fixture groups:
 - `manual-approval`
 - `auto-approval`
 - `aggregate-policy-limits`
+- `aggregate-read`
 - `numeric-bounds`
 - `bounded-set-threats`
 - `reversible-change-sets`
@@ -42,6 +43,12 @@ selection, count/value caps, frozen-version drift checks, atomic rollback,
 exact receipts, hard-delete side-effect refusal, and human approval. Adapter
 tests and `corepack pnpm test:bounded-set` complete the live PostgreSQL/MySQL
 matrix.
+The aggregate-read fixture proves a reviewer-fixed scalar operation, trusted
+tenant scope, fixed equality selection, minimum-group suppression, and an
+evidence/query-audit surface containing no member rows or identities. The live
+`corepack pnpm test:aggregate-read` gate runs COUNT/SUM/AVG, suppression,
+timeout, and dependency classification against disposable PostgreSQL and
+MySQL.
 The reversible-change-set fixture proves that undo is a new reviewed
 compensation proposal, not rollback: apply-time receipts capture only
 allowlisted inverse data, compensation uses fresh guards and exact members,
@@ -72,6 +79,8 @@ Run:
 
 ```bash
 corepack pnpm --filter @synapsor-runner/mcp-server test
+corepack pnpm test:contract-conformance
+corepack pnpm test:aggregate-read
 ```
 
 The spec package also validates every conformance contract:

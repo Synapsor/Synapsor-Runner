@@ -12,7 +12,7 @@ for the Synapsor Cloud CLI.
 
 ## 1.4.121 (prepared, not published)
 
-### Bounded-set multi-term DSL correctness
+### Contract trust surface and bounded-set parser correctness
 
 - Fixes BUG-018, where a documented fixed predicate containing multiple
   equality terms joined by `AND` could compile as one string-valued term and
@@ -26,9 +26,24 @@ for the Synapsor Cloud CLI.
 - PostgreSQL and MySQL live verification proves all terms are applied together
   within trusted tenant scope, source rows remain unchanged before approval,
   and guarded apply, receipt/replay, retry, caps, and drift checks remain green.
+- Contract authors gain one parser-backed review path: stdio LSP diagnostics,
+  completion, hover, and formatting; plain-language explanation; deterministic
+  lint; and adopter-owned static/disposable contract tests.
+- Scoped object/principal reports export redacted JSON, Markdown, or PDF ledger
+  metadata with digest/signature verification. They are tamper-evident exports,
+  not a claim that local SQLite is immutable compliance storage.
+- DSL enum arguments compile to the canonical enum shape and are enforced by
+  every Runner transport. Canonical aggregate reads return one fixed
+  tenant-scoped COUNT/SUM/AVG scalar, suppress small groups, and persist no
+  member rows or identities in evidence/query audit.
+- Graduated trust remains disabled by default and operator-only. It can create
+  and export a verified, bounded policy recommendation artifact, but cannot
+  auto-approve, push, or activate it.
+- C++/Cloud validators and exporters preserve the new additive enum/aggregate
+  fields for canonical round-trip compatibility.
 
-Prepared package versions: `@synapsor/dsl@1.4.2` and
-`@synapsor/runner@1.4.121`. `@synapsor/spec` remains `1.4.0`.
+Prepared package versions: `@synapsor/spec@1.4.1`,
+`@synapsor/dsl@1.4.2`, and `@synapsor/runner@1.4.121`.
 
 ## 1.4.12 (prepared, not published)
 

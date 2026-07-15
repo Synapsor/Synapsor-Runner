@@ -38,6 +38,7 @@ Unknown keys fail when `strict` is true (the default).
 | `session_auth` | HTTP claims | HS256 development or asymmetric RS256/ES256 session-token verification. |
 | `rate_limits` | No | Operational fixed-window limits; fleet-wide only with shared `runtime_store`. |
 | `metrics` | No | Separately authorized scrapeable HTTP metrics. Disabled by default. |
+| `graduated_trust` | No | Off-by-default, operator-only policy recommendation criteria and kill switch. |
 | `executors` | No | App-owned writeback wiring. |
 | `cloud` | Cloud mode | Scoped Cloud adapter configuration. |
 
@@ -374,6 +375,21 @@ runtime wiring and never portable contract fields.
 metrics token; the MCP bearer does not authorize metrics. Labels are bounded to
 trusted tenant, capability, source, engine, and readiness component. Object
 IDs, principals, URLs, tokens, and raw errors are never labels.
+
+## Graduated trust
+
+`graduated_trust` is runtime/operator policy, not model-facing authority. It is
+disabled unless `enabled` is exactly `true`; `kill_switch: true` stops all
+evaluation. Each criterion fixes one capability, approval policy, numeric
+field, minimum human-reviewed sample (10..10000), window (1..365 days), maximum
+rejection/conflict/failure/revert rates, maximum threshold increment, and
+absolute ceiling. Optional `workspace_id` and `project_id` further scope stored
+recommendations.
+
+Auto-approved outcomes never count as human evidence. Recommendation decisions
+require verified operator identity. Approval only permits exporting a new
+contract artifact bound to the current digest/version; Runner never activates
+it. See [Graduated Trust Recommendations](graduated-trust.md).
 
 ## Operator identity
 

@@ -50,6 +50,12 @@ idempotency boundary for effects.
 - Model asks for arbitrary SQL: no generic SQL tool is exposed in the Synapsor path.
 - Model supplies `tenant_id`, `principal`, source id, allowed columns, row version, or approval identity: runner rejects trusted-binding overrides.
 - Prompt injection in database content asks the model to bypass policy: the runner ignores text as authority and only accepts structured capability/job state.
+- Aggregate inference through a one-record group: reviewed aggregate tools
+  require minimum-group suppression and never return member rows or IDs. This
+  reduces, but does not eliminate, statistical inference risk.
+- Policy self-expansion from favorable automated outcomes: graduated trust is
+  off by default, excludes auto-approvals from human evidence, requires a
+  verified operator decision, and exports without activation.
 - Wrong tenant or object: reads and writes include trusted primary-key and tenant predicates.
 - Disallowed field update: patch columns must be allowlisted.
 - Stale row: conflict guard mismatch returns `conflict` instead of silently writing.
