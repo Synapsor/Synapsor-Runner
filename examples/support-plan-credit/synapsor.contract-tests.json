@@ -1,0 +1,53 @@
+{
+  "$schema": "../../schemas/synapsor.contract-tests.schema.json",
+  "version": 1,
+  "name": "support-plan-credit contract boundary",
+  "tests": [
+    {
+      "id": "operator-controls-stay-outside-mcp",
+      "kind": "operator_boundary",
+      "capability": "support.propose_plan_credit"
+    },
+    {
+      "id": "private-customer-fields-stay-hidden",
+      "kind": "hide_fields",
+      "capability": "support.inspect_customer",
+      "args": { "customer_id": "CUS-3001" },
+      "trusted_context": { "tenant_id": "acme", "principal": "contract_test" },
+      "fields": ["card_token", "raw_payment_method", "internal_risk_score", "private_notes"]
+    },
+    {
+      "id": "credit-amount-is-bounded",
+      "kind": "argument_constraint",
+      "capability": "support.propose_plan_credit_record",
+      "argument": "credit_cents",
+      "expected": { "minimum": 1, "maximum": 50000 }
+    },
+    {
+      "id": "trusted-tenant-can-read-own-customer",
+      "kind": "tool_allow",
+      "capability": "support.inspect_customer",
+      "args": { "customer_id": "CUS-3001" },
+      "trusted_context": { "tenant_id": "acme", "principal": "contract_test" }
+    },
+    {
+      "id": "trusted-tenant-cannot-read-other-customer",
+      "kind": "tool_deny",
+      "capability": "support.inspect_customer",
+      "args": { "customer_id": "CUS-9001" },
+      "trusted_context": { "tenant_id": "acme", "principal": "contract_test" },
+      "expected_code": "NOT_FOUND_IN_TENANT"
+    },
+    {
+      "id": "proposal-does-not-write-before-approval",
+      "kind": "source_unchanged_before_approval",
+      "capability": "support.propose_plan_credit",
+      "args": {
+        "customer_id": "CUS-3001",
+        "credit_cents": 10000,
+        "reason": "synthetic conformance check"
+      },
+      "trusted_context": { "tenant_id": "acme", "principal": "contract_test" }
+    }
+  ]
+}
