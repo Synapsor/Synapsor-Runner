@@ -1,0 +1,119 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "aggregate read and enum conformance",
+    "version": "1.0.0"
+  },
+  "resources": [
+    {
+      "name": "billing_invoices",
+      "engine": "postgres",
+      "schema": "public",
+      "table": "invoices",
+      "primary_key": "id",
+      "tenant_key": "tenant_id"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "billing_context",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID"
+        },
+        {
+          "name": "principal",
+          "source": "environment",
+          "key": "SYNAPSOR_PRINCIPAL"
+        }
+      ],
+      "tenant_binding": "tenant_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "billing.sum_overdue_balance",
+      "description": "Return one privacy-suppressed aggregate for the trusted tenant.",
+      "returns_hint": "Returns one scalar or a suppression result; never member rows.",
+      "kind": "aggregate_read",
+      "context": "billing_context",
+      "source": "local_postgres",
+      "subject": {
+        "resource": "billing_invoices"
+      },
+      "args": {},
+      "visible_fields": [],
+      "kept_out_fields": [
+        "customer_email",
+        "private_notes"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "aggregate": {
+        "function": "sum",
+        "column": "balance_cents",
+        "selection": {
+          "all": [
+            {
+              "column": "status",
+              "operator": "eq",
+              "value": "overdue"
+            }
+          ]
+        },
+        "minimum_group_size": 5
+      }
+    },
+    {
+      "name": "billing.inspect_invoice",
+      "description": "Inspect one tenant-scoped invoice using a reviewed risk enum.",
+      "kind": "read",
+      "context": "billing_context",
+      "source": "local_postgres",
+      "subject": {
+        "resource": "billing_invoices"
+      },
+      "args": {
+        "invoice_id": {
+          "type": "string",
+          "required": true,
+          "max_length": 128
+        },
+        "risk_level": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "lookup": {
+        "id_from_arg": "invoice_id"
+      },
+      "visible_fields": [
+        "id",
+        "tenant_id",
+        "status",
+        "balance_cents"
+      ],
+      "kept_out_fields": [
+        "customer_email",
+        "private_notes"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1
+    }
+  ]
+}
+

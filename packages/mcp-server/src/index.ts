@@ -17,7 +17,7 @@ import {
 import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3 } from "@synapsor-runner/protocol";
-import { isNumericProposalField, normalizeContract, type AgentContextSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
+import { isNumericProposalField, normalizeContract, type AgentContextSpec, type AggregateReadSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { z } from "zod";
 import { createJwtVerifier, type JwtAlgorithm, type JwtVerifier, type JwtVerificationConfig } from "./jwt-auth.js";
@@ -28,7 +28,7 @@ export type { JwtAlgorithm, JwtVerifier, JwtVerificationConfig, VerifiedJwt } fr
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
 export type ContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
-export type CapabilityKind = "read" | "proposal";
+export type CapabilityKind = "read" | "aggregate_read" | "proposal";
 export type RuntimeWritebackMode = "direct_sql" | "app_handler" | "cloud_worker" | "none";
 export type ToolNameStyle = "canonical" | "openai" | "both";
 export type ResultFormat = 1 | 2;
@@ -94,6 +94,7 @@ export type RuntimeTransitionGuardConfig = {
 export type RuntimeCapabilityConfig = {
   name: string;
   kind: CapabilityKind;
+  contract_provenance?: { digest: `sha256:${string}`; version: string };
   description?: string;
   returns_hint?: string;
   source: string;
@@ -111,6 +112,7 @@ export type RuntimeCapabilityConfig = {
   visible_columns: string[];
   evidence?: "required" | "optional" | string;
   max_rows?: number;
+  aggregate?: AggregateReadSpec;
   patch?: Record<string, { fixed?: Scalar; from_arg?: string; from_item?: string }>;
   allowed_columns?: string[];
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
@@ -179,6 +181,25 @@ export type RuntimeConfig = {
   metrics?: {
     enabled?: boolean;
     token_env?: string;
+  };
+  graduated_trust?: {
+    enabled?: boolean;
+    kill_switch?: boolean;
+    workspace_id?: string;
+    project_id?: string;
+    criteria?: Array<{
+      capability: string;
+      policy: string;
+      field: string;
+      minimum_human_reviews: number;
+      window_days: number;
+      maximum_rejection_rate: number;
+      maximum_conflict_rate: number;
+      maximum_failure_rate: number;
+      maximum_revert_rate: number;
+      maximum_threshold_increase: number;
+      absolute_ceiling: number;
+    }>;
   };
   storage?: {
     sqlite_path?: string;
@@ -467,6 +488,10 @@ function rememberPolicyName(seen: Map<string, string>, name: string, origin: str
 
 function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: SynapsorContract, origin: string, seenCapabilities: Map<string, string>, seenPolicies: Map<string, string>): void {
   const resources = new Map((contract.resources ?? []).map((resource) => [resource.name, resource]));
+  const provenance = {
+    digest: canonicalJsonDigest(contract),
+    version: contract.metadata?.version ?? contract.spec_version,
+  };
   for (const context of contract.contexts) {
     if (!config.contexts) config.contexts = {};
     config.contexts[context.name] ??= runtimeContextFromSpec(context);
@@ -478,7 +503,7 @@ function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: Synapso
   if (!config.capabilities) config.capabilities = [];
   for (const [capabilityIndex, capability] of contract.capabilities.entries()) {
     rememberCapabilityName(seenCapabilities, capability.name, `${origin} capabilities[${capabilityIndex}]`);
-    config.capabilities.push(runtimeCapabilityFromSpec(capability, resources, config));
+    config.capabilities.push(runtimeCapabilityFromSpec(capability, resources, config, provenance));
   }
   if (contract.policies?.length) {
     if (!config.policies) config.policies = [];
@@ -510,6 +535,7 @@ function runtimeCapabilityFromSpec(
   capability: CapabilitySpec,
   resources: Map<string, ResourceSpec>,
   config: RuntimeConfig,
+  provenance: { digest: `sha256:${string}`; version: string },
 ): RuntimeCapabilityConfig {
   const subjectResource = capability.subject.resource ? resources.get(capability.subject.resource) : undefined;
   const source = resolveCapabilitySource(capability, config);
@@ -522,7 +548,8 @@ function runtimeCapabilityFromSpec(
   };
   const runtime: RuntimeCapabilityConfig = {
     name: capability.name,
-    kind: capability.kind === "proposal" ? "proposal" : "read",
+    kind: capability.kind === "proposal" ? "proposal" : capability.kind === "aggregate_read" ? "aggregate_read" : "read",
+    contract_provenance: provenance,
     ...(capability.description ? { description: capability.description } : {}),
     ...(capability.returns_hint ? { returns_hint: capability.returns_hint } : {}),
     source,
@@ -533,6 +560,7 @@ function runtimeCapabilityFromSpec(
     visible_columns: capability.visible_fields,
     evidence: capability.evidence?.required === false ? "optional" : "required",
     ...(capability.max_rows ? { max_rows: capability.max_rows } : {}),
+    ...(capability.aggregate ? { aggregate: capability.aggregate } : {}),
   };
   if (capability.kind === "proposal" && capability.proposal) {
     runtime.patch = capability.proposal.patch;
@@ -727,9 +755,9 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
             description: capabilityDescription(capability, exposedName),
             inputSchema: zodInputShape(capability),
             annotations: {
-              readOnlyHint: capability.kind === "read",
+              readOnlyHint: capability.kind === "read" || capability.kind === "aggregate_read",
               destructiveHint: false,
-              idempotentHint: capability.kind === "read",
+              idempotentHint: capability.kind === "read" || capability.kind === "aggregate_read",
               openWorldHint: false,
             },
             _meta: {
@@ -1831,12 +1859,12 @@ function zodInputShapeFromJsonSchema(schema: Record<string, unknown>): Record<st
   for (const [name, rawProperty] of Object.entries(properties)) {
     const property = isRecord(rawProperty) ? rawProperty : {};
     let valueSchema: z.ZodTypeAny;
-    if (property.type === "number" || property.type === "integer") valueSchema = z.number();
-    else if (property.type === "boolean") valueSchema = z.boolean();
-    else if (Array.isArray(property.enum)) {
+    if (Array.isArray(property.enum)) {
       const allowed = property.enum.map((item) => scalar(item));
       valueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]).refine((value) => allowed.includes(value), "value is not allowlisted");
-    } else valueSchema = z.string();
+    } else if (property.type === "number" || property.type === "integer") valueSchema = z.number();
+    else if (property.type === "boolean") valueSchema = z.boolean();
+    else valueSchema = z.string();
     if (!required.has(name)) valueSchema = valueSchema.optional();
     shape[name] = valueSchema.describe(typeof property.description === "string" ? property.description : `${name} argument`);
   }
@@ -1885,6 +1913,9 @@ async function callConfiguredTool(input: {
       context,
       env: input.env,
     });
+  if (capability.kind === "aggregate_read") {
+    return recordAggregateRead({ capability, sourceName: capability.source, context, current, store: input.store, mode: input.config.mode });
+  }
   const currentRows = setOperation
     ? batchInsert ? [] : current.rows ?? (current.rowCount === 1 ? [current.row] : [])
     : current.rowCount === 1 ? [current.row] : [];
@@ -2125,6 +2156,105 @@ async function callConfiguredTool(input: {
   };
 }
 
+async function recordAggregateRead(input: {
+  capability: RuntimeCapabilityConfig;
+  sourceName: string;
+  context: TrustedContext;
+  current: { row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number };
+  store: ProposalRuntimeStore;
+  mode: RunnerMode;
+}): Promise<Record<string, unknown>> {
+  const aggregate = input.capability.aggregate;
+  if (!aggregate) throw new McpRuntimeError("AGGREGATE_DEFINITION_MISSING", "Aggregate capability is missing its reviewed definition.");
+  if (input.current.rowCount !== 1 || (input.current.rows && input.current.rows.length !== 1)) throw new McpRuntimeError("AGGREGATE_RESULT_SHAPE_INVALID", "Aggregate adapter must return exactly one scalar envelope row.");
+  const groupSize = finiteAggregateNumber(input.current.row.group_size, "AGGREGATE_GROUP_SIZE_INVALID");
+  if (!Number.isSafeInteger(groupSize) || groupSize < 0) throw new McpRuntimeError("AGGREGATE_GROUP_SIZE_INVALID", "Aggregate group size must be a non-negative safe integer.");
+  const suppressed = groupSize < aggregate.minimum_group_size;
+  const value = suppressed ? null : finiteAggregateNumber(input.current.row.aggregate_value, "AGGREGATE_VALUE_INVALID");
+  const createdAt = new Date().toISOString();
+  const evidenceBundleId = stableId("ev", { capability: input.capability.name, tenant: input.context.tenant_id, aggregate, suppressed, value, at: createdAt });
+  const queryFingerprint = queryFingerprintFor(input.capability, input.context);
+  await input.store.recordEvidenceBundle({
+    evidence_bundle_id: evidenceBundleId,
+    tenant_id: input.context.tenant_id,
+    principal: input.context.principal,
+    capability: input.capability.name,
+    source_id: input.sourceName,
+    source_table: `${input.capability.target.schema}.${input.capability.target.table}`,
+    business_object: `${input.capability.target.table}_aggregate`,
+    object_id: queryFingerprint,
+    query_fingerprint: queryFingerprint,
+    payload: {
+      capability: input.capability.name,
+      source_id: input.sourceName,
+      principal: input.context.principal,
+      tenant_id: input.context.tenant_id,
+      binding_provenance: input.context.provenance,
+      aggregate: aggregate.function,
+      aggregate_column: aggregate.column ?? null,
+      count_mode: aggregate.count_mode ?? null,
+      fixed_selection: aggregate.selection ?? null,
+      minimum_group_size: aggregate.minimum_group_size,
+      suppressed,
+      ...(suppressed ? {} : { aggregate_result: value }),
+      member_rows_included: false,
+      source_database_changed: false,
+    },
+    items: [],
+  });
+  await input.store.recordQueryAudit({
+    evidence_bundle_id: evidenceBundleId,
+    tenant_id: input.context.tenant_id,
+    principal: input.context.principal,
+    capability: input.capability.name,
+    business_object: `${input.capability.target.table}_aggregate`,
+    object_id: queryFingerprint,
+    source_id: input.sourceName,
+    query_fingerprint: queryFingerprint,
+    table_name: `${input.capability.target.schema}.${input.capability.target.table}`,
+    row_count: 1,
+    payload: {
+      capability: input.capability.name,
+      operation: "reviewed_aggregate_read",
+      aggregate: aggregate.function,
+      aggregate_column: aggregate.column ?? null,
+      count_mode: aggregate.count_mode ?? null,
+      fixed_selection: aggregate.selection ?? null,
+      tenant_bound: Boolean(input.capability.target.tenant_key),
+      minimum_group_size: aggregate.minimum_group_size,
+      suppressed,
+      source_member_count_recorded: false,
+      raw_sql_included: false,
+      parameters_redacted: true,
+    },
+  });
+  return {
+    status: suppressed ? "suppressed" : "ok",
+    action: input.capability.name,
+    mode: input.mode,
+    business_object: { type: `${input.capability.target.table}_aggregate`, id: queryFingerprint },
+    data: {
+      function: aggregate.function,
+      column: aggregate.column ?? null,
+      suppressed,
+      minimum_group_size: aggregate.minimum_group_size,
+      value,
+      member_rows_included: false,
+    },
+    trusted_context: { tenant_id: input.context.tenant_id, principal: input.context.principal, provenance: input.context.provenance },
+    evidence_bundle_id: evidenceBundleId,
+    evidence_resource: `synapsor://evidence/${evidenceBundleId}`,
+    source_database_changed: false,
+    source_database_mutated: false,
+  };
+}
+
+function finiteAggregateNumber(value: unknown, code: string): number {
+  const number = typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  if (!Number.isFinite(number)) throw new McpRuntimeError(code, "Aggregate adapter returned a non-finite scalar.");
+  return number;
+}
+
 async function callConfiguredToolV2(input: {
   config: RuntimeConfig;
   env: NodeJS.ProcessEnv;
@@ -2211,9 +2341,11 @@ function resultEnvelopeFromLegacy(
   const objectId = businessObject?.id !== undefined ? String(businessObject.id) : String(legacy.action ?? action);
   return {
     ok: true,
-    summary: `Read ${objectType} ${objectId} through ${action}. Source database changed: no.`,
+    summary: kind === "aggregate_read"
+      ? `Read one reviewed aggregate through ${action}. Source member rows exposed: no. Source database changed: no.`
+      : `Read ${objectType} ${objectId} through ${action}. Source database changed: no.`,
     action,
-    kind: "read",
+    kind,
     data: isRecord(legacy.data) ? legacy.data : {},
     proposal: null,
     error: null,
@@ -2502,6 +2634,7 @@ const TRANSIENT_POSTGRES_CODES = new Set([
   "57P01", // admin_shutdown
   "57P02", // crash_shutdown
   "57P03", // cannot_connect_now
+  "57014", // query_canceled, including reviewed statement_timeout
 ]);
 const TRANSIENT_MYSQL_CODES = new Set([
   "ER_CON_COUNT_ERROR",
@@ -2509,9 +2642,10 @@ const TRANSIENT_MYSQL_CODES = new Set([
   "ER_LOCK_WAIT_TIMEOUT",
   "ER_SERVER_SHUTDOWN",
   "ER_TOO_MANY_USER_CONNECTIONS",
+  "ER_QUERY_TIMEOUT",
   "PROTOCOL_CONNECTION_LOST",
 ]);
-const TRANSIENT_MYSQL_ERRNOS = new Set([1040, 1053, 1203, 1205, 1213, 2002, 2003, 2006, 2013]);
+const TRANSIENT_MYSQL_ERRNOS = new Set([1040, 1053, 1203, 1205, 1213, 2002, 2003, 2006, 2013, 3024]);
 
 function temporarilyUnavailableError(
   message: string,
@@ -2657,6 +2791,7 @@ function buildChangeSet(input: {
       proposal_id: input.proposalId,
       proposal_version: 1,
       action: input.capability.name,
+      ...(input.capability.contract_provenance ? { contract: input.capability.contract_provenance } : {}),
       operation: operationName,
       mode: input.config.mode === "shadow" ? "shadow" : "review_required",
       principal: {
@@ -2733,6 +2868,7 @@ function buildChangeSet(input: {
     proposal_id: input.proposalId,
     proposal_version: 1,
     action: input.capability.name,
+    ...(input.capability.contract_provenance ? { contract: input.capability.contract_provenance } : {}),
     mode: input.config.mode === "shadow" ? "shadow" : "review_required",
     principal: {
       id: input.context.principal,
@@ -2886,6 +3022,7 @@ function buildBoundedSetChangeSet(input: {
     proposal_id: input.proposalId,
     proposal_version: 1,
     action: input.capability.name,
+    ...(input.capability.contract_provenance ? { contract: input.capability.contract_provenance } : {}),
     operation: kind,
     mode: input.config.mode === "shadow" ? "shadow" : "review_required",
     principal: {
@@ -3258,6 +3395,17 @@ async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: R
 }
 
 function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" | "?"): { sql: string } {
+  if (capability.kind === "aggregate_read") {
+    const aggregate = capability.aggregate;
+    if (!aggregate) throw new McpRuntimeError("AGGREGATE_DEFINITION_MISSING", "Aggregate capability is missing its reviewed definition.");
+    const fixedTerms = aggregate.selection?.all ?? [];
+    const where = fixedTerms.map((term, index) => `${quoteIdentifier(term.column, placeholderStyle)} = ${placeholderStyle === "$" ? `$${index + 1}` : "?"}`);
+    if (capability.target.tenant_key) where.push(`${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${placeholderStyle === "$" ? `$${fixedTerms.length + 1}` : "?"}`);
+    const expression = aggregate.function === "count" && aggregate.count_mode === "rows"
+      ? "COUNT(*)"
+      : `${aggregate.function.toUpperCase()}(${quoteIdentifier(aggregate.column ?? "", placeholderStyle)})`;
+    return { sql: `SELECT ${expression} AS aggregate_value, COUNT(*) AS group_size FROM ${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}` };
+  }
   const columns = readColumns(capability).map((column) => quoteIdentifier(column, placeholderStyle)).join(", ");
   if (isSetSelectionCapability(capability)) {
     const fixedTerms = capability.operation?.selection?.all ?? [];
@@ -3283,6 +3431,10 @@ function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" 
 }
 
 function queryValues(capability: RuntimeCapabilityConfig, args: Record<string, unknown>, context: TrustedContext): unknown[] {
+  if (capability.kind === "aggregate_read") return [
+    ...(capability.aggregate?.selection?.all ?? []).map((term) => term.value),
+    ...(capability.target.tenant_key ? [context.tenant_id] : []),
+  ];
   if (isSetSelectionCapability(capability)) {
     return [
       ...(capability.operation?.selection?.all ?? []).map((term) => term.value),
@@ -3295,6 +3447,11 @@ function queryValues(capability: RuntimeCapabilityConfig, args: Record<string, u
 }
 
 function readColumns(capability: RuntimeCapabilityConfig): string[] {
+  if (capability.kind === "aggregate_read") return [
+    ...(capability.aggregate?.column ? [capability.aggregate.column] : []),
+    ...(capability.aggregate?.selection?.all ?? []).map((term) => term.column),
+    ...(capability.target.tenant_key ? [capability.target.tenant_key] : []),
+  ];
   const columns = new Set(capability.visible_columns);
   columns.add(capability.target.primary_key);
   if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
@@ -3458,9 +3615,9 @@ function toolMetadata(capability: RuntimeCapabilityConfig): LocalToolMetadata {
       }),
     }])),
     annotations: {
-      readOnlyHint: capability.kind === "read",
+      readOnlyHint: capability.kind === "read" || capability.kind === "aggregate_read",
       destructiveHint: false,
-      idempotentHint: capability.kind === "read",
+      idempotentHint: capability.kind === "read" || capability.kind === "aggregate_read",
       openWorldHint: false,
       raw_sql_exposed: false,
       approval_or_commit_tool: false,
@@ -3714,6 +3871,7 @@ function queryFingerprintFor(capability: RuntimeCapabilityConfig, context: Trust
     target: capability.target,
     selection: capability.operation?.selection,
     max_rows: capability.operation?.max_rows,
+    aggregate: capability.aggregate,
     columns: readColumns(capability),
     tenant_bound: Boolean(capability.target.tenant_key),
     tenant: context.tenant_id,
@@ -3721,6 +3879,13 @@ function queryFingerprintFor(capability: RuntimeCapabilityConfig, context: Trust
 }
 
 function selectTemplate(capability: RuntimeCapabilityConfig): string {
+  if (capability.kind === "aggregate_read") {
+    const aggregate = capability.aggregate;
+    const expression = aggregate?.function === "count" && aggregate.count_mode === "rows" ? "COUNT(*)" : `${aggregate?.function?.toUpperCase() ?? "AGGREGATE"}(${aggregate?.column ?? "<fixed column>"})`;
+    const terms = (aggregate?.selection?.all ?? []).map((term) => `${term.column} = <fixed>`);
+    if (capability.target.tenant_key) terms.push(`${capability.target.tenant_key} = <trusted tenant>`);
+    return `SELECT ${expression}, COUNT(*) AS group_size FROM ${capability.target.schema}.${capability.target.table}${terms.length ? ` WHERE ${terms.join(" AND ")}` : ""}`;
+  }
   if (isSetSelectionCapability(capability)) {
     const terms = (capability.operation?.selection?.all ?? []).map((term) => `${term.column} = <fixed>`);
     if (capability.target.tenant_key) terms.push(`${capability.target.tenant_key} = <trusted tenant>`);

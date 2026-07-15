@@ -32,6 +32,48 @@ describe("@synapsor/spec validation", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts reviewed aggregate reads with suppression and no model predicate surface", () => {
+    const contract = aggregateReadContract();
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]).toMatchObject({
+      kind: "aggregate_read",
+      args: {},
+      visible_fields: [],
+      aggregate: {
+        function: "sum",
+        column: "balance_cents",
+        minimum_group_size: 5,
+        selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+      },
+    });
+  });
+
+  it("rejects aggregate reads that expose member rows, model predicates, or weak suppression", () => {
+    const contract = aggregateReadContract();
+    const capability = contract.capabilities[0];
+    capability.args.minimum_balance = { type: "number", required: true };
+    capability.visible_fields = ["id"];
+    capability.aggregate.minimum_group_size = 1;
+
+    const codes = validateContract(contract).errors.map((error) => error.code);
+    expect(codes).toContain("AGGREGATE_MODEL_ARGS_FORBIDDEN");
+    expect(codes).toContain("AGGREGATE_VISIBLE_ROWS_FORBIDDEN");
+    expect(codes).toContain("AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED");
+  });
+
+  it("accepts typed argument enums and rejects non-canonical enum values", () => {
+    const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
+    contract.capabilities[0].args.risk_level = { type: "string", required: true, enum: ["low", "medium", "high"] };
+    contract.capabilities[0].args.retry_count = { type: "number", required: true, enum: [0, 1, 2] };
+    contract.capabilities[0].args.notify = { type: "boolean", required: false, enum: [true, false] };
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    contract.capabilities[0].args.risk_level.enum = ["low", "low", 2, null];
+    const codes = validateContract(contract).errors.map((error) => error.code);
+    expect(codes).toContain("ARG_ENUM_DUPLICATE_VALUE");
+    expect(codes).toContain("ARG_ENUM_TYPE_MISMATCH");
+  });
+
   it("rejects model-controlled tenant args", () => {
     const result = validateContract(readJson("fixtures/invalid/model-controlled-tenant.contract.json"));
     expect(result.ok).toBe(false);
@@ -327,5 +369,26 @@ function writeContract(): Record<string, any> {
     tenant_key: "tenant_id",
     conflict_key: "updated_at",
   };
+  return contract;
+}
+
+function aggregateReadContract(): Record<string, any> {
+  const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
+  contract.capabilities[0] = {
+    ...contract.capabilities[0],
+    name: "billing.sum_overdue_balance",
+    kind: "aggregate_read",
+    args: {},
+    lookup: undefined,
+    visible_fields: [],
+    kept_out_fields: ["customer_email", "private_notes"],
+    aggregate: {
+      function: "sum",
+      column: "balance_cents",
+      selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+      minimum_group_size: 5,
+    },
+  };
+  delete contract.capabilities[0].lookup;
   return contract;
 }

@@ -57,7 +57,7 @@ export type AgentContextSpec = ExtensionFields & {
   principal_binding?: string;
 };
 
-export type CapabilityKind = "read" | "proposal" | "external_action" | "answer_with_evidence";
+export type CapabilityKind = "read" | "aggregate_read" | "proposal" | "external_action" | "answer_with_evidence";
 export type ScalarArgumentSpec = ExtensionFields & {
   type: "string" | "number" | "boolean";
   description?: string;
@@ -165,6 +165,15 @@ export type ProposalActionSpec = ExtensionFields & {
   };
 };
 
+export type AggregateReadSpec = ExtensionFields & {
+  function: "count" | "sum" | "avg";
+  /** COUNT only: rows uses COUNT(*); non_null counts the fixed column. */
+  count_mode?: "rows" | "non_null";
+  column?: string;
+  selection?: SetOperationSpec;
+  minimum_group_size: number;
+};
+
 export type CapabilitySpec = ExtensionFields & {
   name: string;
   description?: string;
@@ -180,6 +189,7 @@ export type CapabilitySpec = ExtensionFields & {
   evidence?: EvidenceRequirementSpec;
   max_rows?: number;
   proposal?: ProposalActionSpec;
+  aggregate?: AggregateReadSpec;
 };
 
 export type WorkflowSpec = ExtensionFields & {

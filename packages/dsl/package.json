@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@synapsor/spec": "workspace:^1.4.0"
+    "@synapsor/spec": "workspace:^1.4.1"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

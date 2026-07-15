@@ -23,7 +23,7 @@ const METADATA_KEYS = new Set(["name", "description", "version", "tags"]);
 const RESOURCE_KEYS = new Set(["name", "engine", "schema", "table", "type", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
 const CONTEXT_KEYS = new Set(["name", "description", "bindings", "tenant_binding", "principal_binding"]);
 const BINDING_KEYS = new Set(["name", "source", "key", "required"]);
-const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal"]);
+const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal", "aggregate"]);
 const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
@@ -45,6 +45,7 @@ const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
 const REVERSIBILITY_KEYS = new Set(["mode"]);
+const AGGREGATE_READ_KEYS = new Set(["function", "count_mode", "column", "selection", "minimum_group_size"]);
 const WORKFLOW_KEYS = new Set(["name", "description", "context", "allowed_capabilities", "required_evidence", "approval", "settlement", "replay"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
@@ -215,12 +216,12 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     if (!isQualifiedName(capability.name)) errors.push({ path: `${path}.name`, code: "INVALID_CAPABILITY_NAME", message: "capability name must be namespace.name." });
     else addUnique(names, capability.name, `${path}.name`, "DUPLICATE_CAPABILITY_NAME", errors);
     if (capability.returns_hint !== undefined && !isNonEmptyString(capability.returns_hint)) errors.push({ path: `${path}.returns_hint`, code: "INVALID_RETURNS_HINT", message: "returns_hint must be a non-empty string." });
-    if (!["read", "proposal", "external_action", "answer_with_evidence"].includes(String(capability.kind))) errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read, proposal, external_action, or answer_with_evidence." });
+    if (!["read", "aggregate_read", "proposal", "external_action", "answer_with_evidence"].includes(String(capability.kind))) errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read, aggregate_read, proposal, external_action, or answer_with_evidence." });
     if (!isNonEmptyString(capability.context) || !contextNames.has(capability.context)) errors.push({ path: `${path}.context`, code: "UNKNOWN_CONTEXT", message: "capability.context must reference a declared context." });
     validateSubject(capability.subject, `${path}.subject`, resourceNames, errors, warnings);
-    validateArgs(capability.args, `${path}.args`, errors);
+    validateArgs(capability.args, `${path}.args`, errors, capability.kind === "aggregate_read");
     if (capability.lookup !== undefined) validateLookup(capability.lookup, `${path}.lookup`, capability.args, errors);
-    validateFieldList(capability.visible_fields, `${path}.visible_fields`, "VISIBLE_FIELDS_REQUIRED", errors);
+    validateFieldList(capability.visible_fields, `${path}.visible_fields`, "VISIBLE_FIELDS_REQUIRED", errors, capability.kind === "aggregate_read");
     if (capability.kept_out_fields !== undefined) validateFieldList(capability.kept_out_fields, `${path}.kept_out_fields`, "INVALID_KEPT_OUT_FIELDS", errors, true);
     validateKeptOutExclusion(capability.visible_fields, capability.kept_out_fields, path, errors);
     if (capability.evidence !== undefined) validateEvidenceRequirement(capability.evidence, `${path}.evidence`, errors);
@@ -230,6 +231,8 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
       validateSetCapabilityArgs(capability, path, errors);
     }
     if (capability.kind !== "proposal" && capability.proposal !== undefined) errors.push({ path: `${path}.proposal`, code: "PROPOSAL_ONLY_FOR_PROPOSAL_KIND", message: "proposal is only valid for proposal capabilities." });
+    if (capability.kind === "aggregate_read") validateAggregateRead(capability, path, errors);
+    else if (capability.aggregate !== undefined) errors.push({ path: `${path}.aggregate`, code: "AGGREGATE_ONLY_FOR_AGGREGATE_READ", message: "aggregate is valid only for aggregate_read capabilities." });
   });
   return names;
 }
@@ -295,8 +298,8 @@ function validateSubject(value: unknown, path: string, resourceNames: Set<string
   if (value.single_tenant_dev === true) warnings.push({ path: `${path}.single_tenant_dev`, code: "SINGLE_TENANT_DEV", message: "single_tenant_dev is only for local demos and must not be used for shared tenant data." });
 }
 
-function validateArgs(value: unknown, path: string, errors: ValidationIssue[]): void {
-  if (!isRecord(value) || Object.keys(value).length === 0) {
+function validateArgs(value: unknown, path: string, errors: ValidationIssue[], allowEmpty = false): void {
+  if (!isRecord(value) || (!allowEmpty && Object.keys(value).length === 0)) {
     errors.push({ path, code: "ARGS_REQUIRED", message: "args must define at least one model-facing business argument." });
     return;
   }
@@ -330,8 +333,62 @@ function validateArgs(value: unknown, path: string, errors: ValidationIssue[]): 
     if (arg.minimum !== undefined && !isFiniteNumber(arg.minimum)) errors.push({ path: `${argPath}.minimum`, code: "INVALID_MINIMUM", message: "minimum must be a finite number." });
     if (arg.maximum !== undefined && !isFiniteNumber(arg.maximum)) errors.push({ path: `${argPath}.maximum`, code: "INVALID_MAXIMUM", message: "maximum must be a finite number." });
     if (isFiniteNumber(arg.minimum) && isFiniteNumber(arg.maximum) && Number(arg.minimum) > Number(arg.maximum)) errors.push({ path: argPath, code: "INVALID_ARG_NUMERIC_RANGE", message: "minimum must be less than or equal to maximum." });
-    if (arg.enum !== undefined && (!Array.isArray(arg.enum) || arg.enum.length === 0)) errors.push({ path: `${argPath}.enum`, code: "INVALID_ARG_ENUM", message: "enum must be a non-empty array when provided." });
+    if (arg.enum !== undefined) {
+      if (!Array.isArray(arg.enum) || arg.enum.length === 0 || arg.enum.length > 64) {
+        errors.push({ path: `${argPath}.enum`, code: "INVALID_ARG_ENUM", message: "enum must contain 1 through 64 scalar values." });
+      } else {
+        const expectedType = arg.type;
+        const keys = new Set<string>();
+        arg.enum.forEach((item, enumIndex) => {
+          if (item === null || typeof item !== expectedType) errors.push({ path: `${argPath}.enum[${enumIndex}]`, code: "ARG_ENUM_TYPE_MISMATCH", message: `enum values must match argument type ${String(expectedType)} and cannot be null.` });
+          const key = `${typeof item}:${JSON.stringify(item)}`;
+          if (keys.has(key)) errors.push({ path: `${argPath}.enum[${enumIndex}]`, code: "ARG_ENUM_DUPLICATE_VALUE", message: "enum values must be unique after canonicalization." });
+          keys.add(key);
+        });
+      }
+    }
   }
+}
+
+function validateAggregateRead(capability: JsonRecord, path: string, errors: ValidationIssue[]): void {
+  const aggregate = capability.aggregate;
+  if (!isRecord(aggregate)) {
+    errors.push({ path: `${path}.aggregate`, code: "AGGREGATE_READ_REQUIRED", message: "aggregate_read requires an aggregate definition." });
+    return;
+  }
+  checkUnknownKeys(aggregate, AGGREGATE_READ_KEYS, `${path}.aggregate`, errors);
+  const fn = String(aggregate.function);
+  if (!["count", "sum", "avg"].includes(fn)) errors.push({ path: `${path}.aggregate.function`, code: "INVALID_AGGREGATE_FUNCTION", message: "aggregate function must be count, sum, or avg." });
+  if (!Number.isSafeInteger(aggregate.minimum_group_size) || Number(aggregate.minimum_group_size) < 2 || Number(aggregate.minimum_group_size) > 1_000_000) {
+    errors.push({ path: `${path}.aggregate.minimum_group_size`, code: "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", message: "aggregate reads require minimum_group_size from 2 through 1000000." });
+  }
+  if (fn === "count") {
+    if (aggregate.count_mode !== "rows" && aggregate.count_mode !== "non_null") errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_REQUIRED", message: "COUNT requires count_mode rows or non_null." });
+    if (aggregate.count_mode === "rows" && aggregate.column !== undefined) errors.push({ path: `${path}.aggregate.column`, code: "COUNT_ROWS_COLUMN_FORBIDDEN", message: "COUNT rows must not declare a column." });
+    if (aggregate.count_mode === "non_null" && !isSafeIdentifier(aggregate.column)) errors.push({ path: `${path}.aggregate.column`, code: "COUNT_COLUMN_REQUIRED", message: "COUNT non_null requires a fixed column." });
+  } else {
+    if (!isSafeIdentifier(aggregate.column)) errors.push({ path: `${path}.aggregate.column`, code: "AGGREGATE_NUMERIC_COLUMN_REQUIRED", message: "SUM/AVG require a fixed reviewed numeric column." });
+    if (aggregate.count_mode !== undefined) errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_COUNT_ONLY", message: "count_mode is valid only for COUNT." });
+  }
+  if (aggregate.selection !== undefined) validateFixedSelection(aggregate.selection, `${path}.aggregate.selection`, errors);
+  if (isRecord(capability.args) && Object.keys(capability.args).length > 0) errors.push({ path: `${path}.args`, code: "AGGREGATE_MODEL_ARGS_FORBIDDEN", message: "the first aggregate-read release permits no model-controlled predicate arguments." });
+  if (capability.lookup !== undefined) errors.push({ path: `${path}.lookup`, code: "AGGREGATE_LOOKUP_FORBIDDEN", message: "aggregate reads use only trusted scope and contract-fixed selection." });
+  if (Array.isArray(capability.visible_fields) && capability.visible_fields.length > 0) errors.push({ path: `${path}.visible_fields`, code: "AGGREGATE_VISIBLE_ROWS_FORBIDDEN", message: "aggregate reads return no source row fields." });
+  if (!isRecord(capability.evidence) || capability.evidence.required !== true || capability.evidence.query_audit !== true) errors.push({ path: `${path}.evidence`, code: "AGGREGATE_EVIDENCE_REQUIRED", message: "aggregate reads require evidence and query audit." });
+}
+
+function validateFixedSelection(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) { errors.push({ path, code: "FIXED_SELECTION_REQUIRED", message: "selection must be a reviewed object." }); return; }
+  checkUnknownKeys(value, SELECTION_KEYS, path, errors);
+  if (!Array.isArray(value.all) || value.all.length < 1 || value.all.length > 8) { errors.push({ path: `${path}.all`, code: "INVALID_FIXED_SELECTION", message: "selection.all must contain 1 through 8 fixed equality terms." }); return; }
+  value.all.forEach((term, index) => {
+    const termPath = `${path}.all[${index}]`;
+    if (!isRecord(term)) { errors.push({ path: termPath, code: "PREDICATE_TERM_NOT_OBJECT", message: "predicate term must be an object." }); return; }
+    checkUnknownKeys(term, PREDICATE_TERM_KEYS, termPath, errors);
+    if (!isSafeIdentifier(term.column)) errors.push({ path: `${termPath}.column`, code: "INVALID_PREDICATE_COLUMN", message: "predicate column must be a fixed safe identifier." });
+    if (term.operator !== "eq") errors.push({ path: `${termPath}.operator`, code: "INVALID_PREDICATE_OPERATOR", message: "only literal equality predicates are supported." });
+    if (!("value" in term) || !isJsonScalar(term.value)) errors.push({ path: `${termPath}.value`, code: "FIXED_PREDICATE_VALUE_REQUIRED", message: "predicate value must be a contract literal." });
+  });
 }
 
 function validateLookup(value: unknown, path: string, args: unknown, errors: ValidationIssue[]): void {

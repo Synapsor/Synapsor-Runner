@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "status": "ok",
+  "aggregate": "sum",
+  "value": 15000,
+  "group_size": 5,
+  "member_rows_returned": false,
+  "member_rows_stored_in_evidence": false
+}
