@@ -176,6 +176,23 @@
         "token_env": { "$ref": "#/$defs/env_name" }
       }
     },
+    "graduated_trust": {
+      "description": "Disabled-by-default operator criteria for bounded policy recommendations. Recommendations never activate contracts.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "kill_switch": { "type": "boolean", "default": false },
+        "workspace_id": { "type": "string", "minLength": 1 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/graduated_trust_criterion" }
+        }
+      }
+    },
     "operator_identity": {
       "description": "Operator identity used by approve, reject, and apply. signed_key verifies a registered key; jwt_oidc verifies asymmetric JWT claims and Runner-attests the decision; dev_env is local-development compatibility only.",
       "type": "object",
@@ -302,6 +319,28 @@
       "properties": {
         "requests": { "type": "integer", "minimum": 1, "maximum": 1000000 },
         "window_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    },
+    "graduated_trust_criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability", "policy", "field", "minimum_human_reviews", "window_days",
+        "maximum_rejection_rate", "maximum_conflict_rate", "maximum_failure_rate",
+        "maximum_revert_rate", "maximum_threshold_increase", "absolute_ceiling"
+      ],
+      "properties": {
+        "capability": { "$ref": "#/$defs/qualified_name" },
+        "policy": { "type": "string", "minLength": 1 },
+        "field": { "$ref": "#/$defs/identifier" },
+        "minimum_human_reviews": { "type": "integer", "minimum": 10, "maximum": 10000 },
+        "window_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "maximum_rejection_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_conflict_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_failure_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_revert_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_threshold_increase": { "type": "number", "exclusiveMinimum": 0 },
+        "absolute_ceiling": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "env_name": {
@@ -444,14 +483,27 @@
     "capability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "kind", "source", "target", "args", "lookup", "visible_columns"],
+      "required": ["name", "kind", "source", "target", "args"],
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "aggregate_read" } }, "required": ["kind"] },
+          "then": { "required": ["aggregate", "evidence"] },
+          "else": {
+            "required": ["lookup", "visible_columns"],
+            "properties": {
+              "args": { "minProperties": 1 },
+              "visible_columns": { "minItems": 1 }
+            }
+          }
+        }
+      ],
       "properties": {
         "name": {
           "$ref": "#/$defs/qualified_name"
         },
         "kind": {
           "type": "string",
-          "enum": ["read", "proposal"]
+          "enum": ["read", "aggregate_read", "proposal"]
         },
         "description": {
           "description": "Model-facing text shown in MCP tools/list. Describe when to use the tool.",
@@ -480,7 +532,7 @@
         },
         "args": {
           "type": "object",
-          "minProperties": 1,
+          "minProperties": 0,
           "additionalProperties": {
             "$ref": "#/$defs/arg"
           }
@@ -498,7 +550,7 @@
         },
         "visible_columns": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": {
             "$ref": "#/$defs/identifier"
           }
@@ -509,6 +561,9 @@
         "max_rows": {
           "type": "integer",
           "minimum": 1
+        },
+        "aggregate": {
+          "$ref": "#/$defs/aggregate_read"
         },
         "patch": {
           "type": "object",
@@ -769,6 +824,39 @@
             "strategy": { "enum": ["integer_increment", "database_generated"] }
           }
         }
+      }
+    },
+    "aggregate_read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["function", "minimum_group_size"],
+      "properties": {
+        "function": { "enum": ["count", "sum", "avg"] },
+        "count_mode": { "enum": ["rows", "non_null"] },
+        "column": { "$ref": "#/$defs/identifier" },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["all"],
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["column", "operator", "value"],
+                "properties": {
+                  "column": { "$ref": "#/$defs/identifier" },
+                  "operator": { "const": "eq" },
+                  "value": { "$ref": "#/$defs/scalar" }
+                }
+              }
+            }
+          }
+        },
+        "minimum_group_size": { "type": "integer", "minimum": 2, "maximum": 1000000 }
       }
     },
     "numeric_bound": {

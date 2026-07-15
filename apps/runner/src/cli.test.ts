@@ -7,7 +7,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpRuntime, loadRuntimeConfigFromFile, type DbRowReader } from "@synapsor-runner/mcp-server";
 import { ProposalStore, type StoredWritebackIntent } from "@synapsor-runner/proposal-store";
-import { parseExecutionReceipt } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseExecutionReceipt } from "@synapsor-runner/protocol";
 import { main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
 import type { ReconciliationObservation } from "@synapsor-runner/worker-core";
 
@@ -5549,6 +5549,97 @@ END
       "--store",
       storePath,
     ])).rejects.toThrow(/shadow proposal wrp_cli_shadow cannot be converted into a writeback job/);
+  });
+
+  it("reviews and exports graduated-trust recommendations without activating the contract", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-graduated-trust-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const artifactPath = path.join(tempDir, "synapsor.contract.recommended.json");
+    const storePath = path.join(tempDir, "local.db");
+    const publicPath = path.join(tempDir, "policy-reviewer.pub.pem");
+    const privatePath = path.join(tempDir, "policy-reviewer.pem");
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    await fs.writeFile(publicPath, publicKey.export({ type: "spki", format: "pem" }).toString(), "utf8");
+    await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), { mode: 0o600 });
+    const contract = JSON.parse(await fs.readFile(workspacePath("packages/spec/fixtures/conformance/auto-approval/contract.json"), "utf8"));
+    await fs.writeFile(contractPath, JSON.stringify(contract), "utf8");
+    const capability = "support.propose_plan_credit";
+    const policy = "support_propose_plan_credit_auto_approval";
+    const config = httpHandlerConfig() as any;
+    config.graduated_trust = {
+      enabled: true,
+      workspace_id: "ws_test",
+      project_id: "prj_test",
+      criteria: [{
+        capability,
+        policy,
+        field: "plan_credit_cents",
+        minimum_human_reviews: 10,
+        window_days: 30,
+        maximum_rejection_rate: 0.05,
+        maximum_conflict_rate: 0.05,
+        maximum_failure_rate: 0.05,
+        maximum_revert_rate: 0.05,
+        maximum_threshold_increase: 500,
+        absolute_ceiling: 5000,
+      }],
+    };
+    config.operator_identity = {
+      provider: "signed_key",
+      operators: { alice: { public_key_path: "./policy-reviewer.pub.pem", roles: ["policy_reviewer"] } },
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+    const store = new ProposalStore(storePath);
+    for (let index = 1; index <= 10; index += 1) {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = `wrp_trust_${index}`;
+      proposal.action = capability;
+      proposal.scope.object_id = `CUS-${index}`;
+      proposal.source.primary_key.value = `CUS-${index}`;
+      proposal.created_at = `2026-07-${String(index).padStart(2, "0")}T12:00:00.000Z`;
+      proposal.contract = { digest: canonicalJsonDigest(contract), version: contract.metadata?.version ?? contract.spec_version };
+      proposal.integrity.proposal_hash = canonicalJsonDigest({ proposal: proposal.proposal_id });
+      store.createProposal(proposal);
+      store.approveProposal(proposal.proposal_id, {
+        approver: "human_reviewer",
+        proposal_hash: proposal.integrity.proposal_hash,
+        proposal_version: 1,
+        reason: "reviewed outcome",
+      });
+    }
+    store.close();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => { output.push(String(chunk)); return true; });
+
+    await expect(main([
+      "policy", "recommend", "--contract", contractPath, "--config", configPath,
+      "--tenant", "acme", "--capability", capability, "--policy", policy,
+      "--store", storePath, "--now", "2026-07-14T12:00:00.000Z", "--json",
+    ])).resolves.toBe(0);
+    const recommendation = JSON.parse(output.join("")).recommendation;
+    expect(recommendation).toMatchObject({ status: "pending_review", current_threshold: 2500, proposed_threshold: 3000 });
+
+    output.length = 0;
+    await expect(main(["policy", "recommendations", "show", recommendation.recommendation_id, "--tenant", "globex", "--store", storePath, "--json"]))
+      .rejects.toThrow(/not found in trusted tenant scope/);
+    await expect(main([
+      "policy", "recommendations", "approve", recommendation.recommendation_id,
+      "--tenant", "acme", "--config", configPath, "--store", storePath,
+      "--identity", "alice", "--identity-key", privatePath, "--reason", "reviewed metrics and ceiling", "--yes", "--json",
+    ])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({ status: "approved", decision: { actor: "alice", identity: { verified: true } } });
+
+    output.length = 0;
+    await expect(main([
+      "policy", "recommendations", "export", recommendation.recommendation_id,
+      "--tenant", "acme", "--contract", contractPath, "--out", artifactPath,
+      "--actor", "alice", "--store", storePath, "--yes", "--json",
+    ])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({ recommendation: { status: "exported" }, activated: false });
+    const artifact = JSON.parse(await fs.readFile(artifactPath, "utf8"));
+    expect(artifact.policies[0].rules[0].max).toBe(3000);
+    expect(JSON.parse(await fs.readFile(contractPath, "utf8")).policies[0].rules[0].max).toBe(2500);
   });
 
   it("records and compares human actions for shadow proposals", async () => {

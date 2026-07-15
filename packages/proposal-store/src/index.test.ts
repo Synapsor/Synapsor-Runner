@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
 import {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,
@@ -430,6 +430,41 @@ describe("proposal store", () => {
     expect(replay.query_audit).toHaveLength(1);
     await third.close();
     expect(pool.ended).toBe(true);
+  });
+
+  it("persists graduated-trust recommendations through the shared Postgres runtime store", async () => {
+    const pool = new FakePostgresRuntimePool();
+    const first = new PostgresProposalRuntimeStore({ pool, autoMigrate: true, lockTimeoutMs: 0 });
+    const pending = await first.createPolicyRecommendation(policyRecommendationInput());
+    expect(pending).toMatchObject({
+      status: "pending_review",
+      tenant_id: "acme",
+      capability: "support.propose_plan_credit",
+      policy: "small_credit",
+    });
+
+    const second = new PostgresProposalRuntimeStore({ pool, lockTimeoutMs: 0 });
+    expect(await second.getPolicyRecommendation(pending.recommendation_id)).toEqual(pending);
+    expect(await second.listPolicyRecommendations({ tenant: "acme", status: "pending_review" })).toEqual([pending]);
+    expect(await second.listPolicyRecommendations({ tenant: "globex" })).toEqual([]);
+    const approved = await second.decidePolicyRecommendation(pending.recommendation_id, {
+      action: "approve",
+      actor: "policy_reviewer",
+      reason: "reviewed evidence and ceiling",
+      identity: recommendationIdentity(pending, "approve", true, "policy_reviewer"),
+      now: "2026-07-14T00:02:00.000Z",
+    });
+    expect(approved).toMatchObject({ status: "approved", decision: { actor: "policy_reviewer" } });
+
+    const third = new PostgresProposalRuntimeStore({ pool, lockTimeoutMs: 0 });
+    const exported = await third.markPolicyRecommendationExported(pending.recommendation_id, {
+      actor: "policy_reviewer",
+      artifact_digest: canonicalJsonDigest({ policy: "small_credit", max: 3000 }),
+      now: "2026-07-14T00:03:00.000Z",
+    });
+    expect(exported).toMatchObject({ status: "exported", export: { actor: "policy_reviewer" } });
+    expect(await first.getPolicyRecommendation(pending.recommendation_id)).toEqual(exported);
+    expect([...pool.rows.values()].some((row) => row.kind === "policy_recommendation" && row.tenant_id === "acme")).toBe(true);
   });
 
   it("persists fleet writeback intents directly before end-of-command ledger sync", async () => {
@@ -1627,6 +1662,74 @@ describe("proposal store", () => {
   });
 });
 
+describe("graduated-trust recommendation ledger", () => {
+  it("requires a verified operator decision and preserves approved/exported history through the shared ledger", () => {
+    const store = new ProposalStore();
+    const replica = new ProposalStore();
+    try {
+      const pending = store.createPolicyRecommendation(policyRecommendationInput());
+      expect(pending).toMatchObject({ status: "pending_review", current_threshold: 2500, proposed_threshold: 3000 });
+      expect(() => store.decidePolicyRecommendation(pending.recommendation_id, {
+        action: "approve",
+        actor: "reviewer",
+        reason: "reviewed",
+        identity: recommendationIdentity(pending, "approve", false),
+      })).toThrowError(/cryptographically verified/i);
+
+      const approved = store.decidePolicyRecommendation(pending.recommendation_id, {
+        action: "approve",
+        actor: "reviewer",
+        reason: "reviewed evidence and ceiling",
+        identity: recommendationIdentity(pending, "approve", true),
+      });
+      expect(approved).toMatchObject({ status: "approved", decision: { actor: "reviewer", action: "approve" } });
+      expect(() => store.decidePolicyRecommendation(pending.recommendation_id, {
+        action: "reject",
+        actor: "reviewer",
+        reason: "too late",
+        identity: recommendationIdentity(approved, "reject", true),
+      })).toThrowError(/is approved/);
+
+      const exported = store.markPolicyRecommendationExported(pending.recommendation_id, {
+        actor: "reviewer",
+        artifact_digest: canonicalJsonDigest({ policy: "small_credit", max: 3000 }),
+      });
+      expect(exported).toMatchObject({ status: "exported", export: { actor: "reviewer" } });
+
+      replica.importSharedLedgerEntries(store.sharedLedgerEntries());
+      expect(replica.getPolicyRecommendation(pending.recommendation_id)).toEqual(exported);
+    } finally {
+      replica.close();
+      store.close();
+    }
+  });
+
+  it("keeps rejection terminal and fails closed on a tampered recommendation payload", () => {
+    const store = new ProposalStore();
+    try {
+      const pending = store.createPolicyRecommendation(policyRecommendationInput());
+      const rejected = store.decidePolicyRecommendation(pending.recommendation_id, {
+        action: "reject",
+        actor: "security_reviewer",
+        reason: "sample still too small",
+        identity: recommendationIdentity(pending, "reject", true, "security_reviewer"),
+      });
+      expect(rejected.status).toBe("rejected");
+      expect(() => store.markPolicyRecommendationExported(pending.recommendation_id, {
+        actor: "security_reviewer",
+        artifact_digest: canonicalJsonDigest({ max: 3000 }),
+      })).toThrowError(/is rejected/);
+
+      const payload = JSON.parse(String((store.db.prepare("SELECT payload_json FROM policy_recommendations WHERE recommendation_id = ?").get(pending.recommendation_id) as any).payload_json));
+      payload.proposed_threshold = 999999;
+      store.db.prepare("UPDATE policy_recommendations SET payload_json = ? WHERE recommendation_id = ?").run(JSON.stringify(payload), pending.recommendation_id);
+      expect(() => store.getPolicyRecommendation(pending.recommendation_id)).toThrowError(/integrity check|increment or ceiling/i);
+    } finally {
+      store.close();
+    }
+  });
+});
+
 function expectSecretRejection(fn: () => unknown): void {
   try {
     fn();
@@ -1635,6 +1738,65 @@ function expectSecretRejection(fn: () => unknown): void {
     expect(error).toBeInstanceOf(ProposalStoreError);
     expect((error as ProposalStoreError).code).toBe("SECRET_MATERIAL_REJECTED");
   }
+}
+
+function policyRecommendationInput() {
+  return {
+    tenant_id: "acme",
+    capability: "support.propose_plan_credit",
+    policy: "small_credit",
+    field: "plan_credit_cents",
+    base_contract_digest: canonicalJsonDigest({ contract: "v1" }),
+    base_contract_version: "1",
+    current_threshold: 2500,
+    proposed_threshold: 3000,
+    maximum_increment: 500,
+    absolute_ceiling: 5000,
+    criteria: { minimum_human_reviews: 20, window_days: 30 },
+    metrics: {
+      window_start: "2026-06-14T00:00:00.000Z",
+      window_end: "2026-07-14T00:00:00.000Z",
+      human_reviewed: 25,
+      human_approved: 24,
+      human_rejected: 1,
+      conflicts: 0,
+      failures: 0,
+      reverts: 0,
+      auto_approved_excluded: 5,
+      rejection_rate: 0.04,
+      conflict_rate: 0,
+      failure_rate: 0,
+      revert_rate: 0,
+    },
+    evidence_proposal_ids: ["wrp_1", "wrp_2"],
+    explanation: ["25 verified human-reviewed outcomes met the configured criteria."],
+    now: "2026-07-14T00:00:00.000Z",
+  };
+}
+
+function recommendationIdentity(recommendation: { recommendation_id: string; integrity_hash: string }, action: "approve" | "reject", verified: boolean, actor = "reviewer"): OperatorIdentityProof {
+  const decision = {
+    schema_version: "synapsor.operator-decision.v1" as const,
+    action,
+    proposal_id: recommendation.recommendation_id,
+    proposal_version: 1,
+    proposal_hash: recommendation.integrity_hash,
+    subject: actor,
+    issued_at: "2026-07-14T00:01:00.000Z",
+  };
+  const decisionHash = canonicalJsonDigest(decision);
+  const core = {
+    provider: "signed_key" as const,
+    verified,
+    subject: actor,
+    roles: ["policy_reviewer"],
+    key_id: actor,
+    algorithm: "SHA256",
+    decision,
+    decision_hash: decisionHash,
+    signature: "test-signature",
+  };
+  return { ...core, integrity_hash: canonicalJsonDigest(core) };
 }
 
 function indexNames(store: ProposalStore, table: string): string[] {

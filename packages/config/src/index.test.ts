@@ -219,8 +219,44 @@ describe("runner capability config validation", () => {
       approval: { mode: "human", required_role: "billing_reviewer" },
       writeback: { mode: "direct_sql" },
     }];
+    const aggregateRead = structuredClone(safeConfig) as any;
+    aggregateRead.capabilities = [{
+      name: "billing.overdue_balance_total",
+      kind: "aggregate_read",
+      source: "app_postgres",
+      target: { schema: "public", table: "invoices", primary_key: "id", tenant_key: "tenant_id" },
+      args: {},
+      visible_columns: [],
+      evidence: "required",
+      aggregate: {
+        function: "sum",
+        column: "late_fee_cents",
+        minimum_group_size: 5,
+        selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+      },
+    }];
+    const graduatedTrust = structuredClone(safeConfig) as any;
+    graduatedTrust.graduated_trust = {
+      enabled: true,
+      kill_switch: false,
+      workspace_id: "workspace_acme",
+      project_id: "project_billing",
+      criteria: [{
+        capability: "billing.propose_late_fee_waiver",
+        policy: "billing_small_waiver",
+        field: "late_fee_cents",
+        minimum_human_reviews: 20,
+        window_days: 30,
+        maximum_rejection_rate: 0.05,
+        maximum_conflict_rate: 0.01,
+        maximum_failure_rate: 0.01,
+        maximum_revert_rate: 0.01,
+        maximum_threshold_increase: 500,
+        absolute_ceiling: 5000,
+      }],
+    };
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded, boundedSet, batchInsert]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded, boundedSet, batchInsert, aggregateRead, graduatedTrust]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }

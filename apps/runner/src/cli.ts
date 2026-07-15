@@ -22,6 +22,7 @@ import {
   type EventSearchFilters,
   type LocalProposalState,
   type OperationalMetricRow,
+  type PolicyRecommendation,
   type ProposalEvent,
   type ProposalReplayRecord,
   type ProposalSearchFilters,
@@ -66,6 +67,11 @@ import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
 import { startLocalUiServer, type LocalUiStoreAccess } from "./local-ui.js";
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { hydrateManagedSecrets, type ManagedSecretsProvider } from "./secrets-manager.js";
+import { explainContract, formatContractExplanation, formatContractLint, lintContract, lintFails, loadReviewedContract } from "./contract-tools.js";
+import { formatContractTestReport, runContractTests } from "./contract-testing.js";
+import { runLanguageServer } from "./language-server.js";
+import { createComplianceReport, formatComplianceReport, readComplianceReport, verifyComplianceReport } from "./compliance-report.js";
+import { decideGraduatedTrustRecommendation, evaluateGraduatedTrust, formatGraduatedTrustEvaluation, markGraduatedTrustArtifactExported, prepareGraduatedTrustArtifact } from "./graduated-trust.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -412,11 +418,14 @@ export async function main(argv: string[]): Promise<number> {
     usage(rest);
     return 0;
   }
+  if (command === "language-server") return runLanguageServer();
   await maybeHydrateManagedSecrets(rest);
   if (command === "init") return init(rest);
   if (command === "inspect") return inspect(rest);
   if (command === "config") return configCommand(rest);
   if (command === "contract") return contractCommand(rest);
+  if (command === "report") return reportCommand(rest);
+  if (command === "policy") return policyCommand(rest);
   if (command === "dsl") return dslCommand(rest);
   if (command === "doctor") return doctor(rest);
   if (command === "validate") return validate(rest);
@@ -1979,6 +1988,9 @@ async function contractCommand(args: string[]): Promise<number> {
   if (subcommand === "validate") return contractValidate(rest);
   if (subcommand === "normalize") return contractNormalize(rest);
   if (subcommand === "bundle") return contractBundle(rest);
+  if (subcommand === "explain") return contractExplain(rest);
+  if (subcommand === "lint") return contractLint(rest);
+  if (subcommand === "test") return contractTest(rest);
   usage(["contract"]);
   return 2;
 }
@@ -2064,6 +2076,356 @@ async function contractNormalize(args: string[]): Promise<number> {
     process.stdout.write(text);
   }
   return 0;
+}
+
+async function contractExplain(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("contract explain requires a .synapsor.sql, .synapsor, or canonical contract JSON file");
+  const format = (optionalArg(args, "--format") ?? "text") as "text" | "markdown" | "json";
+  if (!["text", "markdown", "json"].includes(format)) throw new Error("contract explain --format must be text, markdown, or json");
+  const loaded = await loadReviewedContract(target);
+  const text = formatContractExplanation(explainContract(loaded.contract), format);
+  const output = outputArg(args);
+  if (output) {
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, text, "utf8");
+    process.stdout.write(`wrote contract explanation: ${output}\n`);
+  } else {
+    process.stdout.write(text);
+  }
+  return 0;
+}
+
+async function contractLint(args: string[]): Promise<number> {
+  const target = firstPositional(args);
+  if (!target) throw new Error("contract lint requires a .synapsor.sql, .synapsor, or canonical contract JSON file");
+  const format = (optionalArg(args, "--format") ?? "text") as "text" | "json" | "sarif";
+  if (!["text", "json", "sarif"].includes(format)) throw new Error("contract lint --format must be text, json, or sarif");
+  const failOn = (optionalArg(args, "--fail-on") ?? (args.includes("--strict") ? "warning" : "error")) as "error" | "warning";
+  if (!["error", "warning"].includes(failOn)) throw new Error("contract lint --fail-on must be warning or error");
+  const loaded = await loadReviewedContract(target);
+  const configPath = optionalArg(args, "--config");
+  const runnerConfig = configPath ? JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown> : undefined;
+  const result = lintContract(loaded.contract, { runnerConfig, dslWarnings: loaded.dslWarnings });
+  const text = formatContractLint(result, format);
+  const output = outputArg(args);
+  if (output) {
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, text, "utf8");
+    process.stdout.write(`wrote contract lint report: ${output}\n`);
+  } else {
+    process.stdout.write(text);
+  }
+  return lintFails(result, failOn) ? 1 : 0;
+}
+
+async function contractTest(args: string[]): Promise<number> {
+  const contractPath = optionalArg(args, "--contract");
+  const testsPath = optionalArg(args, "--tests");
+  const configPath = optionalArg(args, "--config");
+  if (!contractPath || !testsPath || !configPath) throw new Error("contract test requires --contract, --tests, and --config");
+  const format = (optionalArg(args, "--format") ?? "text") as "text" | "json" | "junit";
+  if (!["text", "json", "junit"].includes(format)) throw new Error("contract test --format must be text, json, or junit");
+  const report = await runContractTests({
+    contractPath,
+    manifestPath: testsPath,
+    configPath,
+    live: args.includes("--live"),
+    allowRemote: args.includes("--allow-remote"),
+  });
+  const text = formatContractTestReport(report, format);
+  const output = outputArg(args);
+  if (output) {
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, text, "utf8");
+    process.stdout.write(`wrote contract test report: ${output}\n`);
+  } else {
+    process.stdout.write(text);
+  }
+  return report.ok ? 0 : 1;
+}
+
+async function reportCommand(args: string[]): Promise<number> {
+  if (args[0] === "verify") {
+    const file = firstPositional(args.slice(1));
+    if (!file) throw new Error("report verify requires <report.json|report.md|report.pdf>");
+    const result = await verifyComplianceReport(await readComplianceReport(file), optionalArg(args, "--public-key"));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else process.stdout.write(`Synapsor report verification: ${result.ok ? "PASS" : "FAIL"}\nCode: ${result.code}\nDigest: ${result.digest_ok ? "verified" : "invalid"}${result.signature_ok === undefined ? "" : `\nSignature: ${result.signature_ok ? "verified" : "invalid"}`}\n`);
+    return result.ok ? 0 : 1;
+  }
+  const configPath = optionalArg(args, "--config");
+  const config = configPath ? await readRuntimeConfig(configPath) : undefined;
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreReadBridge(args, config, "report", (bridgeStorePath) =>
+      reportCommand(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  const tenant = optionalArg(args, "--tenant")?.trim();
+  if (!tenant) throw new Error("REPORT_TENANT_REQUIRED: report generation requires an explicit trusted --tenant scope");
+  const object = optionalArg(args, "--object")?.trim();
+  const principal = optionalArg(args, "--principal")?.trim();
+  if (Boolean(object) === Boolean(principal)) throw new Error("report requires exactly one of --object <type:id> or --principal <principal>");
+  const scope = object ? reportObjectScope(tenant, object) : { kind: "principal" as const, tenant_id: tenant, principal: principal! };
+  const storePath = localStorePath(args);
+  if (storePath !== ":memory:" && !await fileExists(storePath)) throw missingLocalStoreError(storePath);
+  const format = (optionalArg(args, "--format") ?? "markdown") as "markdown" | "json" | "pdf";
+  if (!["markdown", "json", "pdf"].includes(format)) throw new Error("report --format must be markdown, json, or pdf");
+  const report = await createComplianceReport({
+    storePath,
+    scope,
+    signingKeyPath: optionalArg(args, "--signing-key"),
+    signingKeyId: optionalArg(args, "--key-id"),
+  });
+  const rendered = await formatComplianceReport(report, format);
+  const output = outputArg(args);
+  if (format === "pdf" && !output) throw new Error("report --format pdf requires --out <report.pdf>");
+  if (output) {
+    await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await fs.writeFile(output, rendered);
+    process.stdout.write(`wrote ${format} compliance report: ${output}\nIntegrity: ${report.integrity.digest}\n`);
+  } else {
+    process.stdout.write(String(rendered));
+  }
+  return 0;
+}
+
+function reportObjectScope(tenant: string, value: string): { kind: "object"; tenant_id: string; object_type: string; object_id: string } {
+  const separator = value.indexOf(":");
+  if (separator <= 0 || separator === value.length - 1) throw new Error("report --object must be <type:id>");
+  return { kind: "object", tenant_id: tenant, object_type: value.slice(0, separator), object_id: value.slice(separator + 1) };
+}
+
+async function policyCommand(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(args, config, `policy ${args.slice(0, 3).join(" ")}`, (bridgeStorePath) =>
+      policyCommand(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "policy recommendations", args);
+  const storePath = localStorePath(args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(args, storePath, `policy ${args.slice(0, 3).join(" ")}`, () => policyCommand(withoutSharedPostgresLedgerMirror(args)), config);
+  }
+
+  const [group, action] = args;
+  if (group === "recommend") return policyRecommend(args.slice(1), configPath, config);
+  if (group !== "recommendations") throw new Error("policy requires recommend or recommendations <list|show|approve|reject|export>");
+  if (action === "list") return policyRecommendationsList(args.slice(2));
+  if (action === "show") return policyRecommendationsShow(args.slice(2));
+  if (action === "approve" || action === "reject") return policyRecommendationsDecide(action, args.slice(2), configPath, config);
+  if (action === "export") return policyRecommendationsExport(args.slice(2));
+  throw new Error("policy recommendations requires list, show, approve, reject, or export");
+}
+
+async function policyRecommend(args: string[], configPath: string, config: RuntimeConfig | undefined): Promise<number> {
+  if (!config) throw new Error(`graduated trust requires a Runner config: ${configPath}`);
+  const contractPath = requiredOption(args, "--contract", "policy recommend");
+  const tenant = requiredOption(args, "--tenant", "policy recommend");
+  const capability = requiredOption(args, "--capability", "policy recommend");
+  const policy = requiredOption(args, "--policy", "policy recommend");
+  const loaded = await loadReviewedContract(contractPath);
+  const store = await openLocalStore(args);
+  try {
+    const result = await evaluateGraduatedTrust({
+      config,
+      contract: loaded.contract,
+      store,
+      tenant,
+      capability,
+      policy,
+      now: optionalArg(args, "--now"),
+    });
+    process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatGraduatedTrustEvaluation(result));
+    return result.ok ? 0 : 1;
+  } finally {
+    store.close();
+  }
+}
+
+async function policyRecommendationsList(args: string[]): Promise<number> {
+  const tenant = requiredOption(args, "--tenant", "policy recommendations list");
+  const store = await openLocalStore(args);
+  try {
+    const recommendations = store.listPolicyRecommendations({
+      tenant,
+      capability: optionalArg(args, "--capability"),
+      policy: optionalArg(args, "--policy"),
+      status: optionalArg(args, "--status") as PolicyRecommendation["status"] | undefined,
+    });
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(recommendations, null, 2)}\n`);
+    else if (recommendations.length === 0) process.stdout.write("No policy recommendations matched the trusted tenant scope.\n");
+    else process.stdout.write(`${recommendations.map(formatPolicyRecommendationSummary).join("\n")}\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function policyRecommendationsShow(args: string[]): Promise<number> {
+  const recommendationId = positional(args, 0);
+  if (!recommendationId) throw new Error("policy recommendations show requires <recommendation_id>");
+  const tenant = requiredOption(args, "--tenant", "policy recommendations show");
+  const store = await openLocalStore(args);
+  try {
+    const recommendation = requirePolicyRecommendationForTenant(store, recommendationId, tenant);
+    process.stdout.write(args.includes("--json") ? `${JSON.stringify(recommendation, null, 2)}\n` : formatPolicyRecommendationDetail(recommendation));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function policyRecommendationsDecide(
+  action: "approve" | "reject",
+  args: string[],
+  configPath: string,
+  config: RuntimeConfig | undefined,
+): Promise<number> {
+  const recommendationId = positional(args, 0);
+  if (!recommendationId) throw new Error(`policy recommendations ${action} requires <recommendation_id>`);
+  const tenant = requiredOption(args, "--tenant", `policy recommendations ${action}`);
+  const reason = requiredOption(args, "--reason", `policy recommendations ${action}`);
+  if (!config?.operator_identity || config.operator_identity.provider === "dev_env") {
+    throw new Error("POLICY_RECOMMENDATION_VERIFIED_IDENTITY_REQUIRED: configure signed_key or jwt_oidc operator_identity");
+  }
+  const store = await openLocalStore(args);
+  try {
+    const recommendation = requirePolicyRecommendationForTenant(store, recommendationId, tenant);
+    await confirmDangerousAction(args, `${action === "approve" ? "Approve" : "Reject"} policy recommendation ${recommendationId}? This records a decision but does not activate a contract.`);
+    const identity = await policyRecommendationIdentity({ args, config, configPath, store, recommendation, action, reason });
+    const updated = await decideGraduatedTrustRecommendation({
+      store,
+      recommendationId,
+      action,
+      actor: identity.subject,
+      reason,
+      identity,
+      now: optionalArg(args, "--now"),
+    });
+    operationalLog("info", "policy_recommendation_decision", {
+      recommendation_id: updated.recommendation_id,
+      tenant: updated.tenant_id,
+      capability: updated.capability,
+      policy: updated.policy,
+      action,
+      subject: identity.subject,
+      identity_provider: identity.provider,
+      identity_verified: identity.verified,
+      contract_activated: false,
+    });
+    process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : formatPolicyRecommendationDetail(updated));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function policyRecommendationsExport(args: string[]): Promise<number> {
+  const recommendationId = positional(args, 0);
+  if (!recommendationId) throw new Error("policy recommendations export requires <recommendation_id>");
+  const tenant = requiredOption(args, "--tenant", "policy recommendations export");
+  const contractPath = requiredOption(args, "--contract", "policy recommendations export");
+  const output = outputArg(args);
+  if (!output) throw new Error("policy recommendations export requires --out <contract.json>");
+  const actor = requiredOption(args, "--actor", "policy recommendations export");
+  const loaded = await loadReviewedContract(contractPath);
+  const store = await openLocalStore(args);
+  try {
+    requirePolicyRecommendationForTenant(store, recommendationId, tenant);
+    const artifact = await prepareGraduatedTrustArtifact({ store, recommendationId, activeContract: loaded.contract });
+    await confirmDangerousAction(args, `Export reviewed policy artifact for ${recommendationId}? This does not push or activate it.`);
+    await writeFileGuarded(output, `${JSON.stringify(artifact.contract, null, 2)}\n`, args.includes("--force"));
+    const updated = await markGraduatedTrustArtifactExported({
+      store,
+      recommendationId,
+      actor,
+      artifactDigest: artifact.digest,
+      now: optionalArg(args, "--now"),
+    });
+    operationalLog("info", "policy_recommendation_export", {
+      recommendation_id: updated.recommendation_id,
+      tenant: updated.tenant_id,
+      artifact_digest: artifact.digest,
+      base_contract_digest: updated.base_contract_digest,
+      contract_activated: false,
+    });
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify({ recommendation: updated, artifact: { path: output, digest: artifact.digest, diff: artifact.diff }, activated: false }, null, 2)}\n`
+      : `exported reviewable policy artifact: ${output}\nDigest: ${artifact.digest}\nChange: ${artifact.diff.field} ${artifact.diff.before} -> ${artifact.diff.after}\nActivation: not performed\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function policyRecommendationIdentity(input: {
+  args: string[];
+  config: RuntimeConfig;
+  configPath: string;
+  store: ProposalStore;
+  recommendation: PolicyRecommendation;
+  action: "approve" | "reject";
+  reason: string;
+}) {
+  const evidenceProposalId = input.recommendation.evidence_proposal_ids[0];
+  const evidenceProposal = evidenceProposalId ? input.store.getProposal(evidenceProposalId) : undefined;
+  if (!evidenceProposal) throw new Error("POLICY_RECOMMENDATION_EVIDENCE_MISSING: the recommendation cannot be authorized without its bound proposal evidence");
+  const syntheticProposal: StoredProposal = {
+    ...evidenceProposal,
+    proposal_id: input.recommendation.recommendation_id,
+    proposal_version: 1,
+    proposal_hash: input.recommendation.integrity_hash,
+    tenant_id: input.recommendation.tenant_id,
+    capability: input.recommendation.capability,
+    action: `policy_change:${input.recommendation.policy}`,
+  };
+  const identity = await resolveOperatorIdentity({
+    config: input.config.operator_identity as OperatorIdentityConfig,
+    configPath: input.configPath,
+    proposal: syntheticProposal,
+    action: input.action,
+    reason: input.reason,
+    actor: optionalArg(input.args, "--actor"),
+    identity: optionalArg(input.args, "--identity"),
+    privateKeyPath: optionalArg(input.args, "--identity-key"),
+  });
+  if (!identity.verified || identity.provider === "dev_env") throw new Error("POLICY_RECOMMENDATION_VERIFIED_IDENTITY_REQUIRED: decision identity was not cryptographically verified");
+  return identity;
+}
+
+function requirePolicyRecommendationForTenant(store: ProposalStore, recommendationId: string, tenant: string): PolicyRecommendation {
+  const recommendation = store.getPolicyRecommendation(recommendationId);
+  if (!recommendation || recommendation.tenant_id !== tenant) throw new Error(`policy recommendation not found in trusted tenant scope: ${recommendationId}`);
+  return recommendation;
+}
+
+function formatPolicyRecommendationSummary(recommendation: PolicyRecommendation): string {
+  return `${recommendation.recommendation_id}  ${recommendation.status}  ${recommendation.capability}  ${recommendation.policy}.${recommendation.field} ${recommendation.current_threshold} -> ${recommendation.proposed_threshold}`;
+}
+
+function formatPolicyRecommendationDetail(recommendation: PolicyRecommendation): string {
+  return [
+    `Policy recommendation: ${recommendation.recommendation_id}`,
+    `Status: ${recommendation.status}`,
+    `Tenant: ${recommendation.tenant_id}`,
+    `Capability: ${recommendation.capability}`,
+    `Policy: ${recommendation.policy}`,
+    `Threshold: ${recommendation.field} ${recommendation.current_threshold} -> ${recommendation.proposed_threshold}`,
+    `Base contract: ${recommendation.base_contract_digest} (${recommendation.base_contract_version})`,
+    `Evidence proposals: ${recommendation.evidence_proposal_ids.length}`,
+    `Integrity: ${recommendation.integrity_hash}`,
+    recommendation.decision ? `Decision: ${recommendation.decision.action} by ${recommendation.decision.actor}` : "Decision: pending verified operator review",
+    recommendation.export ? `Artifact: ${recommendation.export.artifact_digest}` : "Artifact: not exported",
+    "Activation: not performed by Runner",
+    "",
+  ].join("\n");
+}
+
+function requiredOption(args: string[], flag: string, command: string): string {
+  const value = optionalArg(args, flag)?.trim();
+  if (!value) throw new Error(`${command} requires ${flag} <value>`);
+  return value;
 }
 
 async function contractBundle(args: string[]): Promise<number> {
@@ -3105,6 +3467,7 @@ async function localDoctor(args: string[]): Promise<number> {
     parsed = await readRuntimeConfig(configPath);
   }
   checks.push(...await sharedPostgresLedgerDoctorChecks(parsed));
+  checks.push(...graduatedTrustDoctorChecks(parsed));
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
   for (const [contextName, contextValues] of contextsToCheck) {
@@ -3253,6 +3616,57 @@ async function localDoctor(args: string[]): Promise<number> {
     process.stdout.write(formatLocalDoctorReport(report));
   }
   return report.ok ? 0 : 1;
+}
+
+function graduatedTrustDoctorChecks(config: RuntimeConfig): DoctorCheck[] {
+  const trust = config.graduated_trust;
+  if (trust?.enabled !== true) {
+    return [{
+      name: "graduated-trust:mode",
+      ok: true,
+      level: "pass",
+      message: "Graduated trust is disabled by default; Runner will not create policy recommendations.",
+    }];
+  }
+  if (trust.kill_switch === true) {
+    return [{
+      name: "graduated-trust:kill-switch",
+      ok: true,
+      level: "warn",
+      message: "Graduated-trust kill switch is active; no recommendations can be created.",
+    }];
+  }
+  const checks: DoctorCheck[] = [{
+    name: "graduated-trust:mode",
+    ok: true,
+    level: "pass",
+    message: `Graduated trust is enabled for ${trust.criteria?.length ?? 0} reviewed criterion/criteria. It can recommend only; it cannot approve, export, push, or activate a contract automatically.`,
+  }];
+  const verifiedIdentity = config.operator_identity?.provider === "signed_key" || config.operator_identity?.provider === "jwt_oidc";
+  checks.push({
+    name: "graduated-trust:operator-identity",
+    ok: verifiedIdentity,
+    level: verifiedIdentity ? "pass" : "fail",
+    message: verifiedIdentity
+      ? `Policy recommendation decisions require configured ${config.operator_identity?.provider} operator identity.`
+      : "Enabled graduated trust requires signed_key or jwt_oidc operator_identity before any recommendation can be approved or rejected.",
+  });
+  for (const criterion of trust.criteria ?? []) {
+    const capability = (config.capabilities ?? []).find((item) => item.name === criterion.capability);
+    const policy = (config.policies ?? []).find((item) => item.name === criterion.policy && item.kind === "approval");
+    const rule = policy?.rules?.find((item) => item.field === criterion.field);
+    const current = typeof rule?.max === "number" ? rule.max : undefined;
+    const resolvable = capability?.kind === "proposal" && capability.approval?.mode === "policy" && capability.approval.policy === criterion.policy && current !== undefined;
+    checks.push({
+      name: `graduated-trust:${criterion.capability}:${criterion.policy}:${criterion.field}`,
+      ok: resolvable,
+      level: resolvable ? "pass" : "fail",
+      message: resolvable
+        ? `Reviewed threshold ${current}; minimum ${criterion.minimum_human_reviews} human reviews over ${criterion.window_days} days; increment <= ${criterion.maximum_threshold_increase}; ceiling ${criterion.absolute_ceiling}.`
+        : `Criterion does not resolve to a policy-approved proposal capability and numeric approval rule for ${criterion.field}.`,
+    });
+  }
+  return checks;
 }
 
 async function directSqlWritebackDoctorChecks(
@@ -3676,6 +4090,7 @@ function createCompensationProposal(input: {
     proposal_id: proposalId,
     proposal_version: 1,
     action: input.forward.action,
+    ...(input.forward.change_set.contract ? { contract: input.forward.change_set.contract } : {}),
     mode: "review_required" as const,
     principal: { id: input.actor, source: input.identity.verified ? "trusted_session" as const : "environment" as const },
     scope: { tenant_id: input.forward.tenant_id, business_object: input.forward.business_object, object_id: input.forward.object_id },
@@ -7081,6 +7496,7 @@ async function toolsPreview(args: string[]): Promise<number> {
       approval_policies: boundary.approvalPolicies,
       capability_details: boundary.capabilityDetails,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
+      graduated_trust: boundary.graduatedTrust,
       checks: boundary.checks,
     }, null, 2)}\n`);
   } else {
@@ -7099,6 +7515,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   capabilityDetails: ToolPreviewCapabilityDetail[];
+  graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
   const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
@@ -7116,6 +7533,12 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
     const approvalPolicies = approvalPolicySummaries(parsed);
     const capabilityDetails = toolPreviewCapabilityDetails(parsed);
+    const graduatedTrust = {
+      enabled: parsed.graduated_trust?.enabled === true,
+      kill_switch: parsed.graduated_trust?.kill_switch === true,
+      criteria: parsed.graduated_trust?.criteria?.length ?? 0,
+      model_facing: false as const,
+    };
     const exposures = toolNameExposures(tools.map((tool) => tool.name), aliasMode);
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
@@ -7123,12 +7546,13 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "semantic tools present", ok: names.length > 0, detail: names.join(", ") || "none" },
       { name: "execute_sql absent", ok: !names.some((name) => /execute_sql|run_query|query_database/i.test(name)), detail: "model does not receive raw SQL tools" },
       { name: "approval tools absent", ok: !names.some((name) => /approve/i.test(name)), detail: "approval stays outside MCP" },
+      { name: "policy recommendation tools absent", ok: !names.some((name) => /policy.*recommend|recommend.*policy|activate.*policy/i.test(name)), detail: "graduated-trust evaluation, review, export, and activation stay outside MCP" },
       { name: "commit tools absent", ok: !names.some((name) => /commit|apply_writeback/i.test(name)), detail: "commit stays outside MCP" },
       { name: "database_url absent", ok: !/postgres(?:ql)?:\/\/|mysql:\/\//i.test(serialized), detail: "MCP config uses env var names, not connection strings" },
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, graduatedTrust, checks };
   } finally {
     await runtime.close();
   }
@@ -7138,6 +7562,7 @@ function defaultBlockedToolSurface(): string[] {
   return [
     "execute_sql / raw query tools",
     "approval tools",
+    "policy recommendation/review/activation tools",
     "commit/apply tools",
     "database URLs",
     "write credentials",
@@ -7156,6 +7581,7 @@ function formatToolsPreview(input: {
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   capabilityDetails: ToolPreviewCapabilityDetail[];
+  graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
   const exposedLines = input.exposures.length > 0
@@ -7167,6 +7593,7 @@ function formatToolsPreview(input: {
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
     `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
+    `graduated trust: ${input.graduatedTrust.enabled ? input.graduatedTrust.kill_switch ? "enabled, kill switch active" : `enabled (${input.graduatedTrust.criteria} reviewed criteria)` : "disabled"}; operator-only, never MCP-facing`,
     ...formatApprovalPolicyPreview(input.approvalPolicies),
     "",
     "Exposed to MCP:",
@@ -7192,7 +7619,7 @@ function formatToolsPreview(input: {
 
 type ToolPreviewCapabilityDetail = {
   name: string;
-  kind: "read" | "proposal";
+  kind: "read" | "aggregate_read" | "proposal";
   operation?: "update" | "insert" | "delete";
   cardinality?: "single" | "set";
   target: string;
@@ -7207,6 +7634,8 @@ type ToolPreviewCapabilityDetail = {
   reversibility?: string;
   approval: string;
   max_rows: number;
+  aggregate?: string;
+  minimum_group_size?: number;
 };
 
 function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabilityDetail[] {
@@ -7225,7 +7654,7 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
         : `${capability.target.tenant_key ?? "missing tenant key"} from trusted ${context?.provider ?? "context"}`,
       writable_columns: capability.allowed_columns ?? [],
       dedup_columns: capability.operation?.deduplication?.components.map((component) => component.column) ?? [],
-      fixed_selection: capability.operation?.selection?.all.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`) ?? [],
+      fixed_selection: (capability.operation?.selection?.all ?? capability.aggregate?.selection?.all)?.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`) ?? [],
       aggregate_bounds: capability.operation?.aggregate_bounds?.map((bound) => `${bound.measure}(${bound.column}) <= ${bound.maximum}`) ?? [],
       version_guard: capability.conflict_guard?.column,
       version_advance: capability.operation?.version_advance
@@ -7242,7 +7671,11 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
       approval: capability.kind === "proposal"
         ? `${capability.approval?.mode ?? "human"}${capability.approval?.required_role ? ` role=${capability.approval.required_role}` : ""} quorum=${capability.approval?.required_approvals ?? 1}`
         : "not applicable",
-      max_rows: cardinality === "set" ? capability.operation?.max_rows ?? 0 : capability.max_rows ?? 1,
+      max_rows: capability.kind === "aggregate_read" ? 0 : cardinality === "set" ? capability.operation?.max_rows ?? 0 : capability.max_rows ?? 1,
+      aggregate: capability.aggregate
+        ? `${capability.aggregate.function.toUpperCase()}(${capability.aggregate.function === "count" && capability.aggregate.count_mode !== "non_null" ? "*" : capability.aggregate.column})`
+        : undefined,
+      minimum_group_size: capability.aggregate?.minimum_group_size,
     };
   });
 }
@@ -7251,8 +7684,14 @@ function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail
   if (details.length === 0) return ["  - (none)"];
   return details.flatMap((detail) => [
     `  - ${detail.name}: ${detail.kind}${detail.operation ? ` ${detail.cardinality === "set" ? "BOUNDED SET " : "SINGLE-ROW "}${detail.operation.toUpperCase()}` : ""}`,
-    `    target: ${detail.target}; max rows: ${detail.max_rows}`,
+    detail.kind === "aggregate_read"
+      ? `    target: ${detail.target}; output: one ${detail.aggregate} scalar; minimum group size: ${detail.minimum_group_size}`
+      : `    target: ${detail.target}; max rows: ${detail.max_rows}`,
     `    tenant: ${detail.tenant_source}`,
+    ...(detail.kind === "aggregate_read" ? [
+      `    fixed selection: ${detail.fixed_selection.join(" AND ") || "tenant scope only"}`,
+      "    privacy: member rows and identities are never returned or stored as evidence items",
+    ] : []),
     ...(detail.kind === "proposal" ? [
       `    writable columns: ${detail.writable_columns.join(", ") || "none"}`,
       `    dedup: ${detail.dedup_columns.join(", ") || "not applicable"}`,
@@ -10563,6 +11002,7 @@ function firstPositional(args: string[]): string | undefined {
     "--bearer-env",
     "--capability",
     "--config",
+    "--contract",
     "--conflict-column",
     "--cors-origin",
     "--database-url-env",
@@ -10571,6 +11011,7 @@ function firstPositional(args: string[]): string | undefined {
     "--engine",
     "--evidence",
     "--example",
+    "--fail-on",
     "--format",
     "--from",
     "--from-env",
@@ -10586,6 +11027,7 @@ function firstPositional(args: string[]): string | undefined {
     "--mcp-config",
     "--namespace",
     "--numeric-bound",
+    "--now",
     "--object",
     "--object-id",
     "--object-type",
@@ -10598,7 +11040,10 @@ function firstPositional(args: string[]): string | undefined {
     "--port",
     "--primary-key",
     "--principal-env",
+    "--principal",
+    "--policy",
     "--proposal",
+    "--public-key",
     "--project",
     "--query-fingerprint",
     "--reason",
@@ -10611,6 +11056,7 @@ function firstPositional(args: string[]): string | undefined {
     "--replay",
     "--runner",
     "--schema",
+    "--signing-key",
     "--source-name",
     "--source",
     "--state",
@@ -10624,6 +11070,7 @@ function firstPositional(args: string[]): string | undefined {
     "--tenant",
     "--tenant-env",
     "--tenant-key",
+    "--tests",
     "--timeout-ms",
     "--token",
     "--to",
@@ -10633,6 +11080,7 @@ function firstPositional(args: string[]): string | undefined {
     "--workspace",
     "--writeback-job",
     "--write-url-env",
+    "--key-id",
   ]);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -11891,7 +12339,10 @@ function isKnownTopLevelCommand(command: string): boolean {
     "inspect",
     "config",
     "contract",
+    "report",
+    "policy",
     "dsl",
+    "language-server",
     "doctor",
     "validate",
     "apply",
@@ -11965,7 +12416,10 @@ Commands:
   config       Validate local synapsor.runner.json wiring
   mcp          Serve safe semantic tools over MCP
   contract     Validate and normalize canonical Synapsor contract files
+  report       Export and verify scoped tamper-evident ledger reports
+  policy       Evaluate and review opt-in graduated-trust recommendations
   dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
+  language-server  Start the Synapsor contract LSP over stdio
   cloud        Register runner metadata or dry-run contract push to Cloud
   onboard      One-command own-database setup
   smoke        Test generated tool calls before wiring an MCP client
@@ -11998,7 +12452,12 @@ Examples:
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} contract validate ./synapsor.contract.json
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
+  ${cmd} contract explain ./contract.synapsor.sql --format markdown
+  ${cmd} contract lint ./contract.synapsor.sql --strict
+  ${cmd} report --object invoice:INV-3001 --tenant tenant_acme --store ./.synapsor/local.db --format markdown
+  ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant tenant_acme --capability billing.propose_credit --policy low_risk_credit --store ./.synapsor/local.db
   ${cmd} dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json
+  ${cmd} language-server --stdio
   ${cmd} cloud push ./synapsor.contract.json --dry-run
   ${cmd} smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db
@@ -12022,10 +12481,48 @@ resolved by the Runner process working directory.
     contract: `Usage:
   ${cmd} contract validate ./synapsor.contract.json [--json]
   ${cmd} contract normalize ./synapsor.contract.json [--out ./synapsor.contract.normalized.json]
+  ${cmd} contract explain ./contract.synapsor.sql [--format text|markdown|json] [--out explanation.md]
+  ${cmd} contract lint ./contract.synapsor.sql [--config ./synapsor.runner.json] [--format text|json|sarif] [--fail-on error|warning]
+  ${cmd} contract test --contract ./synapsor.contract.json --tests ./synapsor.contract-tests.json --config ./synapsor.runner.json [--live] [--format text|json|junit]
 
-Validate or normalize canonical Synapsor contract files. Contracts describe
-contexts, capabilities, workflows, evidence, proposal, receipt, and replay
-semantics. Local database URLs, ports, and store paths stay in runner config.
+Validate or normalize canonical Synapsor contract files. Explain renders the
+reviewed boundary in plain language. Lint reports stable objective rule IDs and
+never claims to infer all sensitive columns. Test runs adopter-authored static
+assertions and, with --live, calls the real MCP runtime against an explicitly
+approved disposable database. Local database URLs, ports, and store paths stay
+in runner config.
+`,
+    report: `Usage:
+  ${cmd} report --object invoice:INV-3001 --tenant tenant_acme --store ./.synapsor/local.db [--config ./synapsor.runner.json] [--format markdown|json|pdf] [--out report.md]
+  ${cmd} report --principal support.operator --tenant tenant_acme --store ./.synapsor/local.db [--config ./synapsor.runner.json] [--format markdown|json|pdf] [--out report.json]
+  ${cmd} report verify ./report.json [--public-key ./operator.pub.pem] [--json]
+
+Export a tenant-scoped chronology from proposal, evidence metadata, query audit,
+approval, writeback, receipt, and replay records. Evidence rows and credentials
+are never exported. Optional --signing-key adds an operator signature. Digest or
+signature verification makes an export tamper-evident; it does not make a local
+SQLite ledger immutable compliance storage.
+`,
+    policy: `Usage:
+  ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant <tenant> --capability <name> --policy <name> --store ./.synapsor/local.db
+  ${cmd} policy recommendations list --tenant <tenant> --store ./.synapsor/local.db [--capability <name>] [--policy <name>] [--status pending_review|approved|rejected|exported]
+  ${cmd} policy recommendations show <ptr_id> --tenant <tenant> --store ./.synapsor/local.db
+  ${cmd} policy recommendations approve <ptr_id> --tenant <tenant> --config ./synapsor.runner.json --reason <text> --yes --store ./.synapsor/local.db
+  ${cmd} policy recommendations reject <ptr_id> --tenant <tenant> --config ./synapsor.runner.json --reason <text> --yes --store ./.synapsor/local.db
+  ${cmd} policy recommendations export <ptr_id> --tenant <tenant> --contract ./synapsor.contract.json --out ./synapsor.contract.recommended.json --actor <operator> --yes --store ./.synapsor/local.db
+
+Graduated trust is disabled by default. It evaluates scoped, human-reviewed
+history and can create a pending recommendation; it never auto-approves,
+changes, pushes, or activates a contract. Approval/rejection requires a
+cryptographically verified signed_key or jwt_oidc operator identity. Export
+revalidates the active contract digest and writes a separate reviewable artifact.
+`,
+    "language-server": `Usage:
+  ${cmd} language-server --stdio
+
+Start the Synapsor contract Language Server Protocol endpoint. It supports
+.synapsor.sql and legacy .synapsor files with diagnostics, completion, hover,
+and formatting from the same parser used by dsl validate/compile.
 `,
     dsl: `Usage:
   ${cmd} dsl validate ./contract.synapsor.sql [--json]
