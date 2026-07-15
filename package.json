@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -b",
     "build:runner-package": "tsc -b && node scripts/build-runner-package.mjs",
-    "clean": "find . -path '*/dist' -type d -prune -exec rm -rf {} +",
+    "clean": "find . -path '*/node_modules' -prune -o -path '*/dist' -type d -prune -exec rm -rf {} +",
     "lint": "tsc -b --pretty false",
     "test": "tsc -b --pretty false && vitest run && node scripts/check-license-content.mjs && ./scripts/verify-dsl-source-paths.sh",
     "test:license-content": "node scripts/check-license-content.mjs",
