@@ -17,7 +17,7 @@ Dry-run validates and normalizes locally. It performs no network request.
 ## Push
 
 ```bash
-export SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai"
+export SYNAPSOR_CLOUD_BASE_URL="https://dev-api.synapsor.ai"
 export SYNAPSOR_CLOUD_TOKEN="<workspace-scoped-token>"
 export SYNAPSOR_WORKSPACE_ID="<workspace-id>"
 
@@ -42,6 +42,11 @@ permission (`403`), missing workspace/API paths (`404`), registry conflicts
 (`409`), server validation (`422`), and Cloud/network failures. Error output
 does not echo the bearer token.
 
+`dev-api.synapsor.ai` is the supported design-partner endpoint. Do not replace
+it with `api.synapsor.ai` unless Synapsor has separately announced and verified
+that hostname. Contract push uses a signed-in workspace/API credential;
+Runner registration and jobs use a separate source-scoped Runner token.
+
 ## Cloud To Local
 
 Open **Contract registry** in the workspace, choose a version, and download its
@@ -50,5 +55,7 @@ placeholder environment file, README, and MCP client examples. It contains no
 live credentials or table rows.
 
 Cloud currently preserves approval policy definitions in the contract and
-bundle. Hosted approval-policy enforcement remains a separate Cloud feature;
-do not infer it from registry storage alone.
+bundle. Cloud approval is a human-authenticated decision and is not exposed to
+the Runner token or MCP. The local Runner remains responsible for rechecking
+the exact contract digest, proposal hash, tenant, target, allowed fields,
+conflict/version guard, bounds, and one-write/idempotency rules before applying.

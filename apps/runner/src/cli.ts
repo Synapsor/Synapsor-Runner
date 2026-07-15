@@ -37,7 +37,7 @@ import {
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ChangeSet, type ChangeSetV1, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type ChangeSet, type ChangeSetV1, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
@@ -57,6 +57,7 @@ import {
   doctorChecks,
   formatMcpAuditReport,
   loadConfig,
+  runOnce,
   startPolling,
   type McpAuditReport,
   type RunnerConfig,
@@ -5107,7 +5108,12 @@ async function runCommandHandler(command: string, args: string[], request: Recor
   });
 }
 
-async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: string, storePath?: string): Promise<void> {
+export async function verifyLocalWritebackAuthority(
+  job: WritebackJob,
+  configPath: string,
+  storePath?: string,
+  options: { cloudApproved?: boolean } = {},
+): Promise<void> {
   const config = await readRuntimeConfig(configPath);
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
@@ -5131,6 +5137,13 @@ async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: stri
   if (!matching) {
     throw new Error("writeback job does not match any reviewed proposal capability in local config");
   }
+  if (options.cloudApproved) {
+    const leasedContract = "contract" in job ? job.contract : undefined;
+    if (!leasedContract?.digest) throw new Error("Cloud writeback job is missing its immutable contract digest");
+    if (!matching.contract_provenance || matching.contract_provenance.digest !== leasedContract.digest) {
+      throw new Error("Cloud writeback job contract digest does not match the reviewed local contract");
+    }
+  }
   const reviewedAllowed = new Set(matching.allowed_columns ?? []);
   for (const column of job.allowed_columns) {
     if (!reviewedAllowed.has(column)) {
@@ -5150,13 +5163,16 @@ async function verifyLocalWritebackAuthority(job: WritebackJob, configPath: stri
     try {
       const proposal = store.getProposal(job.proposal_id);
       if (!proposal) throw new Error(`local proposal not found for writeback job: ${job.proposal_id}`);
-      if (proposal.state !== "approved" && proposal.state !== "pending_worker" && proposal.state !== "applied") {
-        throw new Error(`local proposal ${job.proposal_id} is ${proposal.state}, not approved for writeback`);
+      const allowedStates = options.cloudApproved
+        ? new Set(["pending_review", "approved", "pending_worker", "applied"])
+        : new Set(["approved", "pending_worker", "applied"]);
+      if (!allowedStates.has(proposal.state)) {
+        throw new Error(`local proposal ${job.proposal_id} is ${proposal.state}, not eligible for ${options.cloudApproved ? "Cloud-approved" : "local-approved"} writeback`);
       }
       if (proposal.proposal_hash !== job.approval_id) {
         throw new Error("writeback approval/proposal digest does not match local proposal");
       }
-      await verifyStoredApprovalAuthority(config, configPath, store, proposal, matching);
+      if (!options.cloudApproved) await verifyStoredApprovalAuthority(config, configPath, store, proposal, matching);
     } finally {
       store.close();
     }
@@ -5274,17 +5290,54 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
 }
 
 async function start(args: string[] = []): Promise<number> {
-  if (args.length > 0) {
-    if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
+  if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
+    if (args.length > 0) {
       return onboard(["db", ...args]);
     }
-    throw new Error(`start accepts own-database onboarding flags such as --from-env DATABASE_URL, or no flags for the legacy polling worker. Unknown start arguments: ${args.join(" ")}`);
   }
+  const workerOptions = new Map<string, string>();
+  const once = args.includes("--once");
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === "--once") continue;
+    if (flag !== "--config" && flag !== "--store") {
+      throw new Error(`start accepts own-database onboarding flags or Cloud worker flags --config, --store, and --once. Unknown argument: ${flag}`);
+    }
+    const value = args[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`);
+    workerOptions.set(flag, value);
+    index += 1;
+  }
+  const configPath = workerOptions.get("--config");
+  const storePath = workerOptions.get("--store");
+  if (Boolean(configPath) !== Boolean(storePath)) throw new Error("Cloud worker mode requires both --config and --store");
+  if (once && (!configPath || !storePath)) throw new Error("Cloud worker --once requires both --config and --store so local reviewed authority is rechecked");
   const config = loadConfig();
+  if (once) {
+    const reviewedConfigPath = configPath;
+    const reviewedStorePath = storePath;
+    if (!reviewedConfigPath || !reviewedStorePath) {
+      throw new Error("Cloud worker --once requires both --config and --store so local reviewed authority is rechecked");
+    }
+    const completed = await runOnce(
+      config,
+      adapters,
+      (job) => verifyLocalWritebackAuthority(job, reviewedConfigPath, reviewedStorePath, { cloudApproved: true }),
+    );
+    process.stdout.write(`Cloud worker completed ${completed} job(s).\n`);
+    return 0;
+  }
   const controller = new AbortController();
   process.on("SIGINT", () => controller.abort());
   process.on("SIGTERM", () => controller.abort());
-  await startPolling(config, adapters, controller.signal);
+  await startPolling(
+    config,
+    adapters,
+    controller.signal,
+    configPath && storePath
+      ? (job) => verifyLocalWritebackAuthority(job, configPath, storePath, { cloudApproved: true })
+      : undefined,
+  );
   return 0;
 }
 
@@ -5534,9 +5587,217 @@ async function runnerCommand(args: string[]): Promise<number> {
 async function cloud(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "connect") return cloudConnect(rest);
+  if (subcommand === "sync") return cloudSync(rest);
+  if (subcommand === "sync-activity") return cloudSyncActivity(rest);
   if (subcommand === "push") return cloudPush(rest);
   usage();
   return 2;
+}
+
+type CloudConnectionFile = {
+  cloud?: {
+    protocol_version?: string;
+    base_url?: string;
+    base_url_env?: string;
+    runner_token_env?: string;
+    runner_id?: string;
+    runner_version?: string;
+    project_id?: string;
+    source_id?: string;
+    /** Portable source alias named by the reviewed contract and local runner config. */
+    runner_source_id?: string;
+    mapping_id?: string;
+    contract_id?: string;
+    contract_version_id?: string;
+    contract_digest?: string;
+    engines?: string[];
+    capabilities?: string[];
+  };
+};
+
+async function loadCloudConnection(configPath: string): Promise<{
+  file: NonNullable<CloudConnectionFile["cloud"]>;
+  baseUrl: string;
+  runnerToken: string;
+  runnerId: string;
+  runnerVersion: string;
+  sourceId: string;
+}> {
+  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as CloudConnectionFile;
+  if (!parsed.cloud) throw new Error(`cloud config missing in ${configPath}`);
+  const baseUrlEnv = parsed.cloud.base_url_env || "SYNAPSOR_CLOUD_BASE_URL";
+  const tokenEnv = parsed.cloud.runner_token_env || "SYNAPSOR_RUNNER_TOKEN";
+  const baseUrl = envValue(process.env, baseUrlEnv) || String(parsed.cloud.base_url || "").trim();
+  const runnerToken = envValue(process.env, tokenEnv);
+  const missing = [baseUrl ? "" : baseUrlEnv, runnerToken ? "" : tokenEnv].filter(Boolean);
+  if (missing.length > 0) throw new Error(`missing environment variables: ${missing.join(", ")}`);
+  const sourceId = String(parsed.cloud.source_id || process.env.SYNAPSOR_SOURCE_ID || "").trim();
+  if (!sourceId || sourceId === "src_replace_me") throw new Error("cloud.source_id is required and must match the scoped Cloud Runner token source");
+  return {
+    file: parsed.cloud,
+    baseUrl: baseUrl!,
+    runnerToken: runnerToken!,
+    sourceId,
+    runnerId: String(parsed.cloud.runner_id || process.env.SYNAPSOR_RUNNER_ID || "synapsor_runner_local").trim(),
+    runnerVersion: String(parsed.cloud.runner_version || process.env.npm_package_version || runnerPackage.version).trim(),
+  };
+}
+
+async function cloudSync(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.cloud.json";
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const requested = firstPositional(args);
+  const connection = await loadCloudConnection(configPath);
+  const contractId = String(connection.file.contract_id || "").trim();
+  const contractVersionId = String(connection.file.contract_version_id || "").trim();
+  const contractDigest = String(connection.file.contract_digest || "").trim();
+  const runnerSourceId = String(connection.file.runner_source_id || connection.sourceId).trim();
+  if (!contractId || !contractVersionId || !/^sha256:[0-9a-f]{16,}$/i.test(contractDigest)) {
+    throw new Error("cloud sync requires contract_id, contract_version_id, and contract_digest in synapsor.cloud.json");
+  }
+  const client = new ControlPlaneClient({
+    baseUrl: connection.baseUrl,
+    runnerToken: connection.runnerToken,
+    sourceId: connection.sourceId,
+    runnerId: connection.runnerId,
+  });
+  const store = new ProposalStore(storePath);
+  try {
+    const candidates = store.listProposals({ state: "pending_review", source: runnerSourceId, limit: 100 });
+    const selected = requested
+      ? [requested === "latest" ? candidates[0] : store.getProposal(requested)].filter((value): value is StoredProposal => value !== undefined)
+      : candidates;
+    if (requested && selected.length === 0) throw new Error(`local pending proposal not found: ${requested}`);
+    let synced = 0;
+    for (const proposal of selected) {
+      if (proposal.state !== "pending_review") throw new Error(`proposal ${proposal.proposal_id} is ${proposal.state}; only pending_review proposals can enter Cloud approval`);
+      if (proposal.source_id !== runnerSourceId) {
+        throw new Error(`proposal ${proposal.proposal_id} uses local source ${proposal.source_id}; Cloud source ${connection.sourceId} is mapped to reviewed local source ${runnerSourceId}`);
+      }
+      const evidence = store.listEvidenceBundles({ proposal: proposal.proposal_id, limit: 100 });
+      const queryAudit = store.listQueryAudit({ proposal: proposal.proposal_id, limit: 100 });
+      const sanitizedChangeSet = JSON.parse(JSON.stringify(proposal.change_set)) as ChangeSet;
+      sanitizedChangeSet.evidence.items = [];
+      const payload: RunnerProposalV1 = {
+        schema_version: protocolVersions.runnerProposal,
+        runner_id: connection.runnerId,
+        source_id: connection.sourceId,
+        ...(connection.file.mapping_id ? { mapping_id: connection.file.mapping_id } : {}),
+        contract: {
+          contract_id: contractId,
+          contract_version_id: contractVersionId,
+          digest: contractDigest as `sha256:${string}`,
+        },
+        change_set: sanitizedChangeSet,
+        evidence_metadata: {
+          bundle_ids: evidence.map((item) => item.evidence_bundle_id),
+          count: evidence.length,
+          query_fingerprints: [...new Set(evidence.map((item) => item.query_fingerprint).filter(Boolean))],
+          payload_uploaded: false,
+        },
+        query_audit: {
+          audit_ids: queryAudit.map((item) => item.audit_id).filter((value) => value !== undefined),
+          count: queryAudit.length,
+          query_fingerprints: [...new Set(queryAudit.map((item) => item.query_fingerprint).filter(Boolean))],
+          tables: [...new Set(queryAudit.map((item) => item.table_name).filter(Boolean))],
+          payload_uploaded: false,
+        },
+      };
+      await client.submitProposal(payload);
+      synced += 1;
+    }
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ ok: true, synced, source_id: connection.sourceId, contract_version_id: contractVersionId }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`Synced ${synced} pending proposal${synced === 1 ? "" : "s"} to Cloud for ${connection.sourceId}.\n`);
+      process.stdout.write("Only proposal diffs and bounded evidence/query-audit metadata were sent; database credentials and source rows stayed local.\n");
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function cloudSyncActivity(args: string[]): Promise<number> {
+  const configPath = optionalArg(args, "--config") ?? "synapsor.cloud.json";
+  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const requested = firstPositional(args) ?? "latest";
+  const connection = await loadCloudConnection(configPath);
+  const runnerSourceId = String(connection.file.runner_source_id || connection.sourceId).trim();
+  const client = new ControlPlaneClient({
+    baseUrl: connection.baseUrl,
+    runnerToken: connection.runnerToken,
+    sourceId: connection.sourceId,
+    runnerId: connection.runnerId,
+  });
+  const store = new ProposalStore(storePath);
+  try {
+    const proposal = requested === "latest"
+      ? store.listProposals({ source: runnerSourceId, limit: 1 })[0]
+      : store.getProposal(requested);
+    if (!proposal) throw new Error(`local proposal not found: ${requested}`);
+    if (proposal.source_id !== runnerSourceId) {
+      throw new Error(`proposal ${proposal.proposal_id} uses local source ${proposal.source_id}; Cloud source ${connection.sourceId} is mapped to reviewed local source ${runnerSourceId}`);
+    }
+    const evidence = store.listEvidenceBundles({ proposal: proposal.proposal_id, limit: 100 });
+    const queryAudit = store.listQueryAudit({ proposal: proposal.proposal_id, limit: 100 });
+    const replay = store.replay(proposal.proposal_id);
+    const common = {
+      schema_version: protocolVersions.runnerActivity,
+      runner_id: connection.runnerId,
+      source_id: connection.sourceId,
+      proposal_id: proposal.proposal_id,
+      capability: proposal.action,
+      tenant_id: proposal.tenant_id,
+      principal: proposal.principal,
+      business_object: proposal.business_object,
+      object_id: proposal.object_id,
+      status: proposal.state,
+    } as const;
+    const events: RunnerActivityV1[] = [
+      ...evidence.map((item) => ({
+        ...common,
+        event_id: `evidence:${item.evidence_bundle_id}`,
+        event_type: "evidence.recorded" as const,
+        evidence_ids: [item.evidence_bundle_id],
+        detail: { stored_locally: true, payload_uploaded: false },
+        occurred_at: item.created_at,
+      })),
+      ...queryAudit.map((item) => ({
+        ...common,
+        event_id: `query-audit:${String(item.audit_id)}`,
+        event_type: "query_audit.recorded" as const,
+        query_audit_ids: [String(item.audit_id)],
+        ...(typeof item.evidence_bundle_id === "string" ? { evidence_ids: [item.evidence_bundle_id] } : {}),
+        detail: { stored_locally: true, payload_uploaded: false },
+        occurred_at: typeof item.created_at === "string" ? item.created_at : undefined,
+      })),
+      {
+        ...common,
+        event_id: `replay:${replay.replay_id}`,
+        event_type: "replay.recorded",
+        replay_id: replay.replay_id,
+        detail: { stored_locally: true, payload_uploaded: false },
+      },
+    ];
+    for (const event of events) await client.submitActivity(event);
+    const output = {
+      ok: true,
+      synced: events.length,
+      proposal_id: proposal.proposal_id,
+      evidence_references: evidence.length,
+      query_audit_references: queryAudit.length,
+      replay_id: replay.replay_id,
+    };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+    else {
+      process.stdout.write(`Synced ${events.length} local activity reference${events.length === 1 ? "" : "s"} to Cloud for ${proposal.proposal_id}.\n`);
+      process.stdout.write("Evidence contents, source rows, database credentials, and local replay payloads stayed local.\n");
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
 }
 
 async function cloudPush(args: string[]): Promise<number> {
@@ -5720,64 +5981,48 @@ function cloudStringField(value: unknown, key: string): string {
 
 async function cloudConnect(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG ?? "synapsor.cloud.json";
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as {
-    cloud?: {
-      base_url_env?: string;
-      runner_token_env?: string;
-      runner_id?: string;
-      runner_version?: string;
-      project_id?: string;
-      source_id?: string;
-      engines?: string[];
-      capabilities?: string[];
-    };
-  };
-  if (!parsed.cloud) {
-    process.stdout.write(`cloud config missing in ${configPath}\n`);
+  let connection;
+  try {
+    connection = await loadCloudConnection(configPath);
+  } catch (error) {
+    process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
-  const baseUrlEnv = parsed.cloud.base_url_env || "SYNAPSOR_CLOUD_BASE_URL";
-  const tokenEnv = parsed.cloud.runner_token_env || "SYNAPSOR_RUNNER_TOKEN";
-  const baseUrl = envValue(process.env, baseUrlEnv);
-  const runnerToken = envValue(process.env, tokenEnv);
-  const missing = [baseUrl ? "" : baseUrlEnv, runnerToken ? "" : tokenEnv].filter(Boolean);
-  if (missing.length > 0) {
-    process.stdout.write(`missing environment variables: ${missing.join(", ")}\n`);
-    return 1;
-  }
-  if (!baseUrl || !runnerToken) {
-    process.stdout.write("missing Cloud connection settings\n");
-    return 1;
-  }
-  const sourceId = String(parsed.cloud.source_id || process.env.SYNAPSOR_SOURCE_ID || "").trim();
-  if (!sourceId || sourceId === "src_replace_me") {
-    process.stdout.write("cloud.source_id is required before registering a runner. It must match the scoped Cloud runner token source.\n");
-    return 1;
-  }
-  const runnerId = String(parsed.cloud.runner_id || process.env.SYNAPSOR_RUNNER_ID || "synapsor_runner_local").trim();
-  const runnerVersion = String(parsed.cloud.runner_version || process.env.npm_package_version || "0.1.0").trim();
-  const engines = normalizeEngines(parsed.cloud.engines);
-  const capabilities = normalizeCapabilities(parsed.cloud.capabilities);
+  const { baseUrl, runnerToken, sourceId, runnerId, runnerVersion } = connection;
+  const engines = normalizeEngines(connection.file.engines);
+  const capabilities = normalizeCapabilities(connection.file.capabilities);
   const client = new ControlPlaneClient({
     baseUrl,
     runnerToken,
     sourceId,
+    runnerId,
   });
   const report = await client.doctor();
-  if (!report.ok) {
-    process.stdout.write(`cloud connection failed: status ${report.status}\n`);
+  if (!report.ok || !report.authenticated) {
+    const reason = report.authenticated
+      ? `status ${report.status}`
+      : "the endpoint did not authenticate the Runner protocol; upgrade Cloud or use its supported API URL";
+    process.stdout.write(`cloud connection failed: ${reason}\n`);
     return 1;
   }
   const registration: RunnerRegistrationV1 = {
     schema_version: protocolVersions.runnerRegistration,
+    protocol_version: protocolVersions.runnerControl,
     runner_id: runnerId,
     runner_version: runnerVersion,
     engines,
     capabilities,
     scope: {
-      project_id: String(parsed.cloud.project_id || "token_scope"),
+      project_id: String(connection.file.project_id || "token_scope"),
       source_ids: [sourceId],
     },
+    contracts: connection.file.contract_id && connection.file.contract_version_id && connection.file.contract_digest
+      ? [{
+          contract_id: connection.file.contract_id,
+          contract_version_id: connection.file.contract_version_id,
+          digest: connection.file.contract_digest,
+        }]
+      : undefined,
     registered_at: new Date().toISOString(),
   };
   await client.register(registration);
@@ -12536,9 +12781,14 @@ instead of being ignored.
 `,
     cloud: `Usage:
   ${cmd} cloud connect --config ./synapsor.cloud.json
+  ${cmd} cloud sync latest --config ./synapsor.cloud.json --store ./.synapsor/local.db
+  ${cmd} cloud sync-activity latest --config ./synapsor.cloud.json --store ./.synapsor/local.db
   ${cmd} cloud push ./synapsor.contract.json --dry-run [--workspace <id>] [--name <registry-name>]
 
-cloud push validates and normalizes the contract locally, then prints the
+cloud sync sends a pending proposal plus bounded evidence/query-audit metadata.
+cloud sync-activity sends stable local evidence, query-audit, and replay ids;
+record contents and database credentials stay local. cloud push validates and
+normalizes the contract locally, then prints the
 payload summary. With --dry-run it makes no network request. Without --dry-run
 it uploads to the authenticated Cloud registry and reports the stored contract,
 version, digest, and registry URL returned by the server.
@@ -12569,6 +12819,7 @@ Options:
     start: `Usage:
   ${cmd} start --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
   ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
+  ${cmd} runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} start
 
 With --from-env, run the guided own-database setup: inspect schema, choose one
@@ -12577,7 +12828,9 @@ call, and print MCP/UI next steps.
 
 With no flags, start the legacy cloud-linked writeback polling worker from the
 worker environment config. Prefer \`${cmd} runner start\` for that worker path
-so it is not confused with first-run onboarding.
+so it is not confused with first-run onboarding. Add \`--once\` with both
+\`--config\` and \`--store\` for a bounded claim/apply cycle that still rechecks
+the local reviewed contract and proposal before writeback.
 `,
     inspect: `Usage:
   ${cmd} inspect --from-env DATABASE_URL [--engine auto|postgres|mysql] [--schema public] [--json]

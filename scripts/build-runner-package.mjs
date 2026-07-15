@@ -117,6 +117,7 @@ const publicDocs = [
   "guarded-crud-writeback.md",
   "graduated-trust.md",
   "handler-helper.md",
+  "hosted-cloud-linked-verification.md",
   "dependency-license-inventory.md",
   "dsl-reference.md",
   "http-mcp.md",

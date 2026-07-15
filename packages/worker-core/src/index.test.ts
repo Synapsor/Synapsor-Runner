@@ -7,7 +7,9 @@ import {
   classifyFrozenSetReconciliation,
   doctorChecks,
   formatMcpAuditReport,
+  loadConfig,
   redact,
+  runOnce,
   validateJob,
   type RunnerConfig,
 } from "./index.js";
@@ -34,6 +36,18 @@ describe("worker core", () => {
     const text = redact("Bearer syn_wbr_secret postgresql://user:pass@example/db mysql://root:pass@example/db");
     expect(text).not.toContain("pass");
     expect(text).not.toContain("syn_wbr_secret");
+  });
+
+  it("uses the documented write URL for Cloud workers while preserving the legacy fallback", () => {
+    const shared = {
+      SYNAPSOR_CONTROL_PLANE_URL: "https://dev-api.synapsor.ai",
+      SYNAPSOR_RUNNER_TOKEN: "syn_run_dev_test",
+      SYNAPSOR_SOURCE_ID: "src_1",
+    };
+    expect(loadConfig({ ...shared, SYNAPSOR_DATABASE_WRITE_URL: "postgresql://writer:new@example/app", SYNAPSOR_DATABASE_URL: "postgresql://writer:old@example/app" }).databaseUrl)
+      .toBe("postgresql://writer:new@example/app");
+    expect(loadConfig({ ...shared, SYNAPSOR_DATABASE_URL: "postgresql://writer:old@example/app" }).databaseUrl)
+      .toBe("postgresql://writer:old@example/app");
   });
 
   it("validates jobs through the shared protocol", () => {
@@ -136,6 +150,68 @@ describe("worker core", () => {
     expect(report.ok).toBe(true);
     expect(report.control_plane.authenticated).toBe(true);
     expect(report.database.details.receipt_table).toBe("ready");
+  });
+
+  it("fails a Cloud lease closed before database apply when local authority rejects it", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      requests.push({ url, body });
+      if (url.endsWith("/v1/writeback/jobs/claim")) {
+        return new Response(JSON.stringify({ ok: true, jobs: [cloudV2Job()] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const apply = vi.fn();
+    const adapter = { doctor: vi.fn(), apply };
+
+    await expect(runOnce(baseConfig, { postgres: adapter, mysql: adapter }, async () => {
+      throw new Error("sensitive local detail must not leave the worker");
+    })).resolves.toBe(0);
+
+    expect(apply).not.toHaveBeenCalled();
+    const resultRequest = requests.find((request) => request.url.endsWith("/result"));
+    expect(resultRequest?.body).toMatchObject({
+      protocol_version: "2.0",
+      job_id: "wbj_cloud_1",
+      status: "failed",
+      affected_rows: 0,
+      error_code: "LOCAL_AUTHORITY_REJECTED",
+      lease_id: "lease_cloud_1",
+      target_identity: [{ column: "id", value: "INV-1" }],
+    });
+    expect(JSON.stringify(resultRequest)).not.toContain("sensitive local detail");
+  });
+
+  it("applies a Cloud lease only after local authority accepts it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/writeback/jobs/claim")) {
+        return new Response(JSON.stringify({ ok: true, jobs: [cloudV2Job()] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const verifier = vi.fn(async () => undefined);
+    const result = {
+      protocol_version: "2.0" as const,
+      job_id: "wbj_cloud_1",
+      runner_id: "runner_1",
+      operation: "single_row_update" as const,
+      receipt_authority: "runner_ledger" as const,
+      status: "conflict" as const,
+      affected_rows: 0,
+      target_identity: [{ column: "id", value: "INV-1" }],
+      result_hash: `sha256:${"f".repeat(64)}` as const,
+      completed_at: "2026-07-15T00:00:01Z",
+      error_code: "CONFLICT",
+    };
+    const apply = vi.fn(async () => result);
+    const adapter = { doctor: vi.fn(), apply };
+
+    await expect(runOnce(baseConfig, { postgres: adapter, mysql: adapter }, verifier)).resolves.toBe(1);
+    expect(verifier).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledTimes(1);
   });
 
   it("flags generic SQL and model-controlled trust fields in MCP manifests", () => {
@@ -255,6 +331,37 @@ function v3SetJob(): Record<string, unknown> {
     lease_token: "lease-set-1",
     runner_id: "runner-1",
     attempt_count: 1,
+  };
+}
+
+function cloudV2Job(): Record<string, unknown> {
+  return {
+    protocol_version: "2.0",
+    job_id: "wbj_cloud_1",
+    proposal_id: "wrp_cloud_1",
+    approval_id: `sha256:${"a".repeat(64)}`,
+    contract: {
+      contract_id: "agct_1",
+      contract_version_id: "agcv_1",
+      digest: `sha256:${"b".repeat(64)}`,
+    },
+    source_id: "local_postgres",
+    engine: "postgres",
+    operation: "single_row_update",
+    target: {
+      schema: "public",
+      table: "invoices",
+      primary_key: { column: "id", value: "INV-1" },
+      tenant_guard: { column: "tenant_id", value: "acme" },
+    },
+    allowed_columns: ["late_fee_cents"],
+    patch: { late_fee_cents: 0 },
+    conflict_guard: { kind: "version_column", column: "version", expected_value: 1 },
+    version_advance: { column: "version", strategy: "integer_increment" },
+    idempotency_key: "idem_cloud_1",
+    lease_expires_at: "2099-07-15T00:00:00Z",
+    attempt_count: 1,
+    lease_id: "lease_cloud_1",
   };
 }
 

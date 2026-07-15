@@ -11,6 +11,7 @@ Every bundle contains:
 ```text
 synapsor.contract.json
 synapsor.runner.json
+synapsor.cloud.json
 .env.example
 README.md
 mcp-client-examples/
@@ -43,7 +44,25 @@ set -a && . ./.env && set +a
 npx -y -p @synapsor/runner synapsor-runner contract validate ./synapsor.contract.json
 npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json
 npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner synapsor-runner cloud connect --config ./synapsor.cloud.json
 npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+For proposal contracts, run the trusted worker in a separate
+operator-controlled terminal:
+
+```bash
+set -a && . ./.env && set +a
+npx -y -p @synapsor/runner synapsor-runner start --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+After an MCP tool creates a local proposal, sync its reviewed diff and safe
+references to Cloud:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner cloud sync latest \
+  --config ./synapsor.cloud.json \
+  --store ./.synapsor/local.db
 ```
 
 For the OpenAI Agents SDK, use the included TypeScript examples. Their stdio
@@ -57,3 +76,8 @@ Approval and writeback remain outside the model-facing MCP tool surface. Use
 The bundle's `.env.example` contains names and placeholders only. Fill it for a
 local or staging source, source it into the shell or process that launches your
 MCP client, and keep the resulting `.env` out of source control.
+
+The Cloud `source_id` scopes the Runner token and job queue. The contract's
+source alias selects the local database adapter. They are intentionally
+different identifiers. Cloud jobs never contain a database URL or handler
+secret.
