@@ -591,6 +591,51 @@ END
     });
   });
 
+  it("compiles typed ENUM arguments in deterministic reviewed order", () => {
+    const contract = compileAgentDsl(enumArgumentSource([
+      "ARG risk_level STRING ENUM('low', 'medium', 'high') REQUIRED",
+      "ARG retry_count NUMBER ENUM(0, 1, 2) REQUIRED",
+      "ARG notify BOOLEAN ENUM(TRUE, FALSE) REQUIRED",
+    ].join("\n  ")));
+    expect(contract.capabilities[0]?.args).toMatchObject({
+      risk_level: { type: "string", enum: ["low", "medium", "high"] },
+      retry_count: { type: "number", enum: [0, 1, 2] },
+      notify: { type: "boolean", enum: [true, false] },
+    });
+  });
+
+  it("rejects empty, duplicate, mixed, null, and incompatible ENUM values", () => {
+    expect(() => compileAgentDsl(enumArgumentSource("ARG risk_level STRING ENUM() REQUIRED"))).toThrow(/ARG_ENUM_EMPTY/);
+    expect(() => compileAgentDsl(enumArgumentSource("ARG risk_level NUMBER ENUM(1, 1.0) REQUIRED"))).toThrow(/ARG_ENUM_DUPLICATE_VALUE/);
+    expect(() => compileAgentDsl(enumArgumentSource("ARG risk_level STRING ENUM('low', 2) REQUIRED"))).toThrow(/ARG_ENUM_TYPE_MISMATCH/);
+    expect(() => compileAgentDsl(enumArgumentSource("ARG risk_level STRING ENUM(NULL) REQUIRED"))).toThrow(/ARG_ENUM_NULL_UNSUPPORTED/);
+    expect(() => compileAgentDsl(enumArgumentSource("ARG risk_level BOOLEAN ENUM('true') REQUIRED"))).toThrow(/ARG_ENUM_TYPE_MISMATCH/);
+  });
+
+  it("compiles bounded aggregate reads with fixed selection and no row-facing arguments", () => {
+    const contract = compileAgentDsl(aggregateReadSource("AGGREGATE READ SUM balance_cents", "SELECT WHERE status = 'overdue' AND region = 'west'"));
+    expect(contract.capabilities[0]).toMatchObject({
+      kind: "aggregate_read",
+      args: {},
+      visible_fields: [],
+      aggregate: {
+        function: "sum",
+        column: "balance_cents",
+        minimum_group_size: 5,
+        selection: { all: [
+          { column: "status", operator: "eq", value: "overdue" },
+          { column: "region", operator: "eq", value: "west" },
+        ] },
+      },
+    });
+    expect(validateContract(contract).errors).toEqual([]);
+  });
+
+  it("rejects aggregate reads without suppression or with model-controlled predicates", () => {
+    expect(() => compileAgentDsl(aggregateReadSource("AGGREGATE READ COUNT ROWS", "", false))).toThrow(/AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED/);
+    expect(() => compileAgentDsl(aggregateReadSource("AGGREGATE READ AVG balance_cents", "ARG minimum NUMBER REQUIRED MIN 0"))).toThrow(/AGGREGATE_MODEL_ARGS_FORBIDDEN/);
+  });
+
   it("throws AgentDslError for unsupported syntax", () => {
     expect(() => compileAgentDsl("CREATE AGENT WORKFLOW billing.flow\nAUTO MERGE\nEND\n")).toThrow(AgentDslError);
   });
@@ -636,6 +681,55 @@ ${replaceProposal ? "" : `  PROPOSE ACTION grant_plan_credit
   PATCH credit_reason = ARG reason
   BOUND plan_credit_cents 1..50000`}
 ${proposalTail.trimEnd()}
+END
+`;
+}
+
+function enumArgumentSource(argumentsSource: string): string {
+  return `
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  TENANT BINDING tenant_id
+END
+
+CREATE CAPABILITY support.inspect_risk
+  USING CONTEXT local_operator
+  SOURCE local_postgres
+  ON public.accounts
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  LOOKUP account_id BY id
+  ARG account_id STRING REQUIRED MAX LENGTH 128
+  ${argumentsSource}
+  ALLOW READ id, tenant_id, risk_level
+  KEEP OUT private_notes
+  REQUIRE EVIDENCE
+END
+`;
+}
+
+function aggregateReadSource(aggregateClause: string, extraClause: string, includeMinimum = true): string {
+  return `
+CREATE AGENT CONTEXT finance_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY billing.aggregate_overdue
+  DESCRIPTION 'Return one suppressed aggregate over a reviewer-fixed tenant set.'
+  RETURNS HINT 'Returns one aggregate scalar or a suppression result; never member rows.'
+  USING CONTEXT finance_operator
+  SOURCE local_postgres
+  ON public.invoices
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ${aggregateClause}
+  ${extraClause}
+  ${includeMinimum ? "MIN GROUP SIZE 5" : ""}
+  KEEP OUT customer_email, private_notes
+  REQUIRE EVIDENCE
 END
 `;
 }

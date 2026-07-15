@@ -1,0 +1,18 @@
+{
+  "trusted_context": {
+    "tenant_id": "acme",
+    "principal": "billing_analyst"
+  },
+  "invoke": {
+    "capability": "billing.sum_overdue_balance",
+    "args": {}
+  },
+  "source_rows": [
+    { "id": "INV-1", "tenant_id": "acme", "status": "overdue", "balance_cents": 1000 },
+    { "id": "INV-2", "tenant_id": "acme", "status": "overdue", "balance_cents": 2000 },
+    { "id": "INV-3", "tenant_id": "acme", "status": "overdue", "balance_cents": 3000 },
+    { "id": "INV-4", "tenant_id": "acme", "status": "overdue", "balance_cents": 4000 },
+    { "id": "INV-5", "tenant_id": "acme", "status": "overdue", "balance_cents": 5000 },
+    { "id": "INV-X", "tenant_id": "globex", "status": "overdue", "balance_cents": 999999 }
+  ]
+}

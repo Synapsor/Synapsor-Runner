@@ -103,6 +103,32 @@ const fixtureRow = {
   updated_at: "2026-06-20T14:31:08Z",
 };
 
+function aggregateReadConfig(): RuntimeConfig {
+  const cloned = structuredClone(config);
+  cloned.capabilities = [{
+    name: "billing.sum_overdue_balance",
+    kind: "aggregate_read",
+    source: "app_postgres",
+    target: {
+      schema: "public",
+      table: "invoices",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+    },
+    args: {},
+    lookup: { id_from_arg: "id" },
+    visible_columns: [],
+    evidence: "required",
+    aggregate: {
+      function: "sum",
+      column: "balance_cents",
+      selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
+      minimum_group_size: 5,
+    },
+  }];
+  return cloned;
+}
+
 function runtimeStoreAdapter(backing: ProposalStore): ProposalRuntimeStore {
   return {
     close: () => backing.close(),
@@ -954,6 +980,18 @@ describe("local Synapsor MCP runtime", () => {
       runtimeCode: "SOURCE_POOL_TIMEOUT",
       retryAfterMs: 2750,
     },
+    {
+      name: "PostgreSQL statement timeout",
+      error: () => Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" }),
+      runtimeCode: "POSTGRES_57014",
+      retryAfterMs: 1000,
+    },
+    {
+      name: "MySQL statement timeout",
+      error: () => Object.assign(new Error("query execution was interrupted"), { code: "ER_QUERY_TIMEOUT", errno: 3024 }),
+      runtimeCode: "MYSQL_ER_QUERY_TIMEOUT",
+      retryAfterMs: 1000,
+    },
   ])("classifies $name as safely retryable", async ({ error, runtimeCode, retryAfterMs }) => {
     const logs: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -1064,6 +1102,89 @@ describe("local Synapsor MCP runtime", () => {
       });
     } finally {
       runtime.close();
+    }
+  });
+
+  it("returns only a reviewed aggregate scalar and records no source member rows", async () => {
+    const readRow = vi.fn(async (input: any) => {
+      expect(input.args).toEqual({});
+      expect(input.context).toMatchObject({ tenant_id: "acme", principal: "support_agent_17" });
+      expect(input.capability.aggregate?.selection).toEqual({ all: [{ column: "status", operator: "eq", value: "overdue" }] });
+      return { row: { aggregate_value: "7500", group_size: "6" }, rows: [{ aggregate_value: "7500", group_size: "6" }], rowCount: 1 };
+    });
+    const runtime = createMcpRuntime(aggregateReadConfig(), { readRow });
+    try {
+      expect(runtime.listTools()).toEqual([
+        expect.objectContaining({
+          name: "billing.sum_overdue_balance",
+          kind: "aggregate_read",
+          annotations: expect.objectContaining({ readOnlyHint: true, idempotentHint: true }),
+        }),
+      ]);
+      const result = await runtime.callTool("billing.sum_overdue_balance", {});
+      expect(result).toMatchObject({
+        status: "ok",
+        data: {
+          function: "sum",
+          column: "balance_cents",
+          suppressed: false,
+          minimum_group_size: 5,
+          value: 7500,
+          member_rows_included: false,
+        },
+        source_database_changed: false,
+      });
+      expect(readRow).toHaveBeenCalledTimes(1);
+
+      const evidence = await runtime.readResource(String(result.evidence_resource));
+      expect(evidence).toMatchObject({
+        tenant_id: "acme",
+        items: [],
+        payload: {
+          aggregate_result: 7500,
+          member_rows_included: false,
+        },
+      });
+      expect(JSON.stringify(evidence)).not.toContain("INV-");
+      expect(JSON.stringify(evidence)).not.toContain("customer_email");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("suppresses small aggregate groups without exposing the scalar or member count", async () => {
+    const runtime = createMcpRuntime(aggregateReadConfig(), {
+      readRow: async () => ({
+        row: { aggregate_value: 999_999, group_size: 2 },
+        rows: [{ aggregate_value: 999_999, group_size: 2 }],
+        rowCount: 1,
+      }),
+    });
+    try {
+      const result = await runtime.callTool("billing.sum_overdue_balance", {});
+      expect(result).toMatchObject({
+        status: "suppressed",
+        data: { suppressed: true, value: null, minimum_group_size: 5, member_rows_included: false },
+      });
+      expect(result.data).not.toHaveProperty("group_size");
+      const evidence = await runtime.readResource(String(result.evidence_resource));
+      expect(evidence).toMatchObject({ items: [], payload: { suppressed: true, member_rows_included: false } });
+      expect(evidence.payload).not.toHaveProperty("aggregate_result");
+      expect(evidence.payload).not.toHaveProperty("group_size");
+      expect(JSON.stringify({ result, evidence })).not.toContain("999999");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when an aggregate adapter returns source rows instead of one scalar envelope", async () => {
+    const runtime = createMcpRuntime(aggregateReadConfig(), {
+      readRow: async () => ({ row: { aggregate_value: 10, group_size: 5 }, rows: [{ id: "INV-1" }, { id: "INV-2" }], rowCount: 2 }),
+    });
+    try {
+      await expect(runtime.callTool("billing.sum_overdue_balance", {})).rejects.toMatchObject({ code: "AGGREGATE_RESULT_SHAPE_INVALID" });
+    } finally {
+      await runtime.close();
     }
   });
 

@@ -188,11 +188,17 @@ const reversibilityRequestSchema = z.object({
   lineage: reversalLineageSchema,
 });
 
+const contractProvenanceSchema = z.object({
+  digest: sha256,
+  version: z.string().min(1).max(128),
+});
+
 export const changeSetV1Schema = z.object({
   schema_version: z.literal(protocolVersions.changeSet),
   proposal_id: z.string().min(1),
   proposal_version: z.number().int().positive(),
   action: z.string().min(1),
+  contract: contractProvenanceSchema.optional(),
   mode: z.enum(["read_only", "shadow", "review_required", "approved_for_writeback"]),
   principal: z.object({
     id: z.string().min(1),
@@ -269,6 +275,7 @@ export const changeSetV2Schema = z.object({
   proposal_id: z.string().min(1),
   proposal_version: z.number().int().positive(),
   action: z.string().min(1),
+  contract: contractProvenanceSchema.optional(),
   operation: z.enum(["single_row_update", "single_row_insert", "single_row_delete"]),
   mode: z.enum(["read_only", "shadow", "review_required", "approved_for_writeback"]),
   principal: z.object({
@@ -358,6 +365,7 @@ export const changeSetV3Schema = z.object({
   proposal_id: z.string().min(1),
   proposal_version: z.number().int().positive(),
   action: z.string().min(1),
+  contract: contractProvenanceSchema.optional(),
   operation: setOperationSchema,
   mode: z.enum(["read_only", "shadow", "review_required", "approved_for_writeback"]),
   principal: z.object({
@@ -417,6 +425,7 @@ export const compensationChangeSetV1Schema = z.object({
   proposal_id: z.string().min(1),
   proposal_version: z.number().int().positive(),
   action: z.string().min(1),
+  contract: contractProvenanceSchema.optional(),
   mode: z.literal("review_required"),
   principal: z.object({
     id: z.string().min(1),

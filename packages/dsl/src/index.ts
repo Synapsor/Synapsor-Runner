@@ -16,7 +16,7 @@ export type AgentDslContextAst = {
 export type AgentDslCapabilityAst = {
   name: string;
   line?: number;
-  kind: "read" | "proposal";
+  kind: "read" | "aggregate_read" | "proposal";
   description?: string;
   returnsHint?: string;
   context: string;
@@ -35,6 +35,13 @@ export type AgentDslCapabilityAst = {
   keptOutFields: string[];
   evidenceRequired?: boolean;
   maxRows?: number;
+  aggregate?: {
+    function: "count" | "sum" | "avg";
+    count_mode?: "rows" | "non_null";
+    column?: string;
+    selection?: { all: Array<{ column: string; operator: "eq"; value: string | number | boolean | null }> };
+    minimum_group_size?: number;
+  };
   proposal?: {
     action: string;
     allowedFields: string[];
@@ -164,6 +171,13 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
       ...(capability.keptOutFields.length ? { kept_out_fields: capability.keptOutFields } : {}),
       ...(capability.evidenceRequired !== undefined ? { evidence: { required: capability.evidenceRequired, query_audit: true } } : {}),
       ...(capability.maxRows ? { max_rows: capability.maxRows } : {}),
+      ...(capability.aggregate ? { aggregate: {
+        function: capability.aggregate.function,
+        ...(capability.aggregate.count_mode ? { count_mode: capability.aggregate.count_mode } : {}),
+        ...(capability.aggregate.column ? { column: capability.aggregate.column } : {}),
+        ...(capability.aggregate.selection ? { selection: capability.aggregate.selection } : {}),
+        minimum_group_size: capability.aggregate.minimum_group_size ?? 2,
+      } } : {}),
     };
     if (capability.kind === "proposal" && capability.proposal) {
       const autoApprovalPolicyName = capability.proposal.autoApprovalRules?.length ? autoApprovalPolicyNameForCapability(capability.name) : undefined;
@@ -416,6 +430,25 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       else capability.maxRows = Number(maxRows[1]);
       continue;
     }
+    const aggregateRead = item.text.match(/^AGGREGATE\s+READ\s+(COUNT\s+ROWS|COUNT\s+NON\s+NULL\s+[A-Za-z_][A-Za-z0-9_]*|SUM\s+[A-Za-z_][A-Za-z0-9_]*|AVG\s+[A-Za-z_][A-Za-z0-9_]*)$/i);
+    if (aggregateRead?.[1]) {
+      if (capability.proposal) throw dslError(item.line, 1, "AGGREGATE_PROPOSAL_CONFLICT", "AGGREGATE READ cannot be combined with PROPOSE ACTION");
+      const parts = aggregateRead[1].trim().split(/\s+/);
+      const fn = parts[0]!.toLowerCase() as "count" | "sum" | "avg";
+      capability.kind = "aggregate_read";
+      capability.aggregate = fn === "count" && parts[1]?.toUpperCase() === "ROWS"
+        ? { function: "count", count_mode: "rows" }
+        : fn === "count"
+          ? { function: "count", count_mode: "non_null", column: parts[3] }
+          : { function: fn, column: parts[1] };
+      continue;
+    }
+    const minimumGroup = item.text.match(/^MIN\s+GROUP\s+SIZE\s+(\d+)$/i);
+    if (minimumGroup?.[1]) {
+      if (!capability.aggregate) throw dslError(item.line, 1, "AGGREGATE_READ_REQUIRED", "MIN GROUP SIZE requires AGGREGATE READ first");
+      capability.aggregate.minimum_group_size = Number(minimumGroup[1]);
+      continue;
+    }
     const propose = item.text.match(/^PROPOSE\s+ACTION\s+([A-Za-z_][A-Za-z0-9_.]*)(?:\s+(UPDATE|INSERT|DELETE)(\s+SET)?)?$/i);
     if (propose?.[1]) {
       capability.kind = "proposal";
@@ -429,16 +462,20 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     }
     const selection = item.text.match(/^SELECT\s+WHERE(?:\s+(.*))?$/i);
     if (selection) {
-      ensureSetProposal(capability, item);
-      if (capability.proposal.operation.kind === "insert") throw dslError(item.line, 1, "BATCH_INSERT_SELECTION_FORBIDDEN", "batch INSERT reviews explicit items and cannot use SELECT WHERE");
-      capability.proposal.operation.selection ??= { all: [] };
       const clause = selection[1] ?? "";
       const prefix = item.text.match(/^SELECT\s+WHERE\s*/i)?.[0] ?? "SELECT WHERE ";
       const terms = parseFixedSelection(clause, item.line, prefix.length + 1);
-      if (capability.proposal.operation.selection.all.length + terms.length > 8) {
-        throw dslError(item.line, prefix.length + 1, "SELECT_WHERE_TERM_COUNT", "SELECT WHERE supports at most 8 fixed equality terms per capability");
+      if (capability.aggregate) {
+        capability.aggregate.selection ??= { all: [] };
+        if (capability.aggregate.selection.all.length + terms.length > 8) throw dslError(item.line, prefix.length + 1, "SELECT_WHERE_TERM_COUNT", "SELECT WHERE supports at most 8 fixed equality terms per capability");
+        capability.aggregate.selection.all.push(...terms);
+      } else {
+        ensureSetProposal(capability, item);
+        if (capability.proposal.operation.kind === "insert") throw dslError(item.line, 1, "BATCH_INSERT_SELECTION_FORBIDDEN", "batch INSERT reviews explicit items and cannot use SELECT WHERE");
+        capability.proposal.operation.selection ??= { all: [] };
+        if (capability.proposal.operation.selection.all.length + terms.length > 8) throw dslError(item.line, prefix.length + 1, "SELECT_WHERE_TERM_COUNT", "SELECT WHERE supports at most 8 fixed equality terms per capability");
+        capability.proposal.operation.selection.all.push(...terms);
       }
-      capability.proposal.operation.selection.all.push(...terms);
       continue;
     }
     const aggregate = item.text.match(/^MAX\s+TOTAL\s+([A-Za-z_][A-Za-z0-9_]*)\s+(BEFORE|AFTER|ABSOLUTE\s+DELTA)\s+(-?\d+(?:\.\d+)?)$/i);
@@ -570,9 +607,17 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       `${block.name} LOOKUP BY ${capability.lookup.column} cannot be represented by spec 0.1; use declared PRIMARY KEY ${capability.primaryKey}`,
     );
   }
-  if (capability.visibleFields.length === 0) throw dslError(block.line, 1, "CAPABILITY_VISIBLE_FIELDS_REQUIRED", `${block.name} requires ALLOW READ`);
+  if (capability.kind !== "aggregate_read" && capability.visibleFields.length === 0) throw dslError(block.line, 1, "CAPABILITY_VISIBLE_FIELDS_REQUIRED", `${block.name} requires ALLOW READ`);
   if (Object.keys(capability.args).length === 0 && capability.lookup) capability.args[capability.lookup.arg] = { type: "string", required: true, max_length: 128 };
-  if (Object.keys(capability.args).length === 0) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
+  if (capability.kind !== "aggregate_read" && Object.keys(capability.args).length === 0) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
+  if (capability.kind === "aggregate_read") {
+    if (!capability.aggregate) throw dslError(block.line, 1, "AGGREGATE_READ_REQUIRED", `${block.name} requires AGGREGATE READ`);
+    if (!capability.aggregate.minimum_group_size || capability.aggregate.minimum_group_size < 2) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 2 or greater`);
+    if (capability.lookup) throw dslError(block.line, 1, "AGGREGATE_LOOKUP_FORBIDDEN", `${block.name} aggregate reads cannot use LOOKUP`);
+    if (Object.keys(capability.args).length > 0) throw dslError(block.line, 1, "AGGREGATE_MODEL_ARGS_FORBIDDEN", `${block.name} aggregate reads cannot use model-controlled ARG predicates`);
+    if (capability.visibleFields.length > 0) throw dslError(block.line, 1, "AGGREGATE_VISIBLE_ROWS_FORBIDDEN", `${block.name} aggregate reads cannot expose ALLOW READ row fields`);
+    if (capability.evidenceRequired !== true) throw dslError(block.line, 1, "AGGREGATE_EVIDENCE_REQUIRED", `${block.name} aggregate reads require REQUIRE EVIDENCE`);
+  }
   if (capability.kind === "proposal") {
     if (!capability.proposal) throw dslError(block.line, 1, "PROPOSAL_ACTION_REQUIRED", `${block.name} requires PROPOSE ACTION`);
     const operation = capability.proposal.operation?.kind ?? "update";
@@ -946,6 +991,9 @@ function parseArgSpec(
     description = descriptionMatch[1] ?? "";
     rest = `${rest.slice(0, descriptionMatch.index)} ${rest.slice((descriptionMatch.index ?? 0) + descriptionMatch[0].length)}`.trim();
   }
+  const enumOption = extractEnumOption(rest, name, type, line);
+  const enumValues = enumOption.values;
+  rest = enumOption.rest;
   const required = /\bREQUIRED\b/i.test(rest);
   rest = rest.replace(/\bREQUIRED\b/ig, " ").trim();
 
@@ -983,7 +1031,74 @@ function parseArgSpec(
     ...(type === "number" && maximumOrLegacyLength !== undefined ? { maximum: maximumOrLegacyLength } : {}),
     ...(type !== "number" && maxLength !== undefined ? { max_length: maxLength } : {}),
     ...(type !== "number" && maxLength === undefined && maximumOrLegacyLength !== undefined ? { max_length: maximumOrLegacyLength } : {}),
+    ...(enumValues ? { enum: enumValues } : {}),
   };
+}
+
+function extractEnumOption(
+  input: string,
+  name: string,
+  type: ScalarArgumentSpec["type"],
+  line: number,
+): { rest: string; values?: Array<string | number | boolean> } {
+  const match = /\bENUM\s*\(/i.exec(input);
+  if (!match || match.index === undefined) return { rest: input };
+  const valueStart = match.index + match[0].length;
+  let index = valueStart;
+  let quoted = false;
+  let closed = false;
+  while (index < input.length) {
+    const character = input[index];
+    if (character === "'") {
+      if (quoted && input[index + 1] === "'") { index += 2; continue; }
+      quoted = !quoted;
+      index += 1;
+      continue;
+    }
+    if (character === ")" && !quoted) { closed = true; break; }
+    index += 1;
+  }
+  if (!closed) throw dslError(line, 1, "ARG_ENUM_UNTERMINATED", `ARG ${name} ENUM requires a closing )`);
+  const body = input.slice(valueStart, index);
+  const trailing = input.slice(index + 1);
+  if (/\bENUM\s*\(/i.test(trailing)) throw dslError(line, 1, "ARG_ENUM_DUPLICATE_CLAUSE", `ARG ${name} may declare ENUM once`);
+  const rawValues = splitEnumValues(body, line, name);
+  if (rawValues.length === 0) throw dslError(line, 1, "ARG_ENUM_EMPTY", `ARG ${name} ENUM requires at least one value`);
+  if (rawValues.length > 64) throw dslError(line, 1, "ARG_ENUM_ITEM_LIMIT", `ARG ${name} ENUM supports at most 64 values`);
+  const values = rawValues.map((value) => parseLiteral(value, line, 1));
+  if (values.some((value) => value === null)) throw dslError(line, 1, "ARG_ENUM_NULL_UNSUPPORTED", `ARG ${name} ENUM cannot contain NULL`);
+  const expectedType = type === "string" ? "string" : type;
+  if (values.some((value) => typeof value !== expectedType)) throw dslError(line, 1, "ARG_ENUM_TYPE_MISMATCH", `ARG ${name} ENUM values must all be ${type.toUpperCase()} literals`);
+  const keys = values.map((value) => `${typeof value}:${JSON.stringify(value)}`);
+  if (new Set(keys).size !== keys.length) throw dslError(line, 1, "ARG_ENUM_DUPLICATE_VALUE", `ARG ${name} ENUM values must be unique after canonicalization`);
+  return {
+    rest: `${input.slice(0, match.index)} ${trailing}`.trim(),
+    values: values as Array<string | number | boolean>,
+  };
+}
+
+function splitEnumValues(body: string, line: number, name: string): string[] {
+  const values: string[] = [];
+  let start = 0;
+  let quoted = false;
+  for (let index = 0; index < body.length; index += 1) {
+    if (body[index] === "'") {
+      if (quoted && body[index + 1] === "'") { index += 1; continue; }
+      quoted = !quoted;
+      continue;
+    }
+    if (body[index] === "," && !quoted) {
+      const value = body.slice(start, index).trim();
+      if (!value) throw dslError(line, 1, "ARG_ENUM_VALUE_REQUIRED", `ARG ${name} ENUM contains an empty item`);
+      values.push(value);
+      start = index + 1;
+    }
+  }
+  if (quoted) throw dslError(line, 1, "ARG_ENUM_UNTERMINATED_STRING", `ARG ${name} ENUM contains an unterminated string literal`);
+  const finalValue = body.slice(start).trim();
+  if (finalValue) values.push(finalValue);
+  else if (body.trim()) throw dslError(line, 1, "ARG_ENUM_VALUE_REQUIRED", `ARG ${name} ENUM contains an empty item`);
+  return values;
 }
 
 function parseTransitionAllowed(raw: string, line: number): Record<string, string[]> {
