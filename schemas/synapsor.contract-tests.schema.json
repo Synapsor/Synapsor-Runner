@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.contract-tests.schema.json",
+  "title": "Synapsor adopter contract conformance manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "tests"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "capability"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": ["tool_allow", "tool_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary"]
+          },
+          "capability": { "type": "string", "minLength": 1 },
+          "args": { "type": "object" },
+          "trusted_context": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tenant_id", "principal"],
+            "properties": {
+              "tenant_id": { "type": "string", "minLength": 1 },
+              "principal": { "type": "string", "minLength": 1 },
+              "provenance": { "enum": ["environment", "static_dev", "http_claims", "cloud_session"] }
+            }
+          },
+          "expected_code": { "type": "string", "minLength": 1 },
+          "fields": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+          "argument": { "type": "string", "minLength": 1 },
+          "expected": { "type": "object" }
+        }
+      }
+    }
+  }
+}
