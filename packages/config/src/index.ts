@@ -1,7 +1,7 @@
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
 export type TrustedContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
-export type CapabilityKind = "read" | "proposal";
+export type CapabilityKind = "read" | "aggregate_read" | "proposal";
 export type ExecutorType = "sql_update" | "http_handler" | "command_handler";
 
 export type ConfigIssue = {
@@ -18,11 +18,17 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "rate_limits", "metrics", "cloud", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "rate_limits", "metrics", "graduated_trust", "cloud", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
 const METRICS_KEYS = new Set(["enabled", "token_env"]);
+const GRADUATED_TRUST_KEYS = new Set(["enabled", "kill_switch", "workspace_id", "project_id", "criteria"]);
+const GRADUATED_TRUST_CRITERION_KEYS = new Set([
+  "capability", "policy", "field", "minimum_human_reviews", "window_days",
+  "maximum_rejection_rate", "maximum_conflict_rate", "maximum_failure_rate", "maximum_revert_rate",
+  "maximum_threshold_increase", "absolute_ceiling",
+]);
 const OPERATOR_IDENTITY_KEYS = new Set([
   "provider", "actor_env", "roles_env", "apply_roles", "operators", "token_env", "token_file_env", "token_stdin", "roles_claim",
   "subject_claim", "attestation_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
@@ -78,7 +84,10 @@ const CAPABILITY_KEYS = new Set([
   "writeback",
   "operation",
   "single_tenant_dev_ack",
+  "aggregate",
+  "contract_provenance",
 ]);
+const CONTRACT_PROVENANCE_KEYS = new Set(["digest", "version"]);
 const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "single_tenant_dev"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
@@ -101,6 +110,7 @@ const BATCH_KEYS = new Set(["items_from_arg"]);
 const DEDUPLICATION_KEYS = new Set(["components"]);
 const DEDUPLICATION_COMPONENT_KEYS = new Set(["column", "source", "fixed", "item_field"]);
 const VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
+const AGGREGATE_READ_KEYS = new Set(["function", "count_mode", "column", "selection", "minimum_group_size"]);
 
 const MODEL_CONTROLLED_TRUST_FIELDS = new Set([
   "tenant_id",
@@ -191,6 +201,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
   validateRateLimits(input.rate_limits, strict, errors);
   validateMetrics(input.metrics, strict, errors);
+  validateGraduatedTrust(input.graduated_trust, strict, errors);
   validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
   validateEffectiveContextCompatibility(input.trusted_context, input.contexts, input.capabilities, errors);
   validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
@@ -213,6 +224,43 @@ function validateMetrics(value: unknown, strict: boolean, errors: ConfigIssue[])
   if (value.token_env !== undefined && !isEnvName(value.token_env)) {
     errors.push({ path: "$.metrics.token_env", code: "INVALID_METRICS_TOKEN_ENV", message: "metrics.token_env must name the environment variable containing the separate metrics bearer token." });
   }
+}
+
+function validateGraduatedTrust(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.graduated_trust", code: "GRADUATED_TRUST_NOT_OBJECT", message: "graduated_trust must be an operator configuration object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, GRADUATED_TRUST_KEYS, "$.graduated_trust", errors);
+  if (value.enabled !== undefined && typeof value.enabled !== "boolean") errors.push({ path: "$.graduated_trust.enabled", code: "INVALID_GRADUATED_TRUST_ENABLED", message: "enabled must be true or false." });
+  if (value.kill_switch !== undefined && typeof value.kill_switch !== "boolean") errors.push({ path: "$.graduated_trust.kill_switch", code: "INVALID_GRADUATED_TRUST_KILL_SWITCH", message: "kill_switch must be true or false." });
+  for (const key of ["workspace_id", "project_id"] as const) if (value[key] !== undefined && !isNonEmptyString(value[key])) errors.push({ path: `$.graduated_trust.${key}`, code: "INVALID_GRADUATED_TRUST_SCOPE", message: `${key} must be a non-empty identifier when provided.` });
+  if (value.criteria === undefined && value.enabled !== true) return;
+  if (!Array.isArray(value.criteria) || value.criteria.length < 1 || value.criteria.length > 100) {
+    errors.push({ path: "$.graduated_trust.criteria", code: "GRADUATED_TRUST_CRITERIA_REQUIRED", message: "graduated trust requires 1 through 100 reviewed criteria entries." });
+    return;
+  }
+  const seen = new Set<string>();
+  value.criteria.forEach((criterion, index) => {
+    const path = `$.graduated_trust.criteria[${index}]`;
+    if (!isRecord(criterion)) {
+      errors.push({ path, code: "GRADUATED_TRUST_CRITERION_NOT_OBJECT", message: "criterion must be an object." });
+      return;
+    }
+    if (strict) checkUnknownKeys(criterion, GRADUATED_TRUST_CRITERION_KEYS, path, errors);
+    for (const key of ["capability", "policy", "field"] as const) if (!isNonEmptyString(criterion[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_GRADUATED_TRUST_REFERENCE", message: `${key} must be a non-empty reviewed name.` });
+    const identity = `${String(criterion.capability)}\u0000${String(criterion.policy)}\u0000${String(criterion.field)}`;
+    if (seen.has(identity)) errors.push({ path, code: "DUPLICATE_GRADUATED_TRUST_CRITERION", message: "capability/policy/field criteria must be unique." });
+    seen.add(identity);
+    if (!Number.isSafeInteger(criterion.minimum_human_reviews) || Number(criterion.minimum_human_reviews) < 10 || Number(criterion.minimum_human_reviews) > 10000) errors.push({ path: `${path}.minimum_human_reviews`, code: "INVALID_GRADUATED_TRUST_SAMPLE", message: "minimum_human_reviews must be an integer from 10 through 10000." });
+    if (!Number.isSafeInteger(criterion.window_days) || Number(criterion.window_days) < 1 || Number(criterion.window_days) > 365) errors.push({ path: `${path}.window_days`, code: "INVALID_GRADUATED_TRUST_WINDOW", message: "window_days must be an integer from 1 through 365." });
+    for (const key of ["maximum_rejection_rate", "maximum_conflict_rate", "maximum_failure_rate", "maximum_revert_rate"] as const) {
+      if (typeof criterion[key] !== "number" || !Number.isFinite(criterion[key]) || criterion[key] < 0 || criterion[key] > 1) errors.push({ path: `${path}.${key}`, code: "INVALID_GRADUATED_TRUST_RATE", message: `${key} must be a finite rate from 0 through 1.` });
+    }
+    if (typeof criterion.maximum_threshold_increase !== "number" || !Number.isFinite(criterion.maximum_threshold_increase) || criterion.maximum_threshold_increase <= 0) errors.push({ path: `${path}.maximum_threshold_increase`, code: "INVALID_GRADUATED_TRUST_INCREMENT", message: "maximum_threshold_increase must be a finite positive number." });
+    if (typeof criterion.absolute_ceiling !== "number" || !Number.isFinite(criterion.absolute_ceiling) || criterion.absolute_ceiling <= 0) errors.push({ path: `${path}.absolute_ceiling`, code: "INVALID_GRADUATED_TRUST_CEILING", message: "absolute_ceiling must be a finite positive number." });
+  });
 }
 
 function validateRateLimits(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
@@ -1087,13 +1135,22 @@ function validateCapability(
     errors.push({ path: `${path}.name`, code: "INVALID_CAPABILITY_NAME", message: "Capability name must be namespace.name." });
   }
   if (!isCapabilityKind(value.kind)) {
-    errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read or proposal." });
+    errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read, aggregate_read, or proposal." });
   }
   if (value.description !== undefined && !isNonEmptyString(value.description)) {
     errors.push({ path: `${path}.description`, code: "INVALID_CAPABILITY_DESCRIPTION", message: "description must be a non-empty string when provided." });
   }
   if (value.returns_hint !== undefined && !isNonEmptyString(value.returns_hint)) {
     errors.push({ path: `${path}.returns_hint`, code: "INVALID_RETURNS_HINT", message: "returns_hint must be a non-empty string when provided." });
+  }
+  if (value.contract_provenance !== undefined) {
+    if (!isRecord(value.contract_provenance)) {
+      errors.push({ path: `${path}.contract_provenance`, code: "INVALID_CONTRACT_PROVENANCE", message: "contract_provenance must be a generated digest/version object." });
+    } else {
+      if (strict) checkUnknownKeys(value.contract_provenance, CONTRACT_PROVENANCE_KEYS, `${path}.contract_provenance`, errors);
+      if (typeof value.contract_provenance.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(value.contract_provenance.digest)) errors.push({ path: `${path}.contract_provenance.digest`, code: "INVALID_CONTRACT_DIGEST", message: "contract provenance requires a canonical SHA-256 digest." });
+      if (!isNonEmptyString(value.contract_provenance.version)) errors.push({ path: `${path}.contract_provenance.version`, code: "INVALID_CONTRACT_VERSION", message: "contract provenance requires a non-empty version." });
+    }
   }
   if (!isNonEmptyString(value.source) || !sourceNames.has(value.source)) {
     errors.push({ path: `${path}.source`, code: "UNKNOWN_SOURCE", message: "Capability source must reference a configured source." });
@@ -1111,9 +1168,12 @@ function validateCapability(
   validateCapabilityWriteback(value, path, executorNames, strict, errors);
   validateCapabilityReversibility(value, path, strict, errors);
   validateTarget(value.target, `${path}.target`, strict, errors, warnings);
-  validateArgs(value.args, `${path}.args`, strict, errors);
-  validateLookup(value.lookup, `${path}.lookup`, strict, errors);
-  validateVisibleColumns(value.visible_columns, `${path}.visible_columns`, errors);
+  if (value.kind === "aggregate_read") validateAggregateReadCapability(value, path, strict, errors);
+  else {
+    validateArgs(value.args, `${path}.args`, strict, errors);
+    validateLookup(value.lookup, `${path}.lookup`, strict, errors);
+    validateVisibleColumns(value.visible_columns, `${path}.visible_columns`, errors);
+  }
   if (value.max_rows !== undefined && !isPositiveInteger(value.max_rows)) {
     errors.push({ path: `${path}.max_rows`, code: "INVALID_MAX_ROWS", message: "max_rows must be a positive integer." });
   }
@@ -1122,6 +1182,31 @@ function validateCapability(
   } else if (value.writeback !== undefined) {
     errors.push({ path: `${path}.writeback`, code: "WRITEBACK_ONLY_FOR_PROPOSAL", message: "writeback is only valid on proposal capabilities." });
   }
+}
+
+function validateAggregateReadCapability(value: JsonRecord, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (!isRecord(value.args) || Object.keys(value.args).length !== 0) errors.push({ path: `${path}.args`, code: "AGGREGATE_MODEL_ARGS_FORBIDDEN", message: "aggregate reads cannot accept model-controlled predicate arguments." });
+  if (!Array.isArray(value.visible_columns) || value.visible_columns.length !== 0) errors.push({ path: `${path}.visible_columns`, code: "AGGREGATE_VISIBLE_ROWS_FORBIDDEN", message: "aggregate reads cannot expose source row columns." });
+  if (!isRecord(value.aggregate)) { errors.push({ path: `${path}.aggregate`, code: "AGGREGATE_READ_REQUIRED", message: "aggregate_read requires a reviewed aggregate definition." }); return; }
+  if (strict) checkUnknownKeys(value.aggregate, AGGREGATE_READ_KEYS, `${path}.aggregate`, errors);
+  if (!["count", "sum", "avg"].includes(String(value.aggregate.function))) errors.push({ path: `${path}.aggregate.function`, code: "INVALID_AGGREGATE_FUNCTION", message: "aggregate function must be count, sum, or avg." });
+  if (!Number.isSafeInteger(value.aggregate.minimum_group_size) || Number(value.aggregate.minimum_group_size) < 2) errors.push({ path: `${path}.aggregate.minimum_group_size`, code: "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", message: "minimum_group_size must be at least 2." });
+  if (value.aggregate.function === "count") {
+    if (value.aggregate.count_mode !== "rows" && value.aggregate.count_mode !== "non_null") errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_REQUIRED", message: "COUNT requires rows or non_null mode." });
+  } else if (!isSafeIdentifier(value.aggregate.column)) errors.push({ path: `${path}.aggregate.column`, code: "AGGREGATE_NUMERIC_COLUMN_REQUIRED", message: "SUM/AVG require a fixed aggregate column." });
+  if (value.aggregate.selection !== undefined) validateSelection(value.aggregate.selection, `${path}.aggregate.selection`, strict, errors);
+}
+
+function validateSelection(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (!isRecord(value)) { errors.push({ path, code: "FIXED_SELECTION_REQUIRED", message: "selection must be a reviewed object." }); return; }
+  if (strict) checkUnknownKeys(value, SELECTION_KEYS, path, errors);
+  if (!Array.isArray(value.all) || value.all.length < 1 || value.all.length > 8) { errors.push({ path: `${path}.all`, code: "INVALID_FIXED_SELECTION", message: "selection.all must contain 1 through 8 fixed terms." }); return; }
+  value.all.forEach((term, index) => {
+    const termPath = `${path}.all[${index}]`;
+    if (!isRecord(term)) { errors.push({ path: termPath, code: "PREDICATE_TERM_NOT_OBJECT", message: "predicate term must be an object." }); return; }
+    if (strict) checkUnknownKeys(term, PREDICATE_TERM_KEYS, termPath, errors);
+    if (!isSafeIdentifier(term.column) || term.operator !== "eq" || !("value" in term) || !isScalar(term.value)) errors.push({ path: termPath, code: "INVALID_FIXED_PREDICATE", message: "predicate must use a fixed identifier, eq operator, and literal scalar." });
+  });
 }
 
 function validateCapabilityReversibility(value: JsonRecord, path: string, strict: boolean, errors: ConfigIssue[]): void {
@@ -1666,7 +1751,7 @@ function isExecutorType(value: unknown): value is ExecutorType {
 }
 
 function isCapabilityKind(value: unknown): value is CapabilityKind {
-  return value === "read" || value === "proposal";
+  return value === "read" || value === "aggregate_read" || value === "proposal";
 }
 
 function isNonEmptyString(value: unknown): value is string {

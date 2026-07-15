@@ -2,6 +2,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
+  canonicalJsonDigest,
   parseChangeSet,
   parseExecutionReceipt,
   parseWritebackJob,
@@ -314,6 +315,7 @@ export type StoreStats = {
   proposal_events: number;
   shadow_human_actions: number;
   worker_queue: number;
+  policy_recommendations: number;
   page_count: number;
   page_size: number;
   approx_bytes: number;
@@ -336,6 +338,65 @@ export type OperationalMetricRow = {
   failures: number;
   revert_proposals: number;
   revert_applies: number;
+};
+
+export type GraduatedTrustMetrics = {
+  window_start: string;
+  window_end: string;
+  human_reviewed: number;
+  human_approved: number;
+  human_rejected: number;
+  conflicts: number;
+  failures: number;
+  reverts: number;
+  auto_approved_excluded: number;
+  rejection_rate: number;
+  conflict_rate: number;
+  failure_rate: number;
+  revert_rate: number;
+};
+
+export type PolicyRecommendationStatus = "pending_review" | "approved" | "rejected" | "exported";
+
+export type PolicyRecommendation = {
+  schema_version: "synapsor.policy-recommendation.v1";
+  recommendation_id: string;
+  workspace_id?: string;
+  project_id?: string;
+  tenant_id: string;
+  capability: string;
+  policy: string;
+  field: string;
+  base_contract_digest: string;
+  base_contract_version: string;
+  current_threshold: number;
+  proposed_threshold: number;
+  maximum_increment: number;
+  absolute_ceiling: number;
+  criteria: Record<string, unknown>;
+  metrics: GraduatedTrustMetrics;
+  evidence_proposal_ids: string[];
+  explanation: string[];
+  status: PolicyRecommendationStatus;
+  decision?: {
+    actor: string;
+    action: "approve" | "reject";
+    reason: string;
+    identity: OperatorIdentityProof;
+    decided_at: string;
+  };
+  export?: {
+    actor: string;
+    artifact_digest: string;
+    exported_at: string;
+  };
+  integrity_hash: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreatePolicyRecommendationInput = Omit<PolicyRecommendation, "schema_version" | "recommendation_id" | "status" | "decision" | "export" | "integrity_hash" | "created_at" | "updated_at"> & {
+  now?: string;
 };
 
 export type FleetEventMetricRow = {
@@ -466,9 +527,16 @@ export type ProposalRuntimeStore = {
     },
   ): MaybePromise<PolicyApprovalDecision>;
   getProposal(proposalId: string): MaybePromise<StoredProposal | undefined>;
+  listProposals?(filters?: LocalProposalState | ProposalSearchFilters): MaybePromise<StoredProposal[]>;
+  approvals?(proposalId: string): MaybePromise<StoredApproval[]>;
   approvalProgress?(proposalId: string): MaybePromise<ApprovalProgress>;
   operationalMetrics?(filters?: { tenant?: string; capability?: string }): MaybePromise<OperationalMetricRow[]>;
   fleetEventMetrics?(filters?: { tenant?: string; capability?: string }): MaybePromise<FleetEventMetricRow[]>;
+  createPolicyRecommendation?(input: CreatePolicyRecommendationInput): MaybePromise<PolicyRecommendation>;
+  getPolicyRecommendation?(recommendationId: string): MaybePromise<PolicyRecommendation | undefined>;
+  listPolicyRecommendations?(filters?: { tenant?: string; capability?: string; policy?: string; status?: PolicyRecommendationStatus }): MaybePromise<PolicyRecommendation[]>;
+  decidePolicyRecommendation?(recommendationId: string, input: { action: "approve" | "reject"; actor: string; reason: string; identity: OperatorIdentityProof; now?: string }): MaybePromise<PolicyRecommendation>;
+  markPolicyRecommendationExported?(recommendationId: string, input: { actor: string; artifact_digest: string; now?: string }): MaybePromise<PolicyRecommendation>;
   events(proposalId: string): MaybePromise<ProposalEvent[]>;
   receipts(proposalId: string): MaybePromise<StoredWritebackReceipt[]>;
   getEvidenceBundle(evidenceBundleId: string): MaybePromise<StoredEvidenceBundle | undefined>;
@@ -709,6 +777,14 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     return await this.withRead((store) => store.getProposal(proposalId));
   }
 
+  async listProposals(filters?: LocalProposalState | ProposalSearchFilters): Promise<StoredProposal[]> {
+    return await this.withRead((store) => store.listProposals(filters));
+  }
+
+  async approvals(proposalId: string): Promise<StoredApproval[]> {
+    return await this.withRead((store) => store.approvals(proposalId));
+  }
+
   async approvalProgress(proposalId: string): Promise<ApprovalProgress> {
     return await this.withRead((store) => store.approvalProgress(proposalId));
   }
@@ -719,6 +795,26 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
 
   async fleetEventMetrics(filters: { tenant?: string; capability?: string } = {}): Promise<FleetEventMetricRow[]> {
     return await this.withRead((store) => store.fleetEventMetrics(filters));
+  }
+
+  async createPolicyRecommendation(input: CreatePolicyRecommendationInput): Promise<PolicyRecommendation> {
+    return await this.withWrite("createPolicyRecommendation", (store) => store.createPolicyRecommendation(input));
+  }
+
+  async getPolicyRecommendation(recommendationId: string): Promise<PolicyRecommendation | undefined> {
+    return await this.withRead((store) => store.getPolicyRecommendation(recommendationId));
+  }
+
+  async listPolicyRecommendations(filters: { tenant?: string; capability?: string; policy?: string; status?: PolicyRecommendationStatus } = {}): Promise<PolicyRecommendation[]> {
+    return await this.withRead((store) => store.listPolicyRecommendations(filters));
+  }
+
+  async decidePolicyRecommendation(recommendationId: string, input: { action: "approve" | "reject"; actor: string; reason: string; identity: OperatorIdentityProof; now?: string }): Promise<PolicyRecommendation> {
+    return await this.withWrite("decidePolicyRecommendation", (store) => store.decidePolicyRecommendation(recommendationId, input));
+  }
+
+  async markPolicyRecommendationExported(recommendationId: string, input: { actor: string; artifact_digest: string; now?: string }): Promise<PolicyRecommendation> {
+    return await this.withWrite("markPolicyRecommendationExported", (store) => store.markPolicyRecommendationExported(recommendationId, input));
   }
 
   async events(proposalId: string): Promise<ProposalEvent[]> {
@@ -1005,6 +1101,7 @@ export class ProposalStore {
       proposal_events: this.countTable("proposal_events"),
       shadow_human_actions: this.countTable("shadow_human_actions"),
       worker_queue: this.countTable("worker_queue"),
+      policy_recommendations: this.countTable("policy_recommendations"),
       page_count: pageCount,
       page_size: pageSize,
       approx_bytes: pageCount * pageSize,
@@ -1234,6 +1331,19 @@ export class ProposalStore {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS policy_recommendations (
+        recommendation_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        policy TEXT NOT NULL,
+        base_contract_digest TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        integrity_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS worker_queue (
         proposal_id TEXT PRIMARY KEY,
         status TEXT NOT NULL,
@@ -1255,6 +1365,7 @@ export class ProposalStore {
       CREATE INDEX IF NOT EXISTS idx_writeback_intents_status_updated ON writeback_intents(status, updated_at);
       CREATE INDEX IF NOT EXISTS idx_replay_records_proposal_id ON replay_records(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_shadow_human_actions_proposal_id ON shadow_human_actions(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_policy_recommendations_scope ON policy_recommendations(tenant_id, capability, policy, status, created_at);
 
       INSERT OR IGNORE INTO proposal_store_schema(version, applied_at)
       VALUES (1, datetime('now'));
@@ -2814,6 +2925,124 @@ export class ProposalStore {
     return replay;
   }
 
+  createPolicyRecommendation(input: CreatePolicyRecommendationInput): PolicyRecommendation {
+    const now = input.now ?? new Date().toISOString();
+    const identity = {
+      tenant_id: input.tenant_id,
+      capability: input.capability,
+      policy: input.policy,
+      base_contract_digest: input.base_contract_digest,
+      current_threshold: input.current_threshold,
+      proposed_threshold: input.proposed_threshold,
+      evidence_proposal_ids: [...input.evidence_proposal_ids].sort(),
+      created_at: now,
+    };
+    const recommendationId = `ptr_${canonicalJsonDigest(identity).slice("sha256:".length, "sha256:".length + 20)}`;
+    const unsigned = {
+      schema_version: "synapsor.policy-recommendation.v1" as const,
+      recommendation_id: recommendationId,
+      ...(input.workspace_id ? { workspace_id: input.workspace_id } : {}),
+      ...(input.project_id ? { project_id: input.project_id } : {}),
+      tenant_id: input.tenant_id,
+      capability: input.capability,
+      policy: input.policy,
+      field: input.field,
+      base_contract_digest: input.base_contract_digest,
+      base_contract_version: input.base_contract_version,
+      current_threshold: input.current_threshold,
+      proposed_threshold: input.proposed_threshold,
+      maximum_increment: input.maximum_increment,
+      absolute_ceiling: input.absolute_ceiling,
+      criteria: input.criteria,
+      metrics: input.metrics,
+      evidence_proposal_ids: [...input.evidence_proposal_ids].sort(),
+      explanation: [...input.explanation],
+      status: "pending_review" as const,
+      created_at: now,
+      updated_at: now,
+    };
+    const recommendation: PolicyRecommendation = { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+    assertPolicyRecommendationShape(recommendation);
+    assertNoSecretMaterial(recommendation, "policy_recommendation");
+    this.db.prepare(`
+      INSERT INTO policy_recommendations (
+        recommendation_id, tenant_id, capability, policy, base_contract_digest,
+        status, payload_json, integrity_hash, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      recommendation.recommendation_id,
+      recommendation.tenant_id,
+      recommendation.capability,
+      recommendation.policy,
+      recommendation.base_contract_digest,
+      recommendation.status,
+      JSON.stringify(policyRecommendationUnsigned(recommendation)),
+      recommendation.integrity_hash,
+      recommendation.created_at,
+      recommendation.updated_at,
+    );
+    return recommendation;
+  }
+
+  getPolicyRecommendation(recommendationId: string): PolicyRecommendation | undefined {
+    return rowToPolicyRecommendation(this.db.prepare("SELECT * FROM policy_recommendations WHERE recommendation_id = ?").get(recommendationId));
+  }
+
+  listPolicyRecommendations(filters: { tenant?: string; capability?: string; policy?: string; status?: PolicyRecommendationStatus } = {}): PolicyRecommendation[] {
+    const clauses: string[] = [];
+    const params: SQLInputValue[] = [];
+    for (const [column, value] of [["tenant_id", filters.tenant], ["capability", filters.capability], ["policy", filters.policy], ["status", filters.status]] as const) {
+      if (!value) continue;
+      clauses.push(`${column} = ?`);
+      params.push(value);
+    }
+    const sql = `SELECT * FROM policy_recommendations${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY created_at DESC, recommendation_id DESC`;
+    return this.db.prepare(sql).all(...params).map(rowToPolicyRecommendation).filter((item): item is PolicyRecommendation => item !== undefined);
+  }
+
+  decidePolicyRecommendation(
+    recommendationId: string,
+    input: { action: "approve" | "reject"; actor: string; reason: string; identity: OperatorIdentityProof; now?: string },
+  ): PolicyRecommendation {
+    const recommendation = this.requirePolicyRecommendation(recommendationId);
+    if (recommendation.status !== "pending_review") throw new ProposalStoreError("POLICY_RECOMMENDATION_NOT_PENDING", `policy recommendation ${recommendationId} is ${recommendation.status}`);
+    assertPolicyRecommendationIdentity(recommendation, input);
+    const now = input.now ?? new Date().toISOString();
+    const unsigned = {
+      ...policyRecommendationUnsigned(recommendation),
+      status: input.action === "approve" ? "approved" as const : "rejected" as const,
+      decision: { actor: input.actor, action: input.action, reason: input.reason, identity: input.identity, decided_at: now },
+      updated_at: now,
+    };
+    const updated: PolicyRecommendation = { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+    this.db.prepare("UPDATE policy_recommendations SET status = ?, payload_json = ?, integrity_hash = ?, updated_at = ? WHERE recommendation_id = ?")
+      .run(updated.status, JSON.stringify(unsigned), updated.integrity_hash, now, recommendationId);
+    return updated;
+  }
+
+  markPolicyRecommendationExported(recommendationId: string, input: { actor: string; artifact_digest: string; now?: string }): PolicyRecommendation {
+    const recommendation = this.requirePolicyRecommendation(recommendationId);
+    if (recommendation.status !== "approved") throw new ProposalStoreError("POLICY_RECOMMENDATION_NOT_APPROVED", `policy recommendation ${recommendationId} is ${recommendation.status}`);
+    if (!/^sha256:[a-f0-9]{64}$/.test(input.artifact_digest)) throw new ProposalStoreError("POLICY_ARTIFACT_DIGEST_INVALID", "policy recommendation export requires a canonical SHA-256 artifact digest");
+    const now = input.now ?? new Date().toISOString();
+    const unsigned = {
+      ...policyRecommendationUnsigned(recommendation),
+      status: "exported" as const,
+      export: { actor: input.actor, artifact_digest: input.artifact_digest, exported_at: now },
+      updated_at: now,
+    };
+    const updated: PolicyRecommendation = { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+    this.db.prepare("UPDATE policy_recommendations SET status = ?, payload_json = ?, integrity_hash = ?, updated_at = ? WHERE recommendation_id = ?")
+      .run(updated.status, JSON.stringify(unsigned), updated.integrity_hash, now, recommendationId);
+    return updated;
+  }
+
+  private requirePolicyRecommendation(recommendationId: string): PolicyRecommendation {
+    const recommendation = this.getPolicyRecommendation(recommendationId);
+    if (!recommendation) throw new ProposalStoreError("POLICY_RECOMMENDATION_NOT_FOUND", `policy recommendation not found: ${recommendationId}`);
+    return recommendation;
+  }
+
   setRunnerState(key: string, value: Record<string, unknown>): void {
     assertNoSecretMaterial(value, `runner_state.${key}`);
     this.db.prepare(`
@@ -2853,6 +3082,7 @@ export class ProposalStore {
       { table: "shadow_human_actions", kind: "shadow_human_action", key: "action_id", created: "created_at", proposal: "proposal_id" },
       { table: "worker_queue", kind: "worker_queue_item", key: "proposal_id", created: "created_at", proposal: "proposal_id" },
       { table: "runner_state", kind: "runner_state", key: "key", created: "updated_at" },
+      { table: "policy_recommendations", kind: "policy_recommendation", key: "recommendation_id", created: "created_at", tenant: "tenant_id", capability: "capability" },
     ];
     const entries: SharedLedgerEntry[] = [];
     for (const spec of specs) {
@@ -3740,6 +3970,70 @@ function rowToApproval(row: unknown): StoredApproval | undefined {
   };
 }
 
+function rowToPolicyRecommendation(row: unknown): PolicyRecommendation | undefined {
+  if (!isRecord(row)) return undefined;
+  let unsigned: Omit<PolicyRecommendation, "integrity_hash">;
+  try {
+    unsigned = JSON.parse(String(row.payload_json)) as Omit<PolicyRecommendation, "integrity_hash">;
+  } catch {
+    throw new ProposalStoreError("POLICY_RECOMMENDATION_TAMPERED", "policy recommendation payload is not valid JSON");
+  }
+  const recommendation = { ...unsigned, integrity_hash: String(row.integrity_hash) } as PolicyRecommendation;
+  assertPolicyRecommendationShape(recommendation);
+  if (
+    recommendation.recommendation_id !== String(row.recommendation_id)
+    || recommendation.tenant_id !== String(row.tenant_id)
+    || recommendation.capability !== String(row.capability)
+    || recommendation.policy !== String(row.policy)
+    || recommendation.base_contract_digest !== String(row.base_contract_digest)
+    || recommendation.status !== String(row.status)
+  ) throw new ProposalStoreError("POLICY_RECOMMENDATION_TAMPERED", `policy recommendation ${String(row.recommendation_id)} index fields do not match its signed payload`);
+  const expected = canonicalJsonDigest(policyRecommendationUnsigned(recommendation));
+  if (recommendation.integrity_hash !== expected) throw new ProposalStoreError("POLICY_RECOMMENDATION_TAMPERED", `policy recommendation ${recommendation.recommendation_id} failed its integrity check`);
+  return recommendation;
+}
+
+function policyRecommendationUnsigned(recommendation: PolicyRecommendation): Omit<PolicyRecommendation, "integrity_hash"> {
+  const { integrity_hash: _integrityHash, ...unsigned } = recommendation;
+  return unsigned;
+}
+
+function assertPolicyRecommendationShape(recommendation: PolicyRecommendation): void {
+  if (recommendation.schema_version !== "synapsor.policy-recommendation.v1") throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "unsupported policy recommendation schema version");
+  if (!/^ptr_[a-f0-9]{20}$/.test(recommendation.recommendation_id)) throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation id is invalid");
+  for (const [name, value] of [["tenant", recommendation.tenant_id], ["capability", recommendation.capability], ["policy", recommendation.policy], ["field", recommendation.field]] as const) {
+    if (!value || value.length > 256) throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", `policy recommendation ${name} is invalid`);
+  }
+  if (!/^sha256:[a-f0-9]{64}$/.test(recommendation.base_contract_digest)) throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation base digest is invalid");
+  if (!/^sha256:[a-f0-9]{64}$/.test(recommendation.integrity_hash)) throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation integrity digest is invalid");
+  if (!Number.isFinite(recommendation.current_threshold) || !Number.isFinite(recommendation.proposed_threshold) || !Number.isFinite(recommendation.maximum_increment) || !Number.isFinite(recommendation.absolute_ceiling)) {
+    throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation thresholds must be finite numbers");
+  }
+  if (recommendation.proposed_threshold <= recommendation.current_threshold || recommendation.proposed_threshold - recommendation.current_threshold > recommendation.maximum_increment || recommendation.proposed_threshold > recommendation.absolute_ceiling) {
+    throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation exceeds its reviewed increment or ceiling");
+  }
+  if (!Array.isArray(recommendation.evidence_proposal_ids) || recommendation.evidence_proposal_ids.length === 0 || recommendation.evidence_proposal_ids.length > 10_000) {
+    throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation requires bounded proposal evidence");
+  }
+  if (!isRecord(recommendation.metrics) || !isRecord(recommendation.criteria)) throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation criteria and metrics are required");
+  if (!(["pending_review", "approved", "rejected", "exported"] as string[]).includes(recommendation.status)) throw new ProposalStoreError("POLICY_RECOMMENDATION_INVALID", "policy recommendation status is invalid");
+}
+
+function assertPolicyRecommendationIdentity(
+  recommendation: PolicyRecommendation,
+  input: { action: "approve" | "reject"; actor: string; identity: OperatorIdentityProof },
+): void {
+  const proof = input.identity;
+  if (!proof.verified || proof.provider === "dev_env") throw new ProposalStoreError("POLICY_RECOMMENDATION_VERIFIED_IDENTITY_REQUIRED", "policy recommendation decisions require a cryptographically verified operator identity");
+  if (proof.subject !== input.actor || proof.decision.subject !== input.actor) throw new ProposalStoreError("POLICY_RECOMMENDATION_IDENTITY_MISMATCH", "policy recommendation actor does not match the verified identity");
+  if (proof.decision.action !== input.action || proof.decision.proposal_id !== recommendation.recommendation_id || proof.decision.proposal_hash !== recommendation.integrity_hash || proof.decision.proposal_version !== 1) {
+    throw new ProposalStoreError("POLICY_RECOMMENDATION_IDENTITY_MISMATCH", "verified operator decision is not bound to this policy recommendation version");
+  }
+  const { integrity_hash: _integrityHash, ...core } = proof;
+  const canonicalCore = JSON.parse(JSON.stringify(core)) as Record<string, unknown>;
+  if (proof.integrity_hash !== canonicalJsonDigest(canonicalCore)) throw new ProposalStoreError("POLICY_RECOMMENDATION_IDENTITY_TAMPERED", "verified operator identity proof failed its integrity check");
+}
+
 function rowToWorkerQueueItem(row: unknown): WorkerQueueItem | undefined {
   if (!isRecord(row)) return undefined;
   const status = String(row.status);
@@ -3932,6 +4226,7 @@ const sharedLedgerKindToTable: Record<string, string> = {
   shadow_human_action: "shadow_human_actions",
   worker_queue_item: "worker_queue",
   runner_state: "runner_state",
+  policy_recommendation: "policy_recommendations",
 };
 
 type SharedLedgerRestoreSpec = {
@@ -3960,6 +4255,7 @@ const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> = {
   shadow_human_actions: restoreSpec("action_id", ["action_id", "proposal_id", "actor", "patch_json", "notes", "created_at"], ["action_id", "proposal_id", "actor", "patch_json", "created_at"]),
   worker_queue: restoreSpec("proposal_id", ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "lease_owner", "lease_expires_at", "last_error_code", "created_at", "updated_at"], ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"]),
   runner_state: restoreSpec("key", ["key", "value_json", "updated_at"], ["key", "value_json", "updated_at"]),
+  policy_recommendations: restoreSpec("recommendation_id", ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"], ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"]),
 };
 
 function sharedLedgerPayload(table: string, row: Record<string, unknown>): Record<string, unknown> {
@@ -4006,6 +4302,7 @@ function sharedLedgerRestoreRank(entry: SharedLedgerEntry): number {
     "shadow_human_actions",
     "worker_queue",
     "runner_state",
+    "policy_recommendations",
   ];
   const table = sharedLedgerTableForEntry(entry);
   const index = table ? order.indexOf(table) : -1;
