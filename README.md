@@ -78,36 +78,25 @@ approval, apply, or revert tools. A human or trusted operator approves outside
 MCP, then Runner performs a guarded write or routes the proposal to an
 app-owned executor.
 
-The distinction is the complete boundary, not a read-only toggle or a generic
-approve/reject prompt:
-
-- reviewed contracts constrain tools, tenant context, visible and writable
-  columns, numeric bounds, transitions, and approval requirements;
-- proposals separate model intent from commit authority, including aggregate
-  auto-approval ceilings where configured;
-- evidence, query audit, idempotency receipts, and replay preserve what was
-  inspected, requested, approved, and applied.
-
-Runner supports bounded deployments when its documented database, identity,
-ledger, backup, and operational controls are satisfied. It does not make raw
-SQL tools, host infrastructure, or prompt-injection-prone clients safe.
+Contracts constrain tools, trusted context, visible and writable columns,
+bounds, transitions, and approvals. Proposals separate model intent from commit
+authority; evidence, query audit, receipts, and replay preserve the reviewed
+lifecycle. Runner does not make raw SQL tools, hosts, or
+prompt-injection-prone clients safe.
 
 ## Why Not Just Use A Prompt And App Code?
 
-Prompt instructions can guide behavior, but prompt-only enforcement is not an
-authorization boundary. First ask who produces the SQL:
+Prompts are not an authorization boundary. First ask who produces the SQL:
 
-- **The model produces SQL:** your validator must safely understand arbitrary
-  queries, scope, and side effects. That is `execute_sql` with an extra parser.
+- **The model produces SQL:** validation must understand arbitrary queries,
+  scope, and side effects. That is `execute_sql` behind a parser.
 - **Trusted app code produces fixed, parameterized SQL:** good. You have built
   a semantic tool, and that may be enough for a small read-only application.
 
-Runner becomes useful when those tools also need one reviewed contract for
-trusted tenant scope, field controls, evidence, approval outside MCP, guarded
-and idempotent writeback, receipts, replay, and reviewed compensation. Use your
-own code when you do not need that lifecycle. Read the [full build-vs-adopt
-guide](docs/why-synapsor-vs-app-guardrails.md) for the decision table, public
-incident evidence, and regulated-data boundaries.
+Runner adds one reviewed contract for trusted scope, field controls, evidence,
+approval outside MCP, guarded writeback, receipts, replay, and compensation.
+Use your own code when you do not need that lifecycle. See the [build-vs-adopt
+guide](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Connect A Staging Database
 
@@ -224,30 +213,14 @@ See [Security Boundary](docs/security-boundary.md) and
 
 ## Operate The Approval Loop
 
-Reviewed policies combine per-proposal and daily ceilings; exceeding one routes
-the proposal to human review. Operators use `apply --all-approved --yes`,
-Prometheus metrics, structured logs, and optional signed reviewer/apply roles.
-Shared Postgres ledger mirror mode is available for bounded operator handoffs,
-and `storage.shared_postgres.mode = "runtime_store"` lets MCP serving use
-Postgres as the primary proposal/evidence/replay store with bounded CLI
-approval/apply/worker commands bridged through the same ledger. Local SQLite
-remains the default. See
-[Production](docs/production.md) and the
-[Runner Config Reference](docs/runner-config-reference.md).
-
-`smoke call` honors `runtime_store`: artifacts go to shared Postgres; failures
-never fall back to SQLite. `--store` is compatibility plumbing. Requires
-`1.4.12`+.
-
-For a small multi-tenant fleet, bind every capability context to verified HTTP
-claims, use `jwt_asymmetric` session auth, and share a bounded Postgres
-`runtime_store`. Never assume a global `http_claims` setting overrides an
-environment-bound contract context; Runner rejects that contradiction before
-serving tools. Load balancers should use dependency-free `/healthz` for
-liveness and `/readyz` for source/ledger/writeback readiness. The tested
-two-Runner topology, pool/rate-limit budgets, metrics, backup/restore,
-dead-letter, and rolling-upgrade rules are in
-[Running A Small Runner Fleet](docs/running-a-runner-fleet.md).
+Policies combine per-proposal and daily ceilings; exceeding one routes to human
+review. Operators get batch apply, metrics, structured logs, and optional
+signed roles. Local SQLite is the default; bounded fleets can use verified HTTP
+claims, asymmetric JWT sessions, and a shared Postgres `runtime_store`.
+`smoke call` follows that store and never falls back to SQLite. Use `/healthz`
+for liveness and `/readyz` for dependency readiness. See
+[Production](docs/production.md), [Runner Config](docs/runner-config-reference.md),
+and [Small Runner Fleets](docs/running-a-runner-fleet.md).
 
 ## Packages
 

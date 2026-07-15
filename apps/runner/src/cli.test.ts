@@ -1176,7 +1176,7 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect((seenRequest.body?.summary as { proposal_capabilities?: number }).proposal_capabilities).toBe(1);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.4.0",
+        "@synapsor/spec": "1.4.1",
         "@synapsor/dsl": "1.4.2",
         "@synapsor/runner": "1.4.121",
       });

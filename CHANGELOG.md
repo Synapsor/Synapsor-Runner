@@ -11,8 +11,9 @@
   literal content, while malformed terms, trailing tokens, `OR`, parentheses,
   and non-equality operators fail during DSL compilation with location-aware
   errors.
-- Keeps canonical `@synapsor/spec@1.4.0` unchanged and preserves existing
-  single-term contracts and literal types.
+- Preserves existing single-term contracts and literal types. The canonical
+  Spec bump in this release is limited to the additive enum and aggregate-read
+  fields described below.
 - Adds standalone DSL and bundled Runner parity coverage plus PostgreSQL/MySQL
   live proof under source-database and Runner-ledger receipt authority. The
   proof excludes first-term-only, second-term-only, and wrong-tenant rows and
