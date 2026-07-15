@@ -254,6 +254,7 @@ detailed boundary.
 
 ## Next Steps
 
+- Follow the [step-by-step Synapsor Tutorial](https://github.com/sandeshtiwari/Synapsor-Tutorial).
 - Run the [`support-plan-credit` flagship example](examples/support-plan-credit).
 - Connect [Claude, Cursor, OpenAI Agents SDK, or another MCP client](docs/mcp-clients.md).
 - Author and [push a validated contract to Cloud](docs/cloud-push.md).
