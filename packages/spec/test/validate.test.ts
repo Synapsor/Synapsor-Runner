@@ -86,6 +86,52 @@ describe("@synapsor/spec validation", () => {
     expect(result.errors.map((error) => error.code)).toContain("KEPT_OUT_FIELD_VISIBLE");
   });
 
+  it("accepts a tenant-additive principal scope backed by a required trusted binding", () => {
+    const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
+    contract.contexts[0].bindings.find((binding: Record<string, unknown>) => binding.name === "principal").required = true;
+    contract.capabilities[0].subject.principal_scope_key = "assigned_to";
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.subject.principal_scope_key).toBe("assigned_to");
+  });
+
+  it("accepts principal scope when tenant authority comes from a referenced resource", () => {
+    const contract = readJson("examples/guarded-writeback.contract.json") as Record<string, any>;
+    contract.capabilities[0].subject = {
+      resource: contract.resources[0].name,
+      principal_scope_key: "assigned_to",
+    };
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.subject).toMatchObject({
+      resource: contract.resources[0].name,
+      principal_scope_key: "assigned_to",
+    });
+  });
+
+  it("rejects principal scope without tenant scope or a required trusted principal binding", () => {
+    const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
+    contract.capabilities[0].subject.principal_scope_key = "assigned_to";
+    delete contract.capabilities[0].subject.tenant_key;
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("PRINCIPAL_SCOPE_TENANT_REQUIRED");
+
+    contract.capabilities[0].subject.tenant_key = "tenant_id";
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("PRINCIPAL_SCOPE_BINDING_REQUIRED");
+    contract.contexts[0].bindings.find((binding: Record<string, unknown>) => binding.name === "principal").required = false;
+    expect(validateContract(contract).errors.map((error) => error.code)).toContain("PRINCIPAL_SCOPE_BINDING_REQUIRED");
+  });
+
+  it("rejects model-writeable principal scope columns", () => {
+    const contract = writeContract();
+    contract.contexts[0].bindings.find((binding: Record<string, unknown>) => binding.name === "principal").required = true;
+    contract.capabilities[1].subject.principal_scope_key = "assigned_to";
+    contract.capabilities[1].proposal.allowed_fields.push("assigned_to");
+    contract.capabilities[1].proposal.patch.assigned_to = { from_arg: "waiver_reason" };
+
+    const codes = validateContract(contract).errors.map((error) => error.code);
+    expect(codes).toContain("PRINCIPAL_SCOPE_WRITE_FORBIDDEN");
+  });
+
   it("normalizes deterministically", () => {
     const input = readJson("examples/guarded-writeback.contract.json");
     const first = normalizeContract(input);

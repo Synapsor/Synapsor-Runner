@@ -1,0 +1,78 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "trusted principal row scope",
+    "description": "Tenant-additive row authority for two case managers in one hospital."
+  },
+  "contexts": [
+    {
+      "name": "care_session",
+      "bindings": [
+        {
+          "name": "hospital_id",
+          "source": "http_claim",
+          "key": "hospital_id",
+          "required": true
+        },
+        {
+          "name": "principal",
+          "source": "http_claim",
+          "key": "sub",
+          "required": true
+        }
+      ],
+      "tenant_binding": "hospital_id",
+      "principal_binding": "principal"
+    }
+  ],
+  "resources": [],
+  "capabilities": [
+    {
+      "name": "care.inspect_assigned_patient",
+      "description": "Inspect one patient assigned to the authenticated case manager within the trusted hospital.",
+      "returns_hint": "Returns reviewed patient fields and evidence only when both tenant and assignee locks match.",
+      "kind": "read",
+      "context": "care_session",
+      "source": "local_postgres",
+      "subject": {
+        "schema": "public",
+        "table": "patients",
+        "primary_key": "id",
+        "tenant_key": "hospital_id",
+        "principal_scope_key": "assigned_to",
+        "conflict_key": "updated_at"
+      },
+      "args": {
+        "patient_id": {
+          "type": "string",
+          "required": true,
+          "description": "Reviewed patient identifier.",
+          "max_length": 128
+        }
+      },
+      "lookup": {
+        "id_from_arg": "patient_id"
+      },
+      "visible_fields": [
+        "id",
+        "hospital_id",
+        "display_name",
+        "care_status",
+        "updated_at"
+      ],
+      "kept_out_fields": [
+        "assigned_to",
+        "diagnosis_notes",
+        "insurance_member_id"
+      ],
+      "evidence": {
+        "required": true,
+        "query_audit": true
+      },
+      "max_rows": 1
+    }
+  ],
+  "workflows": [],
+  "policies": []
+}

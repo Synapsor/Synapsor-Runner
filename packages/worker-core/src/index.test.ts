@@ -214,6 +214,41 @@ describe("worker core", () => {
     expect(apply).toHaveBeenCalledTimes(1);
   });
 
+  it("hands terminal results to the durable reporter before direct Cloud delivery", async () => {
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.endsWith("/v1/writeback/jobs/claim")) {
+        return new Response(JSON.stringify({ ok: true, jobs: [cloudV2Job()] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const result = {
+      protocol_version: "2.0" as const,
+      job_id: "wbj_cloud_1",
+      runner_id: "runner_1",
+      operation: "single_row_update" as const,
+      receipt_authority: "runner_ledger" as const,
+      status: "applied" as const,
+      affected_rows: 1,
+      target_identity: [{ column: "id", value: "INV-1" }],
+      result_hash: `sha256:${"e".repeat(64)}` as const,
+      completed_at: "2026-07-15T00:00:01Z",
+    };
+    const reporter = vi.fn(async () => undefined);
+    const adapter = { doctor: vi.fn(), apply: vi.fn(async () => result) };
+
+    await expect(runOnce(baseConfig, { postgres: adapter, mysql: adapter }, undefined, reporter)).resolves.toBe(1);
+
+    expect(reporter).toHaveBeenCalledWith(expect.objectContaining({
+      result,
+      leaseId: "lease_cloud_1",
+      job: expect.objectContaining({ proposal_id: "wrp_cloud_1" }),
+    }));
+    expect(requests.some((url) => url.endsWith("/result"))).toBe(false);
+  });
+
   it("flags generic SQL and model-controlled trust fields in MCP manifests", () => {
     const report = auditMcpManifest({
       tools: [

@@ -1,0 +1,12 @@
+{
+  "case_manager_a": {
+    "PAT-1001": "allowed",
+    "PAT-1002": "NOT_FOUND_IN_TENANT"
+  },
+  "case_manager_b": {
+    "PAT-1001": "NOT_FOUND_IN_TENANT",
+    "PAT-1002": "allowed"
+  },
+  "invariant": "hospital_id = trusted tenant AND assigned_to = trusted principal",
+  "denial_exposes_handles": false
+}

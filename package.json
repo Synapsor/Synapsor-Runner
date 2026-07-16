@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "1.4.121",
+  "version": "1.4.122",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc -b",
     "build:runner-package": "tsc -b && node scripts/build-runner-package.mjs",
+    "build:cloud-cli-package": "tsc -b && node scripts/build-cloud-cli-package.mjs",
     "clean": "tsc -b --clean && find . -path '*/node_modules' -prune -o -path '*/dist' -type d -prune -exec rm -rf {} +",
     "lint": "tsc -b --pretty false",
     "test": "tsc -b --pretty false && vitest run && node scripts/check-license-content.mjs && ./scripts/verify-dsl-source-paths.sh",
@@ -28,6 +29,8 @@
     "test:contract-lsp": "vitest run apps/runner/src/language-server.test.ts",
     "test:contract-review": "vitest run apps/runner/src/contract-tools.test.ts",
     "test:contract-conformance": "corepack pnpm build:runner-package && node scripts/verify-contract-conformance.mjs",
+    "test:principal-scope": "corepack pnpm build:runner-package && node scripts/verify-principal-row-scope.mjs",
+    "test:principal-scope:packed": "./scripts/verify-packed-principal-row-scope.sh",
     "test:compliance-report": "vitest run apps/runner/src/compliance-report.test.ts",
     "test:aggregate-read": "corepack pnpm build && node scripts/verify-aggregate-read.mjs",
     "test:graduated-trust": "vitest run apps/runner/src/graduated-trust.test.ts apps/runner/src/cli.test.ts -t 'graduated trust|graduated-trust'",
@@ -48,6 +51,7 @@
     "typecheck": "tsc -b --pretty false",
     "synapsor-runner": "tsx apps/runner/src/cli.ts",
     "runner": "tsx apps/runner/src/cli.ts",
+    "synapsor": "tsx apps/cloud-cli/src/cli.ts",
     "demo:reference": "./scripts/run-reference-app.sh",
     "demo:video": "./scripts/demo-video/build-video.sh",
     "demo:video:check": "./scripts/demo-video/check-prerequisites.sh",
@@ -61,6 +65,7 @@
     "verify:dsl-sources": "./scripts/verify-dsl-source-paths.sh",
     "verify:public-commands": "./scripts/verify-public-commands.sh",
     "verify:packed-runner": "./scripts/verify-packed-runner.sh",
+    "verify:packed-cloud-cli": "./scripts/verify-packed-cloud-cli.sh",
     "verify:packed-own-db": "./scripts/verify-packed-own-db.sh",
     "verify:published-alpha": "./scripts/verify-published-alpha.sh"
   },

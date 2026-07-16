@@ -1,0 +1,44 @@
+{
+  "name": "@synapsor/cli",
+  "version": "0.1.0-beta.1",
+  "description": "Synapsor Cloud CLI for contracts, projects, approvals, Runner connections, and audit records.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "synapsor": "dist/cli.js"
+  },
+  "files": [
+    "dist/cli.js",
+    "dist/cli.d.ts",
+    "dist/cli.d.ts.map",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc -b && node ../../scripts/build-cloud-cli-package.mjs",
+    "prepack": "cd ../.. && corepack pnpm build:cloud-cli-package",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  },
+  "homepage": "https://synapsor.ai/docs/cloud-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Synapsor/Synapsor-Runner.git",
+    "directory": "apps/cloud-cli"
+  },
+  "bugs": {
+    "url": "https://synapsor.ai/contact"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  }
+}

@@ -60,6 +60,15 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)
 
+  apps/cloud-cli:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)
+
   apps/runner:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -122,7 +131,7 @@ importers:
   packages/dsl:
     dependencies:
       '@synapsor/spec':
-        specifier: workspace:^1.4.1
+        specifier: workspace:^1.4.2
         version: link:../spec
     devDependencies:
       typescript:

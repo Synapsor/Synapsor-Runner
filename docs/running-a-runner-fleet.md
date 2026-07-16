@@ -132,6 +132,14 @@ Every served capability context must bind tenant and principal from
 `HTTP_CLAIM`. Runner rejects an environment-bound contract mixed into this
 server with `TRUSTED_CONTEXT_PROVIDER_CONFLICT` before tools are served.
 
+For same-tenant per-user rows, declare `PRINCIPAL SCOPE KEY assigned_to` (or
+the corresponding canonical `principal_scope_key`) on the capability. The
+signed `sub` claim then becomes a bound SQL predicate composed with the signed
+tenant claim. Session token fingerprint pinning prevents swapping identities
+within an MCP session. `tools preview` displays both locks, and
+`corepack pnpm test:principal-scope` proves two concurrent principals cannot
+read each other's rows or evidence handles on Postgres and MySQL.
+
 Use an HTTPS JWKS URL from an allowlisted identity system. Runner rejects
 redirects, oversized responses, unknown algorithms, `none`, missing/unknown
 `kid`, bad issuer/audience, expired/not-yet-valid tokens, and private JWK

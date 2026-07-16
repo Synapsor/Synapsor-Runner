@@ -18,7 +18,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "rate_limits", "metrics", "graduated_trust", "cloud", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -44,6 +44,7 @@ const SESSION_AUTH_KEYS = new Set([
 const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
 const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
+const GOVERNANCE_KEYS = new Set(["mode", "connection_file", "evidence_residency", "queue_when_unavailable", "sync_interval_ms", "max_attempts", "outbox_retention_days"]);
 const SOURCE_KEYS = new Set([
   "engine",
   "read_url_env",
@@ -56,7 +57,7 @@ const SOURCE_KEYS = new Set([
 ]);
 const SOURCE_POOL_KEYS = new Set(["max_connections", "connection_timeout_ms", "idle_timeout_ms", "queue_timeout_ms", "queue_limit"]);
 const SOURCE_RECEIPT_KEYS = new Set(["authority", "provisioning", "schema", "table"]);
-const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values"]);
+const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values", "tenant_binding", "principal_binding"]);
 const CONTEXT_KEYS = TRUSTED_CONTEXT_KEYS;
 const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "signing_secret_env", "timeout_ms", "command_env"]);
 const EXECUTOR_AUTH_KEYS = new Set(["type", "token_env"]);
@@ -88,7 +89,7 @@ const CAPABILITY_KEYS = new Set([
   "contract_provenance",
 ]);
 const CONTRACT_PROVENANCE_KEYS = new Set(["digest", "version"]);
-const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "single_tenant_dev"]);
+const TARGET_KEYS = new Set(["schema", "table", "primary_key", "tenant_key", "principal_scope_key", "single_tenant_dev"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const PATCH_BINDING_KEYS = new Set(["fixed", "from_arg", "from_item"]);
@@ -191,6 +192,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateApprovals(input.approvals, strict, errors);
   const hasContracts = validateContracts(input.contracts, errors);
   validateCloud(input.cloud, input.mode, strict, errors);
+  validateGovernance(input.governance, strict, errors);
   validateSources(input.sources, input.mode, strict, errors, warnings);
   validateReceiptTopology(input.sources, input.storage, errors);
   validateContexts(input.contexts, strict, errors, warnings);
@@ -209,6 +211,35 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateGovernance(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.governance", code: "GOVERNANCE_NOT_OBJECT", message: "governance must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, GOVERNANCE_KEYS, "$.governance", errors);
+  if (value.mode !== "local_only" && value.mode !== "cloud_linked") {
+    errors.push({ path: "$.governance.mode", code: "INVALID_GOVERNANCE_MODE", message: "governance.mode must be local_only or cloud_linked." });
+  }
+  if (value.mode === "cloud_linked" && !isNonEmptyString(value.connection_file)) {
+    errors.push({ path: "$.governance.connection_file", code: "CLOUD_LINKED_CONNECTION_REQUIRED", message: "cloud_linked governance requires a reviewed Cloud connection file." });
+  }
+  if (value.connection_file !== undefined && !isNonEmptyString(value.connection_file)) {
+    errors.push({ path: "$.governance.connection_file", code: "INVALID_GOVERNANCE_CONNECTION_FILE", message: "governance.connection_file must be a non-empty path." });
+  }
+  if (value.evidence_residency !== undefined && value.evidence_residency !== "metadata_only") {
+    errors.push({ path: "$.governance.evidence_residency", code: "UNSUPPORTED_EVIDENCE_RESIDENCY", message: "Only metadata_only Cloud evidence residency is supported; full evidence remains local." });
+  }
+  if (value.queue_when_unavailable !== undefined && typeof value.queue_when_unavailable !== "boolean") {
+    errors.push({ path: "$.governance.queue_when_unavailable", code: "INVALID_GOVERNANCE_QUEUE_POLICY", message: "queue_when_unavailable must be true or false." });
+  }
+  for (const [key, min, max] of [["sync_interval_ms", 250, 300_000], ["max_attempts", 1, 100], ["outbox_retention_days", 1, 3650]] as const) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || Number(value[key]) < min || Number(value[key]) > max)) {
+      errors.push({ path: `$.governance.${key}`, code: "INVALID_GOVERNANCE_LIMIT", message: `${key} must be an integer from ${min} through ${max}.` });
+    }
+  }
 }
 
 function validateMetrics(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
@@ -1295,6 +1326,7 @@ function validateTarget(
     }
   }
   const hasTenantKey = isSafeIdentifier(value.tenant_key);
+  const hasPrincipalScopeKey = isSafeIdentifier(value.principal_scope_key);
   const singleTenant = value.single_tenant_dev === true;
   if (!hasTenantKey && !singleTenant) {
     errors.push({
@@ -1302,6 +1334,12 @@ function validateTarget(
       code: "TENANT_GUARD_REQUIRED",
       message: "tenant_key is required unless target.single_tenant_dev is explicitly true for a local dev example.",
     });
+  }
+  if (value.principal_scope_key !== undefined && !hasPrincipalScopeKey) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PRINCIPAL_SCOPE_KEY", message: "principal_scope_key must be a fixed safe identifier." });
+  }
+  if (hasPrincipalScopeKey && !hasTenantKey) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key can only narrow a target that also declares tenant_key." });
   }
   if (singleTenant) {
     warnings.push({

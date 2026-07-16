@@ -61,6 +61,13 @@ function operationOf(job: WritebackJob): Operation {
   return job.operation ?? "single_row_update";
 }
 
+function principalScope(job: WritebackJob): { column: string; value: string | number | boolean | null } | undefined {
+  const scope = job.target.principal_scope;
+  if (!scope) return undefined;
+  if (scope.value === undefined) throw new Error("PRINCIPAL_SCOPE_VALUE_REQUIRED");
+  return { column: scope.column, value: scope.value };
+}
+
 function receiptAuthority(config: RunnerConfig): "source_db" | "runner_ledger" {
   return config.receipts?.authority ?? "source_db";
 }
@@ -95,6 +102,11 @@ export function buildPostgresUpdate(job: WritebackJob): { sql: string; values: u
     `${quotePostgresIdentifier(job.target.primary_key.column)} = ${pkParam}`,
     `${quotePostgresIdentifier(job.target.tenant_guard.column)} = ${tenantParam}`,
   ];
+  const scope = principalScope(job);
+  if (scope) {
+    values.push(scope.value);
+    where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`);
+  }
   if (job.conflict_guard.kind === "version_column") {
     values.push(job.conflict_guard.expected_value);
     where.push(`${quotePostgresIdentifier(job.conflict_guard.column)} = $${values.length}`);
@@ -127,10 +139,19 @@ export function buildPostgresDelete(job: WritebackJob): { sql: string; values: u
   if (job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") {
     throw new Error("postgres delete requires primary-key and exact version guards");
   }
-  return {
-    sql: `DELETE FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $1\n  AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2\n  AND ${quotePostgresIdentifier(job.conflict_guard.column)} = $3`,
-    values: [job.target.primary_key.value, job.target.tenant_guard.value, job.conflict_guard.expected_value],
-  };
+  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const where = [
+    `${quotePostgresIdentifier(job.target.primary_key.column)} = $1`,
+    `${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2`,
+  ];
+  const scope = principalScope(job);
+  if (scope) {
+    values.push(scope.value);
+    where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`);
+  }
+  values.push(job.conflict_guard.expected_value);
+  where.push(`${quotePostgresIdentifier(job.conflict_guard.column)} = $${values.length}`);
+  return { sql: `DELETE FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}`, values };
 }
 
 function validatePatch(job: WritebackJob, engine: string): void {
@@ -139,6 +160,8 @@ function validatePatch(job: WritebackJob, engine: string): void {
   const allowed = new Set(job.allowed_columns);
   if (allowed.has(job.target.primary_key.column)) throw new Error(`${engine} primary key column must not be patch-allowlisted`);
   if (allowed.has(job.target.tenant_guard.column)) throw new Error(`${engine} tenant guard column must not be patch-allowlisted`);
+  const scope = principalScope(job);
+  if (scope && allowed.has(scope.column)) throw new Error(`${engine} principal scope column must not be patch-allowlisted`);
   for (const column of patchColumns) if (!allowed.has(column)) throw new Error(`${engine} patch column not allowlisted: ${column}`);
 }
 
@@ -154,6 +177,11 @@ function insertValues(job: Extract<WritebackJob, { protocol_version: "2.0" }>): 
     if (component.source === "proposal_id") proposalIdentity = true;
   }
   if (!trustedTenant || !proposalIdentity) throw new Error("INSERT_DEDUP_REQUIRED");
+  const scope = principalScope(job);
+  if (scope) {
+    if (Object.prototype.hasOwnProperty.call(values, scope.column)) throw new Error("PRINCIPAL_SCOPE_COLUMN_COLLISION");
+    values[scope.column] = scope.value;
+  }
   return values;
 }
 
@@ -182,6 +210,8 @@ function digest(value: unknown): `sha256:${string}` {
 
 function reconciliationProjection(job: WritebackJob): string[] {
   const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column, ...job.allowed_columns]);
+  const scope = principalScope(job);
+  if (scope) columns.add(scope.column);
   if (job.protocol_version === "3.0") {
     for (const member of job.frozen_set.members) {
       for (const column of Object.keys(member.before)) columns.add(column);
@@ -204,30 +234,48 @@ function reconciliationProjection(job: WritebackJob): string[] {
 export function buildPostgresReconciliationRead(job: WritebackJob): { sql: string; values: unknown[] } {
   const projection = reconciliationProjection(job).map(quotePostgresIdentifier).join(", ");
   if (job.protocol_version === "4.0") {
-    const values = [job.target.tenant_guard.value, ...job.compensation.members.map((member) => member.primary_key.value)];
+    const values: unknown[] = [job.target.tenant_guard.value];
+    const where = [`${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1`];
+    const scope = principalScope(job);
+    if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
+    const firstIdentity = values.length + 1;
+    values.push(...job.compensation.members.map((member) => member.primary_key.value));
     return {
-      sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1\n  AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map((_, index) => `$${index + 2}`).join(", ")})\nORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC`,
+      sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\n  AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map((_, index) => `$${firstIdentity + index}`).join(", ")})\nORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC`,
       values,
     };
   }
   if (job.protocol_version === "3.0") {
-    const values = [job.target.tenant_guard.value, ...job.frozen_set.members.map((member) => member.primary_key.value)];
-    const identities = job.frozen_set.members.map((_, index) => `$${index + 2}`).join(", ");
+    const values: unknown[] = [job.target.tenant_guard.value];
+    const where = [`${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1`];
+    const scope = principalScope(job);
+    if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
+    const firstIdentity = values.length + 1;
+    values.push(...job.frozen_set.members.map((member) => member.primary_key.value));
+    const identities = job.frozen_set.members.map((_, index) => `$${firstIdentity + index}`).join(", ");
     return {
-      sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1\n  AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${identities})\nORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC`,
+      sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\n  AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${identities})\nORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC`,
       values,
     };
   }
   if (operationOf(job) === "single_row_insert" && job.protocol_version === "2.0" && job.deduplication) {
+    const values: unknown[] = job.deduplication.components.map((component) => component.value);
+    const where = job.deduplication.components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`);
+    const scope = principalScope(job);
+    if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
     return {
-      sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${job.deduplication.components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`).join(" AND ")}\nLIMIT 2`,
-      values: job.deduplication.components.map((component) => component.value),
+      sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join(" AND ")}\nLIMIT 2`,
+      values,
     };
   }
   if (job.target.primary_key.value === undefined) throw new Error("RECONCILIATION_TARGET_IDENTITY_REQUIRED");
+  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const where = [`${quotePostgresIdentifier(job.target.primary_key.column)} = $1`, `${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2`];
+  const scope = principalScope(job);
+  if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
   return {
-    sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $1\n  AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2\nLIMIT 2`,
-    values: [job.target.primary_key.value, job.target.tenant_guard.value],
+    sql: `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nLIMIT 2`,
+    values,
   };
 }
 
@@ -513,6 +561,8 @@ async function mutatePostgres(job: WritebackJob, client: PostgresApplyClient): P
 
 function compensationProjection(job: CompensationWritebackJob): string[] {
   const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column]);
+  const scope = principalScope(job);
+  if (scope) columns.add(scope.column);
   for (const member of job.compensation.members) {
     for (const column of Object.keys(member.expected_state)) columns.add(column);
     for (const column of Object.keys(member.restore_values ?? {})) columns.add(column);
@@ -522,9 +572,15 @@ function compensationProjection(job: CompensationWritebackJob): string[] {
 }
 
 async function lockPostgresCompensationMembers(job: CompensationWritebackJob, client: PostgresApplyClient): Promise<Record<string, unknown>[]> {
+  const values: unknown[] = [job.target.tenant_guard.value];
+  const where = [`${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1`];
+  const scope = principalScope(job);
+  if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
+  const firstIdentity = values.length + 1;
+  values.push(...job.compensation.members.map((member) => member.primary_key.value));
   const result = await client.query(
-    `SELECT ${compensationProjection(job).map(quotePostgresIdentifier).join(", ")} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1 AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map((_, index) => `$${index + 2}`).join(", ")}) ORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
-    [job.target.tenant_guard.value, ...job.compensation.members.map((member) => member.primary_key.value)],
+    `SELECT ${compensationProjection(job).map(quotePostgresIdentifier).join(", ")} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${where.join(" AND ")} AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map((_, index) => `$${firstIdentity + index}`).join(", ")}) ORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
+    values,
   );
   return result.rows;
 }
@@ -572,6 +628,8 @@ async function mutatePostgresCompensation(job: CompensationWritebackJob, client:
   if (job.operation === "restore_insert") {
     for (const member of job.compensation.members) {
       const values = { ...member.restore_values!, [job.target.primary_key.column]: member.primary_key.value, [job.target.tenant_guard.column]: job.target.tenant_guard.value };
+      const scope = principalScope(job);
+      if (scope) values[scope.column] = scope.value;
       const columns = Object.keys(values).sort();
       const inserted = await client.query(
         `INSERT INTO ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} (${columns.map(quotePostgresIdentifier).join(", ")}) VALUES (${columns.map((_, index) => `$${index + 1}`).join(", ")})`,
@@ -587,6 +645,8 @@ async function mutatePostgresCompensation(job: CompensationWritebackJob, client:
         `${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1`,
         `${quotePostgresIdentifier(job.target.primary_key.column)} = $2`,
       ];
+      const scope = principalScope(job);
+      if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
       for (const [column, value] of Object.entries(member.expected_state)) {
         values.push(value);
         where.push(`${quotePostgresIdentifier(column)} IS NOT DISTINCT FROM $${values.length}`);
@@ -609,6 +669,8 @@ async function mutatePostgresCompensation(job: CompensationWritebackJob, client:
       const where = [`${quotePostgresIdentifier(job.target.tenant_guard.column)} = $${values.length}`];
       values.push(member.primary_key.value);
       where.push(`${quotePostgresIdentifier(job.target.primary_key.column)} = $${values.length}`);
+      const scope = principalScope(job);
+      if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
       for (const [column, value] of Object.entries(member.expected_state)) {
         values.push(value);
         where.push(`${quotePostgresIdentifier(column)} IS NOT DISTINCT FROM $${values.length}`);
@@ -665,18 +727,29 @@ async function mutatePostgresSet(job: SetWritebackJob, client: PostgresApplyClie
         return `${quotePostgresIdentifier(column)} = $${values.length}`;
       });
       assignments.push(`${quotePostgresIdentifier(job.version_advance!.column)} = ${quotePostgresIdentifier(job.version_advance!.column)} + 1`);
-      values.push(member.primary_key.value, job.target.tenant_guard.value, expected.value);
+      values.push(member.primary_key.value, job.target.tenant_guard.value);
+      const where = [
+        `${quotePostgresIdentifier(job.target.primary_key.column)} = $${values.length - 1}`,
+        `${quotePostgresIdentifier(job.target.tenant_guard.column)} = $${values.length}`,
+      ];
+      const scope = principalScope(job);
+      if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
+      values.push(expected.value);
+      where.push(`${quotePostgresIdentifier(expected.column)} = $${values.length}`);
       const updated = await client.query(
-        `UPDATE ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $${values.length - 2} AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $${values.length - 1} AND ${quotePostgresIdentifier(expected.column)} = $${values.length}`,
+        `UPDATE ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${where.join(" AND ")}`,
         values,
       );
       if (updated.rowCount !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
       memberEffects.push({ primary_key: member.primary_key, before_digest: member.before_digest, after_digest: member.after_digest });
     } else {
-      const deleted = await client.query(
-        `DELETE FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $1 AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2 AND ${quotePostgresIdentifier(expected.column)} = $3`,
-        [member.primary_key.value, job.target.tenant_guard.value, expected.value],
-      );
+      const values: unknown[] = [member.primary_key.value, job.target.tenant_guard.value];
+      const where = [`${quotePostgresIdentifier(job.target.primary_key.column)} = $1`, `${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2`];
+      const scope = principalScope(job);
+      if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
+      values.push(expected.value);
+      where.push(`${quotePostgresIdentifier(expected.column)} = $${values.length}`);
+      const deleted = await client.query(`DELETE FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${where.join(" AND ")}`, values);
       if (deleted.rowCount !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
       memberEffects.push({ primary_key: member.primary_key, before_digest: member.before_digest, tombstone_digest: member.tombstone_digest });
     }
@@ -687,10 +760,15 @@ async function mutatePostgresSet(job: SetWritebackJob, client: PostgresApplyClie
 async function lockPostgresFrozenMembers(job: SetWritebackJob, client: PostgresApplyClient): Promise<boolean> {
   const columns = new Set<string>([job.target.primary_key.column]);
   for (const member of job.frozen_set.members) for (const column of Object.keys(member.before)) columns.add(column);
-  const values: unknown[] = [job.target.tenant_guard.value, ...job.frozen_set.members.map((member) => member.primary_key.value)];
-  const placeholders = job.frozen_set.members.map((_, index) => `$${index + 2}`);
+  const values: unknown[] = [job.target.tenant_guard.value];
+  const where = [`${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1`];
+  const scope = principalScope(job);
+  if (scope) { columns.add(scope.column); values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
+  const firstIdentity = values.length + 1;
+  values.push(...job.frozen_set.members.map((member) => member.primary_key.value));
+  const placeholders = job.frozen_set.members.map((_, index) => `$${firstIdentity + index}`);
   const result = await client.query(
-    `SELECT ${[...columns].map(quotePostgresIdentifier).join(", ")} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $1 AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${placeholders.join(", ")}) ORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
+    `SELECT ${[...columns].map(quotePostgresIdentifier).join(", ")} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${where.join(" AND ")} AND ${quotePostgresIdentifier(job.target.primary_key.column)} IN (${placeholders.join(", ")}) ORDER BY ${quotePostgresIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
     values,
   );
   if (result.rowCount !== job.frozen_set.row_count) return false;
@@ -714,7 +792,7 @@ async function postgresDeleteSafetyCode(job: SetWritebackJob, client: PostgresAp
 function validateBatchInsertMember(job: SetWritebackJob, member: SetWritebackJob["frozen_set"]["members"][number]): void {
   const dedupColumns = new Set(member.deduplication?.components.map((component) => component.column));
   for (const column of Object.keys(member.after)) {
-    if (!job.allowed_columns.includes(column) && !dedupColumns.has(column)) throw new Error("BATCH_COLUMN_NOT_ALLOWED");
+    if (!job.allowed_columns.includes(column) && !dedupColumns.has(column) && column !== job.target.principal_scope?.column) throw new Error("BATCH_COLUMN_NOT_ALLOWED");
   }
   if (!dedupColumns.has(job.target.primary_key.column) || !dedupColumns.has(job.target.tenant_guard.column)) throw new Error("BATCH_DEDUP_REQUIRED");
 }
@@ -722,9 +800,13 @@ function validateBatchInsertMember(job: SetWritebackJob, member: SetWritebackJob
 async function insertPostgresBatch(job: SetWritebackJob, client: PostgresApplyClient): Promise<MutationOutcome> {
   for (const member of job.frozen_set.members) {
     const components = member.deduplication!.components;
+    const values: unknown[] = components.map((component) => component.value);
+    const where = components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`);
+    const scope = principalScope(job);
+    if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
     const existing = await client.query(
-      `SELECT 1 FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`).join(" AND ")} LIMIT 1 FOR UPDATE`,
-      components.map((component) => component.value),
+      `SELECT 1 FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${where.join(" AND ")} LIMIT 1 FOR UPDATE`,
+      values,
     );
     if (existing.rowCount) return { status: "conflict", affectedRows: 0, code: "INSERT_DEDUP_CONFLICT", targetIdentity: identityForJob(job) };
   }
@@ -753,9 +835,13 @@ async function lockTargetRow(job: WritebackJob, client: PostgresApplyClient): Pr
       : []),
     ...inverseColumns.filter((column) => job.conflict_guard.kind !== "version_column" || column !== job.conflict_guard.column).map(quotePostgresIdentifier),
   ].join(", ");
+  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const where = [`${quotePostgresIdentifier(job.target.primary_key.column)} = $1`, `${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2`];
+  const scope = principalScope(job);
+  if (scope) { values.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`); }
   const result = await client.query(
-    `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${quotePostgresIdentifier(job.target.primary_key.column)} = $1\n  AND ${quotePostgresIdentifier(job.target.tenant_guard.column)} = $2\nFOR UPDATE`,
-    [job.target.primary_key.value, job.target.tenant_guard.value],
+    `SELECT ${projection} FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nFOR UPDATE`,
+    values,
   );
   return result.rowCount ? result.rows[0] : undefined;
 }
@@ -763,9 +849,12 @@ async function lockTargetRow(job: WritebackJob, client: PostgresApplyClient): Pr
 async function insertPostgres(job: WritebackJob, client: PostgresApplyClient): Promise<MutationOutcome> {
   if (job.protocol_version !== "2.0" || !job.deduplication) throw new Error("INSERT_DEDUP_REQUIRED");
   const components = job.deduplication.components;
-  const whereValues = components.map((component) => component.value);
+  const whereValues: unknown[] = components.map((component) => component.value);
+  const where = components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`);
+  const scope = principalScope(job);
+  if (scope) { whereValues.push(scope.value); where.push(`${quotePostgresIdentifier(scope.column)} = $${whereValues.length}`); }
   const existing = await client.query(
-    `SELECT ${quotePostgresIdentifier(job.target.primary_key.column)}::text AS "__synapsor_primary_key" FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`).join(" AND ")}`,
+    `SELECT ${quotePostgresIdentifier(job.target.primary_key.column)}::text AS "__synapsor_primary_key" FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)} WHERE ${where.join(" AND ")}`,
     whereValues,
   );
   if (existing.rowCount) return { status: "conflict", affectedRows: 0, code: "INSERT_DEDUP_CONFLICT", targetIdentity: identityForJob(job, existing.rows[0]?.__synapsor_primary_key) };

@@ -13,6 +13,7 @@
     { "path": "./packages/postgres" },
     { "path": "./packages/mysql" },
     { "path": "./packages/handler" },
-    { "path": "./apps/runner" }
+    { "path": "./apps/runner" },
+    { "path": "./apps/cloud-cli" }
   ]
 }

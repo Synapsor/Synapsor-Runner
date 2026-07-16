@@ -14,9 +14,11 @@ import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  CloudLinkedSynchronizer,
   createMcpRuntime,
   createSynapsorMcpServer,
   checkRunnerReadiness,
+  enqueueCloudLinkedResult,
   loadRuntimeConfigFromFile,
   McpRuntimeError,
   openaiToolNameAlias,
@@ -370,6 +372,10 @@ describe("local Synapsor MCP runtime", () => {
         mode: "review",
         storage: { sqlite_path: ":memory:" },
         contracts: ["./synapsor.contract.json"],
+        session_auth: {
+          provider: "jwt_hs256",
+          secret_env: "SYNAPSOR_TEST_SESSION_SECRET",
+        },
         sources: {
           local_postgres: {
             engine: "postgres",
@@ -1105,6 +1111,70 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("narrows same-tenant reads by trusted principal without exposing the owner column", async () => {
+    const scoped = structuredClone(config);
+    scoped.trusted_context = {
+      provider: "static_dev",
+      principal_binding: "principal",
+      values: { tenant_id: "acme", principal: "support_agent_17" },
+    };
+    for (const capability of scoped.capabilities ?? []) {
+      capability.target.principal_scope_key = "assigned_to";
+      capability.visible_columns = capability.visible_columns.filter((column) => column !== "assigned_to");
+    }
+    const seenContexts: Array<{ tenant_id: string; principal: string }> = [];
+    const runtime = createMcpRuntime(scoped, {
+      readRow: async (input) => {
+        seenContexts.push(input.context);
+        return {
+          row: { ...fixtureRow, assigned_to: "support_agent_17" },
+          rowCount: 1,
+        };
+      },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(seenContexts).toEqual([expect.objectContaining({ tenant_id: "acme", principal: "support_agent_17" })]);
+      expect(result.data).not.toHaveProperty("assigned_to");
+      const evidence = await runtime.readResource(String(result.evidence_resource));
+      expect(JSON.stringify(evidence)).not.toContain('"assigned_to":"support_agent_17"');
+      expect(evidence).toMatchObject({
+        payload: { principal_scope: { column: "assigned_to", binding: "principal" } },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("returns a generic denial when the same tenant has a different trusted principal", async () => {
+    const scoped = structuredClone(config);
+    scoped.result_format = 2;
+    scoped.trusted_context = {
+      provider: "static_dev",
+      principal_binding: "principal",
+      values: { tenant_id: "acme", principal: "other_agent" },
+    };
+    for (const capability of scoped.capabilities ?? []) capability.target.principal_scope_key = "assigned_to";
+    const runtime = createMcpRuntime(scoped, {
+      readRow: async (input) => {
+        expect(input.context).toMatchObject({ tenant_id: "acme", principal: "other_agent" });
+        return { row: {}, rowCount: 0 };
+      },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND_IN_TENANT", retryable: false },
+      });
+      const serialized = JSON.stringify(result);
+      expect(serialized).not.toContain("support_agent_17");
+      expect(serialized).not.toContain("assigned_to");
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("returns only a reviewed aggregate scalar and records no source member rows", async () => {
     const readRow = vi.fn(async (input: any) => {
       expect(input.args).toEqual({});
@@ -1605,6 +1675,198 @@ describe("local Synapsor MCP runtime", () => {
       })).toThrow(/PROPOSAL_NOT_PENDING_REVIEW|is approved/);
     } finally {
       runtime.close();
+    }
+  });
+
+  it("queues Cloud-linked proposals durably and never auto-approves them locally", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-cloud-linked-"));
+    const connectionPath = path.join(dir, "synapsor.cloud.json");
+    fs.writeFileSync(connectionPath, JSON.stringify({
+      cloud: {
+        protocol_version: "1.0",
+        base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
+        runner_id: "runner_test",
+        project_id: "prj_test",
+        source_id: "src_cloud",
+        runner_source_id: "app_postgres",
+        contract_id: "contract_test",
+        contract_version_id: "version_test",
+        contract_digest: `sha256:${"a".repeat(64)}`,
+      },
+    }));
+    const linked = autoApprovalConfig();
+    linked.governance = { mode: "cloud_linked", connection_file: connectionPath, evidence_residency: "metadata_only", queue_when_unavailable: true };
+    const store = new ProposalStore(":memory:");
+    const runtime = createMcpRuntime(linked, {
+      store,
+      env: { SYNAPSOR_CLOUD_BASE_URL: "https://cloud.example", SYNAPSOR_RUNNER_TOKEN: "runner-test-token" },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        reason: "documented outage credit",
+      });
+      expect(result).toMatchObject({
+        status: "pending_cloud_sync",
+        approval_required: true,
+        governance: { authority: "synapsor_cloud", evidence_residency: "metadata_only" },
+        source_database_mutated: false,
+      });
+      const proposalId = String(result.proposal_id);
+      expect(store.getProposal(proposalId)?.state).toBe("pending_review");
+      expect(store.approvals(proposalId)).toEqual([]);
+      expect(store.listCloudOutbox({ proposal_id: proposalId }).map((item) => item.kind)).toEqual(expect.arrayContaining(["proposal", "activity"]));
+      const payload = store.listCloudOutbox({ proposal_id: proposalId }).find((item) => item.kind === "proposal")?.payload;
+      expect(JSON.stringify(payload)).not.toContain("runner-test-token");
+      expect(JSON.stringify(payload)).not.toContain("postgres://");
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("fails before proposal creation when Cloud is unavailable and queueing is explicitly disabled", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-cloud-unqueued-"));
+    const connectionPath = path.join(dir, "synapsor.cloud.json");
+    fs.writeFileSync(connectionPath, JSON.stringify({
+      cloud: {
+        protocol_version: "1.0",
+        base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
+        runner_id: "runner_unqueued_test",
+        project_id: "prj_test",
+        source_id: "src_cloud",
+        runner_source_id: "app_postgres",
+        contract_id: "contract_test",
+        contract_version_id: "version_test",
+        contract_digest: `sha256:${"a".repeat(64)}`,
+      },
+    }));
+    const linked = autoApprovalConfig();
+    linked.result_format = 2;
+    linked.governance = { mode: "cloud_linked", connection_file: connectionPath, evidence_residency: "metadata_only", queue_when_unavailable: false };
+    const store = new ProposalStore(":memory:");
+    const readRow = vi.fn(async () => ({ row: fixtureRow, rowCount: 1 }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: false, error: "temporarily_unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    })));
+    const runtime = createMcpRuntime(linked, {
+      store,
+      env: { SYNAPSOR_CLOUD_BASE_URL: "https://cloud.example", SYNAPSOR_RUNNER_TOKEN: "runner-test-token" },
+      readRow,
+    });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        reason: "documented outage credit",
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "TEMPORARILY_UNAVAILABLE", retryable: true, retry_after_ms: 1000 },
+        source_database_changed: false,
+      });
+      expect(readRow).not.toHaveBeenCalled();
+      expect(store.listProposals()).toEqual([]);
+      expect(store.listCloudOutbox()).toEqual([]);
+    } finally {
+      await runtime.close();
+      store.close();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("delivers durable Cloud results once and mirrors terminal Cloud state separately", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-cloud-result-"));
+    const connectionPath = path.join(dir, "synapsor.cloud.json");
+    fs.writeFileSync(connectionPath, JSON.stringify({
+      cloud: {
+        protocol_version: "1.0",
+        base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
+        runner_id: "runner_result_test",
+        project_id: "prj_test",
+        source_id: "src_cloud",
+        runner_source_id: "app_postgres",
+        contract_id: "contract_test",
+        contract_version_id: "version_test",
+        contract_digest: `sha256:${"a".repeat(64)}`,
+      },
+    }));
+    const linked = autoApprovalConfig();
+    linked.governance = { mode: "cloud_linked", connection_file: connectionPath, evidence_residency: "metadata_only", queue_when_unavailable: true };
+    const env = { SYNAPSOR_CLOUD_BASE_URL: "https://cloud.example", SYNAPSOR_RUNNER_TOKEN: "runner-test-token" };
+    const store = new ProposalStore(":memory:");
+    const runtime = createMcpRuntime(linked, {
+      store,
+      env,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+      requests.push({ url, body });
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({
+          ok: true,
+          proposal_id: url.split("/").at(-1),
+          status: "applied",
+          terminal: true,
+          decision: { status: "approved", actor: "reviewer@example.com", decided_at: "2026-07-16T00:00:00.000Z" },
+          result: { status: "applied", affected_rows: 1, result_hash: `sha256:${"b".repeat(64)}` },
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ok: true, proposal_id: body?.proposal_id, status: "pending_review" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const synchronizer = new CloudLinkedSynchronizer(linked, store, env);
+    try {
+      const proposalResult = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        reason: "documented outage credit",
+      });
+      const proposalId = String(proposalResult.proposal_id);
+      const result = {
+        protocol_version: "2.0" as const,
+        job_id: `wbj_${proposalId}`,
+        runner_id: "runner_result_test",
+        operation: "single_row_update" as const,
+        receipt_authority: "runner_ledger" as const,
+        status: "applied" as const,
+        affected_rows: 1,
+        target_identity: [{ column: "id", value: "INV-3001" }],
+        result_hash: `sha256:${"b".repeat(64)}` as const,
+        completed_at: "2026-07-16T00:00:01.000Z",
+      };
+      const first = await enqueueCloudLinkedResult({ config: linked, store, proposalId, result, leaseId: "lease_result_1" });
+      const duplicate = await enqueueCloudLinkedResult({ config: linked, store, proposalId, result, leaseId: "lease_result_1" });
+      expect(duplicate?.event_id).toBe(first?.event_id);
+
+      for (let index = 0; index < 10; index += 1) {
+        await synchronizer.drainOnce();
+        const remaining = store.listCloudOutbox({ proposal_id: proposalId }).filter((item) => item.status !== "acknowledged");
+        if (remaining.length === 0) break;
+      }
+
+      const resultRequests = requests.filter((request) => request.url.endsWith(`/v1/writeback/jobs/wbj_${proposalId}/result`));
+      expect(resultRequests).toHaveLength(1);
+      expect(resultRequests[0]?.body).toMatchObject({ lease_id: "lease_result_1", status: "applied", result_hash: result.result_hash });
+      expect(store.listCloudOutbox({ proposal_id: proposalId }).every((item) => item.status === "acknowledged")).toBe(true);
+      expect(store.listCloudGovernanceEvents(proposalId)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ authority: "synapsor_cloud", state: "applied" }),
+      ]));
+      expect(store.approvals(proposalId)).toEqual([]);
+    } finally {
+      await synchronizer.stop();
+      await runtime.close();
+      store.close();
+      vi.unstubAllGlobals();
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 

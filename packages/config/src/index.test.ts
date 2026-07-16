@@ -708,6 +708,26 @@ describe("runner capability config validation", () => {
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
   });
+
+  it("validates explicit Cloud-linked governance independently from remote adapter mode", () => {
+    const config = mutableConfig();
+    config.governance = {
+      mode: "cloud_linked",
+      connection_file: "./synapsor.cloud.json",
+      evidence_residency: "metadata_only",
+      queue_when_unavailable: true,
+      sync_interval_ms: 1000,
+      max_attempts: 12,
+      outbox_retention_days: 30,
+    };
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    delete config.governance.connection_file;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("CLOUD_LINKED_CONNECTION_REQUIRED");
+    config.governance.connection_file = "./synapsor.cloud.json";
+    config.governance.evidence_residency = "encrypted_payload";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("UNSUPPORTED_EVIDENCE_RESIDENCY");
+  });
 });
 
 function mutableConfig(): any {

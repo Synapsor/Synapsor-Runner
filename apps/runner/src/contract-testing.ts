@@ -7,10 +7,11 @@ import { loadReviewedContract } from "./contract-tools.js";
 
 export type ContractTestAssertion = {
   id: string;
-  kind: "tool_allow" | "tool_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "source_unchanged_before_approval" | "operator_boundary";
+  kind: "tool_allow" | "tool_deny" | "cross_principal_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "source_unchanged_before_approval" | "operator_boundary";
   capability: string;
   args?: Record<string, unknown>;
   trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" };
+  other_trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" };
   expected_code?: string;
   fields?: string[];
   argument?: string;
@@ -46,7 +47,7 @@ export type ContractTestReport = {
 };
 
 const kinds = new Set<ContractTestAssertion["kind"]>([
-  "tool_allow", "tool_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary",
+  "tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary",
 ]);
 
 export async function loadContractTestManifest(filePath: string): Promise<ContractTestManifest> {
@@ -189,6 +190,49 @@ async function runStaticAssertion(test: ContractTestAssertion, config: RuntimeCo
 async function runLiveAssertion(test: ContractTestAssertion, config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): Promise<void> {
   const trusted = test.trusted_context;
   if (!trusted) throw new ContractAssertionFailure("TRUSTED_CONTEXT_REQUIRED", `${test.kind} requires trusted_context in test setup`);
+  if (test.kind === "cross_principal_deny") {
+    const other = test.other_trusted_context;
+    if (!other) throw new ContractAssertionFailure("OTHER_TRUSTED_CONTEXT_REQUIRED", "cross_principal_deny requires other_trusted_context");
+    if (other.tenant_id !== trusted.tenant_id) throw new ContractAssertionFailure("CROSS_PRINCIPAL_TENANT_MISMATCH", "cross_principal_deny contexts must use the same tenant");
+    if (other.principal === trusted.principal) throw new ContractAssertionFailure("CROSS_PRINCIPAL_IDENTITY_MATCH", "cross_principal_deny contexts must use different principals");
+    const ownerRuntime = createMcpRuntime(config, {
+      env, storePath, resultFormat: 2,
+      trustedContext: { tenant_id: trusted.tenant_id, principal: trusted.principal, provenance: trusted.provenance ?? "static_dev" } as TrustedContext,
+    });
+    const deniedRuntime = createMcpRuntime(config, {
+      env, storePath, resultFormat: 2,
+      trustedContext: { tenant_id: other.tenant_id, principal: other.principal, provenance: other.provenance ?? "static_dev" } as TrustedContext,
+    });
+    try {
+      const allowed = await ownerRuntime.callTool(test.capability, test.args ?? {});
+      if (allowed.ok !== true) throw new ContractAssertionFailure("OWNER_ACCESS_NOT_PROVEN", "the owning principal could not access the reviewed row");
+      const denied = await deniedRuntime.callTool(test.capability, test.args ?? {});
+      const code = isRecord(denied.error) && typeof denied.error.code === "string" ? denied.error.code : undefined;
+      const expected = test.expected_code ?? "NOT_FOUND_IN_TENANT";
+      if (denied.ok === true || code !== expected) throw new ContractAssertionFailure("CROSS_PRINCIPAL_DENIAL_MISMATCH", `expected generic ${expected}, got ${code ?? "success"}`);
+      const serialized = JSON.stringify(denied);
+      const deniedEvidenceHandle = isRecord(denied.evidence) && typeof denied.evidence.bundle_id === "string" ? denied.evidence.bundle_id : undefined;
+      const deniedProposalHandle = isRecord(denied.proposal) && typeof denied.proposal.id === "string" ? denied.proposal.id : undefined;
+      if (deniedEvidenceHandle || deniedProposalHandle || /\b(?:ev|wrp|receipt|replay)_[A-Za-z0-9_.-]+\b/.test(serialized)) {
+        throw new ContractAssertionFailure("CROSS_PRINCIPAL_HANDLE_LEAK", "denied result exposed a local resource handle");
+      }
+      const evidenceId = isRecord(allowed.evidence) && typeof allowed.evidence.bundle_id === "string" ? allowed.evidence.bundle_id : undefined;
+      if (!evidenceId) throw new ContractAssertionFailure("OWNER_EVIDENCE_NOT_PROVEN", "the owning principal call did not create an evidence handle");
+      try {
+        await deniedRuntime.readResource(`synapsor://evidence/${evidenceId}`);
+        throw new ContractAssertionFailure("CROSS_PRINCIPAL_HANDLE_LEAK", "another principal could read the owner's evidence handle");
+      } catch (error) {
+        if (error instanceof ContractAssertionFailure) throw error;
+        if (!isRecord(error) || error.code !== "RESOURCE_NOT_FOUND") {
+          throw new ContractAssertionFailure("CROSS_PRINCIPAL_HANDLE_DENIAL_MISMATCH", "another principal's evidence handle did not fail with generic RESOURCE_NOT_FOUND");
+        }
+      }
+      return;
+    } finally {
+      await ownerRuntime.close();
+      await deniedRuntime.close();
+    }
+  }
   const runtime = createMcpRuntime(config, {
     env,
     storePath,
@@ -232,7 +276,7 @@ async function runLiveAssertion(test: ContractTestAssertion, config: RuntimeConf
 
 function validateAssertion(raw: unknown, index: number, ids: Set<string>): ContractTestAssertion {
   if (!isRecord(raw)) throw new Error(`CONTRACT_TEST_INVALID: tests[${index}] must be an object`);
-  rejectUnknownKeys(raw, new Set(["id", "kind", "capability", "args", "trusted_context", "expected_code", "fields", "argument", "expected"]), `$.tests[${index}]`);
+  rejectUnknownKeys(raw, new Set(["id", "kind", "capability", "args", "trusted_context", "other_trusted_context", "expected_code", "fields", "argument", "expected"]), `$.tests[${index}]`);
   const id = requiredString(raw.id, `tests[${index}].id`);
   if (ids.has(id)) throw new Error(`CONTRACT_TEST_ID_DUPLICATE: ${id}`);
   ids.add(id);
@@ -243,6 +287,7 @@ function validateAssertion(raw: unknown, index: number, ids: Set<string>): Contr
     id, kind, capability,
     ...(isRecord(raw.args) ? { args: raw.args } : {}),
     ...(isRecord(raw.trusted_context) ? { trusted_context: trustedContextFromManifest(raw.trusted_context, id) } : {}),
+    ...(isRecord(raw.other_trusted_context) ? { other_trusted_context: trustedContextFromManifest(raw.other_trusted_context, `${id}.other_trusted_context`) } : {}),
     ...(typeof raw.expected_code === "string" ? { expected_code: raw.expected_code } : {}),
     ...(Array.isArray(raw.fields) ? { fields: raw.fields.map(String) } : {}),
     ...(typeof raw.argument === "string" ? { argument: raw.argument } : {}),
@@ -276,7 +321,7 @@ function liveEngine(config: RuntimeConfig): "postgres" | "mysql" | undefined {
 }
 
 function requiresLive(test: ContractTestAssertion): boolean {
-  return ["tool_allow", "tool_deny", "source_unchanged_before_approval"].includes(test.kind);
+  return ["tool_allow", "tool_deny", "cross_principal_deny", "source_unchanged_before_approval"].includes(test.kind);
 }
 
 function trustedContextFromManifest(record: Record<string, unknown>, id: string): NonNullable<ContractTestAssertion["trusted_context"]> {

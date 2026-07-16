@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
+import { ControlPlaneClient, type ClaimedWritebackJob } from "@synapsor-runner/control-plane-client";
 import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
 export * from "./mcp-audit.js";
@@ -72,6 +72,11 @@ export type ReconciliationObservation = {
 };
 
 export type WritebackAuthorityVerifier = (job: WritebackJob) => Promise<void> | void;
+export type WritebackResultReporter = (input: {
+  job: WritebackJob;
+  result: WritebackResult;
+  leaseId: string;
+}) => Promise<void> | void;
 
 type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
 export type CompensationWritebackJob = Extract<WritebackJob, { protocol_version: "4.0" }>;
@@ -87,6 +92,7 @@ export function assertCompensationJobIntegrity(job: CompensationWritebackJob): v
     || descriptor.target.primary_key_column !== job.target.primary_key.column) throw new Error("COMPENSATION_TARGET_MISMATCH");
   if (descriptor.tenant_guard.column !== job.target.tenant_guard.column
     || descriptor.tenant_guard.value !== job.target.tenant_guard.value) throw new Error("COMPENSATION_TENANT_MISMATCH");
+  if (JSON.stringify(descriptor.principal_scope) !== JSON.stringify(job.target.principal_scope)) throw new Error("COMPENSATION_PRINCIPAL_SCOPE_MISMATCH");
   if (descriptor.members.length < 1 || descriptor.members.length > descriptor.max_rows || descriptor.max_rows > 100) throw new Error("COMPENSATION_ROW_CAP_EXCEEDED");
   const identities = descriptor.members.map((member) => JSON.stringify(member.primary_key.value));
   if (new Set(identities).size !== identities.length) throw new Error("COMPENSATION_IDENTITY_NOT_UNIQUE");
@@ -245,6 +251,7 @@ export function assertFrozenSetJobIntegrity(job: SetWritebackJob): void {
       if (!job.version_advance || job.version_advance.strategy !== "integer_increment" || !member.expected_version || member.expected_version.column !== job.version_advance.column) throw new Error("SET_VERSION_GUARD_REQUIRED");
       if (typeof member.expected_version.value !== "number" || member.before[job.version_advance.column] !== member.expected_version.value) throw new Error("SET_VERSION_GUARD_MISMATCH");
       if (member.before[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("SET_TENANT_GUARD_MISMATCH");
+      if (job.target.principal_scope && member.before[job.target.principal_scope.column] !== job.target.principal_scope.value) throw new Error("SET_PRINCIPAL_SCOPE_MISMATCH");
       const expectedAfter = { ...member.before, ...job.patch, [job.version_advance.column]: member.expected_version.value + 1 };
       if (!recordsEqual(member.after, expectedAfter)) throw new Error("SET_AFTER_STATE_MISMATCH");
       if (!reviewedDigestMatches(member.before_digest, { primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
@@ -252,6 +259,7 @@ export function assertFrozenSetJobIntegrity(job: SetWritebackJob): void {
     } else if (job.operation === "set_delete") {
       if (!member.expected_version || member.before[member.expected_version.column] !== member.expected_version.value) throw new Error("SET_VERSION_GUARD_MISMATCH");
       if (member.before[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("SET_TENANT_GUARD_MISMATCH");
+      if (job.target.principal_scope && member.before[job.target.principal_scope.column] !== job.target.principal_scope.value) throw new Error("SET_PRINCIPAL_SCOPE_MISMATCH");
       if (Object.keys(member.after).length !== 0) throw new Error("SET_DELETE_PATCH_FORBIDDEN");
       if (!reviewedDigestMatches(member.before_digest, { primary_key: member.primary_key.value, before: member.before })) throw new Error("SET_BEFORE_DIGEST_MISMATCH");
       if (!reviewedDigestMatches(member.tombstone_digest, { primary_key: member.primary_key.value, expected_version: member.expected_version })) throw new Error("SET_TOMBSTONE_DIGEST_MISMATCH");
@@ -261,6 +269,7 @@ export function assertFrozenSetJobIntegrity(job: SetWritebackJob): void {
       const tenant = components.find((component) => component.column === job.target.tenant_guard.column);
       if (!primary || primary.value !== member.primary_key.value || !tenant || tenant.source !== "trusted_tenant" || tenant.value !== job.target.tenant_guard.value) throw new Error("BATCH_DEDUP_REQUIRED");
       if (member.after[job.target.primary_key.column] !== member.primary_key.value || member.after[job.target.tenant_guard.column] !== job.target.tenant_guard.value) throw new Error("BATCH_IDENTITY_MISMATCH");
+      if (job.target.principal_scope && member.after[job.target.principal_scope.column] !== job.target.principal_scope.value) throw new Error("BATCH_PRINCIPAL_SCOPE_MISMATCH");
       if (!reviewedDigestMatches(member.after_digest, { primary_key: member.primary_key.value, after: member.after })) throw new Error("SET_AFTER_DIGEST_MISMATCH");
     }
   }
@@ -480,6 +489,7 @@ export async function runOnce(
   config: RunnerConfig,
   adapters: Record<RunnerConfig["engine"], ApplyAdapter>,
   verifyAuthority?: WritebackAuthorityVerifier,
+  reportResult?: WritebackResultReporter,
 ): Promise<number> {
   const logger = createLogger(config);
   const client = new ControlPlaneClient({ baseUrl: config.controlPlaneUrl, runnerToken: config.runnerToken, sourceId: config.sourceId, runnerId: config.runnerId });
@@ -489,9 +499,13 @@ export async function runOnce(
     return 0;
   }
   let completed = 0;
+  const report = async (job: ClaimedWritebackJob, result: WritebackResult) => {
+    if (reportResult) await reportResult({ job, result, leaseId: job.cloud_lease.leaseId });
+    else await client.result(result, job.cloud_lease.leaseId);
+  };
   for (const job of jobs) {
     if (job.engine !== config.engine) {
-      await client.result(failedWritebackResult(job, config.runnerId, "DATABASE_UNAVAILABLE"), job.cloud_lease.leaseId);
+      await report(job, failedWritebackResult(job, config.runnerId, "DATABASE_UNAVAILABLE"));
       continue;
     }
     if (verifyAuthority) {
@@ -499,13 +513,13 @@ export async function runOnce(
         await verifyAuthority(job);
       } catch {
         logger.warn("Cloud-approved job rejected by local reviewed authority", { job_id: job.job_id, error_code: "LOCAL_AUTHORITY_REJECTED" });
-        await client.result(failedWritebackResult(job, config.runnerId, "LOCAL_AUTHORITY_REJECTED"), job.cloud_lease.leaseId);
+        await report(job, failedWritebackResult(job, config.runnerId, "LOCAL_AUTHORITY_REJECTED"));
         continue;
       }
     }
     await client.heartbeat(job.job_id, job.cloud_lease.leaseId, config.runnerId);
     const result = await adapters[config.engine].apply(job, config);
-    await client.result(result, job.cloud_lease.leaseId);
+    await report(job, result);
     completed += 1;
   }
   return completed;
@@ -516,11 +530,12 @@ export async function startPolling(
   adapters: Record<RunnerConfig["engine"], ApplyAdapter>,
   signal?: AbortSignal,
   verifyAuthority?: WritebackAuthorityVerifier,
+  reportResult?: WritebackResultReporter,
 ): Promise<void> {
   const logger = createLogger(config);
   while (!signal?.aborted) {
     try {
-      await runOnce(config, adapters, verifyAuthority);
+      await runOnce(config, adapters, verifyAuthority, reportResult);
     } catch (error) {
       logger.error("runner loop failed", { error: error instanceof Error ? error.message : String(error) });
     }

@@ -4,6 +4,7 @@ CREATE TABLE invoices (
   status varchar(64) NOT NULL,
   late_fee_cents integer NOT NULL,
   waiver_reason varchar(500),
+  assigned_to varchar(128) NOT NULL DEFAULT 'case_manager_a',
   updated_at datetime(6) NOT NULL
 );
 
@@ -41,7 +42,10 @@ INSERT INTO guard_crud_items (id, tenant_id, request_id, value_cents, version) V
 ALTER TABLE guard_crud_items AUTO_INCREMENT = 2001;
 
 INSERT INTO invoices (id, tenant_id, status, late_fee_cents, waiver_reason, updated_at) VALUES
-  ('MYSQL-ACME', 'acme', 'overdue', 700, NULL, '2026-07-12 12:00:00.000000');
+  ('MYSQL-ACME', 'acme', 'overdue', 700, NULL, '2026-07-12 12:00:00.000000'),
+  ('MYSQL-PRINCIPAL-A', 'hospital_a', 'principal_fixture', 100, NULL, '2026-07-12 12:00:00.000000'),
+  ('MYSQL-PRINCIPAL-B', 'hospital_a', 'principal_fixture', 200, NULL, '2026-07-12 12:00:00.000000');
+UPDATE invoices SET assigned_to = 'case_manager_b' WHERE id = 'MYSQL-PRINCIPAL-B';
 
 CREATE VIEW slow_invoices AS
 SELECT invoices.*, SLEEP(0.35) AS synthetic_delay

@@ -37,6 +37,7 @@
       "type": "object", "additionalProperties": false, "required": ["tenant", "allowed_columns"],
       "properties": {
         "tenant": { "$ref": "#/$defs/columnValue" },
+        "principal_scope": { "$ref": "#/$defs/principalScope" },
         "allowed_columns": { "type": "array", "items": { "$ref": "#/$defs/safeIdentifier" }, "maxItems": 256, "uniqueItems": true },
         "version_advance": { "$ref": "#/$defs/versionAdvance" }
       }
@@ -96,6 +97,7 @@
     "scalarRecord": { "type": "object", "propertyNames": { "$ref": "#/$defs/safeIdentifier" }, "additionalProperties": { "$ref": "#/$defs/scalar" }, "maxProperties": 256 },
     "setOperation": { "enum": ["set_update", "set_delete", "batch_insert"] },
     "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "value": { "$ref": "#/$defs/scalar" } } },
+    "principalScope": { "type": "object", "additionalProperties": false, "required": ["schema_version", "column", "binding", "provider", "value_fingerprint"], "properties": { "schema_version": { "const": "synapsor.principal-scope.v1" }, "column": { "$ref": "#/$defs/safeIdentifier" }, "binding": { "$ref": "#/$defs/safeIdentifier" }, "provider": { "enum": ["environment", "http_claims", "cloud_session", "static_dev"] }, "value_fingerprint": { "$ref": "#/$defs/sha256" }, "value": { "$ref": "#/$defs/scalar" } } },
     "versionAdvance": { "type": "object", "additionalProperties": false, "required": ["column", "strategy"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "strategy": { "enum": ["integer_increment", "database_generated"] } } },
     "deduplicationComponent": { "type": "object", "additionalProperties": false, "required": ["column", "value", "source"], "properties": { "column": { "$ref": "#/$defs/safeIdentifier" }, "value": { "$ref": "#/$defs/scalar" }, "source": { "enum": ["proposal_id", "trusted_tenant", "fixed"] } } },
     "deduplication": { "type": "object", "additionalProperties": false, "required": ["components"], "properties": { "components": { "type": "array", "items": { "$ref": "#/$defs/deduplicationComponent" }, "minItems": 1, "maxItems": 8 } } },

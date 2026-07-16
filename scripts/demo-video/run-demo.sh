@@ -72,7 +72,7 @@ if [[ -f "$DEMO_VIDEO_PRIVATE_CLOUD_STATE" ]]; then
   cloud_workspace="$(node -e 'const s=require(process.argv[1]); process.stdout.write(s.project_id)' "$DEMO_VIDEO_PRIVATE_CLOUD_STATE")"
 
   SYNAPSOR_CLOUD_BASE_URL="$cloud_base_url" \
-  SYNAPSOR_CLOUD_TOKEN="$cloud_token" \
+  SYNAPSOR_CLOUD_ACCESS_TOKEN="$cloud_token" \
   SYNAPSOR_WORKSPACE_ID="$cloud_workspace" \
     demo_capture cloud-push.json demo_runner cloud push "$DEMO_VIDEO_CONTRACT" \
       --workspace "$cloud_workspace" \

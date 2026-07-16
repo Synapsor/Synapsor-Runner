@@ -8,9 +8,9 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { ControlPlaneClient } from "@synapsor-runner/control-plane-client";
+import { CloudControlClient, CloudControlError, ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, createMcpRuntime, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, enqueueCloudLinkedResult, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { createPostgresPool, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
@@ -23,6 +23,7 @@ import {
   type LocalProposalState,
   type OperationalMetricRow,
   type PolicyRecommendation,
+  type ProposalRuntimeStore,
   type ProposalEvent,
   type ProposalReplayRecord,
   type ProposalSearchFilters,
@@ -62,6 +63,7 @@ import {
   type McpAuditReport,
   type RunnerConfig,
   type ReconciliationObservation,
+  type WritebackResultReporter,
   type WritebackIntentStore,
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
@@ -3003,7 +3005,13 @@ async function localToolNames(config: RuntimeConfig, checks: DoctorCheck[]): Pro
 }
 
 function formatLocalDoctorReport(report: LocalDoctorReport): string {
-  const lines = [`Synapsor Runner doctor: ${report.ok ? "ok" : "failed"}`, `Config: ${report.config_path}`, `Mode: ${report.mode}`];
+  const lines = [
+    `Synapsor Runner doctor: ${report.ok ? "ok" : "failed"}`,
+    `Config: ${report.config_path}`,
+    `Mode: ${report.mode}`,
+    `Governance authority: ${report.governance.authority_mode}`,
+    `Evidence residency: ${report.governance.evidence_residency}`,
+  ];
   if (report.tools.length) {
     lines.push("Exposed MCP tools:");
     for (const tool of report.tools) lines.push(`  - ${tool}`);
@@ -3025,6 +3033,9 @@ function formatLocalDoctorMarkdown(report: LocalDoctorReport): string {
     `- Node version: ${process.versions.node}`,
     `- Config: ${report.config_path}`,
     `- Mode: ${report.mode}`,
+    `- Governance authority: ${report.governance.authority_mode}`,
+    `- Evidence residency: ${report.governance.evidence_residency}`,
+    `- Queue proposals while Cloud is unavailable: ${report.governance.queue_when_unavailable ? "yes" : "no"}`,
     `- Status: ${report.ok ? "ok" : "needs attention"}`,
     "",
     "## Semantic Tools",
@@ -3067,12 +3078,31 @@ type DoctorCheck = {
   message: string;
 };
 
+type LocalDoctorGovernance = {
+  authority_mode: "local_only" | "cloud_linked";
+  evidence_residency: "metadata_only";
+  queue_when_unavailable: boolean;
+  pending?: number;
+  leased?: number;
+  acknowledged?: number;
+  dead_letter?: number;
+  reconciliation_required?: number;
+  oldest_pending_at?: string;
+  last_acknowledged_at?: string;
+  last_reconciled_at?: string;
+  last_reconciliation_error_code?: string;
+  last_compacted_at?: string;
+  last_compacted_count?: number;
+  connection_error_code?: string;
+};
+
 type LocalDoctorReport = {
   ok: boolean;
   mode: string;
   config_path: string;
   checks: DoctorCheck[];
   tools: string[];
+  governance: LocalDoctorGovernance;
   store_stats?: {
     path: string;
     exists: boolean;
@@ -3469,6 +3499,7 @@ async function localDoctor(args: string[]): Promise<number> {
   }
   checks.push(...await sharedPostgresLedgerDoctorChecks(parsed));
   checks.push(...graduatedTrustDoctorChecks(parsed));
+  const governance = await cloudLinkedGovernanceDoctorStatus(parsed, args, checks);
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
   for (const [contextName, contextValues] of contextsToCheck) {
@@ -3604,6 +3635,7 @@ async function localDoctor(args: string[]): Promise<number> {
     config_path: configPath,
     checks,
     tools,
+    governance,
     store_stats: await localDoctorStoreStats(optionalArg(args, "--store") ?? parsed.storage?.sqlite_path),
   };
   if (args.includes("--report")) {
@@ -3617,6 +3649,67 @@ async function localDoctor(args: string[]): Promise<number> {
     process.stdout.write(formatLocalDoctorReport(report));
   }
   return report.ok ? 0 : 1;
+}
+
+async function cloudLinkedGovernanceDoctorStatus(
+  config: RuntimeConfig,
+  args: string[],
+  checks: DoctorCheck[],
+): Promise<LocalDoctorGovernance> {
+  if (config.governance?.mode !== "cloud_linked") {
+    checks.push({ name: "governance:authority", ok: true, level: "pass", message: "Governance authority is local-only; no Synapsor Cloud account is required." });
+    return { authority_mode: "local_only", evidence_residency: "metadata_only", queue_when_unavailable: false };
+  }
+  const storePath = optionalArg(args, "--store") ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+  let store: ReturnType<typeof createDefaultRuntimeStore> | undefined;
+  let synchronizer: CloudLinkedSynchronizer | undefined;
+  try {
+    store = createDefaultRuntimeStore(config, process.env, storePath);
+    synchronizer = new CloudLinkedSynchronizer(config, store, process.env);
+    const status = await synchronizer.status();
+    checks.push({
+      name: "governance:authority",
+      ok: true,
+      level: "pass",
+      message: `Governance authority is Synapsor Cloud; local store ${storePath} is an operational spool/mirror and is never uploaded.`,
+    });
+    checks.push({
+      name: "governance:evidence-residency",
+      ok: true,
+      level: "pass",
+      message: "Evidence residency is metadata_only; source rows, SQL details, kept-out fields, credentials, and replay payloads remain local.",
+    });
+    const unhealthy = status.dead_letter > 0 || status.reconciliation_required > 0;
+    const lagging = status.pending > 0 || status.leased > 0;
+    checks.push({
+      name: "governance:outbox",
+      ok: !unhealthy,
+      level: unhealthy ? "fail" : lagging ? "warn" : "pass",
+      message: unhealthy
+        ? `Cloud outbox needs operator attention: ${status.dead_letter} dead-letter and ${status.reconciliation_required} reconciliation-required event(s). Run ${cliCommandName()} cloud outbox inspect latest.`
+        : lagging
+          ? `Cloud outbox has ${status.pending} pending and ${status.leased} leased event(s); source writes remain blocked until Cloud governance completes.`
+          : "Cloud outbox has no pending, leased, dead-letter, or reconciliation-required events.",
+    });
+    return { ...status, queue_when_unavailable: config.governance.queue_when_unavailable !== false };
+  } catch (error) {
+    const errorCode = error instanceof Error && "code" in error ? String((error as { code?: unknown }).code ?? "CLOUD_LINKED_DOCTOR_FAILED") : "CLOUD_LINKED_DOCTOR_FAILED";
+    checks.push({
+      name: "governance:cloud-connection",
+      ok: false,
+      level: "fail",
+      message: `Cloud-linked governance configuration could not be opened (${errorCode}). Check the reviewed connection file and Runner credential environment; no local approval fallback is allowed.`,
+    });
+    return {
+      authority_mode: "cloud_linked",
+      evidence_residency: "metadata_only",
+      queue_when_unavailable: config.governance.queue_when_unavailable !== false,
+      connection_error_code: errorCode,
+    };
+  } finally {
+    await synchronizer?.stop();
+    await store?.close();
+  }
 }
 
 function graduatedTrustDoctorChecks(config: RuntimeConfig): DoctorCheck[] {
@@ -3996,6 +4089,11 @@ async function revert(args: string[]): Promise<number> {
     if (capability.reversibility?.mode !== "reviewed_inverse") throw new Error(`REVERSIBILITY_NOT_REVIEWED: capability ${capability.name} does not declare reviewed inverse authority`);
     const trusted = trustedCliContext(config, capability, process.env);
     if (trusted.tenant_id !== forward.tenant_id) throw new Error("REVERSAL_TENANT_MISMATCH: current trusted tenant does not own the forward proposal");
+    const forwardPrincipalScope = forward.change_set.guards.principal_scope;
+    if (capability.target.principal_scope_key) {
+      if (!forwardPrincipalScope?.value || forwardPrincipalScope.column !== capability.target.principal_scope_key) throw new Error("REVERSAL_PRINCIPAL_SCOPE_MISSING: forward proposal does not preserve reviewed principal authority");
+      if (String(forwardPrincipalScope.value) !== trusted.principal) throw new Error("REVERSAL_PRINCIPAL_MISMATCH: current trusted principal does not own the forward proposal");
+    }
     const identity = await operatorIdentityForDecision({ args, config, configPath, proposal: forward, action: "revert", reason: optionalArg(args, "--reason") });
     const receipt = [...store.receipts(forward.proposal_id)].reverse().find((item) => item.status === "applied" || item.status === "already_applied");
     if (!receipt) {
@@ -4109,7 +4207,7 @@ function createCompensationProposal(input: {
     patch,
     after,
     compensation: { descriptor: input.inverse, forward_receipt_hash: input.receiptHash },
-    guards: { tenant: input.inverse.tenant_guard, allowed_columns: input.inverse.allowed_columns },
+    guards: { tenant: input.inverse.tenant_guard, ...(input.inverse.principal_scope ? { principal_scope: input.inverse.principal_scope } : {}), allowed_columns: input.inverse.allowed_columns },
     evidence: { bundle_id: evidenceId, query_fingerprint: queryFingerprint, items: evidenceItems },
     approval: {
       status: "pending" as const,
@@ -4152,6 +4250,7 @@ async function apply(args: string[]): Promise<number> {
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const configPath = optionalArg(args, "--config") ?? (await fileExists("synapsor.runner.json") ? "synapsor.runner.json" : undefined);
   const runtimeConfig = configPath ? await optionalRuntimeConfig(configPath) : undefined;
+  if (!dryRun) assertLocalGovernanceMutationAllowed(runtimeConfig, "apply --job");
   if (runtimeConfig && runtimeStoreBridgeRequired(args, runtimeConfig)) {
     return withSharedPostgresRuntimeStoreBridge(args, runtimeConfig, "apply --job", (bridgeStorePath) => apply(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
@@ -4268,6 +4367,7 @@ async function applyAllApproved(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
   const config = await optionalRuntimeConfig(configPath);
+  assertLocalGovernanceMutationAllowed(config, "apply --all-approved");
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, "apply --all-approved", (bridgeStorePath) => applyAllApproved(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
@@ -4389,6 +4489,7 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
   const runnerId = optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner";
   const workerAttempt = Number(optionalArg(args, "--worker-attempt") ?? "1");
   const config = await readRuntimeConfig(configPath);
+  assertLocalGovernanceMutationAllowed(config, "apply");
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `apply ${proposalId}`, (bridgeStorePath) => applyProposal(argsWithRuntimeStoreBridge(args, bridgeStorePath), proposalId));
   }
@@ -4424,6 +4525,20 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
       identity_verified: identity.verified,
       required_role: config.operator_identity?.apply_roles?.join(",") || undefined,
     });
+    const proposalScope = proposal.change_set.guards.principal_scope;
+    if (capability.target.principal_scope_key) {
+      if (!proposalScope || proposalScope.column !== capability.target.principal_scope_key || proposalScope.value === undefined) {
+        throw new Error(`proposal ${proposal.proposal_id} is missing its reviewed principal scope`);
+      }
+      if (proposalScope.provider === "environment" || proposalScope.provider === "static_dev") {
+        const current = trustedCliContext(config, capability, process.env);
+        if (current.tenant_id !== proposal.tenant_id || current.principal !== String(proposalScope.value)) {
+          throw new Error("current trusted tenant/principal cannot apply this proposal");
+        }
+      }
+    } else if (proposalScope) {
+      throw new Error(`proposal ${proposal.proposal_id} carries unreviewed principal scope`);
+    }
     const executorName = proposalExecutorName(proposal, capability);
     if (executorName === "none" || executorName === "cloud_worker") {
       throw new Error(`proposal ${resolvedProposalId} is not locally applyable; capability ${capability.name} declares ${executorName === "none" ? "no local writeback" : "cloud-worker writeback"}.`);
@@ -4750,6 +4865,7 @@ function prepareHandlerProposal(store: ProposalStore, proposal: StoredProposal, 
         primary_key: changeSet.source.primary_key,
       },
       tenant_guard: changeSet.guards.tenant,
+      ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
       allowed_columns: changeSet.guards.allowed_columns,
       before: changeSet.before,
       patch: changeSet.patch,
@@ -5137,6 +5253,15 @@ export async function verifyLocalWritebackAuthority(
   if (!matching) {
     throw new Error("writeback job does not match any reviewed proposal capability in local config");
   }
+  const reviewedPrincipalColumn = matching.target.principal_scope_key;
+  const jobPrincipalScope = job.target.principal_scope;
+  if (reviewedPrincipalColumn) {
+    if (!jobPrincipalScope || jobPrincipalScope.column !== reviewedPrincipalColumn) {
+      throw new Error("writeback job is missing or changes the reviewed principal scope");
+    }
+  } else if (jobPrincipalScope) {
+    throw new Error("writeback job adds principal scope not present in the reviewed capability");
+  }
   if (options.cloudApproved) {
     const leasedContract = "contract" in job ? job.contract : undefined;
     if (!leasedContract?.digest) throw new Error("Cloud writeback job is missing its immutable contract digest");
@@ -5171,6 +5296,29 @@ export async function verifyLocalWritebackAuthority(
       }
       if (proposal.proposal_hash !== job.approval_id) {
         throw new Error("writeback approval/proposal digest does not match local proposal");
+      }
+      const proposalPrincipalScope = proposal.change_set.guards.principal_scope;
+      if (reviewedPrincipalColumn) {
+        if (!proposalPrincipalScope || proposalPrincipalScope.column !== reviewedPrincipalColumn || proposalPrincipalScope.value === undefined) {
+          throw new Error("local proposal is missing its immutable principal scope");
+        }
+        if (!jobPrincipalScope || jobPrincipalScope.value_fingerprint !== proposalPrincipalScope.value_fingerprint
+          || jobPrincipalScope.binding !== proposalPrincipalScope.binding
+          || jobPrincipalScope.provider !== proposalPrincipalScope.provider) {
+          throw new Error("writeback principal scope does not match the immutable local proposal");
+        }
+        if (jobPrincipalScope.value !== undefined && jobPrincipalScope.value !== proposalPrincipalScope.value) {
+          throw new Error("writeback principal scope value does not match the immutable local proposal");
+        }
+        jobPrincipalScope.value = proposalPrincipalScope.value;
+        if (!options.cloudApproved && (proposalPrincipalScope.provider === "environment" || proposalPrincipalScope.provider === "static_dev")) {
+          const current = trustedCliContext(config, matching, process.env);
+          if (current.tenant_id !== proposal.tenant_id || current.principal !== String(proposalPrincipalScope.value)) {
+            throw new Error("current trusted tenant/principal cannot apply this proposal");
+          }
+        }
+      } else if (proposalPrincipalScope) {
+        throw new Error("local proposal carries principal scope outside the reviewed capability");
       }
       if (!options.cloudApproved) await verifyStoredApprovalAuthority(config, configPath, store, proposal, matching);
     } finally {
@@ -5238,6 +5386,7 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
   if (capability.target.table !== job.target.table) return false;
   if (capability.target.primary_key !== job.target.primary_key.column) return false;
   if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
+  if ((capability.target.principal_scope_key ?? undefined) !== (job.target.principal_scope?.column ?? undefined)) return false;
   const reviewedOperation = capability.operation?.kind ?? "update";
   if (job.protocol_version === protocolVersions.normalizedWritebackJobV4) {
     if (capability.reversibility?.mode !== "reviewed_inverse") return false;
@@ -5313,32 +5462,78 @@ async function start(args: string[] = []): Promise<number> {
   if (Boolean(configPath) !== Boolean(storePath)) throw new Error("Cloud worker mode requires both --config and --store");
   if (once && (!configPath || !storePath)) throw new Error("Cloud worker --once requires both --config and --store so local reviewed authority is rechecked");
   const config = loadConfig();
+  const cloudLinkedWorker = configPath && storePath
+    ? createCloudLinkedWorkerSync(configPath, storePath)
+    : undefined;
   if (once) {
     const reviewedConfigPath = configPath;
     const reviewedStorePath = storePath;
     if (!reviewedConfigPath || !reviewedStorePath) {
       throw new Error("Cloud worker --once requires both --config and --store so local reviewed authority is rechecked");
     }
-    const completed = await runOnce(
-      config,
-      adapters,
-      (job) => verifyLocalWritebackAuthority(job, reviewedConfigPath, reviewedStorePath, { cloudApproved: true }),
-    );
-    process.stdout.write(`Cloud worker completed ${completed} job(s).\n`);
-    return 0;
+    try {
+      await cloudLinkedWorker?.synchronizer.drainOnce();
+      const completed = await runOnce(
+        config,
+        adapters,
+        (job) => verifyLocalWritebackAuthority(job, reviewedConfigPath, reviewedStorePath, { cloudApproved: true }),
+        cloudLinkedWorker?.reportResult,
+      );
+      process.stdout.write(`Cloud worker completed ${completed} job(s).\n`);
+      return 0;
+    } finally {
+      await closeCloudLinkedWorkerSync(cloudLinkedWorker);
+    }
   }
   const controller = new AbortController();
   process.on("SIGINT", () => controller.abort());
   process.on("SIGTERM", () => controller.abort());
-  await startPolling(
-    config,
-    adapters,
-    controller.signal,
-    configPath && storePath
-      ? (job) => verifyLocalWritebackAuthority(job, configPath, storePath, { cloudApproved: true })
-      : undefined,
-  );
-  return 0;
+  cloudLinkedWorker?.synchronizer.start();
+  try {
+    await startPolling(
+      config,
+      adapters,
+      controller.signal,
+      configPath && storePath
+        ? (job) => verifyLocalWritebackAuthority(job, configPath, storePath, { cloudApproved: true })
+        : undefined,
+      cloudLinkedWorker?.reportResult,
+    );
+    return 0;
+  } finally {
+    await closeCloudLinkedWorkerSync(cloudLinkedWorker);
+  }
+}
+
+type CloudLinkedWorkerSync = {
+  runtimeConfig: RuntimeConfig;
+  store: ProposalRuntimeStore;
+  synchronizer: CloudLinkedSynchronizer;
+  reportResult: WritebackResultReporter;
+};
+
+function createCloudLinkedWorkerSync(configPath: string, storePath: string): CloudLinkedWorkerSync | undefined {
+  const runtimeConfig = loadRuntimeConfigFromFile(configPath);
+  if (runtimeConfig.governance?.mode !== "cloud_linked") return undefined;
+  const store = createDefaultRuntimeStore(runtimeConfig, process.env, storePath);
+  const synchronizer = new CloudLinkedSynchronizer(runtimeConfig, store, process.env);
+  const reportResult: WritebackResultReporter = async ({ job, result, leaseId }) => {
+    await enqueueCloudLinkedResult({
+      config: runtimeConfig,
+      store,
+      proposalId: job.proposal_id,
+      result,
+      leaseId,
+    });
+    await synchronizer.drainOnce();
+  };
+  return { runtimeConfig, store, synchronizer, reportResult };
+}
+
+async function closeCloudLinkedWorkerSync(sync: CloudLinkedWorkerSync | undefined): Promise<void> {
+  if (!sync) return;
+  await sync.synchronizer.stop();
+  await sync.store.close();
 }
 
 async function up(args: string[] = []): Promise<number> {
@@ -5590,8 +5785,74 @@ async function cloud(args: string[]): Promise<number> {
   if (subcommand === "sync") return cloudSync(rest);
   if (subcommand === "sync-activity") return cloudSyncActivity(rest);
   if (subcommand === "push") return cloudPush(rest);
+  if (subcommand === "outbox") return cloudOutbox(rest);
   usage();
   return 2;
+}
+
+async function cloudOutbox(args: string[]): Promise<number> {
+  const [action = "status", ...rest] = args;
+  const configPath = optionalArg(rest, "--config") ?? "synapsor.runner.json";
+  const storePath = optionalArg(rest, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const runtimeConfig = loadRuntimeConfigFromFile(configPath);
+  if (runtimeConfig.governance?.mode !== "cloud_linked") throw new Error("cloud outbox requires governance.mode cloud_linked");
+  const store = createDefaultRuntimeStore(runtimeConfig, process.env, storePath);
+  const synchronizer = new CloudLinkedSynchronizer(runtimeConfig, store, process.env);
+  try {
+    if (action === "status") {
+      const status = await synchronizer.status();
+      if (rest.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, ...status }, null, 2)}\n`);
+      else process.stdout.write([
+        "Synapsor Cloud outbox",
+        `Authority: ${status.authority_mode}`,
+        `Evidence residency: ${status.evidence_residency}`,
+        `Pending: ${status.pending}`,
+        `Leased: ${status.leased}`,
+        `Acknowledged: ${status.acknowledged}`,
+        `Dead letter: ${status.dead_letter}`,
+        `Reconciliation required: ${status.reconciliation_required}`,
+        status.last_reconciliation_error_code ? `Last reconciliation error: ${status.last_reconciliation_error_code}` : "",
+      ].filter(Boolean).join("\n") + "\n");
+      return 0;
+    }
+    if (action === "inspect") {
+      const requested = firstPositional(rest);
+      const entries = await store.listCloudOutbox?.({ limit: 10_000 }) ?? [];
+      const selected = requested === "latest" || !requested ? entries.at(-1) : entries.find((entry) => entry.event_id === requested);
+      if (!selected) throw new Error(`cloud outbox event not found: ${requested || "latest"}`);
+      const governance = selected.proposal_id ? await store.listCloudGovernanceEvents?.(selected.proposal_id) ?? [] : [];
+      const safe = { ok: true, outbox: selected, governance };
+      if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(safe, null, 2)}\n`);
+      else process.stdout.write(`Cloud outbox event: ${selected.event_id}\nStatus: ${selected.status}\nKind: ${selected.kind}\nAttempts: ${selected.attempts}/${selected.max_attempts}\nLast error: ${selected.last_error_code ?? "none"}\nGovernance events: ${governance.length}\n`);
+      return 0;
+    }
+    if (action === "reconcile") {
+      if (!rest.includes("--yes")) throw new Error("cloud outbox reconcile requires --yes after inspecting local and Cloud state");
+      const drained = await synchronizer.drainOnce();
+      const reconciled = await synchronizer.reconcileOnce();
+      const status = await synchronizer.status();
+      const result = { ok: true, drained, reconciled, status };
+      if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      else process.stdout.write(`Cloud outbox reconciliation complete.\nAcknowledged: ${drained.acknowledged}\nFailed: ${drained.failed}\nGovernance updates: ${reconciled.recorded}\n`);
+      return status.dead_letter || status.reconciliation_required ? 1 : 0;
+    }
+    if (action === "retry") {
+      const eventId = firstPositional(rest);
+      if (!eventId) throw new Error("cloud outbox retry requires <event-id>");
+      if (!rest.includes("--yes")) throw new Error("cloud outbox retry requires --yes after resolving the reported permanent cause");
+      if (!store.requeueCloudOutbox) throw new Error("configured runtime store does not support Cloud outbox repair");
+      const requeued = await store.requeueCloudOutbox(eventId);
+      const drained = await synchronizer.drainOnce();
+      const result = { ok: true, requeued, drained, status: await synchronizer.status() };
+      if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      else process.stdout.write(`Requeued ${eventId}.\nAcknowledged: ${drained.acknowledged}\nFailed: ${drained.failed}\n`);
+      return drained.failed ? 1 : 0;
+    }
+    throw new Error("cloud outbox supports status, inspect, reconcile, and retry");
+  } finally {
+    await synchronizer.stop();
+    await store.close();
+  }
 }
 
 type CloudConnectionFile = {
@@ -5643,6 +5904,27 @@ async function loadCloudConnection(configPath: string): Promise<{
   };
 }
 
+function stripPrincipalScopeFromCloudRows(changeSet: ChangeSet, column: string): void {
+  const stripRecord = (value: unknown): void => {
+    if (isRecord(value)) delete value[column];
+  };
+  stripRecord(changeSet.before);
+  stripRecord(changeSet.after);
+  if ("frozen_set" in changeSet && isRecord(changeSet.frozen_set) && Array.isArray(changeSet.frozen_set.members)) {
+    for (const member of changeSet.frozen_set.members) {
+      if (!isRecord(member)) continue;
+      stripRecord(member.before);
+      stripRecord(member.after);
+    }
+  }
+  if (changeSet.schema_version === protocolVersions.compensationChangeSet) {
+    for (const member of changeSet.compensation.descriptor.members) {
+      stripRecord(member.expected_state);
+      stripRecord(member.restore_values);
+    }
+  }
+}
+
 async function cloudSync(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.cloud.json";
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
@@ -5678,6 +5960,11 @@ async function cloudSync(args: string[]): Promise<number> {
       const queryAudit = store.listQueryAudit({ proposal: proposal.proposal_id, limit: 100 });
       const sanitizedChangeSet = JSON.parse(JSON.stringify(proposal.change_set)) as ChangeSet;
       sanitizedChangeSet.evidence.items = [];
+      if (sanitizedChangeSet.guards.principal_scope) {
+        stripPrincipalScopeFromCloudRows(sanitizedChangeSet, sanitizedChangeSet.guards.principal_scope.column);
+        sanitizedChangeSet.principal.id = sanitizedChangeSet.guards.principal_scope.value_fingerprint;
+        delete sanitizedChangeSet.guards.principal_scope.value;
+      }
       const payload: RunnerProposalV1 = {
         schema_version: protocolVersions.runnerProposal,
         runner_id: connection.runnerId,
@@ -5742,6 +6029,7 @@ async function cloudSyncActivity(args: string[]): Promise<number> {
     const evidence = store.listEvidenceBundles({ proposal: proposal.proposal_id, limit: 100 });
     const queryAudit = store.listQueryAudit({ proposal: proposal.proposal_id, limit: 100 });
     const replay = store.replay(proposal.proposal_id);
+    const principalScope = proposal.change_set.guards.principal_scope;
     const common = {
       schema_version: protocolVersions.runnerActivity,
       runner_id: connection.runnerId,
@@ -5749,7 +6037,7 @@ async function cloudSyncActivity(args: string[]): Promise<number> {
       proposal_id: proposal.proposal_id,
       capability: proposal.action,
       tenant_id: proposal.tenant_id,
-      principal: proposal.principal,
+      principal: principalScope?.value_fingerprint ?? proposal.principal,
       business_object: proposal.business_object,
       object_id: proposal.object_id,
       status: proposal.state,
@@ -5845,20 +6133,50 @@ async function cloudPush(args: string[]): Promise<number> {
     return 0;
   }
   const apiUrl = (optionalArg(args, "--api-url") ?? process.env.SYNAPSOR_CLOUD_BASE_URL ?? "").trim();
-  const token = (optionalArg(args, "--token") ?? process.env.SYNAPSOR_CLOUD_TOKEN ?? process.env.SYNAPSOR_RUNNER_TOKEN ?? "").trim();
+  if (args.includes("--token")) {
+    throw new Error("cloud push does not accept secrets through --token. Set SYNAPSOR_API_KEY for automation or SYNAPSOR_CLOUD_ACCESS_TOKEN for an authenticated human session.");
+  }
+  const apiKey = (process.env.SYNAPSOR_API_KEY ?? "").trim();
+  const humanAccessToken = (process.env.SYNAPSOR_CLOUD_ACCESS_TOKEN ?? "").trim();
+  const credential = apiKey || humanAccessToken;
   if (!workspace) {
     throw new Error("cloud push upload requires --workspace <project_id> or SYNAPSOR_CLOUD_WORKSPACE/SYNAPSOR_WORKSPACE_ID/SYNAPSOR_PROJECT_ID.");
   }
-  if (!apiUrl || !token) {
-    throw new Error("cloud push upload requires --api-url plus --token/SYNAPSOR_CLOUD_TOKEN. Use --dry-run for local validation without a network call.");
+  if (!apiUrl || !credential) {
+    throw new Error("cloud push upload requires --api-url/SYNAPSOR_CLOUD_BASE_URL plus SYNAPSOR_API_KEY or SYNAPSOR_CLOUD_ACCESS_TOKEN. Use --dry-run for local validation without a network call.");
   }
-  const response = await postCloudContractPush({
-    apiUrl,
-    token,
-    workspace,
-    payload,
-    idempotencyKey,
-  });
+  let response: Record<string, unknown>;
+  try {
+    response = await new CloudControlClient({
+      baseUrl: apiUrl,
+      credential,
+      credentialKind: apiKey ? "service" : "human",
+      userAgent: "synapsor-runner-cloud-push",
+    }).pushContract({
+      projectId: workspace,
+      contract: contract as unknown as Record<string, unknown>,
+      name,
+      description,
+      source: "runner",
+      sourceVersions: payload.source_versions,
+      activate: args.includes("--activate"),
+      idempotencyKey,
+    });
+  } catch (error) {
+    if (error instanceof CloudControlError) {
+      const request = error.request_id ? ` Request: ${error.request_id}.` : "";
+      const issues = Array.isArray(error.details?.errors)
+        ? error.details.errors.slice(0, 3).map((issue) => isRecord(issue)
+          ? `${String(issue.path || "$")} ${String(issue.code || "validation_error")}: ${String(issue.message || "")}`
+          : String(issue)).join("; ")
+        : "";
+      if (error.status === 422 && issues) {
+        throw new Error(`Cloud rejected the contract: ${issues}.${request}`);
+      }
+      throw new Error(`cloud push upload failed: ${error.message} (${error.error_code}).${issues ? ` ${issues}` : ""}${request}`);
+    }
+    throw error;
+  }
   if (json) {
     process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
     return 0;
@@ -5891,88 +6209,6 @@ function contractSummary(contract: SynapsorContract): Record<string, number> {
     approval_policies: contract.policies?.filter((policy) => policy.kind === "approval").length ?? 0,
     kept_out_fields: keptOutFields.size,
   };
-}
-
-async function postCloudContractPush(input: {
-  apiUrl: string;
-  token: string;
-  workspace: string;
-  payload: Record<string, unknown>;
-  idempotencyKey?: string;
-}): Promise<Record<string, unknown>> {
-  let endpoint: URL;
-  try {
-    endpoint = new URL(`/v1/control/projects/${encodeURIComponent(input.workspace)}/agent-contracts`, input.apiUrl.endsWith("/") ? input.apiUrl : `${input.apiUrl}/`);
-  } catch {
-    throw new Error("cloud push upload failed: --api-url/SYNAPSOR_CLOUD_BASE_URL is not a valid URL.");
-  }
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    authorization: `Bearer ${input.token}`,
-    "content-type": "application/json",
-    "user-agent": "synapsor-runner-cloud-push",
-  };
-  if (input.idempotencyKey) headers["idempotency-key"] = input.idempotencyKey;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(input.payload),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    const reason = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError") ? "request timed out" : "network request failed";
-    throw new Error(`cloud push upload failed: ${reason}. Check --api-url/SYNAPSOR_CLOUD_BASE_URL and network connectivity.`);
-  } finally {
-    clearTimeout(timeout);
-  }
-  const text = await response.text();
-  const body = parseCloudResponseJson(text);
-  if (!response.ok || body.ok === false) {
-    throw new Error(cloudPushErrorMessage(response.status, body));
-  }
-  return body;
-}
-
-function parseCloudResponseJson(text: string): Record<string, unknown> {
-  if (!text.trim()) return {};
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    return isRecord(parsed) ? parsed : { value: parsed };
-  } catch {
-    return { raw: text.slice(0, 500) };
-  }
-}
-
-function cloudPushErrorMessage(status: number, body: Record<string, unknown>): string {
-  const code = typeof body.error === "string" && body.error ? body.error : `http_${status}`;
-  const detail = cloudValidationDetail(body);
-  if (status === 401) return `cloud push upload failed: token is missing, invalid, or expired (${code}).`;
-  if (status === 403) return `cloud push upload failed: token does not have permission to write this workspace (${code}).`;
-  if (status === 404) return `cloud push upload failed: Cloud API URL or workspace was not found (${code}).`;
-  if (status === 409) return `cloud push upload failed: registry conflict (${code}).${detail}`;
-  if (status === 422) return `cloud push upload failed: Cloud rejected the contract (${code}).${detail}`;
-  if (status >= 500) return `cloud push upload failed: Cloud returned HTTP ${status} (${code}).`;
-  return `cloud push upload failed: Cloud returned HTTP ${status} (${code}).${detail}`;
-}
-
-function cloudValidationDetail(body: Record<string, unknown>): string {
-  const errors = Array.isArray(body.errors) ? body.errors : [];
-  if (!errors.length) {
-    const message = typeof body.message === "string" ? body.message : "";
-    return message ? ` ${message}` : "";
-  }
-  const rendered = errors.slice(0, 3).map((issue) => {
-    if (!isRecord(issue)) return String(issue);
-    const path = typeof issue.path === "string" ? issue.path : "$";
-    const code = typeof issue.code === "string" ? issue.code : "validation_error";
-    const message = typeof issue.message === "string" ? issue.message : "";
-    return `${path} ${code}${message ? `: ${message}` : ""}`;
-  }).join("; ");
-  return ` ${rendered}`;
 }
 
 function cloudStringField(value: unknown, key: string): string {
@@ -7760,6 +7996,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   capabilityDetails: ToolPreviewCapabilityDetail[];
+  governance: LocalDoctorGovernance;
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
@@ -7778,6 +8015,11 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
     const approvalPolicies = approvalPolicySummaries(parsed);
     const capabilityDetails = toolPreviewCapabilityDetails(parsed);
+    const cloudSync = await runtime.cloudSyncStatus();
+    const governance: LocalDoctorGovernance = {
+      ...cloudSync,
+      queue_when_unavailable: parsed.governance?.mode === "cloud_linked" && parsed.governance.queue_when_unavailable !== false,
+    };
     const graduatedTrust = {
       enabled: parsed.graduated_trust?.enabled === true,
       kill_switch: parsed.graduated_trust?.kill_switch === true,
@@ -7797,7 +8039,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, graduatedTrust, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, governance, graduatedTrust, checks };
   } finally {
     await runtime.close();
   }
@@ -7826,6 +8068,7 @@ function formatToolsPreview(input: {
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   capabilityDetails: ToolPreviewCapabilityDetail[];
+  governance: LocalDoctorGovernance;
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
@@ -7837,6 +8080,11 @@ function formatToolsPreview(input: {
     `Config: ${input.configPath}`,
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
+    `Governance authority: ${input.governance.authority_mode}`,
+    `Evidence residency: ${input.governance.evidence_residency}`,
+    ...(input.governance.authority_mode === "cloud_linked"
+      ? [`Queue proposals while Cloud is unavailable: ${input.governance.queue_when_unavailable ? "yes" : "no"}`]
+      : []),
     `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
     `graduated trust: ${input.graduatedTrust.enabled ? input.graduatedTrust.kill_switch ? "enabled, kill switch active" : `enabled (${input.graduatedTrust.criteria} reviewed criteria)` : "disabled"}; operator-only, never MCP-facing`,
     ...formatApprovalPolicyPreview(input.approvalPolicies),
@@ -7869,6 +8117,7 @@ type ToolPreviewCapabilityDetail = {
   cardinality?: "single" | "set";
   target: string;
   tenant_source: string;
+  principal_source?: string;
   writable_columns: string[];
   dedup_columns: string[];
   fixed_selection: string[];
@@ -7897,6 +8146,9 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
       tenant_source: capability.target.single_tenant_dev
         ? "explicit single-tenant development acknowledgement"
         : `${capability.target.tenant_key ?? "missing tenant key"} from trusted ${context?.provider ?? "context"}`,
+      ...(capability.target.principal_scope_key ? {
+        principal_source: `${capability.target.principal_scope_key} from required trusted ${context?.provider ?? "context"} binding ${context?.principal_binding ?? "principal"}`,
+      } : {}),
       writable_columns: capability.allowed_columns ?? [],
       dedup_columns: capability.operation?.deduplication?.components.map((component) => component.column) ?? [],
       fixed_selection: (capability.operation?.selection?.all ?? capability.aggregate?.selection?.all)?.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`) ?? [],
@@ -7933,6 +8185,7 @@ function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail
       ? `    target: ${detail.target}; output: one ${detail.aggregate} scalar; minimum group size: ${detail.minimum_group_size}`
       : `    target: ${detail.target}; max rows: ${detail.max_rows}`,
     `    tenant: ${detail.tenant_source}`,
+    ...(detail.principal_source ? [`    principal row lock: ${detail.principal_source} (AND tenant)`] : []),
     ...(detail.kind === "aggregate_read" ? [
       `    fixed selection: ${detail.fixed_selection.join(" AND ") || "tenant scope only"}`,
       "    privacy: member rows and identities are never returned or stored as evidence items",
@@ -9197,6 +9450,7 @@ async function proposalsApprove(args: string[]): Promise<number> {
   const storePath = localStorePath(args);
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
   const config = await optionalRuntimeConfig(configPath);
+  assertLocalGovernanceMutationAllowed(config, "proposals approve");
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `proposals approve ${proposalId}`, (bridgeStorePath) => proposalsApprove(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
@@ -9254,6 +9508,7 @@ async function proposalsReject(args: string[]): Promise<number> {
   const storePath = localStorePath(args);
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
   const config = await optionalRuntimeConfig(configPath);
+  assertLocalGovernanceMutationAllowed(config, "proposals reject");
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `proposals reject ${proposalId}`, (bridgeStorePath) => proposalsReject(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
@@ -10129,6 +10384,11 @@ function assertNoRuntimeStoreForLocalMutation(config: RuntimeConfig | undefined,
   if (config?.storage?.shared_postgres?.mode !== "runtime_store") return;
   if (args.includes(runtimeStoreBridgeFlag)) return;
   throw new Error(`${command} cannot run directly against the local SQLite path when storage.shared_postgres.mode=runtime_store. Use the built-in runtime-store bridge or switch to local SQLite/mirror mode.`);
+}
+
+function assertLocalGovernanceMutationAllowed(config: RuntimeConfig | undefined, command: string): void {
+  if (config?.governance?.mode !== "cloud_linked") return;
+  throw new Error(`${command} is disabled for cloud_linked governance. Record human decisions through Synapsor Cloud; only a Cloud-approved leased job may reach the trusted Runner writeback path.`);
 }
 
 function runtimeStoreBridgeRequired(args: string[], config: RuntimeConfig | undefined): boolean {

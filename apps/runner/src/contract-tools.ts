@@ -56,6 +56,15 @@ export type ContractExplanation = {
     source?: string;
     target: string;
     trusted_scope: string[];
+    row_scope?: {
+      tenant_column?: string;
+      tenant_binding?: string;
+      principal_column?: string;
+      principal_binding?: string;
+      principal_provider?: string;
+      principal_required?: boolean;
+      effective_predicate: string;
+    };
     arguments: Array<Record<string, unknown>>;
     lookup?: string;
     fixed_selection?: string[];
@@ -157,6 +166,18 @@ export function lintContract(
       add({ code: "KEPT_OUT_REVIEW_NOT_RECORDED", severity: "warning", path: `${base}.kept_out_fields`, message: `${capability.name} does not record an explicit kept-out field review; lint cannot infer which columns are sensitive.` });
     }
     if (capability.evidence?.required !== true) add({ code: "EVIDENCE_NOT_REQUIRED", severity: "warning", path: `${base}.evidence.required`, message: `${capability.name} does not require evidence.` });
+    if (!capability.subject.principal_scope_key) {
+      const possibleOwnerFields = [...new Set([...capability.visible_fields, ...(capability.kept_out_fields ?? [])])]
+        .filter((field) => /^(?:assigned_to|assignee_id|owner_id|principal_id|user_id|case_manager_id)$/i.test(field));
+      if (possibleOwnerFields.length > 0) {
+        add({
+          code: "PRINCIPAL_SCOPE_REVIEW_RECOMMENDED",
+          severity: "info",
+          path: `${base}.subject.principal_scope_key`,
+          message: `${capability.name} includes ${possibleOwnerFields.join(", ")}, which may represent row ownership. Review whether PRINCIPAL SCOPE KEY is appropriate; this is only a naming heuristic and is not data classification.`,
+        });
+      }
+    }
     for (const [argName, arg] of Object.entries(capability.args)) lintArgument(add, `${base}.args.${argName}`, argName, arg);
 
     if (options.runnerConfig && capability.source && !configSources.has(capability.source)) {
@@ -218,6 +239,14 @@ function explainContext(context: AgentContextSpec): ContractExplanation["context
 function explainCapability(capability: CapabilitySpec, context?: AgentContextSpec): ContractExplanation["capabilities"][number] {
   const proposal = capability.proposal;
   const selection = (proposal?.operation?.selection ?? capability.aggregate?.selection)?.all.map((term) => `${term.column} = ${scalarText(term.value)}`);
+  const principalBinding = context?.bindings.find((binding) => binding.name === context.principal_binding);
+  const tenantColumn = capability.subject.tenant_key;
+  const principalColumn = capability.subject.principal_scope_key;
+  const effectivePredicate = [
+    ...(tenantColumn ? [`${tenantColumn} = <trusted tenant>`] : []),
+    ...(principalColumn ? [`${principalColumn} = <trusted principal>`] : []),
+    ...((proposal?.operation?.selection ?? capability.aggregate?.selection)?.all.map((term) => `${term.column} ${term.operator} <reviewed value>`) ?? []),
+  ].join(" AND ") || "no row predicate declared";
   return {
     name: capability.name,
     ...(capability.description ? { description: capability.description } : {}),
@@ -228,8 +257,18 @@ function explainCapability(capability: CapabilitySpec, context?: AgentContextSpe
     target: capability.subject.resource ?? ([capability.subject.schema, capability.subject.table].filter(Boolean).join(".") || "unresolved target"),
     trusted_scope: [
       ...(context?.tenant_binding ? [`tenant from context binding ${context.tenant_binding}`] : capability.subject.single_tenant_dev ? ["single-tenant development scope"] : ["no tenant binding declared"]),
-      ...(context?.principal_binding ? [`principal from context binding ${context.principal_binding}`] : ["no principal binding declared"]),
+      ...(principalColumn && context?.principal_binding
+        ? [`principal row lock ${principalColumn} from required ${principalBinding?.source ?? "trusted"} binding ${context.principal_binding}`]
+        : context?.principal_binding ? [`principal identity from context binding ${context.principal_binding}; no principal row lock declared`] : ["no principal binding declared"]),
     ],
+    ...((tenantColumn || principalColumn) ? { row_scope: {
+      ...(tenantColumn ? { tenant_column: tenantColumn } : {}),
+      ...(context?.tenant_binding ? { tenant_binding: context.tenant_binding } : {}),
+      ...(principalColumn ? { principal_column: principalColumn } : {}),
+      ...(context?.principal_binding ? { principal_binding: context.principal_binding } : {}),
+      ...(principalBinding ? { principal_provider: principalBinding.source, principal_required: principalBinding.required === true } : {}),
+      effective_predicate: effectivePredicate,
+    } } : {}),
     arguments: Object.entries(capability.args).map(([name, arg]) => explainArgument(name, arg)),
     ...(capability.lookup ? { lookup: `${capability.subject.primary_key ?? "primary key"} from argument ${capability.lookup.id_from_arg}` } : {}),
     ...(selection?.length ? { fixed_selection: selection } : {}),
@@ -310,6 +349,11 @@ function formatExplanationMarkdown(explanation: ContractExplanation): string {
     lines.push(`### ${capability.name}`, "", capability.description ?? "No capability description was provided.", "");
     lines.push(`- Kind: ${capability.kind}`, `- Target: \`${capability.target}\``, `- Context: \`${capability.context}\``);
     for (const scope of capability.trusted_scope) lines.push(`- Trusted scope: ${scope}`);
+    if (capability.row_scope) {
+      if (capability.row_scope.tenant_column) lines.push(`- Tenant row lock: \`${capability.row_scope.tenant_column}\` from binding \`${capability.row_scope.tenant_binding ?? "not declared"}\``);
+      if (capability.row_scope.principal_column) lines.push(`- Principal row lock: \`${capability.row_scope.principal_column}\` from ${capability.row_scope.principal_required ? "required " : ""}${capability.row_scope.principal_provider ?? "trusted"} binding \`${capability.row_scope.principal_binding ?? "not declared"}\``);
+      lines.push(`- Effective row predicate: \`${capability.row_scope.effective_predicate}\``);
+    }
     lines.push(`- Visible fields: ${capability.visible_fields.map((field) => `\`${field}\``).join(", ") || "none"}`);
     lines.push(`- Kept out: ${capability.kept_out_fields.map((field) => `\`${field}\``).join(", ") || "no explicit list"}`);
     lines.push(`- Evidence: ${capability.evidence}`);

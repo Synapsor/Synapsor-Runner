@@ -84,10 +84,13 @@ synapsor-runner contract bundle ./synapsor.contract.json --out ./synapsor-runner
 synapsor-runner cloud push ./synapsor.contract.json --dry-run
 synapsor-runner cloud push ./synapsor.contract.json \
   --api-url "$SYNAPSOR_CLOUD_BASE_URL" \
-  --token "$SYNAPSOR_CLOUD_TOKEN" \
   --workspace "$SYNAPSOR_PROJECT_ID" \
   --name billing-late-fee
 ```
+
+Set `SYNAPSOR_API_KEY` for scoped CI automation or
+`SYNAPSOR_CLOUD_ACCESS_TOKEN` for a signed-in human. Secrets are not accepted
+as command-line flags.
 
 Reference the generated contract from local runner wiring:
 
@@ -317,6 +320,45 @@ Bad:
 ```
 
 Runner rejects model-facing trust-scope arguments.
+
+### Same-Tenant Principal Row Scope
+
+Tenant scope separates organizations. When multiple authenticated users share
+one tenant but should see only rows assigned to them, add a second reviewed
+lock:
+
+```sql
+CREATE AGENT CONTEXT care_session
+  BIND hospital_id FROM HTTP_CLAIM hospital_id REQUIRED
+  BIND principal FROM HTTP_CLAIM sub REQUIRED
+  TENANT BINDING hospital_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY care.inspect_assigned_patient
+  USING CONTEXT care_session
+  SOURCE local_postgres
+  ON public.patients
+  PRIMARY KEY id
+  TENANT KEY hospital_id
+  PRINCIPAL SCOPE KEY assigned_to
+  LOOKUP patient_id BY id
+  ARG patient_id STRING REQUIRED MAX LENGTH 128
+  ALLOW READ id, hospital_id, display_name, care_status, updated_at
+  KEEP OUT assigned_to, diagnosis_notes
+  REQUIRE EVIDENCE
+  MAX ROWS 1
+END
+```
+
+Runner generates one parameterized predicate containing both locks. It also
+forces the scope column on reviewed inserts and preserves it through proposals,
+writeback jobs, receipts, replay, and compensation. A same-tenant row assigned
+to another principal has the same public not-found result as an absent or
+cross-tenant row. The scope column may remain kept out of model-visible data.
+Use a separately reviewed tenant-wide capability for supervisors; there is no
+runtime bypass flag. Database RLS and least-privilege roles remain recommended
+defense in depth.
 
 ## Direct SQL Writeback
 

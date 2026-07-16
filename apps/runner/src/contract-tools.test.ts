@@ -79,4 +79,28 @@ describe("contract review tooling", () => {
     expect(markdown).toContain("Minimum group size: 5");
     expect(markdown).toContain("no member rows or identities");
   });
+
+  it("explains a tenant-additive principal row lock and flags owner-like fields only as an advisory", async () => {
+    const loaded = await loadReviewedContract(fixture);
+    const capability = loaded.contract.capabilities[0]!;
+    capability.subject.principal_scope_key = "assigned_to";
+    capability.visible_fields.push("assigned_to");
+    const explanation = explainContract(loaded.contract);
+    expect(explanation.capabilities[0]?.row_scope).toEqual(expect.objectContaining({
+      tenant_column: "tenant_id",
+      principal_column: "assigned_to",
+      principal_binding: "principal",
+      principal_required: true,
+      effective_predicate: expect.stringContaining("tenant_id = <trusted tenant> AND assigned_to = <trusted principal>"),
+    }));
+    expect(formatContractExplanation(explanation, "markdown")).toContain("Principal row lock: `assigned_to`");
+
+    delete capability.subject.principal_scope_key;
+    const lint = lintContract(loaded.contract);
+    expect(lint.issues).toContainEqual(expect.objectContaining({
+      code: "PRINCIPAL_SCOPE_REVIEW_RECOMMENDED",
+      severity: "info",
+    }));
+    expect(lint.issues.find((issue) => issue.code === "PRINCIPAL_SCOPE_REVIEW_RECOMMENDED")?.message).toContain("not data classification");
+  });
 });

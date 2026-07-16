@@ -32,6 +32,7 @@ Current fixture groups:
 - `numeric-bounds`
 - `bounded-set-threats`
 - `reversible-change-sets`
+- `principal-row-scope`
 
 The fixture set is intentionally small in 0.1. It covers the runner-supported
 semantic surface first: trusted context, scoped reads, evidence handles,
@@ -54,6 +55,10 @@ compensation proposal, not rollback: apply-time receipts capture only
 allowlisted inverse data, compensation uses fresh guards and exact members,
 ambiguous outcomes fail closed pending reconciliation, and hard delete reports
 a specific best-effort-unavailable reason.
+The principal-row-scope fixture proves that a reviewed owner/assignee column is
+bound to a required trusted principal and AND-composed with tenant scope. Run
+`corepack pnpm test:principal-scope` for the live Postgres/MySQL proof covering
+same-tenant denial and shared-ledger evidence-handle isolation.
 
 Additional 0.1 parity coverage currently lives in tests and verification
 scripts rather than separate `cloud-push/` or `dsl-json-parity/` conformance
@@ -81,6 +86,7 @@ Run:
 corepack pnpm --filter @synapsor-runner/mcp-server test
 corepack pnpm test:contract-conformance
 corepack pnpm test:aggregate-read
+corepack pnpm test:principal-scope
 ```
 
 The spec package also validates every conformance contract:

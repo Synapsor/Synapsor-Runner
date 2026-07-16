@@ -23,7 +23,7 @@ if (!flag("SYNAPSOR_HOSTED_E2E") || !flag("SYNAPSOR_E2E_DISPOSABLE_PROJECT")) {
 
 const required = [
   "SYNAPSOR_CLOUD_BASE_URL",
-  "SYNAPSOR_CLOUD_ADMIN_TOKEN",
+  "SYNAPSOR_CLOUD_ACCESS_TOKEN",
   "SYNAPSOR_PROJECT_ID",
   "SYNAPSOR_SOURCE_ID",
   "SYNAPSOR_E2E_CONTRACT_PATH",
@@ -50,7 +50,7 @@ if (missing.length) {
 }
 
 const baseUrl = env("SYNAPSOR_CLOUD_BASE_URL").replace(/\/+$/, "");
-const adminToken = env("SYNAPSOR_CLOUD_ADMIN_TOKEN");
+const humanAccessToken = env("SYNAPSOR_CLOUD_ACCESS_TOKEN");
 const projectId = env("SYNAPSOR_PROJECT_ID");
 const sourceId = env("SYNAPSOR_SOURCE_ID");
 const contractPath = path.resolve(env("SYNAPSOR_E2E_CONTRACT_PATH"));
@@ -62,6 +62,7 @@ if (!['postgres', 'mysql'].includes(engine)) throw new Error("SYNAPSOR_ENGINE mu
 
 const contract = JSON.parse(fs.readFileSync(contractPath, "utf8"));
 const packageSpec = process.env.SYNAPSOR_RUNNER_PACKAGE_SPEC || "@synapsor/runner";
+const cliPackageSpec = process.env.SYNAPSOR_CLI_PACKAGE_SPEC || "@synapsor/cli";
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-hosted-control-plane-"));
 const installDir = path.join(tempDir, "install");
 const bundleDir = path.join(tempDir, "bundle");
@@ -73,10 +74,20 @@ fs.mkdirSync(bundleDir, { recursive: true });
 let runnerToken = "";
 let tokenId = "";
 let runnerBin = "";
+let cliBin = "";
+let serviceApiKey = "";
+let serviceApiKeyId = "";
+let humanCliEnv = {};
+let serviceCliEnv = {};
 const runnerTokens = [];
 const summary = {
   protocol: false,
+  packed_cli: cliPackageSpec,
   packed_runner: packageSpec,
+  human_whoami: false,
+  service_api_key: false,
+  service_api_key_revoked: false,
+  cloud_push_parity: false,
   contract: false,
   bundle: false,
   token_rotated: false,
@@ -107,45 +118,83 @@ try {
   summary.protocol = true;
 
   run("npm", ["init", "-y"], { cwd: installDir, capture: true });
-  run("npm", ["install", "--no-audit", "--no-fund", packageSpec], { cwd: installDir, capture: true });
+  run("npm", ["install", "--no-audit", "--no-fund", packageSpec, cliPackageSpec], { cwd: installDir, capture: true });
   runnerBin = path.join(installDir, "node_modules", ".bin", "synapsor-runner");
+  cliBin = path.join(installDir, "node_modules", ".bin", "synapsor");
   assert(fs.existsSync(runnerBin), "packed/published Runner binary was not installed");
+  assert(fs.existsSync(cliBin), "packed/published Cloud CLI binary was not installed");
   run(runnerBin, ["contract", "validate", contractPath], { capture: true });
+  humanCliEnv = {
+    ...process.env,
+    SYNAPSOR_CONFIG_HOME: path.join(tempDir, "human-cli-config"),
+    SYNAPSOR_CLOUD_BASE_URL: baseUrl,
+    SYNAPSOR_CLOUD_ACCESS_TOKEN: humanAccessToken,
+    SYNAPSOR_API_KEY: "",
+  };
+  const whoami = runJson(cliBin, ["auth", "whoami", "--project", projectId, "--api-url", baseUrl, "--json"], { cwd: installDir, env: humanCliEnv });
+  assert(whoami.ok === true && whoami.credential_kind === "human", "packed Cloud CLI did not authenticate the human session");
+  summary.human_whoami = true;
 
-  const pushed = await controlJson(`/v1/control/projects/${encodeURIComponent(projectId)}/agent-contracts`, {
-    method: "POST",
-    body: {
-      schema_version: "synapsor.cloud-contract-push.v0.1",
-      contract,
-      workspace: projectId,
-      name: String(contract?.metadata?.name || "hosted-runner-e2e"),
-      source: "hosted-e2e",
-      source_versions: { "@synapsor/runner": "packed-e2e" },
-      activate: true,
-      idempotency_key: `hosted-e2e-${digest(contract).slice(7, 23)}`,
-      pushed_at: new Date().toISOString(),
-    },
-  });
+  const serviceKeyFile = path.join(tempDir, "contract-ci.key");
+  const serviceKeyCreated = runJson(cliBin, [
+    "api-keys", "create", "--project", projectId, "--api-url", baseUrl,
+    "--name", "hosted-e2e-contract-ci",
+    "--scopes", "project:read,contracts:read,contracts:write,contracts:activate,runners:read,proposals:read,activity:read,exports:read",
+    "--expires-at", new Date(Date.now() + 3_600_000).toISOString(), "--secret-file", serviceKeyFile,
+    "--idempotency-key", `hosted-e2e-key-${Date.now()}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
+  serviceApiKey = fs.readFileSync(serviceKeyFile, "utf8").trim();
+  serviceApiKeyId = String(serviceKeyCreated.api_key?.key_id || "");
+  assert(serviceApiKey && serviceApiKeyId, "packed Cloud CLI did not create a scoped service API key");
+  serviceCliEnv = {
+    ...process.env,
+    SYNAPSOR_CONFIG_HOME: path.join(tempDir, "service-cli-config"),
+    SYNAPSOR_CLOUD_BASE_URL: baseUrl,
+    SYNAPSOR_API_KEY: serviceApiKey,
+    SYNAPSOR_CLOUD_ACCESS_TOKEN: "",
+  };
+  runJson(cliBin, [
+    "auth", "configure-service", "--profile", "ci", "--api-url", baseUrl,
+    "--project", projectId, "--credential-env", "SYNAPSOR_API_KEY", "--json",
+  ], { cwd: installDir, env: serviceCliEnv });
+  const serviceWhoami = runJson(cliBin, ["auth", "whoami", "--profile", "ci", "--json"], { cwd: installDir, env: serviceCliEnv });
+  assert(serviceWhoami.ok === true && serviceWhoami.credential_kind === "service", "scoped service API key was not usable by the packed CLI");
+  summary.service_api_key = true;
+
+  const pushed = runJson(cliBin, [
+    "contracts", "push", contractPath, "--profile", "ci", "--project", projectId,
+    "--api-url", baseUrl, "--activate", "--idempotency-key", `hosted-e2e-${digest(contract).slice(7, 23)}`, "--json",
+  ], { cwd: installDir, env: serviceCliEnv });
   const contractId = String(pushed.contract_id || pushed.contract?.contract_id || "");
   const versionId = String(pushed.contract_version_id || pushed.version?.contract_version_id || "");
   const contractDigest = String(pushed.digest || pushed.version?.digest || "");
   assert(contractId && versionId && /^sha256:[0-9a-f]{64}$/i.test(contractDigest), "Cloud contract push did not return immutable identity");
   summary.contract = true;
 
-  const tokenResponse = await controlJson(`/v1/control/projects/${encodeURIComponent(projectId)}/runner-tokens`, {
-    method: "POST",
-    body: { name: "hosted-e2e disposable Runner", source_ids: [sourceId], ttl_seconds: 900 },
-  });
-  runnerToken = String(tokenResponse.runner_token || "");
+  const runnerPush = runJson(runnerBin, [
+    "cloud", "push", contractPath, "--api-url", baseUrl, "--workspace", projectId,
+    "--name", String(contract?.metadata?.name || "hosted-runner-e2e"), "--json",
+  ], { cwd: installDir, env: serviceCliEnv });
+  assert(runnerPush.digest === contractDigest && runnerPush.contract_version_id === versionId, "Runner and Cloud CLI contract push diverged");
+  summary.cloud_push_parity = true;
+
+  const runnerTokenFile = path.join(tempDir, "runner.token");
+  const tokenResponse = runJson(cliBin, [
+    "runners", "create", "--project", projectId, "--api-url", baseUrl,
+    "--name", "hosted-e2e disposable Runner", "--sources", sourceId,
+    "--secret-file", runnerTokenFile, "--idempotency-key", `hosted-e2e-runner-${Date.now()}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
+  runnerToken = fs.readFileSync(runnerTokenFile, "utf8").trim();
   tokenId = String(tokenResponse.token?.token_id || "");
   assert(runnerToken.startsWith("syn_run_") && tokenId, "Runner token creation failed");
   runnerTokens.push(runnerToken);
   const originalRunnerToken = runnerToken;
-  const rotatedTokenResponse = await controlJson(
-    `/v1/control/projects/${encodeURIComponent(projectId)}/runner-tokens/${encodeURIComponent(tokenId)}/rotate`,
-    { method: "POST", body: { name: "hosted-e2e rotated Runner", ttl_seconds: 900 } },
-  );
-  runnerToken = String(rotatedTokenResponse.runner_token || "");
+  const rotatedTokenFile = path.join(tempDir, "runner.rotated.token");
+  const rotatedTokenResponse = runJson(cliBin, [
+    "runners", "rotate-token", tokenId, "--project", projectId, "--api-url", baseUrl,
+    "--secret-file", rotatedTokenFile, "--idempotency-key", `hosted-e2e-runner-rotate-${Date.now()}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
+  runnerToken = fs.readFileSync(rotatedTokenFile, "utf8").trim();
   tokenId = String(rotatedTokenResponse.token?.token_id || "");
   assert(runnerToken.startsWith("syn_run_") && tokenId, "Runner token rotation did not return a replacement token");
   runnerTokens.push(runnerToken);
@@ -156,16 +205,16 @@ try {
   summary.token_rotated = true;
 
   const archivePath = path.join(tempDir, "runner-bundle.zip");
-  const bundleResponse = await controlFetch(
-    `/v1/control/projects/${encodeURIComponent(projectId)}/agent-contracts/${encodeURIComponent(contractId)}/versions/${encodeURIComponent(versionId)}/runner-bundle?download=1&source_id=${encodeURIComponent(sourceId)}`,
-  );
-  assert(bundleResponse.ok, `Runner bundle download failed with HTTP ${bundleResponse.status}`);
-  fs.writeFileSync(archivePath, Buffer.from(await bundleResponse.arrayBuffer()));
+  run(cliBin, [
+    "runners", "bundle", "download", `${contractId}/${versionId}`,
+    "--source", sourceId, "--out", archivePath, "--project", projectId,
+    "--api-url", baseUrl, "--json",
+  ], { cwd: installDir, env: humanCliEnv, capture: true });
   run("unzip", ["-q", archivePath, "-d", bundleDir], { capture: true });
   for (const expected of ["synapsor.contract.json", "synapsor.runner.json", "synapsor.cloud.json", ".env.example", "README.md", "mcp-client-examples"]) {
     assert(fs.existsSync(path.join(bundleDir, expected)), `Runner bundle is missing ${expected}`);
   }
-  assertBundleIsCredentialFree(bundleDir, [adminToken, ...runnerTokens, process.env.SYNAPSOR_DATABASE_READ_URL, process.env.SYNAPSOR_DATABASE_WRITE_URL]);
+  assertBundleIsCredentialFree(bundleDir, [humanAccessToken, serviceApiKey, ...runnerTokens, process.env.SYNAPSOR_DATABASE_READ_URL, process.env.SYNAPSOR_DATABASE_WRITE_URL]);
   const runnerConfig = JSON.parse(fs.readFileSync(path.join(bundleDir, "synapsor.runner.json"), "utf8"));
   const cloudConfig = JSON.parse(fs.readFileSync(path.join(bundleDir, "synapsor.cloud.json"), "utf8"));
   assert(cloudConfig.cloud?.source_id === sourceId && cloudConfig.cloud?.contract_digest === contractDigest, "Runner bundle identity mismatch");
@@ -232,7 +281,6 @@ try {
   assertJsonEqual(await sourceSnapshot(env("SYNAPSOR_E2E_SOURCE_CHECK_SQL")), before, "proposal mutated the source before approval");
   summary.proposal_source_unchanged = true;
 
-  run(runnerBin, ["cloud", "sync", toolRun.proposalId, "--config", "./synapsor.cloud.json", "--store", storePath], { cwd: bundleDir, env: runnerEnv, capture: true });
   const cloudProposal = await findCloudProposal(toolRun.proposalId);
   assert(cloudProposal.source_database_mutated === false, "Cloud proposal incorrectly reports pre-approval mutation");
   assert(cloudProposal.contract_digest === contractDigest, "Cloud proposal lost the reviewed contract digest");
@@ -241,7 +289,15 @@ try {
   assert(cloudProposal.evidence_metadata?.payload_uploaded === false, "Cloud proposal did not preserve safe evidence metadata policy");
   assert(cloudProposal.query_audit?.payload_uploaded === false, "Cloud proposal did not preserve safe query-audit metadata policy");
   summary.proposal_reviewed_metadata = true;
-  await controlJson(`/v1/control/external-writebacks/proposals/${encodeURIComponent(toolRun.proposalId)}/approve`, { method: "POST", body: { reason: "hosted synthetic E2E review" } });
+  const serviceApproval = await controlFetch(`/v1/control/external-writebacks/proposals/${encodeURIComponent(toolRun.proposalId)}/approve`, {
+    method: "POST",
+    body: { reason: "service keys must not approve", project_id: projectId },
+  });
+  assert(serviceApproval.status === 403, "scoped service API key was able to record a human proposal decision");
+  runJson(cliBin, [
+    "proposals", "approve", toolRun.proposalId, "--project", projectId, "--api-url", baseUrl,
+    "--reason", "hosted synthetic E2E review", "--yes", "--idempotency-key", `approve-${toolRun.proposalId}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
   summary.cloud_approval = true;
 
   const competingWorkers = await Promise.all([
@@ -258,21 +314,26 @@ try {
 
   const rejected = await createAndSyncProposal(runnerBin, bundleDir, storePath, runnerEnv, "SYNAPSOR_E2E_REJECT_PROPOSAL_INPUT_JSON");
   const beforeReject = await sourceSnapshot(env("SYNAPSOR_E2E_SOURCE_CHECK_SQL"));
-  await controlJson(`/v1/control/external-writebacks/proposals/${encodeURIComponent(rejected)}/reject`, { method: "POST", body: { reason: "hosted synthetic rejection" } });
+  runJson(cliBin, [
+    "proposals", "reject", rejected, "--project", projectId, "--api-url", baseUrl,
+    "--reason", "hosted synthetic rejection", "--yes", "--idempotency-key", `reject-${rejected}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
   assert(await runPackedWorkerOnce(runnerEnv) === 0, "rejected proposal created a claimable job");
   assertJsonEqual(await sourceSnapshot(env("SYNAPSOR_E2E_SOURCE_CHECK_SQL")), beforeReject, "rejected proposal mutated the source");
   summary.rejection_no_write = true;
 
   const stale = await createAndSyncProposal(runnerBin, bundleDir, storePath, runnerEnv, "SYNAPSOR_E2E_STALE_PROPOSAL_INPUT_JSON");
   await executeSourceSql(env("SYNAPSOR_E2E_STALE_MUTATION_SQL"));
-  await controlJson(`/v1/control/external-writebacks/proposals/${encodeURIComponent(stale)}/approve`, { method: "POST", body: { reason: "hosted synthetic stale-guard test" } });
+  runJson(cliBin, [
+    "proposals", "approve", stale, "--project", projectId, "--api-url", baseUrl,
+    "--reason", "hosted synthetic stale-guard test", "--yes", "--idempotency-key", `approve-${stale}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
   await runPackedWorkerOnce(runnerEnv);
   const staleCloud = await findCloudProposal(stale);
   assert(staleCloud.status === "conflict", "stale source state did not fail closed as a conflict");
   summary.stale_conflict = true;
 
-  run(runnerBin, ["cloud", "sync-activity", toolRun.proposalId, "--config", "./synapsor.cloud.json", "--store", storePath], { cwd: bundleDir, env: runnerEnv, capture: true });
-  const chronology = await controlJson(`/v1/control/projects/${encodeURIComponent(projectId)}/runner-activity/${encodeURIComponent(toolRun.proposalId)}`);
+  const chronology = await waitForChronology(toolRun.proposalId, ["proposal.submitted", "proposal.approved", "writeback.result", "evidence.recorded", "query_audit.recorded", "replay.recorded"]);
   const eventTypes = new Set((chronology.events || []).map((event) => event.event_type));
   assert(
     ["proposal.submitted", "proposal.approved", "writeback.result", "evidence.recorded", "query_audit.recorded", "replay.recorded"].every((name) => eventTypes.has(name)),
@@ -321,15 +382,15 @@ try {
   );
   const missingReasonPayload = await missingReason.json().catch(() => ({}));
   assert(missingReason.status === 400 && missingReasonPayload.error === "agent_contract_activation_reason_required", "risk-increasing activation did not require a human reason");
-  const activated = await controlJson(
-    `/v1/control/projects/${encodeURIComponent(projectId)}/agent-contracts/${encodeURIComponent(contractId)}/versions/${encodeURIComponent(stagedVersionId)}/activate`,
-    { method: "POST", body: { reason: "hosted synthetic semantic-diff review" } },
-  );
+  const activated = runJson(cliBin, [
+    "contracts", "activate", `${contractId}/${stagedVersionId}`, "--project", projectId, "--api-url", baseUrl,
+    "--reason", "hosted synthetic semantic-diff review", "--yes", "--idempotency-key", `activate-${stagedVersionId}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
   assert(activated.contract?.active_version_id === stagedVersionId, "reviewed contract version was not activated");
-  const rolledBack = await controlJson(
-    `/v1/control/projects/${encodeURIComponent(projectId)}/agent-contracts/${encodeURIComponent(contractId)}/versions/${encodeURIComponent(versionId)}/rollback`,
-    { method: "POST", body: { reason: "hosted synthetic rollback proof" } },
-  );
+  const rolledBack = runJson(cliBin, [
+    "contracts", "rollback", `${contractId}/${versionId}`, "--project", projectId, "--api-url", baseUrl,
+    "--reason", "hosted synthetic rollback proof", "--yes", "--idempotency-key", `rollback-${versionId}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
   assert(rolledBack.contract?.active_version_id === versionId, "contract rollback did not restore the original version");
   summary.contract_governance = true;
 
@@ -356,9 +417,13 @@ try {
   summary.token_revoked = true;
   summary.revoked_operations_blocked = true;
 
+  await revokeServiceApiKey();
+  summary.service_api_key_revoked = true;
+
   console.log(JSON.stringify(summary, null, 2));
 } finally {
   if (runnerToken && tokenId && !summary.token_revoked) await revokeToken().catch(() => undefined);
+  if (serviceApiKey && serviceApiKeyId && !summary.service_api_key_revoked) await revokeServiceApiKey().catch(() => undefined);
   if (!flag("SYNAPSOR_E2E_KEEP_TEMP")) fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
@@ -370,7 +435,6 @@ async function createAndSyncProposal(bin, cwd, localStore, runnerEnv, inputEnvNa
   const proposalId = proposalIdFromResult(result);
   assert(proposalId, `${inputEnvName} did not produce a proposal id`);
   assertSourceDatabaseUnchanged(result, `${proposalId} did not prove the source remained unchanged before approval`);
-  run(bin, ["cloud", "sync", proposalId, "--config", "./synapsor.cloud.json", "--store", localStore], { cwd, env: runnerEnv, capture: true });
   await findCloudProposal(proposalId);
   return proposalId;
 }
@@ -418,15 +482,40 @@ function bindBundleDatabaseEnvironment(target, config) {
 }
 
 async function findCloudProposal(proposalId) {
-  const response = await controlJson(`/v1/control/external-writebacks/proposals?project_id=${encodeURIComponent(projectId)}&source_id=${encodeURIComponent(sourceId)}&limit=100`);
-  const proposal = (response.proposals || []).find((item) => item.proposal_id === proposalId);
-  assert(proposal, `Cloud proposal ${proposalId} was not found in the scoped inbox`);
-  rejectForbiddenValues(proposal);
-  return proposal;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await controlJson(`/v1/control/external-writebacks/proposals?project_id=${encodeURIComponent(projectId)}&source_id=${encodeURIComponent(sourceId)}&limit=100`);
+    const proposal = (response.proposals || []).find((item) => item.proposal_id === proposalId);
+    if (proposal) {
+      rejectForbiddenValues(proposal);
+      return proposal;
+    }
+    await sleep(250);
+  }
+  throw new Error(`Cloud proposal ${proposalId} was not delivered by the durable outbox`);
+}
+
+async function waitForChronology(proposalId, requiredEvents) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const chronology = await controlJson(`/v1/control/projects/${encodeURIComponent(projectId)}/runner-activity/${encodeURIComponent(proposalId)}`);
+    const eventTypes = new Set((chronology.events || []).map((event) => event.event_type));
+    if (requiredEvents.every((event) => eventTypes.has(event))) return chronology;
+    await sleep(250);
+  }
+  throw new Error(`Cloud chronology ${proposalId} did not receive all automatic activity/result events`);
 }
 
 async function revokeToken() {
-  await controlJson(`/v1/control/projects/${encodeURIComponent(projectId)}/runner-tokens/${encodeURIComponent(tokenId)}/revoke`, { method: "POST", body: {} });
+  runJson(cliBin, [
+    "runners", "revoke-token", tokenId, "--project", projectId, "--api-url", baseUrl,
+    "--yes", "--idempotency-key", `revoke-runner-${tokenId}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
+}
+
+async function revokeServiceApiKey() {
+  runJson(cliBin, [
+    "api-keys", "revoke", serviceApiKeyId, "--project", projectId, "--api-url", baseUrl,
+    "--yes", "--idempotency-key", `revoke-service-${serviceApiKeyId}`, "--json",
+  ], { cwd: installDir, env: humanCliEnv });
 }
 
 async function runnerDoctor(token) {
@@ -507,7 +596,8 @@ async function controlFetch(route, init = {}) {
   return fetch(`${baseUrl}${route}`, {
     method: init.method || "GET",
     headers: {
-      Authorization: `Bearer ${adminToken}`,
+      Authorization: `Bearer ${serviceApiKey}`,
+      "X-Synapsor-Credential-Kind": "service",
       ...(init.body ? { "Content-Type": "application/json" } : {}),
     },
     ...(init.body ? { body: JSON.stringify(init.body) } : {}),
@@ -533,6 +623,19 @@ function run(command, args, options = {}) {
     throw new Error(`${path.basename(command)} failed with code ${result.status}: ${output.slice(0, 1200)}`);
   }
   return result;
+}
+
+function runJson(command, args, options = {}) {
+  const result = run(command, args, { ...options, capture: true });
+  const stdout = String(result.stdout || "").trim();
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    const start = stdout.indexOf("{");
+    const end = stdout.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(stdout.slice(start, end + 1));
+    throw new Error(`${path.basename(command)} did not emit JSON: ${redact(stdout).slice(0, 600)}`);
+  }
 }
 
 function spawnCapture(command, args, options = {}) {
@@ -572,7 +675,7 @@ function rejectForbiddenValues(value) {
   for (const item of forbidden) {
     if (typeof item === "string" && item && serialized.includes(item)) throw new Error("kept-out/cross-tenant fixture value appeared in a Cloud or MCP response");
   }
-  for (const secret of [adminToken, ...runnerTokens, process.env.SYNAPSOR_DATABASE_READ_URL, process.env.SYNAPSOR_DATABASE_WRITE_URL]) {
+  for (const secret of [humanAccessToken, serviceApiKey, ...runnerTokens, process.env.SYNAPSOR_DATABASE_READ_URL, process.env.SYNAPSOR_DATABASE_WRITE_URL]) {
     if (secret && serialized.includes(secret)) throw new Error("secret appeared in a response payload");
   }
 }
@@ -662,18 +765,23 @@ function assert(condition, message) {
 
 function redact(value) {
   let output = String(value || "");
-  for (const secret of [adminToken, ...runnerTokens, process.env.SYNAPSOR_DATABASE_READ_URL, process.env.SYNAPSOR_DATABASE_WRITE_URL]) {
+  for (const secret of [humanAccessToken, serviceApiKey, ...runnerTokens, process.env.SYNAPSOR_DATABASE_READ_URL, process.env.SYNAPSOR_DATABASE_WRITE_URL]) {
     if (secret) output = output.split(secret).join("<redacted>");
   }
   return output.replace(/Bearer\s+\S+/gi, "Bearer <redacted>").replace(/(?:postgres(?:ql)?|mysql):\/\/[^\s]+/gi, "<redacted-database-url>");
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function printHelp() {
   console.log(`Opt-in hosted OSS Runner <-> Synapsor Cloud release gate.
 
-This verifier installs a packed/published Runner in a clean temp directory and
-uses only a disposable project and synthetic Postgres/MySQL data. It pushes a
-contract, rotates a source-scoped token, downloads and inspects a bundle,
+This verifier installs packed/published Cloud CLI and Runner packages in a
+clean temp directory and uses only a disposable project and synthetic
+Postgres/MySQL data. It verifies human whoami, creates a scoped service key,
+proves CLI/Runner push parity, rotates a source-scoped token, downloads a bundle,
 registers two Runners, invokes scoped MCP read/proposal tools, exercises Cloud
 approval/rejection, runs the packed Runner worker against an exclusive job
 lease, proves duplicate/stale safety, verifies activity export and contract
@@ -686,10 +794,11 @@ Safety switches (both required):
 
 Identity and package:
   SYNAPSOR_CLOUD_BASE_URL=https://dev-api.synapsor.ai
-  SYNAPSOR_CLOUD_ADMIN_TOKEN=<signed-in/API credential; read from a secret prompt>
+  SYNAPSOR_CLOUD_ACCESS_TOKEN=<signed-in human session; read from a secret prompt>
   SYNAPSOR_PROJECT_ID=<disposable project>
   SYNAPSOR_SOURCE_ID=<synthetic imported source>
   SYNAPSOR_RUNNER_PACKAGE_SPEC=/absolute/path/to/runner.tgz   # preferred prepublish
+  SYNAPSOR_CLI_PACKAGE_SPEC=/absolute/path/to/cli.tgz         # preferred prepublish
 
 Contract/MCP fixture:
   SYNAPSOR_E2E_CONTRACT_PATH

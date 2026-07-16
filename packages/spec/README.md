@@ -66,6 +66,8 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 
 - contexts and trusted/session bindings;
 - resources and subject identity;
+- optional tenant-additive `principal_scope_key` authority sourced from the
+  context's required trusted principal binding;
 - read/aggregate-read/proposal/external-action capabilities;
 - model-facing capability descriptions and returns hints;
 - visible and kept-out fields;
@@ -121,6 +123,9 @@ do not drift. Cloud/C++ tests use the same fixtures for import/export
 alignment. The main Synapsor repo also keeps C++ export snapshots under
 `tests/fixtures/synapsor_contract_exports/`; those snapshots validate with this
 package and load in Runner through the cross-repo round-trip verifier.
+The `principal-row-scope` fixture additionally proves same-tenant owner/
+assignee isolation; the live Runner gate executes it against Postgres and
+MySQL.
 
 ## Extension Policy
 

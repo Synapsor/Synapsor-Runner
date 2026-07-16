@@ -1,0 +1,30 @@
+{
+  "trusted_contexts": [
+    {
+      "tenant_id": "hospital_a",
+      "principal": "case_manager_a"
+    },
+    {
+      "tenant_id": "hospital_a",
+      "principal": "case_manager_b"
+    }
+  ],
+  "rows": [
+    {
+      "id": "PAT-1001",
+      "hospital_id": "hospital_a",
+      "assigned_to": "case_manager_a",
+      "display_name": "Synthetic Patient One",
+      "care_status": "follow_up",
+      "updated_at": "2026-07-16T12:00:00Z"
+    },
+    {
+      "id": "PAT-1002",
+      "hospital_id": "hospital_a",
+      "assigned_to": "case_manager_b",
+      "display_name": "Synthetic Patient Two",
+      "care_status": "active",
+      "updated_at": "2026-07-16T12:00:00Z"
+    }
+  ]
+}

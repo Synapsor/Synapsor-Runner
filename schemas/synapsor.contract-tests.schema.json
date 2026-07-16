@@ -19,11 +19,21 @@
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "kind": {
-            "enum": ["tool_allow", "tool_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary"]
+            "enum": ["tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary"]
           },
           "capability": { "type": "string", "minLength": 1 },
           "args": { "type": "object" },
           "trusted_context": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tenant_id", "principal"],
+            "properties": {
+              "tenant_id": { "type": "string", "minLength": 1 },
+              "principal": { "type": "string", "minLength": 1 },
+              "provenance": { "enum": ["environment", "static_dev", "http_claims", "cloud_session"] }
+            }
+          },
+          "other_trusted_context": {
             "type": "object",
             "additionalProperties": false,
             "required": ["tenant_id", "principal"],

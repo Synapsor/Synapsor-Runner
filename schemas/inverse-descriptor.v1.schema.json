@@ -19,6 +19,7 @@
       "properties": { "source_id": { "type": "string", "minLength": 1 }, "schema": { "$ref": "#/$defs/identifier" }, "table": { "$ref": "#/$defs/identifier" }, "primary_key_column": { "$ref": "#/$defs/identifier" } }
     },
     "tenant_guard": { "$ref": "#/$defs/columnValue" },
+    "principal_scope": { "$ref": "#/$defs/principalScope" },
     "allowed_columns": { "type": "array", "items": { "$ref": "#/$defs/identifier" }, "maxItems": 256, "uniqueItems": true },
     "members": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/$defs/member" } },
     "max_rows": { "type": "integer", "minimum": 1, "maximum": 100 },
@@ -38,6 +39,7 @@
     "scalar": { "type": ["string", "number", "boolean", "null"] },
     "record": { "type": "object", "propertyNames": { "$ref": "#/$defs/identifier" }, "additionalProperties": { "$ref": "#/$defs/scalar" }, "maxProperties": 256 },
     "columnValue": { "type": "object", "additionalProperties": false, "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/scalar" } } },
+    "principalScope": { "type": "object", "additionalProperties": false, "required": ["schema_version", "column", "binding", "provider", "value_fingerprint"], "properties": { "schema_version": { "const": "synapsor.principal-scope.v1" }, "column": { "$ref": "#/$defs/identifier" }, "binding": { "$ref": "#/$defs/identifier" }, "provider": { "enum": ["environment", "http_claims", "cloud_session", "static_dev"] }, "value_fingerprint": { "type": "string", "pattern": "^sha256:.+" }, "value": { "$ref": "#/$defs/scalar" } } },
     "member": { "type": "object", "additionalProperties": false, "required": ["primary_key", "expected_state"], "properties": { "primary_key": { "$ref": "#/$defs/columnValue" }, "expected_state": { "$ref": "#/$defs/record" }, "restore_values": { "$ref": "#/$defs/record" } } },
     "versionAdvance": { "type": "object", "additionalProperties": false, "required": ["column", "strategy"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "strategy": { "enum": ["integer_increment", "database_generated"] } } },
     "aggregateBound": { "type": "object", "additionalProperties": false, "required": ["column", "measure", "maximum", "actual"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "measure": { "enum": ["before", "after", "absolute_delta"] }, "maximum": { "type": "number", "minimum": 0 }, "actual": { "type": "number", "minimum": 0 } } },

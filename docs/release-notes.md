@@ -10,6 +10,36 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.4.122 (prepared, not published)
+
+### Trusted principal scope and Cloud-linked authority
+
+- Contracts may bind a reviewed target column to a required trusted principal
+  in addition to the existing tenant lock. Runner applies both predicates in
+  SQL and never accepts the principal value from model arguments.
+- Same-tenant rows owned by another principal and cross-principal evidence,
+  proposal, receipt, and replay handles return the same generic miss as absent
+  or cross-tenant resources.
+- PostgreSQL/MySQL live tests cover scoped read/propose/insert/update/delete,
+  aggregate and bounded-set operations, conflict/idempotency, compensation,
+  signed HTTP sessions, and generic denial behavior.
+- In explicit `cloud_linked` mode, Cloud is authoritative for governance while
+  the local/shared Runner store remains the durable operational spool. An
+  idempotent outbox synchronizes bounded proposal/activity/result metadata;
+  full evidence, source rows, SQL details, replay payloads, and credentials
+  remain local.
+- Cloud-linked approval and apply cannot fall back to local operator commands.
+  The trusted Runner still verifies the exact local contract, proposal hash,
+  tenant/principal guards, bounds, conflict checks, and receipt rules before
+  source mutation.
+- A separate `@synapsor/cli@0.1.0-beta.1` package manages Cloud contracts,
+  projects, scoped credentials, Runner connections, proposal decisions, and
+  audit records. Runner keeps the `synapsor-runner` binary and local boundary.
+
+Prepared package versions: `@synapsor/spec@1.4.2`,
+`@synapsor/dsl@1.4.3`, `@synapsor/runner@1.4.122`, and
+`@synapsor/cli@0.1.0-beta.1`.
+
 ## 1.4.121 (prepared, not published)
 
 ### Contract trust surface and bounded-set parser correctness

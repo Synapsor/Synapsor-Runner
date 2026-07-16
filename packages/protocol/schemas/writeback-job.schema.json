@@ -32,6 +32,19 @@
             "column": { "type": "string", "minLength": 1 },
             "value": {}
           }
+        },
+        "principal_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "column", "binding", "provider", "value_fingerprint"],
+          "properties": {
+            "schema_version": { "const": "synapsor.principal-scope.v1" },
+            "column": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+            "binding": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+            "provider": { "enum": ["environment", "http_claims", "cloud_session", "static_dev"] },
+            "value_fingerprint": { "type": "string", "pattern": "^sha256:.+" },
+            "value": { "type": ["string", "number", "boolean", "null"] }
+          }
         }
       }
     },
