@@ -106,6 +106,7 @@ const publicDocs = [
   "benchmarks/bounded-set-local.md",
   "bounded-set-writeback.md",
   "capability-authoring.md",
+  "cloud-cli.md",
   "cloud-mode.md",
   "cloud-push.md",
   "compliance-reports.md",

@@ -84,6 +84,8 @@ export type CapabilitySubjectSpec = ExtensionFields & {
   table?: string;
   primary_key?: string;
   tenant_key?: string;
+  /** Row owner/assignee column bound to the context's required trusted principal binding. */
+  principal_scope_key?: string;
   conflict_key?: string;
   single_tenant_dev?: boolean;
 };

@@ -167,6 +167,7 @@
         "table": { "$ref": "#/$defs/safeIdentifier" },
         "primary_key": { "$ref": "#/$defs/safeIdentifier" },
         "tenant_key": { "$ref": "#/$defs/safeIdentifier" },
+        "principal_scope_key": { "$ref": "#/$defs/safeIdentifier" },
         "conflict_key": { "$ref": "#/$defs/safeIdentifier" },
         "single_tenant_dev": { "type": "boolean" }
       }

@@ -4,16 +4,20 @@ This is the manual release gate for the complete OSS Runner and single-node
 Synapsor Cloud boundary. It is intentionally opt-in because it creates Cloud
 records and mutates a synthetic source row.
 
-The verifier installs a packed or published Runner in a clean temporary
-directory and proves:
+The verifier installs packed or published Cloud CLI and Runner packages in a
+clean temporary directory and proves:
 
 - public protocol discovery;
-- canonical contract push and immutable version identity;
+- packed CLI human `whoami`, secure one-time service-key output, and immediate
+  service-key revocation;
+- canonical contract push parity between `synapsor contracts push` and
+  `synapsor-runner cloud push` with one immutable version identity;
 - source-scoped Runner token creation, rotation, registration idempotency, and
   heartbeat;
 - credential-free Runner bundle download;
 - scoped MCP read and cross-tenant denial;
-- proposal creation without a source write;
+- proposal creation without a source write and automatic durable-outbox
+  delivery without a manual `cloud sync` command;
 - authenticated Cloud approval and guarded local writeback through the packed
   Runner's public worker CLI;
 - two registered Runner processes competing for one exclusive job lease;
@@ -28,18 +32,20 @@ Postgres or MySQL database that can be reset after the run.
 
 ## Prerequisites
 
-Build the workspace and pack the Runner before a pre-publish check:
+Build the workspace and pack both packages before a pre-publish check:
 
 ```bash
 corepack pnpm install
 corepack pnpm build
 corepack pnpm --filter @synapsor/runner pack --pack-destination /tmp
+corepack pnpm --filter @synapsor/cli pack --pack-destination /tmp
 ```
 
 Prepare:
 
 - a disposable Cloud project and imported synthetic source;
-- an authenticated project-admin/session token;
+- an authenticated human session token obtained through the normal browser/
+  device login flow;
 - separate least-privilege read and write source URLs;
 - a canonical contract with one scoped read and one proposal capability; and
 - three independent proposal fixture rows: apply, reject, and stale-conflict.
@@ -64,6 +70,7 @@ export SYNAPSOR_HOSTED_E2E=1
 export SYNAPSOR_E2E_DISPOSABLE_PROJECT=1
 export SYNAPSOR_CLOUD_BASE_URL="https://dev-api.synapsor.ai"
 export SYNAPSOR_RUNNER_PACKAGE_SPEC="/tmp/synapsor-runner-<version>.tgz"
+export SYNAPSOR_CLI_PACKAGE_SPEC="/tmp/synapsor-cli-<version>.tgz"
 
 corepack pnpm verify:hosted-cloud-linked
 ```

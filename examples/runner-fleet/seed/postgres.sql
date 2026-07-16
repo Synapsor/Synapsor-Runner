@@ -4,6 +4,7 @@ CREATE TABLE public.invoices (
   status text NOT NULL,
   late_fee_cents integer NOT NULL,
   waiver_reason text,
+  assigned_to text NOT NULL DEFAULT 'case_manager_a',
   updated_at timestamptz NOT NULL
 );
 
@@ -73,7 +74,10 @@ INSERT INTO public.invoices (id, tenant_id, status, late_fee_cents, waiver_reaso
   ('INV-DEAD-DISCARD', 'acme', 'overdue', 1750, NULL, '2026-07-12T12:00:00Z'),
   ('INV-KILL-BEFORE', 'acme', 'overdue', 1200, NULL, '2026-07-12T12:00:00Z'),
   ('INV-KILL-DURING', 'acme', 'overdue', 1500, NULL, '2026-07-12T12:00:00Z'),
-  ('INV-KILL-AFTER', 'acme', 'overdue', 1800, NULL, '2026-07-12T12:00:00Z');
+  ('INV-KILL-AFTER', 'acme', 'overdue', 1800, NULL, '2026-07-12T12:00:00Z'),
+  ('INV-PRINCIPAL-A', 'hospital_a', 'principal_fixture', 100, NULL, '2026-07-12T12:00:00Z'),
+  ('INV-PRINCIPAL-B', 'hospital_a', 'principal_fixture', 200, NULL, '2026-07-12T12:00:00Z');
+UPDATE public.invoices SET assigned_to = 'case_manager_b' WHERE id = 'INV-PRINCIPAL-B';
 
 CREATE FUNCTION public.synthetic_pool_delay() RETURNS integer
 LANGUAGE plpgsql VOLATILE AS $$

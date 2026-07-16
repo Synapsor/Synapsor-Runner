@@ -272,10 +272,12 @@ Real push uses your Cloud env vars:
 
 ```bash
 export SYNAPSOR_CLOUD_BASE_URL="https://api.synapsor.ai"
-export SYNAPSOR_CLOUD_TOKEN="<workspace-scoped-token>"
-export SYNAPSOR_WORKSPACE_ID="<workspace_id>"
+export SYNAPSOR_API_KEY="<contracts-write-service-key>"
+export SYNAPSOR_PROJECT_ID="<project_id>"
+export SYNAPSOR_SOURCE_ID="<cloud_source_id>"
 
 synapsor-runner cloud push examples/support-plan-credit/synapsor.contract.json \
+  --workspace "$SYNAPSOR_PROJECT_ID" \
   --name support-plan-credit
 ```
 
@@ -283,11 +285,11 @@ After push, Cloud can return the registered version and a runner bundle with
 placeholder env names:
 
 ```bash
-curl -H "Authorization: Bearer $SYNAPSOR_CLOUD_TOKEN" \
-  "$SYNAPSOR_CLOUD_BASE_URL/v1/control/projects/$SYNAPSOR_WORKSPACE_ID/agent-contracts/<contract_id>/versions/<version_id>"
+curl -H "Authorization: Bearer $SYNAPSOR_API_KEY" \
+  "$SYNAPSOR_CLOUD_BASE_URL/v1/control/projects/$SYNAPSOR_PROJECT_ID/agent-contracts/<contract_id>/versions/<version_id>"
 
-curl -H "Authorization: Bearer $SYNAPSOR_CLOUD_TOKEN" \
-  "$SYNAPSOR_CLOUD_BASE_URL/v1/control/projects/$SYNAPSOR_WORKSPACE_ID/agent-contracts/<contract_id>/versions/<version_id>/runner-bundle?download=1" \
+curl -H "Authorization: Bearer $SYNAPSOR_API_KEY" \
+  "$SYNAPSOR_CLOUD_BASE_URL/v1/control/projects/$SYNAPSOR_PROJECT_ID/agent-contracts/<contract_id>/versions/<version_id>/runner-bundle?download=1&source_id=$SYNAPSOR_SOURCE_ID" \
   -o support-plan-credit-runner-bundle.zip
 ```
 

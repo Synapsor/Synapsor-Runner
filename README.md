@@ -14,9 +14,8 @@ surface.
 
 ## Prove It In 60 Seconds
 
-The path is: **audit** your existing MCP risk, then **demo** the safety
-boundary, then **connect** a staging database. The first two commands finish in
-seconds and touch nothing but a local fixture file.
+Path: **audit** MCP risk, **demo** the boundary, then **connect** staging. The
+first two commands touch only a local fixture.
 
 First, inspect the risk in a typical raw-SQL database MCP server. This works
 even if you never adopt Runner:
@@ -25,18 +24,16 @@ even if you never adopt Runner:
 npx -y @synapsor/runner audit --example dangerous-db-mcp
 ```
 
-Then point the same static review at your own exported tool manifest, remote
-`tools/list` endpoint, or stdio MCP server:
+Audit your own tool manifest, remote `tools/list`, or stdio server:
 
 ```bash
 npx -y @synapsor/runner audit ./tools-list.json
 ```
 
-The audit flags raw SQL, arbitrary table/column inputs, model-controlled tenant
-or principal authority, model-facing approval/writeback tools, and missing
-conflict or idempotency signals. It does not call business tools, and it is a
-risk review rather than proof that a server is secure. See [MCP Database Risk
-Review](docs/mcp-audit.md) for remote, stdio, JSON, and Markdown workflows.
+It flags raw SQL, arbitrary identifiers, model-controlled authority,
+model-facing approval/writeback, and missing conflict or idempotency signals.
+It does not call business tools. See [MCP Database Risk
+Review](docs/mcp-audit.md) for supported workflows and limits.
 
 Then see the proposal, approval boundary, evidence, and replay loop. It needs no
 database, Docker, config file, MCP client, or Synapsor account:
@@ -197,6 +194,10 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 - MCP proposal, evidence, and replay handles are references rather than bearer
   authority: resource reads re-check the owning tenant and principal against
   the current trusted session.
+- Same-tenant owner/assignee isolation uses a reviewed
+  [`PRINCIPAL SCOPE KEY`](docs/capability-authoring.md#same-tenant-principal-row-scope)
+  composed with mandatory tenant scope; `test:principal-scope` proves generic
+  cross-principal denial and evidence-handle isolation on Postgres and MySQL.
 - `test:live-apply`, `test:guarded-crud`, `test:bounded-set`, and
   `test:reversible` run disposable PostgreSQL/MySQL scenarios. They prove no
   pre-approval mutation, guarded single-row CRUD, idempotent retry,
@@ -229,6 +230,7 @@ and [Small Runner Fleets](docs/running-a-runner-fleet.md).
 | `@synapsor/runner` | CLI, MCP runtime, local ledger, proposals, approval, guarded writeback, replay, and MCP audit. |
 | `@synapsor/spec` | Canonical portable contracts for contexts, capabilities, workflows, evidence, proposals, receipts, and replay. |
 | `@synapsor/dsl` | SQL-like authoring that compiles contexts, capabilities, and workflow declarations into canonical contract JSON. |
+| `@synapsor/cli` | Synapsor Cloud administration, contract governance, human review, Runner connections, and shared audit records. |
 
 Runner executes locally. The spec is shared by Runner and Cloud/C++; the DSL
 is its reviewable source format. Start with [Capability
@@ -253,6 +255,11 @@ inbox, durable leased writeback jobs, and a redacted shared activity/receipt
 chronology. Database credentials and guarded execution remain local. See [Cloud
 Mode](docs/cloud-mode.md) for the design-partner path and [OSS Runner vs
 Synapsor Cloud](docs/oss-vs-cloud.md) for the detailed boundary.
+
+`synapsor-runner` owns the local MCP/database boundary. `synapsor` from
+`@synapsor/cli` manages Cloud review and audit. Both Cloud push commands use
+the same contract digest and scoped service-key API. See the [Cloud CLI
+guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/cloud-cli.md).
 
 ## Next Steps
 

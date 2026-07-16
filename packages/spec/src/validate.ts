@@ -24,7 +24,7 @@ const RESOURCE_KEYS = new Set(["name", "engine", "schema", "table", "type", "pri
 const CONTEXT_KEYS = new Set(["name", "description", "bindings", "tenant_binding", "principal_binding"]);
 const BINDING_KEYS = new Set(["name", "source", "key", "required"]);
 const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal", "aggregate"]);
-const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
+const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "principal_scope_key", "conflict_key", "single_tenant_dev"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const EVIDENCE_KEYS = new Set(["required", "sources", "query_audit", "handle_prefix"]);
@@ -97,6 +97,7 @@ export function validateContract(input: unknown): ValidationResult {
   const capabilities = Array.isArray(input.capabilities) ? input.capabilities : [];
   const policies = Array.isArray(input.policies) ? input.policies : [];
   const capabilityNames = validateCapabilities(input.capabilities, contextNames, resourceNames, errors, warnings);
+  validatePrincipalScopes(input.capabilities, input.contexts, input.resources, errors);
   validateWorkflows(input.workflows, contextNames, capabilityNames, errors);
   const policyByName = validatePolicies(input.policies, errors);
   validateCapabilityApprovalPolicies(capabilities, policies, policyByName, errors);
@@ -295,7 +296,63 @@ function validateSubject(value: unknown, path: string, resourceNames: Set<string
       errors.push({ path: `${path}.tenant_key`, code: "TENANT_KEY_REQUIRED", message: "tenant_key is required unless single_tenant_dev is explicitly true." });
     }
   }
+  if (value.principal_scope_key !== undefined && !isSafeIdentifier(value.principal_scope_key)) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PRINCIPAL_SCOPE_KEY", message: "principal_scope_key must be a fixed safe identifier." });
+  }
+  if (value.principal_scope_key !== undefined && value.resource === undefined && !isSafeIdentifier(value.tenant_key)) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key can only narrow a capability that also declares tenant_key." });
+  }
+  if (value.principal_scope_key !== undefined && value.single_tenant_dev === true) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key cannot be used with single_tenant_dev; declare a reviewed tenant_key." });
+  }
   if (value.single_tenant_dev === true) warnings.push({ path: `${path}.single_tenant_dev`, code: "SINGLE_TENANT_DEV", message: "single_tenant_dev is only for local demos and must not be used for shared tenant data." });
+}
+
+function validatePrincipalScopes(capabilities: unknown, contexts: unknown, resources: unknown, errors: ValidationIssue[]): void {
+  if (!Array.isArray(capabilities) || !Array.isArray(contexts)) return;
+  const contextByName = new Map<string, JsonRecord>();
+  const resourceByName = new Map<string, JsonRecord>();
+  for (const context of contexts) {
+    if (isRecord(context) && isNonEmptyString(context.name)) contextByName.set(context.name, context);
+  }
+  if (Array.isArray(resources)) {
+    for (const resource of resources) {
+      if (isRecord(resource) && isNonEmptyString(resource.name)) resourceByName.set(resource.name, resource);
+    }
+  }
+  capabilities.forEach((capability, index) => {
+    if (!isRecord(capability) || !isRecord(capability.subject) || capability.subject.principal_scope_key === undefined) return;
+    const path = `$.capabilities[${index}]`;
+    const resource = typeof capability.subject.resource === "string" ? resourceByName.get(capability.subject.resource) : undefined;
+    const tenantKey = capability.subject.tenant_key ?? resource?.tenant_key;
+    const singleTenantDev = capability.subject.single_tenant_dev ?? resource?.single_tenant_dev;
+    if (!isSafeIdentifier(tenantKey) || singleTenantDev === true) {
+      errors.push({ path: `${path}.subject.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key can only narrow a capability with a reviewed tenant_key." });
+    }
+    const context = contextByName.get(String(capability.context));
+    if (!context || !isSafeIdentifier(context.principal_binding)) {
+      errors.push({ path: `${path}.context`, code: "PRINCIPAL_SCOPE_BINDING_REQUIRED", message: "principal-scoped capabilities require a context with principal_binding." });
+      return;
+    }
+    const binding = Array.isArray(context.bindings)
+      ? context.bindings.find((item) => isRecord(item) && item.name === context.principal_binding)
+      : undefined;
+    if (!isRecord(binding) || binding.required !== true) {
+      errors.push({ path: `${path}.context`, code: "PRINCIPAL_SCOPE_BINDING_REQUIRED", message: "principal_binding must reference a required trusted context binding." });
+    }
+    const scopeKey = capability.subject.principal_scope_key;
+    if (isRecord(capability.args) && Object.prototype.hasOwnProperty.call(capability.args, String(scopeKey))) {
+      errors.push({ path: `${path}.args.${String(scopeKey)}`, code: "MODEL_CONTROLLED_PRINCIPAL_SCOPE", message: "the reviewed principal scope column cannot also be a model-facing argument." });
+    }
+    if (isRecord(capability.proposal)) {
+      if (Array.isArray(capability.proposal.allowed_fields) && capability.proposal.allowed_fields.includes(scopeKey)) {
+        errors.push({ path: `${path}.proposal.allowed_fields`, code: "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", message: "the reviewed principal scope column cannot be model-writeable." });
+      }
+      if (isRecord(capability.proposal.patch) && Object.prototype.hasOwnProperty.call(capability.proposal.patch, String(scopeKey))) {
+        errors.push({ path: `${path}.proposal.patch.${String(scopeKey)}`, code: "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", message: "the reviewed principal scope column is forced from trusted context and cannot be patched by the model." });
+      }
+    }
+  });
 }
 
 function validateArgs(value: unknown, path: string, errors: ValidationIssue[], allowEmpty = false): void {

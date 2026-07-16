@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/spec" },
+    { "path": "../../packages/dsl" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/control-plane-client" }
+  ]
+}

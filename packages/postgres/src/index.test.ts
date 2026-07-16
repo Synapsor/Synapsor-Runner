@@ -75,6 +75,24 @@ describe("postgres adapter", () => {
     expect(deletion.values).toEqual(["CR-1", "acme", 7]);
   });
 
+  it("binds trusted principal scope on UPDATE, INSERT, DELETE, and reconciliation", () => {
+    const update = buildPostgresUpdate(withPrincipalScope(v2UpdateJob));
+    expect(update.sql).toContain('"assigned_to" = $4');
+    expect(update.values).toEqual([2500, "CR-1", "acme", "support_agent_17", 7]);
+
+    const insertion = buildPostgresInsert(withPrincipalScope(v2InsertJob));
+    expect(insertion.sql).toContain('"assigned_to"');
+    expect(insertion.values).toEqual([2500, "acme", "wrp_insert", "support_agent_17"]);
+
+    const deletion = buildPostgresDelete(withPrincipalScope(v2DeleteJob));
+    expect(deletion.sql).toContain('"assigned_to" = $3');
+    expect(deletion.values).toEqual(["CR-1", "acme", "support_agent_17", 7]);
+
+    const reconciliation = buildPostgresReconciliationRead(withPrincipalScope(v2UpdateJob));
+    expect(reconciliation.sql).toContain('"assigned_to" = $3');
+    expect(reconciliation.values).toEqual(["CR-1", "acme", "support_agent_17"]);
+  });
+
   it("builds reconciliation reads from reviewed columns and trusted identity only", () => {
     const update = buildPostgresReconciliationRead(v2UpdateJob);
     expect(update.sql).toContain('SELECT "id", "tenant_id", "amount_cents", "version"');
@@ -529,6 +547,19 @@ const v2DeleteJob = {
   lease_expires_at: "2026-07-13T12:00:00Z",
   attempt_count: 1,
 };
+
+const trustedPrincipalScope = {
+  schema_version: "synapsor.principal-scope.v1" as const,
+  column: "assigned_to",
+  binding: "principal",
+  provider: "environment" as const,
+  value_fingerprint: `sha256:${"a".repeat(64)}` as const,
+  value: "support_agent_17",
+};
+
+function withPrincipalScope<T extends { target: Record<string, unknown> }>(input: T): T {
+  return { ...input, target: { ...input.target, principal_scope: trustedPrincipalScope } };
+}
 
 function v4CompensationUpdateJob() {
   return {

@@ -12,6 +12,7 @@ import {
   parseRunnerProposal,
   parseRunnerActivity,
   parseWritebackJob,
+  principalScopeFingerprint,
   parseWritebackResult,
   protocolVersions
 } from "./index.js";
@@ -175,6 +176,56 @@ describe("writeback job schema", () => {
 
   it("rejects tenant guard patch allowlisting", () => {
     expect(() => parseWritebackJob({ ...validJob, allowed_columns: ["tenant_id", "status"] })).toThrow(/tenant guard/i);
+  });
+
+  it("freezes principal row scope and rejects tampered authority", () => {
+    const material = {
+      column: "assigned_to",
+      binding: "principal",
+      provider: "environment" as const,
+      value: "support_agent_17",
+    };
+    const principalScope = {
+      schema_version: protocolVersions.principalScope,
+      ...material,
+      value_fingerprint: principalScopeFingerprint(material),
+    };
+    const parsed = parseWritebackJob({
+      ...validJob,
+      target: { ...validJob.target, principal_scope: principalScope },
+    });
+    expect(parsed.target.principal_scope).toEqual(principalScope);
+    expect(() => parseWritebackJob({
+      ...validJob,
+      target: { ...validJob.target, principal_scope: { ...principalScope, value: "other_agent" } },
+    })).toThrow(/fingerprint/i);
+    expect(() => parseWritebackJob({
+      ...validJob,
+      target: { ...validJob.target, principal_scope: principalScope },
+      allowed_columns: ["assigned_to", "status"],
+    })).toThrow(/principal scope/i);
+  });
+
+  it("accepts fingerprint-only Cloud principal authority", () => {
+    const material = {
+      column: "assigned_to",
+      binding: "principal",
+      provider: "cloud_session" as const,
+      value: "cloud-user-17",
+    };
+    expect(parseWritebackJob({
+      ...validJob,
+      target: {
+        ...validJob.target,
+        principal_scope: {
+          schema_version: protocolVersions.principalScope,
+          column: material.column,
+          binding: material.binding,
+          provider: material.provider,
+          value_fingerprint: principalScopeFingerprint(material),
+        },
+      },
+    }).target.principal_scope).not.toHaveProperty("value");
   });
 
   it("rejects jobs without approval data", () => {

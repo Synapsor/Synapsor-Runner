@@ -66,6 +66,7 @@ export const protocolVersions = {
   runnerControl: "synapsor.runner-control.v1",
   runnerProposal: "synapsor.runner-proposal.v1",
   runnerActivity: "synapsor.runner-activity.v1",
+  principalScope: "synapsor.principal-scope.v1",
   legacyWritebackJob: "1.0",
   normalizedWritebackJobV2: "2.0",
   normalizedWritebackJobV3: "3.0",
@@ -92,6 +93,38 @@ export const writebackTerminalStatusV2Schema = z.enum([
 const columnValueSchema = z.object({
   column: safeIdentifier,
   value: scalar
+});
+
+const trustedScopeProviderSchema = z.enum(["environment", "http_claims", "cloud_session", "static_dev"]);
+
+export type PrincipalScopeFingerprintInput = {
+  column: string;
+  binding: string;
+  provider: z.infer<typeof trustedScopeProviderSchema>;
+  value: string | number | boolean | null;
+};
+
+export function principalScopeFingerprint(input: PrincipalScopeFingerprintInput): `sha256:${string}` {
+  return canonicalJsonDigest({
+    schema_version: protocolVersions.principalScope,
+    column: input.column,
+    binding: input.binding,
+    provider: input.provider,
+    value: input.value,
+  });
+}
+
+export const principalScopeGuardSchema = z.object({
+  schema_version: z.literal(protocolVersions.principalScope),
+  column: safeIdentifier,
+  binding: safeIdentifier,
+  provider: trustedScopeProviderSchema,
+  value_fingerprint: sha256,
+  value: scalar.optional(),
+}).superRefine((scope, ctx) => {
+  if (scope.value !== undefined && principalScopeFingerprint(scope as PrincipalScopeFingerprintInput) !== scope.value_fingerprint) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope fingerprint does not match its trusted value", path: ["value_fingerprint"] });
+  }
 });
 
 const resolvedDeduplicationComponentSchema = z.object({
@@ -163,6 +196,7 @@ export const inverseDescriptorV1Schema = z.object({
     primary_key_column: safeIdentifier,
   }),
   tenant_guard: columnValueSchema,
+  principal_scope: principalScopeGuardSchema.optional(),
   allowed_columns: z.array(safeIdentifier).max(256),
   members: z.array(inverseMemberSchema).min(1).max(100),
   max_rows: z.number().int().min(1).max(100),
@@ -224,6 +258,7 @@ export const changeSetV1Schema = z.object({
   after: scalarMap,
   guards: z.object({
     tenant: columnValueSchema,
+    principal_scope: principalScopeGuardSchema.optional(),
     allowed_columns: z.array(z.string().min(1)).min(1),
     expected_version: columnValueSchema
   }),
@@ -271,6 +306,13 @@ export const changeSetV1Schema = z.object({
       path: ["guards", "allowed_columns"]
     });
   }
+  if (changeSet.guards.principal_scope && allowed.has(changeSet.guards.principal_scope.column)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "principal scope column must not be patch-allowlisted",
+      path: ["guards", "allowed_columns"]
+    });
+  }
 });
 
 export const changeSetV2Schema = z.object({
@@ -302,6 +344,7 @@ export const changeSetV2Schema = z.object({
   after: boundedScalarRecord,
   guards: z.object({
     tenant: columnValueSchema,
+    principal_scope: principalScopeGuardSchema.optional(),
     allowed_columns: z.array(safeIdentifier).max(256),
     expected_version: columnValueSchema.optional(),
     version_advance: versionAdvanceSchema.optional(),
@@ -332,6 +375,7 @@ export const changeSetV2Schema = z.object({
   }
   if (allowed.has(changeSet.source.primary_key.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "primary key column must not be patch-allowlisted", path: ["guards", "allowed_columns"] });
   if (allowed.has(changeSet.guards.tenant.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "tenant guard column must not be patch-allowlisted", path: ["guards", "allowed_columns"] });
+  if (changeSet.guards.principal_scope && allowed.has(changeSet.guards.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["guards", "allowed_columns"] });
 
   if (changeSet.operation === "single_row_insert") {
     if (Object.keys(changeSet.before).length !== 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "INSERT before must be empty", path: ["before"] });
@@ -388,6 +432,7 @@ export const changeSetV3Schema = z.object({
   after: boundedScalarRecord,
   guards: z.object({
     tenant: columnValueSchema,
+    principal_scope: principalScopeGuardSchema.optional(),
     allowed_columns: z.array(safeIdentifier).max(256),
     expected_version: columnValueSchema.optional(),
     version_advance: versionAdvanceSchema.optional(),
@@ -409,6 +454,7 @@ export const changeSetV3Schema = z.object({
   if (changeSet.source.primary_key.value !== undefined || changeSet.guards.expected_version) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set guards live on frozen members, not the top-level envelope", path: ["frozen_set"] });
   const allowed = new Set(changeSet.guards.allowed_columns);
   for (const column of Object.keys(changeSet.patch)) if (!allowed.has(column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `patch column not allowed: ${column}`, path: ["patch", column] });
+  if (changeSet.guards.principal_scope && allowed.has(changeSet.guards.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["guards", "allowed_columns"] });
   for (const [index, member] of changeSet.frozen_set.members.entries()) {
     if (member.primary_key.column !== changeSet.source.primary_key.column) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "member primary key column must match source", path: ["frozen_set", "members", index, "primary_key", "column"] });
     if (changeSet.operation === "set_update") {
@@ -449,7 +495,7 @@ export const compensationChangeSetV1Schema = z.object({
     descriptor: inverseDescriptorV1Schema,
     forward_receipt_hash: sha256,
   }),
-  guards: z.object({ tenant: columnValueSchema, allowed_columns: z.array(safeIdentifier).max(256) }),
+  guards: z.object({ tenant: columnValueSchema, principal_scope: principalScopeGuardSchema.optional(), allowed_columns: z.array(safeIdentifier).max(256) }),
   evidence: z.object({ bundle_id: z.string().min(1), query_fingerprint: sha256, items: z.array(z.unknown()).max(100) }).passthrough(),
   approval: z.object({
     status: z.enum(["pending", "approved", "rejected", "canceled"]),
@@ -466,6 +512,7 @@ export const compensationChangeSetV1Schema = z.object({
   if (descriptor.availability !== "available") ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation proposal requires an available inverse", path: ["compensation", "descriptor", "availability"] });
   if (descriptor.target.source_id !== changeSet.source.source_id || descriptor.target.schema !== changeSet.source.schema || descriptor.target.table !== changeSet.source.table || descriptor.target.primary_key_column !== changeSet.source.primary_key.column) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation descriptor target must match proposal source", path: ["compensation", "descriptor", "target"] });
   if (descriptor.tenant_guard.column !== changeSet.guards.tenant.column || descriptor.tenant_guard.value !== changeSet.guards.tenant.value || descriptor.tenant_guard.value !== changeSet.scope.tenant_id) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation tenant authority must match trusted proposal scope", path: ["guards", "tenant"] });
+  if (JSON.stringify(descriptor.principal_scope) !== JSON.stringify(changeSet.guards.principal_scope)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation principal authority must match inverse descriptor", path: ["guards", "principal_scope"] });
   if (JSON.stringify(descriptor.allowed_columns) !== JSON.stringify(changeSet.guards.allowed_columns)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation allowlist must match inverse descriptor", path: ["guards", "allowed_columns"] });
 });
 
@@ -499,6 +546,7 @@ export const writebackJobV1Schema = z.object({
     primary_key: columnValueSchema
   }),
   tenant_guard: columnValueSchema,
+  principal_scope: principalScopeGuardSchema.optional(),
   allowed_columns: z.array(safeIdentifier).min(1),
   patch: scalarMap,
   conflict_guard: publicConflictGuardSchema,
@@ -510,6 +558,7 @@ export const writebackJobV1Schema = z.object({
   })
 }).superRefine((job, ctx) => {
   validateAllowedPatchColumns(job.allowed_columns, Object.keys(job.patch), job.target.primary_key.column, job.tenant_guard.column, ctx);
+  if (job.principal_scope && job.allowed_columns.includes(job.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
 });
 
 const normalizedWritebackJobV1Schema = writebackJobV1Schema.transform((job) => ({
@@ -524,7 +573,8 @@ const normalizedWritebackJobV1Schema = writebackJobV1Schema.transform((job) => (
     schema: job.target.schema,
     table: job.target.table,
     primary_key: job.target.primary_key,
-    tenant_guard: job.tenant_guard
+    tenant_guard: job.tenant_guard,
+    ...(job.principal_scope ? { principal_scope: job.principal_scope } : {}),
   },
   allowed_columns: job.allowed_columns,
   patch: job.patch,
@@ -553,7 +603,8 @@ export const legacyWritebackJobSchema = z.object({
     tenant_guard: z.object({
       column: safeIdentifier,
       value: scalar
-    })
+    }),
+    principal_scope: principalScopeGuardSchema.optional(),
   }),
   allowed_columns: z.array(safeIdentifier).min(1),
   patch: scalarMap,
@@ -567,6 +618,7 @@ export const legacyWritebackJobSchema = z.object({
   attempt_count: z.number().int().nonnegative().optional()
 }).superRefine((job, ctx) => {
   validateAllowedPatchColumns(job.allowed_columns, Object.keys(job.patch), job.target.primary_key.column, job.target.tenant_guard.column, ctx);
+  if (job.target.principal_scope && job.allowed_columns.includes(job.target.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
 });
 
 export const normalizedWritebackJobV2InputSchema = z.object({
@@ -583,6 +635,7 @@ export const normalizedWritebackJobV2InputSchema = z.object({
     table: safeIdentifier,
     primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }),
     tenant_guard: columnValueSchema,
+    principal_scope: principalScopeGuardSchema.optional(),
   }),
   allowed_columns: z.array(safeIdentifier).max(256),
   patch: boundedScalarRecord,
@@ -603,6 +656,7 @@ export const normalizedWritebackJobV2InputSchema = z.object({
   }
   if (job.operation === "single_row_update" || job.operation === "single_row_insert") {
     validateAllowedPatchColumns(job.allowed_columns, Object.keys(job.patch), job.target.primary_key.column, job.target.tenant_guard.column, ctx);
+    if (job.target.principal_scope && job.allowed_columns.includes(job.target.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
     if (Object.keys(job.patch).length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${job.operation} patch must not be empty`, path: ["patch"] });
   } else if (job.allowed_columns.length !== 0 || Object.keys(job.patch).length !== 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "DELETE must not allow or carry write columns", path: ["allowed_columns"] });
@@ -661,6 +715,7 @@ export const writebackJobV2Schema = z.object({
     primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }),
   }),
   tenant_guard: columnValueSchema,
+  principal_scope: principalScopeGuardSchema.optional(),
   allowed_columns: z.array(safeIdentifier),
   mutation: writebackMutationV2Schema,
   idempotency_key: z.string().min(1),
@@ -677,6 +732,7 @@ export const writebackJobV2Schema = z.object({
   }
   if (mutation.kind === "single_row_update" || mutation.kind === "single_row_insert") {
     validateAllowedPatchColumns(job.allowed_columns, Object.keys(mutation.values), job.target.primary_key.column, job.tenant_guard.column, ctx);
+    if (job.principal_scope && job.allowed_columns.includes(job.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
   } else if (job.allowed_columns.length !== 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "DELETE must not allow write columns", path: ["allowed_columns"] });
   }
@@ -701,6 +757,7 @@ export const writebackJobV2Schema = z.object({
     table: job.target.table,
     primary_key: job.target.primary_key,
     tenant_guard: job.tenant_guard,
+    ...(job.principal_scope ? { principal_scope: job.principal_scope } : {}),
   },
   allowed_columns: job.allowed_columns,
   patch: job.mutation.kind === "single_row_delete" ? {} : job.mutation.values,
@@ -722,7 +779,7 @@ export const normalizedWritebackJobV3InputSchema = z.object({
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   operation: setOperationSchema,
-  target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }), tenant_guard: columnValueSchema }),
+  target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }), tenant_guard: columnValueSchema, principal_scope: principalScopeGuardSchema.optional() }),
   allowed_columns: z.array(safeIdentifier).max(256),
   patch: boundedScalarRecord,
   conflict_guard: z.object({ kind: z.literal("none") }).default({ kind: "none" }),
@@ -733,6 +790,7 @@ export const normalizedWritebackJobV3InputSchema = z.object({
   attempt_count: z.number().int().positive(),
   inverse_capture: inverseDescriptorV1Schema.optional(),
 }).superRefine((job, ctx) => {
+  if (job.target.principal_scope && job.allowed_columns.includes(job.target.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
   if (job.operation === "set_delete" && (job.allowed_columns.length || Object.keys(job.patch).length || job.version_advance)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set DELETE cannot carry patch authority", path: ["patch"] });
   if (job.operation === "set_update" && (!Object.keys(job.patch).length || !job.version_advance)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set UPDATE requires patch and version advance", path: ["patch"] });
   if (job.operation === "batch_insert" && !job.frozen_set.members.every((member) => member.deduplication)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "batch INSERT requires per-item source deduplication", path: ["frozen_set", "members"] });
@@ -749,6 +807,7 @@ export const writebackJobV3Schema = z.object({
   operation: setOperationSchema,
   target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }) }),
   tenant_guard: columnValueSchema,
+  principal_scope: principalScopeGuardSchema.optional(),
   allowed_columns: z.array(safeIdentifier).max(256),
   patch: boundedScalarRecord,
   version_advance: versionAdvanceSchema.optional(),
@@ -764,7 +823,7 @@ export const writebackJobV3Schema = z.object({
   source_id: job.runner_scope.source_id,
   engine: job.engine,
   operation: job.operation,
-  target: { ...job.target, primary_key: { ...job.target.primary_key, value: undefined }, tenant_guard: job.tenant_guard },
+  target: { ...job.target, primary_key: { ...job.target.primary_key, value: undefined }, tenant_guard: job.tenant_guard, ...(job.principal_scope ? { principal_scope: job.principal_scope } : {}) },
   allowed_columns: job.allowed_columns,
   patch: job.patch,
   conflict_guard: { kind: "none" as const },
@@ -787,6 +846,7 @@ export const writebackJobV4Schema = z.object({
   operation: reversalOperationSchema,
   target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }) }),
   tenant_guard: columnValueSchema,
+  principal_scope: principalScopeGuardSchema.optional(),
   allowed_columns: z.array(safeIdentifier).max(256),
   patch: z.object({}).default({}),
   compensation: inverseDescriptorV1Schema,
@@ -797,6 +857,7 @@ export const writebackJobV4Schema = z.object({
   if (job.compensation.availability !== "available") ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation job requires an available inverse", path: ["compensation", "availability"] });
   if (job.compensation.target.source_id !== job.runner_scope.source_id) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation source must match runner scope", path: ["compensation", "target", "source_id"] });
   if (job.operation !== job.compensation.operation || job.target.schema !== job.compensation.target.schema || job.target.table !== job.compensation.target.table || job.target.primary_key.column !== job.compensation.target.primary_key_column || job.tenant_guard.column !== job.compensation.tenant_guard.column || job.tenant_guard.value !== job.compensation.tenant_guard.value) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation public authority must match descriptor", path: ["compensation"] });
+  if (JSON.stringify(job.principal_scope) !== JSON.stringify(job.compensation.principal_scope)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation principal authority must match descriptor", path: ["compensation", "principal_scope"] });
 }).transform((job) => ({
   protocol_version: protocolVersions.normalizedWritebackJobV4,
   job_id: job.writeback_job_id,
@@ -808,6 +869,7 @@ export const writebackJobV4Schema = z.object({
   target: {
     ...job.target,
     tenant_guard: job.tenant_guard,
+    ...(job.principal_scope ? { principal_scope: job.principal_scope } : {}),
   },
   allowed_columns: job.allowed_columns,
   patch: job.patch,
@@ -828,7 +890,7 @@ export const normalizedWritebackJobV4InputSchema = z.object({
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   operation: reversalOperationSchema,
-  target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }), tenant_guard: columnValueSchema }),
+  target: z.object({ schema: safeIdentifier, table: safeIdentifier, primary_key: z.object({ column: safeIdentifier, value: scalar.optional() }), tenant_guard: columnValueSchema, principal_scope: principalScopeGuardSchema.optional() }),
   allowed_columns: z.array(safeIdentifier).max(256),
   patch: z.object({}).default({}),
   conflict_guard: z.object({ kind: z.literal("none") }).default({ kind: "none" }),
@@ -841,6 +903,7 @@ export const normalizedWritebackJobV4InputSchema = z.object({
   if (job.operation !== job.compensation.operation) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation operation mismatch", path: ["operation"] });
   if (job.source_id !== job.compensation.target.source_id || job.target.schema !== job.compensation.target.schema || job.target.table !== job.compensation.target.table || job.target.primary_key.column !== job.compensation.target.primary_key_column) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation target mismatch", path: ["target"] });
   if (job.target.tenant_guard.column !== job.compensation.tenant_guard.column || job.target.tenant_guard.value !== job.compensation.tenant_guard.value) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation tenant mismatch", path: ["target", "tenant_guard"] });
+  if (JSON.stringify(job.target.principal_scope) !== JSON.stringify(job.compensation.principal_scope)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation principal mismatch", path: ["target", "principal_scope"] });
 });
 
 export const writebackJobSchema = z.union([legacyWritebackJobSchema, normalizedWritebackJobV4InputSchema, normalizedWritebackJobV3InputSchema, normalizedWritebackJobV2InputSchema, normalizedWritebackJobV1Schema, writebackJobV4Schema, writebackJobV3Schema, writebackJobV2Schema]);
@@ -1108,6 +1171,9 @@ export const runnerProposalV1Schema = z.object({
   // intentionally independent identifiers.
   if (proposal.change_set.source_database_mutated) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Runner proposals must describe an unchanged source database", path: ["change_set", "source_database_mutated"] });
+  }
+  if (proposal.change_set.guards.principal_scope?.value !== undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Runner Cloud proposals must use fingerprint-only principal scope metadata", path: ["change_set", "guards", "principal_scope", "value"] });
   }
 });
 

@@ -142,6 +142,7 @@ no-database demo, wire your database, then read deeper concepts.
   topology, claim-bound sessions, pools, fleet rate limits, quorum, metrics,
   dead letters, backup/restore/retention, and kill/recovery evidence.
 - [Cloud Mode](cloud-mode.md): what stays local and what Cloud-linked mode adds.
+- [Synapsor Cloud CLI](cloud-cli.md): command, credential, entitlement, and Cloud-linked authority reference.
 - [OSS Runner Vs Synapsor Cloud](oss-vs-cloud.md): detailed product and
   operational boundary.
 - [Cloud Push](cloud-push.md): register a validated local contract in the

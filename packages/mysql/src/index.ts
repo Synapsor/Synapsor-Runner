@@ -42,6 +42,12 @@ export function quoteMysqlIdentifier(identifier: string): string {
 }
 
 function operationOf(job: WritebackJob): Operation { return job.operation ?? "single_row_update"; }
+function principalScope(job: WritebackJob): { column: string; value: string | number | boolean | null } | undefined {
+  const scope = job.target.principal_scope;
+  if (!scope) return undefined;
+  if (scope.value === undefined) throw new Error("PRINCIPAL_SCOPE_VALUE_REQUIRED");
+  return { column: scope.column, value: scope.value };
+}
 function receiptAuthority(config: RunnerConfig): "source_db" | "runner_ledger" { return config.receipts?.authority ?? "source_db"; }
 
 function sourceReceiptTable(config: RunnerConfig): string {
@@ -71,6 +77,11 @@ export function buildMysqlUpdate(job: WritebackJob): { sql: string; values: unkn
     `${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`,
     `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`,
   ];
+  const scope = principalScope(job);
+  if (scope) {
+    values.push(scope.value);
+    where.push(`${quoteMysqlIdentifier(scope.column)} = ?`);
+  }
   if (job.conflict_guard.kind === "version_column") {
     values.push(job.conflict_guard.expected_value);
     where.push(`${quoteMysqlIdentifier(job.conflict_guard.column)} = ?`);
@@ -92,10 +103,13 @@ export function buildMysqlInsert(job: WritebackJob): { sql: string; values: unkn
 export function buildMysqlDelete(job: WritebackJob): { sql: string; values: unknown[] } {
   if (operationOf(job) !== "single_row_delete") throw new Error("mysql delete builder requires single_row_delete");
   if (job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") throw new Error("mysql delete requires primary-key and exact version guards");
-  return {
-    sql: `DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\n  AND ${quoteMysqlIdentifier(job.conflict_guard.column)} = ?`,
-    values: [job.target.primary_key.value, job.target.tenant_guard.value, job.conflict_guard.expected_value],
-  };
+  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+  const scope = principalScope(job);
+  if (scope) { values.push(scope.value); where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); }
+  values.push(job.conflict_guard.expected_value);
+  where.push(`${quoteMysqlIdentifier(job.conflict_guard.column)} = ?`);
+  return { sql: `DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}`, values };
 }
 
 function validatePatch(job: WritebackJob, engine: string): void {
@@ -104,6 +118,8 @@ function validatePatch(job: WritebackJob, engine: string): void {
   const allowed = new Set(job.allowed_columns);
   if (allowed.has(job.target.primary_key.column)) throw new Error(`${engine} primary key column must not be patch-allowlisted`);
   if (allowed.has(job.target.tenant_guard.column)) throw new Error(`${engine} tenant guard column must not be patch-allowlisted`);
+  const scope = principalScope(job);
+  if (scope && allowed.has(scope.column)) throw new Error(`${engine} principal scope column must not be patch-allowlisted`);
   for (const column of patchColumns) if (!allowed.has(column)) throw new Error(`${engine} patch column not allowlisted: ${column}`);
 }
 
@@ -119,6 +135,11 @@ function insertValues(job: Extract<WritebackJob, { protocol_version: "2.0" }>): 
     if (component.source === "proposal_id") proposalIdentity = true;
   }
   if (!trustedTenant || !proposalIdentity) throw new Error("INSERT_DEDUP_REQUIRED");
+  const scope = principalScope(job);
+  if (scope) {
+    if (Object.prototype.hasOwnProperty.call(values, scope.column)) throw new Error("PRINCIPAL_SCOPE_COLUMN_COLLISION");
+    values[scope.column] = scope.value;
+  }
   return values;
 }
 
@@ -143,6 +164,8 @@ function resultHash(job: WritebackJob, status: string, version?: unknown): `sha2
 
 function reconciliationProjection(job: WritebackJob): string[] {
   const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column, ...job.allowed_columns]);
+  const scope = principalScope(job);
+  if (scope) columns.add(scope.column);
   if (job.protocol_version === "3.0") {
     for (const member of job.frozen_set.members) {
       for (const column of Object.keys(member.before)) columns.add(column);
@@ -165,28 +188,46 @@ function reconciliationProjection(job: WritebackJob): string[] {
 export function buildMysqlReconciliationRead(job: WritebackJob): { sql: string; values: unknown[] } {
   const projection = reconciliationProjection(job).map(quoteMysqlIdentifier).join(", ");
   if (job.protocol_version === "4.0") {
+    const scope = principalScope(job);
+    const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+    const values: unknown[] = [job.target.tenant_guard.value];
+    if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+    values.push(...job.compensation.members.map((member) => member.primary_key.value));
     return {
-      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map(() => "?").join(", ")})\nORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC`,
-      values: [job.target.tenant_guard.value, ...job.compensation.members.map((member) => member.primary_key.value)],
+      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\n  AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map(() => "?").join(", ")})\nORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC`,
+      values,
     };
   }
   if (job.protocol_version === "3.0") {
     const identities = job.frozen_set.members.map(() => "?").join(", ");
+    const scope = principalScope(job);
+    const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+    const values: unknown[] = [job.target.tenant_guard.value];
+    if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+    values.push(...job.frozen_set.members.map((member) => member.primary_key.value));
     return {
-      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${identities})\nORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC`,
-      values: [job.target.tenant_guard.value, ...job.frozen_set.members.map((member) => member.primary_key.value)],
+      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\n  AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${identities})\nORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC`,
+      values,
     };
   }
   if (operationOf(job) === "single_row_insert" && job.protocol_version === "2.0" && job.deduplication) {
+    const scope = principalScope(job);
+    const where = job.deduplication.components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`);
+    const values: unknown[] = job.deduplication.components.map((component) => component.value);
+    if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
     return {
-      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${job.deduplication.components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`).join(" AND ")}\nLIMIT 2`,
-      values: job.deduplication.components.map((component) => component.value),
+      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join(" AND ")}\nLIMIT 2`,
+      values,
     };
   }
   if (job.target.primary_key.value === undefined) throw new Error("RECONCILIATION_TARGET_IDENTITY_REQUIRED");
+  const scope = principalScope(job);
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
   return {
-    sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\nLIMIT 2`,
-    values: [job.target.primary_key.value, job.target.tenant_guard.value],
+    sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nLIMIT 2`,
+    values,
   };
 }
 
@@ -451,7 +492,11 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
   if (count !== 1) throw new Error(count === 0 ? "VERSION_CONFLICT" : "MULTI_ROW_WRITE_BLOCKED");
   let resultVersion: string | number | boolean | null | undefined;
   if (job.protocol_version === "2.0" && job.version_advance) {
-    const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${quoteMysqlIdentifier(job.version_advance.column)} AS __synapsor_result_version FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ? AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? FOR UPDATE`, [job.target.primary_key.value, job.target.tenant_guard.value]);
+    const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+    const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+    const scope = principalScope(job);
+    if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+    const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${quoteMysqlIdentifier(job.version_advance.column)} AS __synapsor_result_version FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")} FOR UPDATE`, values);
     resultVersion = rows[0]?.__synapsor_result_version == null ? undefined : scalar(rows[0].__synapsor_result_version);
     verifyVersionAdvanced(job, resultVersion);
   }
@@ -460,6 +505,8 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
 
 function compensationProjection(job: CompensationWritebackJob): string[] {
   const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column]);
+  const scope = principalScope(job);
+  if (scope) columns.add(scope.column);
   for (const member of job.compensation.members) {
     for (const column of Object.keys(member.expected_state)) columns.add(column);
     for (const column of Object.keys(member.restore_values ?? {})) columns.add(column);
@@ -469,10 +516,12 @@ function compensationProjection(job: CompensationWritebackJob): string[] {
 }
 
 async function lockMysqlCompensationMembers(job: CompensationWritebackJob, connection: MysqlApplyConnection): Promise<Record<string, unknown>[]> {
-  const [rows] = await connection.query<Record<string, unknown>[]>(
-    `SELECT ${compensationProjection(job).map(quoteMysqlIdentifier).join(", ")} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map(() => "?").join(", ")}) ORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
-    [job.target.tenant_guard.value, ...job.compensation.members.map((member) => member.primary_key.value)],
-  );
+  const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+  const values: unknown[] = [job.target.tenant_guard.value];
+  const scope = principalScope(job);
+  if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+  values.push(...job.compensation.members.map((member) => member.primary_key.value));
+  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${compensationProjection(job).map(quoteMysqlIdentifier).join(", ")} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")} AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.compensation.members.map(() => "?").join(", ")}) ORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`, values);
   return rows;
 }
 
@@ -527,6 +576,8 @@ async function mutateMysqlCompensation(job: CompensationWritebackJob, connection
   if (job.operation === "restore_insert") {
     for (const member of job.compensation.members) {
       const values = { ...member.restore_values!, [job.target.primary_key.column]: member.primary_key.value, [job.target.tenant_guard.column]: job.target.tenant_guard.value };
+      const scope = principalScope(job);
+      if (scope) values[scope.column] = scope.value;
       const columns = Object.keys(values).sort();
       const [inserted] = await connection.query<Record<string, unknown>>(`INSERT INTO ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} (${columns.map(quoteMysqlIdentifier).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`, columns.map((column) => values[column]));
       if (affectedRows(inserted) !== 1) throw new Error("COMPENSATION_ATOMICITY_VIOLATION");
@@ -536,6 +587,8 @@ async function mutateMysqlCompensation(job: CompensationWritebackJob, connection
     for (const member of job.compensation.members) {
       const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} <=> ?`, `${quoteMysqlIdentifier(job.target.primary_key.column)} <=> ?`];
       const values: unknown[] = [job.target.tenant_guard.value, member.primary_key.value];
+      const scope = principalScope(job);
+      if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} <=> ?`); values.push(scope.value); }
       for (const [column, value] of Object.entries(member.expected_state)) { where.push(`${quoteMysqlIdentifier(column)} <=> ?`); values.push(value); }
       const [deleted] = await connection.query<Record<string, unknown>>(`DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")}`, values);
       if (affectedRows(deleted) !== 1) throw new Error("COMPENSATION_ATOMICITY_VIOLATION");
@@ -550,6 +603,8 @@ async function mutateMysqlCompensation(job: CompensationWritebackJob, connection
       assignments.push(`${quoteMysqlIdentifier(version.column)} = ${quoteMysqlIdentifier(version.column)} + 1`);
       const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} <=> ?`, `${quoteMysqlIdentifier(job.target.primary_key.column)} <=> ?`];
       const values: unknown[] = [...columns.map((column) => restoreValues[column]), job.target.tenant_guard.value, member.primary_key.value];
+      const scope = principalScope(job);
+      if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} <=> ?`); values.push(scope.value); }
       for (const [column, value] of Object.entries(member.expected_state)) { where.push(`${quoteMysqlIdentifier(column)} <=> ?`); values.push(value); }
       const [updated] = await connection.query<Record<string, unknown>>(`UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${where.join(" AND ")}`, values);
       if (affectedRows(updated) !== 1) throw new Error("COMPENSATION_ATOMICITY_VIOLATION");
@@ -593,17 +648,23 @@ async function mutateMysqlSet(job: SetWritebackJob, connection: MysqlApplyConnec
     if (job.operation === "set_update") {
       const assignments = Object.keys(job.patch).map((column) => `${quoteMysqlIdentifier(column)} = ?`);
       assignments.push(`${quoteMysqlIdentifier(job.version_advance!.column)} = ${quoteMysqlIdentifier(job.version_advance!.column)} + 1`);
-      const [updated] = await connection.query<Record<string, unknown>>(
-        `UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ? AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(expected.column)} = ?`,
-        [...Object.values(job.patch), member.primary_key.value, job.target.tenant_guard.value, expected.value],
-      );
+      const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+      const values: unknown[] = [...Object.values(job.patch), member.primary_key.value, job.target.tenant_guard.value];
+      const scope = principalScope(job);
+      if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+      where.push(`${quoteMysqlIdentifier(expected.column)} = ?`);
+      values.push(expected.value);
+      const [updated] = await connection.query<Record<string, unknown>>(`UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} SET ${assignments.join(", ")} WHERE ${where.join(" AND ")}`, values);
       if (affectedRows(updated) !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
       memberEffects.push({ primary_key: member.primary_key, before_digest: member.before_digest, after_digest: member.after_digest });
     } else {
-      const [deleted] = await connection.query<Record<string, unknown>>(
-        `DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ? AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(expected.column)} = ?`,
-        [member.primary_key.value, job.target.tenant_guard.value, expected.value],
-      );
+      const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+      const values: unknown[] = [member.primary_key.value, job.target.tenant_guard.value];
+      const scope = principalScope(job);
+      if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+      where.push(`${quoteMysqlIdentifier(expected.column)} = ?`);
+      values.push(expected.value);
+      const [deleted] = await connection.query<Record<string, unknown>>(`DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")}`, values);
       if (affectedRows(deleted) !== 1) throw new Error("SET_ATOMICITY_VIOLATION");
       memberEffects.push({ primary_key: member.primary_key, before_digest: member.before_digest, tombstone_digest: member.tombstone_digest });
     }
@@ -614,10 +675,12 @@ async function mutateMysqlSet(job: SetWritebackJob, connection: MysqlApplyConnec
 async function lockMysqlFrozenMembers(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<boolean> {
   const columns = new Set<string>([job.target.primary_key.column]);
   for (const member of job.frozen_set.members) for (const column of Object.keys(member.before)) columns.add(column);
-  const [rows] = await connection.query<Record<string, unknown>[]>(
-    `SELECT ${[...columns].map(quoteMysqlIdentifier).join(", ")} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ? AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.frozen_set.members.map(() => "?").join(", ")}) ORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`,
-    [job.target.tenant_guard.value, ...job.frozen_set.members.map((member) => member.primary_key.value)],
-  );
+  const where = [`${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+  const values: unknown[] = [job.target.tenant_guard.value];
+  const scope = principalScope(job);
+  if (scope) { columns.add(scope.column); where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+  values.push(...job.frozen_set.members.map((member) => member.primary_key.value));
+  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${[...columns].map(quoteMysqlIdentifier).join(", ")} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")} AND ${quoteMysqlIdentifier(job.target.primary_key.column)} IN (${job.frozen_set.members.map(() => "?").join(", ")}) ORDER BY ${quoteMysqlIdentifier(job.target.primary_key.column)} ASC FOR UPDATE`, values);
   if (rows.length !== job.frozen_set.row_count) return false;
   const byIdentity = new Map(rows.map((row) => [JSON.stringify(scalar(row[job.target.primary_key.column])), row]));
   return job.frozen_set.members.every((member) => {
@@ -644,17 +707,18 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
 
 function validateBatchInsertMember(job: SetWritebackJob, member: SetWritebackJob["frozen_set"]["members"][number]): void {
   const dedupColumns = new Set(member.deduplication?.components.map((component) => component.column));
-  for (const column of Object.keys(member.after)) if (!job.allowed_columns.includes(column) && !dedupColumns.has(column)) throw new Error("BATCH_COLUMN_NOT_ALLOWED");
+  for (const column of Object.keys(member.after)) if (!job.allowed_columns.includes(column) && !dedupColumns.has(column) && column !== job.target.principal_scope?.column) throw new Error("BATCH_COLUMN_NOT_ALLOWED");
   if (!dedupColumns.has(job.target.primary_key.column) || !dedupColumns.has(job.target.tenant_guard.column)) throw new Error("BATCH_DEDUP_REQUIRED");
 }
 
 async function insertMysqlBatch(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
   for (const member of job.frozen_set.members) {
     const components = member.deduplication!.components;
-    const [existing] = await connection.query<Record<string, unknown>[]>(
-      `SELECT 1 AS found FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`).join(" AND ")} LIMIT 1 FOR UPDATE`,
-      components.map((component) => component.value),
-    );
+    const where = components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`);
+    const values: unknown[] = components.map((component) => component.value);
+    const scope = principalScope(job);
+    if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+    const [existing] = await connection.query<Record<string, unknown>[]>(`SELECT 1 AS found FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")} LIMIT 1 FOR UPDATE`, values);
     if (existing[0]) return { status: "conflict", affectedRows: 0, code: "INSERT_DEDUP_CONFLICT", targetIdentity: identityForJob(job) };
   }
   const memberEffects: NonNullable<MutationOutcome["memberEffects"]> = [];
@@ -682,14 +746,22 @@ async function lockTargetRow(job: WritebackJob, connection: MysqlApplyConnection
       : []),
     ...inverseColumns.filter((column) => job.conflict_guard.kind !== "version_column" || column !== job.conflict_guard.column).map(quoteMysqlIdentifier),
   ].join(", ");
-  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${quoteMysqlIdentifier(job.target.primary_key.column)} = ?\n  AND ${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?\nFOR UPDATE`, [job.target.primary_key.value, job.target.tenant_guard.value]);
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const scope = principalScope(job);
+  if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nFOR UPDATE`, values);
   return rows[0];
 }
 
 async function insertMysql(job: WritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
   if (job.protocol_version !== "2.0" || !job.deduplication) throw new Error("INSERT_DEDUP_REQUIRED");
   const components = job.deduplication.components;
-  const [existing] = await connection.query<Record<string, unknown>[]>(`SELECT ${quoteMysqlIdentifier(job.target.primary_key.column)} AS __synapsor_primary_key FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`).join(" AND ")}`, components.map((component) => component.value));
+  const where = components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`);
+  const values: unknown[] = components.map((component) => component.value);
+  const scope = principalScope(job);
+  if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
+  const [existing] = await connection.query<Record<string, unknown>[]>(`SELECT ${quoteMysqlIdentifier(job.target.primary_key.column)} AS __synapsor_primary_key FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")}`, values);
   if (existing[0]) return { status: "conflict", affectedRows: 0, code: "INSERT_DEDUP_CONFLICT", targetIdentity: identityForJob(job, existing[0].__synapsor_primary_key) };
   const insertion = buildMysqlInsert(job);
   const [inserted] = await connection.query<Record<string, unknown>>(insertion.sql, insertion.values);

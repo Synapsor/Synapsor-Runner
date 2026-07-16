@@ -70,6 +70,7 @@
       "required": ["tenant", "allowed_columns", "expected_version"],
       "properties": {
         "tenant": { "$ref": "#/$defs/columnValue" },
+        "principal_scope": { "$ref": "#/$defs/principalScope" },
         "allowed_columns": {
           "type": "array",
           "items": { "$ref": "#/$defs/safeIdentifier" },
@@ -134,6 +135,19 @@
       "required": ["column", "value"],
       "properties": {
         "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    },
+    "principalScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "column", "binding", "provider", "value_fingerprint"],
+      "properties": {
+        "schema_version": { "const": "synapsor.principal-scope.v1" },
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "binding": { "$ref": "#/$defs/safeIdentifier" },
+        "provider": { "enum": ["environment", "http_claims", "cloud_session", "static_dev"] },
+        "value_fingerprint": { "type": "string", "pattern": "^sha256:.+" },
         "value": { "$ref": "#/$defs/scalar" }
       }
     }

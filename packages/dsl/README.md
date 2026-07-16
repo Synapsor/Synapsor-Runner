@@ -29,6 +29,7 @@ CREATE CAPABILITY billing.inspect_invoice
   ON public.invoices
   PRIMARY KEY id
   TENANT KEY tenant_id
+  PRINCIPAL SCOPE KEY assigned_to
   CONFLICT GUARD updated_at
   LOOKUP invoice_id BY id
   ARG invoice_id STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Invoice id such as INV-3001.'
@@ -41,6 +42,10 @@ END
 A longer worked contract lives in
 [`examples/billing-late-fee.synapsor.sql`](https://github.com/Synapsor/Synapsor-Runner/blob/main/packages/dsl/examples/billing-late-fee.synapsor.sql),
 and the runner README walks the full compile → validate → bundle → serve flow.
+For same-tenant owner/assignee isolation, see
+[`principal-row-scope.synapsor.sql`](https://github.com/Synapsor/Synapsor-Runner/blob/main/packages/dsl/examples/principal-row-scope.synapsor.sql).
+The clause always narrows mandatory tenant scope with the required trusted
+principal binding; the model cannot supply or override its value.
 
 Use `.synapsor.sql` for authored DSL files so editors recognize the file as
 SQL and provide generic SQL highlighting. Existing `.synapsor` files remain
@@ -114,6 +119,7 @@ try {
 - `ON schema.table`
 - `PRIMARY KEY`
 - `TENANT KEY`
+- `PRINCIPAL SCOPE KEY` for a tenant-additive trusted owner/assignee row lock
 - `CONFLICT GUARD`
 - `ARG`
 - `ARG ... DESCRIPTION`

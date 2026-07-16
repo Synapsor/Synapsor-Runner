@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { canonicalJsonDigest, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, principalScopeFingerprint, protocolVersions } from "@synapsor-runner/protocol";
 import {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,
@@ -802,6 +802,35 @@ describe("proposal store", () => {
         revert_applies: 0,
       }]);
       expect(store.operationalMetrics({ tenant: "other" })).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("preserves immutable principal row scope in generated writeback jobs", () => {
+    const store = new ProposalStore();
+    try {
+      const scoped: any = structuredClone(changeSet);
+      const material = {
+        column: "assigned_to",
+        binding: "principal",
+        provider: "environment" as const,
+        value: "support_agent_17",
+      };
+      scoped.guards.principal_scope = {
+        schema_version: protocolVersions.principalScope,
+        ...material,
+        value_fingerprint: principalScopeFingerprint(material),
+      };
+      store.createProposal(scoped);
+      store.approveProposal(scoped.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: scoped.integrity.proposal_hash,
+        proposal_version: scoped.proposal_version,
+      });
+      const job: any = store.createWritebackJobFromProposal(scoped.proposal_id);
+      expect(job.principal_scope).toEqual(scoped.guards.principal_scope);
+      expect(parseWritebackJob(job).target.principal_scope).toEqual(scoped.guards.principal_scope);
     } finally {
       store.close();
     }
@@ -1928,3 +1957,90 @@ function parseFakePayloadJson(value: unknown): Record<string, unknown> {
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
   return {};
 }
+
+describe("Cloud-linked durable outbox", () => {
+  it("persists idempotent events, preserves proposal chronology, and records Cloud authority separately", () => {
+    const store = new ProposalStore(":memory:");
+    try {
+      const proposal = store.createProposal(changeSet);
+      const first = store.enqueueCloudOutbox({
+        event_id: `cloud-proposal:${proposal.proposal_id}`,
+        proposal_id: proposal.proposal_id,
+        sequence: 0,
+        kind: "proposal",
+        payload: { schema_version: "synapsor.runner-proposal.v1", proposal_id: proposal.proposal_id },
+        now: "2026-07-16T00:00:00.000Z",
+      });
+      const duplicate = store.enqueueCloudOutbox({
+        event_id: first.event_id,
+        proposal_id: proposal.proposal_id,
+        sequence: 0,
+        kind: "proposal",
+        payload: { schema_version: "synapsor.runner-proposal.v1", proposal_id: proposal.proposal_id },
+        now: "2026-07-16T00:00:00.000Z",
+      });
+      expect(duplicate.payload_hash).toBe(first.payload_hash);
+      store.enqueueCloudOutbox({
+        event_id: `cloud-activity:${proposal.proposal_id}`,
+        proposal_id: proposal.proposal_id,
+        sequence: 10,
+        kind: "activity",
+        payload: { schema_version: "synapsor.runner-activity.v1", proposal_id: proposal.proposal_id },
+        now: "2026-07-16T00:00:00.000Z",
+      });
+
+      const firstClaim = store.claimCloudOutbox({ owner: "runner-a", limit: 10, now: "2026-07-16T00:00:00.000Z" });
+      expect(firstClaim.map((item) => item.event_id)).toEqual([first.event_id]);
+      store.acknowledgeCloudOutbox(first.event_id, "runner-a", "2026-07-16T00:00:01.000Z");
+      const secondClaim = store.claimCloudOutbox({ owner: "runner-a", limit: 10, now: "2026-07-16T00:00:02.000Z" });
+      expect(secondClaim.map((item) => item.kind)).toEqual(["activity"]);
+
+      const governance = store.recordCloudGovernanceEvent({
+        event_id: `cloud-ack:${proposal.proposal_id}`,
+        proposal_id: proposal.proposal_id,
+        cloud_proposal_id: proposal.proposal_id,
+        kind: "proposal.cloud_acknowledged",
+        state: "pending_review",
+        payload: { evidence_residency: "metadata_only" },
+      });
+      expect(governance.authority).toBe("synapsor_cloud");
+      expect(store.approvals(proposal.proposal_id)).toEqual([]);
+      expect(store.listCloudGovernanceEvents(proposal.proposal_id)).toHaveLength(1);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("rejects idempotency-key payload drift and dead-letters permanent failures", () => {
+    const store = new ProposalStore(":memory:");
+    try {
+      const proposal = store.createProposal(changeSet);
+      store.enqueueCloudOutbox({ event_id: "cloud:event-1", proposal_id: proposal.proposal_id, kind: "proposal", payload: { value: 1 }, max_attempts: 2, now: "2026-07-16T00:00:00.000Z" });
+      expect(() => store.enqueueCloudOutbox({ event_id: "cloud:event-1", proposal_id: proposal.proposal_id, kind: "proposal", payload: { value: 2 } }))
+        .toThrowError(expect.objectContaining({ code: "CLOUD_OUTBOX_IDEMPOTENCY_MISMATCH" }));
+      const [claimed] = store.claimCloudOutbox({ owner: "runner-a", now: "2026-07-16T00:00:00.000Z" });
+      expect(claimed).toBeDefined();
+      const failed = store.failCloudOutbox({ event_id: claimed!.event_id, owner: "runner-a", error_code: "runner_token_revoked", retryable: false, now: "2026-07-16T00:00:01.000Z" });
+      expect(failed.status).toBe("dead_letter");
+      expect(store.claimCloudOutbox({ owner: "runner-a", now: "2026-07-17T00:00:00.000Z" })).toEqual([]);
+      expect(store.requeueCloudOutbox(failed.event_id, "2026-07-17T00:00:01.000Z")).toMatchObject({ status: "pending", attempts: 0 });
+      const [retried] = store.claimCloudOutbox({ owner: "runner-b", now: "2026-07-17T00:00:02.000Z" });
+      expect(retried?.event_id).toBe(failed.event_id);
+      store.acknowledgeCloudOutbox(failed.event_id, "runner-b", "2026-07-17T00:00:03.000Z");
+      expect(store.compactCloudOutbox({ acknowledged_before: "2026-07-18T00:00:00.000Z" })).toBe(1);
+      expect(store.listCloudOutbox()).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("round-trips outbox and governance entries through the shared Postgres runtime store", async () => {
+    const pool = new FakePostgresRuntimePool();
+    const store = new PostgresProposalRuntimeStore({ pool, autoMigrate: true });
+    const proposal = await store.createProposal(changeSet);
+    await store.enqueueCloudOutbox({ event_id: "cloud:shared", proposal_id: proposal.proposal_id, kind: "proposal", payload: { proposal_id: proposal.proposal_id } });
+    await store.recordCloudGovernanceEvent({ event_id: "cloud:shared:pending", proposal_id: proposal.proposal_id, kind: "proposal.pending_cloud_sync", state: "pending_cloud_sync", payload: { evidence_residency: "metadata_only" } });
+    expect((await store.listCloudOutbox()).map((item) => item.event_id)).toContain("cloud:shared");
+    expect(await store.listCloudGovernanceEvents(proposal.proposal_id)).toHaveLength(1);
+  });
+});

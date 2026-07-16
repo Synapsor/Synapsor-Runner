@@ -11,12 +11,13 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { assertValidRunnerCapabilityConfig } from "@synapsor-runner/config";
 import {
+  CloudControlError,
   ControlPlaneClient,
   type AdapterToolCatalogEntry,
 } from "@synapsor-runner/control-plane-client";
 import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
-import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { canonicalJsonDigest, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3 } from "@synapsor-runner/protocol";
+import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type CloudOutboxItem, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { canonicalJsonDigest, principalScopeFingerprint, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3, type RunnerActivityV1, type RunnerProposalV1, type WritebackResult } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type AggregateReadSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import { z } from "zod";
@@ -105,6 +106,7 @@ export type RuntimeCapabilityConfig = {
     table: string;
     primary_key: string;
     tenant_key?: string;
+    principal_scope_key?: string;
     single_tenant_dev?: boolean;
   };
   args: Record<string, RuntimeArgConfig>;
@@ -215,10 +217,14 @@ export type RuntimeConfig = {
   trusted_context?: {
     provider: ContextProvider;
     values?: Record<string, unknown>;
+    tenant_binding?: string;
+    principal_binding?: string;
   };
   contexts?: Record<string, {
     provider: ContextProvider;
     values?: Record<string, unknown>;
+    tenant_binding?: string;
+    principal_binding?: string;
   }>;
   executors?: Record<string, unknown>;
   capabilities?: RuntimeCapabilityConfig[];
@@ -234,11 +240,52 @@ export type RuntimeConfig = {
     capabilities?: string[];
     session?: Record<string, unknown>;
   };
+  governance?: {
+    mode: "local_only" | "cloud_linked";
+    connection_file?: string;
+    evidence_residency?: "metadata_only";
+    queue_when_unavailable?: boolean;
+    sync_interval_ms?: number;
+    max_attempts?: number;
+    outbox_retention_days?: number;
+  };
 };
 
 export type RuntimeRateLimitRule = {
   requests: number;
   window_seconds: number;
+};
+
+export type CloudLinkedConnection = {
+  protocol_version: string;
+  base_url: string;
+  runner_token_env: string;
+  runner_token: string;
+  runner_id: string;
+  runner_version: string;
+  project_id: string;
+  source_id: string;
+  runner_source_id: string;
+  mapping_id?: string;
+  contract_id: string;
+  contract_version_id: string;
+  contract_digest: `sha256:${string}`;
+};
+
+export type CloudLinkedSyncStatus = {
+  authority_mode: "local_only" | "cloud_linked";
+  evidence_residency: "metadata_only";
+  pending: number;
+  leased: number;
+  acknowledged: number;
+  dead_letter: number;
+  reconciliation_required: number;
+  oldest_pending_at?: string;
+  last_acknowledged_at?: string;
+  last_reconciled_at?: string;
+  last_reconciliation_error_code?: string;
+  last_compacted_at?: string;
+  last_compacted_count?: number;
 };
 
 export type TrustedContext = {
@@ -285,6 +332,7 @@ export type McpRuntime = {
   readResource(uri: string): Promise<Record<string, unknown>>;
   poolMetrics(): RuntimePoolMetric[];
   rateLimitMetrics(): RuntimeRateLimitMetric[];
+  cloudSyncStatus(): Promise<CloudLinkedSyncStatus>;
   close(): Promise<void>;
 };
 
@@ -446,7 +494,12 @@ export function loadRuntimeConfigFromFile(
 }
 
 export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cwd()): RuntimeConfig {
-  if (!Array.isArray(config.contracts) || config.contracts.length === 0) return config;
+  const governance = config.governance?.connection_file
+    ? { ...config.governance, connection_file: path.resolve(baseDir, config.governance.connection_file) }
+    : config.governance;
+  if (!Array.isArray(config.contracts) || config.contracts.length === 0) {
+    return governance === config.governance ? config : { ...config, governance };
+  }
   const seenCapabilities = new Map<string, string>();
   const seenPolicies = new Map<string, string>();
   for (const [index, capability] of (config.capabilities ?? []).entries()) {
@@ -457,6 +510,7 @@ export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cw
   }
   const resolved: RuntimeConfig = {
     ...config,
+    ...(governance ? { governance } : {}),
     contexts: { ...(config.contexts ?? {}) },
     capabilities: [...(config.capabilities ?? [])],
     policies: [...(config.policies ?? [])],
@@ -468,6 +522,486 @@ export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cw
   }
   delete resolved.contracts;
   return resolved;
+}
+
+export function loadCloudLinkedConnection(config: RuntimeConfig, env: NodeJS.ProcessEnv = process.env): CloudLinkedConnection {
+  if (config.governance?.mode !== "cloud_linked") {
+    throw new McpRuntimeError("CLOUD_LINKED_MODE_REQUIRED", "This operation requires governance.mode cloud_linked.");
+  }
+  const connectionPath = config.governance.connection_file;
+  if (!connectionPath) throw new McpRuntimeError("CLOUD_CONNECTION_REQUIRED", "Cloud-linked governance requires governance.connection_file.");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(connectionPath, "utf8"));
+  } catch (error) {
+    throw new McpRuntimeError("CLOUD_CONNECTION_INVALID", `Unable to read the reviewed Cloud connection file: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const root = isRecord(parsed) ? parsed : {};
+  const cloud = isRecord(root.cloud) ? root.cloud : undefined;
+  if (!cloud) throw new McpRuntimeError("CLOUD_CONNECTION_INVALID", "Cloud connection file must contain a cloud object.");
+  const baseUrlEnv = nonEmptyString(cloud.base_url_env) ?? "SYNAPSOR_CLOUD_BASE_URL";
+  const runnerTokenEnv = nonEmptyString(cloud.runner_token_env) ?? "SYNAPSOR_RUNNER_TOKEN";
+  const baseUrl = envValue(env, baseUrlEnv) ?? nonEmptyString(cloud.base_url);
+  const runnerToken = envValue(env, runnerTokenEnv);
+  const sourceId = nonEmptyString(cloud.source_id);
+  const runnerSourceId = nonEmptyString(cloud.runner_source_id) ?? sourceId;
+  const projectId = nonEmptyString(cloud.project_id);
+  const contractId = nonEmptyString(cloud.contract_id);
+  const contractVersionId = nonEmptyString(cloud.contract_version_id);
+  const digest = nonEmptyString(cloud.contract_digest);
+  const missing = [
+    !baseUrl ? baseUrlEnv : "",
+    !runnerToken ? runnerTokenEnv : "",
+    !projectId ? "cloud.project_id" : "",
+    !sourceId ? "cloud.source_id" : "",
+    !contractId ? "cloud.contract_id" : "",
+    !contractVersionId ? "cloud.contract_version_id" : "",
+    !digest ? "cloud.contract_digest" : "",
+  ].filter(Boolean);
+  if (missing.length) throw new McpRuntimeError("CLOUD_CONNECTION_INCOMPLETE", `Cloud-linked connection is missing: ${missing.join(", ")}.`);
+  if (!/^sha256:[0-9a-f]{64}$/i.test(digest!)) throw new McpRuntimeError("CLOUD_CONTRACT_DIGEST_INVALID", "cloud.contract_digest must be a full sha256 digest.");
+  let normalizedBaseUrl: string;
+  try {
+    const url = new URL(baseUrl!);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("unsafe URL components");
+    normalizedBaseUrl = url.toString().replace(/\/$/, "");
+  } catch {
+    throw new McpRuntimeError("CLOUD_BASE_URL_INVALID", `${baseUrlEnv} must contain an HTTP(S) origin without credentials, query, or fragment.`);
+  }
+  return {
+    protocol_version: nonEmptyString(cloud.protocol_version) ?? protocolVersions.runnerProposal,
+    base_url: normalizedBaseUrl,
+    runner_token_env: runnerTokenEnv,
+    runner_token: runnerToken!,
+    runner_id: nonEmptyString(cloud.runner_id) ?? envValue(env, "SYNAPSOR_RUNNER_ID") ?? "synapsor_runner_local",
+    runner_version: nonEmptyString(cloud.runner_version) ?? envValue(env, "npm_package_version") ?? "unknown",
+    project_id: projectId!,
+    source_id: sourceId!,
+    runner_source_id: runnerSourceId!,
+    ...(nonEmptyString(cloud.mapping_id) ? { mapping_id: nonEmptyString(cloud.mapping_id) } : {}),
+    contract_id: contractId!,
+    contract_version_id: contractVersionId!,
+    contract_digest: digest!.toLowerCase() as `sha256:${string}`,
+  };
+}
+
+export async function enqueueCloudLinkedProposal(input: {
+  config: RuntimeConfig;
+  store: ProposalRuntimeStore;
+  proposal: StoredProposal;
+  evidenceBundleId: string;
+  queryFingerprint: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<CloudOutboxItem | undefined> {
+  if (input.config.governance?.mode !== "cloud_linked") return undefined;
+  if (!input.store.enqueueCloudOutbox) throw new McpRuntimeError("CLOUD_OUTBOX_UNAVAILABLE", "The configured runtime store does not implement the durable Cloud outbox.");
+  const connection = loadCloudLinkedConnection(input.config, input.env ?? process.env);
+  if (input.proposal.source_id !== connection.runner_source_id) {
+    throw new McpRuntimeError("CLOUD_SOURCE_MAPPING_MISMATCH", `Proposal source ${input.proposal.source_id} is not the reviewed local source ${connection.runner_source_id}.`);
+  }
+  const evidence = input.store.listEvidenceBundles
+    ? await input.store.listEvidenceBundles({ proposal: input.proposal.proposal_id, limit: 100 })
+    : [];
+  const queryAudit = input.store.listQueryAudit
+    ? await input.store.listQueryAudit({ proposal: input.proposal.proposal_id, limit: 100 })
+    : [];
+  const sanitizedChangeSet = cloudSafeChangeSet(input.proposal.change_set);
+  const proposalPayload: RunnerProposalV1 = {
+    schema_version: protocolVersions.runnerProposal,
+    runner_id: connection.runner_id,
+    source_id: connection.source_id,
+    ...(connection.mapping_id ? { mapping_id: connection.mapping_id } : {}),
+    contract: {
+      contract_id: connection.contract_id,
+      contract_version_id: connection.contract_version_id,
+      digest: connection.contract_digest,
+    },
+    change_set: sanitizedChangeSet,
+    evidence_metadata: {
+      bundle_ids: evidence.length ? evidence.map((item) => item.evidence_bundle_id) : [input.evidenceBundleId],
+      count: evidence.length || 1,
+      query_fingerprints: [...new Set([input.queryFingerprint, ...evidence.map((item) => item.query_fingerprint)].filter((value): value is string => Boolean(value)))],
+      payload_uploaded: false,
+    },
+    query_audit: {
+      audit_ids: queryAudit.map((item) => item.audit_id).filter((value) => value !== undefined) as Array<string | number>,
+      count: queryAudit.length,
+      query_fingerprints: [...new Set(queryAudit.map((item) => typeof item.query_fingerprint === "string" ? item.query_fingerprint : undefined).filter((value): value is string => Boolean(value)))],
+      tables: [...new Set(queryAudit.map((item) => typeof item.table_name === "string" ? item.table_name : undefined).filter((value): value is string => Boolean(value)))],
+      payload_uploaded: false,
+    },
+  };
+  const maxAttempts = input.config.governance.max_attempts ?? 12;
+  const proposalItem = await input.store.enqueueCloudOutbox({
+    event_id: `cloud-proposal:${input.proposal.proposal_id}`,
+    proposal_id: input.proposal.proposal_id,
+    sequence: 0,
+    kind: "proposal",
+    payload: proposalPayload as unknown as Record<string, unknown>,
+    max_attempts: maxAttempts,
+  });
+  const principalScope = input.proposal.change_set.guards.principal_scope;
+  const common = {
+    schema_version: protocolVersions.runnerActivity,
+    runner_id: connection.runner_id,
+    source_id: connection.source_id,
+    proposal_id: input.proposal.proposal_id,
+    capability: input.proposal.action,
+    tenant_id: input.proposal.tenant_id,
+    principal: principalScope?.value_fingerprint ?? input.proposal.principal,
+    business_object: input.proposal.business_object,
+    object_id: input.proposal.object_id,
+    status: "pending_cloud_sync",
+  } as const;
+  for (const [index, bundle] of evidence.entries()) {
+    const activity: RunnerActivityV1 = {
+      ...common,
+      event_id: `evidence:${bundle.evidence_bundle_id}`,
+      event_type: "evidence.recorded",
+      evidence_ids: [bundle.evidence_bundle_id],
+      detail: { residency: "metadata_only", stored_locally: true, payload_uploaded: false },
+      occurred_at: bundle.created_at,
+    };
+    await input.store.enqueueCloudOutbox({ event_id: `cloud-activity:${activity.event_id}`, proposal_id: input.proposal.proposal_id, sequence: 10 + index, kind: "activity", payload: activity as unknown as Record<string, unknown>, max_attempts: maxAttempts });
+  }
+  for (const [index, audit] of queryAudit.entries()) {
+    const auditId = String(audit.audit_id);
+    const activity: RunnerActivityV1 = {
+      ...common,
+      event_id: `query-audit:${auditId}`,
+      event_type: "query_audit.recorded",
+      query_audit_ids: [auditId],
+      ...(typeof audit.evidence_bundle_id === "string" ? { evidence_ids: [audit.evidence_bundle_id] } : {}),
+      detail: { residency: "metadata_only", stored_locally: true, payload_uploaded: false },
+      occurred_at: typeof audit.created_at === "string" ? audit.created_at : undefined,
+    };
+    await input.store.enqueueCloudOutbox({ event_id: `cloud-activity:${activity.event_id}`, proposal_id: input.proposal.proposal_id, sequence: 20 + index, kind: "activity", payload: activity as unknown as Record<string, unknown>, max_attempts: maxAttempts });
+  }
+  await input.store.recordCloudGovernanceEvent?.({
+    event_id: `cloud-governance:pending:${input.proposal.proposal_id}`,
+    proposal_id: input.proposal.proposal_id,
+    kind: "proposal.pending_cloud_sync",
+    state: "pending_cloud_sync",
+    payload: { evidence_residency: "metadata_only", contract_digest: connection.contract_digest, project_id: connection.project_id, source_id: connection.source_id },
+  });
+  return proposalItem;
+}
+
+export async function enqueueCloudLinkedResult(input: {
+  config: RuntimeConfig;
+  store: ProposalRuntimeStore;
+  proposalId: string;
+  result: WritebackResult;
+  leaseId: string;
+}): Promise<CloudOutboxItem | undefined> {
+  if (input.config.governance?.mode !== "cloud_linked") return undefined;
+  if (!input.store.enqueueCloudOutbox) throw new McpRuntimeError("CLOUD_OUTBOX_UNAVAILABLE", "The configured runtime store does not implement the durable Cloud outbox.");
+  const proposal = await input.store.getProposal(input.proposalId);
+  if (!proposal) throw new McpRuntimeError("CLOUD_RESULT_LOCAL_PROPOSAL_REQUIRED", `Cloud result ${input.result.job_id} has no matching local proposal.`);
+  if (input.result.job_id !== `wbj_${input.proposalId}` && !input.result.job_id.endsWith(input.proposalId)) {
+    throw new McpRuntimeError("CLOUD_RESULT_PROPOSAL_MISMATCH", "Cloud result job identity does not match the local proposal.");
+  }
+  const payload = {
+    schema_version: "synapsor.cloud-result-outbox.v1",
+    lease_id: input.leaseId,
+    result: input.result,
+  };
+  return input.store.enqueueCloudOutbox({
+    event_id: `cloud-result:${input.result.job_id}:${input.result.result_hash}`,
+    proposal_id: input.proposalId,
+    sequence: 1_000,
+    kind: "result",
+    payload,
+    max_attempts: input.config.governance.max_attempts ?? 12,
+  });
+}
+
+async function assertCloudLinkedProposalAvailability(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (config.governance?.mode !== "cloud_linked" || config.governance.queue_when_unavailable !== false) return;
+  const connection = loadCloudLinkedConnection(config, env);
+  const client = new ControlPlaneClient({
+    baseUrl: connection.base_url,
+    runnerToken: connection.runner_token,
+    sourceId: connection.source_id,
+    runnerId: connection.runner_id,
+  });
+  let result: Awaited<ReturnType<ControlPlaneClient["doctor"]>>;
+  try {
+    result = await client.doctor();
+  } catch (error) {
+    throw new McpRuntimeError(
+      "CLOUD_TEMPORARILY_UNAVAILABLE",
+      "Synapsor Cloud is temporarily unavailable and this Runner is configured not to queue proposals.",
+      { retry_after_ms: 1_000, cause_code: safeRuntimeErrorCode(error) },
+    );
+  }
+  if (result.ok && result.authenticated) return;
+  const errorCode = nonEmptyString(result.details?.error) ?? nonEmptyString(result.details?.error_code);
+  if (result.status === 401) {
+    throw new McpRuntimeError("CLOUD_RUNNER_AUTHENTICATION_FAILED", "The reviewed Synapsor Cloud Runner credential is not authenticated.");
+  }
+  if (result.status === 403) {
+    throw new McpRuntimeError("CLOUD_RUNNER_AUTHORIZATION_FAILED", "The reviewed Synapsor Cloud Runner identity is not authorized for this source.");
+  }
+  if ([409, 412, 422].includes(result.status)) {
+    throw new McpRuntimeError("CLOUD_CONNECTION_CONFLICT", "The reviewed local Cloud connection no longer matches the active Cloud contract or source.", {
+      ...(errorCode ? { cloud_error_code: errorCode } : {}),
+    });
+  }
+  if (result.status === 429) {
+    throw new McpRuntimeError("CLOUD_RATE_LIMITED", "Synapsor Cloud is rate limiting proposal submissions.", { retry_after_ms: 1_000 });
+  }
+  throw new McpRuntimeError(
+    "CLOUD_TEMPORARILY_UNAVAILABLE",
+    "Synapsor Cloud is temporarily unavailable and this Runner is configured not to queue proposals.",
+    { retry_after_ms: 1_000, cloud_status: result.status, ...(errorCode ? { cloud_error_code: errorCode } : {}) },
+  );
+}
+
+function cloudSafeChangeSet(changeSet: ChangeSet): ChangeSet {
+  const sanitized = JSON.parse(JSON.stringify(changeSet)) as ChangeSet;
+  sanitized.evidence.items = [];
+  const principalScope = sanitized.guards.principal_scope;
+  if (principalScope) {
+    stripCloudPrincipalColumn(sanitized, principalScope.column);
+    sanitized.principal.id = principalScope.value_fingerprint;
+    delete principalScope.value;
+  }
+  return sanitized;
+}
+
+function stripCloudPrincipalColumn(changeSet: ChangeSet, column: string): void {
+  const strip = (value: unknown) => { if (isRecord(value)) delete value[column]; };
+  strip(changeSet.before);
+  strip(changeSet.after);
+  if ("frozen_set" in changeSet && isRecord(changeSet.frozen_set) && Array.isArray(changeSet.frozen_set.members)) {
+    for (const member of changeSet.frozen_set.members) {
+      if (!isRecord(member)) continue;
+      strip(member.before);
+      strip(member.after);
+    }
+  }
+  if (changeSet.schema_version === protocolVersions.compensationChangeSet) {
+    for (const member of changeSet.compensation.descriptor.members) {
+      strip(member.expected_state);
+      strip(member.restore_values);
+    }
+  }
+}
+
+export class CloudLinkedSynchronizer {
+  private readonly connection: CloudLinkedConnection;
+  private readonly client: ControlPlaneClient;
+  private readonly owner: string;
+  private timer?: NodeJS.Timeout;
+  private stopped = false;
+  private draining = false;
+  private lastReconciledAt?: string;
+  private lastReconciliationErrorCode?: string;
+  private lastCompactedAt?: string;
+  private lastCompactedCount = 0;
+
+  constructor(private readonly config: RuntimeConfig, private readonly store: ProposalRuntimeStore, env: NodeJS.ProcessEnv = process.env) {
+    this.connection = loadCloudLinkedConnection(config, env);
+    this.client = new ControlPlaneClient({ baseUrl: this.connection.base_url, runnerToken: this.connection.runner_token, sourceId: this.connection.source_id, runnerId: this.connection.runner_id });
+    this.owner = `${this.connection.runner_id}:${process.pid}:${crypto.randomBytes(4).toString("hex")}`;
+    if (!store.claimCloudOutbox || !store.acknowledgeCloudOutbox || !store.failCloudOutbox || !store.listCloudOutbox) {
+      throw new McpRuntimeError("CLOUD_OUTBOX_UNAVAILABLE", "Cloud-linked governance requires durable outbox support in the runtime store.");
+    }
+  }
+
+  start(): void {
+    if (this.timer || this.stopped) return;
+    const tick = async () => {
+      if (this.stopped) return;
+      await this.drainOnce().catch(() => undefined);
+      if (!this.stopped) {
+        this.timer = setTimeout(tick, this.config.governance?.sync_interval_ms ?? 2_000);
+        this.timer.unref?.();
+      }
+    };
+    void tick();
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    if (this.timer) clearTimeout(this.timer);
+    while (this.draining) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  async drainOnce(): Promise<{ claimed: number; acknowledged: number; failed: number }> {
+    if (this.draining) return { claimed: 0, acknowledged: 0, failed: 0 };
+    this.draining = true;
+    let acknowledged = 0;
+    let failed = 0;
+    try {
+      const items = await this.store.claimCloudOutbox!({ owner: this.owner, limit: 10, lease_ms: 30_000 });
+      for (const item of items) {
+        try {
+          const response = await this.deliver(item);
+          if (item.proposal_id && item.kind === "proposal") {
+            const cloudProposalId = nonEmptyString(response.proposal_id) ?? nonEmptyString(response.id) ?? item.proposal_id;
+            const requestId = nonEmptyString(response.request_id);
+            await this.store.recordCloudGovernanceEvent?.({
+              event_id: `cloud-governance:ack:${item.event_id}`,
+              proposal_id: item.proposal_id,
+              cloud_proposal_id: cloudProposalId,
+              kind: "proposal.cloud_acknowledged",
+              state: nonEmptyString(response.status) ?? "pending_review",
+              payload: { ...(requestId ? { request_id: requestId } : {}), evidence_residency: "metadata_only", payload_hash: item.payload_hash },
+            });
+          }
+          await this.store.acknowledgeCloudOutbox!(item.event_id, this.owner);
+          acknowledged += 1;
+        } catch (error) {
+          failed += 1;
+          const classification = classifyCloudSyncFailure(error);
+          await this.store.failCloudOutbox!({ event_id: item.event_id, owner: this.owner, ...classification });
+        }
+      }
+      await this.reconcileOnce().catch((error) => {
+        this.lastReconciliationErrorCode = classifyCloudSyncFailure(error).error_code;
+      });
+      await this.compactAcknowledged().catch(() => undefined);
+      return { claimed: items.length, acknowledged, failed };
+    } finally {
+      this.draining = false;
+    }
+  }
+
+  async status(): Promise<CloudLinkedSyncStatus> {
+    const items = await this.store.listCloudOutbox!({ limit: 10_000 });
+    const count = (status: CloudOutboxItem["status"]) => items.filter((item) => item.status === status).length;
+    const pending = items.filter((item) => item.status === "pending");
+    const acknowledged = items.filter((item) => item.status === "acknowledged" && item.acknowledged_at);
+    return {
+      authority_mode: "cloud_linked",
+      evidence_residency: "metadata_only",
+      pending: count("pending"),
+      leased: count("leased"),
+      acknowledged: count("acknowledged"),
+      dead_letter: count("dead_letter"),
+      reconciliation_required: count("reconciliation_required"),
+      ...(pending[0] ? { oldest_pending_at: pending[0].created_at } : {}),
+      ...(acknowledged.length ? { last_acknowledged_at: acknowledged.map((item) => item.acknowledged_at!).sort().at(-1) } : {}),
+      ...(this.lastReconciledAt ? { last_reconciled_at: this.lastReconciledAt } : {}),
+      ...(this.lastReconciliationErrorCode ? { last_reconciliation_error_code: this.lastReconciliationErrorCode } : {}),
+      ...(this.lastCompactedAt ? { last_compacted_at: this.lastCompactedAt, last_compacted_count: this.lastCompactedCount } : {}),
+    };
+  }
+
+  private async compactAcknowledged(): Promise<void> {
+    if (!this.store.compactCloudOutbox) return;
+    const now = Date.now();
+    if (this.lastCompactedAt && now - Date.parse(this.lastCompactedAt) < 60 * 60 * 1_000) return;
+    const retentionDays = this.config.governance?.outbox_retention_days ?? 30;
+    const cutoff = new Date(now - retentionDays * 24 * 60 * 60 * 1_000).toISOString();
+    this.lastCompactedCount = await this.store.compactCloudOutbox({ acknowledged_before: cutoff });
+    this.lastCompactedAt = new Date(now).toISOString();
+  }
+
+  async reconcileOnce(): Promise<{ inspected: number; recorded: number }> {
+    if (!this.store.listCloudGovernanceEvents || !this.store.recordCloudGovernanceEvent) return { inspected: 0, recorded: 0 };
+    const acknowledged = (await this.store.listCloudOutbox!({ status: "acknowledged", limit: 10_000 }))
+      .filter((item) => item.kind === "proposal" && item.proposal_id);
+    let recorded = 0;
+    for (const item of acknowledged.slice(-100)) {
+      const proposalId = item.proposal_id!;
+      const events = await this.store.listCloudGovernanceEvents(proposalId);
+      const latest = events.at(-1);
+      if (latest && ["applied", "failed", "conflict", "indeterminate", "canceled", "rejected"].includes(latest.state)) continue;
+      const response = await this.client.proposalStatus(proposalId);
+      const state = nonEmptyString(response.status) ?? "unknown";
+      const payload = cloudGovernanceStatusPayload(response);
+      const identity = canonicalJsonDigest({ proposal_id: proposalId, state, payload });
+      const eventId = `cloud-governance:state:${proposalId}:${identity.slice("sha256:".length, "sha256:".length + 20)}`;
+      const existed = events.some((event) => event.event_id === eventId);
+      await this.store.recordCloudGovernanceEvent({
+        event_id: eventId,
+        proposal_id: proposalId,
+        cloud_proposal_id: nonEmptyString(response.proposal_id) ?? proposalId,
+        kind: `proposal.cloud_${state}`,
+        state,
+        payload,
+      });
+      if (!existed) recorded += 1;
+    }
+    this.lastReconciledAt = new Date().toISOString();
+    this.lastReconciliationErrorCode = undefined;
+    return { inspected: acknowledged.length, recorded };
+  }
+
+  private async deliver(item: CloudOutboxItem): Promise<Record<string, unknown>> {
+    if (item.kind === "proposal") return this.client.submitProposal(item.payload as unknown as RunnerProposalV1);
+    if (item.kind === "activity") return this.client.submitActivity(item.payload as unknown as RunnerActivityV1);
+    if (item.kind === "result") {
+      const result = isRecord(item.payload.result) ? item.payload.result as unknown as WritebackResult : undefined;
+      const leaseId = nonEmptyString(item.payload.lease_id);
+      if (!result || !leaseId) throw new McpRuntimeError("CLOUD_RESULT_OUTBOX_INVALID", "Cloud result outbox entry is missing a result or lease identity.");
+      return this.client.result(result, leaseId);
+    }
+    throw new McpRuntimeError("CLOUD_OUTBOX_KIND_UNSUPPORTED", `Unsupported Cloud outbox kind: ${item.kind}`);
+  }
+}
+
+function cloudGovernanceStatusPayload(response: Record<string, unknown>): Record<string, unknown> {
+  const decision = isRecord(response.decision) ? response.decision : undefined;
+  const job = isRecord(response.job) ? response.job : undefined;
+  const result = isRecord(response.result) ? response.result : undefined;
+  const actor = nonEmptyString(decision?.actor);
+  return JSON.parse(JSON.stringify({
+    contract_id: nonEmptyString(response.contract_id),
+    contract_version_id: nonEmptyString(response.contract_version_id),
+    contract_digest: nonEmptyString(response.contract_digest),
+    source_id: nonEmptyString(response.source_id),
+    terminal: response.terminal === true,
+    evidence_residency: "metadata_only",
+    decision: decision ? {
+      status: nonEmptyString(decision.status),
+      authority: "synapsor_cloud",
+      actor_fingerprint: actor ? canonicalJsonDigest({ actor }) : undefined,
+      decided_at: nonEmptyString(decision.decided_at),
+    } : undefined,
+    job: job ? {
+      job_id: nonEmptyString(job.job_id),
+      status: nonEmptyString(job.status),
+      attempt_count: typeof job.attempt_count === "number" ? job.attempt_count : undefined,
+      leased_runner_id: nonEmptyString(job.leased_runner_id),
+      lease_expires_at: job.lease_expires_at,
+    } : undefined,
+    result: result ? {
+      status: nonEmptyString(result.status),
+      source_database_mutated: result.source_database_mutated === true,
+      affected_rows: typeof result.affected_rows === "number" ? result.affected_rows : undefined,
+      receipt_id: nonEmptyString(result.receipt_id),
+      result_hash: nonEmptyString(result.result_hash),
+      error_code: nonEmptyString(result.error_code),
+    } : undefined,
+    updated_at: response.updated_at,
+  })) as Record<string, unknown>;
+}
+
+function classifyCloudSyncFailure(error: unknown): { error_code: string; retryable: boolean; retry_after_ms?: number; reconciliation?: boolean } {
+  if (error instanceof CloudControlError) {
+    const reconciliation = [409, 412, 422].includes(error.status) || ["contract_digest_mismatch", "proposal_hash_mismatch", "cloud_state_conflict"].includes(error.error_code);
+    return {
+      error_code: error.error_code,
+      retryable: error.retryable && !reconciliation,
+      ...(error.retry_after_ms === undefined ? {} : { retry_after_ms: error.retry_after_ms }),
+      ...(reconciliation ? { reconciliation: true } : {}),
+    };
+  }
+  if (error instanceof McpRuntimeError) return { error_code: error.code, retryable: false };
+  return { error_code: "cloud_sync_internal", retryable: false };
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized || undefined;
 }
 
 function rememberCapabilityName(seen: Map<string, string>, name: string, origin: string): void {
@@ -524,6 +1058,8 @@ function runtimeContextFromSpec(context: AgentContextSpec): NonNullable<RuntimeC
           : "environment";
   return {
     provider,
+    tenant_binding: context.tenant_binding,
+    principal_binding: context.principal_binding,
     values: {
       ...(tenantBinding ? { tenant_id_env: tenantBinding.key, tenant_id_key: tenantBinding.key } : {}),
       ...(principalBinding ? { principal_env: principalBinding.key, principal_key: principalBinding.key } : {}),
@@ -544,6 +1080,7 @@ function runtimeCapabilityFromSpec(
     table: subjectResource?.table ?? capability.subject.table ?? "",
     primary_key: subjectResource?.primary_key ?? capability.subject.primary_key ?? "",
     tenant_key: subjectResource?.tenant_key ?? capability.subject.tenant_key,
+    principal_scope_key: capability.subject.principal_scope_key,
     single_tenant_dev: subjectResource?.single_tenant_dev ?? capability.subject.single_tenant_dev,
   };
   const runtime: RuntimeCapabilityConfig = {
@@ -604,6 +1141,11 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   const cloudTools = options.cloudTools ?? [];
   const resultFormat = options.resultFormat ?? config.result_format ?? 1;
   const trustedContext = options.trustedContext;
+  if (config.governance?.mode === "cloud_linked") loadCloudLinkedConnection(config, env);
+  const cloudSynchronizer = ownsStore && config.governance?.mode === "cloud_linked"
+    ? new CloudLinkedSynchronizer(config, store, env)
+    : undefined;
+  cloudSynchronizer?.start();
   const assertLocalStoreAvailable = ownsStore && sharedPostgres?.mode !== "runtime_store";
   const assertStoreAvailable = () => {
     if (assertLocalStoreAvailable) assertPersistentStoreAvailable(storePath);
@@ -638,7 +1180,11 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
     },
     poolMetrics: () => resources.poolMetrics(),
     rateLimitMetrics: () => resources.rateLimitMetrics(),
+    cloudSyncStatus: async () => cloudSynchronizer
+      ? cloudSynchronizer.status()
+      : ({ authority_mode: "local_only", evidence_residency: "metadata_only", pending: 0, leased: 0, acknowledged: 0, dead_letter: 0, reconciliation_required: 0 }),
     close: async () => {
+      await cloudSynchronizer?.stop();
       if (ownsResources) await resources.close();
       if (!options.store) await store.close();
     },
@@ -669,7 +1215,7 @@ export function createMcpRuntimeSharedResources(
   };
 }
 
-function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): ProposalRuntimeStore {
+export function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): ProposalRuntimeStore {
   const sharedPostgres = config.storage?.shared_postgres;
   if (sharedPostgres?.mode === "runtime_store") {
     const databaseUrl = envValue(env, sharedPostgres.url_env);
@@ -944,6 +1490,10 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
   const sharedStorePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
   const sharedStore = createDefaultRuntimeStore(config, env, sharedStorePath);
+  const cloudSynchronizer = config.governance?.mode === "cloud_linked"
+    ? new CloudLinkedSynchronizer(config, sharedStore, env)
+    : undefined;
+  cloudSynchronizer?.start();
   const sharedResources = createMcpRuntimeSharedResources(config, env, options.readRow);
   const sessions = new Map<string, StreamableHttpSession>();
   const openSessions = new Set<StreamableHttpSession>();
@@ -989,6 +1539,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       });
     });
   } catch (error) {
+    await cloudSynchronizer?.stop();
     await closeStreamableSessions(openSessions);
     await sharedResources.close();
     await sharedStore.close();
@@ -1018,7 +1569,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     host: actualHost,
     port: actualPort,
     url,
-    close: () => closeStreamableHttpServer(server, openSessions, sharedResources, sharedStore),
+    close: () => closeStreamableHttpServer(server, openSessions, sharedResources, sharedStore, cloudSynchronizer),
   };
 }
 
@@ -1722,6 +2273,7 @@ async function closeStreamableHttpServer(
   sessions: Set<StreamableHttpSession>,
   sharedResources: McpRuntimeSharedResources,
   sharedStore: ProposalRuntimeStore,
+  cloudSynchronizer?: CloudLinkedSynchronizer,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
@@ -1729,6 +2281,7 @@ async function closeStreamableHttpServer(
       else resolve();
     });
   }).finally(async () => {
+    await cloudSynchronizer?.stop();
     await closeStreamableSessions(sessions);
     await sharedResources.close();
     await sharedStore.close();
@@ -1896,6 +2449,9 @@ async function callConfiguredTool(input: {
     assertProposalWritebackResolvable(input.config, capability);
     assertApprovalPolicyResolvable(input.config, capability);
   }
+  if (capability.kind === "proposal") {
+    await assertCloudLinkedProposalAvailability(input.config, input.env);
+  }
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
   const context = resolveTrustedContext(input.config, input.env, capability, input.trustedContext);
@@ -1931,6 +2487,8 @@ async function callConfiguredTool(input: {
   const patch = capability.kind !== "proposal" || operation === "delete" || batchInsert ? {} : buildPatch(capability, input.args);
   const itemPatches = batchInsert ? batchItems.map((item) => buildItemPatch(capability, item, input.args)) : [];
   const before = scalarRecord(current.row);
+  const principalScope = effectivePrincipalScope(input.config, capability, context);
+  const principalScopeMetadata = principalScope ? withoutPrincipalScopeValue(principalScope) : undefined;
   if (capability.kind === "proposal") {
     if (setOperation && !batchInsert) currentRows.forEach((row) => enforcePatchGuards(capability, scalarRecord(row), patch));
     else if (batchInsert) itemPatches.forEach((itemPatch) => enforcePatchGuards(capability, {}, itemPatch));
@@ -1941,12 +2499,14 @@ async function callConfiguredTool(input: {
     action: capability.name,
     operation,
     tenant: context.tenant_id,
+    principal_scope: principalScope?.value_fingerprint,
     before: setOperation ? currentRows.map(scalarRecord) : before,
     patch: batchInsert ? itemPatches : patch,
     created_at: createdAt,
   } : {
     action: capability.name,
     tenant: context.tenant_id,
+    principal_scope: principalScope?.value_fingerprint,
     object: String(current.row[capability.target.primary_key] ?? input.args[capability.lookup.id_from_arg]),
     before,
     patch,
@@ -1960,6 +2520,7 @@ async function callConfiguredTool(input: {
     ? stableId("set", {
       capability: capability.name,
       tenant: context.tenant_id,
+      principal_scope: principalScope?.value_fingerprint,
       identities: batchInsert ? batchItems : currentRows.map((row) => row[capability.target.primary_key]),
     })
     : capability.kind === "proposal" && operation === "insert"
@@ -1970,6 +2531,7 @@ async function callConfiguredTool(input: {
     capability: capability.name,
     source: capability.source,
     tenant: context.tenant_id,
+    principal_scope: principalScope?.value_fingerprint,
     row: capability.kind === "proposal" && operation === "insert" ? undefined : setOperation ? currentRows : current.row,
     patch: capability.kind === "proposal" && operation === "insert" ? (batchInsert ? itemPatches : patch) : undefined,
     at: createdAt,
@@ -2005,6 +2567,7 @@ async function callConfiguredTool(input: {
       tenant_id: context.tenant_id,
       source_database_changed: false,
       binding_provenance: context.provenance,
+      ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
     },
     items: setOperation
       ? boundedSetEvidenceItems(capability, context, operation, currentRows, itemPatches, batchItems)
@@ -2014,7 +2577,8 @@ async function callConfiguredTool(input: {
         table: `${capability.target.schema}.${capability.target.table}`,
         primary_key: { column: capability.target.primary_key, value: objectId },
         tenant: capability.target.tenant_key ? { column: capability.target.tenant_key, value: context.tenant_id } : undefined,
-        visible_row: capability.kind === "proposal" && operation === "insert" ? patch : scalarRecord(current.row),
+        ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
+        visible_row: capability.kind === "proposal" && operation === "insert" ? patch : visibleScalarRecord(capability, current.row),
         ...(resolvedDeduplication ? { deduplication: resolvedDeduplication } : {}),
       }],
   });
@@ -2029,6 +2593,8 @@ async function callConfiguredTool(input: {
         capability: capability.name,
         columns: capability.visible_columns,
         tenant_bound: Boolean(capability.target.tenant_key),
+        principal_bound: Boolean(principalScope),
+        ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
         statement_template: selectTemplate(capability),
         parameters_redacted: true,
       },
@@ -2044,7 +2610,7 @@ async function callConfiguredTool(input: {
         type: capability.target.table,
         id: objectId,
       },
-      data: scalarRecord(current.row),
+      data: visibleScalarRecord(capability, current.row),
       trusted_context: {
         tenant_id: context.tenant_id,
         principal: context.principal,
@@ -2080,13 +2646,15 @@ async function callConfiguredTool(input: {
     }
     throw error;
   }
-  const approvalResult = await maybeAutoApproveProposal({
-    config: input.config,
-    capability,
-    store: input.store,
-    proposal,
-    patch: changeSet.patch,
-  });
+  const approvalResult = input.config.governance?.mode === "cloud_linked"
+    ? { proposal, approved: false }
+    : await maybeAutoApproveProposal({
+      config: input.config,
+      capability,
+      store: input.store,
+      proposal,
+      patch: changeSet.patch,
+    });
   await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
     proposal_id: proposal.proposal_id,
@@ -2096,6 +2664,7 @@ async function callConfiguredTool(input: {
       proposal_id: proposal.proposal_id,
       source_database_changed: false,
       approval_status: approvalResult.proposal.state === "approved" ? "approved" : changeSet.approval.status,
+      ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
     },
     items: [
       {
@@ -2118,12 +2687,29 @@ async function callConfiguredTool(input: {
         capability: capability.name,
         statement_template: selectTemplate(capability),
         parameters_redacted: true,
+        principal_bound: Boolean(principalScope),
+        ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
       },
     });
   }
 
+  await enqueueCloudLinkedProposal({
+    config: input.config,
+    store: input.store,
+    proposal: approvalResult.proposal,
+    evidenceBundleId,
+    queryFingerprint,
+    env: input.env,
+  });
+
   return {
-    status: input.config.mode === "shadow" ? "shadow_proposal_created" : approvalResult.proposal.state === "approved" ? "approved" : "review_required",
+    status: input.config.governance?.mode === "cloud_linked"
+      ? "pending_cloud_sync"
+      : input.config.mode === "shadow"
+        ? "shadow_proposal_created"
+        : approvalResult.proposal.state === "approved"
+          ? "approved"
+          : "review_required",
     action: capability.name,
     proposal_id: approvalResult.proposal.proposal_id,
     proposal_version: approvalResult.proposal.proposal_version,
@@ -2150,6 +2736,9 @@ async function callConfiguredTool(input: {
         } : {}),
       },
     approval_required: approvalResult.proposal.state === "pending_review",
+    governance: input.config.governance?.mode === "cloud_linked"
+      ? { authority: "synapsor_cloud", state: "pending_cloud_sync", evidence_residency: "metadata_only" }
+      : { authority: "local" },
     writeback: changeSet.writeback,
     source_database_changed: false,
     source_database_mutated: false,
@@ -2172,7 +2761,12 @@ async function recordAggregateRead(input: {
   const suppressed = groupSize < aggregate.minimum_group_size;
   const value = suppressed ? null : finiteAggregateNumber(input.current.row.aggregate_value, "AGGREGATE_VALUE_INVALID");
   const createdAt = new Date().toISOString();
-  const evidenceBundleId = stableId("ev", { capability: input.capability.name, tenant: input.context.tenant_id, aggregate, suppressed, value, at: createdAt });
+  const aggregatePrincipalScope = input.capability.target.principal_scope_key ? {
+    schema_version: protocolVersions.principalScope,
+    column: input.capability.target.principal_scope_key,
+    value_fingerprint: canonicalJsonDigest({ principal: input.context.principal }),
+  } : undefined;
+  const evidenceBundleId = stableId("ev", { capability: input.capability.name, tenant: input.context.tenant_id, principal_scope: aggregatePrincipalScope?.value_fingerprint, aggregate, suppressed, value, at: createdAt });
   const queryFingerprint = queryFingerprintFor(input.capability, input.context);
   await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
@@ -2190,6 +2784,7 @@ async function recordAggregateRead(input: {
       principal: input.context.principal,
       tenant_id: input.context.tenant_id,
       binding_provenance: input.context.provenance,
+      ...(aggregatePrincipalScope ? { principal_scope: aggregatePrincipalScope } : {}),
       aggregate: aggregate.function,
       aggregate_column: aggregate.column ?? null,
       count_mode: aggregate.count_mode ?? null,
@@ -2221,6 +2816,8 @@ async function recordAggregateRead(input: {
       count_mode: aggregate.count_mode ?? null,
       fixed_selection: aggregate.selection ?? null,
       tenant_bound: Boolean(input.capability.target.tenant_key),
+      principal_bound: Boolean(aggregatePrincipalScope),
+      ...(aggregatePrincipalScope ? { principal_scope: aggregatePrincipalScope } : {}),
       minimum_group_size: aggregate.minimum_group_size,
       suppressed,
       source_member_count_recorded: false,
@@ -2545,6 +3142,18 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
       : undefined;
     return { code: "RATE_LIMITED", message: "The trusted tenant request limit was reached. Retry after the current window.", retryable: true, ...(retryAfter ? { retry_after_ms: retryAfter } : {}) };
   }
+  if (runtimeCode === "CLOUD_RATE_LIMITED") {
+    const retryAfter = error instanceof McpRuntimeError && typeof error.details?.retry_after_ms === "number"
+      ? Math.max(1, Math.round(error.details.retry_after_ms))
+      : DEFAULT_INFRA_RETRY_AFTER_MS;
+    return { code: "RATE_LIMITED", message: "Synapsor Cloud is rate limiting proposal submissions. Retry after the current window.", retryable: true, retry_after_ms: retryAfter };
+  }
+  if (runtimeCode === "CLOUD_TEMPORARILY_UNAVAILABLE") {
+    return temporarilyUnavailableError("Synapsor Cloud is temporarily unavailable. Retry later or enable reviewed durable proposal queueing.", error);
+  }
+  if (runtimeCode && ["CLOUD_RUNNER_AUTHENTICATION_FAILED", "CLOUD_RUNNER_AUTHORIZATION_FAILED", "CLOUD_CONNECTION_CONFLICT"].includes(runtimeCode)) {
+    return { code: "POLICY_VIOLATION", message: "The reviewed Synapsor Cloud authority rejected this Runner connection.", retryable: false };
+  }
   if (runtimeCode && (
     runtimeCode.startsWith("ARGUMENT_")
     || runtimeCode === "LOOKUP_ARG_MISSING"
@@ -2740,6 +3349,25 @@ function errorMessage(error: unknown): string {
   return typeof error === "string" ? error : "";
 }
 
+function effectivePrincipalScope(
+  config: RuntimeConfig,
+  capability: RuntimeCapabilityConfig,
+  context: TrustedContext,
+): NonNullable<ChangeSetV2["guards"]["principal_scope"]> | undefined {
+  const column = capability.target.principal_scope_key;
+  if (!column) return undefined;
+  const contextConfig = (capability.context ? config.contexts?.[capability.context] : undefined) ?? config.trusted_context;
+  if (!contextConfig) throw new McpRuntimeError("TRUSTED_CONTEXT_MISSING", `Principal-scoped capability ${capability.name} has no trusted context.`);
+  const binding = contextConfig.principal_binding ?? "principal";
+  const value = scalar(context.principal);
+  const material = { column, binding, provider: contextConfig.provider, value };
+  return {
+    schema_version: protocolVersions.principalScope,
+    ...material,
+    value_fingerprint: principalScopeFingerprint(material),
+  };
+}
+
 function buildChangeSet(input: {
   config: RuntimeConfig;
   capability: RuntimeCapabilityConfig;
@@ -2761,6 +3389,7 @@ function buildChangeSet(input: {
 }): ChangeSet {
   const patch = input.patch;
   const before = scalarRecord(input.currentRow);
+  const principalScope = effectivePrincipalScope(input.config, input.capability, input.context);
   if (isSetCapability(input.capability)) return buildBoundedSetChangeSet(input);
   enforcePatchGuards(input.capability, before, patch);
   const operation = input.capability.operation?.kind ?? "update";
@@ -2774,6 +3403,7 @@ function buildChangeSet(input: {
   if (operation === "insert" && input.resolvedDeduplication) {
     for (const component of input.resolvedDeduplication.components) after[component.column] = component.value;
   }
+  if (operation === "insert" && principalScope) after[principalScope.column] = principalScope.value!;
   const writebackMode = capabilityWritebackMode(input.capability);
   const changeSetWritebackMode = writebackMode === "none" ? "read_only" : "trusted_worker_required";
   const writebackExecutor = writebackMode === "none"
@@ -2824,6 +3454,7 @@ function buildChangeSet(input: {
       after,
       guards: {
         tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+        ...(principalScope ? { principal_scope: principalScope } : {}),
         allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
         ...(guard ? { expected_version: guard } : {}),
         ...(input.capability.operation.version_advance ? { version_advance: input.capability.operation.version_advance } : {}),
@@ -2891,6 +3522,7 @@ function buildChangeSet(input: {
     after,
     guards: {
       tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+      ...(principalScope ? { principal_scope: principalScope } : {}),
       allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
       expected_version: guard!,
     },
@@ -2939,6 +3571,7 @@ function buildBoundedSetChangeSet(input: {
   queryFingerprint: string;
   objectId: string;
 }): ChangeSetV3 {
+  const principalScope = effectivePrincipalScope(input.config, input.capability, input.context);
   const operation = input.capability.operation;
   if (!operation || operation.cardinality !== "set" || !operation.max_rows || !operation.aggregate_bounds?.length) {
     throw new McpRuntimeError("SET_GUARDS_REQUIRED", `Bounded set capability ${input.capability.name} is missing reviewed set guards.`);
@@ -2957,6 +3590,7 @@ function buildBoundedSetChangeSet(input: {
         if (Object.prototype.hasOwnProperty.call(after, component.column)) throw new McpRuntimeError("BATCH_DEDUP_COLUMN_COLLISION", `Batch deduplication column ${component.column} collides with a patch column.`);
         after[component.column] = component.value;
       }
+      if (principalScope) after[principalScope.column] = principalScope.value!;
       return {
         primary_key: { column: input.capability.target.primary_key, value: primary.value },
         before: {},
@@ -3042,6 +3676,7 @@ function buildBoundedSetChangeSet(input: {
     after: { row_count: kind === "set_delete" ? 0 : members.length },
     guards: {
       tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+      ...(principalScope ? { principal_scope: principalScope } : {}),
       allowed_columns: kind === "set_delete" ? [] : input.capability.allowed_columns ?? Object.keys(input.patch),
       ...(kind === "set_update" && operation.version_advance ? { version_advance: operation.version_advance } : {}),
     },
@@ -3401,6 +4036,7 @@ function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" 
     const fixedTerms = aggregate.selection?.all ?? [];
     const where = fixedTerms.map((term, index) => `${quoteIdentifier(term.column, placeholderStyle)} = ${placeholderStyle === "$" ? `$${index + 1}` : "?"}`);
     if (capability.target.tenant_key) where.push(`${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${placeholderStyle === "$" ? `$${fixedTerms.length + 1}` : "?"}`);
+    if (capability.target.principal_scope_key) where.push(`${quoteIdentifier(capability.target.principal_scope_key, placeholderStyle)} = ${placeholderStyle === "$" ? `$${fixedTerms.length + 2}` : "?"}`);
     const expression = aggregate.function === "count" && aggregate.count_mode === "rows"
       ? "COUNT(*)"
       : `${aggregate.function.toUpperCase()}(${quoteIdentifier(aggregate.column ?? "", placeholderStyle)})`;
@@ -3414,17 +4050,24 @@ function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" 
       const tenantIndex = fixedTerms.length + 1;
       where.push(`${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${placeholderStyle === "$" ? `$${tenantIndex}` : "?"}`);
     }
+    if (capability.target.principal_scope_key) {
+      const principalIndex = fixedTerms.length + 2;
+      where.push(`${quoteIdentifier(capability.target.principal_scope_key, placeholderStyle)} = ${placeholderStyle === "$" ? `$${principalIndex}` : "?"}`);
+    }
     const maxRows = capability.operation?.max_rows ?? 0;
     return {
       sql: `SELECT ${columns} FROM ${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} WHERE ${where.join(" AND ")} ORDER BY ${quoteIdentifier(capability.target.primary_key, placeholderStyle)} ASC LIMIT ${maxRows + 1}`,
     };
   }
-  const placeholders = placeholderStyle === "$" ? ["$1", "$2"] : ["?", "?"];
+  const placeholders = placeholderStyle === "$" ? ["$1", "$2", "$3"] : ["?", "?", "?"];
   const where = [
     `${quoteIdentifier(capability.target.primary_key, placeholderStyle)} = ${placeholders[0]}`,
   ];
   if (capability.target.tenant_key) {
     where.push(`${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${placeholders[1]}`);
+  }
+  if (capability.target.principal_scope_key) {
+    where.push(`${quoteIdentifier(capability.target.principal_scope_key, placeholderStyle)} = ${placeholders[2]}`);
   }
   const sql = `SELECT ${columns} FROM ${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} WHERE ${where.join(" AND ")} LIMIT ${Math.max(1, capability.max_rows ?? 1)}`;
   return { sql };
@@ -3434,16 +4077,22 @@ function queryValues(capability: RuntimeCapabilityConfig, args: Record<string, u
   if (capability.kind === "aggregate_read") return [
     ...(capability.aggregate?.selection?.all ?? []).map((term) => term.value),
     ...(capability.target.tenant_key ? [context.tenant_id] : []),
+    ...(capability.target.principal_scope_key ? [context.principal] : []),
   ];
   if (isSetSelectionCapability(capability)) {
     return [
       ...(capability.operation?.selection?.all ?? []).map((term) => term.value),
       ...(capability.target.tenant_key ? [context.tenant_id] : []),
+      ...(capability.target.principal_scope_key ? [context.principal] : []),
     ];
   }
   const pkValue = args[capability.lookup.id_from_arg];
   if (pkValue === undefined) throw new McpRuntimeError("LOOKUP_ARG_MISSING", `${capability.lookup.id_from_arg} is required.`);
-  return capability.target.tenant_key ? [pkValue, context.tenant_id] : [pkValue];
+  return [
+    pkValue,
+    ...(capability.target.tenant_key ? [context.tenant_id] : []),
+    ...(capability.target.principal_scope_key ? [context.principal] : []),
+  ];
 }
 
 function readColumns(capability: RuntimeCapabilityConfig): string[] {
@@ -3451,10 +4100,12 @@ function readColumns(capability: RuntimeCapabilityConfig): string[] {
     ...(capability.aggregate?.column ? [capability.aggregate.column] : []),
     ...(capability.aggregate?.selection?.all ?? []).map((term) => term.column),
     ...(capability.target.tenant_key ? [capability.target.tenant_key] : []),
+    ...(capability.target.principal_scope_key ? [capability.target.principal_scope_key] : []),
   ];
   const columns = new Set(capability.visible_columns);
   columns.add(capability.target.primary_key);
   if (capability.target.tenant_key) columns.add(capability.target.tenant_key);
+  if (capability.target.principal_scope_key) columns.add(capability.target.principal_scope_key);
   if (capability.conflict_guard?.column) columns.add(capability.conflict_guard.column);
   for (const term of capability.operation?.selection?.all ?? []) columns.add(term.column);
   for (const bound of capability.operation?.aggregate_bounds ?? []) columns.add(bound.column);
@@ -3703,7 +4354,7 @@ function boundedSetEvidenceItems(
     table: `${capability.target.schema}.${capability.target.table}`,
     primary_key: { column: capability.target.primary_key, value: scalar(row[capability.target.primary_key]) },
     tenant: capability.target.tenant_key ? { column: capability.target.tenant_key, value: context.tenant_id } : undefined,
-    visible_row: scalarRecord(row),
+    visible_row: visibleScalarRecord(capability, row),
   }));
 }
 
@@ -3866,6 +4517,10 @@ async function resourceResult(uri: string, reader: (uri: string) => Promise<Reco
 }
 
 function queryFingerprintFor(capability: RuntimeCapabilityConfig, context: TrustedContext): string {
+  const principalScope = capability.target.principal_scope_key ? {
+    column: capability.target.principal_scope_key,
+    value_fingerprint: canonicalJsonDigest({ principal: context.principal }),
+  } : undefined;
   return hashJson({
     source: capability.source,
     target: capability.target,
@@ -3875,6 +4530,7 @@ function queryFingerprintFor(capability: RuntimeCapabilityConfig, context: Trust
     columns: readColumns(capability),
     tenant_bound: Boolean(capability.target.tenant_key),
     tenant: context.tenant_id,
+    ...(principalScope ? { principal_scope: principalScope } : {}),
   });
 }
 
@@ -3884,21 +4540,34 @@ function selectTemplate(capability: RuntimeCapabilityConfig): string {
     const expression = aggregate?.function === "count" && aggregate.count_mode === "rows" ? "COUNT(*)" : `${aggregate?.function?.toUpperCase() ?? "AGGREGATE"}(${aggregate?.column ?? "<fixed column>"})`;
     const terms = (aggregate?.selection?.all ?? []).map((term) => `${term.column} = <fixed>`);
     if (capability.target.tenant_key) terms.push(`${capability.target.tenant_key} = <trusted tenant>`);
+    if (capability.target.principal_scope_key) terms.push(`${capability.target.principal_scope_key} = <trusted principal>`);
     return `SELECT ${expression}, COUNT(*) AS group_size FROM ${capability.target.schema}.${capability.target.table}${terms.length ? ` WHERE ${terms.join(" AND ")}` : ""}`;
   }
   if (isSetSelectionCapability(capability)) {
     const terms = (capability.operation?.selection?.all ?? []).map((term) => `${term.column} = <fixed>`);
     if (capability.target.tenant_key) terms.push(`${capability.target.tenant_key} = <trusted tenant>`);
+    if (capability.target.principal_scope_key) terms.push(`${capability.target.principal_scope_key} = <trusted principal>`);
     return `SELECT ${readColumns(capability).join(", ")} FROM ${capability.target.schema}.${capability.target.table} WHERE ${terms.join(" AND ")} ORDER BY ${capability.target.primary_key} ASC LIMIT ${(capability.operation?.max_rows ?? 0) + 1}`;
   }
-  const where = capability.target.tenant_key
-    ? `${capability.target.primary_key} = ? AND ${capability.target.tenant_key} = ?`
-    : `${capability.target.primary_key} = ?`;
+  const terms = [`${capability.target.primary_key} = ?`];
+  if (capability.target.tenant_key) terms.push(`${capability.target.tenant_key} = ?`);
+  if (capability.target.principal_scope_key) terms.push(`${capability.target.principal_scope_key} = ?`);
+  const where = terms.join(" AND ");
   return `SELECT ${readColumns(capability).join(", ")} FROM ${capability.target.schema}.${capability.target.table} WHERE ${where} LIMIT ${capability.max_rows ?? 1}`;
 }
 
 function scalarRecord(row: Record<string, unknown>): Record<string, Scalar> {
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, scalar(value)]));
+}
+
+function visibleScalarRecord(capability: RuntimeCapabilityConfig, row: Record<string, unknown>): Record<string, Scalar> {
+  const visible = new Set(capability.visible_columns);
+  return Object.fromEntries(Object.entries(row).filter(([column]) => visible.has(column)).map(([key, value]) => [key, scalar(value)]));
+}
+
+function withoutPrincipalScopeValue<T extends { value?: unknown }>(scope: T): Omit<T, "value"> {
+  const { value: _value, ...metadata } = scope;
+  return metadata;
 }
 
 function scalar(value: unknown): Scalar {

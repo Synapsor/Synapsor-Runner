@@ -47,6 +47,7 @@ CREATE CAPABILITY billing.inspect_invoice
   ON public.invoices
   PRIMARY KEY id
   TENANT KEY tenant_id
+  PRINCIPAL SCOPE KEY assigned_to
   CONFLICT GUARD updated_at
   ...
 END
@@ -62,7 +63,17 @@ END
 | `ON schema.table` | Required fixed target. Table/schema are never model inputs. |
 | `PRIMARY KEY column` | Fixed single-row target key. Defaults to `id` in DSL 0.1. Declare it explicitly. |
 | `TENANT KEY column` | Required in DSL 0.1. Adds trusted tenant scope to every read/write. |
+| `PRINCIPAL SCOPE KEY column` | Optional tenant-additive row lock. Runner binds this fixed column to the context's required trusted `PRINCIPAL BINDING`; it is never a model argument. |
 | `CONFLICT GUARD column` | Captures the row-version value for exact guarded writeback. Prefer a monotonic version or native-precision timestamp. |
+
+`PRINCIPAL SCOPE KEY` means `tenant_key = trusted tenant AND
+principal_scope_key = trusted principal`. It cannot replace tenant scope,
+default to all rows, or be overridden by an argument. The principal binding
+must be required and come from a trusted provider such as `ENVIRONMENT`,
+`HTTP_CLAIM`, `SESSION`, or `CLOUD_SESSION`. For networked multi-user serving,
+use signed HTTP claims. See the complete
+[`principal-row-scope.synapsor.sql`](../fixtures/dsl/principal-row-scope.synapsor.sql)
+example.
 
 ## Arguments and lookup
 

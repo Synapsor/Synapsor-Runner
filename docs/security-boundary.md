@@ -50,6 +50,20 @@ Trusted context comes from local configuration, environment bindings, or Cloud
 session context in Cloud mode. Tenant, principal, and authorization scope must
 not be accepted from the model as authority.
 
+A capability may declare `principal_scope_key` (DSL: `PRINCIPAL SCOPE KEY`) to
+narrow rows inside a tenant. Runner then adds both fixed, parameterized guards:
+
+```text
+tenant_key = verified tenant AND principal_scope_key = verified principal
+```
+
+This applies to single-row reads and writes, aggregates, bounded sets, inserts,
+deletes, executor envelopes, and reviewed compensation. Missing principal
+context fails closed. A principal lock never replaces tenant scope and has no
+dynamic supervisor bypass. Use a separately reviewed tenant-wide capability
+for broader roles. RLS and restricted database roles remain valuable defense in
+depth; the contract does not replace them.
+
 Proposal, evidence, and replay handles are references, not bearer credentials.
 Before returning a local MCP resource, Runner resolves the resource's owning
 capability context again and requires both tenant and principal to match the
@@ -76,7 +90,7 @@ outside the model-facing MCP server and verifies:
 - local approval state;
 - proposal and job digests;
 - target schema/table;
-- primary-key and tenant guards;
+- primary-key, tenant, and declared principal-row guards;
 - allowed mutable columns;
 - conflict/version guard;
 - idempotency key;

@@ -25,6 +25,7 @@ export type AgentDslCapabilityAst = {
   table: string;
   primaryKey: string;
   tenantKey?: string;
+  principalScopeKey?: string;
   conflictKey?: string;
   lookup?: { arg: string; column: string; line?: number };
   args: Record<string, (
@@ -143,6 +144,7 @@ export function compileAgentDsl(source: string): SynapsorContract {
 
 export function compileAgentDslWithWarnings(source: string): AgentDslCompileResult {
   const ast = parseAgentDsl(source);
+  validatePrincipalScopeContexts(ast);
   const contexts: AgentContextSpec[] = ast.contexts.map((context) => ({
     name: context.name,
     bindings: context.bindings,
@@ -163,6 +165,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
         table: capability.table,
         primary_key: capability.primaryKey,
         ...(capability.tenantKey ? { tenant_key: capability.tenantKey } : {}),
+        ...(capability.principalScopeKey ? { principal_scope_key: capability.principalScopeKey } : {}),
         ...(capability.conflictKey ? { conflict_key: capability.conflictKey } : {}),
       },
       args: specArgsFromDsl(capability.args),
@@ -239,6 +242,25 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
   };
   assertValidContract(contract);
   return { contract: normalizeContract(contract), warnings: collectDslWarnings(ast) };
+}
+
+function validatePrincipalScopeContexts(ast: AgentDslAst): void {
+  const contexts = new Map(ast.contexts.map((context) => [context.name, context]));
+  for (const capability of ast.capabilities) {
+    if (!capability.principalScopeKey) continue;
+    const context = contexts.get(capability.context);
+    const principalBinding = context?.principalBinding;
+    const binding = principalBinding ? context?.bindings.find((item) => item.name === principalBinding) : undefined;
+    if (!context || !principalBinding || !binding || binding.required !== true) {
+      throw dslError(capability.line ?? 1, 1, "PRINCIPAL_SCOPE_BINDING_REQUIRED", `${capability.name} PRINCIPAL SCOPE KEY requires a context with a required PRINCIPAL BINDING`);
+    }
+    if (Object.prototype.hasOwnProperty.call(capability.args, capability.principalScopeKey)) {
+      throw dslError(capability.line ?? 1, 1, "MODEL_CONTROLLED_PRINCIPAL_SCOPE", `${capability.principalScopeKey} cannot be both a trusted principal scope and a model-facing ARG`);
+    }
+    if (capability.proposal?.allowedFields.includes(capability.principalScopeKey) || capability.proposal?.patch[capability.principalScopeKey]) {
+      throw dslError(capability.line ?? 1, 1, "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", `${capability.principalScopeKey} is forced from trusted context and cannot be model-writeable`);
+    }
+  }
 }
 
 export function validateAgentDsl(source: string): ValidationResult {
@@ -372,6 +394,12 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     const tenant = item.text.match(/^TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
     if (tenant?.[1]) {
       capability.tenantKey = tenant[1];
+      continue;
+    }
+    const principalScope = item.text.match(/^PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+    if (principalScope?.[1]) {
+      if (capability.principalScopeKey) throw dslError(item.line, 1, "DUPLICATE_PRINCIPAL_SCOPE", `${block.name} declares PRINCIPAL SCOPE KEY more than once`);
+      capability.principalScopeKey = principalScope[1];
       continue;
     }
     const conflict = item.text.match(/^CONFLICT\s+GUARD\s+([A-Za-z_][A-Za-z0-9_]*)$/i);

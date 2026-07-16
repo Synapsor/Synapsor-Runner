@@ -45,6 +45,24 @@ describe("@synapsor/dsl", () => {
     });
   });
 
+  it("compiles a reviewer-fixed principal scope from a required trusted binding", () => {
+    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8")
+      .replaceAll("TENANT KEY tenant_id", "TENANT KEY tenant_id\n  PRINCIPAL SCOPE KEY assigned_to");
+    const contract = compileAgentDsl(source);
+
+    expect(contract.capabilities.every((capability) => capability.subject.principal_scope_key === "assigned_to")).toBe(true);
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
+  });
+
+  it("rejects principal scope without a required principal binding", () => {
+    const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8")
+      .replace("BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED", "BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL")
+      .replaceAll("TENANT KEY tenant_id", "TENANT KEY tenant_id\n  PRINCIPAL SCOPE KEY assigned_to");
+
+    expect(() => compileAgentDsl(source)).toThrow(/PRINCIPAL_SCOPE_BINDING_REQUIRED/);
+  });
+
   it("keeps kept-out fields out of visible fields", () => {
     const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8");
     const contract = compileAgentDsl(source);

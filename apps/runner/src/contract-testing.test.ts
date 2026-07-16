@@ -25,6 +25,18 @@ describe("adopter contract tests", () => {
       { id: "one", kind: "hide_fields", capability: "support.inspect", fields: ["secret"] },
     ] }));
     await expect(loadContractTestManifest(manifest)).rejects.toThrow("CONTRACT_TEST_ID_DUPLICATE");
+
+    await fs.writeFile(manifest, JSON.stringify({ version: 1, tests: [{
+      id: "same-tenant-other-principal",
+      kind: "cross_principal_deny",
+      capability: "support.inspect",
+      args: { id: "CASE-1" },
+      trusted_context: { tenant_id: "hospital_a", principal: "case_manager_a" },
+      other_trusted_context: { tenant_id: "hospital_a", principal: "case_manager_b" },
+    }] }));
+    await expect(loadContractTestManifest(manifest)).resolves.toMatchObject({
+      tests: [expect.objectContaining({ kind: "cross_principal_deny" })],
+    });
   });
 
   it("runs static visibility, argument, transition, and set-cap assertions against the exact contract", async () => {

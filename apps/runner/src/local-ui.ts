@@ -155,6 +155,10 @@ async function handleRequest(input: {
       sendJson(response, 403, { ok: false, error: "CSRF token required for proposal review actions" });
       return;
     }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked proposals must be reviewed in Synapsor Cloud; local approval is disabled." });
+      return;
+    }
     if (await signedIdentityRequired(configPath)) {
       sendJson(response, 403, { ok: false, error: "This Runner requires a signed operator identity. Approve with the CLI using --identity and --identity-key." });
       return;
@@ -179,6 +183,10 @@ async function handleRequest(input: {
   if (request.method === "POST" && rejectMatch) {
     if (!hasValidCsrf(request, csrfToken)) {
       sendJson(response, 403, { ok: false, error: "CSRF token required for proposal review actions" });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked proposals must be reviewed in Synapsor Cloud; local rejection is disabled." });
       return;
     }
     if (await signedIdentityRequired(configPath)) {
@@ -225,6 +233,11 @@ async function readRunnerConfig(configPath: string): Promise<JsonRecord> {
 async function signedIdentityRequired(configPath: string): Promise<boolean> {
   const config = await readRunnerConfig(configPath);
   return isRecord(config.operator_identity) && ["signed_key", "jwt_oidc"].includes(String(config.operator_identity.provider));
+}
+
+async function cloudLinkedGovernance(configPath: string): Promise<boolean> {
+  const config = await readRunnerConfig(configPath);
+  return isRecord(config.governance) && config.governance.mode === "cloud_linked";
 }
 
 function buildSummary(config: JsonRecord, configPath: string, storePath: string): JsonRecord {

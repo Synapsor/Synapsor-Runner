@@ -18,7 +18,7 @@ Dry-run validates and normalizes locally. It performs no network request.
 
 ```bash
 export SYNAPSOR_CLOUD_BASE_URL="https://dev-api.synapsor.ai"
-export SYNAPSOR_CLOUD_TOKEN="<workspace-scoped-token>"
+export SYNAPSOR_API_KEY="<contracts-write-service-key>"
 export SYNAPSOR_WORKSPACE_ID="<workspace-id>"
 
 synapsor-runner cloud push ./synapsor.contract.json \
@@ -29,7 +29,9 @@ The response includes the contract id, immutable version id, server-computed
 digest, summary counts, status, and registry path. Identical normalized content
 is idempotent; changed content creates the next version.
 
-Tokens are sent in the authorization header and are never part of the contract.
+Use `SYNAPSOR_API_KEY` for scoped CI automation or
+`SYNAPSOR_CLOUD_ACCESS_TOKEN` for an authenticated human session. Credentials
+are sent in the authorization header and are never part of the contract.
 Database URLs, passwords, private keys, and model-controlled tenant bindings
 are rejected by server-side validation.
 
@@ -53,6 +55,14 @@ Open **Contract registry** in the workspace, choose a version, and download its
 runner bundle. The ZIP contains the normalized contract, local runner wiring,
 placeholder environment file, README, and MCP client examples. It contains no
 live credentials or table rows.
+
+Choose the Cloud source when downloading because each bundle is source-bound:
+
+```bash
+synapsor runners bundle download <contract-id>/<version-id> \
+  --source <cloud-source-id> \
+  --out ./synapsor-runner-bundle.zip
+```
 
 Cloud currently preserves approval policy definitions in the contract and
 bundle. Cloud approval is a human-authenticated decision and is not exposed to

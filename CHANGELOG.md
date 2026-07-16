@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.122 (prepared, not published)
+
+### Trusted principal row scope and Cloud-linked governance
+
+- Adds a canonical reviewer-fixed principal row scope that is always
+  AND-composed with tenant scope and resolved only from a required trusted
+  context binding. Missing or invalid principal authority fails closed.
+- Enforces the bound principal predicate in PostgreSQL and MySQL reads,
+  proposals, aggregates, guarded CRUD, bounded sets, executor envelopes,
+  receipts, replay, and reviewed compensation. Same-tenant cross-principal
+  access uses the same generic miss as cross-tenant or absent rows.
+- Preserves the scope through DSL parse/format/compile, Spec validation and
+  digesting, config normalization, protocol jobs, C++/Cloud round trips,
+  contract explanation/testing, and scoped evidence/proposal/resource handles.
+- Adds explicit `local_only` and `cloud_linked` authority behavior. Cloud-linked
+  proposals use a durable idempotent outbox, metadata-only evidence residency,
+  Cloud-governed approval/leasing, terminal-state reconciliation, and no local
+  approval/apply fallback while Cloud is unavailable.
+- Separates contract-registry human/service credentials from Runner machine
+  tokens. Cloud push no longer accepts secrets through command arguments or a
+  Runner-token fallback.
+- Introduces the separately packable `@synapsor/cli@0.1.0-beta.1` Cloud client;
+  `synapsor-runner` remains the local MCP/database enforcement boundary.
+- Stages `@synapsor/spec@1.4.2`, `@synapsor/dsl@1.4.3`, and
+  `@synapsor/runner@1.4.122`. Nothing is published by this change.
+
 ## 1.4.121 (prepared, not published)
 
 ### Contract trust surface and bounded-set parser correctness

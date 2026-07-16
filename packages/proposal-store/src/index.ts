@@ -200,6 +200,41 @@ export type StoredEvidenceBundle = {
   created_at: string;
 };
 
+export type CloudOutboxKind = "proposal" | "activity" | "result";
+export type CloudOutboxStatus = "pending" | "leased" | "acknowledged" | "dead_letter" | "reconciliation_required";
+
+export type CloudOutboxItem = {
+  event_id: string;
+  proposal_id?: string;
+  sequence: number;
+  kind: CloudOutboxKind;
+  status: CloudOutboxStatus;
+  payload_hash: `sha256:${string}`;
+  payload: Record<string, unknown>;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  lease_owner?: string;
+  lease_expires_at?: string;
+  last_error_code?: string;
+  created_at: string;
+  updated_at: string;
+  sent_at?: string;
+  acknowledged_at?: string;
+};
+
+export type CloudGovernanceEvent = {
+  event_id: string;
+  proposal_id: string;
+  cloud_proposal_id?: string;
+  kind: string;
+  state: string;
+  authority: "synapsor_cloud";
+  payload: Record<string, unknown>;
+  integrity_hash: `sha256:${string}`;
+  created_at: string;
+};
+
 export type LocalListOptions = {
   limit?: number;
   from?: string;
@@ -540,11 +575,30 @@ export type ProposalRuntimeStore = {
   events(proposalId: string): MaybePromise<ProposalEvent[]>;
   receipts(proposalId: string): MaybePromise<StoredWritebackReceipt[]>;
   getEvidenceBundle(evidenceBundleId: string): MaybePromise<StoredEvidenceBundle | undefined>;
+  listEvidenceBundles?(filters?: EvidenceSearchFilters): MaybePromise<StoredEvidenceBundle[]>;
+  listQueryAudit?(filters?: QueryAuditSearchFilters): MaybePromise<Record<string, unknown>[]>;
   replay(proposalId: string): MaybePromise<ProposalReplayRecord>;
   claimWritebackIntent?(job: WritebackJob, runnerId: string): MaybePromise<WritebackIntentClaim>;
   markWritebackIntentApplying?(intentId: string, runnerId: string): MaybePromise<void>;
   completeWritebackIntent?(intentId: string, result: WritebackResult): MaybePromise<void>;
   requireWritebackReconciliation?(intentId: string, reason: string): MaybePromise<void>;
+  enqueueCloudOutbox?(input: {
+    event_id: string;
+    proposal_id?: string;
+    sequence?: number;
+    kind: CloudOutboxKind;
+    payload: Record<string, unknown>;
+    max_attempts?: number;
+    now?: string;
+  }): MaybePromise<CloudOutboxItem>;
+  claimCloudOutbox?(input: { owner: string; limit?: number; lease_ms?: number; now?: string }): MaybePromise<CloudOutboxItem[]>;
+  acknowledgeCloudOutbox?(eventId: string, owner: string, now?: string): MaybePromise<CloudOutboxItem>;
+  failCloudOutbox?(input: { event_id: string; owner: string; error_code: string; retryable: boolean; retry_after_ms?: number; reconciliation?: boolean; now?: string }): MaybePromise<CloudOutboxItem>;
+  requeueCloudOutbox?(eventId: string, now?: string): MaybePromise<CloudOutboxItem>;
+  listCloudOutbox?(filters?: { status?: CloudOutboxStatus; proposal_id?: string; limit?: number }): MaybePromise<CloudOutboxItem[]>;
+  compactCloudOutbox?(input: { acknowledged_before: string }): MaybePromise<number>;
+  recordCloudGovernanceEvent?(input: Omit<CloudGovernanceEvent, "authority" | "integrity_hash" | "created_at"> & { created_at?: string }): MaybePromise<CloudGovernanceEvent>;
+  listCloudGovernanceEvents?(proposalId?: string): MaybePromise<CloudGovernanceEvent[]>;
 };
 
 export type PostgresRuntimeQueryResult = {
@@ -829,6 +883,14 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     return await this.withRead((store) => store.getEvidenceBundle(evidenceBundleId));
   }
 
+  async listEvidenceBundles(filters: EvidenceSearchFilters = {}): Promise<StoredEvidenceBundle[]> {
+    return await this.withRead((store) => store.listEvidenceBundles(filters));
+  }
+
+  async listQueryAudit(filters: QueryAuditSearchFilters = {}): Promise<Record<string, unknown>[]> {
+    return await this.withRead((store) => store.listQueryAudit(filters));
+  }
+
   async replay(proposalId: string): Promise<ProposalReplayRecord> {
     return await this.withWrite("replay", (store) => store.replay(proposalId));
   }
@@ -847,6 +909,42 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
 
   async requireWritebackReconciliation(intentId: string, reason: string): Promise<void> {
     await this.withWrite("requireWritebackReconciliation", (store) => store.requireWritebackReconciliation(intentId, reason));
+  }
+
+  async enqueueCloudOutbox(input: Parameters<NonNullable<ProposalRuntimeStore["enqueueCloudOutbox"]>>[0]): Promise<CloudOutboxItem> {
+    return await this.withWrite("enqueueCloudOutbox", (store) => store.enqueueCloudOutbox(input));
+  }
+
+  async claimCloudOutbox(input: Parameters<NonNullable<ProposalRuntimeStore["claimCloudOutbox"]>>[0]): Promise<CloudOutboxItem[]> {
+    return await this.withWrite("claimCloudOutbox", (store) => store.claimCloudOutbox(input));
+  }
+
+  async acknowledgeCloudOutbox(eventId: string, owner: string, now?: string): Promise<CloudOutboxItem> {
+    return await this.withWrite("acknowledgeCloudOutbox", (store) => store.acknowledgeCloudOutbox(eventId, owner, now));
+  }
+
+  async failCloudOutbox(input: Parameters<NonNullable<ProposalRuntimeStore["failCloudOutbox"]>>[0]): Promise<CloudOutboxItem> {
+    return await this.withWrite("failCloudOutbox", (store) => store.failCloudOutbox(input));
+  }
+
+  async requeueCloudOutbox(eventId: string, now?: string): Promise<CloudOutboxItem> {
+    return await this.withWrite("requeueCloudOutbox", (store) => store.requeueCloudOutbox(eventId, now));
+  }
+
+  async listCloudOutbox(filters: Parameters<NonNullable<ProposalRuntimeStore["listCloudOutbox"]>>[0] = {}): Promise<CloudOutboxItem[]> {
+    return await this.withRead((store) => store.listCloudOutbox(filters));
+  }
+
+  async compactCloudOutbox(input: Parameters<NonNullable<ProposalRuntimeStore["compactCloudOutbox"]>>[0]): Promise<number> {
+    return await this.withWrite("compactCloudOutbox", (store) => store.compactCloudOutbox(input));
+  }
+
+  async recordCloudGovernanceEvent(input: Parameters<NonNullable<ProposalRuntimeStore["recordCloudGovernanceEvent"]>>[0]): Promise<CloudGovernanceEvent> {
+    return await this.withWrite("recordCloudGovernanceEvent", (store) => store.recordCloudGovernanceEvent(input));
+  }
+
+  async listCloudGovernanceEvents(proposalId?: string): Promise<CloudGovernanceEvent[]> {
+    return await this.withRead((store) => store.listCloudGovernanceEvents(proposalId));
   }
 
   private async withRead<T>(callback: (store: ProposalStore) => T): Promise<T> {
@@ -1115,7 +1213,13 @@ export class ProposalStore {
   pruneBefore(cutoffIso: string, options: { dryRun?: boolean } = {}): StorePruneResult {
     const dryRun = options.dryRun !== false;
     const proposalIds = this.stringColumn(
-      "SELECT proposal_id FROM proposals WHERE created_at < ? AND state IN ('applied', 'conflict', 'rejected', 'canceled')",
+      `SELECT proposal_id FROM proposals
+       WHERE created_at < ? AND state IN ('applied', 'conflict', 'rejected', 'canceled')
+         AND NOT EXISTS (
+           SELECT 1 FROM cloud_outbox
+           WHERE cloud_outbox.proposal_id = proposals.proposal_id
+             AND cloud_outbox.status <> 'acknowledged'
+         )`,
       [cutoffIso],
       "proposal_id",
     );
@@ -1129,6 +1233,8 @@ export class ProposalStore {
     const evidenceWhere = inWhere("evidence_bundle_id", evidenceIds);
     this.transaction(() => {
       if (proposalWhere) {
+        run("cloud_outbox", `${proposalWhere.sql} AND status = 'acknowledged'`, proposalWhere.params);
+        run("cloud_governance_events", proposalWhere.sql, proposalWhere.params);
         run("idempotency_receipts", proposalWhere.sql, proposalWhere.params);
         run("writeback_receipts", proposalWhere.sql, proposalWhere.params);
         run("writeback_jobs", proposalWhere.sql, proposalWhere.params);
@@ -1139,7 +1245,7 @@ export class ProposalStore {
         run("worker_queue", proposalWhere.sql, proposalWhere.params);
         run("replay_records", proposalWhere.sql, proposalWhere.params);
       } else {
-        for (const table of ["idempotency_receipts", "writeback_receipts", "writeback_jobs", "writeback_intents", "approvals", "proposal_events", "shadow_human_actions", "worker_queue", "replay_records"]) {
+        for (const table of ["cloud_outbox", "cloud_governance_events", "idempotency_receipts", "writeback_receipts", "writeback_jobs", "writeback_intents", "approvals", "proposal_events", "shadow_human_actions", "worker_queue", "replay_records"]) {
           deleted[table] = 0;
         }
       }
@@ -1331,6 +1437,40 @@ export class ProposalStore {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS cloud_outbox (
+        event_id TEXT PRIMARY KEY,
+        proposal_id TEXT,
+        sequence INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL,
+        next_attempt_at TEXT NOT NULL,
+        lease_owner TEXT,
+        lease_expires_at TEXT,
+        last_error_code TEXT,
+        sent_at TEXT,
+        acknowledged_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS cloud_governance_events (
+        event_id TEXT PRIMARY KEY,
+        proposal_id TEXT NOT NULL,
+        cloud_proposal_id TEXT,
+        kind TEXT NOT NULL,
+        state TEXT NOT NULL,
+        authority TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        integrity_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
       CREATE TABLE IF NOT EXISTS policy_recommendations (
         recommendation_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -1366,6 +1506,9 @@ export class ProposalStore {
       CREATE INDEX IF NOT EXISTS idx_replay_records_proposal_id ON replay_records(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_shadow_human_actions_proposal_id ON shadow_human_actions(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_policy_recommendations_scope ON policy_recommendations(tenant_id, capability, policy, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_cloud_outbox_due ON cloud_outbox(status, next_attempt_at, sequence, created_at);
+      CREATE INDEX IF NOT EXISTS idx_cloud_outbox_proposal ON cloud_outbox(proposal_id, sequence, created_at);
+      CREATE INDEX IF NOT EXISTS idx_cloud_governance_proposal ON cloud_governance_events(proposal_id, created_at);
 
       INSERT OR IGNORE INTO proposal_store_schema(version, applied_at)
       VALUES (1, datetime('now'));
@@ -2336,6 +2479,7 @@ export class ProposalStore {
       runner_scope: { project_id: options.project_id ?? "local", source_id: proposal.source_id },
       engine,
       tenant_guard: changeSet.guards.tenant,
+      ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
       allowed_columns: changeSet.guards.allowed_columns,
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
       lease,
@@ -2383,6 +2527,7 @@ export class ProposalStore {
           },
         },
         tenant_guard: changeSet.guards.tenant,
+        ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
         allowed_columns: changeSet.guards.allowed_columns,
         patch: {},
         compensation: changeSet.compensation.descriptor,
@@ -3043,6 +3188,183 @@ export class ProposalStore {
     return recommendation;
   }
 
+  enqueueCloudOutbox(input: {
+    event_id: string;
+    proposal_id?: string;
+    sequence?: number;
+    kind: CloudOutboxKind;
+    payload: Record<string, unknown>;
+    max_attempts?: number;
+    now?: string;
+  }): CloudOutboxItem {
+    const eventId = input.event_id.trim();
+    if (!eventId) throw new ProposalStoreError("CLOUD_OUTBOX_EVENT_ID_REQUIRED", "cloud outbox event_id is required");
+    if (!(["proposal", "activity", "result"] as const).includes(input.kind)) throw new ProposalStoreError("CLOUD_OUTBOX_KIND_INVALID", `unsupported Cloud outbox kind: ${input.kind}`);
+    if (input.proposal_id) this.requireProposal(input.proposal_id);
+    assertNoSecretMaterial(input.payload, `cloud_outbox.${eventId}`);
+    const payloadHash = canonicalJsonDigest(input.payload);
+    const now = input.now ?? new Date().toISOString();
+    const sequence = Math.max(0, Math.trunc(input.sequence ?? 0));
+    const maxAttempts = Math.max(1, Math.min(100, Math.trunc(input.max_attempts ?? 12)));
+    this.db.prepare(`
+      INSERT OR IGNORE INTO cloud_outbox (
+        event_id, proposal_id, sequence, kind, status, payload_hash, payload_json,
+        attempts, max_attempts, next_attempt_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, 0, ?, ?, ?, ?)
+    `).run(eventId, input.proposal_id ?? null, sequence, input.kind, payloadHash, JSON.stringify(input.payload), maxAttempts, now, now, now);
+    const item = this.requireCloudOutboxItem(eventId);
+    if (item.payload_hash !== payloadHash || item.kind !== input.kind || item.proposal_id !== input.proposal_id) {
+      throw new ProposalStoreError("CLOUD_OUTBOX_IDEMPOTENCY_MISMATCH", `cloud outbox event ${eventId} was already recorded with different immutable content`);
+    }
+    return item;
+  }
+
+  claimCloudOutbox(input: { owner: string; limit?: number; lease_ms?: number; now?: string }): CloudOutboxItem[] {
+    const owner = input.owner.trim();
+    if (!owner) throw new ProposalStoreError("CLOUD_OUTBOX_OWNER_REQUIRED", "cloud outbox lease owner is required");
+    const now = input.now ?? new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.parse(now) + Math.max(1_000, Math.min(300_000, input.lease_ms ?? 30_000))).toISOString();
+    const limit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 10)));
+    const claimed: string[] = [];
+    this.transaction(() => {
+      this.db.prepare(`
+        UPDATE cloud_outbox
+        SET status = 'pending', lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+        WHERE status = 'leased' AND lease_expires_at <= ?
+      `).run(now, now);
+      const rows = this.db.prepare(`
+        SELECT candidate.event_id
+        FROM cloud_outbox candidate
+        WHERE candidate.status = 'pending'
+          AND candidate.next_attempt_at <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM cloud_outbox earlier
+            WHERE earlier.proposal_id = candidate.proposal_id
+              AND earlier.sequence < candidate.sequence
+              AND earlier.status NOT IN ('acknowledged')
+          )
+        ORDER BY candidate.sequence ASC, candidate.created_at ASC, candidate.event_id ASC
+        LIMIT ?
+      `).all(now, limit);
+      for (const row of rows) {
+        if (!isRecord(row) || typeof row.event_id !== "string") continue;
+        const result = this.db.prepare(`
+          UPDATE cloud_outbox
+          SET status = 'leased', lease_owner = ?, lease_expires_at = ?, attempts = attempts + 1,
+              sent_at = COALESCE(sent_at, ?), updated_at = ?
+          WHERE event_id = ? AND status = 'pending'
+        `).run(owner, leaseExpiresAt, now, now, row.event_id);
+        if (Number(result.changes) === 1) claimed.push(row.event_id);
+      }
+    });
+    return claimed.map((eventId) => this.requireCloudOutboxItem(eventId));
+  }
+
+  acknowledgeCloudOutbox(eventId: string, owner: string, now = new Date().toISOString()): CloudOutboxItem {
+    const result = this.db.prepare(`
+      UPDATE cloud_outbox
+      SET status = 'acknowledged', lease_owner = NULL, lease_expires_at = NULL,
+          acknowledged_at = ?, last_error_code = NULL, updated_at = ?
+      WHERE event_id = ? AND status = 'leased' AND lease_owner = ?
+    `).run(now, now, eventId, owner);
+    if (Number(result.changes) !== 1) throw new ProposalStoreError("CLOUD_OUTBOX_LEASE_MISMATCH", `cloud outbox event ${eventId} is not leased by ${owner}`);
+    return this.requireCloudOutboxItem(eventId);
+  }
+
+  failCloudOutbox(input: { event_id: string; owner: string; error_code: string; retryable: boolean; retry_after_ms?: number; reconciliation?: boolean; now?: string }): CloudOutboxItem {
+    const now = input.now ?? new Date().toISOString();
+    const current = this.requireCloudOutboxItem(input.event_id);
+    if (current.status !== "leased" || current.lease_owner !== input.owner) {
+      throw new ProposalStoreError("CLOUD_OUTBOX_LEASE_MISMATCH", `cloud outbox event ${input.event_id} is not leased by ${input.owner}`);
+    }
+    const exhausted = current.attempts >= current.max_attempts;
+    const status: CloudOutboxStatus = input.reconciliation
+      ? "reconciliation_required"
+      : input.retryable && !exhausted
+        ? "pending"
+        : "dead_letter";
+    const fallbackDelay = Math.min(300_000, 500 * (2 ** Math.min(current.attempts, 9)));
+    const delayMs = Math.max(0, Math.min(3_600_000, input.retry_after_ms ?? fallbackDelay));
+    const nextAttemptAt = new Date(Date.parse(now) + delayMs).toISOString();
+    this.db.prepare(`
+      UPDATE cloud_outbox
+      SET status = ?, lease_owner = NULL, lease_expires_at = NULL, last_error_code = ?,
+          next_attempt_at = ?, updated_at = ?
+      WHERE event_id = ?
+    `).run(status, input.error_code, nextAttemptAt, now, input.event_id);
+    return this.requireCloudOutboxItem(input.event_id);
+  }
+
+  requeueCloudOutbox(eventId: string, now = new Date().toISOString()): CloudOutboxItem {
+    const current = this.requireCloudOutboxItem(eventId);
+    if (!(["dead_letter", "reconciliation_required"] as CloudOutboxStatus[]).includes(current.status)) {
+      throw new ProposalStoreError("CLOUD_OUTBOX_NOT_REQUEUEABLE", `cloud outbox event ${eventId} is ${current.status}, not dead_letter or reconciliation_required`);
+    }
+    this.db.prepare(`
+      UPDATE cloud_outbox
+      SET status = 'pending', attempts = 0, next_attempt_at = ?, lease_owner = NULL,
+          lease_expires_at = NULL, last_error_code = NULL, updated_at = ?
+      WHERE event_id = ?
+    `).run(now, now, eventId);
+    return this.requireCloudOutboxItem(eventId);
+  }
+
+  listCloudOutbox(filters: { status?: CloudOutboxStatus; proposal_id?: string; limit?: number } = {}): CloudOutboxItem[] {
+    const conditions: string[] = [];
+    const values: SQLInputValue[] = [];
+    if (filters.status) { conditions.push("status = ?"); values.push(filters.status); }
+    if (filters.proposal_id) { conditions.push("proposal_id = ?"); values.push(filters.proposal_id); }
+    const limit = Math.max(1, Math.min(10_000, Math.trunc(filters.limit ?? 100)));
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    return this.db.prepare(`SELECT * FROM cloud_outbox ${where} ORDER BY sequence ASC, created_at ASC, event_id ASC LIMIT ?`)
+      .all(...values, limit).map(rowToCloudOutboxItem).filter((item): item is CloudOutboxItem => item !== undefined);
+  }
+
+  compactCloudOutbox(input: { acknowledged_before: string }): number {
+    const result = this.db.prepare("DELETE FROM cloud_outbox WHERE status = 'acknowledged' AND acknowledged_at < ?").run(input.acknowledged_before);
+    return Number(result.changes);
+  }
+
+  recordCloudGovernanceEvent(input: Omit<CloudGovernanceEvent, "authority" | "integrity_hash" | "created_at"> & { created_at?: string }): CloudGovernanceEvent {
+    this.requireProposal(input.proposal_id);
+    assertNoSecretMaterial(input.payload, `cloud_governance_event.${input.event_id}`);
+    const createdAt = input.created_at ?? new Date().toISOString();
+    const unsigned = {
+      event_id: input.event_id,
+      proposal_id: input.proposal_id,
+      ...(input.cloud_proposal_id ? { cloud_proposal_id: input.cloud_proposal_id } : {}),
+      kind: input.kind,
+      state: input.state,
+      authority: "synapsor_cloud" as const,
+      payload: input.payload,
+      created_at: createdAt,
+    };
+    const event: CloudGovernanceEvent = { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+    this.db.prepare(`
+      INSERT OR IGNORE INTO cloud_governance_events (
+        event_id, proposal_id, cloud_proposal_id, kind, state, authority, payload_json, integrity_hash, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(event.event_id, event.proposal_id, event.cloud_proposal_id ?? null, event.kind, event.state, event.authority, JSON.stringify(event.payload), event.integrity_hash, event.created_at);
+    const stored = this.listCloudGovernanceEvents(input.proposal_id).find((item) => item.event_id === input.event_id);
+    if (!stored || stored.integrity_hash !== event.integrity_hash) {
+      throw new ProposalStoreError("CLOUD_GOVERNANCE_EVENT_MISMATCH", `Cloud governance event ${input.event_id} conflicts with an existing immutable event`);
+    }
+    return stored;
+  }
+
+  listCloudGovernanceEvents(proposalId?: string): CloudGovernanceEvent[] {
+    const rows = proposalId
+      ? this.db.prepare("SELECT * FROM cloud_governance_events WHERE proposal_id = ? ORDER BY created_at ASC, event_id ASC").all(proposalId)
+      : this.db.prepare("SELECT * FROM cloud_governance_events ORDER BY created_at ASC, event_id ASC").all();
+    return rows.map(rowToCloudGovernanceEvent).filter((item): item is CloudGovernanceEvent => item !== undefined);
+  }
+
+  private requireCloudOutboxItem(eventId: string): CloudOutboxItem {
+    const item = rowToCloudOutboxItem(this.db.prepare("SELECT * FROM cloud_outbox WHERE event_id = ?").get(eventId));
+    if (!item) throw new ProposalStoreError("CLOUD_OUTBOX_EVENT_NOT_FOUND", `cloud outbox event not found: ${eventId}`);
+    return item;
+  }
+
   setRunnerState(key: string, value: Record<string, unknown>): void {
     assertNoSecretMaterial(value, `runner_state.${key}`);
     this.db.prepare(`
@@ -3083,6 +3405,8 @@ export class ProposalStore {
       { table: "worker_queue", kind: "worker_queue_item", key: "proposal_id", created: "created_at", proposal: "proposal_id" },
       { table: "runner_state", kind: "runner_state", key: "key", created: "updated_at" },
       { table: "policy_recommendations", kind: "policy_recommendation", key: "recommendation_id", created: "created_at", tenant: "tenant_id", capability: "capability" },
+      { table: "cloud_outbox", kind: "cloud_outbox_event", key: "event_id", created: "created_at", proposal: "proposal_id" },
+      { table: "cloud_governance_events", kind: "cloud_governance_event", key: "event_id", created: "created_at", proposal: "proposal_id" },
     ];
     const entries: SharedLedgerEntry[] = [];
     for (const spec of specs) {
@@ -3721,6 +4045,7 @@ function inverseCaptureFromChangeSet(changeSet: ChangeSet, writebackJobId: strin
       primary_key_column: changeSet.source.primary_key.column,
     },
     tenant_guard: changeSet.guards.tenant,
+    ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
     allowed_columns: changeSet.guards.allowed_columns,
     lineage: changeSet.reversibility.lineage,
   } as const;
@@ -3746,7 +4071,7 @@ function inverseCaptureFromChangeSet(changeSet: ChangeSet, writebackJobId: strin
         operation: "remove_insert",
         members: [{
           primary_key: { column: changeSet.source.primary_key.column, value: primaryValue },
-          expected_state: selectReviewedState(changeSet.after, [changeSet.source.primary_key.column, changeSet.guards.tenant.column, ...changeSet.guards.allowed_columns]),
+          expected_state: selectReviewedState(changeSet.after, [changeSet.source.primary_key.column, changeSet.guards.tenant.column, ...(changeSet.guards.principal_scope ? [changeSet.guards.principal_scope.column] : []), ...changeSet.guards.allowed_columns]),
         }],
         max_rows: 1,
         aggregate_bounds: [],
@@ -4052,6 +4377,47 @@ function rowToWorkerQueueItem(row: unknown): WorkerQueueItem | undefined {
   };
 }
 
+function rowToCloudOutboxItem(row: unknown): CloudOutboxItem | undefined {
+  if (!isRecord(row)) return undefined;
+  const kind = String(row.kind);
+  const status = String(row.status);
+  if (!["proposal", "activity", "result"].includes(kind) || !["pending", "leased", "acknowledged", "dead_letter", "reconciliation_required"].includes(status)) return undefined;
+  return {
+    event_id: String(row.event_id),
+    proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+    sequence: Number(row.sequence),
+    kind: kind as CloudOutboxKind,
+    status: status as CloudOutboxStatus,
+    payload_hash: String(row.payload_hash) as `sha256:${string}`,
+    payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+    attempts: Number(row.attempts),
+    max_attempts: Number(row.max_attempts),
+    next_attempt_at: String(row.next_attempt_at),
+    lease_owner: row.lease_owner == null ? undefined : String(row.lease_owner),
+    lease_expires_at: row.lease_expires_at == null ? undefined : String(row.lease_expires_at),
+    last_error_code: row.last_error_code == null ? undefined : String(row.last_error_code),
+    sent_at: row.sent_at == null ? undefined : String(row.sent_at),
+    acknowledged_at: row.acknowledged_at == null ? undefined : String(row.acknowledged_at),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+function rowToCloudGovernanceEvent(row: unknown): CloudGovernanceEvent | undefined {
+  if (!isRecord(row) || String(row.authority) !== "synapsor_cloud") return undefined;
+  return {
+    event_id: String(row.event_id),
+    proposal_id: String(row.proposal_id),
+    cloud_proposal_id: row.cloud_proposal_id == null ? undefined : String(row.cloud_proposal_id),
+    kind: String(row.kind),
+    state: String(row.state),
+    authority: "synapsor_cloud",
+    payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
+    integrity_hash: String(row.integrity_hash) as `sha256:${string}`,
+    created_at: String(row.created_at),
+  };
+}
+
 function rowToReceipt(row: unknown): StoredWritebackReceipt | undefined {
   if (!isRecord(row)) return undefined;
   return {
@@ -4227,6 +4593,8 @@ const sharedLedgerKindToTable: Record<string, string> = {
   worker_queue_item: "worker_queue",
   runner_state: "runner_state",
   policy_recommendation: "policy_recommendations",
+  cloud_outbox_event: "cloud_outbox",
+  cloud_governance_event: "cloud_governance_events",
 };
 
 type SharedLedgerRestoreSpec = {
@@ -4256,6 +4624,8 @@ const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> = {
   worker_queue: restoreSpec("proposal_id", ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "lease_owner", "lease_expires_at", "last_error_code", "created_at", "updated_at"], ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"]),
   runner_state: restoreSpec("key", ["key", "value_json", "updated_at"], ["key", "value_json", "updated_at"]),
   policy_recommendations: restoreSpec("recommendation_id", ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"], ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"]),
+  cloud_outbox: restoreSpec("event_id", ["event_id", "proposal_id", "sequence", "kind", "status", "payload_hash", "payload_json", "attempts", "max_attempts", "next_attempt_at", "lease_owner", "lease_expires_at", "last_error_code", "sent_at", "acknowledged_at", "created_at", "updated_at"], ["event_id", "sequence", "kind", "status", "payload_hash", "payload_json", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"]),
+  cloud_governance_events: restoreSpec("event_id", ["event_id", "proposal_id", "cloud_proposal_id", "kind", "state", "authority", "payload_json", "integrity_hash", "created_at"], ["event_id", "proposal_id", "kind", "state", "authority", "payload_json", "integrity_hash", "created_at"]),
 };
 
 function sharedLedgerPayload(table: string, row: Record<string, unknown>): Record<string, unknown> {
@@ -4303,6 +4673,8 @@ function sharedLedgerRestoreRank(entry: SharedLedgerEntry): number {
     "worker_queue",
     "runner_state",
     "policy_recommendations",
+    "cloud_outbox",
+    "cloud_governance_events",
   ];
   const table = sharedLedgerTableForEntry(entry);
   const index = table ? order.indexOf(table) : -1;
