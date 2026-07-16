@@ -35,6 +35,55 @@ describe("control plane client", () => {
     expect(JSON.stringify(requests)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
   });
 
+  it("marks a generic health fallback as unauthenticated", async () => {
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      requests.push(url);
+      if (url.endsWith("/v1/writeback/runner/doctor")) {
+        return new Response(JSON.stringify({ ok: false, error: "not_found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+
+    const client = new ControlPlaneClient({ baseUrl: "https://api.synapsor.example", runnerToken: "syn_run_test" });
+    await expect(client.doctor()).resolves.toMatchObject({ ok: true, status: 200, authenticated: false });
+    expect(requests).toEqual([
+      "https://api.synapsor.example/v1/writeback/runner/doctor",
+      "https://api.synapsor.example/health",
+    ]);
+  });
+
+  it("submits only typed, redacted Runner activity", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      requests.push({ url, body: JSON.parse(String(init?.body || "{}")) as Record<string, unknown> });
+      return new Response(JSON.stringify({ ok: true, event: { event_id: "replay:rpl_1" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    const client = new ControlPlaneClient({ baseUrl: "https://synapsor.example", runnerToken: "syn_run_test" });
+    await client.submitActivity({
+      schema_version: "synapsor.runner-activity.v1",
+      event_id: "replay:rpl_1",
+      event_type: "replay.recorded",
+      runner_id: "runner_1",
+      source_id: "src_1",
+      proposal_id: "wrp_1",
+      evidence_ids: ["ev_1"],
+      replay_id: "rpl_1",
+      detail: { stored_locally: true, payload_uploaded: false },
+    });
+    expect(requests).toEqual([{ url: "https://synapsor.example/v1/runner/activity", body: expect.objectContaining({ event_type: "replay.recorded", replay_id: "rpl_1" }) }]);
+    expect(JSON.stringify(requests)).not.toMatch(/database_url|password|private_key/i);
+  });
+
   it("fetches adapter tool catalogs and calls tools through Cloud APIs", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
@@ -83,14 +132,47 @@ describe("control plane client", () => {
   it("renews leases through the existing writeback heartbeat path", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.synapsor.example/v1/writeback/jobs/wbj_1/heartbeat");
-      expect(JSON.parse(String(init?.body || "{}"))).toEqual({ lease_seconds: 120 });
+      expect(JSON.parse(String(init?.body || "{}"))).toEqual({
+        runner_id: "runner_1",
+        lease_id: "lease_1",
+        lease_seconds: 120,
+      });
       return new Response(JSON.stringify({ ok: true, job_id: "wbj_1", lease_expires_at: 123 }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }));
 
-    const client = new ControlPlaneClient({ baseUrl: "https://api.synapsor.example", runnerToken: "syn_wbr_test" });
-    await expect(client.renewLease("wbj_1", 120)).resolves.toMatchObject({ ok: true, job_id: "wbj_1" });
+    const client = new ControlPlaneClient({ baseUrl: "https://api.synapsor.example", runnerToken: "syn_wbr_test", runnerId: "runner_1" });
+    await expect(client.renewLease("wbj_1", "lease_1", undefined, 120)).resolves.toMatchObject({ ok: true, job_id: "wbj_1" });
+  });
+
+  it("keeps Cloud lease ownership attached to claimed jobs", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body || "{}"))).toMatchObject({ source_id: "src_1", runner_id: "runner_1" });
+      return new Response(JSON.stringify({
+        ok: true,
+        jobs: [{
+          schema_version: "synapsor.writeback-job.v1",
+          writeback_job_id: "wbj_1",
+          proposal_id: "wrp_1",
+          proposal_version: 1,
+          proposal_hash: `sha256:${"a".repeat(64)}`,
+          runner_scope: { project_id: "proj_1", source_id: "src_1" },
+          engine: "postgres",
+          operation: "single_row_update",
+          target: { schema: "public", table: "invoices", primary_key: { column: "id", value: "INV-1" } },
+          tenant_guard: { column: "tenant_id", value: "acme" },
+          allowed_columns: ["status"],
+          patch: { status: "paid" },
+          conflict_guard: { kind: "column", column: "version", expected_value: 1 },
+          idempotency_key: "wrp_1",
+          lease: { lease_id: "lease_1", attempt: 2, expires_at: "2026-07-15T12:00:00Z" },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    const client = new ControlPlaneClient({ baseUrl: "https://api.synapsor.example", runnerToken: "syn_run_test", sourceId: "src_1", runnerId: "runner_1" });
+    const [job] = await client.claim();
+    expect(job?.cloud_lease).toEqual({ leaseId: "lease_1", attempt: 2, expiresAt: "2026-07-15T12:00:00Z" });
   });
 });

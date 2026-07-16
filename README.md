@@ -248,9 +248,11 @@ deployments: your database remains the source of truth and Runner stores review
 artifacts in the default local SQLite ledger or an opt-in shared Postgres
 runtime store.
 Synapsor Cloud adds a shared contract registry, immutable versions,
-downloadable Runner bundles, and team activity, evidence, and approval
-surfaces. See [OSS Runner vs Synapsor Cloud](docs/oss-vs-cloud.md) for the
-detailed boundary.
+source-scoped Runner connections, downloadable bundles, a human approval
+inbox, durable leased writeback jobs, and a redacted shared activity/receipt
+chronology. Database credentials and guarded execution remain local. See [Cloud
+Mode](docs/cloud-mode.md) for the design-partner path and [OSS Runner vs
+Synapsor Cloud](docs/oss-vs-cloud.md) for the detailed boundary.
 
 ## Next Steps
 

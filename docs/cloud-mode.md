@@ -15,9 +15,35 @@ Cloud-linked mode is for teams that need a shared control plane:
 - receipt reporting;
 - retention and audit visibility.
 
-The local runner still keeps database credentials in your environment. MCP
-client config snippets should contain command paths and runner arguments, not
-database URLs or write credentials.
+The local Runner still keeps database credentials in your environment. MCP
+client config snippets contain command paths and Runner arguments, not database
+URLs or write credentials.
+
+## Trust Boundary
+
+```text
+agent / MCP client
+  -> local Runner semantic tools
+  -> local scoped read + evidence
+  -> local proposal (source unchanged)
+  -> reviewed diff + safe references synced to Cloud
+  -> signed-in human approves or rejects in Cloud
+  -> source-scoped leased job
+  -> local trusted worker rechecks contract + proposal + DB guards
+  -> local database write
+  -> redacted receipt/activity linkage returned to Cloud
+```
+
+Cloud receives the contract/version/digest, capability, trusted scope
+identifiers, reviewable allowlisted diff, safe evidence/query references,
+decision identity, lease state, and receipt/replay links. Database URLs,
+passwords, handler tokens, private keys, full source rows, and kept-out evidence
+payloads stay local.
+
+Maintainers must run the opt-in
+[hosted Cloud-linked verification](./hosted-cloud-linked-verification.md) with a
+packed Runner, disposable Cloud project, and synthetic source before claiming a
+release is Cloud-linked end to end.
 
 Push and retrieve the portable contract without moving database credentials
 into Cloud:
@@ -29,11 +55,67 @@ synapsor-runner cloud push ./synapsor.contract.json \
   --name support-plan-credit
 ```
 
+Use the current design-partner API base:
+
+```bash
+export SYNAPSOR_CLOUD_BASE_URL="https://dev-api.synapsor.ai"
+```
+
+Then create a source-scoped Runner token in **Contract registry -> Connect
+Runner**, download the selected version's bundle, and run:
+
+```bash
+cd ./<downloaded-runner-bundle>
+cp .env.example .env
+# Fill the placeholders in .env, including the one-time Runner token.
+set -a && . ./.env && set +a
+
+npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json
+npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y -p @synapsor/runner synapsor-runner cloud connect --config ./synapsor.cloud.json
+npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+Run the trusted worker in a second operator-controlled terminal:
+
+```bash
+set -a && . ./.env && set +a
+npx -y -p @synapsor/runner synapsor-runner runner start --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+For deployment checks or an operator-controlled single claim cycle, use the
+same installed worker with `--once`; it exits after applying at most one
+Cloud-approved job and still rechecks the local contract, proposal, tenant,
+version, bounds, and idempotency guards:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
+```
+
+When a local proposal exists:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner cloud sync latest --config ./synapsor.cloud.json --store ./.synapsor/local.db
+```
+
 See [Cloud Push](cloud-push.md) and [Runner Bundles](runner-bundles.md).
 
-Cloud registry storage preserves approval policies but does not, by itself,
-mean hosted policy enforcement is enabled. Local Runner enforcement and hosted
-Cloud approval enforcement are separate runtime boundaries.
+Cloud approval changes proposal state and creates a claimable job; it does not
+touch the source database directly. If a lease expires, another compatible
+Runner may claim the job, but source and ledger idempotency prevent a duplicate
+effect. Stale row/set guards return a conflict. If the system cannot prove
+whether a source write committed, it records an indeterminate/reconciliation
+state instead of retrying blindly.
+
+Runner tokens are scoped to one project, explicit source IDs, and named
+operations. Rotate or revoke them from Connect Runner. Revocation blocks new
+registration, heartbeat, proposal, claim, lease, activity, and result calls.
+
+This is a single-node design-partner boundary, not managed Runner hosting,
+multi-region HA, SAML/SCIM, legal hold/WORM retention, or an enterprise SLA.
+Run the explicit hosted integration gate with synthetic staging data before
+depending on a deployment; registry push alone is not proof that registration,
+approval, leasing, and receipt synchronization are live.
 
 Run the local smoke for this mode with:
 

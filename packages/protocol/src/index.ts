@@ -63,6 +63,9 @@ export const protocolVersions = {
   executionReceiptV3: "synapsor.execution-receipt.v3",
   executionReceiptV4: "synapsor.execution-receipt.v4",
   runnerRegistration: "synapsor.runner-registration.v1",
+  runnerControl: "synapsor.runner-control.v1",
+  runnerProposal: "synapsor.runner-proposal.v1",
+  runnerActivity: "synapsor.runner-activity.v1",
   legacyWritebackJob: "1.0",
   normalizedWritebackJobV2: "2.0",
   normalizedWritebackJobV3: "3.0",
@@ -472,6 +475,12 @@ const publicConflictGuardSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") })
 ]);
 
+const leasedContractRefSchema = z.object({
+  contract_id: z.string().min(1),
+  contract_version_id: z.string().min(1),
+  digest: sha256,
+});
+
 export const writebackJobV1Schema = z.object({
   schema_version: z.literal(protocolVersions.writebackJob),
   writeback_job_id: z.string().min(1),
@@ -530,6 +539,7 @@ export const legacyWritebackJobSchema = z.object({
   job_id: z.string().min(1),
   proposal_id: z.string().min(1),
   approval_id: z.string().min(1),
+  contract: leasedContractRefSchema.optional(),
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   operation: z.literal("single_row_update").optional(),
@@ -564,6 +574,7 @@ export const normalizedWritebackJobV2InputSchema = z.object({
   job_id: z.string().min(1),
   proposal_id: z.string().min(1),
   approval_id: sha256,
+  contract: leasedContractRefSchema.optional(),
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   operation: z.enum(["single_row_update", "single_row_insert", "single_row_delete"]),
@@ -707,6 +718,7 @@ export const normalizedWritebackJobV3InputSchema = z.object({
   job_id: z.string().min(1),
   proposal_id: z.string().min(1),
   approval_id: sha256,
+  contract: leasedContractRefSchema.optional(),
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   operation: setOperationSchema,
@@ -812,6 +824,7 @@ export const normalizedWritebackJobV4InputSchema = z.object({
   job_id: z.string().min(1),
   proposal_id: z.string().min(1),
   approval_id: sha256,
+  contract: leasedContractRefSchema.optional(),
   source_id: z.string().min(1),
   engine: writebackEngineSchema,
   operation: reversalOperationSchema,
@@ -1058,6 +1071,7 @@ export const writebackResultSchema = z.union([legacyWritebackResultSchema, norma
 
 export const runnerRegistrationV1Schema = z.object({
   schema_version: z.literal(protocolVersions.runnerRegistration),
+  protocol_version: z.literal(protocolVersions.runnerControl).optional(),
   runner_id: z.string().min(1),
   runner_version: z.string().min(1),
   engines: z.array(writebackEngineSchema).min(1),
@@ -1066,8 +1080,62 @@ export const runnerRegistrationV1Schema = z.object({
     project_id: z.string().min(1),
     source_ids: z.array(z.string().min(1)).min(1)
   }),
+  contracts: z.array(z.object({
+    contract_id: z.string().min(1),
+    contract_version_id: z.string().min(1),
+    digest: sha256,
+  })).max(100).optional(),
   registered_at: z.string().min(1)
 });
+
+export const runnerProposalV1Schema = z.object({
+  schema_version: z.literal(protocolVersions.runnerProposal),
+  runner_id: z.string().min(1),
+  source_id: z.string().min(1),
+  mapping_id: z.string().min(1).optional(),
+  contract: z.object({
+    contract_id: z.string().min(1),
+    contract_version_id: z.string().min(1),
+    digest: sha256,
+  }),
+  change_set: z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema, compensationChangeSetV1Schema]),
+  evidence_metadata: z.record(z.unknown()).optional(),
+  query_audit: z.record(z.unknown()).optional(),
+}).superRefine((proposal, ctx) => {
+  // source_id is the Cloud external-source scope used for token authorization
+  // and queue routing. change_set.source.source_id is the portable source alias
+  // reviewed in the contract and used by the local Runner config. They are
+  // intentionally independent identifiers.
+  if (proposal.change_set.source_database_mutated) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Runner proposals must describe an unchanged source database", path: ["change_set", "source_database_mutated"] });
+  }
+});
+
+export const runnerActivityV1Schema = z.object({
+  schema_version: z.literal(protocolVersions.runnerActivity),
+  event_id: z.string().min(1).max(120).regex(/^[A-Za-z0-9_.:-]+$/),
+  event_type: z.enum(["evidence.recorded", "query_audit.recorded", "replay.recorded", "worker.diagnostic"]),
+  runner_id: z.string().min(1).max(120),
+  source_id: z.string().min(1).max(120),
+  proposal_id: z.string().min(1).max(120).optional(),
+  job_id: z.string().min(1).max(120).optional(),
+  contract_id: z.string().min(1).max(120).optional(),
+  contract_version_id: z.string().min(1).max(120).optional(),
+  contract_digest: sha256.optional(),
+  capability: z.string().min(1).max(160).optional(),
+  workflow: z.string().min(1).max(160).optional(),
+  tenant_id: z.string().min(1).max(160).optional(),
+  principal: z.string().min(1).max(200).optional(),
+  business_object: z.string().min(1).max(160).optional(),
+  object_id: z.string().min(1).max(200).optional(),
+  status: z.string().min(1).max(80).optional(),
+  evidence_ids: z.array(z.string().min(1).max(160)).max(100).optional(),
+  query_audit_ids: z.array(z.string().min(1).max(160)).max(100).optional(),
+  receipt_id: z.string().min(1).max(160).optional(),
+  replay_id: z.string().min(1).max(160).optional(),
+  detail: z.record(z.unknown()).optional(),
+  occurred_at: z.string().min(1).max(80).optional(),
+}).strict();
 
 export type ChangeSetV1 = z.infer<typeof changeSetV1Schema>;
 export type ChangeSetV2 = z.infer<typeof changeSetV2Schema>;
@@ -1085,6 +1153,8 @@ export type ExecutionReceiptV4 = z.infer<typeof executionReceiptV4Schema>;
 export type ExecutionReceipt = ExecutionReceiptV1 | ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4;
 export type InverseDescriptorV1 = z.infer<typeof inverseDescriptorV1Schema>;
 export type RunnerRegistrationV1 = z.infer<typeof runnerRegistrationV1Schema>;
+export type RunnerProposalV1 = z.infer<typeof runnerProposalV1Schema>;
+export type RunnerActivityV1 = z.infer<typeof runnerActivityV1Schema>;
 export type WritebackJob = z.infer<typeof writebackJobSchema>;
 export type WritebackResult = z.infer<typeof writebackResultSchema>;
 export type WritebackEngine = z.infer<typeof writebackEngineSchema>;
@@ -1179,6 +1249,14 @@ export function parseWritebackResult(input: unknown): WritebackResult {
 
 export function parseRunnerRegistration(input: unknown): RunnerRegistrationV1 {
   return runnerRegistrationV1Schema.parse(input);
+}
+
+export function parseRunnerProposal(input: unknown): RunnerProposalV1 {
+  return runnerProposalV1Schema.parse(input);
+}
+
+export function parseRunnerActivity(input: unknown): RunnerActivityV1 {
+  return runnerActivityV1Schema.parse(input);
 }
 
 export const safeErrorCodes = [

@@ -1,8 +1,12 @@
 import {
   parseRunnerRegistration,
+  parseRunnerProposal,
+  parseRunnerActivity,
   parseWritebackJob,
   parseWritebackResult,
   type RunnerRegistrationV1,
+  type RunnerProposalV1,
+  type RunnerActivityV1,
   type WritebackJob,
   type WritebackResult,
 } from "@synapsor-runner/protocol";
@@ -11,13 +15,23 @@ export type ControlPlaneClientConfig = {
   baseUrl: string;
   runnerToken: string;
   sourceId?: string;
+  runnerId?: string;
 };
 
 export type ClaimOptions = {
   sourceId?: string;
   limit?: number;
   leaseSeconds?: number;
+  runnerId?: string;
 };
+
+export type CloudLease = {
+  leaseId: string;
+  expiresAt: string | number;
+  attempt: number;
+};
+
+export type ClaimedWritebackJob = WritebackJob & { cloud_lease: CloudLease };
 
 export type AdapterToolCatalogEntry = {
   name: string;
@@ -46,22 +60,28 @@ export class ControlPlaneClient {
   private readonly baseUrl: string;
   private readonly runnerToken: string;
   private readonly sourceId?: string;
+  private readonly runnerId?: string;
 
   constructor(config: ControlPlaneClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.runnerToken = config.runnerToken;
     this.sourceId = config.sourceId;
+    this.runnerId = config.runnerId;
   }
 
-  async claim(options: ClaimOptions = {}): Promise<WritebackJob[]> {
+  async claim(options: ClaimOptions = {}): Promise<ClaimedWritebackJob[]> {
     const body = {
       source_id: options.sourceId || this.sourceId,
+      runner_id: options.runnerId || this.runnerId,
       limit: options.limit ?? 1,
       lease_seconds: options.leaseSeconds
     };
     const response = await this.post("/v1/writeback/jobs/claim", body);
     const jobs = Array.isArray(response.jobs) ? response.jobs : [];
-    return jobs.map((job) => parseWritebackJob(job));
+    return jobs.map((job) => {
+      const parsed = parseWritebackJob(job);
+      return Object.assign(parsed, { cloud_lease: cloudLease(job) });
+    });
   }
 
   async register(payload: RunnerRegistrationV1): Promise<Record<string, unknown>> {
@@ -81,21 +101,36 @@ export class ControlPlaneClient {
     return this.post("/v1/runner/heartbeat", payload);
   }
 
-  async heartbeat(jobId: string, leaseSeconds = 60): Promise<void> {
-    await this.post(`/v1/writeback/jobs/${encodeURIComponent(jobId)}/heartbeat`, { lease_seconds: leaseSeconds });
+  async submitProposal(payload: RunnerProposalV1): Promise<Record<string, unknown>> {
+    return this.post("/v1/runner/proposals", parseRunnerProposal(payload));
   }
 
-  async renewLease(jobId: string, leaseSeconds = 60): Promise<Record<string, unknown>> {
-    return this.post(`/v1/writeback/jobs/${encodeURIComponent(jobId)}/heartbeat`, { lease_seconds: leaseSeconds });
+  async submitActivity(payload: RunnerActivityV1): Promise<Record<string, unknown>> {
+    return this.post("/v1/runner/activity", parseRunnerActivity(payload));
   }
 
-  async result(result: WritebackResult): Promise<void> {
+  async heartbeat(jobId: string, leaseId: string, runnerId = this.runnerId, leaseSeconds = 60): Promise<void> {
+    await this.renewLease(jobId, leaseId, runnerId, leaseSeconds);
+  }
+
+  async renewLease(jobId: string, leaseId: string, runnerId = this.runnerId, leaseSeconds = 60): Promise<Record<string, unknown>> {
+    return this.post(`/v1/writeback/jobs/${encodeURIComponent(jobId)}/heartbeat`, {
+      runner_id: requireValue(runnerId, "runner_id"),
+      lease_id: requireValue(leaseId, "lease_id"),
+      lease_seconds: leaseSeconds,
+    });
+  }
+
+  async result(result: WritebackResult, leaseId: string): Promise<void> {
     const parsed = parseWritebackResult(result);
-    await this.post(`/v1/writeback/jobs/${encodeURIComponent(parsed.job_id)}/result`, parsed);
+    await this.post(`/v1/writeback/jobs/${encodeURIComponent(parsed.job_id)}/result`, {
+      ...parsed,
+      lease_id: requireValue(leaseId, "lease_id"),
+    });
   }
 
-  async submitReceipt(result: WritebackResult): Promise<void> {
-    await this.result(result);
+  async submitReceipt(result: WritebackResult, leaseId: string): Promise<void> {
+    await this.result(result, leaseId);
   }
 
   async adapterTools(adapterId: string, options: { session?: Record<string, unknown> } = {}): Promise<AdapterToolCatalog> {
@@ -190,6 +225,28 @@ export class ControlPlaneClient {
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
+}
+
+function cloudLease(input: unknown): CloudLease {
+  const record = normalizeRecord(input);
+  const publicLease = normalizeRecord(record?.lease);
+  const leaseId = typeof publicLease?.lease_id === "string"
+    ? publicLease.lease_id
+    : typeof record?.lease_id === "string"
+      ? record.lease_id
+      : "";
+  const expiresAt = publicLease?.expires_at ?? record?.lease_expires_at;
+  const attempt = Number(publicLease?.attempt ?? record?.attempt_count ?? 0);
+  if (!leaseId || (typeof expiresAt !== "string" && typeof expiresAt !== "number") || !Number.isSafeInteger(attempt) || attempt < 1) {
+    throw new Error("control plane returned a writeback job without a valid lease");
+  }
+  return { leaseId, expiresAt, attempt };
+}
+
+function requireValue(value: string | undefined, field: string): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) throw new Error(`${field} is required for Cloud lease ownership`);
+  return normalized;
 }
 
 function normalizeTool(value: unknown): AdapterToolCatalogEntry | undefined {

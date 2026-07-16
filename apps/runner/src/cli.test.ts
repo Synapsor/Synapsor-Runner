@@ -7,8 +7,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpRuntime, loadRuntimeConfigFromFile, type DbRowReader } from "@synapsor-runner/mcp-server";
 import { ProposalStore, type StoredWritebackIntent } from "@synapsor-runner/proposal-store";
-import { canonicalJsonDigest, parseExecutionReceipt } from "@synapsor-runner/protocol";
-import { main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runInitWizard } from "./cli.js";
+import { canonicalJsonDigest, parseExecutionReceipt, parseWritebackJob } from "@synapsor-runner/protocol";
+import { main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runInitWizard, verifyLocalWritebackAuthority } from "./cli.js";
 import type { ReconciliationObservation } from "@synapsor-runner/worker-core";
 
 function workspacePath(...segments: string[]): string {
@@ -3334,6 +3334,7 @@ END
       ]);
       expect(requests[0]?.body).toMatchObject({
         schema_version: "synapsor.runner-registration.v1",
+        protocol_version: "synapsor.runner-control.v1",
         runner_id: "runner_cloud_test",
         runner_version: "0.1.0-test",
         engines: ["postgres"],
@@ -3364,6 +3365,234 @@ END
         process.env.SYNAPSOR_TEST_RUNNER_TOKEN = oldToken;
       }
     }
+  });
+
+  it("runs one bounded Cloud worker cycle through the public CLI", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-worker-once-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor", "local.db");
+    vi.stubEnv("SYNAPSOR_CONTROL_PLANE_URL", "https://api.synapsor.example");
+    vi.stubEnv("SYNAPSOR_RUNNER_TOKEN", "syn_run_worker_once_secret");
+    vi.stubEnv("SYNAPSOR_RUNNER_ID", "runner_worker_once");
+    vi.stubEnv("SYNAPSOR_SOURCE_ID", "src_pg_cloud");
+    vi.stubEnv("SYNAPSOR_ENGINE", "postgres");
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body || "{}")) as Record<string, unknown>,
+      });
+      return new Response(JSON.stringify({ ok: true, jobs: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["runner", "start", "--once", "--config", configPath, "--store", storePath])).resolves.toBe(0);
+    expect(requests).toEqual([{
+      url: "https://api.synapsor.example/v1/writeback/jobs/claim",
+      body: { source_id: "src_pg_cloud", runner_id: "runner_worker_once", limit: 1 },
+    }]);
+    expect(output.join("")).toContain("Cloud worker completed 0 job(s)");
+    expect(JSON.stringify({ requests, output })).not.toContain("syn_run_worker_once_secret");
+    await expect(main(["runner", "start", "--once"])).rejects.toThrow("requires both --config and --store");
+  });
+
+  it("does not treat a generic health fallback as an authenticated Runner connection", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-health-only-"));
+    const configPath = path.join(tempDir, "synapsor.cloud.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "cloud",
+      trusted_context: { provider: "cloud_session" },
+      cloud: {
+        base_url_env: "SYNAPSOR_TEST_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_TEST_RUNNER_TOKEN",
+        runner_id: "runner_health_only",
+        source_id: "src_pg_cloud",
+      },
+    }), "utf8");
+    vi.stubEnv("SYNAPSOR_TEST_CLOUD_BASE_URL", "https://api.synapsor.example");
+    vi.stubEnv("SYNAPSOR_TEST_RUNNER_TOKEN", "syn_run_health_only");
+    const requests: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.endsWith("/v1/writeback/runner/doctor")) {
+        return new Response(JSON.stringify({ ok: false, error: "not_found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["cloud", "connect", "--config", configPath])).resolves.toBe(1);
+    expect(requests).toEqual([
+      "https://api.synapsor.example/v1/writeback/runner/doctor",
+      "https://api.synapsor.example/health",
+    ]);
+    expect(output.join("")).toContain("did not authenticate the Runner protocol");
+    expect(output.join("")).not.toContain("syn_run_health_only");
+  });
+
+  it("syncs a local pending proposal to the exact Cloud contract without uploading source rows", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-sync-"));
+    const configPath = path.join(tempDir, "synapsor.cloud.json");
+    const storePath = path.join(tempDir, ".synapsor", "local.db");
+    await fs.writeFile(configPath, JSON.stringify({
+      cloud: {
+        base_url_env: "SYNAPSOR_TEST_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_TEST_RUNNER_TOKEN",
+        runner_id: "runner_cloud_test",
+        project_id: "proj_1",
+        source_id: "src_pg_acme",
+        runner_source_id: "local_postgres",
+        contract_id: "act_1",
+        contract_version_id: "acv_1",
+        contract_digest: `sha256:${"a".repeat(64)}`,
+      },
+    }), "utf8");
+    const store = new ProposalStore(storePath);
+    store.createProposal({
+      ...structuredClone(changeSet),
+      source: { ...structuredClone(changeSet.source), source_id: "local_postgres" },
+      evidence: {
+        ...structuredClone(changeSet.evidence),
+        items: [{ id: "INV-CLI", private_note: "must remain local" }],
+      },
+    });
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_cli",
+      proposal_id: "wrp_cli",
+      tenant_id: "acme",
+      payload: { private_note: "must remain local" },
+      items: [{ private_note: "must remain local" }],
+    });
+    store.recordQueryAudit({
+      proposal_id: "wrp_cli",
+      evidence_bundle_id: "ev_cli",
+      source_id: "local_postgres",
+      query_fingerprint: "sha256:evidence",
+      table_name: "invoices",
+      row_count: 1,
+      payload: { operation: "read" },
+    });
+    store.close();
+    vi.stubEnv("SYNAPSOR_TEST_CLOUD_BASE_URL", "https://api.synapsor.example");
+    vi.stubEnv("SYNAPSOR_TEST_RUNNER_TOKEN", "syn_run_secret");
+    const submittedRequests: Record<string, any>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      submittedRequests.push(JSON.parse(String(init?.body || "{}")));
+      return new Response(JSON.stringify({ ok: true, proposal: { proposal_id: "wrp_cli" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    await expect(main(["cloud", "sync", "wrp_cli", "--config", configPath, "--store", storePath])).resolves.toBe(0);
+    const submitted = submittedRequests[0] || {};
+    expect(submitted).toMatchObject({
+      schema_version: "synapsor.runner-proposal.v1",
+      runner_id: "runner_cloud_test",
+      source_id: "src_pg_acme",
+      contract: { contract_id: "act_1", contract_version_id: "acv_1" },
+      change_set: { proposal_id: "wrp_cli", source: { source_id: "local_postgres" }, source_database_mutated: false, evidence: { items: [] } },
+      evidence_metadata: { bundle_ids: ["ev_cli"], payload_uploaded: false },
+      query_audit: { payload_uploaded: false },
+    });
+    const serialized = JSON.stringify(submitted);
+    expect(serialized).not.toContain("must remain local");
+    expect(serialized).not.toContain("syn_run_secret");
+    await expect(main(["cloud", "sync-activity", "wrp_cli", "--config", configPath, "--store", storePath])).resolves.toBe(0);
+    const activity = submittedRequests.slice(1);
+    expect(activity.map((event) => event.event_type)).toEqual(["evidence.recorded", "query_audit.recorded", "replay.recorded"]);
+    expect(activity[0]).toMatchObject({ evidence_ids: ["ev_cli"], detail: { stored_locally: true, payload_uploaded: false } });
+    expect(activity[2]).toMatchObject({ proposal_id: "wrp_cli", replay_id: "replay_wrp_cli" });
+    expect(JSON.stringify(activity)).not.toContain("must remain local");
+    expect(JSON.stringify(activity)).not.toContain("syn_run_secret");
+  });
+
+  it("rechecks a Cloud-approved lease against the local contract digest and immutable proposal", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-authority-"));
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor", "local.db");
+    await fs.copyFile(workspacePath("packages/spec/examples/guarded-writeback.contract.json"), contractPath);
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "SYNAPSOR_DATABASE_READ_URL",
+          write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+        },
+      },
+    }), "utf8");
+    const runtime = loadRuntimeConfigFromFile(configPath);
+    const reviewed = runtime.capabilities?.find((capability) => capability.name === "billing.propose_late_fee_waiver");
+    expect(reviewed?.contract_provenance?.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const contractDigest = reviewed?.contract_provenance?.digest as `sha256:${string}`;
+    const proposalHash = `sha256:${"d".repeat(64)}`;
+    const proposalStore = new ProposalStore(storePath);
+    proposalStore.createProposal({
+      ...structuredClone(changeSet),
+      action: "billing.propose_late_fee_waiver",
+      source: { ...structuredClone(changeSet.source), source_id: "local_postgres" },
+      integrity: { proposal_hash: proposalHash },
+    });
+    proposalStore.close();
+    const job = parseWritebackJob({
+      protocol_version: "1.0",
+      job_id: "wbj_cloud_authority",
+      proposal_id: "wrp_cli",
+      approval_id: proposalHash,
+      contract: {
+        contract_id: "agct_1",
+        contract_version_id: "agcv_1",
+        digest: contractDigest,
+      },
+      source_id: "local_postgres",
+      engine: "postgres",
+      operation: "single_row_update",
+      target: {
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id", value: "INV-CLI" },
+        tenant_guard: { column: "tenant_id", value: "acme" },
+      },
+      allowed_columns: ["late_fee_cents", "waiver_reason"],
+      patch: { late_fee_cents: 0, waiver_reason: "customer requested review" },
+      conflict_guard: { kind: "version_column", column: "updated_at", expected_value: "2026-06-20T14:31:08Z" },
+      idempotency_key: proposalHash,
+      lease_expires_at: "2099-07-15T00:00:00Z",
+      attempt_count: 1,
+    });
+
+    await expect(verifyLocalWritebackAuthority(job, configPath, storePath, { cloudApproved: true })).resolves.toBeUndefined();
+    await expect(verifyLocalWritebackAuthority({
+      ...job,
+      contract: { contract_id: "agct_1", contract_version_id: "agcv_1", digest: `sha256:${"e".repeat(64)}` },
+    }, configPath, storePath, { cloudApproved: true })).rejects.toThrow(/contract digest/);
+    await expect(verifyLocalWritebackAuthority({
+      ...job,
+      allowed_columns: [...job.allowed_columns, "card_token"],
+    }, configPath, storePath, { cloudApproved: true })).rejects.toThrow(/does not match any reviewed proposal capability|allowlist/);
   });
 
   it("audits a remote MCP tools/list endpoint without calling business tools", async () => {

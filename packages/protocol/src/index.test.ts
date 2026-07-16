@@ -9,6 +9,8 @@ import {
   parseChangeSet,
   parseExecutionReceipt,
   parseRunnerRegistration,
+  parseRunnerProposal,
+  parseRunnerActivity,
   parseWritebackJob,
   parseWritebackResult,
   protocolVersions
@@ -37,6 +39,47 @@ const validJob = {
 };
 
 describe("writeback job schema", () => {
+  it("keeps Cloud routing IDs separate from portable contract source aliases", () => {
+    const proposal = parseRunnerProposal({
+      schema_version: protocolVersions.runnerProposal,
+      runner_id: "runner_1",
+      source_id: "xsrc_cloud_1",
+      contract: {
+        contract_id: "agct_1",
+        contract_version_id: "agcv_1",
+        digest: `sha256:${"a".repeat(64)}`,
+      },
+      change_set: {
+        schema_version: protocolVersions.changeSetV2,
+        proposal_id: "wrp_1",
+        proposal_version: 1,
+        action: "billing.propose_waiver",
+        operation: "single_row_update",
+        mode: "review_required",
+        principal: { id: "operator", source: "environment" },
+        scope: { tenant_id: "acme", business_object: "invoice", object_id: "INV-1" },
+        source: { kind: "external_postgres", source_id: "local_postgres", schema: "public", table: "invoices", primary_key: { column: "id", value: "INV-1" } },
+        before: { id: "INV-1", version: 1, late_fee_cents: 2500 },
+        patch: { late_fee_cents: 0 },
+        after: { id: "INV-1", version: 2, late_fee_cents: 0 },
+        guards: {
+          tenant: { column: "tenant_id", value: "acme" },
+          allowed_columns: ["late_fee_cents"],
+          expected_version: { column: "version", value: 1 },
+          version_advance: { column: "version", strategy: "integer_increment" },
+        },
+        evidence: { bundle_id: "ev_1", query_fingerprint: `sha256:${"b".repeat(64)}`, items: [] },
+        approval: { status: "pending", required_role: "billing_lead" },
+        writeback: { status: "not_applied", mode: "trusted_worker_required" },
+        source_database_mutated: false,
+        integrity: { proposal_hash: `sha256:${"c".repeat(64)}` },
+        created_at: "2026-07-15T00:00:00Z",
+      },
+    });
+    expect(proposal.source_id).toBe("xsrc_cloud_1");
+    expect(proposal.change_set.source.source_id).toBe("local_postgres");
+  });
+
   it("canonicalizes reviewed JSON recursively without changing array order", () => {
     const left = {
       operation: "set_update",
@@ -272,6 +315,25 @@ describe("public protocol fixtures", () => {
     expect(registration.schema_version).toBe(protocolVersions.runnerRegistration);
     expect(registration.engines).toContain("postgres");
     expect(registration.scope.source_ids).toContain("src_pg_acme");
+    expect(
+      parseRunnerRegistration({ ...registration, protocol_version: protocolVersions.runnerControl }).protocol_version,
+    ).toBe(protocolVersions.runnerControl);
+  });
+
+  it("parses the redacted Runner activity protocol and rejects unknown fields", () => {
+    const activity = parseRunnerActivity({
+      schema_version: "synapsor.runner-activity.v1",
+      event_id: "replay:rpl_1",
+      event_type: "replay.recorded",
+      runner_id: "runner_1",
+      source_id: "src_1",
+      proposal_id: "wrp_1",
+      evidence_ids: ["ev_1"],
+      replay_id: "rpl_1",
+      detail: { payload_uploaded: false },
+    });
+    expect(activity.event_type).toBe("replay.recorded");
+    expect(() => parseRunnerActivity({ ...activity, database_url: "postgresql://secret" })).toThrow();
   });
 
   it("parses public v2 fixtures for every guarded single-row operation", () => {

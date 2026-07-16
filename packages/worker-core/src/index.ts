@@ -71,6 +71,8 @@ export type ReconciliationObservation = {
   }>;
 };
 
+export type WritebackAuthorityVerifier = (job: WritebackJob) => Promise<void> | void;
+
 type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
 export type CompensationWritebackJob = Extract<WritebackJob, { protocol_version: "4.0" }>;
 type Scalar = string | number | boolean | null;
@@ -358,7 +360,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     runnerToken: requireEnv(env, "SYNAPSOR_RUNNER_TOKEN"),
     runnerId: env.SYNAPSOR_RUNNER_ID || "synapsor-runner-local",
     sourceId: requireEnv(env, "SYNAPSOR_SOURCE_ID"),
-    databaseUrl: env.SYNAPSOR_DATABASE_URL || "",
+    databaseUrl: env.SYNAPSOR_DATABASE_WRITE_URL || env.SYNAPSOR_DATABASE_URL || "",
     engine,
     pollIntervalMs: Number(env.SYNAPSOR_POLL_INTERVAL_MS || "5000"),
     statementTimeoutMs: optionalPositiveInteger(env.SYNAPSOR_WRITEBACK_TIMEOUT_MS, "SYNAPSOR_WRITEBACK_TIMEOUT_MS"),
@@ -415,7 +417,7 @@ export function validateJob(input: unknown): WritebackJob {
 }
 
 export async function doctorChecks(config: RunnerConfig, adapter: ApplyAdapter): Promise<DoctorReport> {
-  const client = new ControlPlaneClient({ baseUrl: config.controlPlaneUrl, runnerToken: config.runnerToken, sourceId: config.sourceId });
+  const client = new ControlPlaneClient({ baseUrl: config.controlPlaneUrl, runnerToken: config.runnerToken, sourceId: config.sourceId, runnerId: config.runnerId });
   const [controlPlane, database] = await Promise.all([
     client.doctor(),
     adapter.doctor(config)
@@ -432,10 +434,56 @@ export async function doctorChecks(config: RunnerConfig, adapter: ApplyAdapter):
   };
 }
 
-export async function runOnce(config: RunnerConfig, adapters: Record<RunnerConfig["engine"], ApplyAdapter>): Promise<number> {
+export function failedWritebackResult(job: WritebackJob, runnerId: string, errorCode: string): WritebackResult {
+  const common = {
+    protocol_version: job.protocol_version,
+    job_id: job.job_id,
+    runner_id: runnerId,
+    status: "failed" as const,
+    affected_rows: 0,
+    completed_at: new Date().toISOString(),
+    error_code: errorCode,
+  };
+  let result: Record<string, unknown>;
+  if (job.protocol_version === protocolVersions.legacyWritebackJob) {
+    result = common;
+  } else if (job.protocol_version === protocolVersions.normalizedWritebackJobV2) {
+    const primaryKey = job.target.primary_key;
+    result = {
+      ...common,
+      operation: job.operation,
+      receipt_authority: "runner_ledger",
+      target_identity: [{ column: primaryKey.column, value: primaryKey.value ?? job.patch[primaryKey.column] ?? null }],
+    };
+  } else if (job.protocol_version === protocolVersions.normalizedWritebackJobV3) {
+    result = {
+      ...common,
+      operation: job.operation,
+      receipt_authority: "runner_ledger",
+      target_identities: job.frozen_set.members.map((member) => member.primary_key),
+      set_digest: job.frozen_set.set_digest,
+      member_effects: [],
+    };
+  } else {
+    result = {
+      ...common,
+      operation: job.operation,
+      receipt_authority: "runner_ledger",
+      target_identities: job.compensation.members.map((member) => member.primary_key),
+      member_effects: [],
+    };
+  }
+  return { ...result, result_hash: canonicalJsonDigest(result) } as WritebackResult;
+}
+
+export async function runOnce(
+  config: RunnerConfig,
+  adapters: Record<RunnerConfig["engine"], ApplyAdapter>,
+  verifyAuthority?: WritebackAuthorityVerifier,
+): Promise<number> {
   const logger = createLogger(config);
-  const client = new ControlPlaneClient({ baseUrl: config.controlPlaneUrl, runnerToken: config.runnerToken, sourceId: config.sourceId });
-  const jobs = await client.claim({ sourceId: config.sourceId, limit: 1 });
+  const client = new ControlPlaneClient({ baseUrl: config.controlPlaneUrl, runnerToken: config.runnerToken, sourceId: config.sourceId, runnerId: config.runnerId });
+  const jobs = await client.claim({ sourceId: config.sourceId, runnerId: config.runnerId, limit: 1 });
   if (jobs.length === 0) {
     logger.info("no approved writeback jobs available", { source_id: config.sourceId });
     return 0;
@@ -443,28 +491,36 @@ export async function runOnce(config: RunnerConfig, adapters: Record<RunnerConfi
   let completed = 0;
   for (const job of jobs) {
     if (job.engine !== config.engine) {
-      await client.result({
-        protocol_version: "1.0",
-        job_id: job.job_id,
-        runner_id: config.runnerId,
-        status: "failed",
-        error_code: "DATABASE_UNAVAILABLE"
-      });
+      await client.result(failedWritebackResult(job, config.runnerId, "DATABASE_UNAVAILABLE"), job.cloud_lease.leaseId);
       continue;
     }
-    await client.heartbeat(job.job_id);
+    if (verifyAuthority) {
+      try {
+        await verifyAuthority(job);
+      } catch {
+        logger.warn("Cloud-approved job rejected by local reviewed authority", { job_id: job.job_id, error_code: "LOCAL_AUTHORITY_REJECTED" });
+        await client.result(failedWritebackResult(job, config.runnerId, "LOCAL_AUTHORITY_REJECTED"), job.cloud_lease.leaseId);
+        continue;
+      }
+    }
+    await client.heartbeat(job.job_id, job.cloud_lease.leaseId, config.runnerId);
     const result = await adapters[config.engine].apply(job, config);
-    await client.result(result);
+    await client.result(result, job.cloud_lease.leaseId);
     completed += 1;
   }
   return completed;
 }
 
-export async function startPolling(config: RunnerConfig, adapters: Record<RunnerConfig["engine"], ApplyAdapter>, signal?: AbortSignal): Promise<void> {
+export async function startPolling(
+  config: RunnerConfig,
+  adapters: Record<RunnerConfig["engine"], ApplyAdapter>,
+  signal?: AbortSignal,
+  verifyAuthority?: WritebackAuthorityVerifier,
+): Promise<void> {
   const logger = createLogger(config);
   while (!signal?.aborted) {
     try {
-      await runOnce(config, adapters);
+      await runOnce(config, adapters, verifyAuthority);
     } catch (error) {
       logger.error("runner loop failed", { error: error instanceof Error ? error.message : String(error) });
     }

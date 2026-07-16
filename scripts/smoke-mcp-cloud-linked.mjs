@@ -240,16 +240,19 @@ async function startMockCloud() {
       if (request.method === "POST" && url.pathname === "/v1/writeback/jobs/claim") {
         state.claimBody = body;
         assert(body.source_id === "src_pg_cloud", "Runner claimed the wrong source", body);
+        assert(body.runner_id === "runner_cloud_smoke", "Runner claim omitted its registered identity", body);
         const jobs = state.approved && !state.claimed ? [job] : [];
         state.claimed = state.claimed || jobs.length > 0;
         writeJson(response, 200, { ok: true, jobs });
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/writeback/jobs/wbj_cloud_1/heartbeat") {
+        assert(body.runner_id === "runner_cloud_smoke" && body.lease_id === "lease_cloud_1", "Runner heartbeat did not prove lease ownership", body);
         writeJson(response, 200, { ok: true, job_id: "wbj_cloud_1", lease_expires_at: "2026-06-20T14:37:00Z" });
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/writeback/jobs/wbj_cloud_1/result") {
+        assert(body.runner_id === "runner_cloud_smoke" && body.lease_id === "lease_cloud_1", "Runner result did not prove lease ownership", body);
         state.resultBody = body;
         state.resultPath = url.pathname;
         state.completed = true;
@@ -337,7 +340,7 @@ run("docker", ["compose", "down", "-v"], { cwd: exampleDir, allowFailure: true }
 run("docker", ["compose", "up", "-d"], { cwd: exampleDir });
 try {
   await waitForPostgres();
-  dockerSql("UPDATE public.invoices SET late_fee_cents = 5500, waiver_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'INV-3001'; DROP TABLE IF EXISTS public.synapsor_writeback_receipts;");
+  dockerSql("UPDATE public.invoices SET late_fee_cents = 5500, waiver_reason = NULL, updated_at = '2026-06-20T14:31:08Z' WHERE id = 'INV-3001';");
 
   console.log("== Cloud-linked runner registration and heartbeat ==");
   const cloudClient = new ControlPlaneClient({
