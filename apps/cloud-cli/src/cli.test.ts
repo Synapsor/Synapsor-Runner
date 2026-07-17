@@ -299,12 +299,16 @@ describe("@synapsor/cli", () => {
     const secretFile = path.join(directory, "runner.key");
     vi.stubEnv("SYNAPSOR_CONFIG_HOME", path.join(directory, "config"));
     vi.stubEnv("SYNAPSOR_CLOUD_ACCESS_TOKEN", "human_session_never_print");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      ok: true,
-      token: { token_id: "rnt_1", token_prefix: "syn_run_dev_", source_ids: ["source_1"] },
-      runner_token: "syn_run_dev_one_time_secret_123456789",
-      secret_available: true,
-    }), { status: 200, headers: { "content-type": "application/json" } })));
+    const requestBodies: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input, init) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({
+        ok: true,
+        token: { token_id: "rnt_1", token_prefix: "syn_run_dev_", source_ids: ["source_1"] },
+        runner_token: "syn_run_dev_one_time_secret_123456789",
+        secret_available: true,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { output.push(String(chunk)); return true; });
     await main([
@@ -312,8 +316,12 @@ describe("@synapsor/cli", () => {
       "--sources", "source_1", "--secret-file", secretFile, "--json",
     ]);
     expect(await fs.readFile(secretFile, "utf8")).toBe("syn_run_dev_one_time_secret_123456789\n");
+    expect(requestBodies).toEqual([{ name: "Runner", source_ids: ["source_1"] }]);
     expect(output.join("")).not.toContain("syn_run_dev_one_time_secret_123456789");
-    expect(JSON.parse(output.join("")).runner_token).toBe("[REDACTED]");
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      token: { token_id: "rnt_1", token_prefix: "syn_run_dev_", source_ids: ["source_1"] },
+      runner_token: "[REDACTED]",
+    });
   });
 
   it("stores only non-secret profile metadata", async () => {

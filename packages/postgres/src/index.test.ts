@@ -12,6 +12,7 @@ import {
   type PostgresApplyClient
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
+import { canonicalJsonStringify } from "@synapsor-runner/protocol";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -212,6 +213,9 @@ describe("postgres adapter", () => {
 
     expect(result.status).toBe("applied");
     expect(result.affected_rows).toBe(1);
+    expect(() => canonicalJsonStringify(result)).not.toThrow();
+    expect(result).not.toHaveProperty("result_version");
+    expect(result).not.toHaveProperty("error_code");
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(true);
     expect(client.recordedReceiptStatus).toBe("applied");
     expect(client.sqlLog).toContain("COMMIT");

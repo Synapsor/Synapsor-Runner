@@ -11,6 +11,7 @@ import {
   type MysqlApplyConnection
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
+import { canonicalJsonStringify } from "@synapsor-runner/protocol";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -199,6 +200,9 @@ describe("mysql adapter", () => {
 
     expect(result.status).toBe("applied");
     expect(result.affected_rows).toBe(1);
+    expect(() => canonicalJsonStringify(result)).not.toThrow();
+    expect(result).not.toHaveProperty("result_version");
+    expect(result).not.toHaveProperty("error_code");
     expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(true);
     expect(connection.recordedReceiptStatus).toBe("applied");
     expect(connection.sqlLog).toContain("COMMIT");

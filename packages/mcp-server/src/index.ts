@@ -656,7 +656,7 @@ export async function enqueueCloudLinkedProposal(input: {
   for (const [index, bundle] of evidence.entries()) {
     const activity: RunnerActivityV1 = {
       ...common,
-      event_id: `evidence:${bundle.evidence_bundle_id}`,
+      event_id: `evidence:${input.proposal.proposal_id}:${bundle.evidence_bundle_id}`,
       event_type: "evidence.recorded",
       evidence_ids: [bundle.evidence_bundle_id],
       detail: { residency: "metadata_only", stored_locally: true, payload_uploaded: false },
@@ -668,7 +668,7 @@ export async function enqueueCloudLinkedProposal(input: {
     const auditId = String(audit.audit_id);
     const activity: RunnerActivityV1 = {
       ...common,
-      event_id: `query-audit:${auditId}`,
+      event_id: `query-audit:${input.proposal.proposal_id}:${auditId}`,
       event_type: "query_audit.recorded",
       query_audit_ids: [auditId],
       ...(typeof audit.evidence_bundle_id === "string" ? { evidence_ids: [audit.evidence_bundle_id] } : {}),
@@ -696,10 +696,15 @@ export async function enqueueCloudLinkedResult(input: {
 }): Promise<CloudOutboxItem | undefined> {
   if (input.config.governance?.mode !== "cloud_linked") return undefined;
   if (!input.store.enqueueCloudOutbox) throw new McpRuntimeError("CLOUD_OUTBOX_UNAVAILABLE", "The configured runtime store does not implement the durable Cloud outbox.");
-  const proposal = await input.store.getProposal(input.proposalId);
-  if (!proposal) throw new McpRuntimeError("CLOUD_RESULT_LOCAL_PROPOSAL_REQUIRED", `Cloud result ${input.result.job_id} has no matching local proposal.`);
   if (input.result.job_id !== `wbj_${input.proposalId}` && !input.result.job_id.endsWith(input.proposalId)) {
     throw new McpRuntimeError("CLOUD_RESULT_PROPOSAL_MISMATCH", "Cloud result job identity does not match the local proposal.");
+  }
+  const proposal = await input.store.getProposal(input.proposalId);
+  const localAuthorityRejected = input.result.status === "failed"
+    && input.result.affected_rows === 0
+    && input.result.error_code === "LOCAL_AUTHORITY_REJECTED";
+  if (!proposal && !localAuthorityRejected) {
+    throw new McpRuntimeError("CLOUD_RESULT_LOCAL_PROPOSAL_REQUIRED", `Cloud result ${input.result.job_id} has no matching local proposal.`);
   }
   const payload = {
     schema_version: "synapsor.cloud-result-outbox.v1",
@@ -708,7 +713,7 @@ export async function enqueueCloudLinkedResult(input: {
   };
   return input.store.enqueueCloudOutbox({
     event_id: `cloud-result:${input.result.job_id}:${input.result.result_hash}`,
-    proposal_id: input.proposalId,
+    ...(proposal ? { proposal_id: input.proposalId } : {}),
     sequence: 1_000,
     kind: "result",
     payload,
@@ -798,7 +803,7 @@ export class CloudLinkedSynchronizer {
   private readonly owner: string;
   private timer?: NodeJS.Timeout;
   private stopped = false;
-  private draining = false;
+  private activeDrain?: Promise<{ claimed: number; acknowledged: number; failed: number }>;
   private lastReconciledAt?: string;
   private lastReconciliationErrorCode?: string;
   private lastCompactedAt?: string;
@@ -829,47 +834,85 @@ export class CloudLinkedSynchronizer {
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
-    while (this.draining) await new Promise((resolve) => setTimeout(resolve, 10));
+    await this.activeDrain?.catch(() => undefined);
   }
 
   async drainOnce(): Promise<{ claimed: number; acknowledged: number; failed: number }> {
-    if (this.draining) return { claimed: 0, acknowledged: 0, failed: 0 };
-    this.draining = true;
+    if (this.activeDrain) return this.activeDrain;
+    const drain = this.performDrainOnce();
+    this.activeDrain = drain;
+    try {
+      return await drain;
+    } finally {
+      if (this.activeDrain === drain) this.activeDrain = undefined;
+    }
+  }
+
+  async synchronizeBeforeProposal(): Promise<void> {
+    while (this.activeDrain) await this.activeDrain;
+    await this.drainOnce();
+  }
+
+  async flushEvent(eventId: string, timeoutMs = 30_000): Promise<CloudOutboxItem> {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    while (true) {
+      const current = (await this.store.listCloudOutbox!({ limit: 10_000 })).find((item) => item.event_id === eventId);
+      if (!current) throw new McpRuntimeError("CLOUD_OUTBOX_EVENT_NOT_FOUND", `Cloud outbox event ${eventId} was not found.`);
+      if (current.status === "acknowledged") return current;
+      if (current.status === "dead_letter" || current.status === "reconciliation_required") {
+        throw new McpRuntimeError(
+          current.last_error_code ?? "CLOUD_OUTBOX_DELIVERY_FAILED",
+          `Cloud outbox event ${eventId} requires operator attention (${current.status}).`,
+        );
+      }
+
+      await this.drainOnce();
+      const refreshed = (await this.store.listCloudOutbox!({ limit: 10_000 })).find((item) => item.event_id === eventId);
+      if (!refreshed) throw new McpRuntimeError("CLOUD_OUTBOX_EVENT_NOT_FOUND", `Cloud outbox event ${eventId} was not found.`);
+      if (refreshed.status === "acknowledged") return refreshed;
+      if (refreshed.status === "dead_letter" || refreshed.status === "reconciliation_required") {
+        throw new McpRuntimeError(
+          refreshed.last_error_code ?? "CLOUD_OUTBOX_DELIVERY_FAILED",
+          `Cloud outbox event ${eventId} requires operator attention (${refreshed.status}).`,
+        );
+      }
+      if (Date.now() >= deadline) return refreshed;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250, Math.max(1, deadline - Date.now()))));
+    }
+  }
+
+  private async performDrainOnce(): Promise<{ claimed: number; acknowledged: number; failed: number }> {
     let acknowledged = 0;
     let failed = 0;
-    try {
-      const items = await this.store.claimCloudOutbox!({ owner: this.owner, limit: 10, lease_ms: 30_000 });
-      for (const item of items) {
-        try {
-          const response = await this.deliver(item);
-          if (item.proposal_id && item.kind === "proposal") {
-            const cloudProposalId = nonEmptyString(response.proposal_id) ?? nonEmptyString(response.id) ?? item.proposal_id;
-            const requestId = nonEmptyString(response.request_id);
-            await this.store.recordCloudGovernanceEvent?.({
-              event_id: `cloud-governance:ack:${item.event_id}`,
-              proposal_id: item.proposal_id,
-              cloud_proposal_id: cloudProposalId,
-              kind: "proposal.cloud_acknowledged",
-              state: nonEmptyString(response.status) ?? "pending_review",
-              payload: { ...(requestId ? { request_id: requestId } : {}), evidence_residency: "metadata_only", payload_hash: item.payload_hash },
-            });
-          }
-          await this.store.acknowledgeCloudOutbox!(item.event_id, this.owner);
-          acknowledged += 1;
-        } catch (error) {
-          failed += 1;
-          const classification = classifyCloudSyncFailure(error);
-          await this.store.failCloudOutbox!({ event_id: item.event_id, owner: this.owner, ...classification });
+    const items = await this.store.claimCloudOutbox!({ owner: this.owner, limit: 10, lease_ms: 30_000 });
+    for (const item of items) {
+      try {
+        const response = await this.deliver(item);
+        if (item.proposal_id && item.kind === "proposal") {
+          const cloudProposalId = nonEmptyString(response.proposal_id) ?? nonEmptyString(response.id) ?? item.proposal_id;
+          const requestId = nonEmptyString(response.request_id);
+          await this.store.recordCloudGovernanceEvent?.({
+            event_id: `cloud-governance:ack:${item.event_id}`,
+            proposal_id: item.proposal_id,
+            cloud_proposal_id: cloudProposalId,
+            kind: "proposal.cloud_acknowledged",
+            state: nonEmptyString(response.status) ?? "pending_review",
+            payload: { ...(requestId ? { request_id: requestId } : {}), evidence_residency: "metadata_only", payload_hash: item.payload_hash },
+          });
         }
+        await this.store.acknowledgeCloudOutbox!(item.event_id, this.owner);
+        acknowledged += 1;
+      } catch (error) {
+        failed += 1;
+        const classification = classifyCloudSyncFailure(error);
+        await this.store.failCloudOutbox!({ event_id: item.event_id, owner: this.owner, ...classification });
       }
-      await this.reconcileOnce().catch((error) => {
-        this.lastReconciliationErrorCode = classifyCloudSyncFailure(error).error_code;
-      });
-      await this.compactAcknowledged().catch(() => undefined);
-      return { claimed: items.length, acknowledged, failed };
-    } finally {
-      this.draining = false;
     }
+    await this.reconcileOnce().catch((error) => {
+      this.lastReconciliationErrorCode = classifyCloudSyncFailure(error).error_code;
+    });
+    await this.compactAcknowledged().catch(() => undefined);
+    return { claimed: items.length, acknowledged, failed };
   }
 
   async status(): Promise<CloudLinkedSyncStatus> {
@@ -1158,6 +1201,7 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
     callTool: async (name, args) => {
       const capability = config.mode === "cloud" ? undefined : localCapabilities(config).find((item) => item.name === name);
       try {
+        if (capability?.kind === "proposal") await cloudSynchronizer?.synchronizeBeforeProposal();
         if (capability) {
           const context = resolveTrustedContext(config, env, capability, trustedContext);
           await resources.consumeRateLimit(context, capability.name);

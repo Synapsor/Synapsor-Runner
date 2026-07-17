@@ -22,6 +22,8 @@ import {
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+
 export type LocalProposalState =
   | "pending_review"
   | "approved"
@@ -1167,6 +1169,9 @@ export class ProposalStore {
       mkdirSync(dirname(resolve(path)), { recursive: true, mode: 0o700 });
     }
     this.db = new DatabaseSync(path);
+    // MCP servers and trusted workers may share one local spool. Wait through
+    // short SQLite writer contention, while keeping persistent lock failures bounded.
+    this.db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
     if (path !== ":memory:" && process.platform !== "win32") {
       try {
         chmodSync(path, 0o600);
@@ -3345,6 +3350,23 @@ export class ProposalStore {
         event_id, proposal_id, cloud_proposal_id, kind, state, authority, payload_json, integrity_hash, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(event.event_id, event.proposal_id, event.cloud_proposal_id ?? null, event.kind, event.state, event.authority, JSON.stringify(event.payload), event.integrity_hash, event.created_at);
+    const localState = localStateFromCloudGovernance(event.state);
+    if (localState) {
+      const sourceMutated = localState === "applied" ? 1 : 0;
+      const projected = this.db.prepare(`
+        UPDATE proposals
+        SET state = ?, source_database_mutated = CASE WHEN ? = 1 THEN 1 ELSE source_database_mutated END, updated_at = ?
+        WHERE proposal_id = ? AND state IN ('pending_review', 'approved', 'pending_worker')
+      `).run(localState, sourceMutated, event.created_at, event.proposal_id);
+      if (Number(projected.changes) === 1) {
+        this.appendEvent(event.proposal_id, `proposal_cloud_${localState}`, "synapsor_cloud", {
+          cloud_event_id: event.event_id,
+          cloud_proposal_id: event.cloud_proposal_id ?? event.proposal_id,
+          cloud_state: event.state,
+          authority: event.authority,
+        });
+      }
+    }
     const stored = this.listCloudGovernanceEvents(input.proposal_id).find((item) => item.event_id === input.event_id);
     if (!stored || stored.integrity_hash !== event.integrity_hash) {
       throw new ProposalStoreError("CLOUD_GOVERNANCE_EVENT_MISMATCH", `Cloud governance event ${input.event_id} conflicts with an existing immutable event`);
@@ -3970,6 +3992,16 @@ function stateFromReceipt(receipt: ExecutionReceipt): LocalProposalState {
   if (receipt.status === "canceled") return "canceled";
   if (receipt.status === "reconciliation_required") return "reconciliation_required";
   return "failed";
+}
+
+function localStateFromCloudGovernance(state: string): LocalProposalState | undefined {
+  if (state === "applied" || state === "already_applied") return "applied";
+  if (state === "rejected") return "rejected";
+  if (state === "canceled") return "canceled";
+  if (state === "conflict") return "conflict";
+  if (state === "failed") return "failed";
+  if (state === "indeterminate" || state === "reconciliation_required") return "reconciliation_required";
+  return undefined;
 }
 
 function receiptToWritebackResult(receipt: ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4): WritebackResult {

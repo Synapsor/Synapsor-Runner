@@ -89,6 +89,9 @@ synapsor runners create \
   --secret-file ./.synapsor/runner.token
 ```
 
+Omitting `--permissions` requests Cloud's bounded Runner-protocol permission
+set. Supply `--permissions <csv>` to narrow the machine token further.
+
 `synapsor-runner cloud push` remains supported for Runner-centric workflows and
 uses the same canonical digest, API, idempotency, and scoped service credential
 as `synapsor contracts push`.

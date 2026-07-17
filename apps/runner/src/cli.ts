@@ -5518,14 +5518,14 @@ function createCloudLinkedWorkerSync(configPath: string, storePath: string): Clo
   const store = createDefaultRuntimeStore(runtimeConfig, process.env, storePath);
   const synchronizer = new CloudLinkedSynchronizer(runtimeConfig, store, process.env);
   const reportResult: WritebackResultReporter = async ({ job, result, leaseId }) => {
-    await enqueueCloudLinkedResult({
+    const outboxItem = await enqueueCloudLinkedResult({
       config: runtimeConfig,
       store,
       proposalId: job.proposal_id,
       result,
       leaseId,
     });
-    await synchronizer.drainOnce();
+    if (outboxItem) await synchronizer.flushEvent(outboxItem.event_id);
   };
   return { runtimeConfig, store, synchronizer, reportResult };
 }
