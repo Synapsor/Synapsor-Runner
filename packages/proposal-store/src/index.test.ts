@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -246,6 +247,59 @@ describe("proposal store", () => {
       expect((await fs.stat(storePath)).mode & 0o777).toBe(0o600);
     } finally {
       store.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("waits through short cross-process SQLite writer contention", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-busy-timeout-"));
+    const storePath = path.join(tempDir, "local.db");
+    const seed = new ProposalStore(storePath);
+    seed.close();
+
+    const locker = spawn(process.execPath, [
+      "-e",
+      `const { DatabaseSync } = require("node:sqlite");
+       const db = new DatabaseSync(process.argv[1]);
+       db.exec("BEGIN IMMEDIATE");
+       process.stdout.write("locked\\n");
+       setTimeout(() => { db.exec("COMMIT"); db.close(); }, 300);`,
+      storePath,
+    ], {
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stderr = "";
+    locker.stderr.setEncoding("utf8");
+    locker.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    const exit = new Promise<number>((resolve, reject) => {
+      locker.once("error", reject);
+      locker.once("close", (code) => resolve(code ?? -1));
+    });
+    await new Promise<void>((resolve, reject) => {
+      let stdout = "";
+      locker.stdout.setEncoding("utf8");
+      locker.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+        if (stdout.includes("locked\n")) resolve();
+      });
+      locker.once("close", (code) => {
+        if (!stdout.includes("locked\n")) reject(new Error(`SQLite lock helper exited ${code}: ${stderr}`));
+      });
+    });
+
+    try {
+      const contender = new ProposalStore(storePath);
+      try {
+        expect(contender.db.prepare("PRAGMA busy_timeout").get()).toEqual({ timeout: 5_000 });
+        expect(contender.createProposal(changeSet).proposal_id).toBe("wrp_123");
+      } finally {
+        contender.close();
+      }
+      expect(await exit).toBe(0);
+    } finally {
+      if (locker.exitCode === null) locker.kill();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -2029,6 +2083,34 @@ describe("Cloud-linked durable outbox", () => {
       store.acknowledgeCloudOutbox(failed.event_id, "runner-b", "2026-07-17T00:00:03.000Z");
       expect(store.compactCloudOutbox({ acknowledged_before: "2026-07-18T00:00:00.000Z" })).toBe(1);
       expect(store.listCloudOutbox()).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("projects Cloud terminal authority once without allowing stale terminal regression", () => {
+    const store = new ProposalStore(":memory:");
+    try {
+      const proposal = store.createProposal(changeSet);
+      store.recordCloudGovernanceEvent({
+        event_id: `cloud:${proposal.proposal_id}:applied`,
+        proposal_id: proposal.proposal_id,
+        kind: "proposal.cloud_applied",
+        state: "applied",
+        payload: { evidence_residency: "metadata_only" },
+      });
+      expect(store.getProposal(proposal.proposal_id)).toMatchObject({ state: "applied", source_database_mutated: true });
+      expect(store.approvals(proposal.proposal_id)).toEqual([]);
+
+      store.recordCloudGovernanceEvent({
+        event_id: `cloud:${proposal.proposal_id}:stale-failed`,
+        proposal_id: proposal.proposal_id,
+        kind: "proposal.cloud_failed",
+        state: "failed",
+        payload: { evidence_residency: "metadata_only" },
+      });
+      expect(store.getProposal(proposal.proposal_id)?.state).toBe("applied");
+      expect(store.events(proposal.proposal_id).filter((event) => event.kind.startsWith("proposal_cloud_"))).toHaveLength(1);
     } finally {
       store.close();
     }

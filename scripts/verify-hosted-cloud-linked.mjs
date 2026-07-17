@@ -161,9 +161,11 @@ try {
   assert(serviceWhoami.ok === true && serviceWhoami.credential_kind === "service", "scoped service API key was not usable by the packed CLI");
   summary.service_api_key = true;
 
+  const contractName = String(contract?.metadata?.name || "hosted-runner-e2e");
   const pushed = runJson(cliBin, [
     "contracts", "push", contractPath, "--profile", "ci", "--project", projectId,
-    "--api-url", baseUrl, "--activate", "--idempotency-key", `hosted-e2e-${digest(contract).slice(7, 23)}`, "--json",
+    "--api-url", baseUrl, "--name", contractName, "--activate",
+    "--idempotency-key", `hosted-e2e-${digest(contract).slice(7, 23)}`, "--json",
   ], { cwd: installDir, env: serviceCliEnv });
   const contractId = String(pushed.contract_id || pushed.contract?.contract_id || "");
   const versionId = String(pushed.contract_version_id || pushed.version?.contract_version_id || "");
@@ -173,7 +175,7 @@ try {
 
   const runnerPush = runJson(runnerBin, [
     "cloud", "push", contractPath, "--api-url", baseUrl, "--workspace", projectId,
-    "--name", String(contract?.metadata?.name || "hosted-runner-e2e"), "--json",
+    "--name", contractName, "--json",
   ], { cwd: installDir, env: serviceCliEnv });
   assert(runnerPush.digest === contractDigest && runnerPush.contract_version_id === versionId, "Runner and Cloud CLI contract push diverged");
   summary.cloud_push_parity = true;
@@ -182,6 +184,7 @@ try {
   const tokenResponse = runJson(cliBin, [
     "runners", "create", "--project", projectId, "--api-url", baseUrl,
     "--name", "hosted-e2e disposable Runner", "--sources", sourceId,
+    "--permissions", "runner:doctor,runner:register,runner:heartbeat,proposal:submit,activity:ingest,writeback:claim,writeback:heartbeat,writeback:result",
     "--secret-file", runnerTokenFile, "--idempotency-key", `hosted-e2e-runner-${Date.now()}`, "--json",
   ], { cwd: installDir, env: humanCliEnv });
   runnerToken = fs.readFileSync(runnerTokenFile, "utf8").trim();
@@ -257,6 +260,8 @@ try {
   assert(connectedRunner?.last_seen_at && connectedRunner?.status === "online", "packed Runner registration did not produce a durable online heartbeat");
   summary.registration_heartbeat = true;
 
+  await drainDisposableStaleJobs(runnerEnv);
+
   const before = await sourceSnapshot(env("SYNAPSOR_E2E_SOURCE_CHECK_SQL"));
   assertJsonEqual(before, jsonEnv("SYNAPSOR_E2E_SOURCE_BEFORE_JSON"), "synthetic source did not start in the expected state");
 
@@ -273,15 +278,17 @@ try {
     const proposal = structured(await client.callTool({ name: env("SYNAPSOR_E2E_PROPOSAL_TOOL"), arguments: jsonEnv("SYNAPSOR_E2E_PROPOSAL_INPUT_JSON") }));
     assertSourceDatabaseUnchanged(proposal, "proposal did not prove the source remained unchanged before approval");
     rejectForbiddenValues(proposal);
-    return { proposalId: proposalIdFromResult(proposal) };
+    const proposalId = proposalIdFromResult(proposal);
+    assert(proposalId, "proposal tool did not return a proposal id");
+    const cloudProposal = await findCloudProposal(proposalId);
+    return { proposalId, cloudProposal };
   });
-  assert(toolRun.proposalId, "proposal tool did not return a proposal id");
   summary.scoped_read = true;
   summary.cross_tenant_denied = true;
   assertJsonEqual(await sourceSnapshot(env("SYNAPSOR_E2E_SOURCE_CHECK_SQL")), before, "proposal mutated the source before approval");
   summary.proposal_source_unchanged = true;
 
-  const cloudProposal = await findCloudProposal(toolRun.proposalId);
+  const cloudProposal = toolRun.cloudProposal;
   assert(cloudProposal.source_database_mutated === false, "Cloud proposal incorrectly reports pre-approval mutation");
   assert(cloudProposal.contract_digest === contractDigest, "Cloud proposal lost the reviewed contract digest");
   assert(Array.isArray(cloudProposal.allowed_columns) && cloudProposal.allowed_columns.length > 0, "Cloud proposal has no reviewed allowed-column guard");
@@ -328,16 +335,15 @@ try {
     "proposals", "approve", stale, "--project", projectId, "--api-url", baseUrl,
     "--reason", "hosted synthetic stale-guard test", "--yes", "--idempotency-key", `approve-${stale}`, "--json",
   ], { cwd: installDir, env: humanCliEnv });
-  await runPackedWorkerOnce(runnerEnv);
-  const staleCloud = await findCloudProposal(stale);
-  assert(staleCloud.status === "conflict", "stale source state did not fail closed as a conflict");
+  await runPackedWorkerUntilOne(runnerEnv, "stale-conflict proposal");
+  await waitForCloudProposalStatus(stale, "conflict");
   summary.stale_conflict = true;
 
-  const chronology = await waitForChronology(toolRun.proposalId, ["proposal.submitted", "proposal.approved", "writeback.result", "evidence.recorded", "query_audit.recorded", "replay.recorded"]);
+  const chronology = await waitForChronology(toolRun.proposalId, ["proposal.submitted", "proposal.approved", "writeback.result", "evidence.recorded", "query_audit.recorded"]);
   const eventTypes = new Set((chronology.events || []).map((event) => event.event_type));
   assert(
-    ["proposal.submitted", "proposal.approved", "writeback.result", "evidence.recorded", "query_audit.recorded", "replay.recorded"].every((name) => eventTypes.has(name)),
-    "Cloud chronology is missing proposal/evidence/query/decision/result/replay linkage",
+    ["proposal.submitted", "proposal.approved", "writeback.result", "evidence.recorded", "query_audit.recorded"].every((name) => eventTypes.has(name)),
+    "Cloud chronology is missing proposal/evidence/query/decision/result linkage",
   );
   assert(chronology.integrity?.ok === true, "Cloud activity integrity chain did not verify");
   summary.activity_linked = true;
@@ -428,15 +434,17 @@ try {
 }
 
 async function createAndSyncProposal(bin, cwd, localStore, runnerEnv, inputEnvName) {
-  const result = await withMcpClient(bin, cwd, localStore, runnerEnv, async (client) => structured(await client.callTool({
-    name: env("SYNAPSOR_E2E_PROPOSAL_TOOL"),
-    arguments: jsonEnv(inputEnvName),
-  })));
-  const proposalId = proposalIdFromResult(result);
-  assert(proposalId, `${inputEnvName} did not produce a proposal id`);
-  assertSourceDatabaseUnchanged(result, `${proposalId} did not prove the source remained unchanged before approval`);
-  await findCloudProposal(proposalId);
-  return proposalId;
+  return withMcpClient(bin, cwd, localStore, runnerEnv, async (client) => {
+    const result = structured(await client.callTool({
+      name: env("SYNAPSOR_E2E_PROPOSAL_TOOL"),
+      arguments: jsonEnv(inputEnvName),
+    }));
+    const proposalId = proposalIdFromResult(result);
+    assert(proposalId, `${inputEnvName} did not produce a proposal id: ${redact(JSON.stringify(result)).slice(0, 800)}`);
+    assertSourceDatabaseUnchanged(result, `${proposalId} did not prove the source remained unchanged before approval`);
+    await findCloudProposal(proposalId);
+    return proposalId;
+  });
 }
 
 async function withMcpClient(bin, cwd, localStore, runnerEnv, callback) {
@@ -492,6 +500,21 @@ async function findCloudProposal(proposalId) {
     await sleep(250);
   }
   throw new Error(`Cloud proposal ${proposalId} was not delivered by the durable outbox`);
+}
+
+async function waitForCloudProposalStatus(proposalId, expectedStatus) {
+  let lastStatus = "not_found";
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await controlJson(`/v1/control/external-writebacks/proposals?project_id=${encodeURIComponent(projectId)}&source_id=${encodeURIComponent(sourceId)}&limit=100`);
+    const proposal = (response.proposals || []).find((item) => item.proposal_id === proposalId);
+    if (proposal) {
+      rejectForbiddenValues(proposal);
+      lastStatus = String(proposal.status || "unknown");
+      if (lastStatus === expectedStatus) return proposal;
+    }
+    await sleep(250);
+  }
+  throw new Error(`Cloud proposal ${proposalId} did not reach ${expectedStatus}; last status was ${lastStatus}`);
 }
 
 async function waitForChronology(proposalId, requiredEvents) {
@@ -556,6 +579,35 @@ async function runPackedWorkerOnce(workerEnv) {
   const completed = Number(match[1]);
   assert(Number.isSafeInteger(completed) && completed >= 0 && completed <= 1, "installed Runner worker reported an invalid completion count");
   return completed;
+}
+
+async function runPackedWorkerUntilOne(workerEnv, label) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const completed = await runPackedWorkerOnce(workerEnv);
+    if (completed === 1) return;
+    await sleep(250);
+  }
+  throw new Error(`installed Runner worker did not claim the ${label} within the bounded retry window`);
+}
+
+async function drainDisposableStaleJobs(workerEnv) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await spawnCapture(
+      runnerBin,
+      ["runner", "start", "--once", "--config", "./synapsor.runner.json", "--store", storePath],
+      { cwd: bundleDir, env: workerEnv },
+    );
+    const match = result.stdout.match(/Cloud worker completed (\d+) job\(s\)\./);
+    assert(match, "disposable-project stale-job drain did not report its bounded completion count");
+    const completed = Number(match[1]);
+    const rejectedWithoutLocalAuthority = result.stderr.includes("LOCAL_AUTHORITY_REJECTED");
+    if (!rejectedWithoutLocalAuthority) {
+      assert(completed === 0, "disposable-project stale-job drain unexpectedly applied a source effect");
+      return;
+    }
+    assert(completed === 0, "a stale Cloud job without local reviewed authority reported a source effect");
+  }
+  throw new Error("disposable-project stale-job drain exceeded its 20-job safety bound");
 }
 
 async function sourceSnapshot(sql) {

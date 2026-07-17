@@ -633,8 +633,17 @@ async function runnerCommand(args: string[]): Promise<number> {
   }
   if (action === "create") {
     const sourceIds = csv(requiredOption(args, "--sources"));
+    const permissions = csv(option(args, "--permissions"));
     requiredOption(args, "--secret-file");
-    const result = await remote.client.post(`/v1/control/projects/${encodeURIComponent(remote.projectId)}/runner-tokens`, { name: option(args, "--name") || "Runner", source_ids: sourceIds, permissions: csv(option(args, "--permissions")) }, { idempotencyKey: idempotency(args) });
+    const result = await remote.client.post(
+      `/v1/control/projects/${encodeURIComponent(remote.projectId)}/runner-tokens`,
+      {
+        name: option(args, "--name") || "Runner",
+        source_ids: sourceIds,
+        ...(permissions.length > 0 ? { permissions } : {}),
+      },
+      { idempotencyKey: idempotency(args) },
+    );
     await outputOneTimeSecret(args, result, "runner_token", "SYNAPSOR_RUNNER_TOKEN");
     return 0;
   }
@@ -976,7 +985,8 @@ function redact(value: unknown): unknown {
   for (const [key, item] of Object.entries(value as Json)) {
     const normalized = key.toLowerCase();
     if (
-      ["token", "access_token", "refresh_token", "session_token", "secret", "token_hash", "password", "private_key", "database_url", "read_url", "write_url", "connection_url", "authorization"].includes(normalized)
+      (["access_token", "refresh_token", "session_token", "secret", "token_hash", "password", "private_key", "database_url", "read_url", "write_url", "connection_url", "authorization"].includes(normalized))
+      || (normalized === "token" && typeof item === "string")
       || normalized.endsWith("_secret")
       || normalized.endsWith("_password")
       || normalized.endsWith("_private_key")

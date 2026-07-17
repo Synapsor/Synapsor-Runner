@@ -171,6 +171,10 @@ synapsor runners create \
 export SYNAPSOR_RUNNER_TOKEN="$(cat ./.synapsor/runner.token)"
 ```
 
+When `--permissions` is omitted, Cloud applies the bounded Runner-protocol
+permission set. Use `--permissions <csv>` to narrow a token further; these
+permissions never authorize human, API-key, contract, or approval operations.
+
 The credential-free Runner bundle contains the reviewed connection metadata
 and sample configuration. Supply the Runner token separately:
 

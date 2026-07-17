@@ -1719,6 +1719,11 @@ describe("local Synapsor MCP runtime", () => {
       expect(store.getProposal(proposalId)?.state).toBe("pending_review");
       expect(store.approvals(proposalId)).toEqual([]);
       expect(store.listCloudOutbox({ proposal_id: proposalId }).map((item) => item.kind)).toEqual(expect.arrayContaining(["proposal", "activity"]));
+      const activityEvents = store.listCloudOutbox({ proposal_id: proposalId })
+        .filter((item) => item.kind === "activity")
+        .map((item) => String(item.payload.event_id));
+      expect(activityEvents.length).toBeGreaterThan(0);
+      expect(activityEvents.every((eventId) => eventId.includes(proposalId))).toBe(true);
       const payload = store.listCloudOutbox({ proposal_id: proposalId }).find((item) => item.kind === "proposal")?.payload;
       expect(JSON.stringify(payload)).not.toContain("runner-test-token");
       expect(JSON.stringify(payload)).not.toContain("postgres://");
@@ -1846,11 +1851,17 @@ describe("local Synapsor MCP runtime", () => {
       const first = await enqueueCloudLinkedResult({ config: linked, store, proposalId, result, leaseId: "lease_result_1" });
       const duplicate = await enqueueCloudLinkedResult({ config: linked, store, proposalId, result, leaseId: "lease_result_1" });
       expect(duplicate?.event_id).toBe(first?.event_id);
-
-      for (let index = 0; index < 10; index += 1) {
-        await synchronizer.drainOnce();
-        const remaining = store.listCloudOutbox({ proposal_id: proposalId }).filter((item) => item.status !== "acknowledged");
-        if (remaining.length === 0) break;
+      if (!first) throw new Error("Cloud result outbox fixture was not created");
+      const externallyLeased = store.claimCloudOutbox({ owner: "other-process", limit: 1, lease_ms: 30_000 });
+      expect(externallyLeased).toHaveLength(1);
+      const releaseLease = setTimeout(() => {
+        store.acknowledgeCloudOutbox(externallyLeased[0]!.event_id, "other-process");
+      }, 25);
+      try {
+        const flushed = await synchronizer.flushEvent(first.event_id, 2_000);
+        expect(flushed.status).toBe("acknowledged");
+      } finally {
+        clearTimeout(releaseLease);
       }
 
       const resultRequests = requests.filter((request) => request.url.endsWith(`/v1/writeback/jobs/wbj_${proposalId}/result`));
@@ -1860,7 +1871,50 @@ describe("local Synapsor MCP runtime", () => {
       expect(store.listCloudGovernanceEvents(proposalId)).toEqual(expect.arrayContaining([
         expect.objectContaining({ authority: "synapsor_cloud", state: "applied" }),
       ]));
+      expect(store.getProposal(proposalId)).toMatchObject({ state: "applied", source_database_mutated: true });
       expect(store.approvals(proposalId)).toEqual([]);
+
+      const missingProposalId = "wrp_missing_local_authority";
+      const localAuthorityRejected = {
+        protocol_version: "2.0" as const,
+        job_id: `wbj_${missingProposalId}`,
+        runner_id: "runner_result_test",
+        operation: "single_row_update" as const,
+        receipt_authority: "runner_ledger" as const,
+        status: "failed" as const,
+        affected_rows: 0,
+        target_identity: [{ column: "id", value: "INV-MISSING" }],
+        result_hash: `sha256:${"c".repeat(64)}` as const,
+        completed_at: "2026-07-16T00:00:02.000Z",
+        error_code: "LOCAL_AUTHORITY_REJECTED",
+      };
+      const rejectedItem = await enqueueCloudLinkedResult({
+        config: linked,
+        store,
+        proposalId: missingProposalId,
+        result: localAuthorityRejected,
+        leaseId: "lease_missing_local",
+      });
+      expect(rejectedItem?.proposal_id).toBeUndefined();
+      await expect(enqueueCloudLinkedResult({
+        config: linked,
+        store,
+        proposalId: "wrp_missing_applied",
+        result: { ...result, job_id: "wbj_wrp_missing_applied" },
+        leaseId: "lease_missing_applied",
+      })).rejects.toMatchObject({ code: "CLOUD_RESULT_LOCAL_PROPOSAL_REQUIRED" });
+      await synchronizer.drainOnce();
+      const rejectedRequests = requests.filter((request) => request.url.endsWith(`/v1/writeback/jobs/${localAuthorityRejected.job_id}/result`));
+      expect(rejectedRequests).toHaveLength(1);
+      expect(rejectedRequests[0]?.body).toMatchObject({
+        lease_id: "lease_missing_local",
+        status: "failed",
+        affected_rows: 0,
+        error_code: "LOCAL_AUTHORITY_REJECTED",
+      });
+      expect(store.listCloudOutbox({ limit: 10_000 })).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event_id: rejectedItem?.event_id, status: "acknowledged", proposal_id: undefined }),
+      ]));
     } finally {
       await synchronizer.stop();
       await runtime.close();
