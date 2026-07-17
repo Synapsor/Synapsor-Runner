@@ -2552,13 +2552,16 @@ END
   it("reports first-run doctor checks without leaking generated MCP config secrets", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-first-run-doctor-"));
     const oldCwd = process.cwd();
+    const oldDockerHost = process.env.DOCKER_HOST;
     const output: string[] = [];
-    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
       return true;
     });
     try {
       process.chdir(tempDir);
+      // Do not make this unit test depend on the CI host's Docker daemon startup.
+      process.env.DOCKER_HOST = "tcp://127.0.0.1:1";
       await fs.writeFile("package.json", JSON.stringify({ name: "doctor-fixture" }), "utf8");
       await fs.mkdir(".synapsor/mcp", { recursive: true });
       await fs.writeFile(".synapsor/mcp/generic-stdio.json", JSON.stringify({
@@ -2614,6 +2617,8 @@ END
       expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|syn_wbr_/);
     } finally {
       process.chdir(oldCwd);
+      if (oldDockerHost === undefined) delete process.env.DOCKER_HOST; else process.env.DOCKER_HOST = oldDockerHost;
+      stdout.mockRestore();
     }
   });
 
