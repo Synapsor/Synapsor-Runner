@@ -64,6 +64,26 @@ grep -F "wrp_quick_INV_3001" events-webhook.txt >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format json >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format markdown >/dev/null
+SURFACE_FIXTURE="$TEMP_DIR/node_modules/@synapsor/runner/fixtures/contracts/capability-surface-fitness.contract.json"
+npx synapsor-runner contract validate "$SURFACE_FIXTURE" > surface-validate.txt
+grep -F "contract valid:" surface-validate.txt >/dev/null
+npx synapsor-runner contract lint "$SURFACE_FIXTURE" --format json > surface-lint.json
+node --input-type=module - surface-lint.json <<'NODE'
+import fs from "node:fs";
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const codes = new Set(report.issues.map((issue) => issue.code));
+for (const code of ["SURFACE_GENERIC_ARGUMENT", "SURFACE_NEAR_DUPLICATE", "SURFACE_OPERATION_NAMING", "SURFACE_TARGET_DENSITY"]) {
+  if (!codes.has(code)) throw new Error(`packed lint report missing ${code}`);
+}
+if (report.ok !== true || report.surface?.total_capabilities !== 9 || report.surface?.density_review_threshold !== 8) {
+  throw new Error("packed lint report has unexpected validity or surface summary");
+}
+NODE
+if npx synapsor-runner contract lint "$SURFACE_FIXTURE" --strict > surface-strict.txt; then
+  echo "packed surface lint unexpectedly succeeded under --strict" >&2
+  exit 1
+fi
+grep -F "SURFACE_TARGET_DENSITY" surface-strict.txt >/dev/null
 npx synapsor-runner recipes init billing.late_fee_waiver --force >/dev/null
 npx synapsor-runner up --config ./synapsor.runner.json --store ./.synapsor/quick-demo.db --dry-run > up.txt
 grep -F "Synapsor Runner review-mode up" up.txt >/dev/null

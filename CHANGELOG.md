@@ -1,6 +1,22 @@
 # Changelog
 
-## 1.4.122 (prepared, not published)
+## 1.4.123 (prepared, not published)
+
+### Advisory capability-surface fitness lint
+
+- Adds deterministic `contract lint` advisories for generic query-like string
+  arguments, more than eight capabilities on one normalized target,
+  non-business-operation names, and structurally near-duplicate capabilities.
+- Keeps canonical validation, compilation, MCP serving, and runtime enforcement
+  unchanged. Advisories succeed by default; explicit `--strict` or
+  `--fail-on warning` remains the opt-in CI policy gate.
+- Adds stable structured details and surface metrics to JSON/SARIF output, plus
+  a concise text summary. No database connection, environment value, source
+  row, or probabilistic classifier is involved.
+- Stages only `@synapsor/runner@1.4.123`; `@synapsor/spec@1.4.2`,
+  `@synapsor/dsl@1.4.3`, and `@synapsor/cli@0.1.0-beta.1` are unchanged.
+
+## 1.4.122 (2026-07-16)
 
 ### Trusted principal row scope and Cloud-linked governance
 
@@ -23,8 +39,8 @@
   Runner-token fallback.
 - Introduces the separately packable `@synapsor/cli@0.1.0-beta.1` Cloud client;
   `synapsor-runner` remains the local MCP/database enforcement boundary.
-- Stages `@synapsor/spec@1.4.2`, `@synapsor/dsl@1.4.3`, and
-  `@synapsor/runner@1.4.122`. Nothing is published by this change.
+- Published `@synapsor/spec@1.4.2`, `@synapsor/dsl@1.4.3`, and
+  `@synapsor/runner@1.4.122`.
 
 ## 1.4.121 (prepared, not published)
 

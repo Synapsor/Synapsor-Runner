@@ -142,7 +142,10 @@ credentials, approval tools, commit tools, or controls that widen reviewed
 tables/columns.
 
 Contract lint and tests are review aids rather than a proof of complete
-security. Scoped report exports omit evidence rows and kept-out values and are
+security. Capability breadth can still drift as narrow tools accumulate;
+surface-fitness lint makes high-signal generic, dense, poorly named, and
+near-duplicate surfaces visible for review but does not enforce good design.
+Scoped report exports omit evidence rows and kept-out values and are
 tamper-evident when their digest/signature verifies; local SQLite is not an
 immutable compliance service. Graduated-trust evaluation is operator-only,
 disabled by default, and can recommend/export a separate artifact but cannot

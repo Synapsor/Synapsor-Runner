@@ -166,8 +166,8 @@ compensation.
 ## Review And Prove Your Contract
 
 Before serving a contract, use `contract explain` for a reviewer-readable
-boundary, `contract lint --strict` for deterministic CI checks, and `contract
-test` for adopter-owned allow/deny/redaction cases. The built-in language
+boundary, `contract lint --strict` for deterministic surface-fitness CI checks,
+and `contract test` for adopter-owned allow/deny/redaction cases. The built-in language
 server supplies diagnostics, completion, hover, and formatting for
 `.synapsor.sql` and legacy `.synapsor` files. See [Contract
 Review](docs/contract-review.md) and [Contract

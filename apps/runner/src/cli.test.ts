@@ -337,7 +337,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.4.122");
+      expect(output.join("").trim()).toBe("1.4.123");
     }
   });
 
@@ -1180,7 +1180,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.4.2",
         "@synapsor/dsl": "1.4.3",
-        "@synapsor/runner": "1.4.122",
+        "@synapsor/runner": "1.4.123",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
