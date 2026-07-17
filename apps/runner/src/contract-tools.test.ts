@@ -36,9 +36,15 @@ describe("contract review tooling", () => {
     expect(lintFails(first, "error")).toBe(false);
     expect(lintFails(first, "warning")).toBe(true);
     expect(formatContractLint(first, "text")).toContain("Summary:");
+    expect(formatContractLint(first, "text")).toContain("Surface:");
+    const json = JSON.parse(formatContractLint(first, "json"));
+    expect(json.issues).toEqual(first.issues);
+    expect(json.surface).toEqual(first.surface);
     const sarif = JSON.parse(formatContractLint(first, "sarif"));
     expect(sarif.version).toBe("2.1.0");
     expect(sarif.runs[0].results.length).toBe(first.issues.length);
+    expect(sarif.runs[0].results.map((result: { ruleId: string }) => result.ruleId)).toEqual(first.issues.map((issue) => issue.code));
+    expect(sarif.runs[0].results.map((result: { properties?: unknown }) => result.properties)).toEqual(first.issues.map((issue) => issue.details));
   });
 
   it("reports unresolved runner sources without reading environment secrets", async () => {

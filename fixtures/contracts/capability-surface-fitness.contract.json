@@ -1,0 +1,190 @@
+{
+  "spec_version": "0.1",
+  "kind": "SynapsorContract",
+  "metadata": {
+    "name": "capability surface fitness fixture",
+    "description": "Exercises advisory capability-breadth review without changing contract validity.",
+    "version": "1.0.0"
+  },
+  "resources": [
+    {
+      "name": "billing_invoices",
+      "engine": "postgres",
+      "schema": "public",
+      "table": "invoices",
+      "type": "table",
+      "primary_key": "id",
+      "tenant_key": "tenant_id",
+      "conflict_key": "updated_at"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "billing_operator",
+      "bindings": [
+        {
+          "name": "tenant_id",
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID",
+          "required": true
+        }
+      ],
+      "tenant_binding": "tenant_id"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "billing.execute",
+      "description": "Look up one reviewed invoice reference.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "filter": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "filter" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_primary",
+      "description": "Inspect one primary invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_copy",
+      "description": "Inspect the same reviewed invoice shape for duplicate detection.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_secondary",
+      "description": "Inspect one secondary invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "secondary_invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "secondary_invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_archived",
+      "description": "Inspect one archived invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "archived_invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "archived_invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_disputed",
+      "description": "Inspect one disputed invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "disputed_invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "disputed_invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_overdue",
+      "description": "Inspect one overdue invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "overdue_invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "overdue_invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_paid",
+      "description": "Inspect one paid invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "paid_invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "paid_invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    },
+    {
+      "name": "billing.inspect_invoice_voided",
+      "description": "Inspect one voided invoice.",
+      "returns_hint": "One allowlisted invoice row.",
+      "kind": "read",
+      "context": "billing_operator",
+      "source": "local_postgres",
+      "subject": { "resource": "billing_invoices" },
+      "args": {
+        "voided_invoice_id": { "type": "string", "required": true, "max_length": 128 }
+      },
+      "lookup": { "id_from_arg": "voided_invoice_id" },
+      "visible_fields": ["id", "tenant_id", "status"],
+      "kept_out_fields": ["card_token", "internal_note"],
+      "evidence": { "required": true, "query_audit": true },
+      "max_rows": 1
+    }
+  ]
+}

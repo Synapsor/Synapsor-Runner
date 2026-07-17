@@ -10,7 +10,25 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.4.122 (prepared, not published)
+## 1.4.123 (prepared, not published)
+
+### Advisory capability-surface fitness lint
+
+- `contract lint` now reports high-signal breadth-drift advisories for generic
+  query/predicate-style string arguments, capability density above eight on one
+  target, operation names that do not read as business actions, and structural
+  near-duplicates with identical or loosened arguments.
+- Findings are deterministic across declaration order and share stable codes in
+  text, JSON, and SARIF. JSON/SARIF include reviewer-safe metrics and structural
+  differences without reading a database or environment values.
+- Advisory-only lint still exits successfully by default. Teams may opt into a
+  CI policy gate with `--strict` or `--fail-on warning`; canonical validity and
+  runtime enforcement are unchanged.
+
+Prepared package version: `@synapsor/runner@1.4.123`. Spec, DSL, and Cloud CLI
+packages are unchanged.
+
+## 1.4.122 (2026-07-16)
 
 ### Trusted principal scope and Cloud-linked authority
 

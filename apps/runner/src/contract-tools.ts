@@ -9,6 +9,10 @@ import {
   type JsonScalar,
   type SynapsorContract,
 } from "@synapsor/spec";
+import {
+  analyzeCapabilitySurface,
+  type CapabilitySurfaceAnalysis,
+} from "./capability-surface-lint.js";
 
 export type ReviewedContractSource = "dsl" | "json";
 
@@ -26,12 +30,14 @@ export type ContractLintIssue = {
   severity: ContractLintSeverity;
   path: string;
   message: string;
+  details?: Record<string, string | number | string[]>;
 };
 
 export type ContractLintResult = {
   ok: boolean;
   issues: ContractLintIssue[];
   summary: { errors: number; warnings: number; info: number };
+  surface: CapabilitySurfaceAnalysis["summary"];
 };
 
 export type ContractExplanation = {
@@ -192,13 +198,16 @@ export function lintContract(
     }
   }
 
+  const surface = analyzeCapabilitySurface(contract);
+  for (const finding of surface.findings) add(finding);
+
   issues.sort((left, right) => severityRank(left.severity) - severityRank(right.severity) || left.code.localeCompare(right.code) || left.path.localeCompare(right.path));
   const summary = {
     errors: issues.filter((issue) => issue.severity === "error").length,
     warnings: issues.filter((issue) => issue.severity === "warning").length,
     info: issues.filter((issue) => issue.severity === "info").length,
   };
-  return { ok: summary.errors === 0, issues, summary };
+  return { ok: summary.errors === 0, issues, summary, surface: surface.summary };
 }
 
 export function formatContractLint(result: ContractLintResult, format: "text" | "json" | "sarif"): string {
@@ -214,11 +223,14 @@ export function formatContractLint(result: ContractLintResult, format: "text" | 
           level: issue.severity === "error" ? "error" : issue.severity === "warning" ? "warning" : "note",
           message: { text: issue.message },
           locations: [{ physicalLocation: { artifactLocation: { uri: issue.path } } }],
+          ...(issue.details ? { properties: issue.details } : {}),
         })),
       }],
     }, null, 2)}\n`;
   }
   const lines = result.issues.map((issue) => `${issue.severity.toUpperCase()} ${issue.code} ${issue.path}: ${issue.message}`);
+  const denseTargets = result.surface.targets.filter((target) => target.density_warning).length;
+  lines.push(`Surface: ${result.surface.total_capabilities} model-facing capabilities across ${result.surface.target_count} targets; ${denseTargets} target(s) above the advisory density threshold of ${result.surface.density_review_threshold}`);
   lines.push(`Summary: ${result.summary.errors} error / ${result.summary.warnings} warning / ${result.summary.info} info`);
   return `${lines.join("\n")}\n`;
 }

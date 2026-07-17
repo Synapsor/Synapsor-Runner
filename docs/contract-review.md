@@ -33,9 +33,42 @@ cover objective review gaps such as missing descriptions/evidence, unbounded
 strings, unresolved wiring, irreversible operations, and policy/writeback
 contradictions. Lint does not claim to discover every sensitive column.
 
+### Review Capability-Surface Fitness
+
+Runner structurally limits capability **depth**: contracts cannot turn a model
+argument into raw SQL or a free-form predicate, and trusted tenant/principal
+scope is never model input. A separate review concern is capability **breadth**:
+many individually narrow tools can accumulate until the total model-facing
+surface is difficult to understand.
+
+Use this fitness test during review:
+
+> If a capability cannot be described as a named business operation an audit
+> log would recognize, it probably should not be exposed yet.
+
+`contract lint` reports these deterministic advisory warnings:
+
+| Code | Review signal |
+| --- | --- |
+| `SURFACE_GENERIC_ARGUMENT` | An un-enumerated string argument is literally named `filter`, `query`, `where`, `predicate`, or `sql`. Runner still does not interpolate it into SQL. |
+| `SURFACE_TARGET_DENSITY` | More than eight capabilities target the same normalized source and object. Eight is a review threshold, not a runtime limit. |
+| `SURFACE_OPERATION_NAMING` | A capability name does not match the conservative named-business-operation heuristic. |
+| `SURFACE_NEAR_DUPLICATE` | Two capabilities have the same target, kind, reviewed fields, targeting, write/approval shape, and identical or directionally loosened arguments. |
+
+The default command exits successfully when these advisories are the only
+findings. `--strict` (or `--fail-on warning`) deliberately lets a team turn all
+warnings into a CI policy gate without changing canonical contract validity.
+Text, JSON, and SARIF use the same stable finding set and deterministic order.
+
+Passing these checks does not prove that a surface is safe or well designed.
+Review which operations each agent actually needs; use narrower contracts or
+Runner/client deployments instead of exposing every organization capability to
+every model.
+
 Expected successful output ends with:
 
 ```text
+Surface: N model-facing capabilities across M targets; 0 target(s) above the advisory density threshold of 8
 Summary: 0 error / 0 warning / N info
 ```
 

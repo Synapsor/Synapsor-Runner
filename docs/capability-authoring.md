@@ -121,6 +121,22 @@ synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/lo
 capabilities cannot accidentally lose descriptions, returns hints, or numeric
 patch bounds during review.
 
+After compilation, run the canonical contract through the surface review:
+
+```bash
+synapsor-runner contract lint ./synapsor.contract.json
+synapsor-runner contract lint ./synapsor.contract.json --strict
+```
+
+The default command keeps capability-surface findings advisory; `--strict` opts
+into warning-as-failure CI policy. Review capabilities using a simple fitness
+test: if the name is not a business operation an audit log would recognize, ask
+whether the model should receive it. Lint also surfaces generic query-like
+string arguments, more than eight capabilities on one target, and structurally
+near-duplicate tools. These checks make breadth drift visible; they do not
+change canonical validity or replace human review. See [Contract
+Review](contract-review.md) for exact codes and behavior.
+
 ## DSL / JSON Capability Parity
 
 The DSL compiles to canonical `@synapsor/spec` JSON. It must not silently weaken
