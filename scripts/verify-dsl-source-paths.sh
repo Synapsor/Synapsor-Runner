@@ -31,6 +31,6 @@ fi
 grep -F '"*.synapsor.sql": "sql"' .vscode/settings.json >/dev/null
 grep -F '"*.synapsor": "sql"' .vscode/settings.json >/dev/null
 grep -F '.synapsor/' .gitignore >/dev/null
-grep -F './.synapsor/quick-demo.db' README.md >/dev/null
+grep -F './.synapsor/try/' README.md >/dev/null
 
 echo "DSL source path check passed: .synapsor.sql preferred, .synapsor compatibility preserved"

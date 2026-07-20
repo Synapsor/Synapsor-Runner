@@ -6,11 +6,9 @@
 
 Stop giving AI agents `execute_sql`. Give them reviewed business actions.
 
-Synapsor Runner is an open-source, local-first MCP runtime for Postgres and
-MySQL. It exposes semantic tools such as `billing.inspect_invoice` and
-`billing.propose_late_fee_waiver`, saves risky changes as proposals, and keeps
-database credentials, approval, and writeback outside the model-facing tool
-surface.
+Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It
+exposes semantic tools, saves risky changes as proposals, and keeps database
+credentials, approval, and writeback outside the model-facing surface.
 
 ## Prove It In 60 Seconds
 
@@ -35,15 +33,18 @@ model-facing approval/writeback, and missing conflict or idempotency signals.
 It does not call business tools. See [MCP Database Risk
 Review](docs/mcp-audit.md) for supported workflows and limits.
 
-Then see the proposal, approval boundary, evidence, and replay loop. It needs no
-database, Docker, config file, MCP client, or Synapsor account:
+Then run the real isolated proposal-to-receipt loop. It needs no database,
+Docker, config, MCP client, or account:
 
 ```bash
+npx -y @synapsor/runner try
+# Backward-compatible noninteractive alias:
 npx -y @synapsor/runner demo --quick
 ```
 
-The quick demo creates a fixture ledger at `./.synapsor/quick-demo.db`. It
-teaches the boundary; it does not claim to test your database connection.
+It runs proposal, guarded writeback, receipt, and replay against an embedded
+demo-only source and stores state under `./.synapsor/try/`. It does not test
+your database connection.
 
 ## Safety Model
 
@@ -165,10 +166,9 @@ compensation.
 
 ## Review And Prove Your Contract
 
-Before serving a contract, use `contract explain` for a reviewer-readable
-boundary, `contract lint --strict` for deterministic surface-fitness CI checks,
-and `contract test` for adopter-owned allow/deny/redaction cases. The built-in language
-server supplies diagnostics, completion, hover, and formatting for
+Before serving, use `contract explain`, `contract lint --strict`, and `contract
+test` for reviewer-readable boundaries and allow/deny/redaction cases. The
+built-in language server supplies diagnostics, completion, hover, and formatting for
 `.synapsor.sql` and legacy `.synapsor` files. See [Contract
 Review](docs/contract-review.md) and [Contract
 Testing](docs/contract-testing.md).

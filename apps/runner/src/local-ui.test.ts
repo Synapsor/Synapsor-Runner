@@ -152,11 +152,22 @@ describe("local UI", () => {
       const unauthorized = await fetch(`${baseUrl}/api/summary`);
       expect(unauthorized.status).toBe(401);
 
-      const landing = await fetch(`${baseUrl}/?token=ui-token`);
+      const bootstrap = await fetch(`${baseUrl}/?token=ui-token&tour=1`, { redirect: "manual" });
+      expect(bootstrap.status).toBe(303);
+      expect(bootstrap.headers.get("location")).toBe("/?tour=1");
+      expect(bootstrap.headers.get("referrer-policy")).toBe("no-referrer");
+      const setCookie = bootstrap.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain("synapsor_ui_token=");
+      expect(setCookie).toContain("HttpOnly");
+      expect(setCookie).toContain("SameSite=Strict");
+      const cookie = setCookie.split(";")[0]!;
+      const landing = await fetch(`${baseUrl}/?tour=1`, { headers: { cookie } });
       expect(landing.status).toBe(200);
-      expect(landing.headers.get("set-cookie")).toContain("synapsor_ui_token=");
+      expect(landing.url).not.toContain("token=");
+      expect(landing.headers.get("referrer-policy")).toBe("no-referrer");
       const html = await landing.text();
       expect(html).toContain("Synapsor Runner Local UI");
+      expect(html).toContain("Commit-safe MCP in one loop");
       expect(html).toContain("Agent requested a change");
       expect(html).toContain("Source database changed:");
       expect(html).toContain("Approval boundary");
@@ -170,8 +181,8 @@ describe("local UI", () => {
       expect(html).not.toContain("ui-token");
       expect(html).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret|should_not_leak/i);
 
-      const tourLanding = await fetch(`${baseUrl}/?token=ui-token&tour=1`);
-      expect(await tourLanding.text()).toContain("Commit-safe MCP in one loop");
+      const reusedBootstrap = await fetch(`${baseUrl}/?token=ui-token`, { redirect: "manual" });
+      expect(reusedBootstrap.status).toBe(401);
 
       const headers = { "x-synapsor-ui-token": "ui-token" };
       const summary = await getJson(`${baseUrl}/api/summary`, headers);

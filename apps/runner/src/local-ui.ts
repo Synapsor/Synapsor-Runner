@@ -47,10 +47,11 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const token = options.token ?? crypto.randomBytes(24).toString("base64url");
   const csrfToken = options.csrfToken ?? crypto.randomBytes(24).toString("base64url");
   const storeAccess = options.storeAccess ?? localStoreAccess(storePath);
+  const bootstrapState = { consumed: false };
 
   const server = createServer(async (request, response) => {
     try {
-      await handleRequest({ request, response, configPath, storePath, storeAccess, token, csrfToken, tour: options.tour === true });
+      await handleRequest({ request, response, configPath, storePath, storeAccess, token, csrfToken, tour: options.tour === true, bootstrapState });
     } catch (error) {
       sendJson(response, 500, {
         ok: false,
@@ -95,16 +96,26 @@ async function handleRequest(input: {
   token: string;
   csrfToken: string;
   tour: boolean;
+  bootstrapState: { consumed: boolean };
 }): Promise<void> {
-  const { request, response, configPath, storePath, storeAccess, token, csrfToken, tour } = input;
+  const { request, response, configPath, storePath, storeAccess, token, csrfToken, tour, bootstrapState } = input;
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+  if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
+    if (url.searchParams.get("token") !== token || bootstrapState.consumed) {
+      sendJson(response, 401, { ok: false, error: "local UI bootstrap token is invalid or already consumed" });
+      return;
+    }
+    bootstrapState.consumed = true;
+    response.setHeader("set-cookie", `synapsor_ui_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=900`);
+    sendRedirect(response, tour || url.searchParams.get("tour") === "1" ? "/?tour=1" : "/");
+    return;
+  }
   if (!hasValidSessionToken(request, url, token)) {
     sendJson(response, 401, { ok: false, error: "local UI session token required" });
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/") {
-    response.setHeader("set-cookie", `synapsor_ui_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`);
     sendHtml(response, renderShell(csrfToken, tour || url.searchParams.get("tour") === "1", configPath, storePath));
     return;
   }
@@ -501,9 +512,9 @@ function hasValidCsrf(request: IncomingMessage, csrfToken: string): boolean {
 }
 
 function hasValidSessionToken(request: IncomingMessage, url: URL, expectedToken: string): boolean {
+  void url;
   const header = request.headers["x-synapsor-ui-token"];
   if (header === expectedToken) return true;
-  if (url.searchParams.get("token") === expectedToken) return true;
   const cookies = parseCookies(String(request.headers.cookie ?? ""));
   return cookies.synapsor_ui_token === expectedToken;
 }
@@ -530,7 +541,17 @@ function sendHtml(response: ServerResponse, html: string): void {
   response.setHeader("content-type", "text/html; charset=utf-8");
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("cache-control", "no-store");
+  response.setHeader("referrer-policy", "no-referrer");
   response.end(html);
+}
+
+function sendRedirect(response: ServerResponse, location: string): void {
+  response.statusCode = 303;
+  response.setHeader("location", location);
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("referrer-policy", "no-referrer");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.end();
 }
 
 function renderShell(csrfToken: string, tour = false, configPath = "synapsor.runner.json", storePath = "./.synapsor/local.db"): string {
