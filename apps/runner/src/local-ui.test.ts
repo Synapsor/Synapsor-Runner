@@ -139,6 +139,40 @@ describe("local UI", () => {
       }),
       "2026-06-20T14:31:10Z",
     );
+    store.createShadowStudy({
+      study_id: "sst_ui",
+      name: "UI shadow study",
+      selected_capabilities: ["billing.waive_late_fee"],
+    });
+    const shadowCase = store.recordShadowCase({
+      study_id: "sst_ui",
+      request_id: "req-ui-shadow",
+      tenant_id: "acme",
+      principal: "support_agent_17",
+      capability: "billing.waive_late_fee",
+      business_object: "invoice",
+      object_id: "INV-SHADOW-UI",
+      proposed_effect: {
+        before: { late_fee_cents: 5500 },
+        after: { late_fee_cents: 0 },
+        patch: { late_fee_cents: 0 },
+      },
+      agent_result: "proposed",
+      risk_score: 15,
+      created_at: "2026-06-20T14:31:11Z",
+    });
+    store.recordShadowOutcome({
+      study_id: "sst_ui",
+      request_id: shadowCase.request_id,
+      tenant_id: "acme",
+      business_object: "invoice",
+      object_id: "INV-SHADOW-UI",
+      actor: "support_lead_1",
+      disposition: "applied",
+      actual_effect: shadowCase.proposed_effect,
+      occurred_at: "2026-06-20T14:32:00Z",
+      source: "support_audit",
+    });
     store.close();
 
     const server = await startLocalUiServer({
@@ -177,6 +211,7 @@ describe("local UI", () => {
       expect(html).toContain("Copy guarded apply command");
       expect(html).toContain("synapsor-runner apply ");
       expect(html).toContain("View raw JSON");
+      expect(html).toContain("Shadow studies");
       expect(html).toContain("csrf-token");
       expect(html).not.toContain("ui-token");
       expect(html).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret|should_not_leak/i);
@@ -197,6 +232,20 @@ describe("local UI", () => {
       ]);
       expect(tools.tools[1].reversibility).toEqual({ mode: "reviewed_inverse" });
       expect(JSON.stringify(tools)).not.toMatch(/execute_sql|approve_proposal|commit_proposal/i);
+
+      const shadowStudies = await getJson(`${baseUrl}/api/shadow/studies`, headers);
+      expect(shadowStudies.studies[0]).toMatchObject({
+        study_id: "sst_ui",
+        total_tasks_observed: 1,
+        authoritative_outcomes: 1,
+      });
+      const shadowReport = await getJson(`${baseUrl}/api/shadow/report?study=sst_ui`, headers);
+      expect(shadowReport.report).toMatchObject({
+        total_tasks_observed: 1,
+        tasks_with_authoritative_outcomes: 1,
+        exact_agreements: 1,
+      });
+      expect(JSON.stringify(shadowReport)).not.toMatch(/postgres(?:ql)?:\/\/|reader_secret|should_not_leak/i);
 
       const proposals = await getJson(`${baseUrl}/api/proposals`, headers);
       expect(proposals.proposals[0]).toMatchObject({

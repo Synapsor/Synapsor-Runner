@@ -184,7 +184,11 @@ npx -y -p @synapsor/runner synapsor-runner proposals reject wrp_123 \
 
 Approval records the approver against the exact proposal hash/version. The proposal patch is immutable after creation.
 
-Shadow-mode proposals are inspectable through `proposals show` and `replay show`, but `proposals approve` and `proposals writeback-job` reject them. Shadow mode never mutates Postgres/MySQL.
+Shadow-mode proposals are inspectable through `proposals show` and `replay
+show`, but `proposals approve` and `proposals writeback-job` reject them.
+Shadow mode never mutates Postgres/MySQL or invokes an app-owned handler. To
+compare agent behavior with explicit application/operator outcomes across a
+pilot, use [Shadow Studies](shadow-studies.md).
 
 ## Browser review UI
 

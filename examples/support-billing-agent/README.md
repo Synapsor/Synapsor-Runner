@@ -78,6 +78,11 @@ Relevant files:
 - `synapsor.runner.json`
 - `scripts/run-demo.sh`
 - `app/README.md`
+- `shadow-study/cases.jsonl` and `shadow-study/outcomes.jsonl`: deterministic
+  true-shadow reference data for agent-versus-authoritative-outcome reports.
+
+See [Shadow Studies](../../docs/shadow-studies.md) for the import and report
+commands. The reference cases do not mutate this demo database.
 
 ## Stop And Clean Up
 

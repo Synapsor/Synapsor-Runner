@@ -141,6 +141,33 @@ async function handleRequest(input: {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/shadow/studies") {
+    await storeAccess("read", "shadow-studies-list", (store) => {
+      const studies = store.listShadowStudies().map((study) => ({
+        ...study,
+        total_tasks_observed: store.shadowCases(study.study_id).length,
+        authoritative_outcomes: store.shadowOutcomes(study.study_id).length,
+      }));
+      sendJson(response, 200, { ok: true, studies });
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/shadow/report") {
+    await storeAccess("read", "shadow-study-report", (store) => {
+      const requested = url.searchParams.get("study");
+      const study = requested
+        ? store.getShadowStudy(requested)
+        : store.listShadowStudies()[0];
+      if (!study) {
+        sendJson(response, 200, { ok: true, report: null });
+        return;
+      }
+      sendJson(response, 200, { ok: true, report: store.shadowStudyReport(study.study_id) });
+    });
+    return;
+  }
+
   const proposalDetailMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)$/);
   if (request.method === "GET" && proposalDetailMatch) {
     const proposalId = decodeURIComponent(proposalDetailMatch[1] ?? "");
@@ -677,6 +704,10 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
     <div class="card" id="proposals"><h2>Proposals</h2><p>Loading...</p></div>
     <div class="card" id="detail"><h2>Local review console</h2><p>Select a proposal to walk through what happened.</p></div>
   </section>
+  <section class="card full" id="shadow-report" style="margin-top:14px">
+    <h2>Shadow studies</h2>
+    <p>Loading local agent-versus-authoritative-outcome comparisons...</p>
+  </section>
   <details class="card config-section">
     <summary>Runtime configuration &amp; tools</summary>
     <div class="grid" style="margin-top:14px">
@@ -689,7 +720,7 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
 const csrfToken = "${escapedCsrf}";
 const configPath = "${escapedConfigPath}";
 const storePath = "${escapedStorePath}";
-const state = { selected: null, firstId: null };
+const state = { selected: null, firstId: null, shadowStudy: null };
 const byId = (id) => document.getElementById(id);
 const text = (tag, value, className = "") => { const node = document.createElement(tag); node.textContent = value == null ? "" : String(value); if (className) node.className = className; return node; };
 function el(tag, opts, kids) {
@@ -838,6 +869,79 @@ async function loadProposals() {
   }
   root.append(list);
   state.firstId = payload.proposals[0].proposal_id;
+}
+function shadowMetric(label, value) {
+  return el("div", { class: "pill", text: label + ": " + String(value) });
+}
+async function loadShadowReport(studyId) {
+  const root = byId("shadow-report");
+  const studiesPayload = await api("/api/shadow/studies");
+  const studies = studiesPayload.studies || [];
+  if (!studies.length) {
+    root.replaceChildren(
+      el("h2", { text: "Shadow studies" }),
+      el("p", { text: "No studies yet. Create one with synapsor-runner shadow study create, then record authoritative outcomes without giving the shadow agent write authority." }),
+    );
+    return;
+  }
+  const selected = studyId || state.shadowStudy || studies[0].study_id;
+  state.shadowStudy = selected;
+  const payload = await api("/api/shadow/report?study=" + encodeURIComponent(selected));
+  const report = payload.report;
+  if (!report) return;
+  const selector = el("div", { class: "actions" });
+  for (const study of studies) {
+    selector.append(el("button", {
+      class: study.study_id === selected ? "" : "secondary",
+      text: study.name,
+      onclick: () => loadShadowReport(study.study_id),
+    }));
+  }
+  const metrics = el("div", { class: "actions" }, [
+    shadowMetric("Observed", report.total_tasks_observed),
+    shadowMetric("Authoritative", report.tasks_with_authoritative_outcomes),
+    shadowMetric("Comparable", report.comparable_tasks),
+    shadowMetric("Exact", report.exact_agreements),
+    shadowMetric("Partial", report.partial_agreements),
+    shadowMetric("Disagreements", report.disagreements),
+    shadowMetric("Unmatched", report.unmatched_cases),
+    shadowMetric("Unsafe scope blocked", report.invalid_or_unsafe_scope_attempts),
+  ]);
+  const risks = el("div");
+  risks.append(el("h3", { text: "Highest-risk disagreements" }));
+  if (!report.highest_risk_disagreements.length) {
+    risks.append(el("p", { text: "None recorded." }));
+  } else {
+    const table = document.createElement("table");
+    table.append(el("thead", {}, [el("tr", {}, [
+      el("th", { text: "Case" }),
+      el("th", { text: "Classification" }),
+      el("th", { text: "Target" }),
+      el("th", { text: "Risk" }),
+    ])]));
+    const body = document.createElement("tbody");
+    for (const item of report.highest_risk_disagreements) {
+      body.append(el("tr", {}, [
+        el("td", { text: item.case_id }),
+        el("td", { text: item.status }),
+        el("td", { text: item.business_object + ":" + item.object_id }),
+        el("td", { text: item.risk_score == null ? "n/a" : item.risk_score }),
+      ]));
+    }
+    table.append(body);
+    risks.append(table);
+  }
+  const raw = document.createElement("details");
+  raw.className = "raw";
+  raw.append(el("summary", { text: "View stable report JSON" }), pre(report));
+  root.replaceChildren(
+    el("h2", { text: "Shadow study: " + report.study.name }),
+    el("p", { text: "Agent proposals are compared with explicit authoritative outcomes. Unmatched tasks stay visible and suggestions remain inactive." }),
+    selector,
+    metrics,
+    risks,
+    raw,
+  );
 }
 function commitResult(stateVal) {
   switch (stateVal) {
@@ -1048,7 +1152,7 @@ async function loadDetail(proposalId) {
   root.append(reviewPane, jsonPane);
 }
 async function init() {
-  await Promise.all([loadSummary(), loadTools(), loadProposals()]);
+  await Promise.all([loadSummary(), loadTools(), loadProposals(), loadShadowReport()]);
   if (state.firstId && !state.selected) await loadDetail(state.firstId);
 }
 init().catch((error) => {

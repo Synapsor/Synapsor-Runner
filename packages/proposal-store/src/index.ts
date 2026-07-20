@@ -314,6 +314,147 @@ export type StoredShadowHumanAction = {
   created_at: string;
 };
 
+export type ShadowAgentResult =
+  | "proposed"
+  | "policy_denied"
+  | "unable_to_propose"
+  | "stale_conflict"
+  | "invalid_unsafe_scope_attempt";
+
+export type ShadowOutcomeDisposition =
+  | "applied"
+  | "rejected_no_action"
+  | "stale_conflict";
+
+export type ShadowComparisonStatus =
+  | "exact_agreement"
+  | "partial_agreement"
+  | "disagreement"
+  | "human_rejected_no_action"
+  | "agent_policy_denied"
+  | "agent_unable_to_propose"
+  | "stale_conflict"
+  | "unmatched_no_authoritative_outcome"
+  | "invalid_or_unsafe_scope_attempt";
+
+export type StoredShadowStudy = {
+  study_id: string;
+  name: string;
+  description?: string;
+  selected_capabilities: string[];
+  starts_at?: string;
+  ends_at?: string;
+  status: "active" | "closed";
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShadowEffect = {
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  patch: Record<string, unknown>;
+};
+
+export type StoredShadowCase = {
+  case_id: string;
+  study_id: string;
+  request_id: string;
+  proposal_id?: string;
+  tenant_id: string;
+  principal?: string;
+  capability: string;
+  business_object: string;
+  object_id: string;
+  evidence_bundle_id?: string;
+  proposed_effect?: ShadowEffect;
+  agent_result: ShadowAgentResult;
+  decision_reason?: string;
+  risk_score?: number;
+  amount_value?: number;
+  created_at: string;
+};
+
+export type StoredShadowOutcome = {
+  outcome_id: string;
+  study_id: string;
+  request_id: string;
+  proposal_id?: string;
+  tenant_id: string;
+  business_object: string;
+  object_id: string;
+  actor: string;
+  disposition: ShadowOutcomeDisposition;
+  actual_effect?: ShadowEffect;
+  occurred_at: string;
+  source: string;
+  reference?: string;
+  reason?: string;
+  created_at: string;
+};
+
+export type ShadowStudyComparison = {
+  study_id: string;
+  case_id: string;
+  request_id: string;
+  proposal_id?: string;
+  tenant_id: string;
+  principal?: string;
+  capability: string;
+  business_object: string;
+  object_id: string;
+  status: ShadowComparisonStatus;
+  comparable: boolean;
+  agent_result: ShadowAgentResult;
+  proposed_effect?: ShadowEffect;
+  outcome?: StoredShadowOutcome;
+  matching_columns: string[];
+  differing_columns: string[];
+  missing_from_human: string[];
+  extra_human_columns: string[];
+  decision_reason?: string;
+  risk_score?: number;
+  amount_value?: number;
+  compared_at: string;
+};
+
+export type ShadowDistribution = {
+  count: number;
+  minimum: number;
+  maximum: number;
+  mean: number;
+  median: number;
+  p95: number;
+  total: number;
+};
+
+export type ShadowStudyReport = {
+  study: StoredShadowStudy;
+  total_tasks_observed: number;
+  tasks_with_authoritative_outcomes: number;
+  comparable_tasks: number;
+  exact_agreements: number;
+  exact_agreement_rate: number | null;
+  partial_agreements: number;
+  disagreements: number;
+  human_rejections_no_action: number;
+  policy_denials: number;
+  stale_conflicts: number;
+  unmatched_cases: number;
+  invalid_or_unsafe_scope_attempts: number;
+  amount_value_distribution: ShadowDistribution | null;
+  by_capability: Record<string, Record<ShadowComparisonStatus, number>>;
+  by_decision_reason: Record<string, number>;
+  highest_risk_disagreements: ShadowStudyComparison[];
+  suggested_policies: Array<{
+    capability: string;
+    suggestion: string;
+    sample_size: number;
+    active: false;
+  }>;
+  comparisons: ShadowStudyComparison[];
+  generated_at: string;
+};
+
 export type ShadowComparison = {
   proposal_id: string;
   status: "exact_match" | "partial_match" | "mismatch" | "no_human_action";
@@ -351,6 +492,9 @@ export type StoreStats = {
   approvals: number;
   proposal_events: number;
   shadow_human_actions: number;
+  shadow_studies: number;
+  shadow_study_cases: number;
+  shadow_outcomes: number;
   worker_queue: number;
   policy_recommendations: number;
   page_count: number;
@@ -1203,6 +1347,9 @@ export class ProposalStore {
       approvals: this.countTable("approvals"),
       proposal_events: this.countTable("proposal_events"),
       shadow_human_actions: this.countTable("shadow_human_actions"),
+      shadow_studies: this.countTable("shadow_studies"),
+      shadow_study_cases: this.countTable("shadow_study_cases"),
+      shadow_outcomes: this.countTable("shadow_outcomes"),
       worker_queue: this.countTable("worker_queue"),
       policy_recommendations: this.countTable("policy_recommendations"),
       page_count: pageCount,
@@ -1246,11 +1393,13 @@ export class ProposalStore {
         run("writeback_intents", proposalWhere.sql, proposalWhere.params);
         run("approvals", proposalWhere.sql, proposalWhere.params);
         run("proposal_events", proposalWhere.sql, proposalWhere.params);
+        run("shadow_outcomes", proposalWhere.sql, proposalWhere.params);
+        run("shadow_study_cases", proposalWhere.sql, proposalWhere.params);
         run("shadow_human_actions", proposalWhere.sql, proposalWhere.params);
         run("worker_queue", proposalWhere.sql, proposalWhere.params);
         run("replay_records", proposalWhere.sql, proposalWhere.params);
       } else {
-        for (const table of ["cloud_outbox", "cloud_governance_events", "idempotency_receipts", "writeback_receipts", "writeback_jobs", "writeback_intents", "approvals", "proposal_events", "shadow_human_actions", "worker_queue", "replay_records"]) {
+        for (const table of ["cloud_outbox", "cloud_governance_events", "idempotency_receipts", "writeback_receipts", "writeback_jobs", "writeback_intents", "approvals", "proposal_events", "shadow_outcomes", "shadow_study_cases", "shadow_human_actions", "worker_queue", "replay_records"]) {
           deleted[table] = 0;
         }
       }
@@ -1436,6 +1585,60 @@ export class ProposalStore {
         FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
       );
 
+      CREATE TABLE IF NOT EXISTS shadow_studies (
+        study_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        selected_capabilities_json TEXT NOT NULL,
+        starts_at TEXT,
+        ends_at TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS shadow_study_cases (
+        case_id TEXT PRIMARY KEY,
+        study_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        proposal_id TEXT,
+        tenant_id TEXT NOT NULL,
+        principal TEXT,
+        capability TEXT NOT NULL,
+        business_object TEXT NOT NULL,
+        object_id TEXT NOT NULL,
+        evidence_bundle_id TEXT,
+        proposed_effect_json TEXT,
+        agent_result TEXT NOT NULL,
+        decision_reason TEXT,
+        risk_score REAL,
+        amount_value REAL,
+        created_at TEXT NOT NULL,
+        UNIQUE(study_id, request_id, tenant_id, business_object, object_id),
+        FOREIGN KEY (study_id) REFERENCES shadow_studies(study_id),
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS shadow_outcomes (
+        outcome_id TEXT PRIMARY KEY,
+        study_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        proposal_id TEXT,
+        tenant_id TEXT NOT NULL,
+        business_object TEXT NOT NULL,
+        object_id TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        disposition TEXT NOT NULL,
+        actual_effect_json TEXT,
+        occurred_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        reference TEXT,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (study_id) REFERENCES shadow_studies(study_id),
+        FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
+      );
+
       CREATE TABLE IF NOT EXISTS runner_state (
         key TEXT PRIMARY KEY,
         value_json TEXT NOT NULL,
@@ -1510,6 +1713,11 @@ export class ProposalStore {
       CREATE INDEX IF NOT EXISTS idx_writeback_intents_status_updated ON writeback_intents(status, updated_at);
       CREATE INDEX IF NOT EXISTS idx_replay_records_proposal_id ON replay_records(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_shadow_human_actions_proposal_id ON shadow_human_actions(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_shadow_studies_status ON shadow_studies(status, starts_at, ends_at);
+      CREATE INDEX IF NOT EXISTS idx_shadow_study_cases_study ON shadow_study_cases(study_id, created_at, case_id);
+      CREATE INDEX IF NOT EXISTS idx_shadow_study_cases_proposal ON shadow_study_cases(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_shadow_outcomes_study_request ON shadow_outcomes(study_id, request_id, occurred_at, outcome_id);
+      CREATE INDEX IF NOT EXISTS idx_shadow_outcomes_proposal ON shadow_outcomes(proposal_id);
       CREATE INDEX IF NOT EXISTS idx_policy_recommendations_scope ON policy_recommendations(tenant_id, capability, policy, status, created_at);
       CREATE INDEX IF NOT EXISTS idx_cloud_outbox_due ON cloud_outbox(status, next_attempt_at, sequence, created_at);
       CREATE INDEX IF NOT EXISTS idx_cloud_outbox_proposal ON cloud_outbox(proposal_id, sequence, created_at);
@@ -1765,6 +1973,9 @@ export class ProposalStore {
         proposal_version: changeSet.proposal_version,
         source_database_mutated: changeSet.source_database_mutated,
       });
+      if (changeSet.mode === "shadow") {
+        this.attachShadowChangeSetToActiveStudies(changeSet, now);
+      }
     });
     const created = this.getProposal(changeSet.proposal_id);
     if (!created) {
@@ -3424,6 +3635,9 @@ export class ProposalStore {
       { table: "query_audit", kind: "query_audit", key: "audit_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id", capability: "capability" },
       { table: "replay_records", kind: "replay_record", key: "replay_id", created: "created_at", proposal: "proposal_id" },
       { table: "shadow_human_actions", kind: "shadow_human_action", key: "action_id", created: "created_at", proposal: "proposal_id" },
+      { table: "shadow_studies", kind: "shadow_study", key: "study_id", created: "created_at" },
+      { table: "shadow_study_cases", kind: "shadow_study_case", key: "case_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id", capability: "capability" },
+      { table: "shadow_outcomes", kind: "shadow_outcome", key: "outcome_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id" },
       { table: "worker_queue", kind: "worker_queue_item", key: "proposal_id", created: "created_at", proposal: "proposal_id" },
       { table: "runner_state", kind: "runner_state", key: "key", created: "updated_at" },
       { table: "policy_recommendations", kind: "policy_recommendation", key: "recommendation_id", created: "created_at", tenant: "tenant_id", capability: "capability" },
@@ -3470,6 +3684,472 @@ export class ProposalStore {
     return { imported, skipped };
   }
 
+  createShadowStudy(input: {
+    study_id?: string;
+    name: string;
+    description?: string;
+    selected_capabilities?: string[];
+    starts_at?: string;
+    ends_at?: string;
+  }): StoredShadowStudy {
+    const name = requiredBoundedText(input.name, "shadow study name", 160);
+    const description = optionalBoundedText(input.description, "shadow study description", 2_000);
+    const selectedCapabilities = [...new Set((input.selected_capabilities ?? []).map((value) =>
+      requiredBoundedText(value, "shadow study capability", 256),
+    ))].sort();
+    const startsAt = optionalIsoTimestamp(input.starts_at, "shadow study starts_at");
+    const endsAt = optionalIsoTimestamp(input.ends_at, "shadow study ends_at");
+    if (startsAt && endsAt && Date.parse(endsAt) < Date.parse(startsAt)) {
+      throw new ProposalStoreError("SHADOW_STUDY_TIME_RANGE_INVALID", "shadow study ends_at must not precede starts_at");
+    }
+    assertNoSecretMaterial({ name, description, selected_capabilities: selectedCapabilities }, "shadow_study");
+    const now = new Date().toISOString();
+    const studyId = input.study_id
+      ? safeShadowId(input.study_id, "study")
+      : `sst_${canonicalJsonDigest({ name, now, ordinal: this.countTable("shadow_studies") }).slice("sha256:".length, "sha256:".length + 20)}`;
+    try {
+      this.db.prepare(`
+        INSERT INTO shadow_studies (
+          study_id, name, description, selected_capabilities_json, starts_at,
+          ends_at, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      `).run(
+        studyId,
+        name,
+        description ?? null,
+        JSON.stringify(selectedCapabilities),
+        startsAt ?? null,
+        endsAt ?? null,
+        now,
+        now,
+      );
+    } catch (error) {
+      throw new ProposalStoreError("SHADOW_STUDY_CREATE_FAILED", safeSqliteFailure(error, `shadow study ${studyId} could not be created`));
+    }
+    const study = this.getShadowStudy(studyId);
+    if (!study) throw new ProposalStoreError("SHADOW_STUDY_CREATE_FAILED", `shadow study ${studyId} was not persisted`);
+    this.syncShadowStudy(studyId);
+    return this.getShadowStudy(studyId) ?? study;
+  }
+
+  getShadowStudy(studyId: string): StoredShadowStudy | undefined {
+    return rowToShadowStudy(this.db.prepare("SELECT * FROM shadow_studies WHERE study_id = ?").get(studyId));
+  }
+
+  listShadowStudies(): StoredShadowStudy[] {
+    return this.db.prepare("SELECT * FROM shadow_studies ORDER BY created_at DESC, study_id ASC").all()
+      .map(rowToShadowStudy)
+      .filter((study): study is StoredShadowStudy => study !== undefined);
+  }
+
+  closeShadowStudy(studyId: string, endsAt = new Date().toISOString()): StoredShadowStudy {
+    this.requireShadowStudy(studyId);
+    const normalizedEndsAt = optionalIsoTimestamp(endsAt, "shadow study ends_at")!;
+    this.db.prepare(`
+      UPDATE shadow_studies SET status = 'closed', ends_at = ?, updated_at = ?
+      WHERE study_id = ?
+    `).run(normalizedEndsAt, new Date().toISOString(), studyId);
+    return this.requireShadowStudy(studyId);
+  }
+
+  syncShadowStudy(studyId: string): { attached: number; total: number } {
+    const study = this.requireShadowStudy(studyId);
+    let attached = 0;
+    for (const proposal of this.listProposals().filter((item) => item.change_set.mode === "shadow")) {
+      if (!shadowStudyIncludes(study, proposal.capability ?? proposal.action, proposal.created_at)) continue;
+      const before = this.shadowCases(studyId).length;
+      this.addShadowProposalToStudy(studyId, proposal.proposal_id);
+      if (this.shadowCases(studyId).length > before) attached += 1;
+    }
+    return { attached, total: this.shadowCases(studyId).length };
+  }
+
+  addShadowProposalToStudy(studyId: string, proposalId: string, requestId?: string): StoredShadowCase {
+    const study = this.requireShadowStudy(studyId);
+    const proposal = this.requireProposal(proposalId);
+    if (proposal.change_set.mode !== "shadow") {
+      throw new ProposalStoreError("NOT_SHADOW_PROPOSAL", `proposal ${proposalId} is not a shadow proposal`);
+    }
+    if (!shadowStudyIncludes(study, proposal.capability ?? proposal.action, proposal.created_at)) {
+      throw new ProposalStoreError("SHADOW_STUDY_SCOPE_MISMATCH", `proposal ${proposalId} is outside shadow study ${studyId}`);
+    }
+    return this.recordShadowCase({
+      study_id: studyId,
+      request_id: requestId ?? proposal.interaction_id ?? proposal.tool_call_id ?? proposal.proposal_id,
+      proposal_id: proposal.proposal_id,
+      tenant_id: proposal.tenant_id,
+      principal: proposal.principal,
+      capability: proposal.capability ?? proposal.action,
+      business_object: proposal.business_object,
+      object_id: proposal.object_id,
+      evidence_bundle_id: proposal.change_set.evidence.bundle_id,
+      proposed_effect: shadowEffectFromChangeSet(proposal.change_set),
+      agent_result: "proposed",
+      amount_value: effectAmountValue(shadowEffectFromChangeSet(proposal.change_set)),
+      created_at: proposal.created_at,
+    });
+  }
+
+  recordShadowCase(input: {
+    study_id: string;
+    request_id: string;
+    proposal_id?: string;
+    tenant_id: string;
+    principal?: string;
+    capability: string;
+    business_object: string;
+    object_id: string;
+    evidence_bundle_id?: string;
+    proposed_effect?: ShadowEffect;
+    agent_result: ShadowAgentResult;
+    decision_reason?: string;
+    risk_score?: number;
+    amount_value?: number;
+    created_at?: string;
+  }): StoredShadowCase {
+    const study = this.requireShadowStudy(input.study_id);
+    const requestId = requiredBoundedText(input.request_id, "shadow request_id", 256);
+    const tenantId = requiredBoundedText(input.tenant_id, "shadow tenant_id", 256);
+    const capability = requiredBoundedText(input.capability, "shadow capability", 256);
+    const businessObject = requiredBoundedText(input.business_object, "shadow business_object", 128);
+    const objectId = requiredBoundedText(input.object_id, "shadow object_id", 256);
+    assertShadowAgentResult(input.agent_result);
+    if (!shadowStudyIncludes(study, capability, input.created_at ?? new Date().toISOString())) {
+      throw new ProposalStoreError("SHADOW_STUDY_SCOPE_MISMATCH", `shadow case is outside study ${study.study_id}`);
+    }
+    if (input.proposal_id) {
+      const proposal = this.requireProposal(input.proposal_id);
+      if (proposal.change_set.mode !== "shadow") {
+        throw new ProposalStoreError("NOT_SHADOW_PROPOSAL", `proposal ${input.proposal_id} is not a shadow proposal`);
+      }
+      if (
+        proposal.tenant_id !== tenantId ||
+        proposal.business_object !== businessObject ||
+        proposal.object_id !== objectId ||
+        (proposal.capability ?? proposal.action) !== capability
+      ) {
+        throw new ProposalStoreError("SHADOW_CASE_PROPOSAL_SCOPE_MISMATCH", "shadow case does not match the proposal's trusted tenant, target, or capability");
+      }
+    }
+    if (input.agent_result === "proposed" && !input.proposed_effect) {
+      throw new ProposalStoreError("SHADOW_PROPOSED_EFFECT_REQUIRED", "a proposed shadow case requires a normalized proposed effect");
+    }
+    const proposedEffect = input.proposed_effect ? normalizeShadowEffect(input.proposed_effect, "shadow_case.proposed_effect") : undefined;
+    const riskScore = optionalFiniteNumber(input.risk_score, "shadow risk_score", 0, 100);
+    const amountValue = optionalFiniteNumber(
+      input.amount_value ?? (proposedEffect ? effectAmountValue(proposedEffect) : undefined),
+      "shadow amount_value",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+    const createdAt = optionalIsoTimestamp(input.created_at, "shadow case created_at") ?? new Date().toISOString();
+    const caseId = `scase_${canonicalJsonDigest({
+      study_id: study.study_id,
+      request_id: requestId,
+      tenant_id: tenantId,
+      business_object: businessObject,
+      object_id: objectId,
+    }).slice("sha256:".length, "sha256:".length + 20)}`;
+    const payload = {
+      request_id: requestId,
+      tenant_id: tenantId,
+      principal: input.principal,
+      capability,
+      business_object: businessObject,
+      object_id: objectId,
+      evidence_bundle_id: input.evidence_bundle_id,
+      proposed_effect: proposedEffect,
+      decision_reason: input.decision_reason,
+    };
+    assertNoSecretMaterial(payload, "shadow_case");
+    this.db.prepare(`
+      INSERT INTO shadow_study_cases (
+        case_id, study_id, request_id, proposal_id, tenant_id, principal,
+        capability, business_object, object_id, evidence_bundle_id,
+        proposed_effect_json, agent_result, decision_reason, risk_score,
+        amount_value, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(study_id, request_id, tenant_id, business_object, object_id)
+      DO NOTHING
+    `).run(
+      caseId,
+      study.study_id,
+      requestId,
+      input.proposal_id ?? null,
+      tenantId,
+      optionalBoundedText(input.principal, "shadow principal", 256) ?? null,
+      capability,
+      businessObject,
+      objectId,
+      optionalBoundedText(input.evidence_bundle_id, "shadow evidence reference", 256) ?? null,
+      proposedEffect ? JSON.stringify(proposedEffect) : null,
+      input.agent_result,
+      optionalBoundedText(input.decision_reason, "shadow decision reason", 2_000) ?? null,
+      riskScore ?? null,
+      amountValue ?? null,
+      createdAt,
+    );
+    const stored = this.getShadowCase(caseId)
+      ?? this.shadowCases(study.study_id).find((item) =>
+        item.request_id === requestId &&
+        item.tenant_id === tenantId &&
+        item.business_object === businessObject &&
+        item.object_id === objectId
+      );
+    if (!stored) throw new ProposalStoreError("SHADOW_CASE_CREATE_FAILED", `shadow case ${caseId} was not persisted`);
+    if (
+      stored.agent_result !== input.agent_result ||
+      stored.capability !== capability ||
+      stored.proposal_id !== input.proposal_id
+    ) {
+      throw new ProposalStoreError("SHADOW_CASE_IDENTITY_CONFLICT", `shadow case identity already exists with different immutable intent`);
+    }
+    return stored;
+  }
+
+  getShadowCase(caseId: string): StoredShadowCase | undefined {
+    return rowToShadowCase(this.db.prepare("SELECT * FROM shadow_study_cases WHERE case_id = ?").get(caseId));
+  }
+
+  shadowCases(studyId: string): StoredShadowCase[] {
+    return this.db.prepare(`
+      SELECT * FROM shadow_study_cases WHERE study_id = ?
+      ORDER BY created_at ASC, case_id ASC
+    `).all(studyId).map(rowToShadowCase).filter((item): item is StoredShadowCase => item !== undefined);
+  }
+
+  recordShadowOutcome(input: {
+    study_id: string;
+    request_id: string;
+    proposal_id?: string;
+    tenant_id: string;
+    business_object: string;
+    object_id: string;
+    actor: string;
+    disposition: ShadowOutcomeDisposition;
+    actual_effect?: ShadowEffect;
+    occurred_at?: string;
+    source: string;
+    reference?: string;
+    reason?: string;
+  }): StoredShadowOutcome {
+    const study = this.requireShadowStudy(input.study_id);
+    const requestId = requiredBoundedText(input.request_id, "shadow outcome request_id", 256);
+    const tenantId = requiredBoundedText(input.tenant_id, "shadow outcome tenant_id", 256);
+    const businessObject = requiredBoundedText(input.business_object, "shadow outcome business_object", 128);
+    const objectId = requiredBoundedText(input.object_id, "shadow outcome object_id", 256);
+    assertShadowOutcomeDisposition(input.disposition);
+    const matchingCase = this.shadowCases(study.study_id).find((item) =>
+      item.request_id === requestId &&
+      item.tenant_id === tenantId &&
+      item.business_object === businessObject &&
+      item.object_id === objectId
+    );
+    if (!matchingCase) {
+      throw new ProposalStoreError("SHADOW_OUTCOME_CASE_NOT_FOUND", "authoritative outcome does not match a case in this shadow study");
+    }
+    if (input.proposal_id !== undefined && matchingCase.proposal_id !== input.proposal_id) {
+      throw new ProposalStoreError("SHADOW_OUTCOME_PROPOSAL_MISMATCH", "authoritative outcome proposal does not match the correlated shadow case");
+    }
+    if (input.disposition === "applied" && !input.actual_effect) {
+      throw new ProposalStoreError("SHADOW_ACTUAL_EFFECT_REQUIRED", "an applied authoritative outcome requires actual before/after effect");
+    }
+    const actualEffect = input.actual_effect ? normalizeShadowEffect(input.actual_effect, "shadow_outcome.actual_effect") : undefined;
+    const occurredAt = optionalIsoTimestamp(input.occurred_at, "shadow outcome occurred_at") ?? new Date().toISOString();
+    const actor = requiredBoundedText(input.actor, "shadow outcome actor", 256);
+    const source = requiredBoundedText(input.source, "shadow outcome source", 256);
+    const reference = optionalBoundedText(input.reference, "shadow outcome reference", 1_024);
+    const reason = optionalBoundedText(input.reason, "shadow outcome reason", 2_000);
+    assertNoSecretMaterial({
+      request_id: requestId,
+      tenant_id: tenantId,
+      business_object: businessObject,
+      object_id: objectId,
+      actor,
+      source,
+      actual_effect: actualEffect,
+      reference,
+      reason,
+    }, "shadow_outcome");
+    const outcomeId = `sout_${canonicalJsonDigest({
+      study_id: study.study_id,
+      request_id: requestId,
+      tenant_id: tenantId,
+      business_object: businessObject,
+      object_id: objectId,
+      actor,
+      disposition: input.disposition,
+      actual_effect: actualEffect ?? null,
+      occurred_at: occurredAt,
+      source,
+      reference: reference ?? null,
+    }).slice("sha256:".length, "sha256:".length + 20)}`;
+    this.db.prepare(`
+      INSERT OR IGNORE INTO shadow_outcomes (
+        outcome_id, study_id, request_id, proposal_id, tenant_id,
+        business_object, object_id, actor, disposition, actual_effect_json,
+        occurred_at, source, reference, reason, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      outcomeId,
+      study.study_id,
+      requestId,
+      matchingCase.proposal_id ?? null,
+      tenantId,
+      businessObject,
+      objectId,
+      actor,
+      input.disposition,
+      actualEffect ? JSON.stringify(actualEffect) : null,
+      occurredAt,
+      source,
+      reference ?? null,
+      reason ?? null,
+      new Date().toISOString(),
+    );
+    const outcome = this.getShadowOutcome(outcomeId);
+    if (!outcome) throw new ProposalStoreError("SHADOW_OUTCOME_CREATE_FAILED", `shadow outcome ${outcomeId} was not persisted`);
+    return outcome;
+  }
+
+  getShadowOutcome(outcomeId: string): StoredShadowOutcome | undefined {
+    return rowToShadowOutcome(this.db.prepare("SELECT * FROM shadow_outcomes WHERE outcome_id = ?").get(outcomeId));
+  }
+
+  shadowOutcomes(studyId: string): StoredShadowOutcome[] {
+    return this.db.prepare(`
+      SELECT * FROM shadow_outcomes WHERE study_id = ?
+      ORDER BY occurred_at ASC, outcome_id ASC
+    `).all(studyId).map(rowToShadowOutcome).filter((item): item is StoredShadowOutcome => item !== undefined);
+  }
+
+  compareShadowStudyCase(caseId: string): ShadowStudyComparison {
+    const shadowCase = this.getShadowCase(caseId);
+    if (!shadowCase) throw new ProposalStoreError("SHADOW_CASE_NOT_FOUND", `shadow case not found: ${caseId}`);
+    const outcome = this.latestShadowOutcomeForCase(shadowCase);
+    return compareShadowStudyCase(shadowCase, outcome);
+  }
+
+  shadowStudyReport(studyId: string): ShadowStudyReport {
+    const study = this.requireShadowStudy(studyId);
+    const cases = this.shadowCases(studyId);
+    const outcomes = this.shadowOutcomes(studyId);
+    const comparisons = cases.map((item) => this.compareShadowStudyCase(item.case_id));
+    const comparable = comparisons.filter((item) => item.comparable);
+    const exact = countShadowStatus(comparisons, "exact_agreement");
+    const byCapability: ShadowStudyReport["by_capability"] = {};
+    const byDecisionReason: Record<string, number> = {};
+    for (const comparison of comparisons) {
+      byCapability[comparison.capability] ??= emptyShadowStatusCounts();
+      byCapability[comparison.capability]![comparison.status] += 1;
+      const reason = comparison.decision_reason ?? comparison.outcome?.reason ?? "(none recorded)";
+      byDecisionReason[reason] = (byDecisionReason[reason] ?? 0) + 1;
+    }
+    const amountValues = comparisons
+      .map((item) => item.amount_value)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const highestRisk = comparisons
+      .filter((item) => item.status === "disagreement" || item.status === "partial_agreement" || item.status === "invalid_or_unsafe_scope_attempt")
+      .sort((left, right) =>
+        (right.risk_score ?? 0) - (left.risk_score ?? 0) ||
+        (right.amount_value ?? 0) - (left.amount_value ?? 0) ||
+        left.case_id.localeCompare(right.case_id)
+      )
+      .slice(0, 10);
+    return {
+      study,
+      total_tasks_observed: comparisons.length,
+      tasks_with_authoritative_outcomes: comparisons.filter((item) => item.outcome !== undefined).length,
+      comparable_tasks: comparable.length,
+      exact_agreements: exact,
+      exact_agreement_rate: comparable.length === 0 ? null : exact / comparable.length,
+      partial_agreements: countShadowStatus(comparisons, "partial_agreement"),
+      disagreements: countShadowStatus(comparisons, "disagreement"),
+      human_rejections_no_action: countShadowStatus(comparisons, "human_rejected_no_action"),
+      policy_denials: countShadowStatus(comparisons, "agent_policy_denied"),
+      stale_conflicts: countShadowStatus(comparisons, "stale_conflict"),
+      unmatched_cases: countShadowStatus(comparisons, "unmatched_no_authoritative_outcome"),
+      invalid_or_unsafe_scope_attempts: countShadowStatus(comparisons, "invalid_or_unsafe_scope_attempt"),
+      amount_value_distribution: distribution(amountValues),
+      by_capability: byCapability,
+      by_decision_reason: byDecisionReason,
+      highest_risk_disagreements: highestRisk,
+      suggested_policies: suggestedShadowPolicies(comparisons),
+      comparisons,
+      generated_at: latestIsoTimestamp([
+        study.updated_at,
+        ...cases.map((item) => item.created_at),
+        ...outcomes.map((item) => item.created_at),
+      ]),
+    };
+  }
+
+  private requireShadowStudy(studyId: string): StoredShadowStudy {
+    const study = this.getShadowStudy(studyId);
+    if (!study) throw new ProposalStoreError("SHADOW_STUDY_NOT_FOUND", `shadow study not found: ${studyId}`);
+    return study;
+  }
+
+  private latestShadowOutcomeForCase(shadowCase: StoredShadowCase): StoredShadowOutcome | undefined {
+    return rowToShadowOutcome(this.db.prepare(`
+      SELECT * FROM shadow_outcomes
+      WHERE study_id = ? AND request_id = ? AND tenant_id = ?
+        AND business_object = ? AND object_id = ?
+      ORDER BY occurred_at DESC, outcome_id DESC
+      LIMIT 1
+    `).get(
+      shadowCase.study_id,
+      shadowCase.request_id,
+      shadowCase.tenant_id,
+      shadowCase.business_object,
+      shadowCase.object_id,
+    ));
+  }
+
+  private attachShadowChangeSetToActiveStudies(changeSet: ChangeSet, createdAt: string): void {
+    const studies = this.db.prepare("SELECT * FROM shadow_studies WHERE status = 'active'").all()
+      .map(rowToShadowStudy)
+      .filter((study): study is StoredShadowStudy => study !== undefined);
+    for (const study of studies) {
+      if (!shadowStudyIncludes(study, changeSet.action, createdAt)) continue;
+      this.insertShadowCaseFromChangeSet(study.study_id, changeSet, createdAt);
+    }
+  }
+
+  private insertShadowCaseFromChangeSet(studyId: string, changeSet: ChangeSet, createdAt: string): void {
+    const requestId = changeSet.proposal_id;
+    const caseId = `scase_${canonicalJsonDigest({
+      study_id: studyId,
+      request_id: requestId,
+      tenant_id: changeSet.scope.tenant_id,
+      business_object: changeSet.scope.business_object,
+      object_id: changeSet.scope.object_id,
+    }).slice("sha256:".length, "sha256:".length + 20)}`;
+    const effect = shadowEffectFromChangeSet(changeSet);
+    this.db.prepare(`
+      INSERT OR IGNORE INTO shadow_study_cases (
+        case_id, study_id, request_id, proposal_id, tenant_id, principal,
+        capability, business_object, object_id, evidence_bundle_id,
+        proposed_effect_json, agent_result, decision_reason, risk_score,
+        amount_value, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', NULL, NULL, ?, ?)
+    `).run(
+      caseId,
+      studyId,
+      requestId,
+      changeSet.proposal_id,
+      changeSet.scope.tenant_id,
+      changeSet.principal.id,
+      changeSet.action,
+      changeSet.scope.business_object,
+      changeSet.scope.object_id,
+      changeSet.evidence.bundle_id,
+      JSON.stringify(effect),
+      effectAmountValue(effect) ?? null,
+      createdAt,
+    );
+  }
+
   recordShadowHumanAction(
     proposalId: string,
     input: { actor: string; patch: Record<string, unknown>; notes?: string },
@@ -3495,6 +4175,32 @@ export class ProposalStore {
     });
     const action = this.shadowHumanActions(proposalId).find((item) => item.action_id === actionId);
     if (!action) throw new ProposalStoreError("SHADOW_ACTION_CREATE_FAILED", `shadow action for ${proposalId} was not persisted`);
+    const legacyStudy = this.getShadowStudy("sst_legacy")
+      ?? this.createShadowStudy({
+        study_id: "sst_legacy",
+        name: "Legacy shadow comparison",
+        description: "Compatibility study for shadow record-human-action commands.",
+      });
+    const shadowCase = this.addShadowProposalToStudy(legacyStudy.study_id, proposalId);
+    this.recordShadowOutcome({
+      study_id: legacyStudy.study_id,
+      request_id: shadowCase.request_id,
+      proposal_id: proposalId,
+      tenant_id: proposal.tenant_id,
+      business_object: proposal.business_object,
+      object_id: proposal.object_id,
+      actor: input.actor,
+      disposition: "applied",
+      actual_effect: normalizeShadowEffect({
+        before: proposal.change_set.before,
+        after: { ...proposal.change_set.before, ...input.patch },
+        patch: input.patch,
+      }, "shadow_human_action.effect"),
+      occurred_at: now,
+      source: "legacy_cli",
+      reference: `shadow_human_action:${actionId}`,
+      reason: input.notes,
+    });
     return action;
   }
 
@@ -4596,6 +5302,78 @@ function rowToShadowHumanAction(row: unknown): StoredShadowHumanAction | undefin
   };
 }
 
+function rowToShadowStudy(row: unknown): StoredShadowStudy | undefined {
+  if (!isRecord(row)) return undefined;
+  const status = String(row.status);
+  if (status !== "active" && status !== "closed") return undefined;
+  const capabilities = JSON.parse(String(row.selected_capabilities_json)) as unknown;
+  if (!Array.isArray(capabilities) || capabilities.some((item) => typeof item !== "string")) return undefined;
+  return {
+    study_id: String(row.study_id),
+    name: String(row.name),
+    description: row.description == null ? undefined : String(row.description),
+    selected_capabilities: capabilities,
+    starts_at: row.starts_at == null ? undefined : String(row.starts_at),
+    ends_at: row.ends_at == null ? undefined : String(row.ends_at),
+    status,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+function rowToShadowCase(row: unknown): StoredShadowCase | undefined {
+  if (!isRecord(row)) return undefined;
+  const agentResult = String(row.agent_result);
+  if (!isShadowAgentResult(agentResult)) return undefined;
+  const proposedEffect = row.proposed_effect_json == null
+    ? undefined
+    : JSON.parse(String(row.proposed_effect_json)) as ShadowEffect;
+  return {
+    case_id: String(row.case_id),
+    study_id: String(row.study_id),
+    request_id: String(row.request_id),
+    proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+    tenant_id: String(row.tenant_id),
+    principal: row.principal == null ? undefined : String(row.principal),
+    capability: String(row.capability),
+    business_object: String(row.business_object),
+    object_id: String(row.object_id),
+    evidence_bundle_id: row.evidence_bundle_id == null ? undefined : String(row.evidence_bundle_id),
+    proposed_effect: proposedEffect,
+    agent_result: agentResult,
+    decision_reason: row.decision_reason == null ? undefined : String(row.decision_reason),
+    risk_score: row.risk_score == null ? undefined : Number(row.risk_score),
+    amount_value: row.amount_value == null ? undefined : Number(row.amount_value),
+    created_at: String(row.created_at),
+  };
+}
+
+function rowToShadowOutcome(row: unknown): StoredShadowOutcome | undefined {
+  if (!isRecord(row)) return undefined;
+  const disposition = String(row.disposition);
+  if (!isShadowOutcomeDisposition(disposition)) return undefined;
+  const actualEffect = row.actual_effect_json == null
+    ? undefined
+    : JSON.parse(String(row.actual_effect_json)) as ShadowEffect;
+  return {
+    outcome_id: String(row.outcome_id),
+    study_id: String(row.study_id),
+    request_id: String(row.request_id),
+    proposal_id: row.proposal_id == null ? undefined : String(row.proposal_id),
+    tenant_id: String(row.tenant_id),
+    business_object: String(row.business_object),
+    object_id: String(row.object_id),
+    actor: String(row.actor),
+    disposition,
+    actual_effect: actualEffect,
+    occurred_at: String(row.occurred_at),
+    source: String(row.source),
+    reference: row.reference == null ? undefined : String(row.reference),
+    reason: row.reason == null ? undefined : String(row.reason),
+    created_at: String(row.created_at),
+  };
+}
+
 const sharedLedgerJsonColumns = new Set([
   "change_set_json",
   "payload_json",
@@ -4607,6 +5385,9 @@ const sharedLedgerJsonColumns = new Set([
   "item_json",
   "value_json",
   "patch_json",
+  "selected_capabilities_json",
+  "proposed_effect_json",
+  "actual_effect_json",
 ]);
 
 const sharedLedgerKindToTable: Record<string, string> = {
@@ -4622,6 +5403,9 @@ const sharedLedgerKindToTable: Record<string, string> = {
   query_audit: "query_audit",
   replay_record: "replay_records",
   shadow_human_action: "shadow_human_actions",
+  shadow_study: "shadow_studies",
+  shadow_study_case: "shadow_study_cases",
+  shadow_outcome: "shadow_outcomes",
   worker_queue_item: "worker_queue",
   runner_state: "runner_state",
   policy_recommendation: "policy_recommendations",
@@ -4653,6 +5437,9 @@ const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> = {
   query_audit: restoreSpec("audit_id", ["audit_id", "proposal_id", "evidence_bundle_id", "tenant_id", "principal", "capability", "business_object", "object_id", "primary_key_value", "source_id", "query_fingerprint", "table_name", "row_count", "payload_json", "created_at"], ["audit_id", "source_id", "query_fingerprint", "table_name", "row_count", "payload_json", "created_at"]),
   replay_records: restoreSpec("replay_id", ["replay_id", "proposal_id", "payload_json", "created_at"], ["replay_id", "proposal_id", "payload_json", "created_at"]),
   shadow_human_actions: restoreSpec("action_id", ["action_id", "proposal_id", "actor", "patch_json", "notes", "created_at"], ["action_id", "proposal_id", "actor", "patch_json", "created_at"]),
+  shadow_studies: restoreSpec("study_id", ["study_id", "name", "description", "selected_capabilities_json", "starts_at", "ends_at", "status", "created_at", "updated_at"], ["study_id", "name", "selected_capabilities_json", "status", "created_at", "updated_at"]),
+  shadow_study_cases: restoreSpec("case_id", ["case_id", "study_id", "request_id", "proposal_id", "tenant_id", "principal", "capability", "business_object", "object_id", "evidence_bundle_id", "proposed_effect_json", "agent_result", "decision_reason", "risk_score", "amount_value", "created_at"], ["case_id", "study_id", "request_id", "tenant_id", "capability", "business_object", "object_id", "agent_result", "created_at"]),
+  shadow_outcomes: restoreSpec("outcome_id", ["outcome_id", "study_id", "request_id", "proposal_id", "tenant_id", "business_object", "object_id", "actor", "disposition", "actual_effect_json", "occurred_at", "source", "reference", "reason", "created_at"], ["outcome_id", "study_id", "request_id", "tenant_id", "business_object", "object_id", "actor", "disposition", "occurred_at", "source", "created_at"]),
   worker_queue: restoreSpec("proposal_id", ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "lease_owner", "lease_expires_at", "last_error_code", "created_at", "updated_at"], ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"]),
   runner_state: restoreSpec("key", ["key", "value_json", "updated_at"], ["key", "value_json", "updated_at"]),
   policy_recommendations: restoreSpec("recommendation_id", ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"], ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"]),
@@ -4701,7 +5488,10 @@ function sharedLedgerRestoreRank(entry: SharedLedgerEntry): number {
     "writeback_receipts",
     "replay_records",
     "proposal_events",
+    "shadow_studies",
+    "shadow_study_cases",
     "shadow_human_actions",
+    "shadow_outcomes",
     "worker_queue",
     "runner_state",
     "policy_recommendations",
@@ -4762,6 +5552,268 @@ function comparePatches(
     notes: humanAction.notes,
     compared_at: comparedAt,
   };
+}
+
+function compareShadowStudyCase(
+  shadowCase: StoredShadowCase,
+  outcome?: StoredShadowOutcome,
+): ShadowStudyComparison {
+  const base = {
+    study_id: shadowCase.study_id,
+    case_id: shadowCase.case_id,
+    request_id: shadowCase.request_id,
+    proposal_id: shadowCase.proposal_id,
+    tenant_id: shadowCase.tenant_id,
+    principal: shadowCase.principal,
+    capability: shadowCase.capability,
+    business_object: shadowCase.business_object,
+    object_id: shadowCase.object_id,
+    agent_result: shadowCase.agent_result,
+    proposed_effect: shadowCase.proposed_effect,
+    outcome,
+    matching_columns: [] as string[],
+    differing_columns: [] as string[],
+    missing_from_human: [] as string[],
+    extra_human_columns: [] as string[],
+    decision_reason: shadowCase.decision_reason,
+    risk_score: shadowCase.risk_score,
+    amount_value: shadowCase.amount_value,
+    compared_at: outcome?.created_at ?? shadowCase.created_at,
+  };
+  if (shadowCase.agent_result === "invalid_unsafe_scope_attempt") {
+    return { ...base, status: "invalid_or_unsafe_scope_attempt", comparable: false };
+  }
+  if (shadowCase.agent_result === "policy_denied") {
+    return { ...base, status: "agent_policy_denied", comparable: false };
+  }
+  if (shadowCase.agent_result === "unable_to_propose") {
+    return { ...base, status: "agent_unable_to_propose", comparable: false };
+  }
+  if (shadowCase.agent_result === "stale_conflict" || outcome?.disposition === "stale_conflict") {
+    return { ...base, status: "stale_conflict", comparable: false };
+  }
+  if (!outcome) {
+    return { ...base, status: "unmatched_no_authoritative_outcome", comparable: false };
+  }
+  if (outcome.disposition === "rejected_no_action") {
+    return { ...base, status: "human_rejected_no_action", comparable: false };
+  }
+  const agentPatch = shadowCase.proposed_effect?.patch ?? {};
+  const humanPatch = outcome.actual_effect?.patch ?? {};
+  const agentColumns = Object.keys(agentPatch).sort();
+  const humanColumns = Object.keys(humanPatch).sort();
+  const matchingColumns = agentColumns.filter((column) =>
+    column in humanPatch && shadowValuesEqual(agentPatch[column], humanPatch[column])
+  );
+  const differingColumns = agentColumns.filter((column) =>
+    column in humanPatch && !shadowValuesEqual(agentPatch[column], humanPatch[column])
+  );
+  const missingFromHuman = agentColumns.filter((column) => !(column in humanPatch));
+  const extraHumanColumns = humanColumns.filter((column) => !(column in agentPatch));
+  const exact =
+    matchingColumns.length === agentColumns.length &&
+    differingColumns.length === 0 &&
+    missingFromHuman.length === 0 &&
+    extraHumanColumns.length === 0;
+  const partial = !exact && matchingColumns.length > 0;
+  return {
+    ...base,
+    status: exact ? "exact_agreement" : partial ? "partial_agreement" : "disagreement",
+    comparable: true,
+    matching_columns: matchingColumns,
+    differing_columns: differingColumns,
+    missing_from_human: missingFromHuman,
+    extra_human_columns: extraHumanColumns,
+  };
+}
+
+function latestIsoTimestamp(values: string[]): string {
+  return [...values].sort((left, right) => Date.parse(right) - Date.parse(left))[0]!;
+}
+
+function normalizeShadowEffect(input: ShadowEffect, path: string): ShadowEffect {
+  if (!isRecord(input) || !isRecord(input.before) || !isRecord(input.after) || !isRecord(input.patch)) {
+    throw new ProposalStoreError("SHADOW_EFFECT_INVALID", `${path} must contain before, after, and patch objects`);
+  }
+  const before = structuredClone(input.before);
+  const after = structuredClone(input.after);
+  const patch = structuredClone(input.patch);
+  for (const [column, value] of Object.entries(patch)) {
+    if (!(column in after) || !shadowValuesEqual(after[column], value)) {
+      throw new ProposalStoreError("SHADOW_EFFECT_PATCH_MISMATCH", `${path}.patch.${column} must equal the normalized after value`);
+    }
+  }
+  assertNoSecretMaterial({ before, after, patch }, path);
+  return { before, after, patch };
+}
+
+function shadowEffectFromChangeSet(changeSet: ChangeSet): ShadowEffect {
+  return normalizeShadowEffect({
+    before: changeSet.before,
+    after: changeSet.after,
+    patch: changeSet.patch,
+  }, "shadow_proposal.effect");
+}
+
+function effectAmountValue(effect: ShadowEffect): number | undefined {
+  let total = 0;
+  let found = false;
+  for (const column of Object.keys(effect.patch)) {
+    const before = effect.before[column];
+    const after = effect.after[column];
+    if (typeof before === "number" && Number.isFinite(before) && typeof after === "number" && Number.isFinite(after)) {
+      total += Math.abs(after - before);
+      found = true;
+    }
+  }
+  return found ? total : undefined;
+}
+
+function shadowStudyIncludes(study: StoredShadowStudy, capability: string, createdAt: string): boolean {
+  const timestamp = Date.parse(createdAt);
+  if (!Number.isFinite(timestamp)) return false;
+  if (study.starts_at && timestamp < Date.parse(study.starts_at)) return false;
+  if (study.ends_at && timestamp > Date.parse(study.ends_at)) return false;
+  return study.selected_capabilities.length === 0 || study.selected_capabilities.includes(capability);
+}
+
+function requiredBoundedText(value: unknown, label: string, maximum: number): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ProposalStoreError("SHADOW_FIELD_REQUIRED", `${label} is required`);
+  }
+  const normalized = value.trim();
+  if (normalized.length > maximum || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(normalized)) {
+    throw new ProposalStoreError("SHADOW_FIELD_INVALID", `${label} exceeds its safe bound or contains control characters`);
+  }
+  return normalized;
+}
+
+function optionalBoundedText(value: unknown, label: string, maximum: number): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return requiredBoundedText(value, label, maximum);
+}
+
+function optionalIsoTimestamp(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const normalized = requiredBoundedText(value, label, 64);
+  const timestamp = Date.parse(normalized);
+  if (!Number.isFinite(timestamp)) {
+    throw new ProposalStoreError("SHADOW_TIMESTAMP_INVALID", `${label} must be an ISO-8601 timestamp`);
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function optionalFiniteNumber(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < minimum || value > maximum) {
+    throw new ProposalStoreError("SHADOW_NUMBER_INVALID", `${label} must be between ${minimum} and ${maximum}`);
+  }
+  return value;
+}
+
+function safeShadowId(value: unknown, kind: string): string {
+  const id = requiredBoundedText(value, `shadow ${kind} id`, 128);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(id)) {
+    throw new ProposalStoreError("SHADOW_ID_INVALID", `shadow ${kind} id contains unsupported characters`);
+  }
+  return id;
+}
+
+function assertShadowAgentResult(value: string): asserts value is ShadowAgentResult {
+  if (!isShadowAgentResult(value)) {
+    throw new ProposalStoreError("SHADOW_AGENT_RESULT_INVALID", `unsupported shadow agent result: ${value}`);
+  }
+}
+
+function isShadowAgentResult(value: string): value is ShadowAgentResult {
+  return [
+    "proposed",
+    "policy_denied",
+    "unable_to_propose",
+    "stale_conflict",
+    "invalid_unsafe_scope_attempt",
+  ].includes(value);
+}
+
+function assertShadowOutcomeDisposition(value: string): asserts value is ShadowOutcomeDisposition {
+  if (!isShadowOutcomeDisposition(value)) {
+    throw new ProposalStoreError("SHADOW_OUTCOME_DISPOSITION_INVALID", `unsupported shadow outcome disposition: ${value}`);
+  }
+}
+
+function isShadowOutcomeDisposition(value: string): value is ShadowOutcomeDisposition {
+  return ["applied", "rejected_no_action", "stale_conflict"].includes(value);
+}
+
+function shadowValuesEqual(left: unknown, right: unknown): boolean {
+  return canonicalJsonDigest(left) === canonicalJsonDigest(right);
+}
+
+function countShadowStatus(comparisons: ShadowStudyComparison[], status: ShadowComparisonStatus): number {
+  return comparisons.filter((item) => item.status === status).length;
+}
+
+function emptyShadowStatusCounts(): Record<ShadowComparisonStatus, number> {
+  return {
+    exact_agreement: 0,
+    partial_agreement: 0,
+    disagreement: 0,
+    human_rejected_no_action: 0,
+    agent_policy_denied: 0,
+    agent_unable_to_propose: 0,
+    stale_conflict: 0,
+    unmatched_no_authoritative_outcome: 0,
+    invalid_or_unsafe_scope_attempt: 0,
+  };
+}
+
+function distribution(values: number[]): ShadowDistribution | null {
+  if (values.length === 0) return null;
+  const ordered = [...values].sort((left, right) => left - right);
+  const total = ordered.reduce((sum, value) => sum + value, 0);
+  const percentile = (fraction: number) => ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * fraction) - 1)]!;
+  return {
+    count: ordered.length,
+    minimum: ordered[0]!,
+    maximum: ordered.at(-1)!,
+    mean: total / ordered.length,
+    median: percentile(0.5),
+    p95: percentile(0.95),
+    total,
+  };
+}
+
+function suggestedShadowPolicies(
+  comparisons: ShadowStudyComparison[],
+): ShadowStudyReport["suggested_policies"] {
+  const byCapability = new Map<string, ShadowStudyComparison[]>();
+  for (const comparison of comparisons) {
+    const items = byCapability.get(comparison.capability) ?? [];
+    items.push(comparison);
+    byCapability.set(comparison.capability, items);
+  }
+  const suggestions: ShadowStudyReport["suggested_policies"] = [];
+  for (const [capability, items] of [...byCapability.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    const exact = items.filter((item) => item.status === "exact_agreement");
+    const values = exact.map((item) => item.amount_value).filter((value): value is number => value !== undefined);
+    if (exact.length < 5 || values.length !== exact.length) continue;
+    suggestions.push({
+      capability,
+      suggestion: `Review a bounded policy no higher than the observed exact-agreement maximum (${Math.max(...values)}).`,
+      sample_size: exact.length,
+      active: false,
+    });
+  }
+  return suggestions;
+}
+
+function safeSqliteFailure(_error: unknown, fallback: string): string {
+  return fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

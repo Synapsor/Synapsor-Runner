@@ -132,6 +132,41 @@ function shadowChangeSet() {
   };
 }
 
+function shadowCaseChangeSet(input: {
+  proposalId: string;
+  objectId: string;
+  amount?: number;
+  tenant?: string;
+}) {
+  const amount = input.amount ?? 0;
+  return {
+    ...structuredClone(changeSet),
+    proposal_id: input.proposalId,
+    mode: "shadow",
+    scope: {
+      ...structuredClone(changeSet.scope),
+      tenant_id: input.tenant ?? "acme",
+      object_id: input.objectId,
+    },
+    source: {
+      ...structuredClone(changeSet.source),
+      primary_key: { column: "id", value: input.objectId },
+    },
+    before: { late_fee_cents: 5500, waiver_reason: null, updated_at: "2026-06-20T14:31:08Z" },
+    patch: { late_fee_cents: amount, waiver_reason: "shadow study" },
+    after: { late_fee_cents: amount, waiver_reason: "shadow study", updated_at: "2026-06-20T14:31:08Z" },
+    guards: {
+      ...structuredClone(changeSet.guards),
+      tenant: { column: "tenant_id", value: input.tenant ?? "acme" },
+    },
+    evidence: {
+      ...structuredClone(changeSet.evidence),
+      bundle_id: `ev_${input.proposalId}`,
+    },
+    integrity: { proposal_hash: `sha256:${input.proposalId}` },
+  };
+}
+
 function operationChangeSet(operation: "single_row_update" | "single_row_insert" | "single_row_delete", suffix: string) {
   const insert = operation === "single_row_insert";
   const deletion = operation === "single_row_delete";
@@ -1492,6 +1527,216 @@ describe("proposal store", () => {
       expect(store.getProposal("wrp_shadow")?.source_database_mutated).toBe(false);
     } finally {
       store.close();
+    }
+  });
+
+  it("runs a persistent shadow study with authoritative outcomes and deterministic classifications", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-shadow-study-"));
+    const storePath = path.join(tempDir, "local.db");
+    let store = new ProposalStore(storePath);
+    try {
+      const study = store.createShadowStudy({
+        study_id: "sst_support",
+        name: "Support waiver comparison",
+        description: "Compare shadow proposals with authorized support outcomes.",
+        selected_capabilities: ["billing.waive_late_fee"],
+      });
+      expect(study.status).toBe("active");
+
+      const exactProposal = store.createProposal(shadowCaseChangeSet({
+        proposalId: "wrp_shadow_exact",
+        objectId: "INV-EXACT",
+      }));
+      const exactCase = store.shadowCases(study.study_id).find((item) => item.proposal_id === exactProposal.proposal_id);
+      expect(exactCase?.evidence_bundle_id).toBe("ev_wrp_shadow_exact");
+      store.recordShadowOutcome({
+        study_id: study.study_id,
+        request_id: exactCase!.request_id,
+        proposal_id: exactProposal.proposal_id,
+        tenant_id: "acme",
+        business_object: "invoice",
+        object_id: "INV-EXACT",
+        actor: "support_lead_1",
+        disposition: "applied",
+        actual_effect: exactCase!.proposed_effect,
+        occurred_at: "2026-07-19T12:00:00.000Z",
+        source: "support_system_audit",
+        reference: "ticket:SUP-EXACT",
+        reason: "customer qualified",
+      });
+
+      const partialProposal = store.createProposal(shadowCaseChangeSet({
+        proposalId: "wrp_shadow_partial",
+        objectId: "INV-PARTIAL",
+      }));
+      const partialCase = store.shadowCases(study.study_id).find((item) => item.proposal_id === partialProposal.proposal_id)!;
+      store.recordShadowOutcome({
+        study_id: study.study_id,
+        request_id: partialCase.request_id,
+        tenant_id: "acme",
+        business_object: "invoice",
+        object_id: "INV-PARTIAL",
+        actor: "support_lead_2",
+        disposition: "applied",
+        actual_effect: {
+          before: partialCase.proposed_effect!.before,
+          after: { ...partialCase.proposed_effect!.after, waiver_reason: "human reason" },
+          patch: { late_fee_cents: 0, waiver_reason: "human reason" },
+        },
+        source: "support_system_audit",
+      });
+
+      const rejectedProposal = store.createProposal(shadowCaseChangeSet({
+        proposalId: "wrp_shadow_rejected",
+        objectId: "INV-REJECTED",
+      }));
+      const rejectedCase = store.shadowCases(study.study_id).find((item) => item.proposal_id === rejectedProposal.proposal_id)!;
+      store.recordShadowOutcome({
+        study_id: study.study_id,
+        request_id: rejectedCase.request_id,
+        tenant_id: "acme",
+        business_object: "invoice",
+        object_id: "INV-REJECTED",
+        actor: "support_lead_3",
+        disposition: "rejected_no_action",
+        source: "support_system_audit",
+        reason: "prior courtesy waiver",
+      });
+
+      for (const [request, result, reason] of [
+        ["req-policy", "policy_denied", "amount above reviewed bound"],
+        ["req-unable", "unable_to_propose", "required evidence unavailable"],
+        ["req-stale", "stale_conflict", "source version moved"],
+        ["req-forgery", "invalid_unsafe_scope_attempt", "tenant override rejected"],
+        ["req-unmatched", "proposed", "awaiting authorized outcome"],
+      ] as const) {
+        store.recordShadowCase({
+          study_id: study.study_id,
+          request_id: request,
+          tenant_id: "acme",
+          principal: "support-agent-shadow",
+          capability: "billing.waive_late_fee",
+          business_object: "invoice",
+          object_id: `INV-${request}`,
+          agent_result: result,
+          decision_reason: reason,
+          risk_score: result === "invalid_unsafe_scope_attempt" ? 100 : 20,
+          ...(result === "proposed" ? {
+            proposed_effect: {
+              before: { late_fee_cents: 5500 },
+              after: { late_fee_cents: 0 },
+              patch: { late_fee_cents: 0 },
+            },
+          } : {}),
+        });
+      }
+
+      const report = store.shadowStudyReport(study.study_id);
+      expect(report).toMatchObject({
+        total_tasks_observed: 8,
+        tasks_with_authoritative_outcomes: 3,
+        comparable_tasks: 2,
+        exact_agreements: 1,
+        exact_agreement_rate: 0.5,
+        partial_agreements: 1,
+        human_rejections_no_action: 1,
+        policy_denials: 1,
+        stale_conflicts: 1,
+        unmatched_cases: 1,
+        invalid_or_unsafe_scope_attempts: 1,
+      });
+      expect(report.highest_risk_disagreements[0]?.status).toBe("invalid_or_unsafe_scope_attempt");
+      expect(report.suggested_policies).toEqual([]);
+      expect(JSON.stringify(report)).not.toContain("password");
+      expect(store.closeShadowStudy(study.study_id).status).toBe("closed");
+    } finally {
+      store.close();
+    }
+
+    store = new ProposalStore(storePath);
+    try {
+      const report = store.shadowStudyReport("sst_support");
+      expect(report.total_tasks_observed).toBe(8);
+      expect(report.study.status).toBe("closed");
+      expect(() => store.approveProposal("wrp_shadow_exact", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:wrp_shadow_exact",
+        proposal_version: 1,
+      })).toThrow(/shadow proposal/);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("fails authoritative shadow outcomes closed on tenant, object, and proposal mismatches", () => {
+    const store = new ProposalStore();
+    try {
+      store.createShadowStudy({ study_id: "sst_scope", name: "Scope binding" });
+      store.createProposal(shadowCaseChangeSet({ proposalId: "wrp_shadow_scope", objectId: "INV-SCOPE" }));
+      const shadowCase = store.shadowCases("sst_scope")[0]!;
+      expect(() => store.recordShadowOutcome({
+        study_id: "sst_scope",
+        request_id: shadowCase.request_id,
+        tenant_id: "globex",
+        business_object: "invoice",
+        object_id: "INV-SCOPE",
+        actor: "operator",
+        disposition: "rejected_no_action",
+        source: "test",
+      })).toThrow(/does not match a case/);
+      expect(() => store.recordShadowOutcome({
+        study_id: "sst_scope",
+        request_id: shadowCase.request_id,
+        proposal_id: "wrp_other",
+        tenant_id: "acme",
+        business_object: "invoice",
+        object_id: "INV-SCOPE",
+        actor: "operator",
+        disposition: "rejected_no_action",
+        source: "test",
+      })).toThrow(/proposal does not match/);
+      expect(() => store.recordShadowCase({
+        study_id: "sst_scope",
+        request_id: "req-secret",
+        tenant_id: "acme",
+        capability: "billing.waive_late_fee",
+        business_object: "invoice",
+        object_id: "INV-SECRET",
+        agent_result: "unable_to_propose",
+        decision_reason: "Bearer do-not-store-this-token",
+      })).toThrow(/secret/i);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("round-trips shadow studies, cases, and outcomes through the shared ledger", () => {
+    const source = new ProposalStore();
+    const restored = new ProposalStore();
+    try {
+      source.createShadowStudy({ study_id: "sst_shared", name: "Shared study" });
+      source.createProposal(shadowCaseChangeSet({ proposalId: "wrp_shadow_shared", objectId: "INV-SHARED" }));
+      const shadowCase = source.shadowCases("sst_shared")[0]!;
+      source.recordShadowOutcome({
+        study_id: "sst_shared",
+        request_id: shadowCase.request_id,
+        tenant_id: "acme",
+        business_object: "invoice",
+        object_id: "INV-SHARED",
+        actor: "operator",
+        disposition: "applied",
+        actual_effect: shadowCase.proposed_effect,
+        source: "shared-ledger-test",
+      });
+      restored.importSharedLedgerEntries(source.sharedLedgerEntries());
+      expect(restored.shadowStudyReport("sst_shared")).toMatchObject({
+        total_tasks_observed: 1,
+        tasks_with_authoritative_outcomes: 1,
+        exact_agreements: 1,
+      });
+    } finally {
+      source.close();
+      restored.close();
     }
   });
 

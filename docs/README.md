@@ -99,6 +99,8 @@ no-database demo, wire your database, then read deeper concepts.
 
 - [Local Mode](local-mode.md): local store, proposals, approval, replay, and
   writeback flow.
+- [Shadow Studies](shadow-studies.md): compare what an agent would propose
+  with explicit authorized outcomes before granting write authority.
 - [Writeback Executors](writeback-executors.md): app-owned writeback handlers
   for approved proposals.
 - [App-Owned Executors](app-owned-executors.md): short entry point for rich
