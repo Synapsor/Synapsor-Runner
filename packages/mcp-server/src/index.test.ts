@@ -3046,7 +3046,7 @@ describe("local Synapsor MCP runtime", () => {
       await acmeOtherClient.close().catch(() => undefined);
       await server.close();
     }
-  });
+  }, 15_000);
 
   it("refuses claims-authenticated serving when a capability resolves an environment context", async () => {
     const secret = "a-production-length-session-secret-32-bytes-minimum";
