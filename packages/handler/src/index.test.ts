@@ -1,8 +1,10 @@
 import type { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { Pool } from "pg";
+import { describe, expect, it, vi } from "vitest";
 import {
   handleWritebackHttpRequest,
+  PostgresWritebackHandlerDatabase,
   signHandlerRequest,
   type HandlerReceipt,
   type HandlerTx,
@@ -219,6 +221,36 @@ describe("app-owned writeback handler helper", () => {
     expect(result.statusCode).toBe(500);
     expect(result.receipt).toMatchObject({ status: "failed", safe_error_code: "HANDLER_EXCEPTION" });
     expect(JSON.stringify(result.receipt)).not.toContain("ECONNREFUSED");
+  });
+
+  it("uses a pre-provisioned receipt table without requiring schema CREATE", async () => {
+    const statements: string[] = [];
+    const client = {
+      async query(sql: string) {
+        statements.push(sql);
+        if (sql === "SELECT to_regclass($1) AS receipt_table") {
+          return { rows: [{ receipt_table: "synapsor_handler_receipts" }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+      release() {},
+    };
+    const connect = vi.spyOn(Pool.prototype, "connect").mockResolvedValue(client as never);
+
+    try {
+      const database = new PostgresWritebackHandlerDatabase(
+        "postgresql://unused.invalid/handler-test",
+        { schema: "public", table: "synapsor_handler_receipts" },
+      );
+      await expect(database.withTransaction(async () => "committed")).resolves.toBe("committed");
+    } finally {
+      connect.mockRestore();
+    }
+
+    expect(statements).toContain("SELECT to_regclass($1) AS receipt_table");
+    expect(statements.some((statement) => statement.includes("CREATE TABLE"))).toBe(false);
+    expect(statements.at(0)).toBe("BEGIN");
+    expect(statements.at(-1)).toBe("COMMIT");
   });
 });
 

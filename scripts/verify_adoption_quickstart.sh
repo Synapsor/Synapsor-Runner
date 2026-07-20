@@ -26,20 +26,26 @@ runner=(node "$ROOT/apps/runner/dist/cli.js")
 spec=(node "$ROOT/packages/spec/dist/cli.js")
 dsl=(node "$ROOT/packages/dsl/dist/cli.js")
 
-echo "[1/8] Audit a dangerous database MCP shape"
+echo "[1/8] Prove the no-database guarded-action boundary"
+(
+  cd "$TMP_ROOT"
+  "${runner[@]}" try --prove --yes --no-open > guarded-action-proof.txt
+)
+grep -q "Proposed effect:" "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "late_fee_cents: 5500 -> 0" "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "Source changed:" "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "Guarded commit complete." "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "restart-safe retry: yes" "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "changed-intent operation reuse rejected: yes" "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "stale apply refused: yes" "$TMP_ROOT/guarded-action-proof.txt"
+grep -q "replay changed source: no" "$TMP_ROOT/guarded-action-proof.txt"
+
+echo "[2/8] Audit a dangerous database MCP shape"
 "${runner[@]}" audit --example dangerous-db-mcp > "$TMP_ROOT/audit.txt"
 grep -q "Target: example:dangerous-db-mcp" "$TMP_ROOT/audit.txt"
 grep -q "execute_sql" "$TMP_ROOT/audit.txt"
 
-echo "[2/8] Run the no-database quick demo"
-(
-  cd "$TMP_ROOT"
-  "${runner[@]}" demo --quick --no-interactive > quick-demo.txt
-)
-grep -q "Synapsor quick demo complete" "$TMP_ROOT/quick-demo.txt"
-grep -q "source DB changed: no" "$TMP_ROOT/quick-demo.txt"
-
-echo "[3/8] Compile the flagship DSL in strict mode"
+echo "[3/8] Compile the graduated-trust DSL in strict mode"
 "${dsl[@]}" compile "$EXAMPLE/contract.synapsor.sql" \
   --out "$TMP_ROOT/synapsor.contract.json" \
   --strict

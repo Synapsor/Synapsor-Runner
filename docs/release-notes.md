@@ -10,6 +10,44 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.5.0 (prepared, not published)
+
+### Complete guarded-action developer proof
+
+- `synapsor-runner try --prove` now demonstrates the complete embedded
+  business-action boundary without an account, database, Docker daemon, MCP
+  client, or model key: scoped evidence, exact `late_fee_cents: 5500 -> 0`
+  proposal, no pre-approval mutation, guarded commit, duplicate-free retry,
+  changed-intent collision refusal, stale conflict, receipt, and replay.
+- Deployments can explicitly select application-level shared-credential scope,
+  PostgreSQL RLS defense in depth, or a tenant-bound credential resolver.
+  Diagnostics report the active assurance and remaining trust boundary;
+  hardened modes fail closed when prerequisites are missing.
+- Strict Shadow Mode now has durable studies, bounded case imports,
+  authoritative human outcomes, deterministic comparison/readiness reports,
+  and effect-level regression fixtures. No study or evaluation path grants
+  authority or writes source data.
+- Proposal tools advertise a standard display-only MCP App where the host
+  supports it. The app and standalone local UI share one reviewer-facing view;
+  approval/apply authority and privileged tokens remain outside MCP.
+- `audit` can generate disabled canonical replacement candidates, while
+  Prisma, Drizzle, and OpenAPI generators create bounded review-only candidate
+  contracts without executing adopter source.
+- The `support-billing-agent` reference now provides a live disposable
+  PostgreSQL/RLS proof for tenant/principal scope, kept-out fields, proposal,
+  approval/apply, receipt/retry, stale conflict, replay, strict shadow, and
+  effect regression.
+- The bundled app-owned handler helper now uses a pre-provisioned receipt table
+  without requiring schema `CREATE`; DDL is attempted only when the table is
+  absent. The source-workspace and packed billing-handler examples both verify
+  transactional apply and idempotent retry.
+- The public README leads with `try --prove`, keeps MCP database-risk audit
+  immediately second, and distinguishes application scope, PostgreSQL RLS, and
+  tenant-bound isolation without overstating any of them.
+
+Prepared package version: `@synapsor/runner@1.5.0`. Spec, DSL, and Cloud CLI
+packages are unchanged. Nothing has been published by this repository change.
+
 ## 1.4.123 (2026-07-17)
 
 ### Advisory capability-surface fitness lint

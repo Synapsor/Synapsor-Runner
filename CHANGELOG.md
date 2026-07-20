@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.5.0 (prepared, not published)
+
+### Complete guarded-action developer proof
+
+- Adds `synapsor-runner try` as a no-account, no-database, no-Docker proof of
+  scoped evidence, an exact business-data proposal, external approval, guarded
+  commit, restart-safe retry, stale-state refusal, receipt, and non-mutating
+  replay. `try --prove` also verifies changed-intent collision rejection.
+- Adds explicit `application_scope`, `postgres_rls`, and `tenant_bound`
+  assurance modes. PostgreSQL hardened mode binds tenant/principal
+  transaction-locally, checks RLS and role prerequisites, and fails closed
+  rather than silently downgrading.
+- Productizes strict local shadow studies, authoritative human-outcome
+  comparison, deterministic readiness reports, and effect-level JSON/JUnit
+  regression fixtures without activating policy or mutating source data.
+- Adds a standard display-only MCP App proposal resource with exact effect,
+  evidence, scope, policy, and review-state presentation. Approval and apply
+  remain absent from MCP, with terminal and standalone local-UI fallbacks.
+- Extends static MCP risk audit into disabled review candidates, and adds
+  review-only Prisma, Drizzle, and OpenAPI generators that emit canonical
+  contracts without importing or executing adopter code.
+- Promotes `examples/support-billing-agent` as a disposable PostgreSQL/RLS
+  proof covering tenant and principal scope, kept-out fields, exact $55
+  proposal, approval/apply, idempotent retry, stale conflict, replay, strict
+  shadow, human comparison, and effect regression.
+- Keeps app-owned handler writers least-privileged when their receipt table is
+  pre-provisioned: the helper checks for the table before attempting DDL, and
+  the live source and packed examples verify transactional apply and retry.
+- Rewrites the README around the complete `try --prove` outcome, keeps MCP
+  audit immediately second, names each isolation boundary precisely, and
+  reconciles release documentation with the live npm registry.
+- Stages only `@synapsor/runner@1.5.0`; `@synapsor/spec@1.4.2`,
+  `@synapsor/dsl@1.4.3`, and `@synapsor/cli@0.1.0-beta.1` remain unchanged.
+  Nothing is published by this change.
+
 ## 1.4.123 (2026-07-17)
 
 ### Advisory capability-surface fitness lint

@@ -32,20 +32,20 @@ done
 "$ROOT/bin/synapsor-runner" handler template --list >/dev/null
 
 cd "$TEMP_DIR"
-"$ROOT/bin/synapsor-runner" demo --quick --no-interactive >/dev/null
+"$ROOT/bin/synapsor-runner" try --prove --yes --no-open >/dev/null
 "$ROOT/bin/synapsor-runner" demo inspect >/dev/null
 "$ROOT/bin/synapsor-runner" events webhook \
   --url http://127.0.0.1:8788/synapsor/events \
   --kind proposal_created \
-  --store ./.synapsor/quick-demo.db \
+  --store ./.synapsor/try/ledger.db \
   --dry-run > events-webhook.txt
 grep -F "synapsor.local-event-webhook.v1" events-webhook.txt >/dev/null
 "$ROOT/bin/synapsor-runner" mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db >/dev/null
 "$ROOT/bin/synapsor-runner" handler template node-fastify --output ./synapsor-writeback-handler.mjs >/dev/null
 grep -F "app-owned transaction" ./synapsor-writeback-handler.mjs >/dev/null
-"$ROOT/bin/synapsor-runner" activity search --object invoice:INV-3001 --store ./.synapsor/quick-demo.db >/dev/null
-"$ROOT/bin/synapsor-runner" store stats --store ./.synapsor/quick-demo.db >/dev/null
-"$ROOT/bin/synapsor-runner" store prune --store ./.synapsor/quick-demo.db --older-than 0d --dry-run >/dev/null
-"$ROOT/bin/synapsor-runner" store reset --store ./.synapsor/quick-demo.db --yes >/dev/null
+"$ROOT/bin/synapsor-runner" activity search --object invoice:INV-3001 --store ./.synapsor/try/ledger.db >/dev/null
+"$ROOT/bin/synapsor-runner" store stats --store ./.synapsor/try/ledger.db >/dev/null
+"$ROOT/bin/synapsor-runner" store prune --store ./.synapsor/try/ledger.db --older-than 0d --dry-run >/dev/null
+"$ROOT/bin/synapsor-runner" store reset --store ./.synapsor/try/ledger.db --yes >/dev/null
 
 echo "public checkout commands verified"
