@@ -37,6 +37,15 @@ Human-readable output:
 npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json
 ```
 
+The default terminal report groups repeated findings into the three most
+important root causes. It shows affected tools, a short blast-radius statement,
+and one next action instead of repeating the same explanation for every tool.
+Use the complete view when triaging every finding:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json --verbose
+```
+
 Remote `tools/list` endpoint with a bearer token kept in the environment:
 
 ```bash
@@ -62,6 +71,15 @@ JSON output:
 npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json --format json
 ```
 
+The JSON contract remains `synapsor.mcp-audit.v1`; its published schema is
+[`schemas/mcp-audit-report.schema.json`](../schemas/mcp-audit-report.schema.json).
+
+SARIF 2.1.0 output for code-scanning ingestion:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json --format sarif > mcp-audit.sarif
+```
+
 Markdown output for issues, PRs, or security review notes:
 
 ```bash
@@ -74,6 +92,42 @@ During local development, the repo-local wrapper can run the same command:
 ./bin/synapsor-runner audit ./tools-list.json
 ./bin/synapsor-runner audit ./tools-list.json --format json
 ```
+
+## Generate review candidates
+
+Audit can create a separate review directory without editing or activating the
+source configuration:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner audit generate \
+  ./tools-list.json \
+  --output ./synapsor-audit-candidates
+```
+
+The generator uses the same parser and findings as `audit`. It writes:
+
+- a canonical `@synapsor/spec` contract;
+- a strict-shadow Runner scaffold with no configured source;
+- deny, redaction, and operator-boundary test candidates;
+- before/after model tool-surface reports;
+- a `REVIEW.md` checklist.
+
+Generated candidates do not carry authority. Every proposal has
+`writeback.mode: none`, the Runner scaffold is `shadow`, and the source map is
+empty. Subject identifiers and visible/write fields are conspicuous
+`review_required_*` placeholders. Input fields that look like SQL, dynamic
+identifiers, tenant/principal scope, credentials, approval identity, or row
+version are omitted rather than copied into model arguments.
+
+The output excludes raw descriptions, defaults, examples, enum values, bearer
+tokens, and credentials. Unknown business meaning becomes a TODO. A developer
+must inspect the real schema, choose trusted tenant/principal bindings, run the
+generated tests and a Shadow study, then deliberately copy reviewed definitions
+into an active contract.
+
+Generation refuses an existing directory. `--force` only replaces a directory
+that carries Runner's `synapsor.audit-candidates.v1` ownership marker; it will
+not overwrite an arbitrary hand-edited directory.
 
 ## Supported inputs
 

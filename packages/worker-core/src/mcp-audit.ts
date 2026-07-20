@@ -27,6 +27,57 @@ export type McpAuditReport = {
   findings: McpAuditFinding[];
 };
 
+export type McpAuditRootCause =
+  | "UNBOUNDED_DATABASE_AUTHORITY"
+  | "MODEL_CONTROLLED_TRUST"
+  | "MODEL_CALLABLE_COMMIT"
+  | "WRITE_SAFETY_GAPS"
+  | "UNSTRUCTURED_TOOL_CONTRACT"
+  | "REVIEWABILITY_GAPS";
+
+export type McpAuditFindingGroup = {
+  root_cause: McpAuditRootCause;
+  severity: McpAuditSeverity;
+  title: string;
+  finding_codes: string[];
+  affected_tools: string[];
+  finding_count: number;
+  blast_radius: string;
+  recommended_action: string;
+};
+
+export type McpAuditToolField = {
+  name: string;
+  type: "string" | "number" | "boolean" | "array" | "object" | "unknown";
+  required: boolean;
+  max_length?: number;
+  minimum?: number;
+  maximum?: number;
+};
+
+/**
+ * Redacted structural view produced by the same parser used by the audit.
+ * Values, examples, enum members, defaults, descriptions, and raw manifests
+ * are deliberately excluded so candidate generators cannot copy secrets.
+ */
+export type McpAuditToolShape = {
+  name: string;
+  path: string;
+  input_fields: McpAuditToolField[];
+  has_structured_output: boolean;
+  annotations: {
+    read_only?: boolean;
+    destructive?: boolean;
+  };
+  signals: {
+    generic_sql: boolean;
+    write_like: boolean;
+    read_like: boolean;
+    proposal_boundary: boolean;
+    model_callable_commit: boolean;
+  };
+};
+
 type JsonRecord = Record<string, unknown>;
 
 type ToolCandidate = {
@@ -87,7 +138,59 @@ const CONFLICT_FIELDS = [
   "previousversion",
 ];
 
-export function auditMcpManifest(input: unknown, options: { target?: string } = {}): McpAuditReport {
+const ROOT_CAUSE_DEFINITIONS: Record<McpAuditRootCause, {
+  title: string;
+  blastRadius: string;
+  recommendedAction: string;
+}> = {
+  UNBOUNDED_DATABASE_AUTHORITY: {
+    title: "The model can shape database authority",
+    blastRadius:
+      "Prompt injection or a mistaken call can choose SQL, identifiers, or a direct mutation outside a reviewed business action.",
+    recommendedAction:
+      "Replace raw database tools with one reviewed semantic inspect/propose capability per business action.",
+  },
+  MODEL_CONTROLLED_TRUST: {
+    title: "Trust scope comes from model input",
+    blastRadius:
+      "A model can request another tenant, principal, source, column set, or row version instead of being constrained by verified server context.",
+    recommendedAction:
+      "Bind tenant, principal, source, and concurrency authority outside model arguments.",
+  },
+  MODEL_CALLABLE_COMMIT: {
+    title: "Commit or approval authority is model-callable",
+    blastRadius:
+      "A compromised model can cross the review boundary itself instead of stopping at an immutable proposal.",
+    recommendedAction:
+      "Remove approve/apply/commit tools from MCP and perform reviewed writeback through an operator or trusted worker.",
+  },
+  WRITE_SAFETY_GAPS: {
+    title: "Write retries and stale state are not bounded",
+    blastRadius:
+      "Retries may duplicate effects and stale reads may silently overwrite newer business state.",
+    recommendedAction:
+      "Add proposal identity, idempotency receipts, exact conflict guards, and an affected-row bound before commit.",
+  },
+  UNSTRUCTURED_TOOL_CONTRACT: {
+    title: "Tool outcomes are not machine-distinguishable",
+    blastRadius:
+      "Clients may confuse reads, proposals, conflicts, failures, and applied receipts when they must parse prose.",
+    recommendedAction:
+      "Publish typed input/output schemas with explicit proposal, conflict, receipt, and replay states.",
+  },
+  REVIEWABILITY_GAPS: {
+    title: "The reviewed intent is underspecified",
+    blastRadius:
+      "Operators and CI cannot reliably tell what the tool does, how destructive it is, or which safe fixture proves the intended behavior.",
+    recommendedAction:
+      "Add a business description, risk annotations, and a non-production fixture for each tool.",
+  },
+};
+
+export function auditMcpManifest(
+  input: unknown,
+  options: { target?: string; generatedAt?: string } = {},
+): McpAuditReport {
   const tools = collectTools(input);
   const findings: McpAuditFinding[] = [];
 
@@ -109,15 +212,16 @@ export function auditMcpManifest(input: unknown, options: { target?: string } = 
   const summary = summarizeFindings(findings, tools.length);
   return {
     schema_version: "synapsor.mcp-audit.v1",
-    target: options.target ?? "inline",
+    target: redactMcpAuditTarget(options.target ?? "inline"),
     disclaimer: MCP_AUDIT_DISCLAIMER,
-    generated_at: new Date().toISOString(),
+    generated_at: options.generatedAt ?? new Date().toISOString(),
     summary,
     findings,
   };
 }
 
 export function formatMcpAuditReport(report: McpAuditReport): string {
+  const groups = groupMcpAuditFindings(report).slice(0, 3);
   const lines = [
     "Synapsor MCP database risk review",
     `Target: ${report.target}`,
@@ -125,7 +229,7 @@ export function formatMcpAuditReport(report: McpAuditReport): string {
     "",
     `Tools inspected: ${report.summary.tools_inspected}`,
     `Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
-    `Overall risk: ${overallRisk(report).toLowerCase()}`,
+    `Overall risk: ${overallMcpAuditRisk(report).toLowerCase()}`,
   ];
 
   if (report.findings.length === 0) {
@@ -134,6 +238,36 @@ export function formatMcpAuditReport(report: McpAuditReport): string {
     return `${lines.join("\n")}\n`;
   }
 
+  lines.push("", "Top distinct risks:");
+  for (const [index, group] of groups.entries()) {
+    lines.push(`${index + 1}. ${group.severity} ${group.title}`);
+    lines.push(`   Affected tools: ${group.affected_tools.join(", ") || "manifest-wide"}`);
+    lines.push(`   Blast radius: ${group.blast_radius}`);
+  }
+  const remainingGroups = groupMcpAuditFindings(report).length - groups.length;
+  if (remainingGroups > 0) {
+    lines.push(`   ${remainingGroups} additional root cause${remainingGroups === 1 ? "" : "s"} available with --verbose.`);
+  }
+  lines.push("", `Next action: ${groups[0]?.recommended_action ?? "Review the complete findings with --verbose."}`);
+  lines.push("Run again with --verbose for every finding, or use audit generate to create disabled review candidates.");
+  return `${lines.join("\n")}\n`;
+}
+
+export function formatMcpAuditVerboseReport(report: McpAuditReport): string {
+  const lines = [
+    "Synapsor MCP database risk review (verbose)",
+    `Target: ${report.target}`,
+    report.disclaimer,
+    "",
+    `Tools inspected: ${report.summary.tools_inspected}`,
+    `Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
+    `Overall risk: ${overallMcpAuditRisk(report).toLowerCase()}`,
+  ];
+  if (report.findings.length === 0) {
+    lines.push("", "No obvious database-commit risks were detected in the static manifest.");
+    lines.push("This does not prove the MCP server or its tools are secure.");
+    return `${lines.join("\n")}\n`;
+  }
   lines.push("");
   for (const finding of report.findings) {
     lines.push(`${finding.severity.padEnd(6)} ${finding.code}${finding.tool ? `  ${finding.tool}` : ""}`);
@@ -155,7 +289,121 @@ export function formatMcpAuditReport(report: McpAuditReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-function overallRisk(report: McpAuditReport): McpAuditSeverity | "NONE" {
+export function formatMcpAuditSarif(report: McpAuditReport): string {
+  const findings = [...report.findings].sort(compareFindings);
+  const rules = [...new Set(findings.map((finding) => finding.code))]
+    .sort()
+    .map((code) => {
+      const finding = findings.find((candidate) => candidate.code === code)!;
+      return {
+        id: code,
+        name: code.toLowerCase(),
+        shortDescription: { text: finding.message },
+        help: { text: finding.recommendation },
+        defaultConfiguration: { level: sarifLevel(finding.severity) },
+        properties: { securitySeverity: finding.severity },
+      };
+    });
+  const sarif = {
+    version: "2.1.0",
+    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: "Synapsor Runner MCP audit",
+            informationUri: "https://synapsor.ai/docs",
+            rules,
+          },
+        },
+        automationDetails: { id: "synapsor/mcp-audit" },
+        results: findings.map((finding) => ({
+          ruleId: finding.code,
+          level: sarifLevel(finding.severity),
+          message: { text: finding.message },
+          locations: [
+            {
+              physicalLocation: {
+                artifactLocation: { uri: report.target },
+              },
+              logicalLocations: finding.tool
+                ? [{ name: finding.tool, kind: "function" }]
+                : undefined,
+            },
+          ],
+          properties: {
+            affectedTool: finding.tool,
+            evidence: finding.evidence,
+            recommendation: finding.recommendation,
+          },
+        })),
+        properties: {
+          schemaVersion: report.schema_version,
+          disclaimer: report.disclaimer,
+          toolsInspected: report.summary.tools_inspected,
+        },
+      },
+    ],
+  };
+  return `${JSON.stringify(sarif, null, 2)}\n`;
+}
+
+export function groupMcpAuditFindings(report: McpAuditReport): McpAuditFindingGroup[] {
+  const grouped = new Map<McpAuditRootCause, McpAuditFinding[]>();
+  for (const finding of report.findings) {
+    const root = rootCauseForFinding(finding.code);
+    const current = grouped.get(root) ?? [];
+    current.push(finding);
+    grouped.set(root, current);
+  }
+  return [...grouped.entries()]
+    .map(([root, findings]) => {
+      const definition = ROOT_CAUSE_DEFINITIONS[root];
+      return {
+        root_cause: root,
+        severity: highestSeverity(findings.map((finding) => finding.severity)),
+        title: definition.title,
+        finding_codes: [...new Set(findings.map((finding) => finding.code))].sort(),
+        affected_tools: [...new Set(findings.flatMap((finding) => finding.tool ? [finding.tool] : []))].sort(),
+        finding_count: findings.length,
+        blast_radius: definition.blastRadius,
+        recommended_action: definition.recommendedAction,
+      };
+    })
+    .sort((left, right) =>
+      severityRank(right.severity) - severityRank(left.severity)
+      || right.finding_count - left.finding_count
+      || left.root_cause.localeCompare(right.root_cause));
+}
+
+export function inspectMcpManifestTools(input: unknown): McpAuditToolShape[] {
+  return collectTools(input)
+    .map((tool) => {
+      const signals = toolSignals(tool);
+      const required = schemaRequiredFields(tool.inputSchema);
+      return {
+        name: safeToolName(tool.name),
+        path: tool.path,
+        input_fields: schemaTopLevelFields(tool.inputSchema).map((field) => ({
+          ...field,
+          required: required.has(field.name),
+        })),
+        has_structured_output: hasStructuredOutput(tool),
+        annotations: {
+          ...(typeof tool.annotations.readOnlyHint === "boolean"
+            ? { read_only: tool.annotations.readOnlyHint }
+            : {}),
+          ...(typeof tool.annotations.destructiveHint === "boolean"
+            ? { destructive: tool.annotations.destructiveHint }
+            : {}),
+        },
+        signals,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name) || left.path.localeCompare(right.path));
+}
+
+export function overallMcpAuditRisk(report: McpAuditReport): McpAuditSeverity | "NONE" {
   if (report.summary.high > 0) return "HIGH";
   if (report.summary.medium > 0) return "MEDIUM";
   if (report.summary.low > 0) return "LOW";
@@ -165,21 +413,13 @@ function overallRisk(report: McpAuditReport): McpAuditSeverity | "NONE" {
 function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
   const propertyNames = collectSchemaPropertyNames(tool.inputSchema);
   const normalizedProperties = new Set([...propertyNames].map(normalizeToken));
-  const text = `${tool.name} ${tool.description} ${safeStringify(tool.annotations)}`.toLowerCase();
-  const normalizedToolName = normalizeToken(tool.name);
-  const lowerToolName = tool.name.toLowerCase();
-  const sqlLike =
-    GENERIC_SQL_TOOL_NAMES.includes(normalizedToolName) ||
-    /\b(execute|run|raw)\s*(sql|query)\b/.test(text) ||
-    /\b(sql|query)\s*(executor|database)\b/.test(text);
-  const writeLike = isWriteLike(text, tool.annotations);
-  const readLike = /\b(read|get|list|search|inspect|select|query)\b/.test(text);
-  const proposalBoundary = /\b(proposal|propose|change[- ]?set|review[- ]?required|approval|approve[- ]?required|guarded writeback|trusted worker)\b/.test(text);
-  const modelCallableCommit =
-    /(^|[._-])(approve|commit|apply|settle|merge)[._-]?(proposal|write|change|writeback)([._-]|$)/.test(lowerToolName) ||
-    /(^|[._-])(proposal|write|change|writeback)[._-]?(approve|commit|apply|settle|merge)([._-]|$)/.test(lowerToolName) ||
-    (/\b(approve|commit|apply|settle|merge)\b/.test(text) &&
-      !/\b(propose|proposal|review[- ]?required|approval[- ]?required)\b/.test(text));
+  const {
+    generic_sql: sqlLike,
+    write_like: writeLike,
+    read_like: readLike,
+    proposal_boundary: proposalBoundary,
+    model_callable_commit: modelCallableCommit,
+  } = toolSignals(tool);
 
   if (sqlLike) {
     addFinding(findings, {
@@ -338,14 +578,41 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
   }
 }
 
+function toolSignals(tool: ToolCandidate): McpAuditToolShape["signals"] {
+  const text = `${tool.name} ${tool.description} ${safeStringify(tool.annotations)}`.toLowerCase();
+  const normalizedToolName = normalizeToken(tool.name);
+  const lowerToolName = tool.name.toLowerCase();
+  const genericSql =
+    GENERIC_SQL_TOOL_NAMES.includes(normalizedToolName) ||
+    /\b(execute|run|raw)\s*(sql|query)\b/.test(text) ||
+    /\b(sql|query)\s*(executor|database)\b/.test(text);
+  const writeLike = isWriteLike(text, tool.annotations);
+  const readLike = /\b(read|get|list|search|inspect|select|query)\b/.test(text);
+  const proposalBoundary =
+    /\b(proposal|propose|change[- ]?set|review[- ]?required|approval|approve[- ]?required|guarded writeback|trusted worker)\b/.test(text);
+  const modelCallableCommit =
+    /(^|[._-])(approve|commit|apply|settle|merge)[._-]?(proposal|write|change|writeback)([._-]|$)/.test(lowerToolName) ||
+    /(^|[._-])(proposal|write|change|writeback)[._-]?(approve|commit|apply|settle|merge)([._-]|$)/.test(lowerToolName) ||
+    (/\b(approve|commit|apply|settle|merge)\b/.test(text) &&
+      !/\b(propose|proposal|review[- ]?required|approval[- ]?required)\b/.test(text));
+  return {
+    generic_sql: genericSql,
+    write_like: writeLike,
+    read_like: readLike,
+    proposal_boundary: proposalBoundary,
+    model_callable_commit: modelCallableCommit,
+  };
+}
+
 function collectTools(input: unknown): ToolCandidate[] {
   const tools: ToolCandidate[] = [];
   const seen = new Set<string>();
 
   function addTool(value: unknown, path: string): void {
     if (!isRecord(value)) return;
-    const name = optionalString(value.name) ?? optionalString(value.tool_name) ?? optionalString(value.toolName);
-    if (!name) return;
+    const rawName = optionalString(value.name) ?? optionalString(value.tool_name) ?? optionalString(value.toolName);
+    if (!rawName) return;
+    const name = safeToolName(rawName);
     const description =
       optionalString(value.description) ?? optionalString(value.title) ?? optionalString(value.summary) ?? "";
     const inputSchema =
@@ -386,6 +653,46 @@ function collectTools(input: unknown): ToolCandidate[] {
   return tools;
 }
 
+function schemaTopLevelFields(schema: unknown): Omit<McpAuditToolField, "required">[] {
+  if (!isRecord(schema) || !isRecord(schema.properties)) return [];
+  return Object.entries(schema.properties)
+    .filter(([, value]) => isRecord(value))
+    .map(([name, raw]) => {
+      const field = raw as JsonRecord;
+      const type = schemaFieldType(field);
+      return {
+        name: safeFieldName(name),
+        type,
+        ...(type === "string" && positiveInteger(field.maxLength)
+          ? { max_length: Math.min(Number(field.maxLength), 1_000_000) }
+          : {}),
+        ...(type === "number" && finiteNumber(field.minimum)
+          ? { minimum: Number(field.minimum) }
+          : {}),
+        ...(type === "number" && finiteNumber(field.maximum)
+          ? { maximum: Number(field.maximum) }
+          : {}),
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function schemaRequiredFields(schema: unknown): Set<string> {
+  if (!isRecord(schema) || !Array.isArray(schema.required)) return new Set();
+  return new Set(
+    schema.required
+      .filter((value): value is string => typeof value === "string")
+      .map(safeFieldName),
+  );
+}
+
+function schemaFieldType(schema: JsonRecord): McpAuditToolField["type"] {
+  const type = schema.type;
+  if (type === "integer" || type === "number") return "number";
+  if (type === "string" || type === "boolean" || type === "array" || type === "object") return type;
+  return "unknown";
+}
+
 function collectSchemaPropertyNames(schema: unknown): Set<string> {
   const names = new Set<string>();
 
@@ -421,6 +728,57 @@ function summarizeFindings(findings: McpAuditFinding[], toolsInspected: number):
     low: findings.filter((finding) => finding.severity === "LOW").length,
     total_findings: findings.length,
   };
+}
+
+function rootCauseForFinding(code: string): McpAuditRootCause {
+  if (code === "MODEL_CONTROLLED_TRUST_SCOPE") return "MODEL_CONTROLLED_TRUST";
+  if (code === "MODEL_CALLABLE_COMMIT_OR_APPROVAL") return "MODEL_CALLABLE_COMMIT";
+  if (["NO_IDEMPOTENCY_FIELD", "NO_CONFLICT_GUARD", "AMBIGUOUS_READ_WRITE_TOOL"].includes(code)) {
+    return "WRITE_SAFETY_GAPS";
+  }
+  if (code === "NO_STRUCTURED_OUTPUT_SCHEMA") return "UNSTRUCTURED_TOOL_CONTRACT";
+  if (["GENERIC_SQL_TOOL", "WRITE_TOOL_ACCEPTS_ARBITRARY_SQL", "ARBITRARY_IDENTIFIER_INPUT", "WRITE_WITHOUT_PROPOSAL_BOUNDARY"].includes(code)) {
+    return "UNBOUNDED_DATABASE_AUTHORITY";
+  }
+  return "REVIEWABILITY_GAPS";
+}
+
+function highestSeverity(values: McpAuditSeverity[]): McpAuditSeverity {
+  return [...values].sort((left, right) => severityRank(right) - severityRank(left))[0] ?? "LOW";
+}
+
+function severityRank(value: McpAuditSeverity): number {
+  return value === "HIGH" ? 3 : value === "MEDIUM" ? 2 : 1;
+}
+
+function compareFindings(left: McpAuditFinding, right: McpAuditFinding): number {
+  return severityRank(right.severity) - severityRank(left.severity)
+    || left.code.localeCompare(right.code)
+    || (left.tool ?? "").localeCompare(right.tool ?? "");
+}
+
+function sarifLevel(severity: McpAuditSeverity): "error" | "warning" | "note" {
+  return severity === "HIGH" ? "error" : severity === "MEDIUM" ? "warning" : "note";
+}
+
+export function redactMcpAuditTarget(target: string): string {
+  if (/^https?:\/\//i.test(target)) {
+    try {
+      const url = new URL(target);
+      url.username = "";
+      url.password = "";
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    } catch {
+      return "remote-mcp-target";
+    }
+  }
+  if (target.startsWith("stdio:")) {
+    const executable = target.slice("stdio:".length).trim().split(/\s+/, 1)[0] ?? "command";
+    return `stdio:${safeToolName(executable)}`;
+  }
+  return redactPotentialSecretText(target).slice(0, 512);
 }
 
 function addFinding(findings: McpAuditFinding[], finding: McpAuditFinding): void {
@@ -472,6 +830,34 @@ function evidenceFor(tool: ToolCandidate, detail: string): string[] {
 
 function normalizeToken(value: string): string {
   return value.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+function safeToolName(value: string): string {
+  const trimmed = redactPotentialSecretText(value)
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 160);
+  return trimmed || "unnamed_tool";
+}
+
+function redactPotentialSecretText(value: string): string {
+  return value
+    .replace(/((?:token|secret|password|api[_-]?key)\s*[=:]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/\b(?:sk|pk|ghp|gho|glpat|xox[baprs]|syn)_[A-Za-z0-9._-]{8,}\b/g, "[REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[REDACTED]");
+}
+
+function safeFieldName(value: string): string {
+  const normalized = value.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").slice(0, 96);
+  return normalized || "unnamed_field";
+}
+
+function positiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) > 0;
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function optionalString(value: unknown): string | undefined {

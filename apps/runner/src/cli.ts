@@ -61,6 +61,8 @@ import {
   createLogger,
   doctorChecks,
   formatMcpAuditReport,
+  formatMcpAuditSarif,
+  formatMcpAuditVerboseReport,
   loadConfig,
   runOnce,
   startPolling,
@@ -95,6 +97,7 @@ import {
   writeEffectJson,
   type EffectFixture,
 } from "./effect-regression.js";
+import { generateAuditCandidateDirectory } from "./audit-candidates.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -7001,7 +7004,7 @@ async function mcp(args: string[]): Promise<number> {
   if (subcommand === "serve") return mcpServe(rest);
   if (subcommand === "serve-http") return mcpServeHttp(rest);
   if (subcommand === "serve-streamable-http") return mcpServeStreamableHttp(rest);
-  if (subcommand === "audit") return mcpAudit(rest);
+  if (subcommand === "audit") return audit(rest);
   if (subcommand === "config") return mcpConfig(rest);
   if (subcommand === "client-config") return mcpConfigure(rest);
   if (subcommand === "configure") return mcpConfigure(rest);
@@ -8072,20 +8075,15 @@ function normalizeResultFormatAnswer(value: string): "default" | "v1" | "v2" {
 
 async function mcpAudit(args: string[]): Promise<number> {
   const format = optionalArg(args, "--format") ?? (args.includes("--json") ? "json" : "text");
-  if (!["text", "json", "markdown"].includes(format)) {
-    throw new Error("audit --format must be text, json, or markdown");
+  if (!["text", "json", "markdown", "sarif"].includes(format)) {
+    throw new Error("audit --format must be text, json, markdown, or sarif");
   }
-  const example = optionalArg(args, "--example");
-  const target = example ? `example:${example}` : firstPositional(args);
-  if (!target) {
-    throw new Error("mcp audit requires <target> or --example dangerous-db-mcp");
-  }
-  const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "5000");
-  const payload = example ? builtInMcpAuditExample(example) : await readMcpAuditTarget(target, args, timeoutMs);
+  const { target, payload } = await resolveMcpAuditInput(args);
   const report = auditMcpManifest(payload, { target });
   if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   else if (format === "markdown") process.stdout.write(formatMcpAuditMarkdown(report));
-  else process.stdout.write(formatMcpAuditReport(report));
+  else if (format === "sarif") process.stdout.write(formatMcpAuditSarif(report));
+  else process.stdout.write(args.includes("--verbose") ? formatMcpAuditVerboseReport(report) : formatMcpAuditReport(report));
   return 0;
 }
 
@@ -8119,17 +8117,64 @@ async function propose(args: string[]): Promise<number> {
 }
 
 async function audit(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "generate") return auditGenerate(rest);
+  return mcpAudit(args);
+}
+
+async function auditGenerate(args: string[]): Promise<number> {
+  const outputDir = outputArg(args);
+  if (!outputDir) {
+    throw new Error("audit generate requires --output <separate-candidate-directory>");
+  }
+  const { target, payload } = await resolveMcpAuditInput(args);
+  const result = await generateAuditCandidateDirectory({
+    manifest: payload,
+    target,
+    outputDir,
+    force: args.includes("--force"),
+  });
+  if (args.includes("--json") || optionalArg(args, "--format") === "json") {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write(`${[
+    "Synapsor audit candidates generated",
+    `Output: ${result.output_dir}`,
+    `Source digest: ${result.source_digest}`,
+    `Overall risk: ${result.overall_risk}`,
+    `Candidates: ${result.candidates.length}`,
+    "",
+    "Safety state: blocked and unreviewed",
+    "- proposal writeback is none;",
+    "- Runner mode is shadow;",
+    "- no source is configured;",
+    "- production configuration was not changed.",
+    "",
+    `Review ${path.join(result.output_dir, "REVIEW.md")} before copying any definition into an active contract.`,
+  ].join("\n")}\n`);
+  return 0;
+}
+
+async function resolveMcpAuditInput(args: string[]): Promise<{ target: string; payload: unknown }> {
   const url = optionalArg(args, "--url");
   const stdio = optionalArg(args, "--stdio");
   const mcpConfig = optionalArg(args, "--mcp-config");
   const example = optionalArg(args, "--example");
-  const target = example ? `example:${example}` : url ?? (stdio ? `stdio:${stdio}` : mcpConfig ?? firstPositional(args));
-  if (!target) throw new Error("audit requires <target>, --example dangerous-db-mcp, --mcp-config <path>, --stdio <command>, or --url <url>");
-  const forwarded = args.filter((arg, index) => {
-    const previous = args[index - 1];
-    return !["--url", "--stdio", "--mcp-config"].includes(arg) && !["--url", "--stdio", "--mcp-config"].includes(previous ?? "");
-  });
-  return mcpAudit([target, ...forwarded.filter((arg) => arg !== target)]);
+  const target = example
+    ? `example:${example}`
+    : url ?? (stdio ? `stdio:${stdio}` : mcpConfig ?? firstPositional(args));
+  if (!target) {
+    throw new Error("audit requires <target>, --example dangerous-db-mcp, --mcp-config <path>, --stdio <command>, or --url <url>");
+  }
+  const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "5000");
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+    throw new Error("audit --timeout-ms must be from 1 through 120000");
+  }
+  const payload = example
+    ? builtInMcpAuditExample(example)
+    : await readMcpAuditTarget(target, args, timeoutMs);
+  return { target, payload };
 }
 
 async function proposalInput(args: string[], capability: RuntimeCapabilityConfig): Promise<Record<string, unknown>> {
@@ -14062,6 +14107,7 @@ Use --yes/--non-interactive plus explicit flags, or --answers, for script/agent-
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp audit --example dangerous-db-mcp
   ${cmd} mcp audit ./tools-list.json
+  ${cmd} mcp audit generate ./tools-list.json --output ./synapsor-audit-candidates
 
 Use stdio for local MCP clients that launch the runner. Use Streamable HTTP for standard HTTP MCP clients. Use serve-http only when you explicitly want the lightweight JSON-RPC bridge.
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
@@ -14221,12 +14267,22 @@ default 10000ms wait with --shared-ledger-lock-timeout-ms.
 `,
     audit: `Usage:
   ${cmd} audit --example dangerous-db-mcp
+  ${cmd} audit --example dangerous-db-mcp --verbose
   ${cmd} audit --example dangerous-db-mcp --format json
   ${cmd} audit --example dangerous-db-mcp --format markdown
+  ${cmd} audit --example dangerous-db-mcp --format sarif
+  ${cmd} audit generate --example dangerous-db-mcp --output ./synapsor-audit-candidates
+  ${cmd} audit generate ./tools-list.json --output ./synapsor-audit-candidates [--force]
   ${cmd} audit ./synapsor.runner.json
   ${cmd} audit --mcp-config ./claude_desktop_config.json
   ${cmd} audit --stdio "node ./server.js"
   ${cmd} audit --url http://localhost:3000/mcp
+
+Default text groups repeated findings into the top three root causes. Use
+--verbose for every finding. Candidate generation uses the same scanner and
+writes a separate canonical contract, shadow-only scaffold, deny/redaction
+tests, and before/after tool surface. It never activates or rewrites production
+configuration.
 
 Static MCP/database risk review only. This is not a security guarantee.
 `,

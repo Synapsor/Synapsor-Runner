@@ -561,3 +561,84 @@ Test-runner note:
 - the new tests were corrected to create real replay records directly through
   `ProposalStore`, removing unnecessary source/demo work; the subsequent
   unmodified complete test command passed all 564 tests.
+
+## Phase 5: Audit Adoption Funnel
+
+Implemented:
+
+- retained the existing `synapsor.mcp-audit.v1` finding/JSON contract and its
+  single manifest parser;
+- changed default terminal output to group repeated findings into the top three
+  distinct root causes with affected tools, blast radius, and one next action;
+- retained complete finding output behind `--verbose` and Markdown;
+- added deterministic SARIF 2.1.0 derived from the same findings;
+- added a redacted structural tool view from the same parser, excluding raw
+  descriptions, examples, defaults, enum values, and input values;
+- redacted URL credentials/query fragments, stdio arguments, secret-looking
+  assignments, and common token forms from report targets/tool names;
+- added explicit
+  `audit generate <target> --output <separate-directory>` candidate generation;
+- emitted a canonical `@synapsor/spec` contract, source-less strict-shadow
+  Runner scaffold, deny/redaction/operator-boundary tests, before/after model
+  tool surfaces, and a required review checklist;
+- made generated proposal candidates fail closed with three independent
+  barriers: `writeback.mode: none`, Runner `mode: shadow`, and an empty source
+  map;
+- used conspicuous `review_required_*` identifiers and
+  `blocked_unreviewed` extensions instead of inventing schema, tenant,
+  principal, field, write, or approval authority;
+- removed authority-bearing SQL/identifier/trust/credential fields from
+  generated model arguments and recorded review TODOs;
+- made generation byte-deterministic, rejected existing output by default, and
+  allowed `--force` only for a directory carrying Runner's ownership marker;
+- published JSON Schemas for audit reports and candidate-directory markers;
+- documented the concise/verbose/SARIF modes and the deliberate activation
+  workflow;
+- extended the real packed-runner verifier through SARIF and candidate
+  generation, including no-overwrite and no-write-authority checks.
+
+Architecture decision:
+
+- audit reports and generated review scaffolds are Runner-owned adoption
+  artifacts; generated capabilities themselves are canonical
+  `@synapsor/spec` documents;
+- candidate generation adds no new contract meaning and does not create a
+  second scanner, runtime config dialect, proposal store, or activation path;
+- business semantics that cannot be inferred become TODOs, never executable
+  authority.
+
+Verification:
+
+```bash
+corepack pnpm typecheck
+corepack pnpm exec vitest run \
+  packages/worker-core/src/index.test.ts \
+  apps/runner/src/audit-candidates.test.ts
+corepack pnpm exec vitest run apps/runner/src/cli.test.ts \
+  -t "audits the built-in dangerous MCP|MCP audit candidate"
+corepack pnpm test
+./scripts/verify-packed-runner.sh
+git diff --check
+```
+
+Results:
+
+- focused audit/candidate suite: 16/16 passed;
+- focused CLI audit test passed;
+- complete suite: 29 files, 569/569 tests passed;
+- typecheck, license/content, and DSL source-path checks passed;
+- real npm tarball scratch install produced concise, verbose, JSON, Markdown,
+  and SARIF reports, generated the canonical disabled candidate directory,
+  proved every proposal writeback remained `none`, and refused implicit
+  overwrite;
+- packed tarball contains both audit schemas and excludes `development/`.
+
+Test-stability note:
+
+- one verification rerun hit the pre-existing 5-second timeout in the first
+  local-UI integration test; the immediately preceding full run had passed that
+  test in 4.99 seconds;
+- the test already performs several real loopback HTTP/SQLite operations, so
+  its explicit timeout was raised to 15 seconds (matching other integration
+  tests), the isolated suite passed 4/4, and the final unmodified full command
+  passed all 569 tests.

@@ -39,6 +39,8 @@ test -f "$PACKED_ROOT/docs/effect-regression.md"
 test -f "$PACKED_ROOT/schemas/effect-fixture.schema.json"
 test -f "$PACKED_ROOT/schemas/effect-result.schema.json"
 test -f "$PACKED_ROOT/schemas/effect-dataset.schema.json"
+test -f "$PACKED_ROOT/schemas/mcp-audit-report.schema.json"
+test -f "$PACKED_ROOT/schemas/mcp-audit-candidates.schema.json"
 test -f "$PACKED_ROOT/fixtures/effects/dataset.json"
 if [[ -e "$PACKED_ROOT/development" ]]; then
   echo "packed runner unexpectedly contains development progress files" >&2
@@ -77,8 +79,42 @@ grep -F "synapsor.local-event-webhook.v1" events-webhook.txt >/dev/null
 grep -F "proposal_created" events-webhook.txt >/dev/null
 grep -F "wrp_try_INV_3001" events-webhook.txt >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp >/dev/null
+npx synapsor-runner audit --example dangerous-db-mcp --verbose > audit-verbose.txt
+grep -F "WRITE_TOOL_ACCEPTS_ARBITRARY_SQL" audit-verbose.txt >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format json >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format markdown >/dev/null
+npx synapsor-runner audit --example dangerous-db-mcp --format sarif > audit.sarif
+node --input-type=module - audit.sarif <<'NODE'
+import fs from "node:fs";
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (report.version !== "2.1.0" || report.runs?.[0]?.tool?.driver?.name !== "Synapsor Runner MCP audit") {
+  throw new Error("packed audit SARIF has an unexpected shape");
+}
+NODE
+npx synapsor-runner audit generate --example dangerous-db-mcp --output ./audit-candidates >/dev/null
+test -f audit-candidates/synapsor.candidate.contract.json
+test -f audit-candidates/synapsor.candidate.runner.json
+test -f audit-candidates/synapsor.candidate.contract-tests.json
+test -f audit-candidates/tool-surface.before.json
+test -f audit-candidates/tool-surface.after.json
+test -f audit-candidates/REVIEW.md
+node --input-type=module - audit-candidates <<'NODE'
+import fs from "node:fs";
+import path from "node:path";
+const root = process.argv[2];
+const config = JSON.parse(fs.readFileSync(path.join(root, "synapsor.candidate.runner.json"), "utf8"));
+const contract = JSON.parse(fs.readFileSync(path.join(root, "synapsor.candidate.contract.json"), "utf8"));
+if (config.mode !== "shadow" || Object.keys(config.sources ?? {}).length !== 0) {
+  throw new Error("packed audit candidate config is not source-less shadow mode");
+}
+for (const capability of contract.capabilities.filter((item) => item.kind === "proposal")) {
+  if (capability.proposal?.writeback?.mode !== "none") throw new Error("packed proposal candidate carries writeback authority");
+}
+NODE
+if npx synapsor-runner audit generate --example dangerous-db-mcp --output ./audit-candidates >/dev/null 2>&1; then
+  echo "packed audit candidate generation unexpectedly overwrote an existing directory" >&2
+  exit 1
+fi
 npx synapsor-runner effect run \
   --dataset "$PACKED_ROOT/fixtures/effects/dataset.json" \
   --results-dir "$PACKED_ROOT/fixtures/effects/results" \

@@ -968,10 +968,17 @@ describe("runner cli", () => {
     const text = output.join("");
     expect(text).toContain("Synapsor MCP database risk review");
     expect(text).toContain("Target: example:dangerous-db-mcp");
-    expect(text).toContain("GENERIC_SQL_TOOL");
-    expect(text).toContain("MODEL_CALLABLE_COMMIT_OR_APPROVAL");
-    expect(text).toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");
-    expect(text).toContain("MODEL_CONTROLLED_TRUST_SCOPE");
+    expect(text).toContain("Top distinct risks:");
+    expect(text).toContain("The model can shape database authority");
+    expect(text).toContain("Commit or approval authority is model-callable");
+    expect(text).not.toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");
+
+    output.length = 0;
+    await expect(main(["audit", "--example", "dangerous-db-mcp", "--verbose"])).resolves.toBe(0);
+    expect(output.join("")).toContain("GENERIC_SQL_TOOL");
+    expect(output.join("")).toContain("MODEL_CALLABLE_COMMIT_OR_APPROVAL");
+    expect(output.join("")).toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");
+    expect(output.join("")).toContain("MODEL_CONTROLLED_TRUST_SCOPE");
 
     output.length = 0;
     await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "json"])).resolves.toBe(0);

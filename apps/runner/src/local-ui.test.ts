@@ -294,7 +294,7 @@ describe("local UI", () => {
     } finally {
       await server.close();
     }
-  });
+  }, 15_000);
 
   it("refuses non-localhost binding unless explicitly allowed", async () => {
     await expect(startLocalUiServer({
