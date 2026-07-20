@@ -10,7 +10,7 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.4.123 (prepared, not published)
+## 1.4.123 (2026-07-17)
 
 ### Advisory capability-surface fitness lint
 
@@ -25,10 +25,10 @@ for the Synapsor Cloud CLI.
   CI policy gate with `--strict` or `--fail-on warning`; canonical validity and
   runtime enforcement are unchanged.
 
-Prepared package version: `@synapsor/runner@1.4.123`. Spec, DSL, and Cloud CLI
+Published package version: `@synapsor/runner@1.4.123`. Spec, DSL, and Cloud CLI
 packages are unchanged.
 
-## 1.4.122 (2026-07-16)
+## 1.4.122 (2026-07-17)
 
 ### Trusted principal scope and Cloud-linked authority
 
@@ -54,11 +54,11 @@ packages are unchanged.
   projects, scoped credentials, Runner connections, proposal decisions, and
   audit records. Runner keeps the `synapsor-runner` binary and local boundary.
 
-Prepared package versions: `@synapsor/spec@1.4.2`,
+Published package versions: `@synapsor/spec@1.4.2`,
 `@synapsor/dsl@1.4.3`, `@synapsor/runner@1.4.122`, and
 `@synapsor/cli@0.1.0-beta.1`.
 
-## 1.4.121 (prepared, not published)
+## 1.4.121 (2026-07-15)
 
 ### Contract trust surface and bounded-set parser correctness
 
@@ -90,10 +90,10 @@ Prepared package versions: `@synapsor/spec@1.4.2`,
 - C++/Cloud validators and exporters preserve the new additive enum/aggregate
   fields for canonical round-trip compatibility.
 
-Prepared package versions: `@synapsor/spec@1.4.1`,
+Published package versions: `@synapsor/spec@1.4.1`,
 `@synapsor/dsl@1.4.2`, and `@synapsor/runner@1.4.121`.
 
-## 1.4.12 (prepared, not published)
+## 1.4.12 (2026-07-14)
 
 ### Runtime-store smoke-call consistency
 
@@ -108,10 +108,10 @@ Prepared package versions: `@synapsor/spec@1.4.1`,
 - Local SQLite and mirror modes retain their existing behavior; no source row
   changes before the normal external approval/apply path.
 
-Prepared package version: `@synapsor/runner@1.4.12`.
+Published package version: `@synapsor/runner@1.4.12`.
 `@synapsor/dsl` remains `1.4.1`; `@synapsor/spec` remains `1.4.0`.
 
-## 1.4.1 (prepared, not published)
+## 1.4.1 (2026-07-14)
 
 ### Bounded-set digest compatibility patch
 
@@ -131,10 +131,10 @@ Prepared package version: `@synapsor/runner@1.4.12`.
   authority, hand-built semantic tools, structural enforcement, build-vs-adopt
   fit, and regulated-data boundaries.
 
-Prepared package versions: `@synapsor/dsl@1.4.1` and
+Published package versions: `@synapsor/dsl@1.4.1` and
 `@synapsor/runner@1.4.1`. `@synapsor/spec` remains `1.4.0`.
 
-## 1.4.0 (prepared, not published)
+## 1.4.0 (2026-07-14)
 
 ### Reviewed Reversible Change Sets
 
@@ -149,7 +149,7 @@ Prepared package versions: `@synapsor/dsl@1.4.1` and
 - Keeps hard DELETE restoration, app-owned handlers, payments, messages, and
   other external effects outside Runner's automatic compensation claim.
 
-Prepared package versions: `@synapsor/spec@1.4.0`,
+Published package versions: `@synapsor/spec@1.4.0`,
 `@synapsor/dsl@1.4.0`, and `@synapsor/runner@1.4.0`.
 
 ## 1.3.0 (prepared, not published)
@@ -254,7 +254,7 @@ Released package versions: `@synapsor/spec@1.1.0`,
 - Declares the first semver contract for the documented CLI, schema, contract,
   MCP result, writeback, approval, metrics, and replay surfaces.
 
-Prepared package versions: `@synapsor/spec@1.0.0`,
+Released package versions: `@synapsor/spec@1.0.0`,
 `@synapsor/dsl@1.0.0`, and `@synapsor/runner@1.0.0`.
 
 ## 0.1.16

@@ -4,19 +4,37 @@
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml?query=branch%3Amain)
 
-Stop giving AI agents `execute_sql`. Give them reviewed business actions.
+**Approve the exact business effect, not an opaque tool call.**
 
 Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It
-exposes semantic tools, saves risky changes as proposals, and keeps database
-credentials, approval, and writeback outside the model-facing surface.
+gives agents reviewed business actions instead of `execute_sql`, saves risky
+changes as proposals, and keeps database credentials, approval, and writeback
+outside the model-facing surface.
 
 ## Prove It In 60 Seconds
 
-Path: **audit** MCP risk, **demo** the boundary, then **connect** staging. The
-first two commands touch only a local fixture.
+First, prove the boundary without a database, Docker, config, MCP client, LLM,
+or account:
 
-First, inspect the risk in a typical raw-SQL database MCP server. This works
-even if you never adopt Runner:
+```bash
+npx -y @synapsor/runner try --prove
+```
+
+The embedded source requests a $55 waiver and shows:
+
+```text
+Proposed effect: late_fee_cents: 5500 -> 0
+Source changed before approval: No
+Guarded commit: 1 row, receipt recorded
+Restart-safe retry: yes; duplicate mutations: 0
+Stale apply refused: yes
+```
+
+Review happens outside the model-facing tools. The command stores inspectable
+state under `./.synapsor/try/` and does not test your database connection.
+`demo --quick` remains a noninteractive compatibility alias.
+
+Next, audit a typical raw-SQL MCP server:
 
 ```bash
 npx -y @synapsor/runner audit --example dangerous-db-mcp
@@ -33,18 +51,7 @@ model-facing approval/writeback, and missing conflict or idempotency signals.
 It does not call business tools. See [MCP Database Risk
 Review](docs/mcp-audit.md) for supported workflows and limits.
 
-Then run the real isolated proposal-to-receipt loop. It needs no database,
-Docker, config, MCP client, or account:
-
-```bash
-npx -y @synapsor/runner try
-# Backward-compatible noninteractive alias:
-npx -y @synapsor/runner demo --quick
-```
-
-It runs proposal, guarded writeback, receipt, and replay against an embedded
-demo-only source and stores state under `./.synapsor/try/`. It does not test
-your database connection.
+Then [connect a staging database](#connect-a-staging-database).
 
 ## Safety Model
 
@@ -76,32 +83,29 @@ approval, apply, or revert tools. A human or trusted operator approves outside
 MCP, then Runner performs a guarded write or routes the proposal to an
 app-owned executor.
 
-Contracts constrain tools, trusted context, visible and writable columns,
-bounds, transitions, and approvals. Proposals separate model intent from commit
-authority; evidence, query audit, receipts, and replay preserve the reviewed
-lifecycle. Runner does not make raw SQL tools, hosts, or
-prompt-injection-prone clients safe.
+Contracts fix trusted context, fields, bounds, transitions, and approvals;
+evidence, query audit, receipts, and replay preserve the lifecycle. Runner does
+not make raw SQL or prompt-injection-prone clients safe.
 
-## Why Not Just Use A Prompt And App Code?
+## Choose An Isolation Mode
 
-Prompts are not an authorization boundary. First ask who produces the SQL:
+| Mode | Boundary |
+| --- | --- |
+| Embedded `try` | Synthetic source; proves the lifecycle, not your database. |
+| `application_scope` | Shared role plus Runner predicates. A Runner bug or compromised process can cross scope; retain database controls. |
+| `postgres_rls` | PostgreSQL also checks transaction-bound tenant/principal scope. Arbitrary trusted-context or credential control remains outside this guarantee. |
+| `tenant_bound` | Authenticated context selects a restricted per-tenant credential or process. |
 
-- **The model produces SQL:** validation must understand arbitrary queries,
-  scope, and side effects. That is `execute_sql` behind a parser.
-- **Trusted app code produces fixed, parameterized SQL:** good. You have built
-  a semantic tool, and that may be enough for a small read-only application.
-
-Runner adds one reviewed contract for trusted scope, field controls, evidence,
-approval outside MCP, guarded writeback, receipts, replay, and compensation.
-Use your own code when you do not need that lifecycle. See the [build-vs-adopt
-guide](docs/why-synapsor-vs-app-guardrails.md).
+Stdio commonly trusts process environment; shared HTTP must use verified signed
+claims. Model arguments, query parameters, and arbitrary tenant headers are
+never trusted. MySQL has no native RLS; use restricted views or tenant
+credentials. See [Database scope] and the
+[build-vs-adopt guide](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Connect A Staging Database
 
 Start with staging and a read-only credential. Keep database permissions,
-views, and RLS. Default shared-credential scope is application-level.
-See [Database scope] for PostgreSQL RLS and tenant-bound alternatives; MySQL
-has no native RLS.
+views, and RLS.
 
 ```bash
 npm install -g @synapsor/runner
@@ -270,7 +274,7 @@ guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/cloud-cli.md).
 ## Next Steps
 
 - Follow the [step-by-step Synapsor Tutorial](https://github.com/sandeshtiwari/Synapsor-Tutorial).
-- Run the [`support-plan-credit` flagship example](examples/support-plan-credit).
+- Run the [`support-billing-agent` flagship example](examples/support-billing-agent).
 - Connect [Claude, Cursor, OpenAI Agents SDK, or another MCP client](docs/mcp-clients.md).
 - Author and [push a validated contract to Cloud](docs/cloud-push.md).
 - Browse the [task-first documentation index](docs/README.md).

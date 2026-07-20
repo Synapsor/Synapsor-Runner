@@ -31,8 +31,9 @@ Current contract version:
 0.1
 ```
 
-`0.1` is preview/stabilizing. Unknown core fields fail validation. Extension
-fields must use one of:
+`0.1` is the current contract schema identifier; it is independent of the npm
+package version and is not a package-maturity label. Unknown core fields fail
+validation. Extension fields must use one of:
 
 - `x-cloud-*`
 - `x-runner-*`

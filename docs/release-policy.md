@@ -11,8 +11,12 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 npm install -g @synapsor/runner
 ```
 
-Use `@alpha` or an exact prerelease only when intentionally testing the moving
-preview channel.
+Use an exact prerelease or a named preview tag only when intentionally testing
+preview behavior. Check the tags that currently exist before documenting one:
+
+```bash
+npm dist-tag ls @synapsor/runner
+```
 
 ## Alpha Expectations
 
@@ -128,9 +132,9 @@ internals. Local store migrations may happen inside `1.x` and later minor
 versions, but documented CLI inspection commands should remain the supported way
 to read the store.
 
-Alpha users should pin an exact alpha version in package.json, CI, and MCP
-client snippets. Use `@alpha` only when intentionally testing the moving
-preview channel.
+Prerelease users should pin an exact version in package.json, CI, and MCP
+client snippets. Do not assume an `alpha`, `beta`, or `next` tag exists; inspect
+the registry tags first.
 
 ## Result Envelope Migration
 

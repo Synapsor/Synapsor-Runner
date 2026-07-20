@@ -16,9 +16,9 @@ Proposal tools also advertise a standard display-only
 other clients keep the same text/JSON proposal result. Approval and apply
 remain outside MCP in both cases.
 
-Command examples use the published alpha package through `npx`. From a source
-checkout, use `./bin/synapsor-runner ...` only when you intentionally want the local
-source wrapper.
+Command examples use the stable untagged package through `npx`. From a source
+checkout, use `./bin/synapsor-runner ...` only when you intentionally want the
+local source wrapper.
 
 Checked examples live in:
 
@@ -154,7 +154,9 @@ From the runner repository:
 npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
-For the alpha package, keep the package tag explicit in client configuration.
+For reproducible deployments, pin an exact stable version in package manifests
+and MCP client configuration. The untagged examples above intentionally resolve
+the current `latest` release.
 
 For standard app/server HTTP MCP mode:
 
