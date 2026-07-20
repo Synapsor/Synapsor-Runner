@@ -19,6 +19,7 @@ import {
   createMcpRuntime,
   createSynapsorMcpServer,
   checkRunnerReadiness,
+  describeIsolationAssurance,
   enqueueCloudLinkedResult,
   loadRuntimeConfigFromFile,
   McpRuntimeError,
@@ -33,6 +34,70 @@ import {
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
 describe("database-enforced trusted scope", () => {
+  it("describes application, PostgreSQL RLS, and tenant-bound assurance without overstating the process boundary", () => {
+    const base: RuntimeConfig = {
+      version: 1,
+      mode: "read_only",
+      sources: {
+        application: { engine: "postgres", read_url_env: "APP_URL" },
+        rls: {
+          engine: "postgres",
+          read_url_env: "RLS_URL",
+          database_scope: { mode: "postgres_rls", tenant_setting: "app.tenant", principal_setting: "app.principal" },
+        },
+        tenant: {
+          engine: "mysql",
+          read_url_env: "TENANT_URL",
+          credential_scope: { mode: "tenant_resolver", resolver: "tenant_creds" },
+        },
+      },
+      trusted_context: { provider: "http_claims" },
+      session_auth: { provider: "jwt_hs256", secret_env: "SESSION_SECRET" },
+      capabilities: [
+        {
+          name: "application.inspect",
+          kind: "read",
+          source: "application",
+          target: { schema: "public", table: "records", primary_key: "id", tenant_key: "tenant_id" },
+          args: { id: { type: "string" } },
+          lookup: { id_from_arg: "id" },
+          visible_columns: ["id"],
+        },
+        {
+          name: "rls.inspect",
+          kind: "read",
+          source: "rls",
+          target: { schema: "public", table: "records", primary_key: "id", tenant_key: "tenant_id" },
+          args: { id: { type: "string" } },
+          lookup: { id_from_arg: "id" },
+          visible_columns: ["id"],
+        },
+        {
+          name: "tenant.inspect",
+          kind: "read",
+          source: "tenant",
+          target: { schema: "public", table: "records", primary_key: "id", tenant_key: "tenant_id" },
+          args: { id: { type: "string" } },
+          lookup: { id_from_arg: "id" },
+          visible_columns: ["id"],
+        },
+      ],
+    };
+
+    const assurance = describeIsolationAssurance(base);
+    expect(assurance.map((item) => [item.source, item.mode])).toEqual([
+      ["application", "application_scope"],
+      ["rls", "postgres_rls"],
+      ["tenant", "tenant_bound"],
+    ]);
+    expect(assurance[0]).toMatchObject({
+      trusted_context: { request_binding: "verified_http_session" },
+      warning: expect.stringContaining("application-level scope only"),
+    });
+    expect(assurance[1]?.does_not_protect_against).toContain("compromised_runner_selecting_arbitrary_rls_context");
+    expect(assurance[2]?.remaining_trust_boundary).toContain("resolver");
+  });
+
   it("refuses an unattested custom database reader in hardened mode", () => {
     const hardened: RuntimeConfig = {
       version: 1,
@@ -2581,6 +2646,34 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("prints the non-secret isolation assurance mode at Streamable HTTP startup", async () => {
+    const log = new PassThrough();
+    let output = "";
+    log.on("data", (chunk) => {
+      output += String(chunk);
+    });
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: "startup-log-token",
+        SYNAPSOR_TENANT_ID: "acme",
+        SYNAPSOR_PRINCIPAL: "support_agent_17",
+      },
+      log,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      expect(output).toContain("Isolation app_postgres: application_scope; trusted context: process_bound");
+      expect(output).not.toContain("startup-log-token");
+      expect(output).not.toContain("acme");
+      expect(output).not.toContain("support_agent_17");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("exposes bounded metrics only through the separately authorized endpoint", async () => {
     const metricsConfig = structuredClone(config);
     metricsConfig.metrics = { enabled: true, token_env: "SYNAPSOR_METRICS_TOKEN" };
@@ -2762,7 +2855,18 @@ describe("local Synapsor MCP runtime", () => {
     const acmeToken = signedSessionToken(secret, { sub: "alice", tenant_id: "acme", iss: "https://identity.example", aud: "synapsor-runner", exp: expires });
     const globexToken = signedSessionToken(secret, { sub: "bob", tenant_id: "globex", iss: "https://identity.example", aud: "synapsor-runner", exp: expires });
     const acmeOtherToken = signedSessionToken(secret, { sub: "mallory", tenant_id: "acme", iss: "https://identity.example", aud: "synapsor-runner", exp: expires });
-    const acmeTransport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${acmeToken}` } } });
+    const acmeUrl = new URL(server.url);
+    acmeUrl.searchParams.set("tenant_id", "globex");
+    acmeUrl.searchParams.set("principal", "mallory");
+    const acmeTransport = new StreamableHTTPClientTransport(acmeUrl, {
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${acmeToken}`,
+          "x-synapsor-tenant-id": "globex",
+          "x-synapsor-principal": "mallory",
+        },
+      },
+    });
     const globexTransport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${globexToken}` } } });
     const acmeOtherTransport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${acmeOtherToken}` } } });
     const acmeClient = new Client({ name: "acme-agent", version: "0.0.0" });
@@ -2770,7 +2874,11 @@ describe("local Synapsor MCP runtime", () => {
     const acmeOtherClient = new Client({ name: "acme-other-agent", version: "0.0.0" });
     try {
       await acmeClient.connect(acmeTransport);
-      const acme = await acmeClient.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-A" } });
+      const acme = await acmeClient.callTool({
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-A" },
+        _meta: { tenant_id: "globex", principal: "mallory" },
+      });
       expect(acme.structuredContent).toMatchObject({ trusted_context: { tenant_id: "acme", principal: "alice", provenance: "http_claims" } });
       const acmeEvidenceUri = String((acme.structuredContent as Record<string, unknown>).evidence_resource);
 
