@@ -14,6 +14,8 @@
   "scripts": {
     "build": "tsc -b",
     "build:runner-package": "tsc -b && node scripts/build-runner-package.mjs",
+    "build:mcpb": "corepack pnpm build:runner-package && node scripts/build-runner-mcpb.mjs",
+    "verify:mcpb": "node scripts/verify-runner-mcpb.mjs",
     "build:cloud-cli-package": "tsc -b && node scripts/build-cloud-cli-package.mjs",
     "clean": "tsc -b --clean && find . -path '*/node_modules' -prune -o -path '*/dist' -type d -prune -exec rm -rf {} +",
     "lint": "tsc -b --pretty false",
@@ -71,6 +73,7 @@
     "verify:published-alpha": "./scripts/verify-published-alpha.sh"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
     "@synapsor-runner/config": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
     "@synapsor-runner/mcp-server": "workspace:*",

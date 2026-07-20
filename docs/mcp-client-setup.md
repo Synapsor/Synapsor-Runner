@@ -11,6 +11,11 @@ or SDK. The simplest local-client contract is stdio. Standard HTTP MCP is
 available through Streamable HTTP when your agent connects to a long-running
 Runner service.
 
+Proposal tools also advertise a standard display-only
+[MCP App](mcp-apps.md). Supporting hosts discover it from tool metadata;
+other clients keep the same text/JSON proposal result. Approval and apply
+remain outside MCP in both cases.
+
 Command examples use the published alpha package through `npx`. From a source
 checkout, use `./bin/synapsor-runner ...` only when you intentionally want the local
 source wrapper.
@@ -135,6 +140,11 @@ backup before writing. Noninteractive scripts must add `--yes`.
 
 The command writes only the local stdio MCP command and args. It does not write
 database URLs or passwords into the client config.
+
+No separate Apps flag is required. A compatible host discovers
+`ui://synapsor/proposal-review.html` from proposal-tool metadata. The app can
+display the exact diff, but it has no approval/apply authority; use the
+standalone local UI or terminal for human review.
 
 ## Start Command
 

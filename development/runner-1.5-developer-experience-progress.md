@@ -15,7 +15,7 @@ publishing, pushing, tagging, or deploying.
 | 1: `try` experience | complete | 533 tests, content/path checks, packed scratch installs passed |
 | 1B: database-enforced scope | complete | 549 tests, explicit assurance/provenance diagnostics, adversarial PostgreSQL RLS proof passed |
 | 2: shadow studies | complete | 546 tests, packed scratch study/import/report passed |
-| 3: MCP App | pending | |
+| 3: MCP App | complete | 551 tests, packed install, unsigned MCPB build/unpack/runtime discovery passed |
 | 4: effect regression | pending | |
 | 5: audit funnel | pending | |
 | 6: schema candidates | pending | |
@@ -263,6 +263,76 @@ Results:
 
 None. Do not push, publish, tag, or deploy during this goal.
 
+## Pause Checkpoint - 2026-07-19
+
+The user intentionally paused the goal during Phase 3 and subsequently resumed
+it. Continue from this checkpoint; do not repeat completed phases.
+
+Branch:
+
+```text
+feature/runner-1.5-developer-experience
+```
+
+Completed milestone commits:
+
+```text
+ada9a6f Phase 1: add one-command guarded action proof
+1140b8b Phase 1B: add database-enforced PostgreSQL scope
+4acbaed Phase 2: productize local shadow studies
+6b6078f Phase 1B: report tenant isolation assurance
+```
+
+Uncommitted partial Phase 3 files at pause time:
+
+```text
+M  apps/runner/src/local-ui.ts
+M  packages/mcp-server/package.json
+M  packages/mcp-server/src/index.ts
+M  pnpm-lock.yaml
+?? packages/mcp-server/src/proposal-app.ts
+?? packages/mcp-server/src/proposal-review-view.ts
+```
+
+Partial Phase 3 implementation:
+
+- added pinned `@modelcontextprotocol/ext-apps@1.7.4`;
+- confirmed the stable MCP Apps spec is `2026-01-26`;
+- registered proposal tools with official MCP Apps UI metadata;
+- registered an official `text/html;profile=mcp-app` resource;
+- created a responsive display-only proposal card using the standard
+  `ui/initialize` and `ui/notifications/tool-result` protocol messages;
+- centralized the proposal review payload in
+  `packages/mcp-server/src/proposal-review-view.ts`;
+- changed the standalone local UI to consume that shared payload;
+- enriched proposal tool results with `proposal_review`;
+- preserved the security boundary: no approve/apply model tools and no
+  privileged review token/challenge in text, structured content, resource URI,
+  query string, or app source;
+- selected display-only fallback because the inspected official SDK exposes
+  presentation metadata but no documented model-hidden authority channel.
+
+Build verification completed:
+
+```bash
+corepack pnpm --filter @synapsor-runner/mcp-server build
+corepack pnpm --filter @synapsor/runner build
+```
+
+Both passed.
+
+Completed after resume:
+
+- official in-memory MCP client/transport compatibility coverage;
+- proposal-tool UI metadata and app-resource MIME/read coverage;
+- standard Apps initialize/tool-result schema validation;
+- text fallback, shared review payload, local UI reuse, and no-secret/no-authority
+  assertions;
+- focused MCP App and local UI tests: 2 files, 80 tests passed.
+
+This checkpoint is superseded by the completed Phase 3 record below. Continue
+sequentially with Phase 4.
+
 ## Phase 2: True Shadow Studies
 
 Implemented:
@@ -326,3 +396,80 @@ Results:
 - clean scratch npm install created a study, imported six cases and two
   outcomes, and reported the expected 6/2/1 totals and every required
   classification.
+
+## Phase 3: Inline MCP App Proposal Review
+
+Implemented:
+
+- pinned official `@modelcontextprotocol/ext-apps@1.7.4` against the stable
+  MCP Apps `2026-01-26` protocol;
+- official proposal-tool App metadata and one
+  `text/html;profile=mcp-app` resource at
+  `ui://synapsor/proposal-review.html`;
+- a responsive display-only proposal card showing trusted scope, exact diff,
+  evidence/guard state, expected version, policy, receipt, reversibility, and
+  the standalone operator handoff;
+- one shared proposal review view model consumed by both the App and the
+  loopback local UI;
+- structured `proposal_review` tool results plus unchanged text fallback for
+  hosts without Apps support;
+- client-config diagnostics that explain automatic App discovery without
+  altering or contaminating generated JSON;
+- official in-memory MCP client compatibility tests for tool/resource
+  discovery, metadata, resource reads, Apps initialize/tool-result messages,
+  fallback output, and the continued absence of model-callable
+  approval/apply/raw-SQL tools;
+- `docs/mcp-apps.md` with exact versions, upstream-listed versus locally
+  tested hosts, the display-only security rationale, fallback behavior, and
+  operator workflow;
+- an unsigned standard-profile MCPB build using
+  `@anthropic-ai/mcpb@2.1.2`, manifest `0.4`, user-config placeholders, a
+  frozen-lockfile hoisted production dependency layout, path/credential
+  scans, digest/build metadata, and explicit `signed: false`;
+- an independent unpacked-MCPB verifier that launches the artifact with the
+  official MCP client and proves semantic tools plus the App resource;
+- refreshed dependency-license counts and packed-install assertions that the
+  MCP Apps guide ships while `development/` does not;
+- updated packed-runner checks for the Phase 1 `try` ledger/IDs after the old
+  quick-demo fixture was retired.
+
+Security decisions:
+
+- the inline App is presentation-only because the selected stable protocol
+  does not document a model-hidden privileged authority channel;
+- no approval token, review challenge, database credential, tenant secret, or
+  reusable operator authority appears in tool results, resource metadata,
+  resource HTML, resource URIs, or generated client JSON;
+- approval and apply remain outside MCP in the loopback operator UI or trusted
+  terminal;
+- unsigned MCPB output is never presented as an official signed release, and
+  release-owner signing remains a separate explicit action.
+
+Verification:
+
+```bash
+corepack pnpm exec vitest run packages/mcp-server/src/index.test.ts apps/runner/src/local-ui.test.ts apps/runner/src/cli.test.ts
+corepack pnpm test
+git diff --check
+corepack pnpm verify:packed-runner
+corepack pnpm build:mcpb
+corepack pnpm verify:mcpb
+corepack pnpm exec mcpb info dist/mcpb/synapsor-runner-1.4.123-unsigned.mcpb
+corepack pnpm licenses list --json
+```
+
+Results:
+
+- focused MCP/App/local-UI/CLI suite: 3 files, 188/188 passed;
+- complete suite: 26 files, 551/551 passed;
+- typecheck, license/content, and DSL source-path checks passed;
+- real npm tarball scratch install passed current `try`, audit, contract,
+  MCP-config, handler, activity, store, and Streamable HTTP checks;
+- tarball includes `docs/mcp-apps.md` and excludes `development/`;
+- unsigned MCPB built at 7,617,355 bytes, validated, unpacked, and reported
+  `WARNING: Not signed` as intended;
+- unpacked MCPB started Runner `1.4.123`, negotiated MCP, listed the three
+  support semantic tools, advertised/read the App resource with the standard
+  MIME type, and exposed zero model-facing approval/apply tools;
+- the license inventory now covers all current build/runtime dependencies,
+  including the official Apps and MCPB tooling.

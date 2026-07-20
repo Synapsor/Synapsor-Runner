@@ -10,11 +10,15 @@ Summary from the current dependency set:
 
 | License | Package entries |
 | --- | ---: |
-| MIT | 149 |
+| MIT | 200 |
 | Apache-2.0 | 4 |
 | BSD-3-Clause | 3 |
 | BSD-2-Clause | 1 |
-| ISC | 11 |
+| ISC | 15 |
+| `(BSD-3-Clause OR GPL-2.0)` | 1 |
+| `(MIT AND Zlib)` | 1 |
+| `0BSD` | 1 |
+| `(MIT OR CC0-1.0)` | 1 |
 
 Apache-2.0 dependency entries reported by pnpm:
 

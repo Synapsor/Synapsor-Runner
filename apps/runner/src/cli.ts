@@ -7974,6 +7974,7 @@ async function mcpConfigure(args: string[]): Promise<number> {
     process.stdout.write(`wrote MCP ${client} configuration to ${destination}\n`);
   } else {
     process.stderr.write(`Paste this ${client} MCP config into your local MCP client settings. It contains command paths only, not database URLs or write credentials.\n`);
+    process.stderr.write("Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
     process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
   }
   return 0;

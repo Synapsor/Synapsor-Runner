@@ -9,6 +9,11 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import {
+  registerAppResource,
+  registerAppTool,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/server";
 import { assertValidRunnerCapabilityConfig } from "@synapsor-runner/config";
 import {
   CloudControlError,
@@ -23,9 +28,13 @@ import mysql from "mysql2/promise";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { createJwtVerifier, type JwtAlgorithm, type JwtVerifier, type JwtVerificationConfig } from "./jwt-auth.js";
+import { PROPOSAL_APP_URI, proposalAppHtml } from "./proposal-app.js";
+import { buildProposalReviewView } from "./proposal-review-view.js";
 
 export { createJwtVerifier } from "./jwt-auth.js";
 export type { JwtAlgorithm, JwtVerifier, JwtVerificationConfig, VerifiedJwt } from "./jwt-auth.js";
+export { PROPOSAL_APP_SPEC_VERSION, PROPOSAL_APP_URI, proposalAppHtml, proposalAppInitializeRequest } from "./proposal-app.js";
+export { buildProposalReviewView, type ProposalReviewView } from "./proposal-review-view.js";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
@@ -1615,30 +1624,40 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     const exposedNames = toolNameExposureMap(tools.map((tool) => tool.name), toolNameStyle);
     for (const tool of tools) {
       for (const exposedName of exposedNames.get(tool.name) ?? [tool.name]) {
-        server.registerTool(
-          exposedName,
-          {
-            title: tool.title,
-            description: toolDescriptionWithCanonical(tool.description, tool.name, exposedName),
-            inputSchema: zodInputShapeFromJsonSchema(tool.input_schema),
-            annotations: {
-              readOnlyHint: Boolean(tool.annotations.readOnlyHint),
-              destructiveHint: false,
-              idempotentHint: Boolean(tool.annotations.idempotentHint),
-              openWorldHint: false,
-            },
-            _meta: {
-              ...tool.annotations,
-              "synapsor.cloud_delegated": true,
-              "synapsor.canonical_tool_name": tool.name,
-              "synapsor.exposed_tool_name": exposedName,
-              "synapsor.tool_name_style": toolNameStyle,
-              "synapsor.raw_sql_exposed": false,
-              "synapsor.approval_tool": false,
-            },
+        const toolConfig = {
+          title: tool.title,
+          description: toolDescriptionWithCanonical(tool.description, tool.name, exposedName),
+          inputSchema: zodInputShapeFromJsonSchema(tool.input_schema),
+          annotations: {
+            readOnlyHint: Boolean(tool.annotations.readOnlyHint),
+            destructiveHint: false,
+            idempotentHint: Boolean(tool.annotations.idempotentHint),
+            openWorldHint: false,
           },
-          async (args) => toolCallResult(runtime, tool.name, args as Record<string, unknown>),
-        );
+          _meta: {
+            ...tool.annotations,
+            "synapsor.cloud_delegated": true,
+            "synapsor.canonical_tool_name": tool.name,
+            "synapsor.exposed_tool_name": exposedName,
+            "synapsor.tool_name_style": toolNameStyle,
+            "synapsor.raw_sql_exposed": false,
+            "synapsor.approval_tool": false,
+          },
+        };
+        const callback = async (args: unknown) =>
+          toolCallResult(runtime, tool.name, args as Record<string, unknown>);
+        if (tool.annotations.readOnlyHint === false) {
+          registerAppTool(server, exposedName, {
+            ...toolConfig,
+            _meta: {
+              ...toolConfig._meta,
+              ui: { resourceUri: PROPOSAL_APP_URI, visibility: ["model", "app"] },
+              "synapsor.mcp_app_mode": "display_only",
+            },
+          }, callback);
+        } else {
+          server.registerTool(exposedName, toolConfig, callback);
+        }
       }
     }
   } else {
@@ -1646,34 +1665,75 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     const exposedNames = toolNameExposureMap(capabilities.map((capability) => capability.name), toolNameStyle);
     for (const capability of capabilities) {
       for (const exposedName of exposedNames.get(capability.name) ?? [capability.name]) {
-        server.registerTool(
-          exposedName,
-          {
-            title: capability.name,
-            description: capabilityDescription(capability, exposedName),
-            inputSchema: zodInputShape(capability),
-            annotations: {
-              readOnlyHint: capability.kind === "read" || capability.kind === "aggregate_read",
-              destructiveHint: false,
-              idempotentHint: capability.kind === "read" || capability.kind === "aggregate_read",
-              openWorldHint: false,
-            },
-            _meta: {
-              "synapsor.kind": capability.kind,
-              "synapsor.source": capability.source,
-              "synapsor.target": `${capability.target.schema}.${capability.target.table}`,
-              "synapsor.canonical_tool_name": capability.name,
-              "synapsor.exposed_tool_name": exposedName,
-              "synapsor.tool_name_style": toolNameStyle,
-              "synapsor.raw_sql_exposed": false,
-              "synapsor.approval_tool": false,
-            },
+        const toolConfig = {
+          title: capability.name,
+          description: capabilityDescription(capability, exposedName),
+          inputSchema: zodInputShape(capability),
+          annotations: {
+            readOnlyHint: capability.kind === "read" || capability.kind === "aggregate_read",
+            destructiveHint: false,
+            idempotentHint: capability.kind === "read" || capability.kind === "aggregate_read",
+            openWorldHint: false,
           },
-          async (args) => toolCallResult(runtime, capability.name, args as Record<string, unknown>),
-        );
+          _meta: {
+            "synapsor.kind": capability.kind,
+            "synapsor.source": capability.source,
+            "synapsor.target": `${capability.target.schema}.${capability.target.table}`,
+            "synapsor.canonical_tool_name": capability.name,
+            "synapsor.exposed_tool_name": exposedName,
+            "synapsor.tool_name_style": toolNameStyle,
+            "synapsor.raw_sql_exposed": false,
+            "synapsor.approval_tool": false,
+          },
+        };
+        const callback = async (args: unknown) =>
+          toolCallResult(runtime, capability.name, args as Record<string, unknown>);
+        if (capability.kind === "proposal") {
+          registerAppTool(server, exposedName, {
+            ...toolConfig,
+            _meta: {
+              ...toolConfig._meta,
+              ui: { resourceUri: PROPOSAL_APP_URI, visibility: ["model", "app"] },
+              "synapsor.mcp_app_mode": "display_only",
+            },
+          }, callback);
+        } else {
+          server.registerTool(exposedName, toolConfig, callback);
+        }
       }
     }
   }
+
+  registerAppResource(
+    server,
+    "Synapsor proposal review",
+    PROPOSAL_APP_URI,
+    {
+      title: "Synapsor proposal review",
+      description: "Display-only proposal diff and trusted-scope summary. Approval and apply remain outside MCP.",
+      _meta: {
+        ui: {
+          prefersBorder: true,
+          csp: { connectDomains: [], resourceDomains: [] },
+          permissions: {},
+        },
+      },
+    },
+    async () => ({
+      contents: [{
+        uri: PROPOSAL_APP_URI,
+        mimeType: RESOURCE_MIME_TYPE,
+        text: proposalAppHtml(),
+        _meta: {
+          ui: {
+            prefersBorder: true,
+            csp: { connectDomains: [], resourceDomains: [] },
+            permissions: {},
+          },
+        },
+      }],
+    }),
+  );
 
   server.registerResource(
     "synapsor-proposals",
@@ -2685,7 +2745,8 @@ function disposeStreamableSession(
 
 async function toolCallResult(runtime: McpRuntime, toolName: string, args: Record<string, unknown>) {
   try {
-    const structuredContent = await runtime.callTool(toolName, args);
+    const result = await runtime.callTool(toolName, args);
+    const structuredContent = await withProposalReviewPresentation(runtime, result);
     return {
       content: [{ type: "text" as const, text: JSON.stringify(structuredContent, null, 2) }],
       structuredContent,
@@ -2697,6 +2758,31 @@ async function toolCallResult(runtime: McpRuntime, toolName: string, args: Recor
       content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
       structuredContent: payload,
     };
+  }
+}
+
+async function withProposalReviewPresentation(
+  runtime: McpRuntime,
+  result: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const directId = typeof result.proposal_id === "string" ? result.proposal_id : undefined;
+  const nested = isRecord(result.proposal) ? result.proposal : undefined;
+  const proposalId = directId ?? (typeof nested?.id === "string" ? nested.id : undefined);
+  if (!proposalId || proposalId === "wrp_unknown") return result;
+  try {
+    const resource = await runtime.readResource(`synapsor://proposals/${proposalId}`);
+    const proposal = resource.proposal as StoredProposal | undefined;
+    const receipts = Array.isArray(resource.receipts)
+      ? resource.receipts as import("@synapsor-runner/proposal-store").StoredWritebackReceipt[]
+      : [];
+    if (!proposal?.proposal_id) return result;
+    return {
+      ...result,
+      proposal_review: buildProposalReviewView(proposal, receipts),
+    };
+  } catch {
+    // Presentation enrichment must never turn a successful governed action into a tool failure.
+    return result;
   }
 }
 

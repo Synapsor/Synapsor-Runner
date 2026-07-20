@@ -82,6 +82,9 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 06 Serve MCP
 
+- [Inline Proposal Review With MCP Apps](mcp-apps.md): display-only proposal
+  cards where supported, exact protocol versions, tested compatibility, and
+  secure standalone review fallback.
 - [MCP Client Setup](mcp-client-setup.md): connect Claude, Cursor, VS Code, or
   another stdio MCP client.
 - [MCP Client Configs](mcp-clients.md): complete Claude, Cursor, OpenAI Agents,

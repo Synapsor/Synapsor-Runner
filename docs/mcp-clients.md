@@ -4,6 +4,11 @@ Synapsor Runner exposes reviewed semantic tools over standard MCP. The model
 receives inspect/propose capabilities; it does not receive raw SQL, database
 credentials, approval commands, or apply commands.
 
+Proposal tools advertise a display-only [MCP App](mcp-apps.md). Hosts that
+implement the Apps extension can render the exact proposal diff inline.
+Clients without it receive the same structured/text result, and human approval
+still occurs in the standalone operator UI or terminal.
+
 The complete copy-paste templates live in:
 
 - [`examples/support-plan-credit/mcp-client-examples/`](../examples/support-plan-credit/mcp-client-examples/)
@@ -109,6 +114,9 @@ synapsor-runner smoke call --config ./synapsor.runner.json --store ./.synapsor/l
 The preview must list semantic capabilities and must not list `execute_sql`,
 approval/apply tools, database URLs, write credentials, or model-controlled
 tenant authority.
+
+MCP App discovery is automatic from the proposal tool's
+`_meta.ui.resourceUri`; it does not require credentials in the client snippet.
 
 ## Troubleshooting
 
