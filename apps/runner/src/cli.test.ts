@@ -6151,6 +6151,176 @@ END
       mismatches: 0,
     });
   });
+
+  it("runs restart-safe shadow studies with bounded imports and stable reports", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-shadow-study-"));
+    const storePath = path.join(tempDir, "local.db");
+    const casesPath = path.join(tempDir, "cases.jsonl");
+    const outcomePath = path.join(tempDir, "outcome.json");
+    const reportPath = path.join(tempDir, "report.json");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "shadow", "study", "create",
+      "--id", "sst_cli",
+      "--name", "CLI comparison",
+      "--capability", "billing.waive_late_fee",
+      "--store", storePath,
+      "--json",
+    ])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).study.study_id).toBe("sst_cli");
+
+    let store = new ProposalStore(storePath);
+    store.createProposal(shadowChangeSet());
+    const proposedCase = store.shadowCases("sst_cli").find((item) => item.proposal_id === "wrp_cli_shadow")!;
+    store.close();
+
+    await fs.writeFile(casesPath, [
+      JSON.stringify({
+        request_id: "req-policy",
+        tenant_id: "acme",
+        principal: "support_agent_17",
+        capability: "billing.waive_late_fee",
+        business_object: "invoice",
+        object_id: "INV-POLICY",
+        agent_result: "policy_denied",
+        decision_reason: "amount above reviewed bound",
+        risk_score: 35,
+      }),
+      JSON.stringify({
+        request_id: "req-forgery",
+        tenant_id: "acme",
+        principal: "support_agent_17",
+        capability: "billing.waive_late_fee",
+        business_object: "invoice",
+        object_id: "INV-FORGERY",
+        agent_result: "invalid_unsafe_scope_attempt",
+        decision_reason: "tenant override rejected",
+        risk_score: 100,
+      }),
+      JSON.stringify({
+        request_id: "req-unmatched",
+        tenant_id: "acme",
+        principal: "support_agent_17",
+        capability: "billing.waive_late_fee",
+        business_object: "invoice",
+        object_id: "INV-UNMATCHED",
+        agent_result: "proposed",
+        proposed_effect: {
+          before: { late_fee_cents: 5500 },
+          after: { late_fee_cents: 0 },
+          patch: { late_fee_cents: 0 },
+        },
+      }),
+    ].join("\n"), "utf8");
+    await fs.writeFile(outcomePath, JSON.stringify({
+      request_id: proposedCase.request_id,
+      proposal_id: proposedCase.proposal_id,
+      tenant_id: "acme",
+      business_object: "invoice",
+      object_id: "INV-CLI",
+      actor: "support_lead_1",
+      disposition: "applied",
+      actual_effect: proposedCase.proposed_effect,
+      occurred_at: "2026-07-19T12:00:00.000Z",
+      source: "support_system_audit",
+      reference: "ticket:SUP-CLI",
+      reason: "customer qualified",
+    }), "utf8");
+
+    output.length = 0;
+    await expect(main(["shadow", "case", "import", "--study", "sst_cli", "--input", casesPath, "--store", storePath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).imported).toBe(3);
+    output.length = 0;
+    await expect(main(["shadow", "outcome", "record", "--study", "sst_cli", "--input", outcomePath, "--store", storePath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).imported).toBe(1);
+
+    output.length = 0;
+    await expect(main(["shadow", "report", "--study", "sst_cli", "--store", storePath, "--output", reportPath, "--json"])).resolves.toBe(0);
+    const firstReportText = output.join("");
+    const report = JSON.parse(firstReportText);
+    expect(report).toMatchObject({
+      total_tasks_observed: 4,
+      tasks_with_authoritative_outcomes: 1,
+      comparable_tasks: 1,
+      exact_agreements: 1,
+      policy_denials: 1,
+      unmatched_cases: 1,
+      invalid_or_unsafe_scope_attempts: 1,
+      suggested_policies: [],
+    });
+    expect(report.highest_risk_disagreements[0]).toMatchObject({
+      status: "invalid_or_unsafe_scope_attempt",
+      risk_score: 100,
+    });
+    expect(await fs.readFile(reportPath, "utf8")).toBe(firstReportText);
+    expect(firstReportText).not.toMatch(/password|Bearer|database_url|reader_secret/i);
+
+    output.length = 0;
+    await expect(main(["shadow", "report", "--study", "sst_cli", "--store", storePath, "--json"])).resolves.toBe(0);
+    expect(output.join("")).toBe(firstReportText);
+
+    output.length = 0;
+    await expect(main(["shadow", "study", "close", "sst_cli", "--ends-at", "2026-07-19T13:00:00.000Z", "--store", storePath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join("")).study.status).toBe("closed");
+    output.length = 0;
+    await expect(main(["shadow", "study", "show", "sst_cli", "--store", storePath, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      study: { study_id: "sst_cli", status: "closed" },
+      cases: expect.arrayContaining([expect.objectContaining({ request_id: "req-unmatched" })]),
+    });
+
+    store = new ProposalStore(storePath);
+    try {
+      expect(() => store.approveProposal("wrp_cli_shadow", {
+        approver: "support_lead_1",
+        proposal_hash: "sha256:shadow",
+        proposal_version: 1,
+      })).toThrow(/shadow proposal/);
+      expect(() => store.createWritebackJobFromProposal("wrp_cli_shadow")).toThrow(/shadow proposal/);
+      expect(store.getProposal("wrp_cli_shadow")?.source_database_mutated).toBe(false);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("classifies the packaged support shadow-study reference cases", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-shadow-reference-"));
+    const storePath = path.join(tempDir, "local.db");
+    const casesPath = workspacePath("examples/support-billing-agent/shadow-study/cases.jsonl");
+    const outcomesPath = workspacePath("examples/support-billing-agent/shadow-study/outcomes.jsonl");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await main([
+      "shadow", "study", "create", "--id", "sst_support_reference",
+      "--name", "Support reference study",
+      "--capability", "billing.propose_late_fee_waiver",
+      "--store", storePath,
+    ]);
+    output.length = 0;
+    await main(["shadow", "case", "import", "--study", "sst_support_reference", "--input", casesPath, "--store", storePath]);
+    await main(["shadow", "outcome", "import", "--study", "sst_support_reference", "--input", outcomesPath, "--store", storePath]);
+    output.length = 0;
+    await main(["shadow", "report", "--study", "sst_support_reference", "--store", storePath, "--json"]);
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      total_tasks_observed: 6,
+      tasks_with_authoritative_outcomes: 2,
+      comparable_tasks: 1,
+      exact_agreements: 1,
+      human_rejections_no_action: 1,
+      policy_denials: 1,
+      stale_conflicts: 1,
+      unmatched_cases: 1,
+      invalid_or_unsafe_scope_attempts: 1,
+    });
+  });
 });
 
 function httpHandlerConfig(): Record<string, unknown> {

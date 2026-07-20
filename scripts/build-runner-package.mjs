@@ -164,6 +164,7 @@ const publicDocs = [
   "conformance.md",
   "recipes.md",
   "security-boundary.md",
+  "shadow-studies.md",
   "store-lifecycle.md",
   "troubleshooting-first-run.md",
   "writeback-executors.md",

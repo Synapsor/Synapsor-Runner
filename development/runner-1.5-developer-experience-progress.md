@@ -14,7 +14,7 @@ publishing, pushing, tagging, or deploying.
 | Baseline | complete | Full release gate passed |
 | 1: `try` experience | complete | 533 tests, content/path checks, packed scratch installs passed |
 | 1B: database-enforced scope | complete | 541 tests, adversarial PostgreSQL RLS proof, packed runtime import passed |
-| 2: shadow studies | pending | |
+| 2: shadow studies | complete | 546 tests, packed scratch study/import/report passed |
 | 3: MCP App | pending | |
 | 4: effect regression | pending | |
 | 5: audit funnel | pending | |
@@ -197,3 +197,67 @@ Results:
 ## External Actions
 
 None. Do not push, publish, tag, or deploy during this goal.
+
+## Phase 2: True Shadow Studies
+
+Implemented:
+
+- persistent local studies with stable IDs, selected capabilities, optional
+  time bounds, status, cases, explicit authoritative outcomes, and
+  proposal/evidence references;
+- automatic attachment of new shadow proposals to matching active studies,
+  restart-safe sync, and safe shared-ledger export/import for the new records;
+- deterministic classifications for exact/partial/disagreement, human
+  rejection, policy denial, unable-to-propose, stale/conflict, unmatched, and
+  invalid/unsafe-scope outcomes;
+- deterministic JSON reports with total and comparable denominators,
+  amount/value distribution, capability/reason breakdowns, risk-ranked
+  disagreements, and inactive sample-size-labeled policy suggestions;
+- bounded 2 MiB/10,000-record JSON and JSONL imports whose authoritative
+  outcomes are bound to study, request, tenant, object, and optional proposal;
+- CLI study lifecycle, case/outcome record/import, stable report export, and
+  legacy shadow-command compatibility;
+- a protected local-UI shadow report using the existing loopback session
+  boundary and the same proposal store;
+- six deterministic support/billing reference cases plus explicit outcomes
+  for the exact $55 waiver and human rejection;
+- task documentation shipped in the Runner tarball.
+
+Security invariants:
+
+- approval and writeback-job creation remain blocked in `ProposalStore` for
+  shadow proposals, below CLI/UI routing;
+- no shadow command invokes database writeback or an app-owned handler;
+- unmatched cases remain visible rather than being inferred as rejection;
+- imports and shared-ledger records use the existing secret-material guard;
+- report suggestions are data only and always carry `active: false`;
+- no canonical contract or DSL meaning changed; study/report state remains
+  Runner-owned local evaluation data.
+
+Verification:
+
+```bash
+corepack pnpm build
+corepack pnpm test
+corepack pnpm exec vitest run apps/runner/src/cli.test.ts -t "shadow studies|shadow-study reference|shadow proposals"
+node scripts/check-license-content.mjs
+corepack pnpm build:runner-package
+corepack pnpm --filter @synapsor/runner pack --pack-destination /tmp/synapsor-phase2-pack.sIuJiw
+npm install /tmp/synapsor-phase2-pack.sIuJiw/synapsor-runner-1.4.123.tgz
+npx --no-install synapsor-runner shadow study create ...
+npx --no-install synapsor-runner shadow case import ...
+npx --no-install synapsor-runner shadow outcome import ...
+npx --no-install synapsor-runner shadow report --json ...
+```
+
+Results:
+
+- build/typecheck passed;
+- complete suite: 26 files, 546/546 tests passed;
+- focused shadow CLI suite: 4/4 passed;
+- content/license and DSL path checks passed;
+- packed tarball contains `docs/shadow-studies.md` and both reference JSONL
+  files, and contains no `development/` progress file;
+- clean scratch npm install created a study, imported six cases and two
+  outcomes, and reported the expected 6/2/1 totals and every required
+  classification.
