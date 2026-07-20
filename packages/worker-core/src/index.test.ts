@@ -7,6 +7,10 @@ import {
   classifyFrozenSetReconciliation,
   doctorChecks,
   formatMcpAuditReport,
+  formatMcpAuditSarif,
+  formatMcpAuditVerboseReport,
+  groupMcpAuditFindings,
+  inspectMcpManifestTools,
   loadConfig,
   redact,
   runOnce,
@@ -274,6 +278,67 @@ describe("worker core", () => {
     expect(report.findings.map((finding) => finding.code)).toContain("MODEL_CONTROLLED_TRUST_SCOPE");
     expect(report.findings.map((finding) => finding.code)).toContain("ARBITRARY_IDENTIFIER_INPUT");
     expect(formatMcpAuditReport(report)).toContain(MCP_AUDIT_DISCLAIMER);
+    expect(formatMcpAuditReport(report)).toContain("Top distinct risks:");
+    expect(formatMcpAuditReport(report)).not.toContain("WRITE_TOOL_ACCEPTS_ARBITRARY_SQL  execute_sql");
+    expect(formatMcpAuditVerboseReport(report)).toContain("WRITE_TOOL_ACCEPTS_ARBITRARY_SQL  execute_sql");
+    expect(groupMcpAuditFindings(report)[0]).toMatchObject({
+      root_cause: "UNBOUNDED_DATABASE_AUTHORITY",
+      affected_tools: ["execute_sql"],
+    });
+    const sarif = JSON.parse(formatMcpAuditSarif(report));
+    expect(sarif.version).toBe("2.1.0");
+    expect(sarif.runs[0].results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "GENERIC_SQL_TOOL", level: "error" }),
+    ]));
+  });
+
+  it("uses one redacted structural tool parser for audit candidate inputs", () => {
+    const manifest = {
+      tools: [
+        {
+          name: "billing.update_invoice",
+          description: "token=do-not-copy update invoice",
+          inputSchema: {
+            type: "object",
+            properties: {
+              invoice_id: { type: "string", maxLength: 128, default: "INV-SECRET" },
+              tenant_id: { type: "string", example: "other-tenant" },
+              api_key: { type: "string", enum: ["sk-secret"] },
+              amount_cents: { type: "integer", minimum: 0, maximum: 5000 },
+            },
+            required: ["invoice_id", "tenant_id", "api_key", "amount_cents"],
+          },
+          outputSchema: { type: "object" },
+          annotations: { readOnlyHint: false, destructiveHint: true },
+          examples: [{ api_key: "sk-secret", tenant_id: "other-tenant" }],
+        },
+      ],
+    };
+    const tools = inspectMcpManifestTools(manifest);
+    expect(tools).toEqual([
+      expect.objectContaining({
+        name: "billing.update_invoice",
+        has_structured_output: true,
+        input_fields: [
+          expect.objectContaining({ name: "amount_cents", type: "number", required: true, minimum: 0, maximum: 5000 }),
+          expect.objectContaining({ name: "api_key", type: "string", required: true }),
+          expect.objectContaining({ name: "invoice_id", type: "string", required: true, max_length: 128 }),
+          expect.objectContaining({ name: "tenant_id", type: "string", required: true }),
+        ],
+      }),
+    ]);
+    const serialized = JSON.stringify(tools);
+    expect(serialized).not.toContain("INV-SECRET");
+    expect(serialized).not.toContain("sk-secret");
+    expect(serialized).not.toContain("do-not-copy");
+
+    const report = auditMcpManifest(manifest, {
+      target: "https://user:password@example.test/mcp?token=secret#private",
+      generatedAt: "2026-07-19T00:00:00.000Z",
+    });
+    expect(report.target).toBe("https://example.test/mcp");
+    expect(JSON.stringify(report)).not.toContain("password");
+    expect(JSON.stringify(report)).not.toContain("token=secret");
   });
 
   it("does not flag reviewed proposal tools as direct write tools", () => {

@@ -28,9 +28,10 @@ no-database demo, wire your database, then read deeper concepts.
   Guardrails](why-synapsor-vs-app-guardrails.md): where SQL authority lives,
   what a hand-built semantic tool already gets right, and when the shared
   contract, approval, receipt, and replay layer is worth adopting.
-- [MCP Audit](mcp-audit.md): static review for risky database MCP tools such as
-  `execute_sql`, broad query tools, model-controlled tenant filters, or
-  model-facing approval/commit tools.
+- [MCP Audit](mcp-audit.md): concise static review for risky database MCP tools
+  such as `execute_sql`, broad query tools, model-controlled tenant filters, or
+  model-facing approval/commit tools, plus explicit generation of disabled
+  canonical review candidates.
 
 ## 03 Run The Demo
 
