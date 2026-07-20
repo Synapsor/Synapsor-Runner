@@ -30,9 +30,9 @@ Current local-mode foundation:
 - local approved proposal to `synapsor.writeback-job.v1` job generation;
 - guarded Postgres/MySQL writeback adapters for approved structured jobs.
 
-Still pending:
+Runtime requirement:
 
-The alpha package requires Node >= 22.5.0 because the local evidence/replay
+The stable package requires Node >= 22.5.0 because the local evidence/replay
 ledger uses Node's `node:sqlite` runtime. The published package declares that
 engine requirement and the CLI exits early with a clear message on older Node
 versions. The Docker-backed demo remains the recommended path when you do not

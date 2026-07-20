@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.123 (prepared, not published)
+## 1.4.123 (2026-07-17)
 
 ### Advisory capability-surface fitness lint
 
@@ -13,10 +13,10 @@
 - Adds stable structured details and surface metrics to JSON/SARIF output, plus
   a concise text summary. No database connection, environment value, source
   row, or probabilistic classifier is involved.
-- Stages only `@synapsor/runner@1.4.123`; `@synapsor/spec@1.4.2`,
+- Published only `@synapsor/runner@1.4.123`; `@synapsor/spec@1.4.2`,
   `@synapsor/dsl@1.4.3`, and `@synapsor/cli@0.1.0-beta.1` are unchanged.
 
-## 1.4.122 (2026-07-16)
+## 1.4.122 (2026-07-17)
 
 ### Trusted principal row scope and Cloud-linked governance
 
@@ -42,7 +42,7 @@
 - Published `@synapsor/spec@1.4.2`, `@synapsor/dsl@1.4.3`, and
   `@synapsor/runner@1.4.122`.
 
-## 1.4.121 (prepared, not published)
+## 1.4.121 (2026-07-15)
 
 ### Contract trust surface and bounded-set parser correctness
 
@@ -78,10 +78,10 @@
 - Proves additive Spec/DSL/Runner/C++ aggregate and enum parity, shared Postgres
   recommendation durability, and transient PostgreSQL/MySQL timeout
   classification.
-- Stages `@synapsor/spec@1.4.1`, `@synapsor/dsl@1.4.2`, and
-  `@synapsor/runner@1.4.121`. Nothing is published by this change.
+- Published `@synapsor/spec@1.4.1`, `@synapsor/dsl@1.4.2`, and
+  `@synapsor/runner@1.4.121`.
 
-## 1.4.12 (prepared, not published)
+## 1.4.12 (2026-07-14)
 
 ### Runtime-store smoke-call consistency
 
@@ -97,10 +97,10 @@
 - Adds focused no-fallback coverage and a disposable two-process fleet proof
   covering ownership, approval/apply, one source receipt, replay, and safe
   ledger unavailability.
-- Stages only `@synapsor/runner@1.4.12`; `@synapsor/dsl` remains `1.4.1` and
-  `@synapsor/spec` remains `1.4.0`. Nothing is published by this change.
+- Published only `@synapsor/runner@1.4.12`; `@synapsor/dsl` remains `1.4.1`
+  and `@synapsor/spec` remains `1.4.0`.
 
-## 1.4.1 (prepared, not published)
+## 1.4.1 (2026-07-14)
 
 ### Canonical Bounded-Set Digest Verification
 
@@ -127,11 +127,11 @@
   structural authorization, explains where SQL authority lives, and documents
   the approval, receipt, replay, and compensation layer without claiming
   prompt-injection prevention or compliance certification.
-- Stages `@synapsor/runner@1.4.1` and `@synapsor/dsl@1.4.1`;
+- Published `@synapsor/runner@1.4.1` and `@synapsor/dsl@1.4.1`;
   `@synapsor/spec` remains `1.4.0` because the public contract schema did not
-  change. Nothing is published by this change.
+  change.
 
-## 1.4.0 (prepared, not published)
+## 1.4.0 (2026-07-14)
 
 ### Reviewed Reversible Change Sets
 
@@ -155,8 +155,8 @@
   conformance fixtures, owner-authorized resources, local UI/doctor/preview
   state, bounded metrics, crash-reconciliation tests, and the disposable
   `corepack pnpm test:reversible` gate.
-- Stages `@synapsor/spec@1.4.0`, `@synapsor/dsl@1.4.0`, and
-  `@synapsor/runner@1.4.0`. No npm package is published by this change.
+- Published `@synapsor/spec@1.4.0`, `@synapsor/dsl@1.4.0`, and
+  `@synapsor/runner@1.4.0`.
 
 ## 1.3.0 (prepared, not published)
 
@@ -233,7 +233,8 @@
   metadata so a leaked handle does not become bearer authority.
 - Adds shared-store and Streamable HTTP regressions proving owner access still
   works while cross-session resource reads fail closed.
-- Stages only `@synapsor/runner@1.1.1`; canonical Spec and DSL remain `1.1.0`.
+- Published only `@synapsor/runner@1.1.1`; canonical Spec and DSL remain
+  `1.1.0`.
 
 ## 1.1.0
 
@@ -257,8 +258,8 @@
 - Adds verified dead-letter list/show/requeue/discard, shared-ledger
   backup/digest/restore, archive-before-retention, and a repeatable two-Runner
   kill/recovery test over synthetic Postgres/MySQL.
-- Stages `@synapsor/spec@1.1.0`, `@synapsor/dsl@1.1.0`, and
-  `@synapsor/runner@1.1.0`. Nothing is published by this change.
+- Published `@synapsor/spec@1.1.0`, `@synapsor/dsl@1.1.0`, and
+  `@synapsor/runner@1.1.0`.
 
 ## 1.0.0
 
@@ -280,7 +281,7 @@
   and Streamable HTTP mTLS.
 - Declares the first semver contract for the documented CLI, schema, contract,
   MCP result, writeback, approval, metrics, and replay surfaces.
-- Stages `@synapsor/spec@1.0.0`, `@synapsor/dsl@1.0.0`, and
+- Published `@synapsor/spec@1.0.0`, `@synapsor/dsl@1.0.0`, and
   `@synapsor/runner@1.0.0`.
 
 ## 0.1.16

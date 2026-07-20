@@ -107,7 +107,7 @@ try {
 
 `formatAgentDsl(source)` returns a canonically formatted copy of the DSL text.
 
-## Supported Preview Constructs
+## Supported Constructs
 
 - `CREATE AGENT CONTEXT`
 - `CREATE CAPABILITY`

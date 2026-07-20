@@ -60,16 +60,19 @@ if (readme !== packagedReadme) {
 const wordCount = readme.trim().split(/\s+/).length;
 if (wordCount > 1500) fail(`README must stay at or below 1,500 words; found ${wordCount}.`);
 
+const proofCommand = "npx -y @synapsor/runner try --prove";
 const auditCommand = "npx -y @synapsor/runner audit --example dangerous-db-mcp";
-const demoCommand = "npx -y @synapsor/runner demo --quick";
+if ((readme.match(new RegExp(proofCommand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length !== 1) {
+  fail("README must contain the public guarded-action proof command exactly once.");
+}
 if ((readme.match(new RegExp(auditCommand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length !== 1) {
   fail("README must contain the public audit command exactly once.");
 }
-if ((readme.match(new RegExp(demoCommand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length !== 1) {
-  fail("README must contain the public quick-demo command exactly once.");
+if (readme.indexOf(proofCommand) > readme.indexOf(auditCommand)) {
+  fail("README must put the guarded-action proof before the audit command.");
 }
-if (readme.indexOf(auditCommand) > readme.indexOf(demoCommand)) {
-  fail("README must put the audit command before the quick demo.");
+if (!readme.includes("`demo --quick` remains a noninteractive compatibility alias.")) {
+  fail("README must retain the demo --quick compatibility note.");
 }
 if (/sslmode=no-verify/i.test(readme)) {
   fail("README must not recommend sslmode=no-verify.");

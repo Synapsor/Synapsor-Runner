@@ -150,7 +150,7 @@ reviewed runner JSON capabilities. Current parity:
 | arg `minimum` | `ARG amount NUMBER MIN 1` | 0.1.8 | NUMBER args only. |
 | arg `maximum` | `ARG amount NUMBER MAX 2500` | 0.1.8 | NUMBER args only. |
 | arg `max_length` | `ARG reason TEXT MAX LENGTH 500` | 0.1.8 | STRING/TEXT args only. Legacy `MAX 500` is still accepted for existing DSL files, but `MAX LENGTH` is the reviewed spelling. |
-| arg `enum` | Not expressible in DSL yet | 0.1 | Use embedded JSON or generated contract JSON when enum allowlists are required. |
+| arg `enum` | `ARG risk_level STRING ENUM('low', 'medium', 'high') REQUIRED` | 1.4.121 | Supports 1..64 same-type string, number, or boolean values; duplicates and mixed types fail compilation. |
 | proposal `numeric_bounds` | `BOUND column 1..2500`, `BOUND column ..2500`, or `BOUND column 1..` | 0.1.8 | Applies to patched numeric columns. Strict mode warns when a NUMBER arg is patched without arg min/max or a matching `BOUND`. |
 | proposal `transition_guards` | `TRANSITION status ALLOW pending -> approved\|rejected` or `TRANSITION status FROM current_status ALLOW open -> closed` | 0.1.8 | Values are state strings; use `|` for multiple target states. |
 | proposal `conflict_guard` | `CONFLICT GUARD updated_at` | 0.1 | If omitted, DSL emits an explicit weak-guard acknowledgement. Prefer a real row-version column. |

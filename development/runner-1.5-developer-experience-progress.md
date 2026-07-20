@@ -20,7 +20,7 @@ publishing, pushing, tagging, or deploying.
 | 5: audit funnel | complete | 569 tests, SARIF and disabled packed candidate generation passed |
 | 6: schema candidates | complete | 576 tests, malicious fixtures and packed Prisma generation passed |
 | 7: reference experience | complete | Hardened PostgreSQL/RLS demo, strict shadow, human outcomes, effect regression, legacy reference, and 576 tests passed |
-| 8: docs and trust hygiene | pending | |
+| 8: docs and trust hygiene | complete | Concise 1,485-word README, live-registry provenance audit, website correction handoff, packed docs, and 576 tests passed |
 | 9: final verification | pending | |
 
 ## Baseline Commands
@@ -783,3 +783,76 @@ Results:
 - complete suite: 30 files, 576/576 tests passed;
 - typecheck, license/content, and DSL source-path checks passed;
 - Docker resources were removed after every live run.
+
+## Phase 8: Documentation, Website, And Trust Hygiene
+
+Implemented:
+
+- rewrote the README first screen around "Approve the exact business effect,
+  not an opaque tool call";
+- made `npx -y @synapsor/runner try --prove` the first command and showed the
+  exact `late_fee_cents: 5500 -> 0` effect, no pre-approval source mutation,
+  guarded commit, duplicate-free retry, and stale-state refusal;
+- kept `audit --example dangerous-db-mcp` immediately second, before the
+  staging-database path;
+- replaced broad tenant-safety wording with an explicit isolation matrix for
+  the embedded proof, shared-credential application scope, PostgreSQL RLS, and
+  tenant-bound credentials/deployments;
+- documented trusted-context provenance and the distinct PostgreSQL/MySQL
+  boundaries without claiming that RLS contains a process that controls trusted
+  settings or credentials;
+- kept the root and npm-package README byte-identical at 1,485 words;
+- promoted `examples/support-billing-agent` as the live flagship while
+  retaining the graduated-trust example elsewhere;
+- updated the content gate so CI enforces the new proof -> audit -> staging
+  sequence and the `demo --quick` compatibility note;
+- clarified that canonical contract `spec_version: "0.1"` is a schema
+  identifier, not the maturity of the independently versioned npm package;
+- removed obsolete current-use alpha wording from MCP client setup, local mode,
+  release policy, and the DSL package README while preserving historical
+  release notes;
+- corrected DSL/JSON parity documentation for the shipped enum syntax;
+- reconciled changelog and release-note publication status against the live npm
+  registry without inventing releases that do not exist;
+- created `development/runner-1.5-website-corrections.md` with exact deployed
+  URLs, proprietary source locations, replacement copy, isolation-language
+  corrections, and website verification steps for a separately authorized
+  goal.
+
+Release provenance:
+
+- live `latest` and `next` tags both point to Runner `1.4.123`, Spec `1.4.2`,
+  and DSL `1.4.3`; Cloud CLI `latest`/`next` point to `0.1.0-beta.1`;
+- local package versions match those published versions before the Phase 9
+  release bump;
+- only `v1.0.0` is present in the local Git tag history, so missing later
+  release tags remain an explicit operator follow-up rather than fabricated
+  history;
+- `1.1.2`, `1.2.0`, and `1.3.0` remain marked prepared/not published because
+  those versions are absent from the registry.
+
+Verification:
+
+```bash
+corepack pnpm build:runner-package
+corepack pnpm test:license-content
+corepack pnpm verify:packed-runner
+corepack pnpm test
+wc -w README.md apps/runner/README.md
+cmp -s README.md apps/runner/README.md
+git diff --check
+npm view @synapsor/runner version dist-tags time --json
+npm view @synapsor/spec version dist-tags time --json
+npm view @synapsor/dsl version dist-tags time --json
+npm view @synapsor/cli version dist-tags time --json
+```
+
+Results:
+
+- package build and Markdown-link validation passed;
+- packed scratch installation passed;
+- complete suite: 30 files, 576/576 tests passed;
+- typecheck, license/content, and DSL source-path checks passed;
+- both README copies contain 1,485 words and are byte-identical;
+- website source was inspected but not modified, pushed, or deployed from this
+  OSS branch.
