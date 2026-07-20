@@ -1,7 +1,11 @@
-.PHONY: demo unsafe clean
+.PHONY: demo unsafe evaluate clean
 
 demo:
 	cd ../.. && examples/support-billing-agent/scripts/run-demo.sh
+	cd ../.. && examples/support-billing-agent/scripts/run-evaluation.sh
+
+evaluate:
+	cd ../.. && examples/support-billing-agent/scripts/run-evaluation.sh
 
 unsafe:
 	@printf '%s\n' "Unsafe raw-SQL shortcut this demo avoids:"

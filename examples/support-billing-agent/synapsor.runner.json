@@ -9,7 +9,15 @@
       "engine": "postgres",
       "read_url_env": "REFERENCE_POSTGRES_READ_URL",
       "write_url_env": "REFERENCE_POSTGRES_WRITE_URL",
-      "statement_timeout_ms": 3000
+      "statement_timeout_ms": 3000,
+      "database_scope": {
+        "mode": "postgres_rls",
+        "tenant_setting": "synapsor.tenant_id",
+        "principal_setting": "synapsor.principal"
+      },
+      "credential_scope": {
+        "mode": "shared"
+      }
     }
   },
   "trusted_context": {
@@ -38,7 +46,8 @@
         "schema": "public",
         "table": "support_tickets",
         "primary_key": "id",
-        "tenant_key": "tenant_id"
+        "tenant_key": "tenant_id",
+        "principal_scope_key": "assigned_to"
       },
       "args": {
         "ticket_id": {
@@ -71,7 +80,8 @@
         "schema": "public",
         "table": "customers",
         "primary_key": "id",
-        "tenant_key": "tenant_id"
+        "tenant_key": "tenant_id",
+        "principal_scope_key": "assigned_to"
       },
       "args": {
         "customer_id": {
@@ -140,7 +150,8 @@
         "schema": "public",
         "table": "invoices",
         "primary_key": "id",
-        "tenant_key": "tenant_id"
+        "tenant_key": "tenant_id",
+        "principal_scope_key": "assigned_to"
       },
       "args": {
         "invoice_id": {
@@ -174,7 +185,8 @@
         "schema": "public",
         "table": "invoices",
         "primary_key": "id",
-        "tenant_key": "tenant_id"
+        "tenant_key": "tenant_id",
+        "principal_scope_key": "assigned_to"
       },
       "args": {
         "invoice_id": {
