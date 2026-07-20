@@ -266,6 +266,149 @@ export type RuntimeConfig = {
   };
 };
 
+export type IsolationAssuranceMode = "application_scope" | "postgres_rls" | "tenant_bound";
+export type TrustedContextBindingMode =
+  | "process_bound"
+  | "verified_http_session"
+  | "verified_external_session"
+  | "mixed"
+  | "missing";
+
+export type SourceIsolationAssurance = {
+  source: string;
+  engine: SourceEngine;
+  mode: IsolationAssuranceMode;
+  database_scope: "application" | "postgres_rls";
+  credential_scope: "shared" | "tenant_resolver";
+  trusted_context: {
+    providers: ContextProvider[];
+    request_binding: TrustedContextBindingMode;
+  };
+  controls: string[];
+  protects_against: string[];
+  does_not_protect_against: string[];
+  remaining_trust_boundary: string;
+  warning?: string;
+};
+
+/**
+ * Describes deployment assurance without changing portable contract semantics.
+ * This is intentionally derived from local Runner wiring, never model input.
+ */
+export function describeIsolationAssurance(config: RuntimeConfig): SourceIsolationAssurance[] {
+  return Object.entries(config.sources ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([sourceName, source]) => {
+      const providers = trustedContextProvidersForSource(config, sourceName);
+      const requestBinding = trustedContextBindingMode(providers);
+      const databaseScope = source.database_scope?.mode ?? "application";
+      const credentialScope = source.credential_scope?.mode ?? "shared";
+      const mode: IsolationAssuranceMode = credentialScope === "tenant_resolver"
+        ? "tenant_bound"
+        : databaseScope === "postgres_rls"
+          ? "postgres_rls"
+          : "application_scope";
+      const controls = [
+        "runner_predicates",
+        ...(databaseScope === "postgres_rls" ? ["postgres_rls"] : []),
+        ...(credentialScope === "tenant_resolver" ? ["tenant_credential_resolver"] : []),
+      ];
+
+      if (mode === "tenant_bound") {
+        return {
+          source: sourceName,
+          engine: source.engine,
+          mode,
+          database_scope: databaseScope,
+          credential_scope: credentialScope,
+          trusted_context: { providers, request_binding: requestBinding },
+          controls,
+          protects_against: [
+            "model_scope_override",
+            "runner_query_predicate_defect",
+            "pooled_context_leakage",
+            "cross_tenant_process_authority_when_resolver_grants_are_correct",
+          ],
+          does_not_protect_against: [
+            "incorrect_credential_resolver_or_database_grants",
+            "compromised_selected_tenant_credential",
+            "compromised_database_administrator",
+          ],
+          remaining_trust_boundary: "The application-supplied resolver and database grants must ensure the selected credential has no authority over other tenants.",
+        };
+      }
+
+      if (mode === "postgres_rls") {
+        return {
+          source: sourceName,
+          engine: source.engine,
+          mode,
+          database_scope: databaseScope,
+          credential_scope: credentialScope,
+          trusted_context: { providers, request_binding: requestBinding },
+          controls,
+          protects_against: [
+            "model_scope_override",
+            "runner_query_predicate_defect",
+            "pooled_context_leakage",
+          ],
+          does_not_protect_against: [
+            "compromised_runner_selecting_arbitrary_rls_context",
+            "broad_credential_compromise",
+            "compromised_database_administrator",
+          ],
+          remaining_trust_boundary: "A fully compromised Runner holding a broad credential can still choose arbitrary transaction-local RLS context.",
+        };
+      }
+
+      const sharedHttp = requestBinding === "verified_http_session";
+      return {
+        source: sourceName,
+        engine: source.engine,
+        mode,
+        database_scope: databaseScope,
+        credential_scope: credentialScope,
+        trusted_context: { providers, request_binding: requestBinding },
+        controls,
+        protects_against: [
+          "model_scope_override",
+          "forged_model_tool_arguments",
+        ],
+        does_not_protect_against: [
+          "runner_query_predicate_defect",
+          "broad_credential_compromise",
+          "compromised_runner_process",
+          "compromised_database_administrator",
+        ],
+        remaining_trust_boundary: "Runner query construction and the shared database credential remain inside the tenant-isolation trust boundary.",
+        ...(sharedHttp ? {
+          warning: "Shared authenticated HTTP sessions use application-level scope only. Add PostgreSQL RLS or tenant-bound credentials for an independent database/process boundary.",
+        } : {}),
+      };
+    });
+}
+
+function trustedContextProvidersForSource(config: RuntimeConfig, sourceName: string): ContextProvider[] {
+  const providers = new Set<ContextProvider>();
+  for (const capability of config.capabilities ?? []) {
+    if (capability.source !== sourceName) continue;
+    const context = capability.context ? config.contexts?.[capability.context] : config.trusted_context;
+    if (context?.provider) providers.add(context.provider);
+  }
+  if (providers.size === 0 && config.trusted_context?.provider) {
+    providers.add(config.trusted_context.provider);
+  }
+  return [...providers].sort();
+}
+
+function trustedContextBindingMode(providers: ContextProvider[]): TrustedContextBindingMode {
+  if (providers.length === 0) return "missing";
+  if (providers.every((provider) => provider === "http_claims")) return "verified_http_session";
+  if (providers.every((provider) => provider === "cloud_session")) return "verified_external_session";
+  if (providers.every((provider) => provider === "environment" || provider === "static_dev")) return "process_bound";
+  return "mixed";
+}
+
 export type RuntimeRateLimitRule = {
   requests: number;
   window_seconds: number;
@@ -1789,6 +1932,10 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       : usesSessionAuth
         ? `Auth: signed per-session JWT (${config.session_auth?.provider})\n`
         : `Auth: bearer token from ${authTokenEnv}\n`);
+    for (const assurance of describeIsolationAssurance(config)) {
+      log.write(`Isolation ${assurance.source}: ${assurance.mode}; trusted context: ${assurance.trusted_context.request_binding}\n`);
+      if (assurance.warning) log.write(`Isolation warning ${assurance.source}: ${assurance.warning}\n`);
+    }
     log.write(`Config: ${options.configPath ?? "synapsor.runner.json"}\n`);
     log.write(`Store: ${options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db"}\n`);
   }
@@ -2820,6 +2967,7 @@ async function callConfiguredTool(input: {
       payload: {
         capability: capability.name,
         columns: capability.visible_columns,
+        binding_provenance: context.provenance,
         tenant_bound: Boolean(capability.target.tenant_key),
         principal_bound: Boolean(principalScope),
         ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
@@ -3036,10 +3184,11 @@ async function recordAggregateRead(input: {
     query_fingerprint: queryFingerprint,
     table_name: `${input.capability.target.schema}.${input.capability.target.table}`,
     row_count: 1,
-    payload: {
-      capability: input.capability.name,
-      operation: "reviewed_aggregate_read",
-      aggregate: aggregate.function,
+      payload: {
+        capability: input.capability.name,
+        operation: "reviewed_aggregate_read",
+        binding_provenance: input.context.provenance,
+        aggregate: aggregate.function,
       aggregate_column: aggregate.column ?? null,
       count_mode: aggregate.count_mode ?? null,
       fixed_selection: aggregate.selection ?? null,

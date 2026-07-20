@@ -13,7 +13,7 @@ publishing, pushing, tagging, or deploying.
 | --- | --- | --- |
 | Baseline | complete | Full release gate passed |
 | 1: `try` experience | complete | 533 tests, content/path checks, packed scratch installs passed |
-| 1B: database-enforced scope | complete | 541 tests, adversarial PostgreSQL RLS proof, packed runtime import passed |
+| 1B: database-enforced scope | complete | 549 tests, explicit assurance/provenance diagnostics, adversarial PostgreSQL RLS proof passed |
 | 2: shadow studies | complete | 546 tests, packed scratch study/import/report passed |
 | 3: MCP App | pending | |
 | 4: effect regression | pending | |
@@ -193,6 +193,71 @@ Results:
 - packed tarball contains the new guide and runtime JS/types; a clean npm
   install imported all three public runtime functions;
 - no development progress file was included in the package.
+
+### Expanded Phase 1B Assurance Addendum
+
+The goal was expanded after the original Phase 1B commit. Reopened and
+completed the milestone before continuing later phases.
+
+Implemented:
+
+- one Runner-local assurance descriptor shared by `doctor`, `tools preview`,
+  and Streamable HTTP startup, with exact modes `application_scope`,
+  `postgres_rls`, and `tenant_bound`;
+- structured trusted-context binding diagnostics for `process_bound`,
+  `verified_http_session`, and externally verified Cloud sessions;
+- explicit remaining-trust-boundary and attacker-class output without changing
+  canonical contract semantics;
+- prominent warnings when shared signed HTTP sessions still rely only on
+  application-level database scope;
+- provider-aware doctor checks so `http_claims` no longer incorrectly requires
+  process tenant/principal environment variables;
+- session-auth readiness checks, including signing-material presence and a
+  production recommendation for asymmetric verification;
+- startup output that reports non-secret assurance mode without logging tenant,
+  principal, token, or database credentials;
+- evidence/query-audit provenance recording for reviewed reads and aggregates;
+- documentation that rejects query parameters, arbitrary MCP metadata,
+  caller-selected tenant headers, and unverified forwarding metadata as
+  authority;
+- explicit opt-in/adopter-owned RLS policy guidance rather than silent policy
+  mutation.
+
+Security verification:
+
+- a signed Streamable HTTP session was invoked with conflicting tenant and
+  principal values in the URL query, custom headers, and MCP request metadata;
+  the database reader still received only the verified JWT claims;
+- session reuse with a different signed identity remained denied;
+- cross-tenant and cross-principal evidence handles remained unreadable;
+- assurance output accurately retained the compromised-process limitation of
+  broad shared credentials and PostgreSQL session-context RLS.
+
+Verification:
+
+```bash
+corepack pnpm build
+corepack pnpm exec vitest run packages/mcp-server/src/index.test.ts apps/runner/src/cli.test.ts
+corepack pnpm test:database-scope
+corepack pnpm test
+node scripts/check-license-content.mjs
+./scripts/verify-dsl-source-paths.sh
+corepack pnpm --filter @synapsor/runner pack --pack-destination /tmp/synapsor-phase1b-assurance-pack
+npm install --prefix <scratch> /tmp/synapsor-phase1b-assurance-pack/synapsor-runner-1.4.123.tgz
+node <scratch>/node_modules/@synapsor/runner/dist/cli.js tools preview --json ...
+```
+
+Results:
+
+- focused MCP/CLI suite: 182/182 passed;
+- disposable PostgreSQL RLS proof passed;
+- complete suite: 26 files, 549/549 passed;
+- license/content and DSL source-path checks passed;
+- packed scratch install reported `application_scope` and `process_bound`
+  through the shipped CLI, shipped the updated database-scope guide, and
+  excluded `development/`;
+- no spec, DSL, or public protocol schema changed; deployment assurance remains
+  Runner-owned local wiring.
 
 ## External Actions
 

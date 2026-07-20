@@ -3,11 +3,11 @@
 Runner always binds tenant and principal from trusted server-side context, not
 from model arguments. Choose the database enforcement mode deliberately:
 
-| Mode | What enforces scope | Protects against | Does not protect against |
+| Diagnostic mode | What enforces scope | Protects against | Does not protect against |
 | --- | --- | --- | --- |
-| Application scope | Runner's fixed, parameterized predicates with one least-privilege credential | A model trying to widen tenant or principal arguments | A defect in Runner's predicate construction |
-| PostgreSQL RLS | Runner predicates plus PostgreSQL row-level security | Omitted/wrong Runner predicates and pooled-session context leakage | A fully compromised process that can choose trusted settings while holding a broad credential |
-| Tenant-bound credential/deployment | Runner predicates plus a credential or process that cannot access other tenants | Query mistakes and a process that never receives organization-wide database authority | Incorrect grants or isolation in the credential/deployment itself |
+| `application_scope` | Runner's fixed, parameterized predicates with one least-privilege credential | A model trying to widen tenant or principal arguments | A defect in Runner's predicate construction |
+| `postgres_rls` | Runner predicates plus PostgreSQL row-level security | Omitted/wrong Runner predicates and pooled-session context leakage | A fully compromised process that can choose trusted settings while holding a broad credential |
+| `tenant_bound` | Runner predicates plus a credential or process that cannot access other tenants | Query mistakes and a process that never receives organization-wide database authority | Incorrect grants or isolation in the credential/deployment itself |
 
 These modes are defense in depth, not substitutes for least-privilege roles,
 restricted views, application authorization, or staging-first validation.
@@ -29,6 +29,33 @@ the model from selecting another tenant, because scope is not a tool argument.
 It is still application-level isolation: a defect in Runner's SQL construction
 could cross that boundary. Keep database permissions, restricted views, and
 RLS where available.
+
+## Trusted-Context Provenance
+
+The tenant value is part of the security boundary. Runner accepts it through
+these reviewed paths:
+
+| Deployment | Trusted-context source | Diagnostic binding |
+| --- | --- | --- |
+| Local stdio or one explicitly single-tenant process | Operator-controlled environment or local development binding | `process_bound` |
+| Shared Streamable HTTP | Verified signed JWT claims configured with `http_claims` and `session_auth` | `verified_http_session` |
+| Cloud embedding | A verified per-session binding supplied by the embedding control plane | `verified_external_session` |
+
+Runner does not treat a tool argument, query parameter, arbitrary MCP `_meta`
+value, `X-Tenant-*` header, or unverified forwarded header as tenant or
+principal authority. A shared HTTP catalog cannot mix claims-bound capabilities
+with environment-bound capabilities.
+
+For shared production HTTP, prefer asymmetric JWT verification so Runner holds
+only public verification material. HS256 remains useful for local development
+and controlled deployments but gives Runner access to the signing secret.
+
+Run `doctor --json` or `tools preview --json` to inspect the effective
+per-source assurance mode and trusted-context binding. Server startup prints
+the same non-secret summary. An `application_scope` source used with verified
+HTTP sessions is deliberately reported with a warning: authentication makes
+the tenant value trustworthy, but it does not add an independent database
+boundary.
 
 ## PostgreSQL RLS Mode
 
@@ -75,6 +102,9 @@ attested. Required properties include:
 
 Use a non-owner read role and a separate non-owner write role. Adapt names and
 grants to your schema:
+
+Runner does not silently create or widen these policies. Review and apply the
+SQL as a database owner, then run doctor using the steady-state non-owner role.
 
 ```sql
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;

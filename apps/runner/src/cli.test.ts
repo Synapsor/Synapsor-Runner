@@ -2735,6 +2735,94 @@ END
     }
   });
 
+  it("reports signed HTTP trusted-context assurance without requiring process tenant env vars", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-http-assurance-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+        },
+      },
+      trusted_context: {
+        provider: "http_claims",
+      },
+      session_auth: {
+        provider: "jwt_hs256",
+        secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+        issuer: "https://identity.example",
+        audience: "synapsor-runner",
+      },
+      capabilities: [{
+        name: "billing.inspect_invoice",
+        kind: "read",
+        source: "app_postgres",
+        target: {
+          schema: "public",
+          table: "invoices",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {
+          invoice_id: { type: "string", required: true, max_length: 128 },
+        },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "status"],
+        evidence: "required",
+        max_rows: 1,
+      }],
+    }), "utf8");
+    const oldRead = process.env.APP_POSTGRES_READ_URL;
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    const oldSessionSecret = process.env.SYNAPSOR_SESSION_JWT_SECRET;
+    delete process.env.APP_POSTGRES_READ_URL;
+    delete process.env.SYNAPSOR_TENANT_ID;
+    delete process.env.SYNAPSOR_PRINCIPAL;
+    process.env.SYNAPSOR_SESSION_JWT_SECRET = "test-session-secret-that-is-at-least-32-bytes";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+      const report = JSON.parse(output.join(""));
+      expect(report.isolation).toEqual([
+        expect.objectContaining({
+          source: "app_postgres",
+          mode: "application_scope",
+          trusted_context: {
+            providers: ["http_claims"],
+            request_binding: "verified_http_session",
+          },
+          warning: expect.stringContaining("application-level scope only"),
+        }),
+      ]);
+      expect(report.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: "trusted-context:trusted_context",
+          level: "pass",
+          message: expect.stringContaining("arbitrary headers"),
+        }),
+        expect.objectContaining({
+          name: "source:app_postgres:isolation-assurance",
+          level: "warn",
+        }),
+      ]));
+      expect(report.checks.some((check: { name: string }) => check.name === "env:SYNAPSOR_TENANT_ID" || check.name === "env:SYNAPSOR_PRINCIPAL")).toBe(false);
+    } finally {
+      if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
+      if (oldSessionSecret === undefined) delete process.env.SYNAPSOR_SESSION_JWT_SECRET; else process.env.SYNAPSOR_SESSION_JWT_SECRET = oldSessionSecret;
+    }
+  });
+
   it("probes direct SQL writeback safely when requested by doctor", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-doctor-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -4202,6 +4290,7 @@ END
     expect(output.join("")).toContain("Not exposed to MCP:");
     expect(output.join("")).toContain("execute_sql / raw query tools");
     expect(output.join("")).toContain("principal row lock: assigned_to from required trusted environment binding principal (AND tenant)");
+    expect(output.join("")).toContain("app_mysql: application_scope; trusted context process_bound");
 
     output.length = 0;
     await expect(main(["tools", "preview", "--config", configPath, "--store", storePath, "--alias-mode", "openai"])).resolves.toBe(0);
@@ -4216,6 +4305,17 @@ END
     expect(preview.capability_details[0]).toMatchObject({
       principal_source: "assigned_to from required trusted environment binding principal",
     });
+    expect(preview.isolation).toEqual([
+      expect.objectContaining({
+        source: "app_mysql",
+        engine: "mysql",
+        mode: "application_scope",
+        trusted_context: {
+          providers: ["environment"],
+          request_binding: "process_bound",
+        },
+      }),
+    ]);
     expect(preview.alias_mappings).toEqual(expect.arrayContaining([
       expect.objectContaining({
         canonicalName: "clinic.inspect_appointment",

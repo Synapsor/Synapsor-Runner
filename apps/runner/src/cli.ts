@@ -10,7 +10,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CloudControlClient, CloudControlError, ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, enqueueCloudLinkedResult, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { bindPostgresRlsScope, createPostgresPool, inspectPostgresRlsTarget, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration, type PostgresRlsOperation } from "@synapsor-runner/postgres";
@@ -2654,13 +2654,28 @@ function normalizeConfigForMigration(config: unknown): Record<string, unknown> {
   return clone;
 }
 
-function trustedContextsForDoctor(config: RuntimeConfig): Array<[string, Record<string, unknown>]> {
-  const contexts: Array<[string, Record<string, unknown>]> = [];
-  if (config.trusted_context?.values) contexts.push(["trusted_context", config.trusted_context.values]);
-  for (const [name, context] of Object.entries(config.contexts ?? {})) {
-    contexts.push([`contexts.${name}`, context.values ?? {}]);
+type TrustedContextDoctorEntry = {
+  name: string;
+  provider: ContextProvider;
+  values: Record<string, unknown>;
+};
+
+function trustedContextsForDoctor(config: RuntimeConfig): TrustedContextDoctorEntry[] {
+  const contexts: TrustedContextDoctorEntry[] = [];
+  if (config.trusted_context) {
+    contexts.push({
+      name: "trusted_context",
+      provider: config.trusted_context.provider,
+      values: config.trusted_context.values ?? {},
+    });
   }
-  if (contexts.length === 0) contexts.push(["trusted_context", {}]);
+  for (const [name, context] of Object.entries(config.contexts ?? {})) {
+    contexts.push({
+      name: `contexts.${name}`,
+      provider: context.provider,
+      values: context.values ?? {},
+    });
+  }
   return contexts;
 }
 
@@ -3017,6 +3032,11 @@ function formatLocalDoctorReport(report: LocalDoctorReport): string {
     `Governance authority: ${report.governance.authority_mode}`,
     `Evidence residency: ${report.governance.evidence_residency}`,
   ];
+  for (const assurance of report.isolation) {
+    lines.push(`Isolation ${assurance.source}: ${assurance.mode} (${assurance.trusted_context.request_binding})`);
+    lines.push(`  Remaining boundary: ${assurance.remaining_trust_boundary}`);
+    if (assurance.warning) lines.push(`  WARNING: ${assurance.warning}`);
+  }
   if (report.tools.length) {
     lines.push("Exposed MCP tools:");
     for (const tool of report.tools) lines.push(`  - ${tool}`);
@@ -3043,6 +3063,19 @@ function formatLocalDoctorMarkdown(report: LocalDoctorReport): string {
     `- Queue proposals while Cloud is unavailable: ${report.governance.queue_when_unavailable ? "yes" : "no"}`,
     `- Status: ${report.ok ? "ok" : "needs attention"}`,
     "",
+    "## Tenant Isolation",
+    "",
+    ...report.isolation.flatMap((assurance) => [
+      `### ${assurance.source}`,
+      "",
+      `- Assurance mode: \`${assurance.mode}\``,
+      `- Trusted-context binding: \`${assurance.trusted_context.request_binding}\``,
+      `- Providers: ${assurance.trusted_context.providers.map((provider) => `\`${provider}\``).join(", ") || "none"}`,
+      `- Controls: ${assurance.controls.map((control) => `\`${control}\``).join(", ")}`,
+      `- Remaining boundary: ${assurance.remaining_trust_boundary}`,
+      ...(assurance.warning ? [`- Warning: ${assurance.warning}`] : []),
+      "",
+    ]),
     "## Semantic Tools",
     "",
     ...(report.tools.length ? report.tools.map((tool) => `- ${tool}`) : ["- none listed"]),
@@ -3108,6 +3141,7 @@ type LocalDoctorReport = {
   checks: DoctorCheck[];
   tools: string[];
   governance: LocalDoctorGovernance;
+  isolation: SourceIsolationAssurance[];
   store_stats?: {
     path: string;
     exists: boolean;
@@ -3375,14 +3409,25 @@ function memoryCheck(): FirstRunCheck {
 
 function firstRunConfigEnvChecks(config: RuntimeConfig): FirstRunCheck[] {
   const checks: FirstRunCheck[] = [];
-  for (const [contextName, values] of trustedContextsForDoctor(config)) {
+  for (const context of trustedContextsForDoctor(config)) {
+    if (context.provider === "http_claims") {
+      checks.push(config.session_auth
+        ? pass(`trusted-context-${context.name}`, `${context.name} binds tenant/principal from verified signed HTTP session claims.`, "Shared HTTP tenant scope must come from authenticated server-side identity.", "No action needed.")
+        : fail(`trusted-context-${context.name}`, `${context.name} uses http_claims without session_auth.`, "Unsigned transport metadata must never become trusted tenant authority.", "Configure signed session_auth before serving Streamable HTTP."));
+      continue;
+    }
+    if (context.provider === "cloud_session") {
+      checks.push(warn(`trusted-context-${context.name}`, `${context.name} requires an externally verified Cloud session binding.`, "Cloud session scope cannot be supplied by model arguments or static bearer authentication.", "Use the Cloud-linked embedding that supplies verified per-session context."));
+      continue;
+    }
+    const values = context.values;
     for (const envName of [
       String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID"),
       String(values.principal_env ?? "SYNAPSOR_PRINCIPAL"),
     ]) {
       checks.push(envValue(process.env, envName)
-        ? pass(`env-${envName}`, `${envName} is set for ${contextName}.`, "Trusted tenant/principal values must come from the launcher, not the model.", "No action needed.")
-        : warn(`env-${envName}`, `${envName} is not set for ${contextName}.`, "Trusted tenant/principal values must come from the launcher, not the model.", `Set ${envName}, or use the generated .env.example as a template.`));
+        ? pass(`env-${envName}`, `${envName} is set for ${context.name}.`, "Trusted tenant/principal values must come from the launcher, not the model.", "No action needed.")
+        : warn(`env-${envName}`, `${envName} is not set for ${context.name}.`, "Trusted tenant/principal values must come from the launcher, not the model.", `Set ${envName}, or use the generated .env.example as a template.`));
     }
   }
   for (const [sourceName, source] of Object.entries(config.sources ?? {})) {
@@ -3506,15 +3551,39 @@ async function localDoctor(args: string[]): Promise<number> {
   checks.push(...await sharedPostgresLedgerDoctorChecks(parsed));
   checks.push(...graduatedTrustDoctorChecks(parsed));
   const governance = await cloudLinkedGovernanceDoctorStatus(parsed, args, checks);
+  const isolation = describeIsolationAssurance(parsed);
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
-  for (const [contextName, contextValues] of contextsToCheck) {
-    const tenantEnv = String(contextValues.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
-    const principalEnv = String(contextValues.principal_env ?? "SYNAPSOR_PRINCIPAL");
+  for (const context of contextsToCheck) {
+    if (context.provider === "http_claims") {
+      checks.push({
+        name: `trusted-context:${context.name}`,
+        ok: Boolean(parsed.session_auth),
+        level: parsed.session_auth ? "pass" : "fail",
+        message: parsed.session_auth
+          ? `${context.name} binds tenant/principal from verified signed HTTP session claims; arbitrary headers, query parameters, MCP metadata, and model arguments are not trusted.`
+          : `${context.name} uses http_claims but session_auth is missing.`,
+      });
+      continue;
+    }
+    if (context.provider === "cloud_session") {
+      checks.push({
+        name: `trusted-context:${context.name}`,
+        ok: parsed.mode === "cloud",
+        level: parsed.mode === "cloud" ? "pass" : "fail",
+        message: parsed.mode === "cloud"
+          ? `${context.name} requires a verified Cloud session binding from the embedding control plane.`
+          : `${context.name} cannot be resolved by the stock local server; use a verified Cloud-session embedding.`,
+      });
+      continue;
+    }
+    const tenantEnv = String(context.values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
+    const principalEnv = String(context.values.principal_env ?? "SYNAPSOR_PRINCIPAL");
     for (const envName of [tenantEnv, principalEnv]) {
-      checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${contextName}.`));
+      checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`));
     }
   }
+  checks.push(...await sessionAuthDoctorChecks(parsed, configPath));
 
   const sources = parsed.sources ?? {};
   if (parsed.mode === "review") {
@@ -3539,7 +3608,8 @@ async function localDoctor(args: string[]): Promise<number> {
     }
   }
   for (const [sourceName, source] of Object.entries(sources)) {
-    checks.push(databaseScopeModeDoctorCheck(sourceName, source));
+    const assurance = isolation.find((item) => item.source === sourceName);
+    if (assurance) checks.push(databaseScopeModeDoctorCheck(assurance));
     if (source.credential_scope?.mode === "tenant_resolver") {
       checks.push({
         name: `source:${sourceName}:tenant-credential-resolver`,
@@ -3659,6 +3729,7 @@ async function localDoctor(args: string[]): Promise<number> {
     checks,
     tools,
     governance,
+    isolation,
     store_stats: await localDoctorStoreStats(optionalArg(args, "--store") ?? parsed.storage?.sqlite_path),
   };
   if (args.includes("--report")) {
@@ -3672,6 +3743,53 @@ async function localDoctor(args: string[]): Promise<number> {
     process.stdout.write(formatLocalDoctorReport(report));
   }
   return report.ok ? 0 : 1;
+}
+
+async function sessionAuthDoctorChecks(config: RuntimeConfig, configPath: string): Promise<DoctorCheck[]> {
+  if (!trustedContextsForDoctor(config).some((context) => context.provider === "http_claims")) return [];
+  const auth = config.session_auth;
+  if (!auth) {
+    return [{
+      name: "session-auth:configuration",
+      ok: false,
+      level: "fail",
+      message: "http_claims trusted context requires signed session_auth.",
+    }];
+  }
+  const checks: DoctorCheck[] = [{
+    name: "session-auth:configuration",
+    ok: true,
+    level: auth.provider === "jwt_hs256" ? "warn" : "pass",
+    message: auth.provider === "jwt_hs256"
+      ? "Signed HS256 session claims are configured. Use asymmetric JWT verification for shared production deployments so Runner never holds the signing secret."
+      : `Signed asymmetric session claims are configured with ${(auth.algorithms ?? []).join(", ")}.`,
+  }];
+  if (auth.provider === "jwt_hs256" && auth.secret_env) {
+    checks.push(envPresenceCheck(auth.secret_env, `${auth.secret_env} is required to verify signed HTTP sessions.`));
+    if (auth.previous_secret_env) {
+      checks.push(envPresenceCheck(auth.previous_secret_env, `${auth.previous_secret_env} is configured for session-key rotation and must be present while accepted.`));
+    }
+    return checks;
+  }
+  if (auth.jwks_url_env) {
+    checks.push(envPresenceCheck(auth.jwks_url_env, `${auth.jwks_url_env} is required to resolve the trusted session JWKS endpoint.`));
+  }
+  if (auth.public_key_env) {
+    checks.push(envPresenceCheck(auth.public_key_env, `${auth.public_key_env} is required to verify signed HTTP sessions.`));
+  }
+  if (auth.public_key_path) {
+    const keyPath = path.resolve(path.dirname(path.resolve(configPath)), auth.public_key_path);
+    const exists = await fileExists(keyPath);
+    checks.push({
+      name: "session-auth:public-key-path",
+      ok: exists,
+      level: exists ? "pass" : "fail",
+      message: exists
+        ? "Configured session-auth public key file exists."
+        : "Configured session-auth public key file does not exist relative to the Runner config.",
+    });
+  }
+  return checks;
 }
 
 async function cloudLinkedGovernanceDoctorStatus(
@@ -3786,28 +3904,30 @@ function graduatedTrustDoctorChecks(config: RuntimeConfig): DoctorCheck[] {
   return checks;
 }
 
-function databaseScopeModeDoctorCheck(sourceName: string, source: RunnerSourceConfig): DoctorCheck {
-  if (source.database_scope?.mode === "postgres_rls") {
+function databaseScopeModeDoctorCheck(assurance: SourceIsolationAssurance): DoctorCheck {
+  if (assurance.mode === "tenant_bound") {
     return {
-      name: `source:${sourceName}:database-scope-mode`,
+      name: `source:${assurance.source}:isolation-assurance`,
       ok: true,
       level: "pass",
-      message: `PostgreSQL database-enforced scope is configured with transaction-local settings ${source.database_scope.tenant_setting} and ${source.database_scope.principal_setting}. Runner predicates remain enabled as a separate check.`,
+      message: `Isolation mode tenant_bound uses ${assurance.credential_scope}; trusted context is ${assurance.trusted_context.request_binding}. ${assurance.remaining_trust_boundary}`,
     };
   }
-  if (source.engine === "mysql") {
+  if (assurance.mode === "postgres_rls") {
     return {
-      name: `source:${sourceName}:database-scope-mode`,
+      name: `source:${assurance.source}:isolation-assurance`,
       ok: true,
-      level: "warn",
-      message: "MySQL source uses application-level Runner predicates. MySQL has no PostgreSQL-equivalent native RLS; use tenant-bound credentials, restricted tenant-aware views/procedures, or isolated databases/deployments for an independent boundary.",
+      level: "pass",
+      message: `Isolation mode postgres_rls combines Runner predicates with database policy; trusted context is ${assurance.trusted_context.request_binding}. ${assurance.remaining_trust_boundary}`,
     };
   }
   return {
-    name: `source:${sourceName}:database-scope-mode`,
+    name: `source:${assurance.source}:isolation-assurance`,
     ok: true,
     level: "warn",
-    message: "Source uses application-level Runner tenant/principal predicates with the configured credential. For defense in depth against query-builder mistakes, configure postgres_rls and database policies; use tenant-bound credentials or deployments for a stronger process-compromise boundary.",
+    message: assurance.engine === "mysql"
+      ? `Isolation mode application_scope uses Runner tenant/principal predicates with a shared MySQL credential; trusted context is ${assurance.trusted_context.request_binding}. MySQL has no PostgreSQL-equivalent native RLS; use tenant-bound credentials, restricted views/procedures, or isolated deployments.`
+      : `Isolation mode application_scope uses Runner tenant/principal predicates with a shared credential; trusted context is ${assurance.trusted_context.request_binding}. ${assurance.warning ?? assurance.remaining_trust_boundary}`,
   };
 }
 
@@ -8067,6 +8187,7 @@ async function toolsPreview(args: string[]): Promise<number> {
       alias_mappings: boundary.exposures,
       approval_policies: boundary.approvalPolicies,
       capability_details: boundary.capabilityDetails,
+      isolation: boundary.isolation,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
       graduated_trust: boundary.graduatedTrust,
       checks: boundary.checks,
@@ -8087,6 +8208,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   capabilityDetails: ToolPreviewCapabilityDetail[];
+  isolation: SourceIsolationAssurance[];
   governance: LocalDoctorGovernance;
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
@@ -8106,6 +8228,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
     const approvalPolicies = approvalPolicySummaries(parsed);
     const capabilityDetails = toolPreviewCapabilityDetails(parsed);
+    const isolation = describeIsolationAssurance(parsed);
     const cloudSync = await runtime.cloudSyncStatus();
     const governance: LocalDoctorGovernance = {
       ...cloudSync,
@@ -8130,7 +8253,7 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, governance, graduatedTrust, checks };
+    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, isolation, governance, graduatedTrust, checks };
   } finally {
     await runtime.close();
   }
@@ -8159,6 +8282,7 @@ function formatToolsPreview(input: {
   autoApprovalDisabled: boolean;
   approvalPolicies: Array<{ capability: string; policy: string; limits: unknown[] }>;
   capabilityDetails: ToolPreviewCapabilityDetail[];
+  isolation: SourceIsolationAssurance[];
   governance: LocalDoctorGovernance;
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
@@ -8178,6 +8302,13 @@ function formatToolsPreview(input: {
       : []),
     `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
     `graduated trust: ${input.graduatedTrust.enabled ? input.graduatedTrust.kill_switch ? "enabled, kill switch active" : `enabled (${input.graduatedTrust.criteria} reviewed criteria)` : "disabled"}; operator-only, never MCP-facing`,
+    "",
+    "Tenant isolation:",
+    ...input.isolation.flatMap((assurance) => [
+      `  - ${assurance.source}: ${assurance.mode}; trusted context ${assurance.trusted_context.request_binding}`,
+      `    remaining boundary: ${assurance.remaining_trust_boundary}`,
+      ...(assurance.warning ? [`    WARNING: ${assurance.warning}`] : []),
+    ]),
     ...formatApprovalPolicyPreview(input.approvalPolicies),
     "",
     "Exposed to MCP:",
