@@ -1,0 +1,34 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("GENERATOR_FIXTURE_DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Customer {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  email        String
+  displayName  String    @map("display_name")
+  apiToken     String    @default("fixture-secret-must-not-escape") @map("api_token")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  invoices     Invoice[]
+
+  @@map("customers")
+}
+
+model Invoice {
+  id             String   @id
+  tenantId       String   @map("tenant_id")
+  customerId     String   @map("customer_id")
+  status         String
+  balanceCents   Int      @map("balance_cents")
+  lateFeeCents   Int      @map("late_fee_cents")
+  internalNote   String?  @map("internal_note")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  customer       Customer @relation(fields: [customerId], references: [id])
+
+  @@map("invoices")
+}

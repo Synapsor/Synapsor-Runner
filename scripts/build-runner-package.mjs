@@ -46,9 +46,11 @@ const external = [
   "mysql2/*",
   "pg",
   "pg/*",
+  "typescript",
   "vscode-languageserver",
   "vscode-languageserver/*",
   "vscode-languageserver-textdocument",
+  "yaml",
   "zod",
 ];
 
@@ -163,6 +165,7 @@ const publicDocs = [
   "runner-config-reference.md",
   "runner-bundles.md",
   "running-a-runner-fleet.md",
+  "schema-api-candidates.md",
   "conformance.md",
   "recipes.md",
   "security-boundary.md",

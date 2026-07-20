@@ -64,6 +64,10 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 05 Generate Capabilities
 
+- [Reviewed Prisma, Drizzle, And OpenAPI
+  Candidates](schema-api-candidates.md): turn structural developer artifacts
+  into deterministic, disabled canonical review candidates without executing
+  adopter code or inferring authority.
 - [Capability Authoring](capability-authoring.md): define read/proposal
   capabilities, model-facing descriptions, result envelopes, trusted context,
   and writeback guards.

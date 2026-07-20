@@ -16,9 +16,9 @@ publishing, pushing, tagging, or deploying.
 | 1B: database-enforced scope | complete | 549 tests, explicit assurance/provenance diagnostics, adversarial PostgreSQL RLS proof passed |
 | 2: shadow studies | complete | 546 tests, packed scratch study/import/report passed |
 | 3: MCP App | complete | 551 tests, packed install, unsigned MCPB build/unpack/runtime discovery passed |
-| 4: effect regression | pending | |
-| 5: audit funnel | pending | |
-| 6: schema candidates | pending | |
+| 4: effect regression | complete | 564 tests, stable JSON/JUnit and packed fixture checks passed |
+| 5: audit funnel | complete | 569 tests, SARIF and disabled packed candidate generation passed |
+| 6: schema candidates | complete | 576 tests, malicious fixtures and packed Prisma generation passed |
 | 7: reference experience | pending | |
 | 8: docs and trust hygiene | pending | |
 | 9: final verification | pending | |
@@ -642,3 +642,74 @@ Test-stability note:
   its explicit timeout was raised to 15 seconds (matching other integration
   tests), the isolated suite passed 4/4, and the final unmodified full command
   passed all 569 tests.
+
+## Phase 6: Reviewed Schema And API Candidates
+
+Implemented:
+
+- focused `init from-prisma`, `init from-drizzle`, and `init from-openapi`
+  commands that require a separate output directory;
+- deterministic canonical `@synapsor/spec` candidate contracts plus a
+  source-less strict-shadow Runner scaffold, deny/redaction/operator-boundary
+  tests, stable JSON review report, and human review checklist;
+- conspicuous unresolved tenant, principal, visible-field, conflict, source,
+  reviewer, and write-field placeholders rather than inferred authority;
+- proposal candidates with `writeback.mode: none`, no configured source, and
+  `blocked_unreviewed` markers;
+- review output separating structural primary/version hints, potential
+  tenant/principal fields, potentially sensitive/kept-out suggestions,
+  business-logic needs, and app-handler needs;
+- bounded structured Prisma parsing that ignores datasource credentials,
+  defaults, enum values, generators, plugins, and model relations;
+- bounded OpenAPI 3 JSON/YAML parsing with local component-schema references
+  only and no server URL, example, default, enum, callback, webhook, or
+  credential copying;
+- conservative Drizzle `pgTable`/`mysqlTable` analysis through the TypeScript
+  AST without importing, transpiling, type-checking, resolving, or executing
+  adopter code;
+- 2 MiB input, 50-object, 128-field, 200-capability, AST-node, structure-node,
+  and recursion bounds;
+- no-overwrite behavior, with `--force` accepted only for directories carrying
+  the matching Runner ownership marker;
+- public JSON Schemas for marker and review output, malicious fixtures, task
+  documentation, README/docs-index links, CLI help, and packed-install
+  generation coverage.
+
+Architecture and packaging decisions:
+
+- inferred capability documents use the canonical contract; no Runner-only
+  capability dialect or new portable semantics were introduced;
+- generator review/marker files are local Runner adoption artifacts;
+- `typescript@5.9.3` and `yaml@2.8.1` are pinned runtime dependencies but are
+  external to the bundled ESM CLI and loaded only by the generator path;
+- scratch-install verification caught and prevented broken ESM dynamic
+  requires when those parsers were initially bundled; the final main bundle
+  is 2.9 MB uncompressed rather than 12.6 MB.
+
+Verification:
+
+```bash
+corepack pnpm typecheck
+corepack pnpm vitest run apps/runner/src/schema-candidates.test.ts
+corepack pnpm build:runner-package
+corepack pnpm test:license-content
+corepack pnpm verify:packed-runner
+corepack pnpm test
+git diff --check
+```
+
+Results:
+
+- focused generator suite: 7/7 passed across Prisma, Drizzle, and OpenAPI;
+- malicious Drizzle input did not execute its file-write side effect and read
+  only the explicitly requested input, not an adjacent secret;
+- external OpenAPI references, dynamic Drizzle table names, oversized inputs,
+  implicit overwrite, and forced overwrite of unowned directories failed
+  closed;
+- generated contracts passed the canonical validator and review/marker
+  documents passed their public JSON Schemas;
+- complete suite: 30 files, 576/576 tests passed;
+- typecheck, content/license, DSL source-path, documentation-link, and packed
+  scratch-install checks passed;
+- a real installed tarball generated blocked Prisma candidates and shipped the
+  fixtures, schemas, and guide while excluding `development/`.
