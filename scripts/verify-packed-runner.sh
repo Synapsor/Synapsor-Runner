@@ -41,6 +41,9 @@ test -f "$PACKED_ROOT/schemas/effect-result.schema.json"
 test -f "$PACKED_ROOT/schemas/effect-dataset.schema.json"
 test -f "$PACKED_ROOT/schemas/mcp-audit-report.schema.json"
 test -f "$PACKED_ROOT/schemas/mcp-audit-candidates.schema.json"
+test -f "$PACKED_ROOT/schemas/schema-candidate-review.schema.json"
+test -f "$PACKED_ROOT/schemas/schema-candidates.schema.json"
+test -f "$PACKED_ROOT/docs/schema-api-candidates.md"
 test -f "$PACKED_ROOT/fixtures/effects/dataset.json"
 if [[ -e "$PACKED_ROOT/development" ]]; then
   echo "packed runner unexpectedly contains development progress files" >&2
@@ -115,6 +118,26 @@ if npx synapsor-runner audit generate --example dangerous-db-mcp --output ./audi
   echo "packed audit candidate generation unexpectedly overwrote an existing directory" >&2
   exit 1
 fi
+npx synapsor-runner init from-prisma \
+  "$PACKED_ROOT/fixtures/generators/prisma/schema.prisma" \
+  --output ./prisma-candidates >/dev/null
+node --input-type=module - prisma-candidates <<'NODE'
+import fs from "node:fs";
+import path from "node:path";
+const root = process.argv[2];
+const config = JSON.parse(fs.readFileSync(path.join(root, "synapsor.candidate.runner.json"), "utf8"));
+const contract = JSON.parse(fs.readFileSync(path.join(root, "synapsor.candidate.contract.json"), "utf8"));
+const review = JSON.parse(fs.readFileSync(path.join(root, "generation-review.json"), "utf8"));
+if (config.mode !== "shadow" || Object.keys(config.sources ?? {}).length !== 0) {
+  throw new Error("packed Prisma candidate config is not source-less shadow mode");
+}
+if (review.activation !== "blocked_unreviewed" || contract["x-runner-candidate-only"] !== true) {
+  throw new Error("packed Prisma candidates are not blocked and unreviewed");
+}
+for (const capability of contract.capabilities.filter((item) => item.kind === "proposal")) {
+  if (capability.proposal?.writeback?.mode !== "none") throw new Error("packed Prisma proposal carries writeback authority");
+}
+NODE
 npx synapsor-runner effect run \
   --dataset "$PACKED_ROOT/fixtures/effects/dataset.json" \
   --results-dir "$PACKED_ROOT/fixtures/effects/results" \

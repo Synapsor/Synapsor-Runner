@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapsor.ai/schemas/schema-candidate-review.schema.json",
+  "title": "Synapsor Schema/API Candidate Review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format",
+    "source_digest",
+    "activation",
+    "summary",
+    "warnings",
+    "objects"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "synapsor.schema-candidates.v1"
+    },
+    "format": {
+      "enum": [
+        "prisma",
+        "drizzle",
+        "openapi"
+      ]
+    },
+    "source_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "activation": {
+      "const": "blocked_unreviewed"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objects",
+        "fields",
+        "capabilities",
+        "write_candidates"
+      ],
+      "properties": {
+        "objects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fields": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "write_candidates": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "table",
+          "structural_primary_key_candidates",
+          "potential_tenant_fields",
+          "potential_principal_fields",
+          "potential_conflict_fields",
+          "potentially_sensitive_fields",
+          "suggested_kept_out_fields",
+          "suggested_visible_fields",
+          "possible_actions",
+          "uncertain_assumptions",
+          "unsupported_or_dynamic"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "table": {
+            "type": "string"
+          },
+          "structural_primary_key_candidates": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "potential_tenant_fields": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "potential_principal_fields": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "potential_conflict_fields": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "potentially_sensitive_fields": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "suggested_kept_out_fields": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "suggested_visible_fields": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "possible_actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "kind",
+                "allowed_field_candidates",
+                "requires_business_logic",
+                "requires_app_owned_handler"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "read",
+                    "proposal"
+                  ]
+                },
+                "allowed_field_candidates": {
+                  "$ref": "#/$defs/stringArray"
+                },
+                "requires_business_logic": {
+                  "type": "boolean"
+                },
+                "requires_app_owned_handler": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "uncertain_assumptions": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "unsupported_or_dynamic": {
+            "$ref": "#/$defs/stringArray"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

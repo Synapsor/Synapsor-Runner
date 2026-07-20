@@ -98,6 +98,7 @@ import {
   type EffectFixture,
 } from "./effect-regression.js";
 import { generateAuditCandidateDirectory } from "./audit-candidates.js";
+import type { SchemaCandidateFormat } from "./schema-candidates.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -517,6 +518,9 @@ function managedSecretsProvider(value: string): ManagedSecretsProvider {
 }
 
 async function init(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  const schemaFormat = schemaCandidateFormat(subcommand);
+  if (schemaFormat) return initFromDeveloperSchema(schemaFormat, rest);
   const answersPath = optionalArg(args, "--answers");
   if (answersPath) {
     return initFromAnswers(args, answersPath);
@@ -574,6 +578,49 @@ async function init(args: string[]): Promise<number> {
   await fs.writeFile(resolved, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   process.stdout.write(`created ${output}\n`);
   process.stdout.write("Edit table/column names and set the referenced environment variables before serving MCP tools.\n");
+  return 0;
+}
+
+function schemaCandidateFormat(value: string | undefined): SchemaCandidateFormat | undefined {
+  if (value === "from-prisma") return "prisma";
+  if (value === "from-drizzle") return "drizzle";
+  if (value === "from-openapi") return "openapi";
+  return undefined;
+}
+
+async function initFromDeveloperSchema(format: SchemaCandidateFormat, args: string[]): Promise<number> {
+  const inputPath = firstPositional(args);
+  if (!inputPath) throw new Error(`init from-${format} requires <input-file>`);
+  const outputDir = outputArg(args);
+  if (!outputDir) {
+    throw new Error(`init from-${format} requires --output <separate-candidate-directory>`);
+  }
+  const { generateSchemaCandidateDirectory } = await import("./schema-candidates.js");
+  const result = await generateSchemaCandidateDirectory({
+    format,
+    inputPath,
+    outputDir,
+    force: args.includes("--force"),
+  });
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write(`${[
+    `Synapsor ${format} candidates generated`,
+    `Output: ${result.output_dir}`,
+    `Source digest: ${result.source_digest}`,
+    `Objects: ${result.objects}`,
+    `Capabilities: ${result.capabilities}`,
+    "",
+    "Safety state: blocked and unreviewed",
+    "- schema/API shape was inspected; tenant and principal authority were not inferred;",
+    "- proposal writeback is disabled;",
+    "- Runner mode is shadow and no database source is configured;",
+    "- production configuration was not changed.",
+    "",
+    `Review ${path.join(result.output_dir, "REVIEW.md")} and the candidate contract before activating anything.`,
+  ].join("\n")}\n`);
   return 0;
 }
 
@@ -14086,6 +14133,9 @@ Inspect schema metadata without mutating the database or printing credentials.
   ${cmd} init --inspection-json schema.json --table sessions --mode review --operation delete
   ${cmd} init --answers answers.json --yes
   ${cmd} init --inspection-json schema.json --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
+  ${cmd} init from-prisma ./prisma/schema.prisma --output ./synapsor-prisma-candidates
+  ${cmd} init from-drizzle ./src/schema.ts --output ./synapsor-drizzle-candidates
+  ${cmd} init from-openapi ./openapi.yaml --output ./synapsor-openapi-candidates
 
 Generate a reviewed Synapsor Runner contract. Defaults to read-only in the wizard.
 Native direct SQL operations are update, insert, and delete. Existing configs default to update.
@@ -14097,6 +14147,14 @@ If --namespace is omitted, init derives one from the table name instead of using
 Use --read-tool and --proposal-tool to override the exact model-facing capability names.
 The guided wizard shows a final preview and lets you revise visible fields or capability names before writing files.
 Use --yes/--non-interactive plus explicit flags, or --answers, for script/agent-friendly setup without prompts.
+
+The from-prisma, from-drizzle, and from-openapi commands inspect developer
+artifacts and emit a separate, deterministic review directory. They infer
+structure only. Tenant/principal authority, sensitive-field decisions, write
+policy, and business bounds remain explicit review tasks. Generated writes are
+disabled, the Runner config is shadow-only and source-less, and existing output
+is never replaced unless --force targets a directory owned by this generator.
+Drizzle input is parsed as a bounded TypeScript AST and is never imported or run.
 	`,
     mcp: `Usage:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db

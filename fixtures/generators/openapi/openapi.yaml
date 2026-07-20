@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: Support billing API
+  version: 1.0.0
+servers:
+  - url: https://user:server-secret@example.invalid/api
+paths:
+  /invoices/{invoice_id}:
+    get:
+      operationId: getInvoice
+      tags: [billing]
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: INV-SECRET-EXAMPLE
+      responses:
+        "200":
+          description: Invoice response with server-secret-description
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+    patch:
+      operationId: waiveLateFee
+      tags: [billing]
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaiverRequest"
+      responses:
+        "200":
+          description: Updated invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+components:
+  schemas:
+    Invoice:
+      type: object
+      required: [id, tenant_id, status, balance_cents, updated_at]
+      properties:
+        id:
+          type: string
+          readOnly: true
+        tenant_id:
+          type: string
+        status:
+          type: string
+        balance_cents:
+          type: integer
+        card_token:
+          type: string
+          writeOnly: true
+          default: card-secret-must-not-escape
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    WaiverRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          example: secret-business-example
+        amount_cents:
+          type: integer
+          minimum: 0
+          maximum: 5000

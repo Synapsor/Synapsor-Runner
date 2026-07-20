@@ -109,10 +109,12 @@ export DATABASE_URL="postgresql://runner_reader:REPLACE_ME@db.example.com:5432/a
 synapsor-runner start --from-env DATABASE_URL --schema public
 ```
 
-The guided command inspects metadata, asks you to choose one table or view,
-creates trusted context, generates reviewed capabilities, previews the MCP tool
-surface, and prints the next smoke and serve commands. It stores environment
-variable names, not connection strings.
+The wizard inspects metadata, generates reviewed capabilities, previews MCP
+tools, and prints smoke/serve commands. It stores environment-variable names,
+not connection strings.
+
+[Generate disabled review candidates from Prisma, Drizzle, or
+OpenAPI.](docs/schema-api-candidates.md)
 
 The generated capability is a tenant-scoped read with an explicit column
 allowlist and required evidence. See the [own-database
