@@ -66,6 +66,13 @@ export DATABASE_URL="<postgres-or-mysql-read-url>"
 
 Use a read-only credential for inspection and model-facing read/proposal tools.
 
+The generated compatibility setup uses application-level trusted-scope
+predicates. Before production-like multi-tenant use, choose and document one of
+the modes in [Database-Enforced Tenant And Principal
+Scope](database-enforced-scope.md): shared application scope, PostgreSQL RLS
+plus Runner checks, or tenant-bound credentials/deployments. MySQL has no
+native RLS equivalent.
+
 ### TLS notes for AWS RDS and other managed databases
 
 If you see an error like:

@@ -23,6 +23,19 @@ export type RunnerConfig = {
     schema?: string;
     table?: string;
   };
+  /**
+   * Verified execution context for PostgreSQL row-level security.
+   *
+   * Callers derive these values from the approved proposal or another
+   * trusted authority. Database adapters never accept them from model input.
+   */
+  databaseScope?: {
+    mode: "postgres_rls";
+    tenantSetting: string;
+    principalSetting: string;
+    tenantId: string;
+    principal: string;
+  };
   writebackIntentStore?: WritebackIntentStore;
   /** Test-only crash injection. Production config loaders must never expose this. */
   testFailpoint?: (name: WritebackFailpoint) => void | Promise<void>;

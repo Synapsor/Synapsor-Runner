@@ -17,6 +17,35 @@ export type PostgresApplyClient = {
   query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
 };
 
+export type PostgresRlsOperation = "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+export type PostgresRlsScope = NonNullable<RunnerConfig["databaseScope"]>;
+
+export type PostgresRlsPolicyInspection = {
+  name: string;
+  command: "ALL" | PostgresRlsOperation;
+  permissive: boolean;
+  using_expression?: string;
+  with_check_expression?: string;
+};
+
+export type PostgresRlsInspection = {
+  schema: string;
+  table: string;
+  role: string;
+  table_exists: boolean;
+  row_security_enabled: boolean;
+  force_row_security: boolean;
+  role_is_superuser: boolean;
+  role_has_bypassrls: boolean;
+  role_is_table_owner: boolean;
+  tenant_setting: string;
+  principal_setting: string;
+  required_operations: PostgresRlsOperation[];
+  policies: PostgresRlsPolicyInspection[];
+  errors: string[];
+  ok: boolean;
+};
+
 type Operation = NonNullable<WritebackJob["operation"]>;
 type SetWritebackJob = Extract<WritebackJob, { protocol_version: "3.0" }>;
 type ColumnValue = { column: string; value: string | number | boolean | null };
@@ -57,8 +86,150 @@ export function quotePostgresIdentifier(identifier: string): string {
   return `"${identifier}"`;
 }
 
+export async function bindPostgresRlsScope(
+  client: PostgresApplyClient,
+  scope: PostgresRlsScope,
+): Promise<void> {
+  if (!scope.tenantId.trim()) throw new Error("POSTGRES_RLS_TENANT_CONTEXT_MISSING");
+  if (!scope.principal.trim()) throw new Error("POSTGRES_RLS_PRINCIPAL_CONTEXT_MISSING");
+  await client.query(
+    "SELECT set_config($1, $2, true), set_config($3, $4, true)",
+    [scope.tenantSetting, scope.tenantId, scope.principalSetting, scope.principal],
+  );
+}
+
+export async function inspectPostgresRlsTarget(
+  client: PostgresApplyClient,
+  input: {
+    schema: string;
+    table: string;
+    scope: Pick<PostgresRlsScope, "tenantSetting" | "principalSetting">;
+    operations: PostgresRlsOperation[];
+  },
+): Promise<PostgresRlsInspection> {
+  const metadata = await client.query(
+    `SELECT
+       current_user AS role,
+       c.oid::text AS table_oid,
+       c.relrowsecurity AS row_security_enabled,
+       c.relforcerowsecurity AS force_row_security,
+       owner.rolname = current_user AS role_is_table_owner,
+       current_role_info.rolsuper AS role_is_superuser,
+       current_role_info.rolbypassrls AS role_has_bypassrls
+     FROM pg_catalog.pg_class c
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+     JOIN pg_catalog.pg_roles owner ON owner.oid = c.relowner
+     JOIN pg_catalog.pg_roles current_role_info ON current_role_info.rolname = current_user
+     WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p')
+     LIMIT 1`,
+    [input.schema, input.table],
+  );
+  const row = metadata.rows[0];
+  const requiredOperations = [...new Set(input.operations)].sort() as PostgresRlsOperation[];
+  const report: PostgresRlsInspection = {
+    schema: input.schema,
+    table: input.table,
+    role: typeof row?.role === "string" ? row.role : "unknown",
+    table_exists: Boolean(row),
+    row_security_enabled: row?.row_security_enabled === true,
+    force_row_security: row?.force_row_security === true,
+    role_is_superuser: row?.role_is_superuser === true,
+    role_has_bypassrls: row?.role_has_bypassrls === true,
+    role_is_table_owner: row?.role_is_table_owner === true,
+    tenant_setting: input.scope.tenantSetting,
+    principal_setting: input.scope.principalSetting,
+    required_operations: requiredOperations,
+    policies: [],
+    errors: [],
+    ok: false,
+  };
+  if (!row) {
+    report.errors.push("POSTGRES_RLS_TARGET_NOT_FOUND");
+    return report;
+  }
+  const policies = await client.query(
+    `SELECT
+       p.polname AS name,
+       CASE p.polcmd
+         WHEN '*' THEN 'ALL'
+         WHEN 'r' THEN 'SELECT'
+         WHEN 'a' THEN 'INSERT'
+         WHEN 'w' THEN 'UPDATE'
+         WHEN 'd' THEN 'DELETE'
+       END AS command,
+       p.polpermissive AS permissive,
+       pg_catalog.pg_get_expr(p.polqual, p.polrelid) AS using_expression,
+       pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) AS with_check_expression
+     FROM pg_catalog.pg_policy p
+     WHERE p.polrelid = $1::oid
+       AND EXISTS (
+         SELECT 1
+         FROM unnest(p.polroles) AS policy_role(role_oid)
+         WHERE policy_role.role_oid = 0
+            OR pg_catalog.pg_has_role(current_user, policy_role.role_oid, 'MEMBER')
+       )
+     ORDER BY p.polname`,
+    [row.table_oid],
+  );
+  report.policies = policies.rows.map((policy) => ({
+    name: String(policy.name),
+    command: String(policy.command) as PostgresRlsPolicyInspection["command"],
+    permissive: policy.permissive === true,
+    ...(typeof policy.using_expression === "string" ? { using_expression: policy.using_expression } : {}),
+    ...(typeof policy.with_check_expression === "string" ? { with_check_expression: policy.with_check_expression } : {}),
+  }));
+  if (!report.row_security_enabled) report.errors.push("POSTGRES_RLS_DISABLED");
+  if (!report.force_row_security) report.errors.push("POSTGRES_RLS_FORCE_DISABLED");
+  if (report.role_is_superuser) report.errors.push("POSTGRES_RLS_ROLE_SUPERUSER");
+  if (report.role_has_bypassrls) report.errors.push("POSTGRES_RLS_ROLE_BYPASSRLS");
+  if (report.role_is_table_owner) report.errors.push("POSTGRES_RLS_ROLE_TABLE_OWNER");
+  for (const operation of requiredOperations) {
+    const applicable = report.policies.filter((policy) => policy.command === "ALL" || policy.command === operation);
+    if (!applicable.length) {
+      report.errors.push(`POSTGRES_RLS_${operation}_POLICY_MISSING`);
+      continue;
+    }
+    if (!applicable.some((policy) => policy.permissive)) {
+      report.errors.push(`POSTGRES_RLS_${operation}_PERMISSIVE_POLICY_MISSING`);
+    }
+    const expressions = operation === "INSERT"
+      ? applicable.map((policy) => policy.with_check_expression)
+      : operation === "UPDATE"
+        ? applicable.flatMap((policy) => [policy.using_expression, policy.with_check_expression])
+        : applicable.map((policy) => policy.using_expression);
+    if (expressions.some((expression) => !expression)) {
+      report.errors.push(`POSTGRES_RLS_${operation}_${operation === "INSERT" ? "WITH_CHECK" : operation === "UPDATE" ? "USING_OR_WITH_CHECK" : "USING"}_MISSING`);
+      continue;
+    }
+    for (const setting of [input.scope.tenantSetting, input.scope.principalSetting]) {
+      if (expressions.some((expression) => !expression!.includes(setting))) {
+        report.errors.push(`POSTGRES_RLS_${operation}_SETTING_MISSING:${setting}`);
+      }
+    }
+  }
+  report.errors = [...new Set(report.errors)];
+  report.ok = report.errors.length === 0;
+  return report;
+}
+
+export async function assertPostgresRlsTarget(
+  client: PostgresApplyClient,
+  input: Parameters<typeof inspectPostgresRlsTarget>[1],
+): Promise<PostgresRlsInspection> {
+  const report = await inspectPostgresRlsTarget(client, input);
+  if (!report.ok) throw new Error(`POSTGRES_RLS_PREREQUISITE_FAILED:${report.errors.join(",")}`);
+  return report;
+}
+
 function operationOf(job: WritebackJob): Operation {
   return job.operation ?? "single_row_update";
+}
+
+function rlsOperationForJob(job: WritebackJob): Exclude<PostgresRlsOperation, "SELECT"> {
+  const operation = operationOf(job);
+  if (operation === "single_row_insert" || operation === "batch_insert" || operation === "restore_insert") return "INSERT";
+  if (operation === "single_row_delete" || operation === "set_delete" || operation === "remove_insert") return "DELETE";
+  return "UPDATE";
 }
 
 function principalScope(job: WritebackJob): { column: string; value: string | number | boolean | null } | undefined {
@@ -279,20 +450,39 @@ export function buildPostgresReconciliationRead(job: WritebackJob): { sql: strin
   };
 }
 
-export async function inspectPostgresWritebackSource(job: WritebackJob, databaseUrl: string): Promise<ReconciliationObservation> {
+export async function inspectPostgresWritebackSource(
+  job: WritebackJob,
+  databaseUrl: string,
+  databaseScope?: PostgresRlsScope,
+): Promise<ReconciliationObservation> {
   if (!databaseUrl) throw new Error("DATABASE_UNAVAILABLE");
   const pool = createPostgresPool(databaseUrl);
+  const client = await pool.connect();
   try {
     const query = buildPostgresReconciliationRead(job);
-    const result = await pool.query(query.sql, query.values);
+    await client.query("BEGIN");
+    if (databaseScope) {
+      assertDatabaseScopeMatchesJob(job, databaseScope);
+      await assertPostgresRlsTarget(client, {
+        schema: job.target.schema,
+        table: job.target.table,
+        scope: databaseScope,
+        operations: ["SELECT", rlsOperationForJob(job)],
+      });
+      await bindPostgresRlsScope(client, databaseScope);
+    }
+    const result = await client.query(query.sql, query.values);
+    await client.query("COMMIT");
     if (job.protocol_version === "3.0") return classifyFrozenSetReconciliation(job, result.rows, versionValuesMatch);
     if (job.protocol_version === "4.0") return classifyCompensationReconciliation(job, result.rows);
     if (result.rowCount !== null && result.rowCount > 1) throw new Error("RECONCILIATION_IDENTITY_NOT_UNIQUE");
     return reconciliationObservation(job, result.rows[0]);
   } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
     const code = safeErrorCode(error);
     throw new Error(code === "TRANSACTION_FAILED" ? "RECONCILIATION_INSPECTION_FAILED" : code);
   } finally {
+    client.release();
     await pool.end();
   }
 }
@@ -401,15 +591,26 @@ export function versionValuesMatch(actual: unknown, expected: unknown): boolean 
 
 async function sourceTransaction<T>(
   client: PostgresApplyClient,
+  job: WritebackJob,
+  config: RunnerConfig,
   fn: () => Promise<T>,
-  statementTimeoutMs?: number,
   hooks: { afterBegin?: () => Promise<void>; afterMutation?: () => Promise<void>; beforeCommit?: () => Promise<void> } = {},
 ): Promise<T> {
   await client.query("BEGIN");
   try {
-    if (statementTimeoutMs !== undefined) {
-      await client.query(`SET LOCAL statement_timeout = ${statementTimeoutMs}`);
-      await client.query(`SET LOCAL lock_timeout = ${statementTimeoutMs}`);
+    if (config.statementTimeoutMs !== undefined) {
+      await client.query(`SET LOCAL statement_timeout = ${config.statementTimeoutMs}`);
+      await client.query(`SET LOCAL lock_timeout = ${config.statementTimeoutMs}`);
+    }
+    if (config.databaseScope) {
+      assertDatabaseScopeMatchesJob(job, config.databaseScope);
+      await assertPostgresRlsTarget(client, {
+        schema: job.target.schema,
+        table: job.target.table,
+        scope: config.databaseScope,
+        operations: ["SELECT", rlsOperationForJob(job)],
+      });
+      await bindPostgresRlsScope(client, config.databaseScope);
     }
     await hooks.afterBegin?.();
     const result = await fn();
@@ -430,6 +631,16 @@ async function sourceTransaction<T>(
       }
     }
     throw error;
+  }
+}
+
+function assertDatabaseScopeMatchesJob(job: WritebackJob, scope: PostgresRlsScope): void {
+  if (String(job.target.tenant_guard.value) !== scope.tenantId) {
+    throw new Error("POSTGRES_RLS_TENANT_CONTEXT_MISMATCH");
+  }
+  const principal = job.target.principal_scope?.value;
+  if (principal !== undefined && String(principal) !== scope.principal) {
+    throw new Error("POSTGRES_RLS_PRINCIPAL_CONTEXT_MISMATCH");
   }
 }
 
@@ -459,14 +670,14 @@ export async function applyPostgresJobWithClient(job: WritebackJob, config: Runn
   validateOperation(job);
   if (receiptAuthority(config) === "runner_ledger") return await applyWithRunnerLedger(job, config, client);
   if (config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
-  return await sourceTransaction(client, async () => {
+  return await sourceTransaction(client, job, config, async () => {
     const existing = await claimSourceReceipt(client, job, config);
     if (existing) return existing;
     const outcome = await mutatePostgres(job, client);
     const result = resultFromOutcome(job, config, outcome);
     await recordSourceReceipt(client, job, config, outcome.status, resultHashFromResult(job, result));
     return result;
-  }, config.statementTimeoutMs);
+  });
 }
 
 async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, client: PostgresApplyClient): Promise<WritebackResult> {
@@ -485,7 +696,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, cl
   await config.testFailpoint?.("after_intent_applying");
   let result: WritebackResult;
   try {
-    const outcome = await sourceTransaction(client, () => mutatePostgres(job, client), config.statementTimeoutMs, {
+    const outcome = await sourceTransaction(client, job, config, () => mutatePostgres(job, client), {
       afterBegin: () => Promise.resolve(config.testFailpoint?.("after_source_begin")),
       afterMutation: () => Promise.resolve(config.testFailpoint?.("after_source_mutation")),
       beforeCommit: () => Promise.resolve(config.testFailpoint?.("before_source_commit")),
@@ -941,6 +1152,10 @@ function safeErrorCode(error: unknown, operation?: Operation): string {
   if (error instanceof SourceOutcomeUnknownError) return "OUTCOME_UNKNOWN";
   const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("POSTGRES_RLS_PREREQUISITE_FAILED")) return "POSTGRES_RLS_PREREQUISITE_FAILED";
+  for (const known of ["POSTGRES_RLS_TENANT_CONTEXT_MISSING", "POSTGRES_RLS_PRINCIPAL_CONTEXT_MISSING", "POSTGRES_RLS_TENANT_CONTEXT_MISMATCH", "POSTGRES_RLS_PRINCIPAL_CONTEXT_MISMATCH"]) {
+    if (message.includes(known)) return known;
+  }
   if (code === "23505" && (operation === "single_row_insert" || operation === "batch_insert")) return "INSERT_DEDUP_CONFLICT";
   for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
   return "TRANSACTION_FAILED";

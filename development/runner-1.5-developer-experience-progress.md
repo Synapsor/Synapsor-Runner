@@ -13,7 +13,7 @@ publishing, pushing, tagging, or deploying.
 | --- | --- | --- |
 | Baseline | complete | Full release gate passed |
 | 1: `try` experience | complete | 533 tests, content/path checks, packed scratch installs passed |
-| 1B: database-enforced scope | pending | |
+| 1B: database-enforced scope | complete | 541 tests, adversarial PostgreSQL RLS proof, packed runtime import passed |
 | 2: shadow studies | pending | |
 | 3: MCP App | pending | |
 | 4: effect regression | pending | |
@@ -134,6 +134,65 @@ Results:
 - both explicit-bin and single-bin package resolution ran the packed artifact
   successfully from a clean scratch directory;
 - the package tarball contains no `development/` progress artifacts.
+
+## Phase 1B: Database-Enforced Scope
+
+Implemented:
+
+- explicit, backward-compatible source modes:
+  `database_scope.application`, `database_scope.postgres_rls`,
+  `credential_scope.shared`, and `credential_scope.tenant_resolver`;
+- transaction-local, parameterized tenant and principal binding for every
+  PostgreSQL runtime read and guarded write transaction;
+- fail-closed RLS attestation covering RLS/FORCE, owner/superuser/BYPASSRLS
+  roles, operation policies, `USING`/`WITH CHECK`, and both setting names;
+- startup and per-pool target preflight, with resolver-backed HTTP-claim
+  sessions deferred until verified context exists;
+- `doctor --check-rls` metadata reporting plus read-only cross-tenant,
+  cross-principal, and pooled-context canaries;
+- trusted writeback context reconstructed from the immutable stored proposal
+  for apply, reconciliation, bounded sets, and compensation;
+- a generic tenant credential resolver whose pools are partitioned by source,
+  access, tenant, principal, and non-secret credential identity, with expiry
+  and rotation handling;
+- a public `@synapsor/runner/runtime` embedding subpath for stdio, Streamable
+  HTTP, and legacy JSON-RPC serving with an application-owned resolver;
+- stock CLI refusal to load executable resolver modules, plus a documented
+  per-tenant process/credential deployment path;
+- an honest mode/guarantee matrix, PostgreSQL policy recipe, doctor procedure,
+  and MySQL alternatives in `docs/database-enforced-scope.md`.
+
+Canonical ownership:
+
+- these settings are local source/deployment wiring, not portable capability
+  semantics, so they belong to Runner config rather than `@synapsor/spec`;
+- no DSL, canonical contract, or public protocol record changed.
+
+Verification:
+
+```bash
+corepack pnpm build
+corepack pnpm exec vitest run packages/config/src/index.test.ts packages/mcp-server/src/index.test.ts packages/postgres/src/index.test.ts apps/runner/src/cli.test.ts
+corepack pnpm test:database-scope
+corepack pnpm test
+node scripts/check-license-content.mjs
+./scripts/verify-dsl-source-paths.sh
+corepack pnpm --filter @synapsor/runner pack --pack-destination /tmp/synapsor-phase1b-pack.pj1HQn
+npm install /tmp/synapsor-phase1b-pack.pj1HQn/synapsor-runner-1.4.123.tgz
+node --input-type=module -e "await import('@synapsor/runner/runtime')"
+```
+
+Results:
+
+- focused config/MCP/PostgreSQL/CLI suite: 241/241 passed;
+- complete Vitest suite: 26 files, 541/541 passed;
+- content and DSL-path checks passed after keeping the README at 1,500 words;
+- disposable PostgreSQL proof passed for intentionally unscoped SQL denial,
+  correct and incorrect tenant/principal access, `WITH CHECK`, pool reset,
+  guarded update, bounded set, compensation, and unsafe doctor fixtures;
+- packed tarball contains the new guide and runtime JS/types; a clean npm
+  install imported all three public runtime functions;
+- no development progress file was included in the package.
 
 ## External Actions
 

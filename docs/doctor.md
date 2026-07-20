@@ -20,6 +20,23 @@ The default check validates:
 - MCP tool boundary, including absence of raw SQL and commit tools;
 - local store stats.
 
+For a source configured with `database_scope.mode = "postgres_rls"`, doctor
+also verifies RLS/FORCE status, effective-role bypass risk, applicable
+operation policies, `USING`/`WITH CHECK`, and both configured trusted-setting
+names. Hardened mode fails rather than silently falling back to
+application-only predicates.
+
+On a disposable or explicitly approved live target, add:
+
+```bash
+synapsor-runner doctor --config synapsor.runner.json --check-rls
+```
+
+This performs a read-only cross-tenant and cross-principal canary and checks
+that transaction-local values do not survive the pooled transaction. See
+[Database-Enforced Tenant And Principal
+Scope](database-enforced-scope.md).
+
 ## App-Owned Handler Checks
 
 For `http_handler` executors, add `--check-handlers`:

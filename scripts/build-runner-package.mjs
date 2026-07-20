@@ -6,6 +6,8 @@ import { build } from "esbuild";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const entryPoint = resolve(root, "apps/runner/src/cli.ts");
 const outfile = resolve(root, "apps/runner/dist/runner.mjs");
+const runtimeEntryPoint = resolve(root, "apps/runner/src/runtime.ts");
+const runtimeOutfile = resolve(root, "apps/runner/dist/runtime.mjs");
 const binfile = resolve(root, "apps/runner/dist/cli.js");
 const workspaceAliases = new Map([
   ["@synapsor-runner/config", "packages/config/src/index.ts"],
@@ -34,7 +36,21 @@ const workspaceAliasPlugin = {
 // can leave dist files owned by the container user, so remove old bundle files
 // before esbuild tries to overwrite them.
 await rm(outfile, { force: true });
+await rm(runtimeOutfile, { force: true });
 await rm(binfile, { force: true });
+
+const external = [
+  "@modelcontextprotocol/sdk",
+  "@modelcontextprotocol/sdk/*",
+  "mysql2",
+  "mysql2/*",
+  "pg",
+  "pg/*",
+  "vscode-languageserver",
+  "vscode-languageserver/*",
+  "vscode-languageserver-textdocument",
+  "zod",
+];
 
 await build({
   entryPoints: [entryPoint],
@@ -44,23 +60,25 @@ await build({
   format: "esm",
   target: "node22.5",
   sourcemap: false,
-  external: [
-    "@modelcontextprotocol/sdk",
-    "@modelcontextprotocol/sdk/*",
-    "mysql2",
-    "mysql2/*",
-    "pg",
-    "pg/*",
-    "vscode-languageserver",
-    "vscode-languageserver/*",
-    "vscode-languageserver-textdocument",
-    "zod",
-  ],
+  external,
   plugins: [workspaceAliasPlugin],
   logLevel: "info",
 });
 
 await chmod(outfile, 0o755);
+
+await build({
+  entryPoints: [runtimeEntryPoint],
+  outfile: runtimeOutfile,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22.5",
+  sourcemap: false,
+  external,
+  plugins: [workspaceAliasPlugin],
+  logLevel: "info",
+});
 
 await writeFile(
   binfile,
@@ -113,6 +131,7 @@ const publicDocs = [
   "contract-review.md",
   "contract-testing.md",
   "current-scope.md",
+  "database-enforced-scope.md",
   "doctor.md",
   "getting-started-own-database.md",
   "guarded-crud-writeback.md",

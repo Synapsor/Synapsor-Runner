@@ -15,11 +15,12 @@ import {
   ControlPlaneClient,
   type AdapterToolCatalogEntry,
 } from "@synapsor-runner/control-plane-client";
-import { createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
+import { assertPostgresRlsTarget, createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type CloudOutboxItem, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, principalScopeFingerprint, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3, type RunnerActivityV1, type RunnerProposalV1, type WritebackResult } from "@synapsor-runner/protocol";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type AggregateReadSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
+import type { PoolClient } from "pg";
 import { z } from "zod";
 import { createJwtVerifier, type JwtAlgorithm, type JwtVerifier, type JwtVerificationConfig } from "./jwt-auth.js";
 
@@ -48,6 +49,8 @@ export type RuntimeSourceConfig = {
   read_only?: boolean;
   statement_timeout_ms?: number;
   pool?: RuntimeSourcePoolConfig;
+  database_scope?: RuntimeDatabaseScopeConfig;
+  credential_scope?: RuntimeCredentialScopeConfig;
   receipts?: {
     authority: "source_db" | "runner_ledger";
     provisioning?: "precreated" | "auto_migrate";
@@ -55,6 +58,18 @@ export type RuntimeSourceConfig = {
     table?: string;
   };
 };
+
+export type RuntimeDatabaseScopeConfig =
+  | { mode: "application" }
+  | {
+    mode: "postgres_rls";
+    tenant_setting: string;
+    principal_setting: string;
+  };
+
+export type RuntimeCredentialScopeConfig =
+  | { mode: "shared" }
+  | { mode: "tenant_resolver"; resolver: string };
 
 export type RuntimeSourcePoolConfig = {
   max_connections?: number;
@@ -309,12 +324,88 @@ export type McpRuntimeOptions = {
   storePath?: string;
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
+  credentialResolver?: TenantCredentialResolver;
   controlPlaneClient?: CloudAdapterClient;
   cloudTools?: LocalToolMetadata[];
   trustedContext?: TrustedContext;
   clock?: () => number;
   sharedResources?: McpRuntimeSharedResources;
 };
+
+export type TenantCredentialResolver = {
+  /** Stable implementation identifier matched by source.credential_scope.resolver. */
+  id: string;
+  resolve(input: {
+    source_name: string;
+    engine: SourceEngine;
+    access: "read" | "write";
+    tenant_id: string;
+    principal: string;
+  }): Promise<{
+    connection_url: string;
+    /** Non-secret identity used to partition pools; never use the credential itself. */
+    credential_id: string;
+    expires_at?: string;
+  }>;
+};
+
+export async function resolveRuntimeSourceCredential(input: {
+  sourceName: string;
+  source: RuntimeSourceConfig;
+  context: TrustedContext;
+  env: NodeJS.ProcessEnv;
+  resolver?: TenantCredentialResolver;
+  access?: "read" | "write";
+  now?: number;
+}): Promise<{ connectionUrl: string; poolKey: string; expiresAt?: number }> {
+  if (input.source.credential_scope?.mode !== "tenant_resolver") {
+    const connectionUrl = envValue(input.env, input.source.read_url_env);
+    if (!connectionUrl) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
+    return { connectionUrl, poolKey: input.sourceName };
+  }
+  const expectedResolver = input.source.credential_scope.resolver;
+  if (!input.resolver || input.resolver.id !== expectedResolver) {
+    throw new McpRuntimeError(
+      "TENANT_CREDENTIAL_RESOLVER_MISSING",
+      `Source ${input.sourceName} requires tenant credential resolver ${expectedResolver}.`,
+    );
+  }
+  try {
+    const resolved = await input.resolver.resolve({
+      source_name: input.sourceName,
+      engine: input.source.engine,
+      access: input.access ?? "read",
+      tenant_id: input.context.tenant_id,
+      principal: input.context.principal,
+    });
+    const connectionUrl = resolved.connection_url.trim();
+    const credentialId = resolved.credential_id.trim();
+    if (!connectionUrl || !credentialId || credentialId.length > 128 || /[\u0000-\u001f\u007f]/.test(credentialId)) {
+      throw new Error("resolver returned an invalid credential");
+    }
+    const expiresAt = resolved.expires_at === undefined ? undefined : Date.parse(resolved.expires_at);
+    if (expiresAt !== undefined && (!Number.isFinite(expiresAt) || expiresAt <= (input.now ?? Date.now()))) {
+      throw new Error("resolver returned an expired credential");
+    }
+    return {
+      connectionUrl,
+      poolKey: canonicalJsonDigest({
+        source: input.sourceName,
+        access: input.access ?? "read",
+        tenant: input.context.tenant_id,
+        principal: input.context.principal,
+        credential_id: credentialId,
+      }),
+      ...(expiresAt === undefined ? {} : { expiresAt }),
+    };
+  } catch (error) {
+    if (error instanceof McpRuntimeError) throw error;
+    throw new McpRuntimeError(
+      "TENANT_CREDENTIAL_RESOLUTION_FAILED",
+      `Tenant credential resolution failed closed for source ${input.sourceName}.`,
+    );
+  }
+}
 
 export type McpRuntimeSharedResources = {
   readRow: DbRowReader;
@@ -373,6 +464,7 @@ export type HttpMcpServerOptions = {
   log?: false | { write(chunk: string): unknown };
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
+  credentialResolver?: TenantCredentialResolver;
   tls?: StreamableHttpTlsOptions;
   readinessCheck?: () => Promise<ReadinessReport>;
 };
@@ -1172,13 +1264,16 @@ function resolveCapabilitySource(capability: CapabilitySpec, config: RuntimeConf
 export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptions = {}): McpRuntime {
   config = resolveRuntimeConfig(config);
   assertValidRunnerCapabilityConfig(config);
+  if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
+    throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested.");
+  }
   const env = options.env ?? process.env;
   const storePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
   const sharedPostgres = config.storage?.shared_postgres;
   const ownsStore = !options.store;
   const store = options.store ?? createDefaultRuntimeStore(config, env, storePath);
   const ownsResources = !options.sharedResources;
-  const resources = options.sharedResources ?? createMcpRuntimeSharedResources(config, env, options.readRow, options.clock);
+  const resources = options.sharedResources ?? createMcpRuntimeSharedResources(config, env, options.readRow, options.clock, options.credentialResolver);
   const readRow = resources.readRow;
   const cloudClient = options.controlPlaneClient ?? (config.mode === "cloud" ? createCloudClient(config, env) : undefined);
   const cloudTools = options.cloudTools ?? [];
@@ -1240,8 +1335,9 @@ export function createMcpRuntimeSharedResources(
   env: NodeJS.ProcessEnv = process.env,
   customReadRow?: DbRowReader,
   clock: () => number = Date.now,
+  credentialResolver?: TenantCredentialResolver,
 ): McpRuntimeSharedResources {
-  const databasePools = customReadRow ? undefined : new RuntimeDatabasePools(env);
+  const databasePools = customReadRow ? undefined : new RuntimeDatabasePools(env, credentialResolver);
   const rateLimiter = config.rate_limits && config.rate_limits.enabled !== false
     ? new RuntimeRateLimiter(config, env, clock)
     : undefined;
@@ -1257,6 +1353,75 @@ export function createMcpRuntimeSharedResources(
       await rateLimiter?.close();
     },
   };
+}
+
+/**
+ * Verify shared PostgreSQL RLS roles and target policies before opening an MCP
+ * listener. Resolver-backed HTTP-claim sources are checked on first scoped
+ * request because no trusted tenant exists at process startup.
+ */
+export async function preflightPostgresDatabaseScope(
+  inputConfig: RuntimeConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  credentialResolver?: TenantCredentialResolver,
+  trustedContext?: TrustedContext,
+): Promise<void> {
+  const config = resolveRuntimeConfig(inputConfig);
+  assertValidRunnerCapabilityConfig(config);
+  const inspected = new Set<string>();
+  for (const capability of localCapabilities(config)) {
+    const sourceName = capability.source;
+    const source = config.sources?.[sourceName];
+    if (!source || source.engine !== "postgres" || source.database_scope?.mode !== "postgres_rls") continue;
+    let context = trustedContext;
+    if (!context) {
+      try {
+        context = resolveTrustedContext(config, env, capability);
+      } catch (error) {
+        if (source.credential_scope?.mode === "tenant_resolver") {
+          if (configUsesHttpClaims(config)) continue;
+          throw error;
+        }
+        context = { tenant_id: "__startup_preflight__", principal: "__startup_preflight__", provenance: "static_dev" };
+      }
+    }
+    const credential = await resolveRuntimeSourceCredential({
+      sourceName,
+      source,
+      context,
+      env,
+      resolver: credentialResolver,
+    });
+    const key = `${credential.poolKey}\u0000${capability.target.schema}\u0000${capability.target.table}`;
+    if (inspected.has(key)) continue;
+    const pool = createPostgresPool(credential.connectionUrl, {
+      max: 1,
+      connectionTimeoutMillis: source.pool?.connection_timeout_ms ?? 3000,
+      idleTimeoutMillis: source.pool?.idle_timeout_ms ?? 30000,
+    });
+    let client: PoolClient | undefined;
+    try {
+      client = await pool.connect();
+      await assertPostgresRlsTarget(client, {
+        schema: capability.target.schema,
+        table: capability.target.table,
+        scope: {
+          tenantSetting: source.database_scope.tenant_setting,
+          principalSetting: source.database_scope.principal_setting,
+        },
+        operations: ["SELECT"],
+      });
+      inspected.add(key);
+    } catch {
+      throw new McpRuntimeError(
+        "POSTGRES_RLS_PREREQUISITE_FAILED",
+        `PostgreSQL RLS prerequisites failed for configured target ${capability.target.schema}.${capability.target.table}; Runner refused to serve hardened source ${sourceName}.`,
+      );
+    } finally {
+      client?.release();
+      await pool.end();
+    }
+  }
 }
 
 export function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): ProposalRuntimeStore {
@@ -1389,10 +1554,20 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
   return server;
 }
 
-export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat; stdin?: Readable; stdout?: Writable } = {}): Promise<void> {
-  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat; stdin?: Readable; stdout?: Writable; readRow?: DbRowReader; credentialResolver?: TenantCredentialResolver } = {}): Promise<void> {
+  const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
+  if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
+    throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
+  }
+  await preflightPostgresDatabaseScope(config, process.env, options.credentialResolver);
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, process.env) : undefined;
-  const runtime = createMcpRuntime(config, { storePath: options.storePath, resultFormat: options.resultFormat, cloudTools });
+  const runtime = createMcpRuntime(config, {
+    storePath: options.storePath,
+    resultFormat: options.resultFormat,
+    cloudTools,
+    readRow: options.readRow,
+    credentialResolver: options.credentialResolver,
+  });
   const server = createSynapsorMcpServer(runtime, { toolNameStyle: options.toolNameStyle });
   const input = options.stdin ?? process.stdin;
   const transport = new StdioServerTransport(input, options.stdout ?? process.stdout);
@@ -1428,7 +1603,7 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
   const authTokenEnv = options.authTokenEnv ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
-  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+  const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
   const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
 
   if (devNoAuth && !isLoopbackHost(host)) {
@@ -1444,11 +1619,16 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
   }
 
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
+  if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
+    throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
+  }
+  await preflightPostgresDatabaseScope(config, env, options.credentialResolver);
   const runtime = createMcpRuntime(config, {
     env,
     storePath: options.storePath,
     resultFormat: options.resultFormat,
     readRow: options.readRow,
+    credentialResolver: options.credentialResolver,
     cloudTools,
   });
   const readinessCheck = options.readinessCheck ?? (() => checkRunnerReadiness(config, env));
@@ -1506,7 +1686,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const authTokenEnv = options.authTokenEnv ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
-  const config = options.config ?? loadRuntimeConfigFromFile(options.configPath);
+  const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
   assertValidRunnerCapabilityConfig(config);
   const usesSessionAuth = configUsesHttpClaims(config);
   const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
@@ -1532,13 +1712,17 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   }
 
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
+  if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
+    throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
+  }
+  await preflightPostgresDatabaseScope(config, env, options.credentialResolver);
   const sharedStorePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
   const sharedStore = createDefaultRuntimeStore(config, env, sharedStorePath);
   const cloudSynchronizer = config.governance?.mode === "cloud_linked"
     ? new CloudLinkedSynchronizer(config, sharedStore, env)
     : undefined;
   cloudSynchronizer?.start();
-  const sharedResources = createMcpRuntimeSharedResources(config, env, options.readRow);
+  const sharedResources = createMcpRuntimeSharedResources(config, env, options.readRow, Date.now, options.credentialResolver);
   const sessions = new Map<string, StreamableHttpSession>();
   const openSessions = new Set<StreamableHttpSession>();
   const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
@@ -3901,15 +4085,27 @@ class RuntimeRateLimiter {
 }
 
 class RuntimeDatabasePools {
-  private readonly postgres = new Map<string, ReturnType<typeof createPostgresPool>>();
-  private readonly mysqlPools = new Map<string, ReturnType<typeof mysql.createPool>>();
+  private readonly postgres = new Map<string, { pool: ReturnType<typeof createPostgresPool>; expiresAt?: number; connectionDigest: string }>();
+  private readonly mysqlPools = new Map<string, { pool: ReturnType<typeof mysql.createPool>; expiresAt?: number; connectionDigest: string }>();
   private readonly counters = new Map<string, { engine: SourceEngine; active: number; waiting: number; max: number }>();
+  private readonly postgresRlsPreflight = new Set<string>();
 
-  constructor(private readonly env: NodeJS.ProcessEnv) {}
+  constructor(
+    private readonly env: NodeJS.ProcessEnv,
+    private readonly credentialResolver?: TenantCredentialResolver,
+  ) {}
 
   async read(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }> {
-    const databaseUrl = envValue(this.env, input.source.read_url_env);
-    if (!databaseUrl) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
+    const credential = await resolveRuntimeSourceCredential({
+      sourceName: input.sourceName,
+      source: input.source,
+      context: input.context,
+      env: this.env,
+      resolver: this.credentialResolver,
+    });
+    const databaseUrl = credential.connectionUrl;
+    const connectionDigest = crypto.createHash("sha256").update(databaseUrl).digest("hex");
+    const poolKey = credential.poolKey;
     const poolConfig = input.source.pool ?? {};
     const max = poolConfig.max_connections ?? 10;
     const queueLimit = poolConfig.queue_limit ?? Math.max(10, max * 4);
@@ -3919,17 +4115,27 @@ class RuntimeDatabasePools {
     counter.waiting += 1;
     try {
       if (input.source.engine === "postgres") {
-        let pool = this.postgres.get(input.sourceName);
-        if (!pool) {
-          pool = createPostgresPool(databaseUrl, {
+        let entry = this.postgres.get(poolKey);
+        if (entry && ((entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) || entry.connectionDigest !== connectionDigest)) {
+          this.postgres.delete(poolKey);
+          this.clearPostgresRlsPreflight(poolKey);
+          await entry.pool.end();
+          entry = undefined;
+        }
+        if (!entry) {
+          entry = {
+            pool: createPostgresPool(databaseUrl, {
             max,
             connectionTimeoutMillis: poolConfig.connection_timeout_ms ?? 3000,
             idleTimeoutMillis: poolConfig.idle_timeout_ms ?? 30000,
-          });
-          this.postgres.set(input.sourceName, pool);
+            }),
+            expiresAt: credential.expiresAt,
+            connectionDigest,
+          };
+          this.postgres.set(poolKey, entry);
         }
         const client = await withPoolAcquireTimeout(
-          pool.connect(),
+          entry.pool.connect(),
           poolConfig.queue_timeout_ms ?? 5000,
           input.sourceName,
           (lateClient) => lateClient.release(),
@@ -3940,6 +4146,22 @@ class RuntimeDatabasePools {
           const query = buildSelect(input.capability, "$");
           await client.query("BEGIN");
           if (input.source.statement_timeout_ms) await client.query(`SET LOCAL statement_timeout = ${Number(input.source.statement_timeout_ms)}`);
+          if (input.source.database_scope?.mode === "postgres_rls") {
+            const preflightKey = `${poolKey}\u0000${input.capability.target.schema}\u0000${input.capability.target.table}\u0000SELECT`;
+            if (!this.postgresRlsPreflight.has(preflightKey)) {
+              await assertPostgresRlsTarget(client, {
+                schema: input.capability.target.schema,
+                table: input.capability.target.table,
+                scope: {
+                  tenantSetting: input.source.database_scope.tenant_setting,
+                  principalSetting: input.source.database_scope.principal_setting,
+                },
+                operations: ["SELECT"],
+              });
+              this.postgresRlsPreflight.add(preflightKey);
+            }
+          }
+          await bindPostgresTrustedScope(client, input.source.database_scope, input.context);
           const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
           await client.query("COMMIT");
           return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
@@ -3952,22 +4174,31 @@ class RuntimeDatabasePools {
         }
       }
 
-      let pool = this.mysqlPools.get(input.sourceName);
-      if (!pool) {
-        pool = mysql.createPool({
-          uri: databaseUrl,
-          dateStrings: true,
-          waitForConnections: true,
-          connectionLimit: max,
-          maxIdle: max,
-          idleTimeout: poolConfig.idle_timeout_ms ?? 30000,
-          queueLimit,
-          connectTimeout: poolConfig.connection_timeout_ms ?? 3000,
-        });
-        this.mysqlPools.set(input.sourceName, pool);
+      let entry = this.mysqlPools.get(poolKey);
+      if (entry && ((entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) || entry.connectionDigest !== connectionDigest)) {
+        this.mysqlPools.delete(poolKey);
+        await entry.pool.end();
+        entry = undefined;
+      }
+      if (!entry) {
+        entry = {
+          pool: mysql.createPool({
+            uri: databaseUrl,
+            dateStrings: true,
+            waitForConnections: true,
+            connectionLimit: max,
+            maxIdle: max,
+            idleTimeout: poolConfig.idle_timeout_ms ?? 30000,
+            queueLimit,
+            connectTimeout: poolConfig.connection_timeout_ms ?? 3000,
+          }),
+          expiresAt: credential.expiresAt,
+          connectionDigest,
+        };
+        this.mysqlPools.set(poolKey, entry);
       }
       const connection = await withPoolAcquireTimeout(
-        pool.getConnection(),
+        entry.pool.getConnection(),
         poolConfig.queue_timeout_ms ?? 5000,
         input.sourceName,
         (lateConnection) => lateConnection.release(),
@@ -3997,12 +4228,32 @@ class RuntimeDatabasePools {
 
   async close(): Promise<void> {
     await Promise.all([
-      ...[...this.postgres.values()].map((pool) => pool.end()),
-      ...[...this.mysqlPools.values()].map((pool) => pool.end()),
+      ...[...this.postgres.values()].map((entry) => entry.pool.end()),
+      ...[...this.mysqlPools.values()].map((entry) => entry.pool.end()),
     ]);
     this.postgres.clear();
     this.mysqlPools.clear();
+    this.postgresRlsPreflight.clear();
   }
+
+  private clearPostgresRlsPreflight(poolKey: string): void {
+    for (const key of this.postgresRlsPreflight) {
+      if (key.startsWith(`${poolKey}\u0000`)) this.postgresRlsPreflight.delete(key);
+    }
+  }
+
+}
+
+export async function bindPostgresTrustedScope(
+  client: { query(sql: string, values?: unknown[]): Promise<unknown> },
+  scope: RuntimeDatabaseScopeConfig | undefined,
+  context: TrustedContext,
+): Promise<void> {
+  if (!scope || scope.mode === "application") return;
+  await client.query(
+    "SELECT set_config($1, $2, true), set_config($3, $4, true)",
+    [scope.tenant_setting, context.tenant_id, scope.principal_setting, context.principal],
+  );
 }
 
 async function withPoolAcquireTimeout<T>(
@@ -4043,6 +4294,18 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
     if (input.source.statement_timeout_ms) {
       await client.query(`SET LOCAL statement_timeout = ${Number(input.source.statement_timeout_ms)}`);
     }
+    if (input.source.database_scope?.mode === "postgres_rls") {
+      await assertPostgresRlsTarget(client, {
+        schema: input.capability.target.schema,
+        table: input.capability.target.table,
+        scope: {
+          tenantSetting: input.source.database_scope.tenant_setting,
+          principalSetting: input.source.database_scope.principal_setting,
+        },
+        operations: ["SELECT"],
+      });
+    }
+    await bindPostgresTrustedScope(client, input.source.database_scope, input.context);
     const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
     await client.query("COMMIT");
     return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };

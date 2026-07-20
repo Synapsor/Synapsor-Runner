@@ -394,6 +394,57 @@
             "queue_limit": { "type": "integer", "minimum": 0, "maximum": 100000 }
           }
         },
+        "database_scope": {
+          "description": "Database-side scope enforcement. application uses Runner predicates; postgres_rls also binds trusted context into transaction-local PostgreSQL settings and requires verified RLS policies.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode"],
+              "properties": {
+                "mode": { "const": "application" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "tenant_setting", "principal_setting"],
+              "properties": {
+                "mode": { "const": "postgres_rls" },
+                "tenant_setting": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+                },
+                "principal_setting": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+                }
+              }
+            }
+          ]
+        },
+        "credential_scope": {
+          "description": "Connection authority. tenant_resolver names an application-supplied resolver; it never embeds credentials.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode"],
+              "properties": {
+                "mode": { "const": "shared" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "resolver"],
+              "properties": {
+                "mode": { "const": "tenant_resolver" },
+                "resolver": { "$ref": "#/$defs/identifier" }
+              }
+            }
+          ]
+        },
         "receipts": {
           "type": "object",
           "additionalProperties": false,

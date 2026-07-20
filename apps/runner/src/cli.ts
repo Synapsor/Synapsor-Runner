@@ -13,7 +13,7 @@ import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@sy
 import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, enqueueCloudLinkedResult, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
-import { createPostgresPool, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration } from "@synapsor-runner/postgres";
+import { bindPostgresRlsScope, createPostgresPool, inspectPostgresRlsTarget, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration, type PostgresRlsOperation } from "@synapsor-runner/postgres";
 import {
   PostgresWritebackIntentStore,
   ProposalStore,
@@ -3482,6 +3482,7 @@ async function localDoctor(args: string[]): Promise<number> {
   const allowSharedCredential = args.includes("--allow-shared-credential");
   const checkHandlers = args.includes("--check-handlers");
   const checkWriteback = args.includes("--check-writeback") || args.includes("--check-db");
+  const checkRls = args.includes("--check-rls");
   const rawConfig = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
   let parsed = rawConfig;
   const checks: DoctorCheck[] = [];
@@ -3534,6 +3535,15 @@ async function localDoctor(args: string[]): Promise<number> {
     }
   }
   for (const [sourceName, source] of Object.entries(sources)) {
+    checks.push(databaseScopeModeDoctorCheck(sourceName, source));
+    if (source.credential_scope?.mode === "tenant_resolver") {
+      checks.push({
+        name: `source:${sourceName}:tenant-credential-resolver`,
+        ok: false,
+        level: "fail",
+        message: `Source requires tenant credential resolver ${source.credential_scope.resolver}. The stock CLI does not load executable resolver code; provide the matching TenantCredentialResolver through the embedding API, or use one tenant-bound Runner process with shared credentials.`,
+      });
+    }
     if (parsed.mode === "review" && sourceNeedsSqlWriteback(parsed, sourceName)) {
       checks.push(sourceReceiptModeDoctorCheck(parsed, sourceName, source));
     }
@@ -3580,6 +3590,14 @@ async function localDoctor(args: string[]): Promise<number> {
       }
     }
     await inspectConfiguredSource({ config: parsed, sourceName, source, checks });
+    if (source.database_scope?.mode === "postgres_rls") {
+      checks.push(...await postgresRlsDoctorChecks({
+        config: parsed,
+        sourceName,
+        source,
+        checkCanary: checkRls,
+      }));
+    }
   }
 
   for (const [executorName, executor] of Object.entries(parsed.executors ?? {})) {
@@ -3762,6 +3780,232 @@ function graduatedTrustDoctorChecks(config: RuntimeConfig): DoctorCheck[] {
     });
   }
   return checks;
+}
+
+function databaseScopeModeDoctorCheck(sourceName: string, source: RunnerSourceConfig): DoctorCheck {
+  if (source.database_scope?.mode === "postgres_rls") {
+    return {
+      name: `source:${sourceName}:database-scope-mode`,
+      ok: true,
+      level: "pass",
+      message: `PostgreSQL database-enforced scope is configured with transaction-local settings ${source.database_scope.tenant_setting} and ${source.database_scope.principal_setting}. Runner predicates remain enabled as a separate check.`,
+    };
+  }
+  if (source.engine === "mysql") {
+    return {
+      name: `source:${sourceName}:database-scope-mode`,
+      ok: true,
+      level: "warn",
+      message: "MySQL source uses application-level Runner predicates. MySQL has no PostgreSQL-equivalent native RLS; use tenant-bound credentials, restricted tenant-aware views/procedures, or isolated databases/deployments for an independent boundary.",
+    };
+  }
+  return {
+    name: `source:${sourceName}:database-scope-mode`,
+    ok: true,
+    level: "warn",
+    message: "Source uses application-level Runner tenant/principal predicates with the configured credential. For defense in depth against query-builder mistakes, configure postgres_rls and database policies; use tenant-bound credentials or deployments for a stronger process-compromise boundary.",
+  };
+}
+
+async function postgresRlsDoctorChecks(input: {
+  config: RuntimeConfig;
+  sourceName: string;
+  source: RunnerSourceConfig;
+  checkCanary: boolean;
+}): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const scope = input.source.database_scope;
+  if (scope?.mode !== "postgres_rls") return checks;
+  const readUrl = envValue(process.env, input.source.read_url_env);
+  const readCapabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
+  const readTargets = uniqueRlsTargets(readCapabilities.map((capability) => ({
+    schema: capability.target.schema,
+    table: capability.target.table,
+    operations: ["SELECT"] as PostgresRlsOperation[],
+  })));
+  if (!readUrl) {
+    checks.push({
+      name: `source:${input.sourceName}:postgres-rls-reader`,
+      ok: false,
+      level: "fail",
+      message: `Cannot inspect PostgreSQL RLS reader role because ${input.source.read_url_env} is missing.`,
+    });
+  } else {
+    for (const target of readTargets) {
+      checks.push(await inspectPostgresRlsDoctorTarget(input.sourceName, "reader", readUrl, scope, target));
+    }
+  }
+
+  const writeCapabilities = directSqlProposalCapabilities(input.config, input.sourceName);
+  const writeTargets = uniqueRlsTargets(writeCapabilities.map((capability) => ({
+    schema: capability.target.schema,
+    table: capability.target.table,
+    operations: ["SELECT", capabilityOperation(capability).toUpperCase() as Exclude<PostgresRlsOperation, "SELECT">],
+  })));
+  if (writeTargets.length) {
+    const writeUrl = input.source.write_url_env ? envValue(process.env, input.source.write_url_env) : undefined;
+    if (!writeUrl) {
+      checks.push({
+        name: `source:${input.sourceName}:postgres-rls-writer`,
+        ok: false,
+        level: "fail",
+        message: `Cannot inspect PostgreSQL RLS writer role because ${input.source.write_url_env ?? "write_url_env"} is missing.`,
+      });
+    } else {
+      for (const target of writeTargets) {
+        checks.push(await inspectPostgresRlsDoctorTarget(input.sourceName, "writer", writeUrl, scope, target));
+      }
+    }
+  }
+
+  if (!input.checkCanary) {
+    checks.push({
+      name: `source:${input.sourceName}:postgres-rls-live-canary`,
+      ok: true,
+      level: "warn",
+      message: "Live cross-tenant/principal RLS canary was not run. On a disposable or explicitly approved live target, rerun doctor with --check-rls.",
+    });
+  } else if (!readUrl || !readCapabilities.length) {
+    checks.push({
+      name: `source:${input.sourceName}:postgres-rls-live-canary`,
+      ok: false,
+      level: "fail",
+      message: "Live RLS canary requires the reader credential and at least one capability target.",
+    });
+  } else {
+    try {
+      await verifyPostgresRlsCanary(input.config, readCapabilities[0]!, readUrl, scope);
+      checks.push({
+        name: `source:${input.sourceName}:postgres-rls-live-canary`,
+        ok: true,
+        level: "pass",
+        message: "Transaction-local trusted scope allowed the reviewed tenant/principal, denied an intentionally tenant-unscoped cross-tenant query, denied a cross-principal query, and did not bleed across transaction reuse.",
+      });
+    } catch (error) {
+      checks.push({
+        name: `source:${input.sourceName}:postgres-rls-live-canary`,
+        ok: false,
+        level: "fail",
+        message: `Live RLS canary failed (${rlsDoctorError(error)}). Use a disposable row visible to the configured trusted context and verify both tenant and principal policy clauses.`,
+      });
+    }
+  }
+  return checks;
+}
+
+function uniqueRlsTargets(
+  targets: Array<{ schema: string; table: string; operations: PostgresRlsOperation[] }>,
+): Array<{ schema: string; table: string; operations: PostgresRlsOperation[] }> {
+  const unique = new Map<string, { schema: string; table: string; operations: Set<PostgresRlsOperation> }>();
+  for (const target of targets) {
+    const key = `${target.schema}\u0000${target.table}`;
+    const current = unique.get(key) ?? { schema: target.schema, table: target.table, operations: new Set<PostgresRlsOperation>() };
+    for (const operation of target.operations) current.operations.add(operation);
+    unique.set(key, current);
+  }
+  return [...unique.values()].map((target) => ({
+    schema: target.schema,
+    table: target.table,
+    operations: [...target.operations].sort(),
+  }));
+}
+
+async function inspectPostgresRlsDoctorTarget(
+  sourceName: string,
+  credentialKind: "reader" | "writer",
+  databaseUrl: string,
+  scope: Extract<NonNullable<RunnerSourceConfig["database_scope"]>, { mode: "postgres_rls" }>,
+  target: { schema: string; table: string; operations: PostgresRlsOperation[] },
+): Promise<DoctorCheck> {
+  const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
+  const client = await pool.connect();
+  try {
+    const report = await inspectPostgresRlsTarget(client, {
+      schema: target.schema,
+      table: target.table,
+      scope: {
+        tenantSetting: scope.tenant_setting,
+        principalSetting: scope.principal_setting,
+      },
+      operations: target.operations,
+    });
+    return {
+      name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
+      ok: report.ok,
+      level: report.ok ? "pass" : "fail",
+      message: report.ok
+        ? `Role ${report.role} is non-owner/non-bypass, RLS and FORCE RLS are enabled, and ${target.operations.join("/")} policies use both configured settings (${report.policies.length} applicable policy record(s)).`
+        : `RLS prerequisites failed for role ${report.role}: ${report.errors.join(", ")}. Hardened mode will refuse this target rather than fall back to Runner-only predicates.`,
+    };
+  } catch (error) {
+    return {
+      name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
+      ok: false,
+      level: "fail",
+      message: `RLS metadata inspection failed (${rlsDoctorError(error)}). Hardened mode will refuse this target.`,
+    };
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function verifyPostgresRlsCanary(
+  config: RuntimeConfig,
+  capability: RunnerCapabilityConfig,
+  databaseUrl: string,
+  scope: Extract<NonNullable<RunnerSourceConfig["database_scope"]>, { mode: "postgres_rls" }>,
+): Promise<void> {
+  const context = trustedCliContext(config, capability, process.env);
+  const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
+  const client = await pool.connect();
+  const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
+  const primaryKey = quotePostgresIdentifier(capability.target.primary_key);
+  const bind = async (tenantId: string, principal: string) => bindPostgresRlsScope(client, {
+    mode: "postgres_rls",
+    tenantSetting: scope.tenant_setting,
+    principalSetting: scope.principal_setting,
+    tenantId,
+    principal,
+  });
+  try {
+    await client.query("BEGIN");
+    await bind(context.tenant_id, context.principal);
+    const visible = await client.query(`SELECT ${primaryKey} AS id FROM ${table} ORDER BY ${primaryKey} LIMIT 1`);
+    await client.query("ROLLBACK");
+    const id = visible.rows[0]?.id;
+    if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
+
+    for (const [tenantId, principal] of [
+      [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
+      [context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`],
+    ] as Array<[string, string]>) {
+      await client.query("BEGIN");
+      const before = await client.query(
+        "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
+        [scope.tenant_setting, scope.principal_setting],
+      );
+      if (before.rows[0]?.tenant === context.tenant_id || before.rows[0]?.principal === context.principal) {
+        throw new Error("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
+      }
+      await bind(tenantId, principal);
+      const denied = await client.query(`SELECT ${primaryKey} AS id FROM ${table} WHERE ${primaryKey} = $1`, [id]);
+      await client.query("ROLLBACK");
+      if ((denied.rowCount ?? denied.rows.length) !== 0) throw new Error("POSTGRES_RLS_CANARY_SCOPE_BYPASS");
+    }
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+function rlsDoctorError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/POSTGRES_RLS_[A-Z0-9_:,-]+/.test(message)) return message.match(/POSTGRES_RLS_[A-Z0-9_:,-]+/)?.[0] ?? "POSTGRES_RLS_CHECK_FAILED";
+  return safeDatabaseProbeError(error);
 }
 
 async function directSqlWritebackDoctorChecks(
@@ -4274,6 +4518,13 @@ async function apply(args: string[]): Promise<number> {
   const databaseUrl = configPath
     ? await resolveSqlWriteDatabaseUrl(job, configPath, process.env)
     : process.env.SYNAPSOR_DATABASE_URL || "";
+  let localStore: ProposalStore | undefined;
+  if (storePath) {
+    if (storePath !== ":memory:") {
+      await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
+    }
+    localStore = new ProposalStore(storePath);
+  }
   const config: RunnerConfig = {
     controlPlaneUrl: process.env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
     runnerToken: process.env.SYNAPSOR_RUNNER_TOKEN || "local-dry-run-token",
@@ -4287,14 +4538,12 @@ async function apply(args: string[]): Promise<number> {
     dryRun,
     stateDir: process.env.SYNAPSOR_STATE_DIR || "./state",
     receipts: runnerReceiptConfig(runtimeConfig?.sources?.[job.source_id]),
+    databaseScope: writebackDatabaseScope(
+      runtimeConfig?.sources?.[job.source_id],
+      localStore?.getProposal(job.proposal_id),
+      job,
+    ),
   };
-  let localStore: ProposalStore | undefined;
-  if (storePath) {
-    if (storePath !== ":memory:") {
-      await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
-    }
-    localStore = new ProposalStore(storePath);
-  }
   const intentAuthority = createWritebackIntentAuthority(runtimeConfig, job.source_id, process.env, localStore);
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
   let result: WritebackResult;
@@ -4580,6 +4829,7 @@ async function applySqlJob(job: unknown, configPath: string, storePath: string |
   await verifyLocalWritebackAuthority(parsedJob, configPath, storePath);
   const runtimeConfig = await readRuntimeConfig(configPath);
   const databaseUrl = await resolveSqlWriteDatabaseUrl(parsedJob, configPath, env);
+  const store = storePath ? new ProposalStore(storePath) : undefined;
   const config: RunnerConfig = {
     controlPlaneUrl: env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
     runnerToken: env.SYNAPSOR_RUNNER_TOKEN || "local-dry-run-token",
@@ -4593,8 +4843,12 @@ async function applySqlJob(job: unknown, configPath: string, storePath: string |
     dryRun,
     stateDir: env.SYNAPSOR_STATE_DIR || "./state",
     receipts: runnerReceiptConfig(runtimeConfig.sources?.[parsedJob.source_id]),
+    databaseScope: writebackDatabaseScope(
+      runtimeConfig.sources?.[parsedJob.source_id],
+      store?.getProposal(parsedJob.proposal_id),
+      parsedJob,
+    ),
   };
-  const store = storePath ? new ProposalStore(storePath) : undefined;
   const intentAuthority = createWritebackIntentAuthority(runtimeConfig, parsedJob.source_id, env, store);
   if (config.receipts?.authority === "runner_ledger" && !intentAuthority.store) throw new Error("runner_ledger receipt authority requires --store or an authoritative shared runtime store");
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
@@ -4643,6 +4897,36 @@ function runnerReceiptConfig(source: RunnerSourceConfig | undefined): RunnerConf
     };
 }
 
+function writebackDatabaseScope(
+  source: RunnerSourceConfig | undefined,
+  proposal: StoredProposal | undefined,
+  job: WritebackJob,
+): RunnerConfig["databaseScope"] {
+  const scope = source?.database_scope;
+  if (!scope || scope.mode === "application") return undefined;
+  if (source?.engine !== "postgres" || job.engine !== "postgres") {
+    throw new Error("postgres_rls database scope is valid only for PostgreSQL writeback");
+  }
+  if (!proposal) {
+    throw new Error(`POSTGRES_RLS_TRUSTED_CONTEXT_MISSING: proposal ${job.proposal_id} is required to bind hardened writeback scope`);
+  }
+  const tenantId = String(proposal.change_set.scope.tenant_id);
+  const principal = String(proposal.change_set.principal.id);
+  if (tenantId !== String(job.target.tenant_guard.value)) {
+    throw new Error("POSTGRES_RLS_TENANT_CONTEXT_MISMATCH");
+  }
+  if (job.target.principal_scope?.value !== undefined && principal !== String(job.target.principal_scope.value)) {
+    throw new Error("POSTGRES_RLS_PRINCIPAL_CONTEXT_MISMATCH");
+  }
+  return {
+    mode: "postgres_rls",
+    tenantSetting: scope.tenant_setting,
+    principalSetting: scope.principal_setting,
+    tenantId,
+    principal,
+  };
+}
+
 function writebackTimeoutMs(source: RunnerSourceConfig | undefined, env: NodeJS.ProcessEnv = process.env): number | undefined {
   if (source?.statement_timeout_ms !== undefined) return source.statement_timeout_ms;
   const raw = envValue(env, "SYNAPSOR_WRITEBACK_TIMEOUT_MS");
@@ -4655,6 +4939,11 @@ function writebackTimeoutMs(source: RunnerSourceConfig | undefined, env: NodeJS.
 export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv): Promise<string> {
   const config = await readRuntimeConfig(configPath);
   const source = config.sources?.[job.source_id];
+  if (source?.credential_scope?.mode === "tenant_resolver") {
+    throw new Error(
+      `TENANT_CREDENTIAL_RESOLVER_REQUIRED: source ${job.source_id} requires application-supplied resolver ${source.credential_scope.resolver}; the stock CLI never loads executable resolver code. Embed the resolver or run one tenant-bound Runner process with shared credential mode.`,
+    );
+  }
   const writeUrlEnv = source?.write_url_env;
   if (writeUrlEnv) {
     const value = envValue(env, writeUrlEnv);
@@ -6435,7 +6724,11 @@ async function inspectWritebackIntentContext(
   if (runnerReceiptConfig(source)?.authority !== "runner_ledger") throw new Error(`source ${intent.intent.source_id} does not use runner_ledger receipt authority`);
   const databaseUrl = await resolveSqlWriteDatabaseUrl(intent.intent, configPath, process.env);
   const observation = intent.intent.engine === "postgres"
-    ? await inspectPostgresWritebackSource(intent.intent, databaseUrl)
+    ? await inspectPostgresWritebackSource(
+      intent.intent,
+      databaseUrl,
+      writebackDatabaseScope(source, proposal, intent.intent),
+    )
     : await inspectMysqlWritebackSource(intent.intent, databaseUrl);
   return { intent, proposal, observation };
 }
@@ -13117,11 +13410,13 @@ Static MCP/database risk review only. This is not a security guarantee.
   ${cmd} doctor --config synapsor.runner.json --json
   ${cmd} doctor --config synapsor.runner.json --check-handlers
   ${cmd} doctor --config synapsor.runner.json --check-writeback
+  ${cmd} doctor --config synapsor.runner.json --check-rls
   ${cmd} doctor --config synapsor.runner.json --report --redact --output synapsor-doctor.md
   ${cmd} doctor --first-run
 
 Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, operation-specific direct SQL writeback readiness, receipt authority, and local store stats. Reports are redacted; do not paste secrets into issues.
 Use --check-writeback to verify the configured receipt mode. source_db/precreated uses rollback-only probes and never runs CREATE; source_db/auto_migrate verifies the fixed migration; runner_ledger verifies its durable intent store and requires no source receipt table.
+Use --check-rls only on a disposable or explicitly approved live PostgreSQL target to run read-only cross-tenant/principal and pooled-context canaries for sources configured with database_scope.mode=postgres_rls.
 Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_CONTROL_PLANE_URL plus the scoped worker environment.
 `,
     proposals: `Usage:

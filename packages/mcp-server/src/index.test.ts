@@ -14,6 +14,7 @@ import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  bindPostgresTrustedScope,
   CloudLinkedSynchronizer,
   createMcpRuntime,
   createSynapsorMcpServer,
@@ -22,6 +23,7 @@ import {
   loadRuntimeConfigFromFile,
   McpRuntimeError,
   openaiToolNameAlias,
+  resolveRuntimeSourceCredential,
   serveStdio,
   startHttpMcpServer,
   startStreamableHttpMcpServer,
@@ -29,6 +31,127 @@ import {
 } from "./index.js";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
+
+describe("database-enforced trusted scope", () => {
+  it("refuses an unattested custom database reader in hardened mode", () => {
+    const hardened: RuntimeConfig = {
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        source: {
+          engine: "postgres",
+          read_url_env: "SOURCE_URL",
+          database_scope: {
+            mode: "postgres_rls",
+            tenant_setting: "app.tenant_id",
+            principal_setting: "app.principal_id",
+          },
+        },
+      },
+      trusted_context: { provider: "static_dev", values: { tenant_id: "acme", principal: "alice" } },
+      capabilities: [{
+        name: "support.inspect_ticket",
+        kind: "read",
+        source: "source",
+        target: { schema: "public", table: "tickets", primary_key: "id", tenant_key: "tenant_id", principal_scope_key: "assigned_to" },
+        args: { ticket_id: { type: "string", required: true } },
+        lookup: { id_from_arg: "ticket_id" },
+        visible_columns: ["id", "tenant_id", "status"],
+        evidence: "required",
+        max_rows: 1,
+      }],
+    };
+    expect(() => createMcpRuntime(hardened, {
+      readRow: async () => ({ row: {}, rowCount: 0 }),
+    })).toThrowError(expect.objectContaining({ code: "POSTGRES_RLS_CUSTOM_READER_UNVERIFIED" }));
+  });
+
+  it("binds tenant and principal through parameterized transaction-local PostgreSQL settings", async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 1 }));
+    await bindPostgresTrustedScope({ query }, {
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal_id",
+    }, {
+      tenant_id: "acme'; RESET ALL; --",
+      principal: "support-agent",
+      provenance: "environment",
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      "SELECT set_config($1, $2, true), set_config($3, $4, true)",
+      ["app.tenant_id", "acme'; RESET ALL; --", "app.principal_id", "support-agent"],
+    );
+  });
+
+  it("partitions tenant-resolved credentials by trusted scope and fails closed", async () => {
+    const resolver = {
+      id: "app_credentials",
+      resolve: vi.fn(async (input: { tenant_id: string; principal: string }) => ({
+        connection_url: `postgresql://${input.tenant_id}:secret@db.example/app`,
+        credential_id: `role:${input.tenant_id}`,
+        expires_at: "2099-01-01T00:00:00.000Z",
+      })),
+    };
+    const source = {
+      engine: "postgres" as const,
+      read_url_env: "UNUSED_SHARED_URL",
+      credential_scope: { mode: "tenant_resolver" as const, resolver: "app_credentials" },
+    };
+    const acme = await resolveRuntimeSourceCredential({
+      sourceName: "app_postgres",
+      source,
+      context: { tenant_id: "acme", principal: "alice", provenance: "environment" },
+      env: {},
+      resolver,
+      now: 0,
+    });
+    const globex = await resolveRuntimeSourceCredential({
+      sourceName: "app_postgres",
+      source,
+      context: { tenant_id: "globex", principal: "alice", provenance: "environment" },
+      env: {},
+      resolver,
+      now: 0,
+    });
+    expect(acme.poolKey).not.toBe(globex.poolKey);
+    expect(acme.poolKey).not.toContain("secret");
+    expect(resolver.resolve).toHaveBeenCalledWith(expect.objectContaining({ tenant_id: "acme", principal: "alice" }));
+    await resolveRuntimeSourceCredential({
+      sourceName: "app_postgres",
+      source,
+      context: { tenant_id: "acme", principal: "alice", provenance: "environment" },
+      env: {},
+      resolver,
+      access: "write",
+      now: 0,
+    });
+    expect(resolver.resolve).toHaveBeenLastCalledWith(expect.objectContaining({ access: "write", tenant_id: "acme" }));
+
+    await expect(resolveRuntimeSourceCredential({
+      sourceName: "app_postgres",
+      source,
+      context: { tenant_id: "acme", principal: "alice", provenance: "environment" },
+      env: {},
+    })).rejects.toMatchObject({ code: "TENANT_CREDENTIAL_RESOLVER_MISSING" });
+
+    const failing = {
+      id: "app_credentials",
+      resolve: async () => { throw new Error("postgresql://user:leaked-secret@db.example/app"); },
+    };
+    await expect(resolveRuntimeSourceCredential({
+      sourceName: "app_postgres",
+      source,
+      context: { tenant_id: "acme", principal: "alice", provenance: "environment" },
+      env: {},
+      resolver: failing,
+    })).rejects.toMatchObject({
+      code: "TENANT_CREDENTIAL_RESOLUTION_FAILED",
+      message: "Tenant credential resolution failed closed for source app_postgres.",
+    });
+  });
+});
 
 const config: RuntimeConfig = {
   version: 1,

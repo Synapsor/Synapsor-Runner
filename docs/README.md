@@ -49,6 +49,9 @@ no-database demo, wire your database, then read deeper concepts.
   links to the canonical own-database guide.
 - [Doctor](doctor.md): redacted setup checks, handler probes, direct SQL
   writeback probes, and receipt-table guidance.
+- [Database-Enforced Scope](database-enforced-scope.md): application-level
+  scope, hardened PostgreSQL RLS, tenant-bound credentials/deployments, and
+  honest MySQL alternatives.
 - [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md): native
   INSERT/UPDATE/DELETE, receipt modes, crash semantics, privileges, and
   reconciliation.
