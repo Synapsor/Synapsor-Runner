@@ -35,6 +35,11 @@ npm install "$TARBALL" >/dev/null
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
 test -f "$PACKED_ROOT/docs/mcp-apps.md"
 grep -F "text/html;profile=mcp-app" "$PACKED_ROOT/docs/mcp-apps.md" >/dev/null
+test -f "$PACKED_ROOT/docs/effect-regression.md"
+test -f "$PACKED_ROOT/schemas/effect-fixture.schema.json"
+test -f "$PACKED_ROOT/schemas/effect-result.schema.json"
+test -f "$PACKED_ROOT/schemas/effect-dataset.schema.json"
+test -f "$PACKED_ROOT/fixtures/effects/dataset.json"
 if [[ -e "$PACKED_ROOT/development" ]]; then
   echo "packed runner unexpectedly contains development progress files" >&2
   exit 1
@@ -74,6 +79,17 @@ grep -F "wrp_try_INV_3001" events-webhook.txt >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format json >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format markdown >/dev/null
+npx synapsor-runner effect run \
+  --dataset "$PACKED_ROOT/fixtures/effects/dataset.json" \
+  --results-dir "$PACKED_ROOT/fixtures/effects/results" \
+  --format junit > effect-results.xml
+grep -F '<testsuite name="synapsor-effect" tests="14" failures="0">' effect-results.xml >/dev/null
+if npx synapsor-runner effect run \
+  --dataset "$PACKED_ROOT/fixtures/effects/dataset.json" \
+  --results-dir "$PACKED_ROOT/fixtures/effects/changed" >/dev/null; then
+  echo "packed effect regression unexpectedly accepted the changed result" >&2
+  exit 1
+fi
 SURFACE_FIXTURE="$TEMP_DIR/node_modules/@synapsor/runner/fixtures/contracts/capability-surface-fitness.contract.json"
 npx synapsor-runner contract validate "$SURFACE_FIXTURE" > surface-validate.txt
 grep -F "contract valid:" surface-validate.txt >/dev/null

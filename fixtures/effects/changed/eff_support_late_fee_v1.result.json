@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../schemas/effect-result.schema.json",
+  "schema_version": "synapsor.effect-result.v1",
+  "fixture_id": "eff_support_late_fee_v1",
+  "capability_calls": [
+    {
+      "name": "billing.inspect_invoice",
+      "args": {
+        "invoice_id": "INV-3001"
+      }
+    },
+    {
+      "name": "billing.propose_late_fee_waiver",
+      "args": {
+        "invoice_id": "INV-3001",
+        "waiver_reason": "Courtesy waiver supported by SUP-184"
+      }
+    }
+  ],
+  "trusted_context": {
+    "tenant_id": "acme",
+    "principal": "support-agent-reference",
+    "provenance": "static_dev"
+  },
+  "proposal": {
+    "result_category": "proposal_created",
+    "capability": "billing.propose_late_fee_waiver",
+    "contract_version": "0.1.0",
+    "target": {
+      "business_object": "invoice",
+      "object_id": "INV-3001"
+    },
+    "diff": {
+      "late_fee_cents": {
+        "before": 5500,
+        "proposed": 2500
+      },
+      "waiver_reason": {
+        "before": null,
+        "proposed": "Partial waiver"
+      }
+    },
+    "policy": {
+      "decision": "auto_approved"
+    }
+  },
+  "observed_fields": [
+    "invoice_status",
+    "late_fee_cents",
+    "support_ticket",
+    "waiver_reason"
+  ],
+  "evidence": {
+    "mode": "fixture",
+    "new_source_reads": false
+  },
+  "source_database_changed": false
+}

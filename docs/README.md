@@ -77,6 +77,9 @@ no-database demo, wire your database, then read deeper concepts.
   and deterministic lint/SARIF output.
 - [Contract Testing](contract-testing.md): adopter-owned static and disposable
   PostgreSQL/MySQL allow/deny/redaction assertions.
+- [Agent Effect Regression](effect-regression.md): provider-neutral,
+  propose-only fixtures that catch changed capability calls, business diffs,
+  policy outcomes, tenant handling, and hidden-field behavior.
 - [Bounded Aggregate Reads](aggregate-reads.md): fixed scalar count/sum/avg,
   tenant scope, suppression, and no-row evidence.
 

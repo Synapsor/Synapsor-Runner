@@ -133,6 +133,7 @@ const publicDocs = [
   "current-scope.md",
   "database-enforced-scope.md",
   "doctor.md",
+  "effect-regression.md",
   "getting-started-own-database.md",
   "guarded-crud-writeback.md",
   "graduated-trust.md",
