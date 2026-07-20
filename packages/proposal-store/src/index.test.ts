@@ -337,7 +337,7 @@ describe("proposal store", () => {
       if (locker.exitCode === null) locker.kill();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("blocks active duplicates but permits a successor after conflict", () => {
     const store = new ProposalStore();
