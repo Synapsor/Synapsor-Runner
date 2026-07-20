@@ -19,7 +19,7 @@ publishing, pushing, tagging, or deploying.
 | 4: effect regression | complete | 564 tests, stable JSON/JUnit and packed fixture checks passed |
 | 5: audit funnel | complete | 569 tests, SARIF and disabled packed candidate generation passed |
 | 6: schema candidates | complete | 576 tests, malicious fixtures and packed Prisma generation passed |
-| 7: reference experience | pending | |
+| 7: reference experience | complete | Hardened PostgreSQL/RLS demo, strict shadow, human outcomes, effect regression, legacy reference, and 576 tests passed |
 | 8: docs and trust hygiene | pending | |
 | 9: final verification | pending | |
 
@@ -713,3 +713,73 @@ Results:
   scratch-install checks passed;
 - a real installed tarball generated blocked Prisma candidates and shipped the
   fixtures, schemas, and guide while excluding `development/`.
+
+## Phase 7: Support/Billing Reference Experience
+
+Implemented:
+
+- promoted `examples/support-billing-agent` as the compact flagship live
+  database proof while keeping the embedded no-Docker `try` source separate;
+- aligned the example around ticket `SUP-184`, invoice `INV-3001`, and an
+  exact `late_fee_cents: 5500 -> 0` ($55) business effect;
+- added a reviewer-fixed `assigned_to` principal row lock alongside tenant
+  scope for customer, ticket, and invoice capabilities;
+- enabled and forced PostgreSQL RLS on the three scoped tables, with separate
+  least-privilege reader and writer policies bound to transaction-local trusted
+  tenant and principal settings;
+- reduced database grants to explicit readable columns and seeded
+  `card_token` and `internal_risk_note` values that the live test proves never
+  enter the model-facing response;
+- made the live command require a passing `doctor --check-rls` canary before
+  serving tools;
+- expanded the shared smoke to prove exact tool exposure, scoped invoice and
+  ticket evidence, no unsafe tools, tenant-argument spoof rejection,
+  cross-tenant denial, same-tenant cross-principal denial, exact proposal diff,
+  no pre-approval mutation, manual approval, one-row guarded writeback,
+  idempotent retry, stale-version conflict, and complete replay linkage;
+- added a strict-shadow proof that creates a real shadow proposal, rejects
+  approval, and leaves PostgreSQL unchanged;
+- added an idempotent `make evaluate` path that imports six packaged shadow
+  cases, compares two authoritative human outcomes, and runs the reference
+  business-effect regression fixture;
+- made `make demo` run both the live database boundary and deterministic
+  shadow/effect evaluation in one command;
+- documented the exact guarantees and the important limit that PostgreSQL RLS
+  is defense in depth, not protection from a process that can select arbitrary
+  trusted context or replace credentials;
+- parameterized the shared smoke's ticket and principal-scope checks so the
+  smaller legacy reference fixture remains unchanged and supported.
+
+Architecture decision:
+
+- the production-oriented variant uses existing Runner source configuration
+  and the canonical capability surface; no new spec/DSL semantics or workflow
+  engine were introduced;
+- the direct guarded single-row update remains appropriate for the late-fee
+  waiver; app-owned handlers remain reserved for behavior outside Runner's
+  supported guarded write paths.
+
+Verification:
+
+```bash
+bash -n \
+  examples/support-billing-agent/scripts/run-demo.sh \
+  examples/support-billing-agent/scripts/run-evaluation.sh
+examples/support-billing-agent/scripts/run-evaluation.sh
+make -C examples/support-billing-agent demo
+corepack pnpm test:reference-app
+corepack pnpm test
+git diff --check
+```
+
+Results:
+
+- the disposable PostgreSQL/RLS live proof passed twice, including the
+  live-attestation canary and adversarial scope checks;
+- deterministic shadow/human-outcome and effect checks passed repeatedly from
+  a clean evaluation store;
+- the legacy reference application passed after the shared smoke was made
+  fixture-parameterized;
+- complete suite: 30 files, 576/576 tests passed;
+- typecheck, license/content, and DSL source-path checks passed;
+- Docker resources were removed after every live run.

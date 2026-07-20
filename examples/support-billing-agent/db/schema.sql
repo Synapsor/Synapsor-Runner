@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.tenants (
 CREATE TABLE IF NOT EXISTS public.customers (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES public.tenants(id),
+  assigned_to text NOT NULL,
   name text NOT NULL,
   email text,
   plan text NOT NULL,
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
 CREATE TABLE IF NOT EXISTS public.support_tickets (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES public.tenants(id),
+  assigned_to text NOT NULL,
   customer_id text NOT NULL REFERENCES public.customers(id),
   subject text NOT NULL,
   status text NOT NULL,
@@ -30,11 +32,14 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
 CREATE TABLE IF NOT EXISTS public.invoices (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES public.tenants(id),
+  assigned_to text NOT NULL,
   customer_id text NOT NULL REFERENCES public.customers(id),
   status text NOT NULL,
   balance_cents integer NOT NULL,
   late_fee_cents integer NOT NULL,
   waiver_reason text,
+  card_token text,
+  internal_risk_note text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -93,9 +98,91 @@ $$;
 
 GRANT CONNECT ON DATABASE synapsor_support_billing_agent TO synapsor_reader, synapsor_writer;
 GRANT USAGE ON SCHEMA public TO synapsor_reader, synapsor_writer;
-GRANT SELECT ON public.tenants, public.customers, public.support_tickets, public.invoices, public.credits, public.agent_actions, public.orders TO synapsor_reader, synapsor_writer;
+GRANT SELECT ON public.tenants, public.credits, public.agent_actions, public.orders TO synapsor_reader, synapsor_writer;
+GRANT SELECT (id, tenant_id, assigned_to, name, plan, plan_credit_cents, credit_reason, created_at, updated_at)
+  ON public.customers TO synapsor_reader, synapsor_writer;
+GRANT SELECT (id, tenant_id, assigned_to, customer_id, subject, status, resolution_note, updated_at)
+  ON public.support_tickets TO synapsor_reader, synapsor_writer;
+GRANT SELECT (id, tenant_id, assigned_to, customer_id, status, balance_cents, late_fee_cents, waiver_reason, updated_at)
+  ON public.invoices TO synapsor_reader, synapsor_writer;
 GRANT SELECT, INSERT, UPDATE ON public.synapsor_writeback_receipts TO synapsor_writer;
 GRANT UPDATE (plan_credit_cents, credit_reason, updated_at) ON public.customers TO synapsor_writer;
 GRANT UPDATE (status, resolution_note, updated_at) ON public.support_tickets TO synapsor_writer;
 GRANT UPDATE (late_fee_cents, waiver_reason, updated_at) ON public.invoices TO synapsor_writer;
 GRANT UPDATE (status, status_change_reason, updated_at) ON public.orders TO synapsor_writer;
+
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.support_tickets FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoices FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY customers_reader_scope ON public.customers
+  FOR SELECT TO synapsor_reader
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+CREATE POLICY customers_writer_select_scope ON public.customers
+  FOR SELECT TO synapsor_writer
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+CREATE POLICY customers_writer_update_scope ON public.customers
+  FOR UPDATE TO synapsor_writer
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  )
+  WITH CHECK (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+
+CREATE POLICY support_tickets_reader_scope ON public.support_tickets
+  FOR SELECT TO synapsor_reader
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+CREATE POLICY support_tickets_writer_select_scope ON public.support_tickets
+  FOR SELECT TO synapsor_writer
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+CREATE POLICY support_tickets_writer_update_scope ON public.support_tickets
+  FOR UPDATE TO synapsor_writer
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  )
+  WITH CHECK (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+
+CREATE POLICY invoices_reader_scope ON public.invoices
+  FOR SELECT TO synapsor_reader
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+CREATE POLICY invoices_writer_select_scope ON public.invoices
+  FOR SELECT TO synapsor_writer
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
+CREATE POLICY invoices_writer_update_scope ON public.invoices
+  FOR UPDATE TO synapsor_writer
+  USING (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  )
+  WITH CHECK (
+    tenant_id = current_setting('synapsor.tenant_id', true)
+    AND assigned_to = current_setting('synapsor.principal', true)
+  );
