@@ -354,46 +354,49 @@ describe("runner cli", () => {
       process.chdir(tempDir);
       await expect(main(["demo", "--quick", "--no-interactive"])).resolves.toBe(0);
       const text = output.join("");
-      expect(text).toContain("Synapsor quick demo complete.");
-      expect(text).toContain("billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")");
-      expect(text).toContain("* proposal created");
-      expect(text).toContain("* source DB changed: no");
-      expect(text).toContain("* approval required outside MCP");
-      expect(text).toContain("* evidence + replay saved locally");
-      expect(text).toContain("./.synapsor/quick-demo.db");
-      expect(text).toContain("synapsor-runner demo inspect");
-      expect(text).not.toContain("Raw MCP shape");
-      expect(text).not.toContain("synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db");
-      await fs.access(path.join(tempDir, ".synapsor/quick-demo.db"));
+      expect(text).toContain("Synapsor Runner try");
+      expect(text).toContain("deterministic simulated agent");
+      expect(text).toContain("No execute_sql, approve, apply, or commit tool");
+      expect(text).toContain("late_fee_cents: 5500 -> 0");
+      expect(text).toContain("Source changed:\n  No");
+      expect(text).toContain("Guarded commit complete.");
+      expect(text).toContain("Receipt status: applied");
+      expect(text).toContain("Source late_fee_cents: 0");
+      expect(text).toContain("Replay: replay_wrp_try_INV_3001");
+      expect(text).not.toContain("internal_risk_note");
+      await fs.access(path.join(tempDir, ".synapsor/try/ledger.db"));
+      const source = JSON.parse(await fs.readFile(path.join(tempDir, ".synapsor/try/source.json"), "utf8"));
+      expect(source.invoices["INV-3001"].late_fee_cents).toBe(0);
+      expect(source.invoices["INV-GLOBEX-1"].late_fee_cents).toBe(9900);
 
       output.length = 0;
       await expect(main(["demo", "--quick"])).resolves.toBe(0);
-      expect(output.join("")).toContain("Synapsor quick demo complete.");
+      expect(output.join("")).toContain("Guarded commit complete.");
       expect(output.join("")).not.toContain("Press Enter to continue...");
 
       output.length = 0;
-      await expect(main(["activity", "search", "--object", "invoice:INV-3001", "--store", "./.synapsor/quick-demo.db"])).resolves.toBe(0);
+      await expect(main(["activity", "search", "--object", "invoice:INV-3001", "--store", "./.synapsor/try/ledger.db"])).resolves.toBe(0);
       expect(output.join("")).toContain("billing.propose_late_fee_waiver");
-      expect(output.join("")).toContain("wrp_quick_INV_3001");
+      expect(output.join("")).toContain("wrp_try_INV_3001");
 
       output.length = 0;
-      await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      await expect(main(["store", "stats", "--store", "./.synapsor/try/ledger.db", "--json"])).resolves.toBe(0);
       expect(JSON.parse(output.join("")).proposals).toBe(1);
 
       output.length = 0;
-      await expect(main(["events", "tail", "--store", "./.synapsor/quick-demo.db"])).resolves.toBe(0);
+      await expect(main(["events", "tail", "--store", "./.synapsor/try/ledger.db"])).resolves.toBe(0);
       expect(output.join("")).toContain("proposal_created");
-      expect(output.join("")).toContain("wrp_quick_INV_3001");
+      expect(output.join("")).toContain("wrp_try_INV_3001");
 
       output.length = 0;
-      await expect(main(["events", "tail", "--kind", "evidence_recorded", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      await expect(main(["events", "tail", "--kind", "evidence_recorded", "--store", "./.synapsor/try/ledger.db", "--json"])).resolves.toBe(0);
       expect(JSON.parse(output.join("")).events[0].kind).toBe("evidence_recorded");
 
       output.length = 0;
-      await expect(main(["events", "webhook", "--url", "https://hooks.example.test/synapsor", "--kind", "proposal_created", "--store", "./.synapsor/quick-demo.db", "--dry-run"])).resolves.toBe(0);
+      await expect(main(["events", "webhook", "--url", "https://hooks.example.test/synapsor", "--kind", "proposal_created", "--store", "./.synapsor/try/ledger.db", "--dry-run"])).resolves.toBe(0);
       expect(output.join("")).toContain("synapsor.local-event-webhook.v1");
       expect(output.join("")).toContain("proposal_created");
-      expect(output.join("")).toContain("wrp_quick_INV_3001");
+      expect(output.join("")).toContain("wrp_try_INV_3001");
 
       const oldWebhookToken = process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN;
       process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN = "evt_secret_token";
@@ -422,7 +425,7 @@ describe("runner cli", () => {
           "--kind",
           "proposal_created",
           "--store",
-          "./.synapsor/quick-demo.db",
+          "./.synapsor/try/ledger.db",
         ])).resolves.toBe(0);
       } finally {
         if (oldWebhookToken === undefined) delete process.env.SYNAPSOR_TEST_EVENT_WEBHOOK_TOKEN;
@@ -432,7 +435,7 @@ describe("runner cli", () => {
       expect(webhookRequests[0]?.auth).toBe("Bearer evt_secret_token");
       expect(webhookRequests[0]?.body).toMatchObject({
         schema_version: "synapsor.local-event-webhook.v1",
-        event: { kind: "proposal_created", proposal_id: "wrp_quick_INV_3001" },
+        event: { kind: "proposal_created", proposal_id: "wrp_try_INV_3001" },
       });
       expect(output.join("")).toContain("pushed event");
       expect(output.join("")).toContain("https://hooks.example.test/synapsor");
@@ -440,38 +443,38 @@ describe("runner cli", () => {
       expect(output.join("")).not.toContain("evt_secret_token");
 
       output.length = 0;
-      await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--dry-run", "--json"])).resolves.toBe(0);
+      await expect(main(["store", "prune", "--store", "./.synapsor/try/ledger.db", "--older-than", "0d", "--dry-run", "--json"])).resolves.toBe(0);
       const dryRun = JSON.parse(output.join(""));
       expect(dryRun.dry_run).toBe(true);
-      expect(dryRun.deleted.proposals).toBe(0);
+      expect(dryRun.deleted.proposals).toBe(1);
 
       output.length = 0;
-      await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
+      await expect(main(["store", "stats", "--store", "./.synapsor/try/ledger.db", "--json"])).resolves.toBe(0);
       expect(JSON.parse(output.join("")).proposals).toBe(1);
 
       await fs.writeFile(
-        path.join(tempDir, ".synapsor/quick-demo.db.lease.json"),
+        path.join(tempDir, ".synapsor/try/ledger.db.lease.json"),
         JSON.stringify({
           pid: process.pid,
           mode: "mcp",
           transport: "streamable-http",
-          store_path: path.join(tempDir, ".synapsor/quick-demo.db"),
+          store_path: path.join(tempDir, ".synapsor/try/ledger.db"),
           started_at: new Date().toISOString(),
         }),
         "utf8",
       );
       output.length = 0;
-      await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--yes"])).rejects.toThrow(/Local store appears active/);
+      await expect(main(["store", "prune", "--store", "./.synapsor/try/ledger.db", "--older-than", "0d", "--yes"])).rejects.toThrow(/Local store appears active/);
 
       output.length = 0;
-      await expect(main(["store", "prune", "--store", "./.synapsor/quick-demo.db", "--older-than", "0d", "--yes", "--force"])).resolves.toBe(0);
+      await expect(main(["store", "prune", "--store", "./.synapsor/try/ledger.db", "--older-than", "0d", "--yes", "--force"])).resolves.toBe(0);
       expect(output.join("")).toContain("Local store prune complete");
       output.length = 0;
-      await expect(main(["store", "vacuum", "--store", "./.synapsor/quick-demo.db"])).resolves.toBe(0);
+      await expect(main(["store", "vacuum", "--store", "./.synapsor/try/ledger.db"])).resolves.toBe(0);
       expect(output.join("")).toContain("vacuumed local store");
       output.length = 0;
-      await expect(main(["store", "stats", "--store", "./.synapsor/quick-demo.db", "--json"])).resolves.toBe(0);
-      expect(JSON.parse(output.join("")).proposals).toBe(1);
+      await expect(main(["store", "stats", "--store", "./.synapsor/try/ledger.db", "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join("")).proposals).toBe(0);
     } finally {
       process.chdir(oldCwd);
     }
@@ -562,6 +565,30 @@ describe("runner cli", () => {
       manifest: { entries: 0, digest },
     }), "utf8");
     await expect(main(["store", "shared-postgres", "verify-backup", "--input", archivePath])).rejects.toThrow(/manifest digest mismatch/);
+  });
+
+  it("requires explicit demo operator automation in noninteractive try modes", async () => {
+    await expect(main(["try", "--json"])).rejects.toThrow(/requires --yes/);
+    await expect(main(["try", "--no-open"])).rejects.toThrow(/interactive terminal/);
+  });
+
+  it("emits one JSON document for explicitly automated try mode", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-try-json-"));
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["try", "--json", "--yes", "--no-open", "--state-dir", tempDir])).resolves.toBe(0);
+    expect(output).toHaveLength(1);
+    const result = JSON.parse(output[0]!);
+    expect(result).toMatchObject({
+      mode: "embedded_demo",
+      actor: "deterministic_simulated_agent",
+      proposal: { state: "applied" },
+      receipt: { status: "applied", rows_affected: 1 },
+    });
   });
 
   it("keeps shared Postgres ledger mirroring explicit and bounded", async () => {
@@ -826,10 +853,10 @@ describe("runner cli", () => {
     try {
       process.chdir(tempDir);
       await expect(main(["demo", "--quick", "--no-interactive"])).resolves.toBe(0);
-      const storePath = path.join(tempDir, ".synapsor/quick-demo.db");
+      const storePath = path.join(tempDir, ".synapsor/try/ledger.db");
       await fs.access(storePath);
 
-      await expect(main(["store", "reset", "--store", "./.synapsor/quick-demo.db"])).rejects.toThrow(/--yes/);
+      await expect(main(["store", "reset", "--store", "./.synapsor/try/ledger.db"])).rejects.toThrow(/--yes/);
 
       await fs.writeFile(`${storePath}.lease.json`, JSON.stringify({
         pid: process.pid,
@@ -838,10 +865,10 @@ describe("runner cli", () => {
         store_path: storePath,
         started_at: new Date().toISOString(),
       }), "utf8");
-      await expect(main(["store", "reset", "--store", "./.synapsor/quick-demo.db", "--yes"])).rejects.toThrow(/Local store appears active/);
+      await expect(main(["store", "reset", "--store", "./.synapsor/try/ledger.db", "--yes"])).rejects.toThrow(/Local store appears active/);
 
       output.length = 0;
-      await expect(main(["store", "reset", "--store", "./.synapsor/quick-demo.db", "--yes", "--force"])).resolves.toBe(0);
+      await expect(main(["store", "reset", "--store", "./.synapsor/try/ledger.db", "--yes", "--force"])).resolves.toBe(0);
       expect(output.join("")).toContain("Local store reset complete");
       expect(output.join("")).toContain("Source database changed: no");
       await expect(fs.access(storePath)).rejects.toMatchObject({ code: "ENOENT" });
@@ -864,44 +891,34 @@ describe("runner cli", () => {
       process.chdir(tempDir);
       await expect(main(["demo", "--quick", "--details"])).resolves.toBe(0);
       let text = output.join("");
-      expect(text).toContain("Raw MCP shape:");
-      expect(text).toContain("execute_sql(sql: string)");
-      expect(text).toContain("Synapsor shape:");
-      expect(text).toContain("Trusted context:");
+      expect(text).toContain("No execute_sql, approve, apply, or commit tool");
+      expect(text).toContain("Trusted context (not model-controlled):");
       expect(text).toContain("Replay:");
-      expect(text).toContain("wrp_quick_INV_3001");
-      expect(text).toContain("ev_quick_INV_3001");
-      expect(text).toContain("synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db");
+      expect(text).toContain("wrp_try_INV_3001");
+      expect(text).toContain("ev_wrp_try_INV_3001");
+      expect(text).toContain("restart-safe retry: yes");
+      expect(text).toContain("changed-intent operation reuse rejected: yes");
+      expect(text).toContain("stale apply refused: yes");
+      expect(text).toContain("replay changed source: no");
 
       output.length = 0;
       await expect(main(["demo", "--quick", "--json"])).resolves.toBe(0);
       const json = JSON.parse(output.join(""));
-      expect(json.mode).toBe("fixture_only");
-      expect(json.source_database_changed).toBe(false);
-      expect(json.proposal_id).toBe("wrp_quick_INV_3001");
+      expect(json.mode).toBe("embedded_demo");
+      expect(json.proposal.source_database_changed_before_approval).toBe(false);
+      expect(json.proposal.proposal_id).toBe("wrp_try_INV_3001");
+      expect(json.receipt).toMatchObject({ status: "applied", rows_affected: 1 });
+      expect(json.source_after.late_fee_cents).toBe(0);
+      expect(JSON.stringify(json)).not.toMatch(/internal_risk_note|internal_agent_note/);
 
       output.length = 0;
       await expect(main(["demo", "--quick", "--guided"])).resolves.toBe(0);
       text = output.join("");
-      expect(text).toContain("------------------------------------------------------------");
-      expect(text).toContain("Step 1/7: Synapsor Runner quick demo");
-      expect(text).toContain("Step 2/7: The risky default");
-      expect(text).toContain("Step 7/7: Next paths");
-      expect(text).toContain("This teaches the Synapsor safety model without Docker, a database, or an MCP client.");
-      expect(text).toContain("It also creates a local fixture ledger you can inspect.");
-      expect(text).toContain("- proposal: what the model requested");
-      expect(text).toContain("- evidence: what data supported it");
-      expect(text).toContain("- query audit: what was read");
-      expect(text).toContain("- replay: what happened later");
-      expect(text).toContain("Run this next:");
-      expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner demo inspect");
-      expect(text).toContain("synapsor-runner demo inspect");
-      expect(text).toContain("demo inspect shows the proposal, evidence, activity search, and replay commands.");
-      expect(text).toContain("If installed globally, use:");
-      expect(text).toContain("export DATABASE_URL=\"postgres://...\"");
-      expect(text).toContain("Press Enter to continue...");
-      expect(text).toContain("It cannot commit the write.");
-      expect(text).toContain("Done. You just saw Synapsor's core boundary: business tools for the model, approval/writeback outside the model, and replay for inspection.");
+      expect(text).toContain("Synapsor Runner try");
+      expect(text).toContain("deterministic simulated agent");
+      expect(text).toContain("Source changed:\n  No");
+      expect(text).toContain("Guarded commit complete.");
+      expect(text).toContain("Connect a staging database next:");
     } finally {
       process.chdir(oldCwd);
     }
@@ -918,20 +935,22 @@ describe("runner cli", () => {
 
     try {
       process.chdir(tempDir);
+      await expect(main(["try", "--yes", "--no-open"])).resolves.toBe(0);
+      output.length = 0;
       await expect(main(["demo", "inspect"])).resolves.toBe(0);
       let text = output.join("");
-      expect(text).toContain("Quick demo inspection");
+      expect(text).toContain("Synapsor try inspection");
       expect(text).toContain("1. Proposal summary");
-      expect(text).toContain("synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db");
-      expect(text).toContain("synapsor-runner evidence show ev_quick_INV_3001 --store ./.synapsor/quick-demo.db");
-      expect(text).toContain("synapsor-runner activity search --object invoice:INV-3001 --store ./.synapsor/quick-demo.db");
-      expect(text).toContain("synapsor-runner replay show latest --store ./.synapsor/quick-demo.db");
-      await fs.access(path.join(tempDir, ".synapsor/quick-demo.db"));
+      expect(text).toContain("synapsor-runner proposals show wrp_try_INV_3001 --store .synapsor/try/ledger.db");
+      expect(text).toContain("synapsor-runner evidence show ev_wrp_try_INV_3001 --store .synapsor/try/ledger.db");
+      expect(text).toContain("synapsor-runner activity search --object invoice:INV-3001 --store .synapsor/try/ledger.db");
+      expect(text).toContain("synapsor-runner replay show wrp_try_INV_3001 --store .synapsor/try/ledger.db");
+      await fs.access(path.join(tempDir, ".synapsor/try/ledger.db"));
 
       output.length = 0;
       await expect(main(["demo", "inspect", "--npx"])).resolves.toBe(0);
       text = output.join("");
-      expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner proposals show latest");
+      expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner proposals show wrp_try_INV_3001");
       expect(text).toContain("npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp");
     } finally {
       process.chdir(oldCwd);

@@ -38,7 +38,7 @@ import {
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ChangeSet, type ChangeSetV1, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { parseWritebackJob, protocolVersions, type ChangeSet, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
@@ -75,6 +75,7 @@ import { formatContractTestReport, runContractTests } from "./contract-testing.j
 import { runLanguageServer } from "./language-server.js";
 import { createComplianceReport, formatComplianceReport, readComplianceReport, verifyComplianceReport } from "./compliance-report.js";
 import { decideGraduatedTrustRecommendation, evaluateGraduatedTrust, formatGraduatedTrustEvaluation, markGraduatedTrustArtifactExported, prepareGraduatedTrustArtifact } from "./graduated-trust.js";
+import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -175,7 +176,6 @@ const dangerousDatabaseMcpAuditExample = {
 };
 const defaultConfigPath = "synapsor.runner.json";
 const defaultStorePath = "./.synapsor/local.db";
-const quickDemoStorePath = "./.synapsor/quick-demo.db";
 const generatedSmokeInputPath = "./.synapsor/smoke-input.json";
 const handlerSecurityWarning = [
   "IMPORTANT: your app handler owns the final business write.",
@@ -446,6 +446,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "writeback") return writeback(rest);
   if (command === "handler") return handler(rest);
   if (command === "onboard") return onboard(rest);
+  if (command === "try") return tryCommand(rest);
   if (command === "demo") return demo(rest);
   if (command === "recipes") return recipes(rest);
   if (command === "benchmark") return benchmark(rest);
@@ -6801,303 +6802,245 @@ async function demo(args: string[]): Promise<number> {
 }
 
 async function quickDemo(args: string[]): Promise<number> {
-  const allowed = new Set(["--quick", "--guided", "--no-interactive", "--details", "--json"]);
+  const allowed = new Set(["--quick", "--guided", "--no-interactive", "--details", "--json", "--yes", "--no-open", "--no-color", "--prove"]);
   assertKnownOptions(args, allowed, "demo --quick");
-  const seeded = await seedQuickDemoStore(quickDemoStorePath);
-  const summary = quickDemoSummary(seeded);
-  if (args.includes("--json")) {
-    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    return 0;
+  const delegated = [
+    ...(args.includes("--details") || args.includes("--prove") ? ["--prove"] : []),
+    ...(args.includes("--json") ? ["--json"] : []),
+    ...(args.includes("--no-color") ? ["--no-color"] : []),
+    ...(args.includes("--no-open") || args.includes("--no-interactive") || !process.stdout.isTTY ? ["--no-open"] : []),
+    ...(args.includes("--yes") || args.includes("--no-interactive") || args.includes("--json") || !process.stdout.isTTY ? ["--yes"] : []),
+  ];
+  return tryCommand(delegated);
+}
+
+async function tryCommand(args: string[]): Promise<number> {
+  const allowed = new Set(["--prove", "--yes", "--no-open", "--json", "--no-color", "--state-dir"]);
+  assertKnownOptions(args, allowed, "try");
+  const json = args.includes("--json");
+  const yes = args.includes("--yes");
+  const noOpen = args.includes("--no-open");
+  if (json && !yes) throw new Error("try --json requires --yes because JSON mode cannot wait for an interactive review");
+  if (!yes && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+    throw new Error("try requires an interactive terminal. Use --yes --no-open only for this isolated demo or CI.");
   }
-  if (args.includes("--details")) {
-    process.stdout.write(formatQuickDemoDetails(seeded));
-    return 0;
+
+  const result = await runTryExperience({
+    root_dir: optionalArg(args, "--state-dir"),
+    prove: args.includes("--prove"),
+    review: async (context) => reviewTryProposal(context, { yes, noOpen, json }),
+    on_stage: json
+      ? (stage, detail) => process.stderr.write(`[synapsor try] ${stage}: ${JSON.stringify(detail)}\n`)
+      : undefined,
+  });
+  if (json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else {
+    process.stdout.write(formatTryResult(result));
   }
-  const canPauseForInput = Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !process.env.VITEST);
-  const forceConcise = args.includes("--no-interactive");
-  const forceGuided = args.includes("--guided") && !forceConcise;
-  const shouldGuide = forceGuided || (canPauseForInput && !forceConcise);
-  if (shouldGuide) {
-    await runGuidedQuickDemo(seeded, { pause: canPauseForInput });
-    return 0;
+  return result.ok ? 0 : 1;
+}
+
+async function reviewTryProposal(
+  context: TryReviewContext,
+  options: { yes: boolean; noOpen: boolean; json: boolean },
+): Promise<"approve" | "reject" | "already_reviewed"> {
+  if (!options.json) process.stdout.write(formatTryReview(context));
+  if (options.yes) {
+    if (!options.json) process.stdout.write("Review: approved by trusted demo operator automation (--yes).\n\n");
+    return "approve";
   }
-  process.stdout.write(formatQuickDemoConcise(seeded));
-  return 0;
+  if (options.noOpen) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = (await rl.question("Approve this exact effect? Type APPROVE or REJECT: ")).trim().toUpperCase();
+      if (answer === "APPROVE") return "approve";
+      if (answer === "REJECT") return "reject";
+      throw new Error("review requires the exact word APPROVE or REJECT");
+    } finally {
+      rl.close();
+    }
+  }
+
+  const server = await startLocalUiServer({
+    configPath: context.config_path,
+    storePath: context.store_path,
+    host: "127.0.0.1",
+    port: 0,
+    tour: true,
+  });
+  try {
+    process.stdout.write(`Local review UI: ${server.url}\n`);
+    process.stdout.write("The URL bootstrap token is removed after the first browser request.\n");
+    process.stdout.write("Approve or reject the proposal in the browser. Press Ctrl+C to stop.\n\n");
+    openBrowser(server.url);
+    await waitForTryReview(context.store_path, context.proposal.proposal_id);
+    return "already_reviewed";
+  } finally {
+    await server.close();
+  }
+}
+
+async function waitForTryReview(storePath: string, proposalId: string): Promise<void> {
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const store = new ProposalStore(storePath);
+    try {
+      const proposal = store.getProposal(proposalId);
+      if (!proposal) throw new Error(`proposal not found while waiting for review: ${proposalId}`);
+      if (proposal.state !== "pending_review") return;
+    } finally {
+      store.close();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("local review timed out after 15 minutes; rerun synapsor-runner try");
+}
+
+function formatTryReview(context: TryReviewContext): string {
+  return [
+    "Synapsor Runner try",
+    "",
+    "Actor:",
+    "  deterministic simulated agent (no LLM call)",
+    "",
+    "Model-facing tools:",
+    "  billing.inspect_invoice",
+    "  billing.propose_late_fee_waiver",
+    "  No execute_sql, approve, apply, or commit tool",
+    "",
+    "Trusted context (not model-controlled):",
+    "  tenant: acme",
+    "  principal: support-agent-demo",
+    "",
+    "Request:",
+    `  ${context.request}`,
+    "",
+    "Evidence:",
+    `  Support ticket ${context.evidence.support_ticket}`,
+    `  ${context.evidence.summary}`,
+    "",
+    "Proposed effect:",
+    `  ${context.proposed_effect.field}: ${context.proposed_effect.before} -> ${context.proposed_effect.after}`,
+    "",
+    "Source changed:",
+    "  No",
+    "",
+  ].join("\n");
+}
+
+function formatTryResult(result: TryExperienceResult): string {
+  const receipt = result.receipt;
+  return [
+    "",
+    result.proposal.state === "rejected" ? "Proposal rejected. Source remains unchanged." : "Guarded commit complete.",
+    "",
+    `Proposal: ${result.proposal.proposal_id}`,
+    `Operation: ${result.proposal.operation_id}`,
+    `Evidence: ${result.evidence.evidence_bundle_id}`,
+    `Approval state: ${result.proposal.state}`,
+    `Source late_fee_cents: ${result.source_after.late_fee_cents}`,
+    ...(receipt ? [
+      `Receipt status: ${receipt.status}`,
+      `Rows affected: ${receipt.rows_affected}`,
+      `Receipt hash: ${receipt.receipt_hash}`,
+    ] : []),
+    `Replay: replay_${result.proposal.proposal_id}`,
+    ...(result.proof ? [
+      "",
+      "Extended proof:",
+      `  restart-safe retry: ${yesNo(result.proof.restart_safe_retry)}`,
+      `  duplicate mutations: ${result.proof.duplicate_mutations}`,
+      `  changed-intent operation reuse rejected: ${yesNo(result.proof.changed_intent_rejected)}`,
+      `  stale apply refused: ${yesNo(result.proof.stale_apply_rejected)}`,
+      `  replay changed source: ${yesNo(result.proof.replay_mutated_source)}`,
+      `  UNKNOWN auto-retried: ${yesNo(result.proof.unknown_auto_retried)}`,
+    ] : []),
+    "",
+    "Inspect:",
+    `  ${cliCommandName()} replay show ${result.proposal.proposal_id} --store ${result.paths.ledger}`,
+    "",
+    "Connect a staging database next:",
+    `  ${result.next}`,
+    "",
+  ].join("\n");
+}
+
+function yesNo(value: boolean): "yes" | "no" {
+  return value ? "yes" : "no";
 }
 
 async function demoInspect(args: string[]): Promise<number> {
-  const allowed = new Set(["--npx", "--json"]);
+  const allowed = new Set(["--npx", "--json", "--state-dir"]);
   assertKnownOptions(args, allowed, "demo inspect");
-  const seeded = await seedQuickDemoStore(quickDemoStorePath);
-  const commands = quickDemoInspectCommands(args.includes("--npx"));
+  const stateDir = optionalArg(args, "--state-dir") ?? "./.synapsor/try";
+  const storePath = path.join(stateDir, "ledger.db");
+  try {
+    await fs.access(storePath);
+  } catch {
+    throw new Error(`Synapsor try state was not found at ${storePath}. Run '${cliCommandName()} try --yes --no-open' first.`);
+  }
+  const store = new ProposalStore(storePath);
+  let proposal: ReturnType<ProposalStore["getProposal"]>;
+  try {
+    proposal = store.getProposal("wrp_try_INV_3001") ?? store.listProposals()[0];
+  } finally {
+    store.close();
+  }
+  if (!proposal) throw new Error(`No proposals were found in ${storePath}. Run '${cliCommandName()} try --yes --no-open' first.`);
+  const commands = tryInspectCommands(args.includes("--npx"), storePath, proposal.proposal_id, proposal.change_set.evidence.bundle_id);
+  const summary = {
+    mode: "embedded_demo",
+    store: storePath,
+    proposal_id: proposal.proposal_id,
+    proposal_state: proposal.state,
+    evidence_bundle_id: proposal.change_set.evidence.bundle_id,
+    replay_id: `replay_${proposal.proposal_id}`,
+    model_tool: proposal.capability,
+    business_object: "invoice:INV-3001",
+    proposed_change: { late_fee_cents: { before: 5500, after: 0 } },
+    approval_and_apply: "outside MCP",
+  };
   if (args.includes("--json")) {
-    process.stdout.write(`${JSON.stringify({ ...quickDemoSummary(seeded), commands }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ ...summary, commands }, null, 2)}\n`);
     return 0;
   }
-  process.stdout.write(formatQuickDemoInspect(commands));
+  process.stdout.write(formatTryInspect(commands, storePath));
   return 0;
 }
 
-function quickDemoSummary(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): Record<string, unknown> {
-  return {
-    mode: "fixture_only",
-    store: quickDemoStorePath,
-    proposal_id: seeded.proposal_id,
-    evidence_bundle_id: seeded.evidence_bundle_id,
-    replay_id: seeded.replay_id,
-    model_tool: "billing.propose_late_fee_waiver",
-    business_object: "invoice:INV-3001",
-    proposed_change: { late_fee_cents: { before: 5500, after: 0 } },
-    source_database_changed: false,
-    approval: "required outside MCP",
-  };
-}
-
-function formatQuickDemoConcise(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): string {
-  void seeded;
-  return [
-    "Synapsor quick demo complete.",
-    "",
-    "The model asked to waive a late fee:",
-    "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")",
-    "",
-    "Result:",
-    "* proposal created",
-    "* source DB changed: no",
-    "* approval required outside MCP",
-    "* evidence + replay saved locally",
-    "",
-    "Local ledger:",
-    quickDemoStorePath,
-    "",
-    "Next:",
-    `${cliCommandName()} demo inspect`,
-    "",
-  ].join("\n");
-}
-
-function formatQuickDemoDetails(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): string {
-  return [
-    "Synapsor Runner quick demo is ready.",
-    "",
-    "This is a fixture-only first look. It does not start Docker, connect a database,",
-    "or require an MCP client. It writes an inspectable local ledger fixture to:",
-    quickDemoStorePath,
-    "",
-    "If you ran this through one-off npx and did not install the package, prefix",
-    "follow-up commands with: npx -y -p @synapsor/runner synapsor-runner",
-    "",
-    "Raw MCP shape:",
-    "execute_sql(sql: string)",
-    "Risk: the model can write arbitrary SQL with database authority.",
-    "",
-    "Synapsor shape:",
-    "billing.inspect_invoice(invoice_id)",
-    "billing.propose_late_fee_waiver(invoice_id, reason)",
-    "",
-    "Agent requested:",
-    "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\", reason=\"approved support waiver\")",
-    "",
-    "Trusted context:",
-    "tenant_id = acme",
-    "principal = support.agent",
-    "",
-    "Proposal:",
-    "invoice.late_fee_cents: 5500 -> 0",
-    "",
-    "Source DB changed:",
-    "no",
-    "",
-    "Approval:",
-    "required outside MCP",
-    "",
-    "Replay:",
-    `${seeded.replay_id} captures the local proposal, evidence handle, query audit, and events.`,
-    `Proposal id: ${seeded.proposal_id}`,
-    `Evidence id: ${seeded.evidence_bundle_id}`,
-    "",
-    "What this proves:",
-    "* The model gets a business tool, not raw SQL.",
-    "* The model created a proposal, not a write.",
-    "* Source DB changed: no.",
-    "* You can inspect evidence and replay locally.",
-    "",
-    "Try:",
-    `1. ${cliCommandName()} proposals show latest --store ${quickDemoStorePath}`,
-    `2. ${cliCommandName()} activity search --object invoice:INV-3001 --store ${quickDemoStorePath}`,
-    `3. ${cliCommandName()} replay show latest --store ${quickDemoStorePath}`,
-    "",
-    "For full reviewer detail:",
-    `${cliCommandName()} replay show latest --details --store ${quickDemoStorePath}`,
-    "",
-    "For real guarded writeback against disposable Postgres:",
-    `${cliCommandName()} demo`,
-    "",
-  ].join("\n");
-}
-
-async function runGuidedQuickDemo(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }, options: { pause: boolean }): Promise<void> {
-  const screens = quickDemoGuidedScreens(seeded);
-  for (const [index, screen] of screens.entries()) {
-    printStep(screen.title, screen.body, index + 1, screens.length);
-    if (index < screens.length - 1) {
-      await waitForEnter("Press Enter to continue...", options);
-    }
-  }
-}
-
-function quickDemoGuidedScreens(seeded: { proposal_id: string; evidence_bundle_id: string; replay_id: string }): Array<{ title: string; body: string[] }> {
-  return [
-    {
-      title: "Synapsor Runner quick demo",
-      body: [
-        "This teaches the Synapsor safety model without Docker, a database, or an MCP client.",
-        "",
-        "It also creates a local fixture ledger you can inspect.",
-      ],
-    },
-    {
-      title: "The risky default",
-      body: [
-        "Many database MCP demos expose this:",
-        "",
-        "execute_sql(sql: string)",
-        "",
-        "That means the model can receive database authority directly.",
-      ],
-    },
-    {
-      title: "The Synapsor boundary",
-      body: [
-        "Synapsor gives the model business tools instead:",
-        "",
-        "billing.inspect_invoice(invoice_id)",
-        "billing.propose_late_fee_waiver(invoice_id, reason)",
-        "",
-        "The model can ask for a business change.",
-        "It cannot commit the write.",
-      ],
-    },
-    {
-      title: "What the agent requested",
-      body: [
-        "billing.propose_late_fee_waiver(invoice_id=\"INV-3001\")",
-        "",
-        "Proposed change:",
-        "late_fee_cents: 5500 -> 0",
-        "",
-        "Source DB changed:",
-        "no",
-      ],
-    },
-    {
-      title: "What Synapsor saved",
-      body: [
-        "Synapsor saved:",
-        "",
-        "- proposal: what the model requested",
-        "- evidence: what data supported it",
-        "- query audit: what was read",
-        "- replay: what happened later",
-        "",
-        `Proposal: ${seeded.proposal_id}`,
-        `Evidence: ${seeded.evidence_bundle_id}`,
-        `Replay: ${seeded.replay_id}`,
-        "",
-        "Local ledger:",
-        quickDemoStorePath,
-      ],
-    },
-    {
-      title: "Inspect it",
-      body: [
-        "Run this next:",
-        "",
-        "npx -y -p @synapsor/runner synapsor-runner demo inspect",
-        "",
-        "demo inspect shows the proposal, evidence, activity search, and replay commands.",
-        "",
-        "If installed globally, use:",
-        "synapsor-runner demo inspect",
-      ],
-    },
-    {
-      title: "Next paths",
-      body: [
-        "Full disposable Postgres demo:",
-        `${cliCommandName()} demo`,
-        "",
-        "Audit risky MCP database tools:",
-        `${cliCommandName()} audit --example dangerous-db-mcp`,
-        "",
-        "Use your own staging DB:",
-        "export DATABASE_URL=\"postgres://...\"",
-        `${cliCommandName()} onboard db --from-env DATABASE_URL`,
-        "",
-        "Done. You just saw Synapsor's core boundary: business tools for the model, approval/writeback outside the model, and replay for inspection.",
-      ],
-    },
-  ];
-}
-
-function printStep(title: string, body: string[], index: number, total: number): void {
-  const divider = "------------------------------------------------------------";
-  process.stdout.write([
-    "",
-    divider,
-    `Step ${index}/${total}: ${title}`,
-    divider,
-    "",
-    ...body,
-    "",
-  ].join("\n"));
-}
-
-async function waitForEnter(message: string, options: { pause: boolean }): Promise<void> {
-  if (!options.pause) {
-    process.stdout.write(`${message}\n`);
-    return;
-  }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    await rl.question(`${message} `);
-  } finally {
-    rl.close();
-  }
-}
-
-function quickDemoInspectCommands(useNpx: boolean): Array<{ label: string; command: string; description: string }> {
+function tryInspectCommands(
+  useNpx: boolean,
+  storePath: string,
+  proposalId: string,
+  evidenceId: string,
+): Array<{ label: string; command: string; description: string }> {
   const cmd = useNpx ? "npx -y -p @synapsor/runner synapsor-runner" : cliCommandName();
   return [
     {
       label: "Proposal summary",
-      description: "See what the model asked to change.",
-      command: `${cmd} proposals show latest --store ${quickDemoStorePath}`,
+      description: "See the exact reviewed business effect.",
+      command: `${cmd} proposals show ${proposalId} --store ${storePath}`,
     },
     {
       label: "Evidence",
-      description: "Inspect rows and evidence items captured for the proposal.",
-      command: `${cmd} evidence show ev_quick_INV_3001 --store ${quickDemoStorePath}`,
+      description: "Inspect the scoped, allowlisted evidence captured for the proposal.",
+      command: `${cmd} evidence show ${evidenceId} --store ${storePath}`,
     },
     {
       label: "Activity search",
-      description: "Find the local ledger records for invoice INV-3001.",
-      command: `${cmd} activity search --object invoice:INV-3001 --store ${quickDemoStorePath}`,
+      description: "Find ledger records for invoice INV-3001.",
+      command: `${cmd} activity search --object invoice:INV-3001 --store ${storePath}`,
     },
     {
       label: "Replay",
-      description: "Replay the local proposal/evidence/audit story.",
-      command: `${cmd} replay show latest --store ${quickDemoStorePath}`,
+      description: "Reconstruct the request, evidence, review, writeback, and receipt without reapplying.",
+      command: `${cmd} replay show ${proposalId} --store ${storePath}`,
     },
     {
-      label: "Approve outside MCP",
-      description: "Approve the proposal through the local operator boundary.",
-      command: `${cmd} proposals approve latest --yes --store ${quickDemoStorePath}`,
-    },
-    {
-      label: "Full Docker-backed demo",
-      description: "Run the disposable Postgres-backed proof.",
-      command: `${cmd} demo`,
+      label: "Extended proof",
+      description: "Prove restart-safe retry, idempotency collision, stale conflict, and replay behavior.",
+      command: `${cmd} try --prove --yes --no-open`,
     },
     {
       label: "Audit risky MCP database tools",
@@ -7107,12 +7050,15 @@ function quickDemoInspectCommands(useNpx: boolean): Array<{ label: string; comma
   ];
 }
 
-function formatQuickDemoInspect(commands: Array<{ label: string; command: string; description: string }>): string {
+function formatTryInspect(
+  commands: Array<{ label: string; command: string; description: string }>,
+  storePath: string,
+): string {
   return [
-    "Quick demo inspection",
+    "Synapsor try inspection",
     "",
     "Local ledger:",
-    quickDemoStorePath,
+    storePath,
     "",
     ...commands.flatMap((item, index) => [
       `${index + 1}. ${item.label}`,
@@ -7121,158 +7067,6 @@ function formatQuickDemoInspect(commands: Array<{ label: string; command: string
       "",
     ]),
   ].join("\n");
-}
-
-async function seedQuickDemoStore(storePath: string): Promise<{ proposal_id: string; evidence_bundle_id: string; replay_id: string }> {
-  const resolved = path.resolve(storePath);
-  await fs.mkdir(path.dirname(resolved), { recursive: true });
-  await fs.rm(resolved, { force: true });
-  const store = new ProposalStore(resolved);
-  try {
-    const changeSet = quickDemoChangeSet();
-    const proposal = store.createProposal(changeSet);
-    store.recordEvidenceBundle({
-      evidence_bundle_id: changeSet.evidence.bundle_id,
-      proposal_id: proposal.proposal_id,
-      tenant_id: changeSet.scope.tenant_id,
-      payload: {
-        capability: changeSet.action,
-        proposal_id: proposal.proposal_id,
-        source_id: changeSet.source.source_id,
-        target: `${changeSet.source.schema}.${changeSet.source.table}`,
-        principal: changeSet.principal.id,
-        tenant_id: changeSet.scope.tenant_id,
-        business_object: changeSet.scope.business_object,
-        object_id: changeSet.scope.object_id,
-        query_fingerprint: changeSet.evidence.query_fingerprint,
-        source_database_changed: false,
-      },
-      items: [
-        {
-          kind: "external_row",
-          source_id: changeSet.source.source_id,
-          table: `${changeSet.source.schema}.${changeSet.source.table}`,
-          primary_key: changeSet.source.primary_key,
-          tenant: changeSet.guards.tenant,
-          visible_row: changeSet.before,
-        },
-        {
-          kind: "proposal_diff",
-          before: changeSet.before,
-          patch: changeSet.patch,
-          after: changeSet.after,
-        },
-      ],
-    });
-    store.recordQueryAudit({
-      proposal_id: proposal.proposal_id,
-      evidence_bundle_id: changeSet.evidence.bundle_id,
-      source_id: changeSet.source.source_id,
-      query_fingerprint: changeSet.evidence.query_fingerprint,
-      table_name: `${changeSet.source.schema}.${changeSet.source.table}`,
-      row_count: 1,
-      payload: {
-        capability: changeSet.action,
-        tenant_bound: true,
-        statement_template: "SELECT id, tenant_id, updated_at, late_fee_cents FROM invoices WHERE id = ? AND tenant_id = ? LIMIT 1",
-        parameters_redacted: true,
-      },
-    });
-    store.replay(proposal.proposal_id);
-    return {
-      proposal_id: proposal.proposal_id,
-      evidence_bundle_id: changeSet.evidence.bundle_id,
-      replay_id: `replay_${proposal.proposal_id}`,
-    };
-  } finally {
-    store.close();
-  }
-}
-
-function quickDemoChangeSet(): ChangeSetV1 {
-  const base = {
-    schema_version: protocolVersions.changeSet,
-    proposal_id: "wrp_quick_INV_3001",
-    proposal_version: 1,
-    action: "billing.propose_late_fee_waiver",
-    mode: "review_required",
-    principal: {
-      id: "support.agent",
-      source: "trusted_session",
-    },
-    scope: {
-      tenant_id: "acme",
-      business_object: "invoice",
-      object_id: "INV-3001",
-    },
-    source: {
-      kind: "external_postgres",
-      source_id: "app_postgres",
-      schema: "public",
-      table: "invoices",
-      primary_key: {
-        column: "id",
-        value: "INV-3001",
-      },
-    },
-    before: {
-      id: "INV-3001",
-      tenant_id: "acme",
-      updated_at: "2026-06-23T09:00:00Z",
-      late_fee_cents: 5500,
-    },
-    patch: {
-      late_fee_cents: 0,
-    },
-    after: {
-      id: "INV-3001",
-      tenant_id: "acme",
-      updated_at: "2026-06-23T09:00:00Z",
-      late_fee_cents: 0,
-    },
-    guards: {
-      tenant: {
-        column: "tenant_id",
-        value: "acme",
-      },
-      allowed_columns: ["late_fee_cents"],
-      expected_version: {
-        column: "updated_at",
-        value: "2026-06-23T09:00:00Z",
-      },
-    },
-    evidence: {
-      bundle_id: "ev_quick_INV_3001",
-      query_fingerprint: "sha256:quick-demo-invoice-read",
-      items: [
-        {
-          kind: "external_row",
-          source_id: "app_postgres",
-          table: "public.invoices",
-          primary_key: { column: "id", value: "INV-3001" },
-        },
-      ],
-    },
-    approval: {
-      status: "pending",
-      required_role: "local_operator",
-    },
-    writeback: {
-      status: "not_applied",
-      mode: "trusted_worker_required",
-    },
-    source_database_mutated: false,
-    integrity: {
-      proposal_hash: "sha256:placeholder",
-    },
-    created_at: "2026-06-23T09:00:00Z",
-  } satisfies Omit<ChangeSetV1, "integrity"> & { integrity: { proposal_hash: `sha256:${string}` } };
-  return {
-    ...base,
-    integrity: {
-      proposal_hash: hashReceipt({ ...base, integrity: undefined }),
-    },
-  };
 }
 
 async function mcpServe(args: string[]): Promise<number> {
@@ -12864,6 +12658,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "writeback",
     "handler",
     "onboard",
+    "try",
     "demo",
     "recipes",
     "benchmark",
@@ -12914,6 +12709,7 @@ Usage:
   ${cmd} <command>
 
 Commands:
+  try          Run the complete no-account proposal-to-commit proof
   inspect      Inspect a Postgres/MySQL schema
   start        Start guided own-database setup, or no-arg legacy worker polling
   up           Bring up local review mode guidance/server
@@ -12949,6 +12745,8 @@ Commands:
   ui           Open the local review UI
 
 Examples:
+  ${cmd} try
+  ${cmd} try --prove --yes --no-open
   ${cmd} start --from-env DATABASE_URL
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
   ${cmd} onboard db --from-env DATABASE_URL
@@ -12974,6 +12772,24 @@ Examples:
 Global options:
   --secrets-provider aws-secretsmanager-cli --secret-map-env SYNAPSOR_SECRET_MAP
   --secrets-provider env-json --secret-map-env SYNAPSOR_SECRET_MAP --secret-values-env SYNAPSOR_SECRET_VALUES
+`,
+    try: `Usage:
+  ${cmd} try
+  ${cmd} try --no-open
+  ${cmd} try --prove
+  ${cmd} try --yes --no-open
+  ${cmd} try --json --yes --no-open
+
+Run the complete Synapsor commit-boundary proof without Docker, a database,
+signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
+the real semantic proposal/ledger/writeback lifecycle against an isolated
+embedded demo source.
+
+The default path shows scoped evidence, the exact business diff, explicit
+operator review outside MCP, guarded commit, receipt, and replay. --prove also
+demonstrates restart-safe retry, changed-intent idempotency rejection, stale
+conflict, and non-mutating replay. --yes is valid only for this isolated demo
+and CI; it does not grant model authority.
 `,
     config: `Usage:
   ${cmd} config validate --config ./synapsor.runner.json
@@ -13482,7 +13298,7 @@ failed/retry, or dead-letter records.
 	  ${cmd} demo inspect --npx
 
 	Start a disposable local Postgres demo and write ./synapsor.runner.json for the first-run flow.
-	Use --quick for a fixture-only guided walkthrough and local ledger seed with no Docker startup. Use demo inspect to print follow-up commands for the quick-demo fixture.
+	Use --quick as a backward-compatible alias for the isolated real try pipeline. Use demo inspect after try to print follow-up commands for its proposal, evidence, receipt, and replay.
 	`,
     ui: `Usage:
   ${cmd} ui [--open] [--tour] [--config synapsor.runner.json] [--store ./.synapsor/local.db]
