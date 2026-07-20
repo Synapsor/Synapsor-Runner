@@ -54,9 +54,13 @@ const SOURCE_KEYS = new Set([
   "ssl",
   "pool",
   "receipts",
+  "database_scope",
+  "credential_scope",
 ]);
 const SOURCE_POOL_KEYS = new Set(["max_connections", "connection_timeout_ms", "idle_timeout_ms", "queue_timeout_ms", "queue_limit"]);
 const SOURCE_RECEIPT_KEYS = new Set(["authority", "provisioning", "schema", "table"]);
+const SOURCE_DATABASE_SCOPE_KEYS = new Set(["mode", "tenant_setting", "principal_setting"]);
+const SOURCE_CREDENTIAL_SCOPE_KEYS = new Set(["mode", "resolver"]);
 const TRUSTED_CONTEXT_KEYS = new Set(["provider", "values", "tenant_binding", "principal_binding"]);
 const CONTEXT_KEYS = TRUSTED_CONTEXT_KEYS;
 const EXECUTOR_KEYS = new Set(["type", "url_env", "method", "auth", "signing_secret_env", "timeout_ms", "command_env"]);
@@ -518,7 +522,71 @@ function validateSources(
     }
     validateSourcePool(source.pool, `${path}.pool`, strict, errors);
     validateSourceReceipts(source.receipts, `${path}.receipts`, strict, errors);
+    validateSourceDatabaseScope(source.database_scope, source.engine, `${path}.database_scope`, strict, errors);
+    validateSourceCredentialScope(source.credential_scope, `${path}.credential_scope`, strict, errors);
   }
+}
+
+function validateSourceDatabaseScope(
+  value: unknown,
+  engine: unknown,
+  path: string,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "SOURCE_DATABASE_SCOPE_NOT_OBJECT", message: "database_scope must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SOURCE_DATABASE_SCOPE_KEYS, path, errors);
+  if (value.mode !== "application" && value.mode !== "postgres_rls") {
+    errors.push({ path: `${path}.mode`, code: "INVALID_DATABASE_SCOPE_MODE", message: "database_scope.mode must be application or postgres_rls." });
+    return;
+  }
+  if (value.mode === "application") {
+    if (value.tenant_setting !== undefined || value.principal_setting !== undefined) {
+      errors.push({ path, code: "APPLICATION_SCOPE_HAS_DATABASE_SETTINGS", message: "application database scope must not declare PostgreSQL session settings." });
+    }
+    return;
+  }
+  if (engine !== "postgres") {
+    errors.push({ path: `${path}.mode`, code: "POSTGRES_RLS_ENGINE_REQUIRED", message: "postgres_rls database scope is supported only for PostgreSQL." });
+  }
+  if (!isPostgresSettingName(value.tenant_setting)) {
+    errors.push({ path: `${path}.tenant_setting`, code: "INVALID_RLS_TENANT_SETTING", message: "tenant_setting must be a fixed qualified PostgreSQL custom setting name such as app.tenant_id." });
+  }
+  if (!isPostgresSettingName(value.principal_setting)) {
+    errors.push({ path: `${path}.principal_setting`, code: "INVALID_RLS_PRINCIPAL_SETTING", message: "principal_setting must be a fixed qualified PostgreSQL custom setting name such as app.principal_id." });
+  }
+  if (value.tenant_setting === value.principal_setting && value.tenant_setting !== undefined) {
+    errors.push({ path, code: "RLS_SETTINGS_MUST_DIFFER", message: "tenant_setting and principal_setting must be different." });
+  }
+}
+
+function validateSourceCredentialScope(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "SOURCE_CREDENTIAL_SCOPE_NOT_OBJECT", message: "credential_scope must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SOURCE_CREDENTIAL_SCOPE_KEYS, path, errors);
+  if (value.mode !== "shared" && value.mode !== "tenant_resolver") {
+    errors.push({ path: `${path}.mode`, code: "INVALID_CREDENTIAL_SCOPE_MODE", message: "credential_scope.mode must be shared or tenant_resolver." });
+    return;
+  }
+  if (value.mode === "tenant_resolver" && !isSafeIdentifier(value.resolver)) {
+    errors.push({ path: `${path}.resolver`, code: "TENANT_CREDENTIAL_RESOLVER_REQUIRED", message: "tenant_resolver mode requires a fixed resolver identifier; credentials remain outside this config." });
+  }
+  if (value.mode === "shared" && value.resolver !== undefined) {
+    errors.push({ path: `${path}.resolver`, code: "SHARED_CREDENTIAL_RESOLVER_FORBIDDEN", message: "shared credential mode must not declare a resolver." });
+  }
+}
+
+function isPostgresSettingName(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length <= 128
+    && /^[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)+$/i.test(value);
 }
 
 function validateSourceReceipts(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {

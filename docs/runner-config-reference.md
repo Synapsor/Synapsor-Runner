@@ -114,6 +114,14 @@ not print database URLs or create the schema.
       "write_url_env": "BILLING_POSTGRES_WRITE_URL",
       "read_only": false,
       "statement_timeout_ms": 3000,
+      "database_scope": {
+        "mode": "postgres_rls",
+        "tenant_setting": "synapsor.tenant_id",
+        "principal_setting": "synapsor.principal"
+      },
+      "credential_scope": {
+        "mode": "shared"
+      },
       "receipts": {
         "authority": "source_db",
         "provisioning": "precreated",
@@ -137,6 +145,23 @@ same general DML statement-timeout guarantee as PostgreSQL. `ssl` carries
 adapter-specific reviewed SSL options when used.
 
 A contract's `SOURCE billing_postgres` must exactly match a `sources` key.
+
+`database_scope.mode` defaults to `application`: Runner enforces trusted
+tenant/principal predicates with the configured database credential.
+`postgres_rls` is PostgreSQL-only and requires fixed, distinct
+`tenant_setting` and `principal_setting` names. Runner binds them
+transaction-locally and refuses serving/writeback when RLS, FORCE, role, or
+operation-policy prerequisites cannot be attested.
+
+`credential_scope.mode` defaults to `shared`. `tenant_resolver` names a
+programmatic `TenantCredentialResolver`; credentials remain outside the
+contract/config and pools are partitioned by trusted scope and credential
+identity. The stock CLI does not load executable resolver modules, so CLI-only
+deployments should run one tenant-bound process/credential per tenant.
+
+See [Database-Enforced Tenant And Principal
+Scope](database-enforced-scope.md) for the guarantee matrix, PostgreSQL policy
+example, resolver interface, doctor canary, and MySQL alternatives.
 
 Long-running servers reuse native driver pools. Optional `pool` keys are
 `max_connections` (default 10), `connection_timeout_ms` (3000),

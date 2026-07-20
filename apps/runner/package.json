@@ -7,6 +7,12 @@
   "bin": {
     "synapsor-runner": "dist/cli.js"
   },
+  "exports": {
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.mjs"
+    }
+  },
   "files": [
     "dist/cli.js",
     "dist/cli.d.ts",
@@ -14,6 +20,9 @@
     "dist/local-ui.d.ts",
     "dist/local-ui.d.ts.map",
     "dist/runner.mjs",
+    "dist/runtime.mjs",
+    "dist/runtime.d.ts",
+    "dist/runtime.d.ts.map",
     "docs/**/*.md",
     "examples/dangerous-mcp-tools.json",
     "examples/app-owned-writeback/**",

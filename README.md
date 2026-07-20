@@ -98,8 +98,10 @@ guide](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Connect A Staging Database
 
-Start with a staging or disposable database and a read-only credential. Keep
-database permissions, restricted views, and row-level security in place.
+Start with staging and a read-only credential. Keep database permissions,
+views, and RLS. Default shared-credential scope is application-level.
+See [Database scope] for PostgreSQL RLS and tenant-bound alternatives; MySQL
+has no native RLS.
 
 ```bash
 npm install -g @synapsor/runner
@@ -211,6 +213,8 @@ Runner is a narrow agent/database safety boundary, not a replacement for
 least-privilege database access, host security, or application authorization.
 See [Security Boundary](docs/security-boundary.md) and
 [Current Limitations](docs/limitations.md).
+
+[Database scope]: docs/database-enforced-scope.md
 
 ## Operate The Approval Loop
 

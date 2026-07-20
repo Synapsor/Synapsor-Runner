@@ -50,6 +50,16 @@ Trusted context comes from local configuration, environment bindings, or Cloud
 session context in Cloud mode. Tenant, principal, and authorization scope must
 not be accepted from the model as authority.
 
+With a shared credential, these checks are application-level enforcement and
+depend on Runner's fixed predicate implementation. Optional PostgreSQL RLS mode
+adds an independent database check for omitted predicates and pooled-context
+leakage. Tenant-bound credentials or isolated deployments provide the stronger
+boundary when a Runner process must not hold organization-wide authority.
+PostgreSQL RLS does not protect against a fully compromised process that can
+choose arbitrary trusted settings, and MySQL has no native RLS equivalent. See
+[Database-Enforced Tenant And Principal
+Scope](database-enforced-scope.md).
+
 A capability may declare `principal_scope_key` (DSL: `PRINCIPAL SCOPE KEY`) to
 narrow rows inside a tenant. Runner then adds both fixed, parameterized guards:
 

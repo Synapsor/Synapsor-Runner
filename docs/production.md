@@ -94,6 +94,14 @@ Read credential:
 - can `SELECT` only the tables/views used by capabilities;
 - should be restricted by views/RLS where possible.
 
+Name the scope mode in production reviews. The compatibility default is
+application-level Runner predicates with a shared credential. PostgreSQL can
+add database-enforced RLS to catch omitted predicates and pooled-context
+leakage. Tenant-bound credentials or isolated processes remove
+organization-wide authority from a Runner process. See
+[Database-Enforced Tenant And Principal
+Scope](database-enforced-scope.md).
+
 Write credential for direct `sql_update`:
 
 - can use only the operation-specific business DML and reviewed columns;

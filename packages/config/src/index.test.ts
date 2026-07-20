@@ -164,6 +164,16 @@ describe("runner capability config validation", () => {
       default: { requests: 120, window_seconds: 60 },
       capabilities: { "billing.propose_late_fee_waiver": { requests: 20, window_seconds: 60 } },
     };
+    const databaseScoped = structuredClone(safeConfig) as any;
+    databaseScoped.sources.app_postgres.database_scope = {
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal_id",
+    };
+    databaseScoped.sources.app_postgres.credential_scope = {
+      mode: "tenant_resolver",
+      resolver: "app_credentials",
+    };
     const boundedSet = structuredClone(safeConfig) as any;
     boundedSet.capabilities = [{
       ...boundedSet.capabilities[1],
@@ -256,7 +266,7 @@ describe("runner capability config validation", () => {
       }],
     };
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded, boundedSet, batchInsert, aggregateRead, graduatedTrust]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -338,6 +348,36 @@ describe("runner capability config validation", () => {
     expect(validateRunnerCapabilityConfig(config).errors).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: "$.sources.app_postgres.pool.max_connections", code: "INVALID_SOURCE_POOL_BOUND" }),
     ]));
+  });
+
+  it("validates explicit database and credential scope modes without accepting secrets", () => {
+    const config = mutableConfig();
+    config.sources.app_postgres.database_scope = {
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal_id",
+    };
+    config.sources.app_postgres.credential_scope = {
+      mode: "tenant_resolver",
+      resolver: "app_credentials",
+    };
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    config.sources.app_postgres.database_scope.principal_setting = "app.tenant_id";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("RLS_SETTINGS_MUST_DIFFER");
+
+    const mysqlConfig = mutableConfig();
+    mysqlConfig.sources.app_postgres.engine = "mysql";
+    mysqlConfig.sources.app_postgres.database_scope = {
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal_id",
+    };
+    expect(validateRunnerCapabilityConfig(mysqlConfig).errors.map((error) => error.code)).toContain("POSTGRES_RLS_ENGINE_REQUIRED");
+
+    const missingResolver = mutableConfig();
+    missingResolver.sources.app_postgres.credential_scope = { mode: "tenant_resolver" };
+    expect(validateRunnerCapabilityConfig(missingResolver).errors.map((error) => error.code)).toContain("TENANT_CREDENTIAL_RESOLVER_REQUIRED");
   });
 
   it("validates operational per-capability rate limits", () => {

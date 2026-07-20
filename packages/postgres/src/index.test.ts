@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   applyPostgresJobWithClient,
+  bindPostgresRlsScope,
   buildPostgresDelete,
   buildPostgresInsert,
   buildPostgresReconciliationRead,
   buildPostgresUpdate,
+  inspectPostgresRlsTarget,
   normalizeVersionValue,
   postgresPoolConfig,
   versionValuesMatch,
@@ -35,6 +37,74 @@ const job = {
 };
 
 describe("postgres adapter", () => {
+  it("binds PostgreSQL RLS settings as transaction-local parameter values", async () => {
+    const calls: Array<{ sql: string; values?: unknown[] }> = [];
+    await bindPostgresRlsScope({
+      async query(sql, values) {
+        calls.push({ sql, values });
+        return { rows: [], rowCount: 1 };
+      },
+    }, {
+      mode: "postgres_rls",
+      tenantSetting: "app.tenant_id",
+      principalSetting: "app.principal_id",
+      tenantId: "acme'); RESET ALL; --",
+      principal: "support-agent",
+    });
+    expect(calls).toEqual([{
+      sql: "SELECT set_config($1, $2, true), set_config($3, $4, true)",
+      values: ["app.tenant_id", "acme'); RESET ALL; --", "app.principal_id", "support-agent"],
+    }]);
+  });
+
+  it("inspects role, FORCE RLS, command policies, and both trusted settings", async () => {
+    const report = await inspectPostgresRlsTarget(new HardenedPostgresClient(), {
+      schema: "public",
+      table: "tickets",
+      scope: { tenantSetting: "app.tenant_id", principalSetting: "app.principal_id" },
+      operations: ["SELECT", "UPDATE"],
+    });
+    expect(report.ok).toBe(true);
+    expect(report.role_is_table_owner).toBe(false);
+    expect(report.required_operations).toEqual(["SELECT", "UPDATE"]);
+  });
+
+  it("fails hardened apply before mutation when the role can bypass RLS", async () => {
+    const client = new HardenedPostgresClient({ bypass: true });
+    await expect(applyPostgresJobWithClient(job, {
+      ...config,
+      databaseScope: {
+        mode: "postgres_rls",
+        tenantSetting: "app.tenant_id",
+        principalSetting: "app.principal_id",
+        tenantId: "acme",
+        principal: "support-agent",
+      },
+    }, client)).rejects.toThrow(/POSTGRES_RLS_ROLE_BYPASSRLS/);
+    expect(client.sqlLog.some((sql) => sql.startsWith('UPDATE "public"."tickets"'))).toBe(false);
+    expect(client.sqlLog).toContain("ROLLBACK");
+  });
+
+  it("checks hardened prerequisites and binds scope before guarded writeback", async () => {
+    const client = new HardenedPostgresClient();
+    const result = await applyPostgresJobWithClient(job, {
+      ...config,
+      databaseScope: {
+        mode: "postgres_rls",
+        tenantSetting: "app.tenant_id",
+        principalSetting: "app.principal_id",
+        tenantId: "acme",
+        principal: "support-agent",
+      },
+    }, client);
+    expect(result.status).toBe("applied");
+    const bindIndex = client.sqlLog.findIndex((sql) => sql.startsWith("SELECT set_config"));
+    const mutationIndex = client.sqlLog.findIndex((sql) => sql.startsWith('UPDATE "public"."tickets"'));
+    expect(bindIndex).toBeGreaterThan(-1);
+    expect(mutationIndex).toBeGreaterThan(bindIndex);
+    expect(client.boundValues).toEqual(["app.tenant_id", "acme", "app.principal_id", "support-agent"]);
+  });
+
   it("preserves native timestamp text before proposal construction", () => {
     const types = postgresPoolConfig("postgresql://example.invalid/app").types;
     if (!types) throw new Error("custom postgres type parsers missing");
@@ -831,6 +901,56 @@ function batchInsertMember(id: string, externalId: string, amount: number) {
 
 function sha(value: unknown): `sha256:${string}` {
   return `sha256:${crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+class HardenedPostgresClient implements PostgresApplyClient {
+  readonly sqlLog: string[] = [];
+  boundValues?: unknown[];
+
+  constructor(private readonly options: { bypass?: boolean; owner?: boolean; force?: boolean } = {}) {}
+
+  async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    const normalized = sql.trim();
+    this.sqlLog.push(sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK" ? sql : normalized);
+    if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: null };
+    if (normalized.includes("FROM pg_catalog.pg_class c")) {
+      return {
+        rows: [{
+          role: "runner_role",
+          table_oid: "4242",
+          row_security_enabled: true,
+          force_row_security: this.options.force !== false,
+          role_is_table_owner: this.options.owner === true,
+          role_is_superuser: false,
+          role_has_bypassrls: this.options.bypass === true,
+        }],
+        rowCount: 1,
+      };
+    }
+    if (normalized.includes("FROM pg_catalog.pg_policy p")) {
+      const expression = "((tenant_id = current_setting('app.tenant_id'::text, true)) AND (assigned_to = current_setting('app.principal_id'::text, true)))";
+      return {
+        rows: [
+          { name: "tickets_select", command: "SELECT", permissive: true, using_expression: expression, with_check_expression: null },
+          { name: "tickets_update", command: "UPDATE", permissive: true, using_expression: expression, with_check_expression: expression },
+        ],
+        rowCount: 2,
+      };
+    }
+    if (normalized.startsWith("SELECT set_config")) {
+      this.boundValues = values;
+      return { rows: [{}], rowCount: 1 };
+    }
+    if (normalized.startsWith("INSERT INTO synapsor_writeback_receipts")) {
+      return { rows: [{ status: "in_progress", result_hash: null }], rowCount: 1 };
+    }
+    if (normalized.startsWith("SELECT") && normalized.includes('FROM "public"."tickets"') && normalized.includes("FOR UPDATE")) {
+      return { rows: [{ __synapsor_conflict_value: "v1" }], rowCount: 1 };
+    }
+    if (normalized.startsWith('UPDATE "public"."tickets"')) return { rows: [], rowCount: 1 };
+    if (normalized.startsWith("UPDATE synapsor_writeback_receipts")) return { rows: [], rowCount: 1 };
+    throw new Error(`unexpected hardened query: ${sql}`);
+  }
 }
 
 class FakePostgresClient implements PostgresApplyClient {
