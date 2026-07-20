@@ -473,3 +473,91 @@ Results:
   MIME type, and exposed zero model-facing approval/apply tools;
 - the license inventory now covers all current build/runtime dependencies,
   including the official Apps and MCPB tooling.
+
+## Phase 4: Agent Business-Effect Regression
+
+Implemented:
+
+- a Runner-owned, versioned `synapsor.effect-fixture.v1` artifact created from
+  a proposal replay, stored proposal, or shadow-study case;
+- separate versioned provider-neutral result and dataset formats, with public
+  JSON Schemas under `schemas/`;
+- replay evidence snapshots that reuse existing ledger data and record that
+  evaluation made no new source read;
+- fail-closed secret scanning, kept-out field checks, fixture digests, bounded
+  2 MiB files, bounded 1,000-case datasets, duplicate-ID checks, and
+  dataset-path containment;
+- offline comparison of capability calls/surface expansion, trusted context,
+  model-controlled tenant/principal arguments, target, exact business diff,
+  policy, hidden fields, conflict/block code, result category, contract
+  version, source reads, and source mutation;
+- stable terminal, JSON, and JUnit reports with nonzero failure status;
+- CLI commands:
+  `effect fixture create`, `effect result init`, `effect run`,
+  `effect compare`, and `effect accept`;
+- an explicit acceptance workflow requiring actor, reason, `--yes`, and
+  either `--in-place` or a separate output file, with before/after baseline
+  digests in history;
+- non-waivable acceptance failures for fixture identity, source mutation,
+  new reads, trusted-context drift/override, and hidden-field exposure;
+- a deterministic support late-fee pass/fail dataset under
+  `fixtures/effects/`;
+- `docs/effect-regression.md`, CLI help, task-index linkage, and packed
+  documentation/assets.
+
+Architecture decision:
+
+- effect fixtures/results are local evaluation artifacts owned by Runner, not
+  canonical capability semantics, so this phase did not change
+  `@synapsor/spec`, `@synapsor/dsl`, or the public writeback protocol;
+- contract conformance remains a separate test kind; effect evaluation
+  imports observations from any provider/application harness and deliberately
+  does not become an agent workflow engine or provider SDK;
+- Runner does not execute adopter code, invoke an LLM, query a source, approve
+  a proposal, or apply a write during effect comparison.
+
+Verification:
+
+```bash
+corepack pnpm typecheck
+corepack pnpm vitest run \
+  apps/runner/src/effect-regression.test.ts \
+  apps/runner/src/effect-cli.test.ts
+corepack pnpm test
+corepack pnpm runner effect run \
+  --dataset ./fixtures/effects/dataset.json \
+  --results-dir ./fixtures/effects/results
+corepack pnpm runner effect run \
+  --dataset ./fixtures/effects/dataset.json \
+  --results-dir ./fixtures/effects/changed
+corepack pnpm build:runner-package
+node apps/runner/dist/cli.js effect run \
+  --dataset ./fixtures/effects/dataset.json \
+  --results-dir ./fixtures/effects/results \
+  --format junit
+./scripts/verify-packed-runner.sh
+```
+
+Results:
+
+- focused effect suite: 2 files, 13/13 passed;
+- complete suite: 28 files, 564/564 tests passed;
+- typecheck, license/content, and DSL source-path checks passed;
+- the matching reference dataset passed and the changed fee/policy dataset
+  failed with `BUSINESS_DIFF` and `POLICY_DECISION`;
+- built JUnit output reported 14 checks and zero failures;
+- real npm tarball scratch installation contains the three effect schemas,
+  effect guide, pass/fail fixtures, and built command, while excluding
+  `development/`;
+- packed matching/changed result checks behaved identically to source.
+
+Test-runner note:
+
+- the first complete run oversubscribed the machine because the initial new
+  tests invoked the full embedded `try` flow three additional times; several
+  unrelated 5-second SQLite/UI tests timed out, one timeout temporarily left
+  `process.cwd()` in a removed fixture directory, and that caused cascading
+  `ENOENT` failures;
+- the new tests were corrected to create real replay records directly through
+  `ProposalStore`, removing unnecessary source/demo work; the subsequent
+  unmodified complete test command passed all 564 tests.

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapsor.ai/schemas/effect-result.schema.json",
+  "title": "Synapsor imported effect result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fixture_id",
+    "capability_calls",
+    "trusted_context",
+    "proposal",
+    "observed_fields",
+    "evidence",
+    "source_database_changed"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "synapsor.effect-result.v1" },
+    "fixture_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "capability_calls": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "args": { "type": "object" }
+        }
+      }
+    },
+    "trusted_context": { "$ref": "effect-fixture.schema.json#/$defs/trusted_context" },
+    "proposal": { "$ref": "effect-fixture.schema.json#/$defs/proposal" },
+    "observed_fields": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "new_source_reads"],
+      "properties": {
+        "mode": { "enum": ["fixture", "live"] },
+        "new_source_reads": { "type": "boolean" }
+      }
+    },
+    "source_database_changed": { "type": "boolean" }
+  }
+}

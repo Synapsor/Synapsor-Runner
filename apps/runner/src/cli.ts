@@ -42,7 +42,7 @@ import {
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob, protocolVersions, type ChangeSet, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type ChangeSet, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
@@ -80,6 +80,21 @@ import { runLanguageServer } from "./language-server.js";
 import { createComplianceReport, formatComplianceReport, readComplianceReport, verifyComplianceReport } from "./compliance-report.js";
 import { decideGraduatedTrustRecommendation, evaluateGraduatedTrust, formatGraduatedTrustEvaluation, markGraduatedTrustArtifactExported, prepareGraduatedTrustArtifact } from "./graduated-trust.js";
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
+import {
+  acceptEffectBaseline,
+  compareEffectResult,
+  createEffectFixtureFromReplay,
+  createEffectFixtureFromShadowCase,
+  createEffectRegressionReport,
+  effectResultFileName,
+  effectResultTemplate,
+  formatEffectRegressionReport,
+  loadEffectFixture,
+  loadEffectFixtureSet,
+  loadEffectResult,
+  writeEffectJson,
+  type EffectFixture,
+} from "./effect-regression.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -431,6 +446,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "inspect") return inspect(rest);
   if (command === "config") return configCommand(rest);
   if (command === "contract") return contractCommand(rest);
+  if (command === "effect") return effectCommand(rest);
   if (command === "report") return reportCommand(rest);
   if (command === "policy") return policyCommand(rest);
   if (command === "dsl") return dslCommand(rest);
@@ -2001,6 +2017,291 @@ async function contractCommand(args: string[]): Promise<number> {
   if (subcommand === "test") return contractTest(rest);
   usage(["contract"]);
   return 2;
+}
+
+async function effectCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "fixture") return effectFixtureCommand(rest);
+  if (subcommand === "result") return effectResultCommand(rest);
+  if (subcommand === "run" || subcommand === "compare") return effectRun(rest);
+  if (subcommand === "accept") return effectAccept(rest);
+  usage(["effect"]);
+  return 2;
+}
+
+async function effectFixtureCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "create") return effectFixtureCreate(rest);
+  usage(["effect"]);
+  return 2;
+}
+
+async function effectResultCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "init") return effectResultInit(rest);
+  usage(["effect"]);
+  return 2;
+}
+
+const effectFixtureCreateOptions = new Set([
+  "--from-replay",
+  "--from-proposal",
+  "--from-shadow-case",
+  "--request",
+  "--name",
+  "--contract",
+  "--capability-call",
+  "--config",
+  "--store",
+  "--output",
+  "--out",
+  "--force",
+  runtimeStoreBridgeFlag,
+]);
+
+async function effectFixtureCreate(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "effect fixture create",
+    (storePath) => effectFixtureCreate(argsWithRuntimeStoreBridge(args, storePath)),
+  );
+  if (bridged !== undefined) return bridged;
+  assertKnownOptions(args, effectFixtureCreateOptions, "effect fixture create");
+  const sources = [
+    ["replay", optionalArg(args, "--from-replay")],
+    ["proposal", optionalArg(args, "--from-proposal")],
+    ["shadow_case", optionalArg(args, "--from-shadow-case")],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  if (sources.length !== 1) {
+    throw new Error("effect fixture create requires exactly one of --from-replay, --from-proposal, or --from-shadow-case");
+  }
+  const businessRequest = optionalArg(args, "--request");
+  if (!businessRequest) throw new Error("effect fixture create requires --request <business-request>");
+  const contractPath = optionalArg(args, "--contract");
+  if (!contractPath) throw new Error("effect fixture create requires --contract <contract.synapsor.sql|synapsor.contract.json>");
+  const output = outputArg(args);
+  if (!output) throw new Error("effect fixture create requires --output <effect.fixture.json>");
+
+  const reviewed = await loadReviewedContract(contractPath);
+  const contractVersion = reviewed.contract.metadata?.version
+    ?? canonicalJsonDigest(reviewed.contract);
+  const store = await openLocalStore(args);
+  let fixture: EffectFixture;
+  try {
+    const [sourceKind, reference] = sources[0]!;
+    if (sourceKind === "shadow_case") {
+      const shadowCase = store.getShadowCase(reference);
+      if (!shadowCase) throw new Error(`shadow case not found: ${reference}`);
+      const replay = shadowCase.proposal_id
+        ? store.replay(shadowCase.proposal_id)
+        : undefined;
+      const capabilityCalls = effectCapabilityCalls(args, shadowCase.capability);
+      fixture = createEffectFixtureFromShadowCase({
+        shadowCase,
+        replay,
+        businessRequest,
+        name: optionalArg(args, "--name"),
+        capabilityCalls,
+        hiddenFields: effectHiddenFields(reviewed.contract, capabilityCalls),
+        contractVersion,
+      });
+    } else {
+      const proposalId = reference.startsWith("replay_")
+        ? proposalIdFromReplayId(reference)
+        : resolveProposalIdFromStore(reference, store);
+      const replay = store.replay(proposalId);
+      const capability = replay.proposal.capability ?? replay.proposal.action;
+      const capabilityCalls = effectCapabilityCalls(args, capability);
+      fixture = createEffectFixtureFromReplay({
+        replay,
+        businessRequest,
+        name: optionalArg(args, "--name"),
+        sourceKind: sourceKind as "replay" | "proposal",
+        capabilityCalls,
+        hiddenFields: effectHiddenFields(reviewed.contract, capabilityCalls),
+        contractVersion,
+      });
+    }
+  } finally {
+    store.close();
+  }
+  await writeEffectArtifactGuarded(output, fixture, args.includes("--force"));
+  process.stdout.write([
+    `wrote effect fixture: ${path.resolve(output)}`,
+    `fixture: ${fixture.fixture_id}`,
+    "evaluation mode: offline imported result (no Runner source read or write)",
+    `next: ${cliCommandName()} effect result init --fixture ${shellQuote(output)} --output ${shellQuote(`${output}.result.json`)}`,
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function effectResultInit(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--fixture", "--output", "--out", "--force"]),
+    "effect result init",
+  );
+  const fixturePath = optionalArg(args, "--fixture");
+  if (!fixturePath) throw new Error("effect result init requires --fixture <effect.fixture.json>");
+  const output = outputArg(args);
+  if (!output) throw new Error("effect result init requires --output <effect.result.json>");
+  const fixture = await loadEffectFixture(fixturePath);
+  await writeEffectArtifactGuarded(
+    output,
+    effectResultTemplate(fixture),
+    args.includes("--force"),
+  );
+  process.stdout.write([
+    `wrote provider-neutral effect result template: ${path.resolve(output)}`,
+    "Populate it from your agent harness without applying a write, then run:",
+    `${cliCommandName()} effect run --fixture ${shellQuote(fixturePath)} --result ${shellQuote(output)}`,
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function effectRun(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set([
+      "--fixture",
+      "--dataset",
+      "--result",
+      "--results-dir",
+      "--allow-live-read",
+      "--format",
+      "--json",
+      "--output",
+      "--out",
+      "--force",
+    ]),
+    "effect run",
+  );
+  const fixturePath = optionalArg(args, "--fixture");
+  const datasetPath = optionalArg(args, "--dataset");
+  const fixtures = await loadEffectFixtureSet({ fixturePath, datasetPath });
+  const explicitResult = optionalArg(args, "--result");
+  const resultsDir = optionalArg(args, "--results-dir");
+  if (Boolean(explicitResult) === Boolean(resultsDir)) {
+    throw new Error("effect run requires exactly one of --result or --results-dir");
+  }
+  if (explicitResult && fixtures.length !== 1) {
+    throw new Error("effect run --result is valid only for one --fixture; use --results-dir with a dataset");
+  }
+  const allowLiveRead = args.includes("--allow-live-read");
+  const cases = [];
+  for (const entry of fixtures) {
+    const resultPath = explicitResult
+      ?? path.join(path.resolve(resultsDir!), effectResultFileName(entry.fixture));
+    const result = await loadEffectResult(resultPath);
+    cases.push(compareEffectResult(entry.fixture, result, { allowLiveRead }));
+  }
+  const report = createEffectRegressionReport(cases, { allowLiveRead });
+  const formatValue = optionalArg(args, "--format") ?? (args.includes("--json") ? "json" : "text");
+  if (!["text", "json", "junit"].includes(formatValue)) {
+    throw new Error("effect run --format must be text, json, or junit");
+  }
+  const rendered = formatEffectRegressionReport(
+    report,
+    formatValue as "text" | "json" | "junit",
+  );
+  const output = outputArg(args);
+  if (output) {
+    await writeTextArtifactGuarded(output, rendered, args.includes("--force"));
+  } else {
+    process.stdout.write(rendered);
+  }
+  return report.ok ? 0 : 1;
+}
+
+async function effectAccept(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set([
+      "--fixture",
+      "--result",
+      "--actor",
+      "--reason",
+      "--output",
+      "--out",
+      "--in-place",
+      "--yes",
+      "--force",
+    ]),
+    "effect accept",
+  );
+  const fixturePath = optionalArg(args, "--fixture");
+  const resultPath = optionalArg(args, "--result");
+  const actor = optionalArg(args, "--actor");
+  const reason = optionalArg(args, "--reason");
+  if (!fixturePath || !resultPath) {
+    throw new Error("effect accept requires --fixture <effect.fixture.json> --result <effect.result.json>");
+  }
+  if (!actor || !reason) throw new Error("effect accept requires --actor <identity> --reason <reviewed-change>");
+  if (!args.includes("--yes")) {
+    throw new Error("effect accept requires --yes after reviewing the changed business effect");
+  }
+  const inPlace = args.includes("--in-place");
+  const output = outputArg(args);
+  if (inPlace === Boolean(output)) {
+    throw new Error("effect accept requires exactly one of --in-place or --output <new.fixture.json>");
+  }
+  const fixture = await loadEffectFixture(fixturePath);
+  const result = await loadEffectResult(resultPath);
+  const accepted = acceptEffectBaseline({ fixture, result, actor, reason });
+  const destination = inPlace ? fixturePath : output!;
+  if (inPlace) await writeEffectJson(destination, accepted);
+  else await writeEffectArtifactGuarded(destination, accepted, args.includes("--force"));
+  process.stdout.write([
+    `accepted reviewed effect baseline: ${accepted.fixture_id}`,
+    `actor: ${actor}`,
+    `reason: ${reason}`,
+    `wrote: ${path.resolve(destination)}`,
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+function effectCapabilityCalls(args: string[], fallback: string): string[] {
+  const requested = repeatedArgs(args, "--capability-call")
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return uniqueStrings(requested.length ? requested : [fallback]);
+}
+
+function effectHiddenFields(contract: SynapsorContract, capabilityCalls: string[]): string[] {
+  const capabilities = new Map(contract.capabilities.map((capability) => [capability.name, capability]));
+  const missing = capabilityCalls.filter((name) => !capabilities.has(name));
+  if (missing.length) {
+    throw new Error(`EFFECT_CAPABILITY_NOT_IN_CONTRACT: ${missing.join(", ")}`);
+  }
+  return uniqueStrings(capabilityCalls.flatMap((name) =>
+    capabilities.get(name)?.kept_out_fields ?? []));
+}
+
+async function writeEffectArtifactGuarded(
+  filePath: string,
+  value: unknown,
+  force: boolean,
+): Promise<void> {
+  if (!force && await fileExists(filePath)) {
+    throw new Error(`${filePath} already exists. Use --force to overwrite it.`);
+  }
+  await writeEffectJson(filePath, value);
+}
+
+async function writeTextArtifactGuarded(
+  filePath: string,
+  value: string,
+  force: boolean,
+): Promise<void> {
+  if (!force && await fileExists(filePath)) {
+    throw new Error(`${filePath} already exists. Use --force to overwrite it.`);
+  }
+  await fs.mkdir(path.dirname(path.resolve(filePath)), { recursive: true });
+  await fs.writeFile(filePath, value, { encoding: "utf8", mode: 0o600 });
 }
 
 async function dslCommand(args: string[]): Promise<number> {
@@ -13431,6 +13732,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "inspect",
     "config",
     "contract",
+    "effect",
     "report",
     "policy",
     "dsl",
@@ -13510,6 +13812,7 @@ Commands:
   config       Validate local synapsor.runner.json wiring
   mcp          Serve safe semantic tools over MCP
   contract     Validate and normalize canonical Synapsor contract files
+  effect       Catch changed agent business effects with offline fixtures
   report       Export and verify scoped tamper-evident ledger reports
   policy       Evaluate and review opt-in graduated-trust recommendations
   dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
@@ -13551,6 +13854,8 @@ Examples:
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
   ${cmd} contract explain ./contract.synapsor.sql --format markdown
   ${cmd} contract lint ./contract.synapsor.sql --strict
+  ${cmd} effect fixture create --from-replay replay_wrp_... --request "Waive the late fee" --contract ./synapsor.contract.json --store ./.synapsor/local.db --out ./effects/late-fee.json
+  ${cmd} effect run --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json
   ${cmd} report --object invoice:INV-3001 --tenant tenant_acme --store ./.synapsor/local.db --format markdown
   ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant tenant_acme --capability billing.propose_credit --policy low_risk_credit --store ./.synapsor/local.db
   ${cmd} dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json
@@ -13606,6 +13911,25 @@ never claims to infer all sensitive columns. Test runs adopter-authored static
 assertions and, with --live, calls the real MCP runtime against an explicitly
 approved disposable database. Local database URLs, ports, and store paths stay
 in runner config.
+`,
+    effect: `Usage:
+  ${cmd} effect fixture create --from-replay replay_wrp_... --request "Waive the late fee" --contract ./synapsor.contract.json --store ./.synapsor/local.db --out ./effects/late-fee.json
+  ${cmd} effect fixture create --from-shadow-case shc_... --request "Issue a plan credit" --contract ./synapsor.contract.json --store ./.synapsor/local.db --out ./effects/plan-credit.json
+  ${cmd} effect result init --fixture ./effects/late-fee.json --out ./effects/late-fee.result.json
+  ${cmd} effect run --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json [--format text|json|junit]
+  ${cmd} effect run --dataset ./effects/dataset.json --results-dir ./effects/results [--format text|json|junit]
+  ${cmd} effect accept --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json --actor <operator> --reason <reviewed-change> --in-place --yes
+
+Create a versioned effect baseline from an existing proposal replay or shadow
+case, import a provider-neutral result from your agent harness, and fail CI when
+capability calls, trusted context, target, business diff, policy, hidden fields,
+conflict behavior, or result category drift.
+
+Runner evaluates imported results offline and never applies a write. Evidence is
+snapshotted from the existing ledger. A new source read is rejected unless
+--allow-live-read is explicit. Baselines never update silently: acceptance
+requires an operator identity, reason, --yes, and --in-place or a new output.
+This complements contract test; it does not replace contract conformance.
 `,
     report: `Usage:
   ${cmd} report --object invoice:INV-3001 --tenant tenant_acme --store ./.synapsor/local.db [--config ./synapsor.runner.json] [--format markdown|json|pdf] [--out report.md]

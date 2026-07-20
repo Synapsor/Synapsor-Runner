@@ -1,0 +1,8 @@
+{
+  "$schema": "../../schemas/effect-dataset.schema.json",
+  "schema_version": "synapsor.effect-dataset.v1",
+  "name": "reference support billing effects",
+  "fixtures": [
+    "./support-late-fee.effect.json"
+  ]
+}

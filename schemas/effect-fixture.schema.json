@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapsor.ai/schemas/effect-fixture.schema.json",
+  "title": "Synapsor effect regression fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fixture_id",
+    "fixture_digest",
+    "name",
+    "business_request",
+    "source",
+    "evidence",
+    "expected"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "synapsor.effect-fixture.v1" },
+    "fixture_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "fixture_digest": { "$ref": "#/$defs/sha256" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "business_request": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reference_id", "captured_digest"],
+      "properties": {
+        "kind": { "enum": ["replay", "proposal", "shadow_case"] },
+        "reference_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "proposal_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "captured_digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "bundle_ids",
+        "query_fingerprints",
+        "snapshot",
+        "source_reads_during_evaluation"
+      ],
+      "properties": {
+        "mode": { "const": "replay_snapshot" },
+        "bundle_ids": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "query_fingerprints": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "snapshot": { "type": "array", "maxItems": 1000 },
+        "source_reads_during_evaluation": { "const": false }
+      }
+    },
+    "expected": { "$ref": "#/$defs/expected" },
+    "baseline_history": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actor",
+          "reason",
+          "accepted_at",
+          "previous_expected_digest",
+          "accepted_expected_digest"
+        ],
+        "properties": {
+          "actor": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "accepted_at": { "type": "string", "format": "date-time" },
+          "previous_expected_digest": { "$ref": "#/$defs/sha256" },
+          "accepted_expected_digest": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "trusted_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "principal"],
+      "properties": {
+        "tenant_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "principal": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provenance": {
+          "enum": [
+            "environment",
+            "static_dev",
+            "http_claims",
+            "cloud_session",
+            "trusted_session"
+          ]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["business_object", "object_id"],
+      "properties": {
+        "business_object": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "object_id": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "diff_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "before": { "type": ["string", "number", "boolean", "null"] },
+        "proposed": { "type": ["string", "number", "boolean", "null"] }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision"],
+      "properties": {
+        "decision": {
+          "enum": ["pending_review", "auto_approved", "denied", "not_applicable"]
+        },
+        "required_role": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "required_approvals": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "reason_code": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_category", "policy"],
+      "properties": {
+        "result_category": {
+          "enum": [
+            "proposal_created",
+            "policy_denied",
+            "unable_to_propose",
+            "stale_conflict",
+            "invalid_unsafe_scope_attempt"
+          ]
+        },
+        "capability": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "contract_version": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "target": { "$ref": "#/$defs/target" },
+        "diff": {
+          "type": "object",
+          "maxProperties": 256,
+          "additionalProperties": { "$ref": "#/$defs/diff_value" }
+        },
+        "policy": { "$ref": "#/$defs/policy" },
+        "error_code": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_calls",
+        "trusted_context",
+        "proposal",
+        "hidden_fields",
+        "source_database_changed"
+      ],
+      "properties": {
+        "capability_calls": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "trusted_context": { "$ref": "#/$defs/trusted_context" },
+        "proposal": { "$ref": "#/$defs/proposal" },
+        "hidden_fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "source_database_changed": { "const": false }
+      }
+    }
+  }
+}
