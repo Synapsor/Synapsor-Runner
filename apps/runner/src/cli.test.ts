@@ -4070,8 +4070,13 @@ END
 
   it("prints MCP client configuration snippets without secrets", async () => {
     const output: string[] = [];
+    const stderr: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk));
       return true;
     });
 
@@ -4091,7 +4096,10 @@ END
       command: "synapsor-runner",
       args: ["mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
     });
+    expect(stderr.join("")).toContain("display-only MCP App automatically");
+    expect(stderr.join("")).toContain("Approval and apply remain outside MCP");
     expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret/i);
+    expect(stderr.join("")).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|secret_[A-Za-z0-9]|sk-/i);
   });
 
   it("prints MCP client config snippets through the short mcp config alias", async () => {

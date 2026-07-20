@@ -145,6 +145,7 @@ const publicDocs = [
   "licensing.md",
   "local-mode.md",
   "mcp-audit.md",
+  "mcp-apps.md",
   "mcp-client-setup.md",
   "mcp-clients.md",
   "migrating-to-synapsor-spec.md",

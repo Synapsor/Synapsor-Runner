@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import * as mcpAppsSdk from "@modelcontextprotocol/ext-apps";
+import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -24,12 +27,24 @@ import {
   loadRuntimeConfigFromFile,
   McpRuntimeError,
   openaiToolNameAlias,
+  PROPOSAL_APP_SPEC_VERSION,
+  PROPOSAL_APP_URI,
+  proposalAppHtml,
+  proposalAppInitializeRequest,
   resolveRuntimeSourceCredential,
   serveStdio,
   startHttpMcpServer,
   startStreamableHttpMcpServer,
   type RuntimeConfig,
 } from "./index.js";
+
+const {
+  McpUiInitializeRequestSchema,
+  McpUiToolResultNotificationSchema,
+} = mcpAppsSdk as unknown as {
+  McpUiInitializeRequestSchema: { parse(value: unknown): unknown };
+  McpUiToolResultNotificationSchema: { parse(value: unknown): unknown };
+};
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -851,6 +866,126 @@ describe("local Synapsor MCP runtime", () => {
     } finally {
       runtime.close();
     }
+  });
+
+  it("serves a display-only MCP App proposal view through the official MCP client", async () => {
+    const runtime = createMcpRuntime(config, {
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const server = createSynapsorMcpServer(runtime);
+    const client = new Client({ name: "synapsor-mcp-app-test", version: "0.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const listed = await client.listTools();
+      const proposalTool = listed.tools.find((tool) => tool.name === "billing.propose_late_fee_waiver");
+      const readTool = listed.tools.find((tool) => tool.name === "billing.inspect_invoice");
+      expect(proposalTool?._meta?.ui).toEqual({
+        resourceUri: PROPOSAL_APP_URI,
+        visibility: ["model", "app"],
+      });
+      expect(proposalTool?._meta?.["ui/resourceUri"]).toBe(PROPOSAL_APP_URI);
+      expect(proposalTool?._meta?.["synapsor.mcp_app_mode"]).toBe("display_only");
+      expect(readTool?._meta?.ui).toBeUndefined();
+      expect(listed.tools.some((tool) => /approve|apply|commit|execute_sql|run_query/i.test(tool.name))).toBe(false);
+
+      const resources = await client.listResources();
+      expect(resources.resources).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          uri: PROPOSAL_APP_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+        }),
+      ]));
+      const appResource = await client.readResource({ uri: PROPOSAL_APP_URI });
+      const appContent = appResource.contents[0];
+      if (!appContent || !("text" in appContent)) throw new Error("MCP App HTML resource missing");
+      expect(appContent.mimeType).toBe(RESOURCE_MIME_TYPE);
+      expect(appContent.text).toContain("ui/initialize");
+      expect(appContent.text).toContain("ui/notifications/tool-result");
+      expect(appContent.text).toContain("ui/notifications/initialized");
+      expect(appContent.text).toContain("Waiting for a Synapsor proposal result");
+      expect(appContent.text).not.toMatch(/tools\/call|approveProposal|applyProposal|bearer\s+[a-z0-9._-]+|[?&](?:token|challenge)=/i);
+
+      const proposed = await client.callTool({
+        name: "billing.propose_late_fee_waiver",
+        arguments: { invoice_id: "INV-3001", reason: "reviewed support waiver" },
+      });
+      expect(proposed.structuredContent).toMatchObject({
+        status: "review_required",
+        source_database_mutated: false,
+        proposal_review: {
+          schema_version: "synapsor.proposal-review-view.v1",
+          requested_business_action: "billing.propose_late_fee_waiver",
+          semantic_capability: "billing.propose_late_fee_waiver",
+          trusted_context: {
+            tenant_id: "acme",
+            principal: "support_agent_17",
+          },
+          kept_out_fields: {
+            values_included: false,
+          },
+          expected_source_version: {
+            column: "updated_at",
+            value: "2026-06-20 14:31:08.000000Z",
+          },
+          expiration: {
+            status: "not_configured",
+          },
+          receipt: {
+            status: "not_created",
+          },
+          security_boundary: {
+            presentation_only: true,
+            approval_tool_exposed: false,
+            apply_tool_exposed: false,
+            privileged_handoff_embedded: false,
+          },
+          handoff: {
+            mode: "standalone_operator",
+            privileged_authority_embedded: false,
+          },
+        },
+      });
+      const serializedResult = JSON.stringify(proposed);
+      expect(serializedResult).toContain("proposal_review");
+      expect(serializedResult).not.toMatch(/database_url|write_credentials|review_challenge|approval_token|bearer\s+[a-z0-9._-]+/i);
+      expect(proposed.content).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: expect.stringContaining("proposal_review") }),
+      ]));
+
+      expect(() => McpUiToolResultNotificationSchema.parse({
+        method: "ui/notifications/tool-result",
+        params: proposed,
+      })).not.toThrow();
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+      await runtime.close().catch(() => undefined);
+    }
+  });
+
+  it("emits a standards-valid MCP Apps initialize request without privileged handoff data", () => {
+    expect(PROPOSAL_APP_SPEC_VERSION).toBe("2026-01-26");
+    const request = proposalAppInitializeRequest("proposal-app-init");
+    expect(() => McpUiInitializeRequestSchema.parse({
+      method: request.method,
+      params: request.params,
+    })).not.toThrow();
+    expect(request).toMatchObject({
+      jsonrpc: "2.0",
+      id: "proposal-app-init",
+      method: "ui/initialize",
+      params: {
+        protocolVersion: "2026-01-26",
+        appInfo: { name: "synapsor-proposal-review" },
+        appCapabilities: {},
+      },
+    });
+    const html = proposalAppHtml();
+    expect(html).toContain(JSON.stringify(proposalAppInitializeRequest(1)));
+    expect(html).not.toMatch(/review[_-]?token|approval[_-]?token|review[_-]?challenge|[?&](?:token|challenge)=/i);
   });
 
   it("surfaces author-supplied tool, argument, and returns descriptions", () => {

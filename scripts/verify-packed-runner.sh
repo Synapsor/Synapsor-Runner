@@ -32,6 +32,14 @@ cd "$TEMP_DIR"
 npm init -y >/dev/null
 npm install "$TARBALL" >/dev/null
 
+PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
+test -f "$PACKED_ROOT/docs/mcp-apps.md"
+grep -F "text/html;profile=mcp-app" "$PACKED_ROOT/docs/mcp-apps.md" >/dev/null
+if [[ -e "$PACKED_ROOT/development" ]]; then
+  echo "packed runner unexpectedly contains development progress files" >&2
+  exit 1
+fi
+
 for version_args in "--version" "-v" "version" "synapsor-runner --version"; do
   read -r -a args <<< "$version_args"
   actual="$(npx synapsor-runner "${args[@]}")"
@@ -43,24 +51,26 @@ done
 
 npx synapsor-runner --help >/dev/null
 npx synapsor-runner demo --quick --no-interactive > quick.txt
-grep -F "Synapsor quick demo complete." quick.txt >/dev/null
-grep -F "* source DB changed: no" quick.txt >/dev/null
-if grep -F "Raw MCP shape" quick.txt >/dev/null; then
-  echo "packed quick concise output unexpectedly printed detailed raw MCP section" >&2
+grep -F "Synapsor Runner try" quick.txt >/dev/null
+grep -F "Source changed:" quick.txt >/dev/null
+grep -F "Guarded commit complete." quick.txt >/dev/null
+if grep -F "Extended proof:" quick.txt >/dev/null; then
+  echo "packed quick output unexpectedly ran the extended proof" >&2
   exit 1
 fi
 npx synapsor-runner demo --quick --details > quick-details.txt
-grep -F "Raw MCP shape:" quick-details.txt >/dev/null
-grep -F "Evidence id: ev_quick_INV_3001" quick-details.txt >/dev/null
+grep -F "Extended proof:" quick-details.txt >/dev/null
+grep -F "restart-safe retry: yes" quick-details.txt >/dev/null
+grep -F "Evidence: ev_wrp_try_INV_3001" quick-details.txt >/dev/null
 npx synapsor-runner demo inspect > inspect.txt
-grep -F "Quick demo inspection" inspect.txt >/dev/null
-grep -F "synapsor-runner proposals show latest --store ./.synapsor/quick-demo.db" inspect.txt >/dev/null
+grep -F "Synapsor try inspection" inspect.txt >/dev/null
+grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store .synapsor/try/ledger.db" inspect.txt >/dev/null
 npx synapsor-runner demo inspect --npx > inspect-npx.txt
-grep -F "npx -y -p @synapsor/runner synapsor-runner proposals show latest" inspect-npx.txt >/dev/null
-npx synapsor-runner events webhook --url http://127.0.0.1:8788/synapsor/events --kind proposal_created --store ./.synapsor/quick-demo.db --dry-run > events-webhook.txt
+grep -F "npx -y -p @synapsor/runner synapsor-runner proposals show wrp_try_INV_3001" inspect-npx.txt >/dev/null
+npx synapsor-runner events webhook --url http://127.0.0.1:8788/synapsor/events --kind proposal_created --store ./.synapsor/try/ledger.db --dry-run > events-webhook.txt
 grep -F "synapsor.local-event-webhook.v1" events-webhook.txt >/dev/null
 grep -F "proposal_created" events-webhook.txt >/dev/null
-grep -F "wrp_quick_INV_3001" events-webhook.txt >/dev/null
+grep -F "wrp_try_INV_3001" events-webhook.txt >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format json >/dev/null
 npx synapsor-runner audit --example dangerous-db-mcp --format markdown >/dev/null
@@ -85,7 +95,7 @@ if npx synapsor-runner contract lint "$SURFACE_FIXTURE" --strict > surface-stric
 fi
 grep -F "SURFACE_TARGET_DENSITY" surface-strict.txt >/dev/null
 npx synapsor-runner recipes init billing.late_fee_waiver --force >/dev/null
-npx synapsor-runner up --config ./synapsor.runner.json --store ./.synapsor/quick-demo.db --dry-run > up.txt
+npx synapsor-runner up --config ./synapsor.runner.json --store ./.synapsor/try/ledger.db --dry-run > up.txt
 grep -F "Synapsor Runner review-mode up" up.txt >/dev/null
 grep -F "Serve now: no" up.txt >/dev/null
 grep -F "Model-facing tools:" up.txt >/dev/null
@@ -119,8 +129,8 @@ npx synapsor-runner receipts --help >/dev/null
 npx synapsor-runner replay --help >/dev/null
 npx synapsor-runner store --help >/dev/null
 npx synapsor-runner --help >/dev/null
-npx synapsor-runner store stats --store ./.synapsor/quick-demo.db >/dev/null
-npx synapsor-runner store prune --store ./.synapsor/quick-demo.db --older-than 0d --dry-run >/dev/null
-npx synapsor-runner store reset --store ./.synapsor/quick-demo.db --yes >/dev/null
+npx synapsor-runner store stats --store ./.synapsor/try/ledger.db >/dev/null
+npx synapsor-runner store prune --store ./.synapsor/try/ledger.db --older-than 0d --dry-run >/dev/null
+npx synapsor-runner store reset --store ./.synapsor/try/ledger.db --yes >/dev/null
 
 echo "packed runner verified in $TEMP_DIR"
