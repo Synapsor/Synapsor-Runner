@@ -13,10 +13,12 @@ Expected output includes:
 
 ```text
 execute_sql
-Synapsor quick demo complete.
-proposal created
-source DB changed: no
-approval required outside MCP
+late_fee_cents: 5500 -> 0
+Source changed:
+  No
+Guarded commit complete.
+restart-safe retry: yes
+stale apply refused: yes
 ```
 
 The raw-SQL shortcut is:

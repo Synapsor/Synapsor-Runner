@@ -30,9 +30,14 @@ npm view @synapsor/runner@latest bin license >/dev/null
 cd "$TEMP_DIR"
 
 npx -y -p @synapsor/runner@latest synapsor-runner --help >/dev/null
-npx -y -p @synapsor/runner@latest synapsor-runner demo --quick --no-interactive > quick.txt
-grep -F "Synapsor quick demo complete." quick.txt >/dev/null
-grep -F "* source DB changed: no" quick.txt >/dev/null
+npx -y -p @synapsor/runner@latest synapsor-runner try --prove --yes --no-open > proof.txt
+grep -F "late_fee_cents: 5500 -> 0" proof.txt >/dev/null
+grep -F "Source changed:" proof.txt >/dev/null
+grep -F "Guarded commit complete." proof.txt >/dev/null
+grep -F "restart-safe retry: yes" proof.txt >/dev/null
+grep -F "changed-intent operation reuse rejected: yes" proof.txt >/dev/null
+grep -F "stale apply refused: yes" proof.txt >/dev/null
+grep -F "replay changed source: no" proof.txt >/dev/null
 
 npx -y -p @synapsor/runner@latest synapsor-runner audit --example dangerous-db-mcp --format markdown > audit.md
 grep -F "execute_sql" audit.md >/dev/null
@@ -41,9 +46,9 @@ npx -y -p @synapsor/runner@latest synapsor-runner mcp serve-streamable-http --he
 grep -F -- "--alias-mode openai" streamable-help.txt >/dev/null
 
 npx -y -p @synapsor/runner@latest synapsor-runner demo inspect > inspect.txt
-grep -F "Quick demo inspection" inspect.txt >/dev/null
+grep -F "Synapsor try inspection" inspect.txt >/dev/null
 
-npx -y -p @synapsor/runner@latest synapsor-runner activity search --object invoice:INV-3001 --store ./.synapsor/quick-demo.db >/dev/null
-npx -y -p @synapsor/runner@latest synapsor-runner replay show latest --store ./.synapsor/quick-demo.db >/dev/null
+npx -y -p @synapsor/runner@latest synapsor-runner activity search --object invoice:INV-3001 --store ./.synapsor/try/ledger.db >/dev/null
+npx -y -p @synapsor/runner@latest synapsor-runner replay show wrp_try_INV_3001 --store ./.synapsor/try/ledger.db >/dev/null
 
 echo "published stable $PUBLISHED_VERSION verified in $TEMP_DIR"

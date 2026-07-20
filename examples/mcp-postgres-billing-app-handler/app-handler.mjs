@@ -119,5 +119,13 @@ function writeJson(response, statusCode, body) {
 }
 
 async function loadHandlerHelper() {
-  return await import(new URL("./synapsor-handler.mjs", import.meta.url));
+  const bundledHelper = new URL("./synapsor-handler.mjs", import.meta.url);
+  try {
+    return await import(bundledHelper);
+  } catch (error) {
+    if (error?.code !== "ERR_MODULE_NOT_FOUND" || error?.url !== bundledHelper.href) {
+      throw error;
+    }
+    return await import(new URL("../../packages/handler/dist/index.js", import.meta.url));
+  }
 }

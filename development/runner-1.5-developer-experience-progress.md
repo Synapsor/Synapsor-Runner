@@ -21,7 +21,7 @@ publishing, pushing, tagging, or deploying.
 | 6: schema candidates | complete | 576 tests, malicious fixtures and packed Prisma generation passed |
 | 7: reference experience | complete | Hardened PostgreSQL/RLS demo, strict shadow, human outcomes, effect regression, legacy reference, and 576 tests passed |
 | 8: docs and trust hygiene | complete | Concise 1,485-word README, live-registry provenance audit, website correction handoff, packed docs, and 576 tests passed |
-| 9: final verification | pending | |
+| 9: final verification | complete | 577 tests, all live/security suites, release gate, packed app handler, MCPB, and 223-file tarball audit passed |
 
 ## Baseline Commands
 
@@ -856,3 +856,84 @@ Results:
 - both README copies contain 1,485 words and are byte-identical;
 - website source was inspected but not modified, pushed, or deployed from this
   OSS branch.
+
+## Phase 9: Final Verification And Release Staging
+
+Implemented and reconciled:
+
+- staged only the root workspace and `@synapsor/runner` at `1.5.0`; canonical
+  Spec remains `1.4.2`, DSL remains `1.4.3`, and Cloud CLI remains
+  `0.1.0-beta.1`;
+- added prepared/not-published 1.5.0 changelog and release-note entries without
+  changing npm dist-tags, creating Git tags, or claiming publication;
+- updated adoption, local, public, and post-publication verifiers from the
+  retired quick-demo store to the canonical `try --prove` proof and ledger;
+- updated the raw-SQL comparison example to lead with the exact guarded-action
+  proof;
+- fixed the app-owned billing example so the source checkout loads the
+  workspace helper while the npm package loads its bundled helper;
+- pre-provisioned the app-handler receipt table in the disposable fixture and
+  changed the helper to check for an existing table before attempting DDL, so a
+  least-privilege writer does not need schema `CREATE`;
+- added a focused regression test and verified the app-owned transaction,
+  receipt, and idempotent retry from both the source checkout and an installed
+  npm tarball.
+
+Verification:
+
+```bash
+corepack pnpm install --frozen-lockfile
+corepack pnpm lint
+corepack pnpm test
+corepack pnpm test:database-scope
+corepack pnpm test:principal-scope
+corepack pnpm test:contract-conformance
+corepack pnpm test:guarded-crud
+corepack pnpm test:bounded-set
+corepack pnpm test:reversible
+corepack pnpm test:fleet
+corepack pnpm test:mcp-local
+corepack pnpm test:reference-app
+corepack pnpm test:mcp-cloud-linked
+corepack pnpm test:app-owned-executor
+corepack pnpm --filter @synapsor/handler test
+make -C examples/support-billing-agent demo
+corepack pnpm verify:adoption
+./scripts/verify-local-runner.sh
+./scripts/verify-public-commands.sh
+corepack pnpm build:mcpb
+corepack pnpm verify:mcpb
+./scripts/verify-release-gate.sh 1.5.0
+```
+
+Results:
+
+- complete suite: 30 files, 577/577 tests passed; typecheck, license/content,
+  and DSL source-path checks passed;
+- disposable PostgreSQL RLS checks passed for valid policy, missing/invalid
+  prerequisites, owner/BYPASSRLS roles, pooled tenant reset, and an
+  intentionally omitted application predicate;
+- trusted principal/tenant scope passed for PostgreSQL and MySQL, both DSL
+  extensions, generic denial behavior, and shared-ledger resource handles;
+- canonical contract conformance passed 6/6 PostgreSQL and 4/4 MySQL cases;
+- guarded CRUD, bounded set writes, compensation, fleet behavior, local MCP,
+  reference app, and synthetic Cloud-linked lifecycle all passed;
+- flagship support/billing `make demo` passed live RLS, exact writeback,
+  retry/stale/replay, strict shadow, human comparison, and effect regression;
+- app-owned handler passed from source and from an installed tarball:
+  proposal first, no pre-approval source change, transactional two-row business
+  effect, receipt, and duplicate-free retry;
+- unsigned MCPB built and independently unpacked/verified with semantic tools,
+  the display-only App resource, and no model-facing approval/apply tools;
+- release gate passed 345 focused tests, MCP client configs, Docker first run,
+  public/local commands, packed install, packed live own-database writeback,
+  documentation checks, and npm pack dry-run;
+- npm tarball contains 223 files (1.0 MB packed, 4.7 MB unpacked), including
+  runtime bundles, UI/App support, scope docs, schemas, flagship examples, and
+  the bundled handler;
+- tarball excludes `development/`, progress trackers, website handoffs, local
+  home paths, private-key markers, and AWS access-key patterns;
+- hosted Cloud-linked verification was not run because it requires an
+  explicitly authorized disposable hosted project, operator token, source
+  credentials, and temporary project mutation. The synthetic Cloud-linked
+  lifecycle passed; the hosted command remains an external release-owner gate.

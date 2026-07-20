@@ -248,6 +248,12 @@ class PostgresWritebackHandlerTransaction implements WritebackHandlerTransaction
   ) {}
 
   async ensureReceiptTable(): Promise<void> {
+    const existing = await this.client.query<{ receipt_table: string | null }>(
+      "SELECT to_regclass($1) AS receipt_table",
+      [this.receiptTableName()],
+    );
+    if (existing.rows[0]?.receipt_table) return;
+
     await this.client.query(`
       CREATE TABLE IF NOT EXISTS ${this.receiptTableName()} (
         idempotency_key text PRIMARY KEY,
