@@ -38,7 +38,7 @@ jobs:
       - name: Create SARIF for the reviewed proposal surface
         run: node apps/runner/dist/cli.js audit fixtures/mcp-audit/reviewed-proposal-tools-list.json --format sarif > mcp-audit.sarif
       - name: Verify SARIF shape
-        run: node -e 'const r=require("./mcp-audit.sarif"); if(r.version!=="2.1.0" || !Array.isArray(r.runs)) process.exit(1)'
+        run: node -e 'const fs=require("node:fs"); const r=JSON.parse(fs.readFileSync("./mcp-audit.sarif", "utf8")); if(r.version!=="2.1.0" || !Array.isArray(r.runs)) process.exit(1)'
       - uses: actions/upload-artifact@v4
         with:
           name: synapsor-mcp-audit
