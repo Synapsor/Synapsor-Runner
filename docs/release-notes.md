@@ -10,7 +10,31 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.5.0 (prepared, not published)
+## 1.5.1 (prepared, not published)
+
+### Safe disposable state ownership
+
+- `try --state-dir` no longer treats the supplied directory as disposable.
+  The supplied path is a caller-owned container and Runner uses a marked
+  managed child beneath it.
+- Cleanup removes only known direct try-state files. Unrelated files remain in
+  place, and roots, home/cwd/repository paths, traversal, symlink escapes,
+  unmarked lookalikes, and linked managed files fail closed.
+- An atomic state lease prevents concurrent runs from corrupting each other and
+  permits recovery from a valid lease whose process is no longer alive.
+- `demo inspect --state-dir` resolves the same managed child. The default
+  `.synapsor/try` path safely adopts only the recognized legacy file layout.
+- Explicit `--force` replacement of generated schema and MCP-audit candidate
+  directories now rejects protected paths, symlinked ancestors, and linked or
+  invalid ownership markers.
+- The embedded `try` data source is consistently identified as synthetic.
+- The packaged YAML parser is updated to `2.8.3` to include the upstream fix
+  for deeply nested collection denial of service.
+
+Prepared package version: `@synapsor/runner@1.5.1`. Spec, DSL, and Cloud CLI
+packages are unchanged. Nothing has been published by this repository change.
+
+## 1.5.0 (published 2026-07-20)
 
 ### Complete guarded-action developer proof
 
@@ -45,8 +69,8 @@ for the Synapsor Cloud CLI.
   immediately second, and distinguishes application scope, PostgreSQL RLS, and
   tenant-bound isolation without overstating any of them.
 
-Prepared package version: `@synapsor/runner@1.5.0`. Spec, DSL, and Cloud CLI
-packages are unchanged. Nothing has been published by this repository change.
+Published package version: `@synapsor/runner@1.5.0`. Spec, DSL, and Cloud CLI
+packages were unchanged.
 
 ## 1.4.123 (2026-07-17)
 

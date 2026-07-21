@@ -16,6 +16,7 @@ run() {
 corepack pnpm --dir "$ROOT" build:runner-package >/dev/null
 
 cd "$TEMP_DIR"
+STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 run try --prove --yes --no-open > proof.txt
 grep -F "Synapsor Runner try" proof.txt >/dev/null
@@ -30,9 +31,9 @@ grep -F "replay changed source: no" proof.txt >/dev/null
 
 run demo inspect > inspect.txt
 grep -F "Synapsor try inspection" inspect.txt >/dev/null
-grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store .synapsor/try/ledger.db" inspect.txt >/dev/null
-grep -F "synapsor-runner evidence show ev_wrp_try_INV_3001 --store .synapsor/try/ledger.db" inspect.txt >/dev/null
-grep -F "synapsor-runner replay show wrp_try_INV_3001 --store .synapsor/try/ledger.db" inspect.txt >/dev/null
+grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store $STORE_PATH" inspect.txt >/dev/null
+grep -F "synapsor-runner evidence show ev_wrp_try_INV_3001 --store $STORE_PATH" inspect.txt >/dev/null
+grep -F "synapsor-runner replay show wrp_try_INV_3001 --store $STORE_PATH" inspect.txt >/dev/null
 
 run demo inspect --npx > inspect-npx.txt
 grep -F "npx -y -p @synapsor/runner synapsor-runner proposals show wrp_try_INV_3001" inspect-npx.txt >/dev/null

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { probeTryEmbeddedScope, runTryExperience, TryExperienceError } from "./try-experience.js";
+import { resolveTryStateLocation } from "./try-state.js";
 
 describe("Synapsor try experience", () => {
   it("keeps the embedded source unchanged when the operator rejects", async () => {
@@ -26,12 +27,13 @@ describe("Synapsor try experience", () => {
 
   it("applies only after approval and proves retry, collision, stale, and replay behavior", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-try-prove-"));
+    const managedRoot = resolveTryStateLocation(root).root;
     let sourceChangedAtReview = true;
     const result = await runTryExperience({
       root_dir: root,
       prove: true,
       review: async (context) => {
-        const source = JSON.parse(await fs.readFile(path.join(root, "source.json"), "utf8"));
+        const source = JSON.parse(await fs.readFile(path.join(managedRoot, "source.json"), "utf8"));
         sourceChangedAtReview = source.invoices["INV-3001"].late_fee_cents !== 5500;
         expect(context.proposal.state).toBe("pending_review");
         expect(context.proposed_effect).toEqual({
@@ -76,12 +78,12 @@ describe("Synapsor try experience", () => {
       replay_mutated_source: false,
       unknown_auto_retried: false,
     });
-    const source = JSON.parse(await fs.readFile(path.join(root, "source.json"), "utf8"));
+    const source = JSON.parse(await fs.readFile(path.join(managedRoot, "source.json"), "utf8"));
     expect(source.invoices["INV-GLOBEX-1"].late_fee_cents).toBe(9900);
     expect(source.invoices["INV-3001"].waiver_reason).toBe("Courtesy waiver supported by SUP-184");
     expect(Object.keys(source.operations)).toEqual(["op_try_waive_INV_3001_v1"]);
 
-    const config = JSON.parse(await fs.readFile(path.join(root, "synapsor.runner.json"), "utf8"));
+    const config = JSON.parse(await fs.readFile(path.join(managedRoot, "synapsor.runner.json"), "utf8"));
     expect(config.capabilities.map((capability: { name: string }) => capability.name)).toEqual([
       "billing.inspect_invoice",
       "billing.propose_late_fee_waiver",

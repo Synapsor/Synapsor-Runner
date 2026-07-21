@@ -195,6 +195,51 @@ describe("reviewed schema and API candidate generation", () => {
     }
   });
 
+  it("refuses force replacement through a symlinked output ancestor", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-schema-output-link-"));
+    const external = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-schema-output-target-"));
+    const target = path.join(external, "candidates");
+    const link = path.join(root, "linked-parent");
+    try {
+      await generateSchemaCandidateDirectory({ format: "prisma", inputPath: fixtures[0]!.input, outputDir: target });
+      const sentinel = path.join(target, "operator-notes.txt");
+      await fs.writeFile(sentinel, "preserve\n", "utf8");
+      await fs.symlink(external, link, "dir");
+
+      await expect(generateSchemaCandidateDirectory({
+        format: "prisma",
+        inputPath: fixtures[0]!.input,
+        outputDir: path.join(link, "candidates"),
+        force: true,
+      })).rejects.toThrow(/symbolic link/);
+      expect(await fs.readFile(sentinel, "utf8")).toBe("preserve\n");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+      await fs.rm(external, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses force replacement when the owned output became a Git repository root", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-schema-output-repository-"));
+    const output = path.join(root, "candidates");
+    try {
+      await generateSchemaCandidateDirectory({ format: "prisma", inputPath: fixtures[0]!.input, outputDir: output });
+      const sentinel = path.join(output, "operator-notes.txt");
+      await fs.writeFile(sentinel, "preserve\n", "utf8");
+      await fs.mkdir(path.join(output, ".git"));
+
+      await expect(generateSchemaCandidateDirectory({
+        format: "prisma",
+        inputPath: fixtures[0]!.input,
+        outputDir: output,
+        force: true,
+      })).rejects.toThrow(/Git repository root/);
+      expect(await fs.readFile(sentinel, "utf8")).toBe("preserve\n");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("exposes all three focused generators through init", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-schema-cli-"));
     const writes: string[] = [];

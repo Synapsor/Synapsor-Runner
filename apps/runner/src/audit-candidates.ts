@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { assertSafeManagedOutputPath, readManagedOutputMarker } from "./managed-output.js";
 import { validateContract, type ArgumentSpec, type CapabilitySpec, type SynapsorContract } from "@synapsor/spec";
 import {
   auditMcpManifest,
@@ -119,7 +120,7 @@ export async function generateAuditCandidateDirectory(input: {
   outputDir: string;
   force?: boolean;
 }): Promise<AuditCandidateOutput> {
-  const outputDir = path.resolve(input.outputDir);
+  const outputDir = await assertSafeManagedOutputPath(input.outputDir);
   const parent = path.dirname(outputDir);
   const existed = await pathExists(outputDir);
   if (existed) {
@@ -140,7 +141,10 @@ export async function generateAuditCandidateDirectory(input: {
     await fs.writeFile(path.join(temporary, AFTER_FILE), json(bundle.after), "utf8");
     await fs.writeFile(path.join(temporary, REVIEW_FILE), bundle.review, "utf8");
     await fs.writeFile(path.join(temporary, AUDIT_CANDIDATE_MARKER), json(bundle.marker), "utf8");
-    if (existed) await fs.rm(outputDir, { recursive: true, force: true });
+    if (existed) {
+      await assertOwnedCandidateDirectory(outputDir);
+      await fs.rm(outputDir, { recursive: true, force: true });
+    }
     await fs.rename(temporary, outputDir);
   } catch (error) {
     await fs.rm(temporary, { recursive: true, force: true });
@@ -569,7 +573,7 @@ values, examples, defaults, enum values, or raw tool descriptions.
 
 async function assertOwnedCandidateDirectory(directory: string): Promise<void> {
   try {
-    const marker = JSON.parse(await fs.readFile(path.join(directory, AUDIT_CANDIDATE_MARKER), "utf8")) as Record<string, unknown>;
+    const marker = await readManagedOutputMarker(directory, AUDIT_CANDIDATE_MARKER);
     if (marker.schema_version !== AUDIT_CANDIDATE_SCHEMA_VERSION || marker.owner !== "@synapsor/runner") {
       throw new Error("marker mismatch");
     }

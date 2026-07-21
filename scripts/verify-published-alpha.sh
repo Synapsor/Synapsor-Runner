@@ -24,6 +24,7 @@ fi
 npm view @synapsor/runner@alpha bin license >/dev/null
 
 cd "$TEMP_DIR"
+STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 npx -y -p @synapsor/runner@alpha synapsor-runner --help >/dev/null
 npx -y -p @synapsor/runner@alpha synapsor-runner try --prove --yes --no-open > proof.txt
@@ -35,7 +36,7 @@ grep -F "replay changed source: no" proof.txt >/dev/null
 
 npx -y -p @synapsor/runner@alpha synapsor-runner demo inspect > inspect.txt
 grep -F "Synapsor try inspection" inspect.txt >/dev/null
-grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store .synapsor/try/ledger.db" inspect.txt >/dev/null
+grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store $STORE_PATH" inspect.txt >/dev/null
 npx -y -p @synapsor/runner@alpha synapsor-runner events webhook \
   --url http://127.0.0.1:8788/synapsor/events \
   --kind proposal_created \
