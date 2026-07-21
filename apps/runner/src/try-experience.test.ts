@@ -89,6 +89,13 @@ describe("Synapsor try experience", () => {
       "billing.propose_late_fee_waiver",
     ]);
     expect(JSON.stringify(config)).not.toMatch(/internal_risk_note|internal_agent_note|execute_sql|approve|apply|commit/);
+    const activation = JSON.parse(await fs.readFile(path.join(managedRoot, "activation.json"), "utf8"));
+    expect(activation).toMatchObject({
+      schema_version: "synapsor.try-activation.v1",
+      mode: "embedded_synthetic_proof",
+      telemetry_transmitted: false,
+    });
+    expect(activation.product_activation_ms).toBeGreaterThanOrEqual(0);
   }, 15_000);
 
   it("enforces trusted tenant and principal scope in the embedded source", async () => {

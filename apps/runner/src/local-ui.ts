@@ -4,9 +4,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { buildProposalReviewView } from "@synapsor-runner/mcp-server";
+import { buildProposalReviewView, loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions } from "@synapsor-runner/protocol";
+import { cursorProjectStatus } from "./cursor-project.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -122,14 +123,26 @@ async function handleRequest(input: {
   }
 
   if (request.method === "GET" && url.pathname === "/api/summary") {
-    const config = await readRunnerConfig(configPath);
+    const config = await readResolvedRunnerConfig(configPath);
     sendJson(response, 200, buildSummary(config, configPath, storePath));
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/tools") {
-    const config = await readRunnerConfig(configPath);
+    const config = await readResolvedRunnerConfig(configPath);
     sendJson(response, 200, buildTools(config));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/workbench") {
+    const config = await readResolvedRunnerConfig(configPath);
+    const manifest = await readOnboardingManifest(configPath);
+    const cursorState = await cursorProjectStatus(path.dirname(configPath)).then((status) => status.state).catch(() => "tampered" as const);
+    const activity = await storeAccess("read", "workbench-activity", (store) => ({
+      proposals: store.listProposals(),
+      queryAuditCount: store.listQueryAudit().length,
+    }));
+    sendJson(response, 200, buildWorkbench(config, manifest, cursorState, activity.proposals, activity.queryAuditCount));
     return;
   }
 
@@ -175,11 +188,13 @@ async function handleRequest(input: {
     await storeAccess("read", "proposal-show", (store) => {
       const proposal = requireProposal(store, proposalId);
       const receipts = store.receipts(proposalId);
+      const reviewView = buildProposalReviewView(proposal, receipts);
       sendJson(response, 200, {
         ok: true,
         proposal,
         approval_progress: store.approvalProgress(proposalId),
-        review_view: buildProposalReviewView(proposal, receipts),
+        review_view: reviewView,
+        data_pr: buildDataPr(proposal, reviewView, receipts.at(-1)),
         events: store.events(proposalId),
         receipts,
         evidence: store.getEvidenceBundle(proposal.change_set.evidence.bundle_id),
@@ -267,6 +282,24 @@ async function readRunnerConfig(configPath: string): Promise<JsonRecord> {
   const parsed = JSON.parse(raw) as unknown;
   if (!isRecord(parsed)) throw new Error("runner config must be a JSON object");
   return parsed;
+}
+
+async function readResolvedRunnerConfig(configPath: string): Promise<JsonRecord> {
+  const raw = await readRunnerConfig(configPath);
+  return Array.isArray(raw.contracts) && raw.contracts.length > 0
+    ? loadRuntimeConfigFromFile(configPath) as unknown as JsonRecord
+    : raw;
+}
+
+async function readOnboardingManifest(configPath: string): Promise<JsonRecord | undefined> {
+  const manifestPath = path.join(path.dirname(configPath), ".synapsor", "onboarding.json");
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+    return isRecord(parsed) && parsed.schema_version === "synapsor.onboarding.v1" ? parsed : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 async function signedIdentityRequired(configPath: string): Promise<boolean> {
@@ -357,6 +390,99 @@ function buildTools(config: JsonRecord): JsonRecord {
     };
   }) : [];
   return { ok: true, tools: capabilities };
+}
+
+function buildWorkbench(
+  config: JsonRecord,
+  manifest: JsonRecord | undefined,
+  cursorState: "not_installed" | "installed" | "unowned" | "tampered",
+  proposals: StoredProposal[],
+  queryAuditCount: number,
+): JsonRecord {
+  const project = asRecord(manifest?.project);
+  const source = asRecord(manifest?.source);
+  const trustScope = asRecord(manifest?.trust_scope);
+  const action = asRecord(manifest?.action);
+  const safety = asRecord(manifest?.safety);
+  const capabilities = Array.isArray(config.capabilities) ? config.capabilities.map(asRecord) : [];
+  const readCapability = capabilities.find((capability) => capability.kind === "read");
+  const proposalCapability = capabilities.find((capability) => capability.kind === "proposal");
+  const validation = validateRunnerCapabilityConfig(config);
+  const latest = proposals.at(0);
+  const generated = Boolean(manifest);
+  return {
+    ok: validation.ok && capabilities.length > 0,
+    title: "First safe action",
+    status: manifest?.status ?? "existing_config",
+    stages: [
+      stage("Project", generated ? "complete" : "ready", generated
+        ? `${String(project.frameworks || "existing application")}; package manager ${String(project.package_manager ?? "not detected")}`
+        : "Existing reviewed Runner configuration"),
+      stage("Data source", Object.keys(asRecord(config.sources)).length ? "complete" : "blocked",
+        source.table ? `${String(source.engine)} ${String(source.schema)}.${String(source.table)} via ${String(source.database_url_env)}` : `${Object.keys(asRecord(config.sources)).length} configured source(s)`),
+      stage("Trust scope", trustScope.tenant_key || trustScope.single_tenant_dev === true ? "complete" : "ready",
+        trustScope.tenant_key ? `tenant key ${String(trustScope.tenant_key)}; identity from environment bindings` : "Review the configured tenant/principal authority"),
+      stage("Action", readCapability ? "complete" : "blocked",
+        [readCapability?.name, proposalCapability?.name].filter(Boolean).join(" -> ") || "No reviewed capability"),
+      stage("Agent", cursorState === "installed" ? "complete" : cursorState === "not_installed" ? "ready" : "blocked",
+        cursorState === "installed" ? "Project Cursor MCP entry is installed" : `Cursor project state: ${cursorState}`),
+      stage("Test", !validation.ok ? "blocked" : queryAuditCount > 0 ? "complete" : "ready",
+        !validation.ok
+          ? `${validation.errors.length} config error(s)`
+          : queryAuditCount > 0
+            ? `${queryAuditCount} scoped tool call(s) recorded; source unchanged during onboarding: ${safety.source_changed_during_onboarding === false ? "yes" : "not recorded"}`
+            : "Configuration is valid; run the reviewed read tool against one staging record to complete this step"),
+      stage("Review", latest ? "complete" : "ready",
+        latest ? `${latest.proposal_id}: ${latest.state}` : "Waiting for the first exact proposal"),
+    ],
+    action: {
+      read_capability: action.read_capability ?? readCapability?.name,
+      proposal_capability: action.proposal_capability ?? proposalCapability?.name,
+      visible_fields: Array.isArray(action.visible_fields) ? action.visible_fields : readCapability?.visible_columns ?? [],
+      kept_out_fields: Array.isArray(action.kept_out_fields) ? action.kept_out_fields : [],
+      writeback: action.writeback ?? "not recorded",
+      activation_confirmed: safety.developer_confirmed_activation === true,
+    },
+    cursor: { state: cursorState },
+    latest_proposal: latest ? summarizeProposal(latest) : null,
+  };
+}
+
+function stage(name: string, status: "complete" | "ready" | "blocked", detail: string): JsonRecord {
+  return { name, status, detail };
+}
+
+function buildDataPr(proposal: StoredProposal, reviewView: JsonRecord, latestReceipt: unknown): JsonRecord {
+  const changeSet = proposal.change_set;
+  return {
+    schema_version: "synapsor.data-pr.v1",
+    title: `${proposal.action} on ${proposal.object_id}`,
+    business_action: proposal.action,
+    capability: proposal.capability ?? proposal.action,
+    trusted_scope: reviewView.trusted_context,
+    target: {
+      source_id: proposal.source_id,
+      schema: proposal.source_schema,
+      table: proposal.source_table,
+      object_id: proposal.object_id,
+    },
+    evidence_reference: reviewView.evidence_summary,
+    kept_out_fields: reviewView.kept_out_fields,
+    exact_diff: reviewView.diff,
+    policy_result: reviewView.policy_and_risk,
+    expected_version: reviewView.expected_source_version,
+    operation_identity: {
+      proposal_id: proposal.proposal_id,
+      proposal_hash: proposal.proposal_hash,
+      proposal_version: proposal.proposal_version,
+      idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
+    },
+    executor: asRecord(reviewView.writeback).executor,
+    receipt_mode: changeSet.writeback.mode,
+    source_unchanged_before_approval: proposal.source_database_mutated === false,
+    apply_result: latestReceipt ?? null,
+    replay_id: `replay_${proposal.proposal_id}`,
+  };
 }
 
 function summarizeProposal(proposal: StoredProposal): JsonRecord {
@@ -542,12 +668,13 @@ input, textarea { width:100%; border:1px solid var(--line); border-radius:10px; 
 .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
 header h1 { margin-bottom:6px; }
 .console { display:grid; grid-template-columns:300px minmax(0,1fr); gap:16px; align-items:start; }
+.console > *, .detail-head > *, .step-main { min-width:0; }
 .plist { display:flex; flex-direction:column; gap:8px; }
 .pitem { display:block; width:100%; text-align:left; background:white; color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:12px; cursor:pointer; box-shadow:none; font-weight:400; }
 .pitem:hover { border-color:#9cc6e6; }
 .pitem.sel { border-color:#0b72a8; box-shadow:0 0 0 3px rgba(11,114,168,.12); }
 .pitem-action { font-weight:700; font-size:14px; color:var(--ink); }
-.pitem-target { font-size:12px; color:var(--muted); margin:2px 0 8px; word-break:break-all; }
+.pitem-target { font-size:12px; color:var(--muted); margin:2px 0 8px; overflow-wrap:anywhere; }
 .chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 9px; font-size:11px; font-weight:600; border:1px solid var(--line); }
 .chip-ok{color:var(--ok);background:#eefaf2;border-color:#b7e3c2;}
 .chip-wait{color:var(--warn);background:#fff7ed;border-color:#fed7aa;}
@@ -574,7 +701,7 @@ header h1 { margin-bottom:6px; }
 .status-line { font-size:13px; margin:4px 0; }
 .diff { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:6px 0; }
 .diff-col { background:#f1f6fb; padding:6px 10px; font-weight:600; border-bottom:1px solid var(--line); color:var(--muted); }
-.diff-line { padding:5px 10px; white-space:pre-wrap; word-break:break-all; }
+.diff-line { padding:5px 10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .diff-line.del { background:#fef2f2; color:#991b1b; }
 .diff-line.add { background:#eefaf2; color:#116b35; }
 .badge-row { display:flex; align-items:center; gap:10px; font-size:14px; margin:6px 0; }
@@ -589,14 +716,27 @@ header h1 { margin-bottom:6px; }
 .tl-ok{background:var(--ok);} .tl-warn{background:#ea580c;} .tl-bad{background:var(--bad);} .tl-info{background:#0b72a8;} .tl-wait{background:#d97706;} .tl-muted{background:#94a3b8;}
 .tl-label { font-weight:600; font-size:13px; }
 .tl-meta { font-size:12px; color:var(--muted); word-break:break-all; }
-.kv { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:13px; margin:8px 0; }
-.kv dt { color:var(--muted); } .kv dd { margin:0; color:var(--ink); word-break:break-all; }
+.kv { display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:4px 14px; font-size:13px; margin:8px 0; }
+.kv dt { color:var(--muted); } .kv dd { margin:0; color:var(--ink); overflow-wrap:anywhere; }
 details.raw { margin-top:12px; }
 details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font-size:13px; }
 .config-section { margin-top:24px; }
 .config-section > summary { cursor:pointer; font-weight:700; font-size:16px; padding:10px 0; color:var(--ink); }
+.activation { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:1px; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--line); margin-top:12px; }
+.activation-step { min-width:0; padding:12px; background:white; }
+.activation-step strong { display:block; font-size:12px; margin-bottom:5px; }
+.activation-step span { display:block; color:var(--muted); font-size:11px; line-height:1.35; overflow-wrap:anywhere; }
+.activation-step.complete { box-shadow:inset 0 3px 0 var(--ok); }
+.activation-step.ready { box-shadow:inset 0 3px 0 #d97706; }
+.activation-step.blocked { box-shadow:inset 0 3px 0 var(--bad); }
+.data-pr-head { border:1px solid var(--line); border-left:3px solid var(--blue); border-radius:8px; padding:12px; margin:10px 0 18px; background:var(--soft); }
 @media (max-width: 900px) { .console { grid-template-columns:1fr; } }
-@media (max-width: 850px) { .grid, .tour-grid { grid-template-columns: 1fr; } main { padding:18px; } }
+@media (max-width: 850px) { .grid, .tour-grid, .activation { grid-template-columns: 1fr; } main { padding:18px; } }
+@media (max-width: 600px) {
+  .data-pr-head .kv, .step .kv { grid-template-columns:1fr; gap:2px; }
+  .data-pr-head .kv dd { margin-bottom:8px; }
+  .step .kv dd { margin-bottom:6px; }
+}
 </style>
 </head>
 <body>
@@ -606,6 +746,10 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
     <p>A local review console for what an agent proposed, what the safety boundary did, and what the trusted runner committed. No raw SQL editor is exposed.</p>
   </header>
   ${tourHtml}
+  <section class="card full" id="workbench" style="margin-bottom:16px">
+    <h2>First safe action</h2>
+    <p>Loading reviewed project activation state...</p>
+  </section>
   <section class="console">
     <div class="card" id="proposals"><h2>Proposals</h2><p>Loading...</p></div>
     <div class="card" id="detail"><h2>Local review console</h2><p>Select a proposal to walk through what happened.</p></div>
@@ -742,6 +886,25 @@ async function loadSummary() {
   add("Sources", Object.keys(payload.setup.sources || {}).join(", ") || "(none)");
   root.append(kv);
   root.append(rawJson("View raw JSON", { sources: payload.setup.sources, trusted_context: payload.setup.trusted_context, storage: payload.setup.storage, warnings: payload.doctor.warnings, errors: payload.doctor.errors }));
+}
+async function loadWorkbench() {
+  const payload = await api("/api/workbench");
+  const root = byId("workbench");
+  root.replaceChildren(el("div", { class: "detail-head" }, [
+    el("div", {}, [el("h2", { text: payload.title, style: "margin:0" }), el("div", { class: "sub", text: "Project to reviewed Data PR" })]),
+    chip(payload.ok ? "Boundary ready" : "Needs attention", payload.ok ? "ok" : "warn"),
+  ]));
+  const activation = el("div", { class: "activation" });
+  for (const step of payload.stages || []) {
+    activation.append(el("div", { class: "activation-step " + step.status }, [
+      el("strong", { text: step.name }),
+      el("span", { text: step.detail }),
+    ]));
+  }
+  root.append(activation);
+  if (payload.action && payload.action.kept_out_fields && payload.action.kept_out_fields.length) {
+    root.append(el("p", { text: "Kept out of the model-facing action: " + payload.action.kept_out_fields.join(", ") }));
+  }
 }
 async function loadTools() {
   const payload = await api("/api/tools");
@@ -890,7 +1053,9 @@ function buildStory(payload) {
       el("dt", { text: "Proposal" }), el("dd", { text: proposal.proposal_id }),
       el("dt", { text: "Tenant" }), el("dd", { text: proposal.tenant_id }),
       el("dt", { text: "Principal" }), el("dd", { text: principalId }),
+      el("dt", { text: "Evidence" }), el("dd", { text: (rv.evidence_summary && rv.evidence_summary.bundle_id) || "not recorded" }),
     ]),
+    el("p", { text: rv.kept_out_fields && rv.kept_out_fields.note ? rv.kept_out_fields.note : "Fields outside the reviewed visible-column allowlist stay out." }),
   ]));
 
   // 3. The proposed change
@@ -917,6 +1082,7 @@ function buildStory(payload) {
     el("div", { class: "callout", text: "Approval happened outside MCP. The model did not get approve or commit tools." }),
     el("div", { class: "kv" }, [
       el("dt", { text: "Approval progress" }), el("dd", { text: approvalProgress.approved + "/" + approvalProgress.required }),
+      el("dt", { text: "Policy result" }), el("dd", { text: (rv.policy_and_risk && rv.policy_and_risk.decision) || stateVal }),
     ]),
   ];
   const approvedEv = find("proposal_approved");
@@ -1004,8 +1170,8 @@ async function loadDetail(proposalId) {
 
   const head = el("div", { class: "detail-head" }, [
     el("div", {}, [
-      el("h2", { text: proposal.action, style: "margin:0" }),
-      el("div", { class: "sub", text: proposal.object_id + " · " + proposal.source_schema + "." + proposal.source_table }),
+      el("h2", { text: "Data PR", style: "margin:0" }),
+      el("div", { class: "sub", text: proposal.action + " · " + proposal.object_id + " · " + proposal.source_schema + "." + proposal.source_table }),
     ]),
     chip(st.label, st.tone),
   ]);
@@ -1019,11 +1185,23 @@ async function loadDetail(proposalId) {
   jsonTab.onclick = () => { jsonTab.classList.add("active"); reviewTab.classList.remove("active"); jsonPane.classList.remove("hidden"); reviewPane.classList.add("hidden"); };
   root.append(el("div", { class: "tabs" }, [reviewTab, jsonTab]));
 
-  reviewPane.append(buildStory(payload));
+  const dataPr = payload.data_pr || {};
+  const dataPrHead = el("div", { class: "data-pr-head" }, [
+    el("strong", { text: dataPr.title || proposal.action }),
+    el("div", { class: "kv" }, [
+      el("dt", { text: "Capability" }), el("dd", { text: dataPr.capability || proposal.action }),
+      el("dt", { text: "Operation identity" }), el("dd", { text: dataPr.operation_identity ? dataPr.operation_identity.proposal_hash : proposal.proposal_hash }),
+      el("dt", { text: "Source unchanged before approval" }), el("dd", { text: dataPr.source_unchanged_before_approval ? "Yes" : "No" }),
+      el("dt", { text: "Executor / receipt mode" }), el("dd", { text: fmtVal(dataPr.executor) + " / " + fmtVal(dataPr.receipt_mode) }),
+    ]),
+  ]);
+  reviewPane.append(dataPrHead, buildStory(payload));
 
   if (proposal.state === "pending_review") {
     const actor = document.createElement("input"); actor.placeholder = "Reviewer identity"; actor.value = "local_reviewer";
     const reason = document.createElement("textarea"); reason.placeholder = "Reason for approval or rejection"; reason.rows = 3;
+    actor.setAttribute("aria-label", "Reviewer identity");
+    reason.setAttribute("aria-label", "Reason for approval or rejection");
     const actions = el("div", { class: "actions" });
     const approve = el("button", { text: "Approve outside MCP", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/approve", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value, confirm: "approve" }) }); await loadProposals(); await loadDetail(proposalId); } });
     const reject = el("button", { class: "danger", text: "Reject", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/reject", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value || "rejected from local UI", confirm: "reject" }) }); await loadProposals(); await loadDetail(proposalId); } });
@@ -1058,7 +1236,7 @@ async function loadDetail(proposalId) {
   root.append(reviewPane, jsonPane);
 }
 async function init() {
-  await Promise.all([loadSummary(), loadTools(), loadProposals(), loadShadowReport()]);
+  await Promise.all([loadWorkbench(), loadSummary(), loadTools(), loadProposals(), loadShadowReport()]);
   if (state.firstId && !state.selected) await loadDetail(state.firstId);
 }
 init().catch((error) => {

@@ -44,8 +44,9 @@ no-database demo, wire your database, then read deeper concepts.
 ## 04 Connect Your DB
 
 - [Connect Your Own Database](getting-started-own-database.md): inspect a
-  staging Postgres/MySQL database, generate `synapsor.runner.json`, preview
-  semantic tools, and serve them over MCP.
+  staging Postgres/MySQL database, generate canonical reviewed artifacts, open
+  the first-action workbench, add the tools to Cursor, and inspect the local
+  activation report.
 - [Use Your Own Database](use-your-own-database.md): short entry point that
   links to the canonical own-database guide.
 - [Doctor](doctor.md): redacted setup checks, handler probes, direct SQL
@@ -90,6 +91,9 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 06 Serve MCP
 
+- [Host Compatibility](host-compatibility.md): exact Tested,
+  Protocol-tested, Unsupported, and Unknown claims for Cursor and other MCP
+  hosts, including the inline-review fallback.
 - [Inline Proposal Review With MCP Apps](mcp-apps.md): display-only proposal
   cards where supported, exact protocol versions, tested compatibility, and
   secure standalone review fallback.

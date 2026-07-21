@@ -61,6 +61,12 @@ for version_args in "--version" "-v" "version" "synapsor-runner --version"; do
 done
 
 npx synapsor-runner --help >/dev/null
+node "$PACKED_ROOT/dist/cli.js" --help > direct-launcher-help.txt
+grep -F "synapsor-runner try --prove" direct-launcher-help.txt >/dev/null
+if grep -F "synapsor try --prove" direct-launcher-help.txt >/dev/null; then
+  echo "packed Runner launcher confused the local binary with the Cloud CLI" >&2
+  exit 1
+fi
 npx synapsor-runner demo --quick --no-interactive > quick.txt
 grep -F "Synapsor Runner try" quick.txt >/dev/null
 grep -F "Source changed:" quick.txt >/dev/null
@@ -170,7 +176,7 @@ if npx synapsor-runner contract lint "$SURFACE_FIXTURE" --strict > surface-stric
   exit 1
 fi
 grep -F "SURFACE_TARGET_DENSITY" surface-strict.txt >/dev/null
-npx synapsor-runner recipes init billing.late_fee_waiver --force >/dev/null
+npx synapsor-runner recipes init billing.late_fee_waiver --yes --force >/dev/null
 npx synapsor-runner up --config ./synapsor.runner.json --store ./.synapsor/try/ledger.db --dry-run > up.txt
 grep -F "Synapsor Runner review-mode up" up.txt >/dev/null
 grep -F "Serve now: no" up.txt >/dev/null

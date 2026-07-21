@@ -153,9 +153,22 @@ export type TryExperienceResult = {
 };
 
 export async function runTryExperience(options: TryExperienceOptions): Promise<TryExperienceResult> {
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
   const state = await prepareTryState(options.root_dir);
   try {
-    return await runManagedTryExperience(options, state.root);
+    const result = await runManagedTryExperience(options, state.root);
+    const completedAt = new Date().toISOString();
+    await writeJsonAtomic(path.join(state.root, "activation.json"), {
+      schema_version: "synapsor.try-activation.v1",
+      mode: "embedded_synthetic_proof",
+      started_at: startedAt,
+      completed_at: completedAt,
+      product_activation_ms: Math.max(0, Date.now() - startedMs),
+      clock_boundary: "CLI execution after package installation; excludes npm package download and cache population",
+      telemetry_transmitted: false,
+    });
+    return result;
   } finally {
     await state.release();
   }

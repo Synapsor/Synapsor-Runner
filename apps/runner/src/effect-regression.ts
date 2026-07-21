@@ -164,7 +164,8 @@ export type EffectRegressionCaseReport = {
 export type EffectRegressionReport = {
   schema_version: typeof effectReportSchemaVersion;
   ok: boolean;
-  mode: "offline_import";
+  mode: "offline_import" | "command_adapter";
+  result_origin: "imported" | "deterministic_application" | "external_model";
   allow_live_read: boolean;
   summary: { passed: number; failed: number; total: number };
   cases: EffectRegressionCaseReport[];
@@ -500,14 +501,19 @@ export function compareEffectResult(
 
 export function createEffectRegressionReport(
   cases: EffectRegressionCaseReport[],
-  options: { allowLiveRead?: boolean } = {},
+  options: {
+    allowLiveRead?: boolean;
+    mode?: EffectRegressionReport["mode"];
+    resultOrigin?: EffectRegressionReport["result_origin"];
+  } = {},
 ): EffectRegressionReport {
   const passed = cases.filter((item) => item.status === "passed").length;
   const failed = cases.length - passed;
   return {
     schema_version: effectReportSchemaVersion,
     ok: failed === 0,
-    mode: "offline_import",
+    mode: options.mode ?? "offline_import",
+    result_origin: options.resultOrigin ?? "imported",
     allow_live_read: options.allowLiveRead === true,
     summary: { passed, failed, total: cases.length },
     cases,
@@ -536,7 +542,9 @@ export function formatEffectRegressionReport(
   }
   return `${[
     `Synapsor effect regression: ${report.ok ? "PASS" : "FAIL"}`,
-    "Mode: offline imported result (no Runner source write)",
+    `Mode: ${report.mode === "command_adapter" ? "provider-neutral command adapter" : "offline imported result"}`,
+    `Result origin: ${report.result_origin.replaceAll("_", " ")}`,
+    "Runner did not approve or apply a source write during evaluation.",
     ...report.cases.flatMap((item) => [
       `${item.status === "passed" ? "PASS" : "FAIL"} ${item.fixture_id} ${item.fixture_name}`,
       ...item.checks
@@ -607,6 +615,12 @@ export async function loadEffectFixture(filePath: string): Promise<EffectFixture
 
 export async function loadEffectResult(filePath: string): Promise<EffectResult> {
   const parsed = effectResultShape.parse(await readBoundedJson(filePath));
+  assertNoSecretMaterial(parsed, "effect result");
+  return parsed;
+}
+
+export function parseEffectResult(value: unknown): EffectResult {
+  const parsed = effectResultShape.parse(value);
   assertNoSecretMaterial(parsed, "effect result");
   return parsed;
 }

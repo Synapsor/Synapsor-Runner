@@ -32,11 +32,12 @@ Current local-mode foundation:
 
 Runtime requirement:
 
-The stable package requires Node >= 22.5.0 because the local evidence/replay
-ledger uses Node's `node:sqlite` runtime. The published package declares that
-engine requirement and the CLI exits early with a clear message on older Node
-versions. The Docker-backed demo remains the recommended path when you do not
-want to change your host Node version.
+The stable package requires Node >= 22.13.0 because the local evidence/replay
+ledger uses Node's unflagged `node:sqlite` runtime. Earlier Node 22 releases
+require an experimental flag and are not supported. The published package
+declares that engine requirement and the CLI exits early with a clear message
+on older Node versions. The Docker-backed demo remains the recommended path
+when you do not want to change your host Node version.
 
 ## Initialize a config
 

@@ -8,6 +8,10 @@ const entryPoint = resolve(root, "apps/runner/src/cli.ts");
 const outfile = resolve(root, "apps/runner/dist/runner.mjs");
 const runtimeEntryPoint = resolve(root, "apps/runner/src/runtime.ts");
 const runtimeOutfile = resolve(root, "apps/runner/dist/runtime.mjs");
+const authoringEntryPoint = resolve(root, "apps/runner/src/authoring.ts");
+const authoringOutfile = resolve(root, "apps/runner/dist/authoring.mjs");
+const shadowEntryPoint = resolve(root, "apps/runner/src/shadow.ts");
+const shadowOutfile = resolve(root, "apps/runner/dist/shadow.mjs");
 const binfile = resolve(root, "apps/runner/dist/cli.js");
 const workspaceAliases = new Map([
   ["@synapsor-runner/config", "packages/config/src/index.ts"],
@@ -37,6 +41,8 @@ const workspaceAliasPlugin = {
 // before esbuild tries to overwrite them.
 await rm(outfile, { force: true });
 await rm(runtimeOutfile, { force: true });
+await rm(authoringOutfile, { force: true });
+await rm(shadowOutfile, { force: true });
 await rm(binfile, { force: true });
 
 const external = [
@@ -60,7 +66,33 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node22.5",
+  target: "node22.13",
+  sourcemap: false,
+  external,
+  plugins: [workspaceAliasPlugin],
+  logLevel: "info",
+});
+
+await build({
+  entryPoints: [authoringEntryPoint],
+  outfile: authoringOutfile,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22.13",
+  sourcemap: false,
+  external,
+  plugins: [workspaceAliasPlugin],
+  logLevel: "info",
+});
+
+await build({
+  entryPoints: [shadowEntryPoint],
+  outfile: shadowOutfile,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22.13",
   sourcemap: false,
   external,
   plugins: [workspaceAliasPlugin],
@@ -75,7 +107,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node22.5",
+  target: "node22.13",
   sourcemap: false,
   external,
   plugins: [workspaceAliasPlugin],
@@ -87,15 +119,14 @@ await writeFile(
   [
     "#!/usr/bin/env node",
     "import { spawnSync } from 'node:child_process';",
-    "import { dirname, basename, join } from 'node:path';",
+    "import { dirname, join } from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
     "",
     "const __dirname = dirname(fileURLToPath(import.meta.url));",
-    "const invoked = basename(process.argv[1] || 'synapsor');",
-    "const commandName = invoked === 'synapsor-runner' ? 'synapsor-runner' : 'synapsor';",
+    "const commandName = 'synapsor-runner';",
     "const [major, minor] = process.versions.node.split('.').map(Number);",
-    "if (!(major > 22 || (major === 22 && minor >= 5))) {",
-    "  console.error(`Synapsor Runner requires Node >= 22.5.0 because the local ledger uses Node's node:sqlite runtime. Current Node: ${process.versions.node}. Upgrade Node or use the Docker demo from a source checkout.`);",
+    "if (!(major > 22 || (major === 22 && minor >= 13))) {",
+    "  console.error(`Synapsor Runner requires Node >= 22.13.0 because the local ledger uses Node's unflagged node:sqlite runtime. Current Node: ${process.versions.node}. Upgrade Node or use the Docker demo from a source checkout.`);",
     "  process.exit(1);",
     "}",
     "const result = spawnSync(process.execPath, ['--no-warnings', join(__dirname, 'runner.mjs'), ...process.argv.slice(2)], {",
@@ -140,6 +171,7 @@ const publicDocs = [
   "guarded-crud-writeback.md",
   "graduated-trust.md",
   "handler-helper.md",
+  "host-compatibility.md",
   "hosted-cloud-linked-verification.md",
   "dependency-license-inventory.md",
   "dsl-reference.md",

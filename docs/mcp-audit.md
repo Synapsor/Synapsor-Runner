@@ -104,6 +104,19 @@ npx -y -p @synapsor/runner synapsor-runner audit generate \
   --output ./synapsor-audit-candidates
 ```
 
+Open the same blocked candidate directly in the secured local review
+workbench:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner audit generate \
+  ./tools-list.json \
+  --output ./synapsor-audit-candidates \
+  --open-ui
+```
+
+This does not activate the candidate. The generated Runner config has no source
+and every proposal writeback is `none`.
+
 The generator uses the same parser and findings as `audit`. It writes:
 
 - a canonical `@synapsor/spec` contract;

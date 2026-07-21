@@ -118,6 +118,22 @@ describe("local UI", () => {
         },
       ],
     }, null, 2), "utf8");
+    await fs.mkdir(path.join(tempDir, ".synapsor"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, ".synapsor/onboarding.json"), `${JSON.stringify({
+      schema_version: "synapsor.onboarding.v1",
+      status: "review_active",
+      project: { package_manager: "pnpm", frameworks: ["node"], schema_inputs: [], database_env_names: ["SYNAPSOR_DATABASE_READ_URL"] },
+      source: { engine: "postgres", database_url_env: "SYNAPSOR_DATABASE_READ_URL", schema: "public", table: "invoices" },
+      trust_scope: { tenant_key: "tenant_id", single_tenant_dev: false, tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+      action: {
+        read_capability: "billing.inspect_invoice",
+        proposal_capability: "billing.propose_invoice_update",
+        visible_fields: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+        kept_out_fields: ["card_token", "internal_risk_score"],
+        writeback: "direct_sql",
+      },
+      safety: { developer_confirmed_activation: true, source_changed_during_onboarding: false },
+    }, null, 2)}\n`, "utf8");
     const store = new ProposalStore(storePath);
     store.createProposal(changeSet);
     store.db.prepare(`
@@ -202,6 +218,8 @@ describe("local UI", () => {
       const html = await landing.text();
       expect(html).toContain("Synapsor Runner Local UI");
       expect(html).toContain("Commit-safe MCP in one loop");
+      expect(html).toContain("First safe action");
+      expect(html).toContain("Data PR");
       expect(html).toContain("Agent requested a change");
       expect(html).toContain("Source database changed:");
       expect(html).toContain("Approval boundary");
@@ -212,6 +230,10 @@ describe("local UI", () => {
       expect(html).toContain("synapsor-runner apply ");
       expect(html).toContain("View raw JSON");
       expect(html).toContain("Shadow studies");
+      expect(html).toContain("@media (max-width: 600px)");
+      expect(html).toContain(".data-pr-head .kv, .step .kv { grid-template-columns:1fr");
+      expect(html).toContain('actor.setAttribute("aria-label", "Reviewer identity")');
+      expect(html).toContain('reason.setAttribute("aria-label", "Reason for approval or rejection")');
       expect(html).toContain("csrf-token");
       expect(html).not.toContain("ui-token");
       expect(html).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret|should_not_leak/i);
@@ -220,6 +242,20 @@ describe("local UI", () => {
       expect(reusedBootstrap.status).toBe(401);
 
       const headers = { "x-synapsor-ui-token": "ui-token" };
+      const workbench = await getJson(`${baseUrl}/api/workbench`, headers);
+      expect(workbench.stages.map((stage: { name: string }) => stage.name)).toEqual([
+        "Project", "Data source", "Trust scope", "Action", "Agent", "Test", "Review",
+      ]);
+      expect(workbench.stages.find((stage: { name: string }) => stage.name === "Test")).toMatchObject({
+        status: "blocked",
+      });
+      expect(workbench.action).toMatchObject({
+        proposal_capability: "billing.propose_invoice_update",
+        kept_out_fields: ["card_token", "internal_risk_score"],
+        activation_confirmed: true,
+      });
+      expect(JSON.stringify(workbench)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret/i);
+
       const summary = await getJson(`${baseUrl}/api/summary`, headers);
       expect(summary.setup.sources.app_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
       expect(summary.doctor.no_raw_sql_exposed).toBe(true);
@@ -272,6 +308,18 @@ describe("local UI", () => {
         status: "requested",
       });
       expect(detail.review_view.reversibility.message).toContain("unambiguous trusted apply receipt");
+      expect(detail.data_pr).toMatchObject({
+        schema_version: "synapsor.data-pr.v1",
+        business_action: "billing.waive_late_fee",
+        source_unchanged_before_approval: true,
+        evidence_reference: { bundle_id: "ev_ui" },
+        operation_identity: {
+          proposal_id: "wrp_ui",
+          proposal_hash: `sha256:${"a".repeat(64)}`,
+          proposal_version: 1,
+        },
+      });
+      expect(detail.data_pr.exact_diff.late_fee_cents).toEqual({ before: 5500, proposed: 0 });
       expect(JSON.stringify(detail)).toContain("<redacted>");
       expect(JSON.stringify(detail)).not.toMatch(/postgres(?:ql)?:\/\/|reader_secret|should_not_leak/i);
 
@@ -295,6 +343,51 @@ describe("local UI", () => {
       await server.close();
     }
   }, 15_000);
+
+  it("resolves canonical contract capabilities in the workbench and tools API", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-contract-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const contractPath = path.join(tempDir, "support.contract.json");
+    await fs.copyFile(path.resolve(process.cwd(), "packages/spec/examples/support-refund.contract.json"), contractPath);
+    await fs.writeFile(configPath, `${JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        support_postgres: {
+          engine: "postgres",
+          read_url_env: "SUPPORT_POSTGRES_READ_URL",
+          write_url_env: "SUPPORT_POSTGRES_WRITE_URL",
+        },
+      },
+      contexts: {
+        support_agent_context: {
+          provider: "environment",
+          values: { tenant_id_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+        },
+      },
+      contracts: ["./support.contract.json"],
+    }, null, 2)}\n`, "utf8");
+    const server = await startLocalUiServer({ configPath, storePath: path.join(tempDir, ".synapsor/local.db"), token: "contract-token" });
+    try {
+      const headers = { "x-synapsor-ui-token": "contract-token" };
+      const tools = await getJson(`http://${server.host}:${server.port}/api/tools`, headers);
+      expect(tools.tools.map((tool: { name: string }) => tool.name)).toEqual([
+        "support.inspect_order",
+        "support.propose_refund_review",
+      ]);
+      const summary = await getJson(`http://${server.host}:${server.port}/api/summary`, headers);
+      expect(summary.setup.capabilities).toHaveLength(2);
+      expect(summary.doctor.config_ok).toBe(true);
+      const workbench = await getJson(`http://${server.host}:${server.port}/api/workbench`, headers);
+      expect(workbench.stages.find((stage: { name: string }) => stage.name === "Test")).toMatchObject({
+        status: "ready",
+        detail: expect.stringContaining("run the reviewed read tool"),
+      });
+    } finally {
+      await server.close();
+    }
+  });
 
   it("refuses non-localhost binding unless explicitly allowed", async () => {
     await expect(startLocalUiServer({

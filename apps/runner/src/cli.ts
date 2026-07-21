@@ -83,6 +83,9 @@ import { createComplianceReport, formatComplianceReport, readComplianceReport, v
 import { decideGraduatedTrustRecommendation, evaluateGraduatedTrust, formatGraduatedTrustEvaluation, markGraduatedTrustArtifactExported, prepareGraduatedTrustArtifact } from "./graduated-trust.js";
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
 import { resolveReadableTryStateRoot } from "./try-state.js";
+import { buildCanonicalOnboardingArtifacts, type CanonicalOnboardingArtifacts } from "./onboarding-artifacts.js";
+import { detectProjectContext, formatProjectDetection } from "./project-detection.js";
+import { cursorProjectStatus, installCursorProject, previewCursorProjectInstall, uninstallCursorProject } from "./cursor-project.js";
 import {
   acceptEffectBaseline,
   compareEffectResult,
@@ -98,7 +101,9 @@ import {
   writeEffectJson,
   type EffectFixture,
 } from "./effect-regression.js";
+import { runEffectCommandAdapter } from "./effect-command.js";
 import { generateAuditCandidateDirectory } from "./audit-candidates.js";
+import { buildLocalActivationReport, formatLocalActivationReport, recordOwnDataActivationTiming } from "./activation-report.js";
 import type { SchemaCandidateFormat } from "./schema-candidates.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
@@ -483,6 +488,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "activity") return activity(rest);
   if (command === "events") return events(rest);
   if (command === "metrics") return metrics(rest);
+  if (command === "activation") return activation(rest);
   if (command === "worker") return workerCommand(rest);
   if (command === "store") return storeCommand(rest);
   if (command === "shadow") return shadow(rest);
@@ -995,7 +1001,11 @@ export async function runInitWizard(
   const confirmed = await askDefault(ask, "Write generated config and MCP snippets? Type yes to continue", "no");
   if (confirmed.toLowerCase() !== "yes") throw new Error("guided init canceled before writing files");
   const outputPath = outputArg(args) ?? "synapsor.runner.json";
-  await writeGeneratedOnboardingFiles(outputPath, generated, args.includes("--force"), { printNext: false });
+  await writeGeneratedOnboardingFiles(outputPath, generated, spec, args.includes("--force"), {
+    printNext: false,
+    table,
+    activationConfirmed: spec.mode === "review",
+  });
   if (generatedHandlerTemplate) {
     await writeHandlerTemplateFile(generatedHandlerTemplate.name, generatedHandlerTemplate.output, args.includes("--force"));
     stdout.write(`created ${generatedHandlerTemplate.output}\n`);
@@ -1004,7 +1014,7 @@ export async function runInitWizard(
     await writeGeneratedSmokeInputFile(lookupArg, smokeObjectId, args.includes("--force"));
     stdout.write(`created ${generatedSmokeInputPath}\n`);
     const smoke = await maybeRunGeneratedSmokeCall({
-      config: generated.config as RuntimeConfig,
+      config: loadRuntimeConfigFromFile(outputPath),
       configPath: outputPath,
       env: options.env ?? process.env,
       input: { [lookupArg]: smokeObjectId },
@@ -1057,6 +1067,7 @@ function printWizardContractPreview(
   stdout.write(`  primary key: ${input.spec.primary_key}${input.spec.conflict_column ? `; conflict guard: ${input.spec.conflict_column}` : ""}\n`);
   stdout.write(`  visible fields: ${visiblePreview || "none"}\n`);
   stdout.write(`  mode: ${input.spec.mode}\n`);
+  stdout.write(`  activation: ${input.spec.mode === "review" ? "disabled until the final explicit confirmation" : input.spec.mode === "shadow" ? "shadow-only; approval and writeback disabled" : "read-only"}\n`);
   if (input.spec.mode !== "read_only") stdout.write(`  operation: ${(input.spec.operation ?? "update").toUpperCase()}; max rows: 1\n`);
   stdout.write(`  result envelope: ${input.spec.result_format ? `v${input.spec.result_format}` : "default"}\n`);
   stdout.write(`  writeback path: ${input.spec.writeback?.executor ?? (input.spec.mode === "review" ? "sql_update" : "none")}\n`);
@@ -1079,12 +1090,13 @@ async function initFromSpec(args: string[], specPath: string): Promise<number> {
   const output = outputArg(args) ?? "synapsor.runner.json";
   const force = args.includes("--force");
   const spec = JSON.parse(await fs.readFile(specPath, "utf8")) as OnboardingSelectionSpec;
+  assertGeneratedReviewActivation(args, spec, "init --spec");
   const generated = generateRunnerConfigFromSpec(spec);
   if (args.includes("--dry-run")) {
     process.stdout.write(`${JSON.stringify(generated.config, null, 2)}\n`);
     return 0;
   }
-  await writeGeneratedOnboardingFiles(output, generated, force);
+  await writeGeneratedOnboardingFiles(output, generated, spec, force, { activationConfirmed: args.includes("--yes") });
   return 0;
 }
 
@@ -1093,12 +1105,13 @@ async function initFromAnswers(args: string[], answersPath: string): Promise<num
   const force = args.includes("--force");
   const raw = JSON.parse(await fs.readFile(answersPath, "utf8"));
   const spec = answersToSelectionSpec(raw);
+  assertGeneratedReviewActivation(args, spec, "init --answers");
   const generated = generateRunnerConfigFromSpec(spec);
   if (args.includes("--dry-run")) {
     process.stdout.write(`${JSON.stringify(generated.config, null, 2)}\n`);
     return 0;
   }
-  await writeGeneratedOnboardingFiles(output, generated, force);
+  await writeGeneratedOnboardingFiles(output, generated, spec, force, { activationConfirmed: args.includes("--yes") });
   await maybeWriteHandlerTemplateForArgs(args, spec.writeback);
   return 0;
 }
@@ -1419,7 +1432,11 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
     process.stdout.write(`${JSON.stringify(generated.config, null, 2)}\n`);
     return 0;
   }
-  await writeGeneratedOnboardingFiles(outputArg(args) ?? "synapsor.runner.json", generated, args.includes("--force"));
+  assertGeneratedReviewActivation(args, spec, "own-database onboarding");
+  await writeGeneratedOnboardingFiles(outputArg(args) ?? "synapsor.runner.json", generated, spec, args.includes("--force"), {
+    table,
+    activationConfirmed: args.includes("--yes"),
+  });
   await maybeWriteHandlerTemplateForArgs(args, writeback);
   process.stdout.write(`selected ${table.schema}.${table.name} from ${inspection.engine} inspection\n`);
   process.stdout.write(`exposed tools: ${(generated.config.capabilities as Array<{ name: string }>).map((capability) => capability.name).join(", ")}\n`);
@@ -1429,22 +1446,101 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
 async function writeGeneratedOnboardingFiles(
   output: string,
   generated: GeneratedOnboardingFiles,
+  selection: OnboardingSelectionSpec,
   force: boolean,
-  options: { printNext?: boolean } = {},
-): Promise<void> {
-  await writeFileGuarded(output, `${JSON.stringify(generated.config, null, 2)}\n`, force);
-  await writeFileGuarded(".env.example", generated.envExample, force);
-  await fs.mkdir(path.resolve(".synapsor/mcp"), { recursive: true });
-  for (const [fileName, snippet] of Object.entries(generated.mcpSnippets)) {
-    await writeFileGuarded(path.join(".synapsor/mcp", fileName), `${JSON.stringify(snippet, null, 2)}\n`, force);
+  options: { printNext?: boolean; table?: TableInfo; activationConfirmed?: boolean } = {},
+): Promise<CanonicalOnboardingArtifacts> {
+  const configPath = path.resolve(output);
+  const projectRoot = path.dirname(configPath);
+  const contractPath = canonicalContractPath(configPath);
+  const environmentPath = path.join(projectRoot, ".env.example");
+  const mcpDirectory = path.join(projectRoot, ".synapsor/mcp");
+  const manifestPath = path.join(projectRoot, ".synapsor/onboarding.json");
+  const project = await detectProjectContext(projectRoot);
+  const artifacts = buildCanonicalOnboardingArtifacts({
+    generated,
+    selection,
+    ...(options.table ? { table: options.table } : {}),
+    configPath,
+    contractPath,
+    project,
+    activationConfirmed: options.activationConfirmed,
+  });
+  const configArgument = `./${path.basename(configPath)}`;
+  const snippets = rewriteGeneratedMcpSnippets(artifacts.mcpSnippets, configArgument);
+  const targets = [
+    configPath,
+    contractPath,
+    environmentPath,
+    manifestPath,
+    ...Object.keys(snippets).map((fileName) => path.join(mcpDirectory, fileName)),
+  ];
+  await assertGeneratedTargetsWritable(targets, force);
+  await writeFileGuarded(configPath, `${JSON.stringify(artifacts.config, null, 2)}\n`, true);
+  await writeFileGuarded(contractPath, `${JSON.stringify(artifacts.contract, null, 2)}\n`, true);
+  await writeFileGuarded(environmentPath, artifacts.envExample, true);
+  await fs.mkdir(mcpDirectory, { recursive: true });
+  for (const [fileName, snippet] of Object.entries(snippets)) {
+    await writeFileGuarded(path.join(mcpDirectory, fileName), `${JSON.stringify(snippet, null, 2)}\n`, true);
   }
-  await fs.mkdir(path.resolve(".synapsor"), { recursive: true });
-  process.stdout.write(`created ${output}\n`);
-  process.stdout.write("created .env.example\n");
-  process.stdout.write("created MCP client snippets under .synapsor/mcp\n");
+  await writeFileGuarded(manifestPath, `${JSON.stringify(artifacts.manifest, null, 2)}\n`, true);
+  process.stdout.write(formatProjectDetection(project));
+  process.stdout.write(`created ${displayPath(configPath)}\n`);
+  process.stdout.write(`created canonical contract ${displayPath(contractPath)}\n`);
+  process.stdout.write(`created ${displayPath(environmentPath)}\n`);
+  process.stdout.write(`created MCP client snippets under ${displayPath(mcpDirectory)}\n`);
+  process.stdout.write(`created onboarding manifest ${displayPath(manifestPath)}\n`);
   if (options.printNext !== false) {
-    process.stdout.write(`Next: set the referenced environment variables, run \`${cliCommandName()} config validate\`, then run \`${cliCommandName()} mcp serve\`.\n`);
+    process.stdout.write(`Next: set the referenced environment variables, run \`${cliCommandName()} config validate --config ${configArgument}\`, then add the reviewed tools to Cursor with \`${cliCommandName()} mcp install cursor --project --config ${configArgument}\`.\n`);
   }
+  return artifacts;
+}
+
+function assertGeneratedReviewActivation(args: string[], selection: OnboardingSelectionSpec, command: string): void {
+  if (selection.mode === "review" && !args.includes("--yes")) {
+    throw new Error(`${command} generated a review/writeback action, but it remains disabled. Review the preview and rerun with --yes to activate the reviewed action.`);
+  }
+}
+
+function canonicalContractPath(configPath: string): string {
+  const fileName = path.basename(configPath);
+  const extension = path.extname(fileName);
+  const contractName = fileName.endsWith(".runner.json")
+    ? `${fileName.slice(0, -".runner.json".length)}.contract.json`
+    : `${extension ? fileName.slice(0, -extension.length) : fileName}.contract.json`;
+  return path.join(path.dirname(configPath), contractName);
+}
+
+function rewriteGeneratedMcpSnippets(
+  snippets: Record<string, unknown>,
+  configPath: string,
+): Record<string, unknown> {
+  return replaceStringDeep(structuredClone(snippets), "./synapsor.runner.json", configPath) as Record<string, unknown>;
+}
+
+function replaceStringDeep(value: unknown, from: string, to: string): unknown {
+  if (value === from) return to;
+  if (Array.isArray(value)) return value.map((item) => replaceStringDeep(item, from, to));
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceStringDeep(item, from, to)]));
+}
+
+async function assertGeneratedTargetsWritable(targets: string[], force: boolean): Promise<void> {
+  if (force) return;
+  for (const target of targets) {
+    try {
+      await fs.access(target);
+      throw new Error(`${displayPath(target)} already exists. Use --force to overwrite the generated artifact set.`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function displayPath(filePath: string): string {
+  const relative = path.relative(process.cwd(), filePath);
+  if (!relative) return ".";
+  return relative.startsWith("..") || path.isAbsolute(relative) ? filePath : relative;
 }
 
 async function writeGeneratedSmokeInputFile(lookupArg: string, objectId: string, force: boolean): Promise<void> {
@@ -2220,6 +2316,11 @@ async function effectRun(args: string[]): Promise<number> {
       "--dataset",
       "--result",
       "--results-dir",
+      "--adapter",
+      "--adapter-arg",
+      "--adapter-cwd",
+      "--adapter-timeout-ms",
+      "--result-origin",
       "--allow-live-read",
       "--format",
       "--json",
@@ -2234,21 +2335,47 @@ async function effectRun(args: string[]): Promise<number> {
   const fixtures = await loadEffectFixtureSet({ fixturePath, datasetPath });
   const explicitResult = optionalArg(args, "--result");
   const resultsDir = optionalArg(args, "--results-dir");
-  if (Boolean(explicitResult) === Boolean(resultsDir)) {
-    throw new Error("effect run requires exactly one of --result or --results-dir");
+  const adapter = optionalArg(args, "--adapter");
+  if (adapter && (explicitResult || resultsDir)) {
+    throw new Error("effect run --adapter cannot be combined with --result or --results-dir");
+  }
+  if (!adapter && Boolean(explicitResult) === Boolean(resultsDir)) {
+    throw new Error("effect run requires exactly one of --result, --results-dir, or --adapter");
   }
   if (explicitResult && fixtures.length !== 1) {
     throw new Error("effect run --result is valid only for one --fixture; use --results-dir with a dataset");
   }
   const allowLiveRead = args.includes("--allow-live-read");
+  const resultOriginValue = optionalArg(args, "--result-origin");
+  if (adapter && !resultOriginValue) {
+    throw new Error("effect run --adapter requires --result-origin deterministic-application or external-model");
+  }
+  if (resultOriginValue && !["deterministic-application", "external-model"].includes(resultOriginValue)) {
+    throw new Error("--result-origin must be deterministic-application or external-model");
+  }
   const cases = [];
   for (const entry of fixtures) {
-    const resultPath = explicitResult
-      ?? path.join(path.resolve(resultsDir!), effectResultFileName(entry.fixture));
-    const result = await loadEffectResult(resultPath);
+    const result = adapter
+      ? await runEffectCommandAdapter({
+          command: adapter,
+          args: repeatedArgs(args, "--adapter-arg"),
+          fixturePath: entry.path,
+          cwd: optionalArg(args, "--adapter-cwd"),
+          timeoutMs: optionalArg(args, "--adapter-timeout-ms")
+            ? Number(optionalArg(args, "--adapter-timeout-ms"))
+            : undefined,
+        })
+      : await loadEffectResult(explicitResult
+        ?? path.join(path.resolve(resultsDir!), effectResultFileName(entry.fixture)));
     cases.push(compareEffectResult(entry.fixture, result, { allowLiveRead }));
   }
-  const report = createEffectRegressionReport(cases, { allowLiveRead });
+  const report = createEffectRegressionReport(cases, {
+    allowLiveRead,
+    mode: adapter ? "command_adapter" : "offline_import",
+    resultOrigin: adapter
+      ? resultOriginValue === "external-model" ? "external_model" : "deterministic_application"
+      : "imported",
+  });
   const formatValue = optionalArg(args, "--format") ?? (args.includes("--json") ? "json" : "text");
   if (!["text", "json", "junit"].includes(formatValue)) {
     throw new Error("effect run --format must be text, json, or junit");
@@ -4073,6 +4200,7 @@ async function localDoctor(args: string[]): Promise<number> {
     level: forbiddenTools.length === 0 ? "pass" : "fail",
     message: forbiddenTools.length === 0 ? "MCP tool catalog is semantic-only." : `Forbidden model-facing tools: ${forbiddenTools.join(", ")}`,
   });
+  checks.push(...await cursorProjectDoctorChecks(configPath, tools, args));
 
   const report: LocalDoctorReport = {
     ok: checks.every((check) => check.level !== "fail"),
@@ -4095,6 +4223,81 @@ async function localDoctor(args: string[]): Promise<number> {
     process.stdout.write(formatLocalDoctorReport(report));
   }
   return report.ok ? 0 : 1;
+}
+
+async function cursorProjectDoctorChecks(configPath: string, expectedTools: string[], args: string[]): Promise<DoctorCheck[]> {
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? path.dirname(path.resolve(configPath)));
+  try {
+    const status = await cursorProjectStatus(projectRoot);
+    if (status.state === "not_installed") {
+      return [{
+        name: "cursor-project:installation",
+        ok: true,
+        level: "warn",
+        message: `No Runner-owned project Cursor entry is installed. Preview it with ${cliCommandName()} mcp install cursor --project --project-root ${projectRoot} --dry-run.`,
+      }];
+    }
+    if (status.state !== "installed") {
+      return [{
+        name: "cursor-project:installation",
+        ok: false,
+        level: "fail",
+        message: status.message,
+      }];
+    }
+    const recordedConfig = path.resolve(projectRoot, status.paths.configArgument);
+    const configMatches = recordedConfig === path.resolve(configPath);
+    const checks: DoctorCheck[] = [{
+      name: "cursor-project:installation",
+      ok: configMatches,
+      level: configMatches ? "pass" : "fail",
+      message: configMatches
+        ? `Runner owns an intact project Cursor entry for ${status.paths.configArgument}.`
+        : `Cursor entry points to ${status.paths.configArgument}, but doctor inspected ${path.resolve(configPath)}.`,
+    }, {
+      name: "cursor-project:model-tools",
+      ok: expectedTools.length > 0,
+      level: expectedTools.length > 0 ? "pass" : "fail",
+      message: `Reviewed model-facing tools: ${expectedTools.join(", ") || "none"}. Approval, apply, revert, policy, credentials, and trusted identity remain outside MCP.`,
+    }];
+    if (!args.includes("--check-cursor")) {
+      checks.push({
+        name: "cursor-project:launch",
+        ok: true,
+        level: "warn",
+        message: `Cursor command was not launched. Rerun with --check-cursor to perform a real stdio initialize + tools/list handshake.`,
+      });
+      return checks;
+    }
+    const entry = status.entry;
+    const command = typeof entry?.command === "string" ? entry.command : "";
+    const commandArgs = Array.isArray(entry?.args) && entry.args.every((value) => typeof value === "string") ? entry.args as string[] : [];
+    if (!command) {
+      checks.push({ name: "cursor-project:launch", ok: false, level: "fail", message: "Cursor Synapsor entry has no valid command." });
+      return checks;
+    }
+    const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "10000");
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new Error("--timeout-ms must be an integer from 100 to 120000");
+    const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, projectRoot);
+    const liveTools = mcpAuditToolNames(response);
+    const matches = stableStringArray(liveTools).join("\n") === stableStringArray(expectedTools).join("\n");
+    checks.push({
+      name: "cursor-project:launch",
+      ok: matches,
+      level: matches ? "pass" : "fail",
+      message: matches
+        ? `Configured Cursor command started and exposed exactly ${liveTools.length} reviewed tool(s).`
+        : `Configured command exposed ${liveTools.join(", ") || "no tools"}; expected ${expectedTools.join(", ") || "no tools"}.`,
+    });
+    return checks;
+  } catch (error) {
+    return [{
+      name: "cursor-project:installation",
+      ok: false,
+      level: "fail",
+      message: `Cursor project verification failed: ${safeErrorMessage(error)}`,
+    }];
+  }
 }
 
 async function sessionAuthDoctorChecks(config: RuntimeConfig, configPath: string): Promise<DoctorCheck[]> {
@@ -6207,9 +6410,36 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
 async function start(args: string[] = []): Promise<number> {
   if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
     if (args.length > 0) {
-      return onboard(["db", ...args]);
+      const openWorkbench = process.stdin.isTTY && process.stdout.isTTY && !args.includes("--no-open") && !args.includes("--dry-run");
+      return onboard(["db", ...args, ...(openWorkbench && !args.includes("--open-ui") ? ["--open-ui"] : [])]);
     }
   }
+  if (args.length === 0) {
+    const project = await detectProjectContext(process.cwd());
+    process.stdout.write(formatProjectDetection(project));
+    const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
+    if (!databaseEnv) {
+      const detected = project.database_env_names.length
+        ? ` Detected names: ${project.database_env_names.join(", ")}, but none is exported in this process.`
+        : "";
+      throw new Error(`No exported database URL environment variable was detected.${detected}\nRun: ${cliCommandName()} start --from-env DATABASE_URL`);
+    }
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error(`Detected ${databaseEnv}, but guided start needs an interactive terminal. For automation, pass --from-env ${databaseEnv} --table <table> --tenant-key <column> --mode read_only --yes.`);
+    }
+    process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
+    return onboard(["db", "--from-env", databaseEnv, "--open-ui"]);
+  }
+  return startWorker(args);
+}
+
+function preferredDetectedDatabaseEnv(names: string[], env: NodeJS.ProcessEnv): string | undefined {
+  const available = names.filter((name) => envValue(env, name));
+  const preference = ["DATABASE_URL", "SYNAPSOR_DATABASE_READ_URL", "POSTGRES_URL", "POSTGRESQL_URL", "MYSQL_URL", "DB_URL"];
+  return preference.find((name) => available.includes(name)) ?? available.find((name) => !name.includes("WRITE"));
+}
+
+async function startWorker(args: string[] = []): Promise<number> {
   const workerOptions = new Map<string, string>();
   const once = args.includes("--once");
   for (let index = 0; index < args.length; index += 1) {
@@ -6538,7 +6768,7 @@ function formatUpNextCommands(config: RuntimeConfig, configPath: string, storePa
 
 async function runnerCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
-  if (subcommand === "start") return start(rest);
+  if (subcommand === "start") return startWorker(rest);
   if (subcommand === "up") return up(rest);
   if (subcommand === "doctor") return doctor(rest);
   usage();
@@ -7056,9 +7286,187 @@ async function mcp(args: string[]): Promise<number> {
   if (subcommand === "config") return mcpConfig(rest);
   if (subcommand === "client-config") return mcpConfigure(rest);
   if (subcommand === "configure") return mcpConfigure(rest);
+  if (subcommand === "install") return mcpProjectInstall(rest);
+  if (subcommand === "uninstall") return mcpProjectUninstall(rest);
+  if (subcommand === "status") return mcpProjectStatus(rest);
   if (subcommand === "smoke") return mcpSmoke(rest);
   usage(["mcp"]);
   return 2;
+}
+
+async function mcpProjectInstall(args: string[]): Promise<number> {
+  const [client, ...rest] = args;
+  if (client !== "cursor") throw new Error("mcp install currently supports cursor only");
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--config", "--store", "--dry-run", "--yes", "--json"]), "mcp install cursor");
+  if (!rest.includes("--project")) {
+    throw new Error("mcp install cursor requires --project so Runner changes only the current project's .cursor/mcp.json");
+  }
+  const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const configPath = optionalArg(rest, "--config") ?? "./synapsor.runner.json";
+  const storePath = optionalArg(rest, "--store") ?? "./.synapsor/local.db";
+  const absoluteConfig = path.resolve(projectRoot, configPath);
+  await readRuntimeConfig(absoluteConfig);
+  const boundary = await inspectMcpToolBoundary(["--config", absoluteConfig, "--store", ":memory:"]);
+  if (!boundary.ok) {
+    throw new Error(`Cursor install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
+  }
+  const preview = await previewCursorProjectInstall({ projectRoot, configPath, storePath });
+  const report = cursorProjectLifecycleReport(preview, boundary.names);
+  const json = rest.includes("--json");
+  if (rest.includes("--dry-run") || preview.action === "unchanged") {
+    if (json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    else process.stdout.write(formatCursorProjectPreview(report));
+    return 0;
+  }
+  if (!json) process.stdout.write(formatCursorProjectPreview(report));
+  await confirmDangerousAction(rest, `Install the reviewed Synapsor MCP entry in ${path.relative(projectRoot, preview.paths.destination)}?`);
+  const installed = await installCursorProject({ projectRoot, configPath, storePath });
+  if (json) {
+    process.stdout.write(`${JSON.stringify({ ...report, action: installed.action, installed: true, backup: installed.backup ?? null }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`Cursor project MCP entry installed at ${path.relative(projectRoot, installed.paths.destination)}.\n`);
+    if (installed.backup) process.stdout.write(`Backup: ${installed.backup}\n`);
+    process.stdout.write("Restart or reload Cursor, then run `synapsor-runner mcp status cursor --project` to verify the reviewed tool boundary.\n");
+  }
+  return 0;
+}
+
+async function mcpProjectStatus(args: string[]): Promise<number> {
+  const [client, ...rest] = args;
+  if (client !== "cursor") throw new Error("mcp status currently supports cursor only");
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--json", "--check-launch", "--timeout-ms"]), "mcp status cursor");
+  if (!rest.includes("--project")) throw new Error("mcp status cursor requires --project");
+  const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const status = await cursorProjectStatus(projectRoot);
+  let tools: string[] = [];
+  let launch: { checked: boolean; ok: boolean; message: string } = {
+    checked: false,
+    ok: status.state === "installed",
+    message: "Launch probe not requested; pass --check-launch to execute the configured stdio tools/list handshake.",
+  };
+  if (status.state === "installed") {
+    const configPath = path.resolve(projectRoot, status.paths.configArgument);
+    const boundary = await inspectMcpToolBoundary(["--config", configPath, "--store", ":memory:"]);
+    tools = boundary.names;
+    if (!boundary.ok) {
+      launch = { checked: false, ok: false, message: `Static tool boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}` };
+    } else if (rest.includes("--check-launch")) {
+      const entry = status.entry;
+      const command = typeof entry?.command === "string" ? entry.command : "";
+      const commandArgs = Array.isArray(entry?.args) && entry.args.every((value) => typeof value === "string") ? entry.args as string[] : [];
+      if (!command) throw new Error("Cursor Synapsor entry does not contain a valid command");
+      const timeoutMs = Number(optionalArg(rest, "--timeout-ms") ?? "10000");
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new Error("--timeout-ms must be an integer from 100 to 120000");
+      const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, projectRoot);
+      const liveNames = mcpAuditToolNames(response);
+      const matches = stableStringArray(liveNames).join("\n") === stableStringArray(tools).join("\n");
+      launch = {
+        checked: true,
+        ok: matches,
+        message: matches ? `Cursor command started and exposed exactly ${liveNames.length} reviewed tool(s).` : `Started command exposed ${liveNames.join(", ") || "no tools"}; expected ${tools.join(", ") || "no tools"}.`,
+      };
+    }
+  }
+  const report = {
+    ok: status.state === "installed" && launch.ok,
+    state: status.state,
+    message: status.message,
+    destination: path.relative(projectRoot, status.paths.destination),
+    config: status.paths.configArgument,
+    store: status.paths.storeArgument,
+    tools,
+    not_exposed_to_mcp: defaultBlockedToolSurface(),
+    launch,
+  };
+  if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  else process.stdout.write(formatCursorProjectStatus(report));
+  return report.ok ? 0 : 1;
+}
+
+async function mcpProjectUninstall(args: string[]): Promise<number> {
+  const [client, ...rest] = args;
+  if (client !== "cursor") throw new Error("mcp uninstall currently supports cursor only");
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--dry-run", "--yes", "--json"]), "mcp uninstall cursor");
+  if (!rest.includes("--project")) throw new Error("mcp uninstall cursor requires --project");
+  const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const status = await cursorProjectStatus(projectRoot);
+  const preview = {
+    ok: status.state === "installed" || status.state === "not_installed",
+    state: status.state,
+    changed: status.state === "installed",
+    destination: path.relative(projectRoot, status.paths.destination),
+    preserves_other_servers: true,
+    message: status.message,
+  };
+  const json = rest.includes("--json");
+  if (rest.includes("--dry-run") || !preview.changed) {
+    if (json) process.stdout.write(`${JSON.stringify(preview, null, 2)}\n`);
+    else process.stdout.write(`${preview.message}\n${preview.changed ? `Will remove only the Runner-owned Synapsor entry from ${preview.destination}.\n` : "No file change is needed.\n"}`);
+    return preview.ok ? 0 : 1;
+  }
+  if (!json) process.stdout.write(`${preview.message}\nWill remove only the Runner-owned Synapsor entry from ${preview.destination}.\n`);
+  if (!preview.ok) throw new Error("Cursor project entry is unowned or changed; refusing to remove it automatically");
+  await confirmDangerousAction(rest, `Remove only the Runner-owned Synapsor MCP entry from ${preview.destination}?`);
+  const removed = await uninstallCursorProject({ projectRoot });
+  if (json) process.stdout.write(`${JSON.stringify({ ...preview, changed: removed.changed, backup: removed.backup ?? null }, null, 2)}\n`);
+  else process.stdout.write(`Removed Runner-owned Cursor project MCP entry. Backup: ${removed.backup}\n`);
+  return 0;
+}
+
+function cursorProjectLifecycleReport(
+  preview: Awaited<ReturnType<typeof previewCursorProjectInstall>>,
+  tools: string[],
+): Record<string, unknown> {
+  return {
+    ok: true,
+    action: preview.action,
+    destination: path.relative(preview.paths.projectRoot, preview.paths.destination),
+    config: preview.paths.configArgument,
+    store: preview.paths.storeArgument,
+    preserves_other_servers: true,
+    credentials_in_cursor_config: false,
+    tools,
+    not_exposed_to_mcp: defaultBlockedToolSurface(),
+  };
+}
+
+function formatCursorProjectPreview(report: Record<string, unknown>): string {
+  const tools = Array.isArray(report.tools) ? report.tools.join(", ") : "";
+  return [
+    `Cursor project MCP ${String(report.action)} preview`,
+    `Destination: ${String(report.destination)}`,
+    `Runner config: ${String(report.config)}`,
+    `Runner store: ${String(report.store)}`,
+    `Model-facing tools: ${tools || "none"}`,
+    "Approval, apply, revert, policy, credentials, and trusted identity stay outside MCP.",
+    "Other Cursor MCP servers and project settings are preserved.",
+    "",
+  ].join("\n");
+}
+
+function formatCursorProjectStatus(report: {
+  ok: boolean;
+  state: string;
+  message: string;
+  destination: string;
+  config: string;
+  tools: string[];
+  launch: { checked: boolean; ok: boolean; message: string };
+}): string {
+  return [
+    `Cursor project MCP: ${report.state}`,
+    report.message,
+    `Destination: ${report.destination}`,
+    `Runner config: ${report.config}`,
+    `Model-facing tools: ${report.tools.join(", ") || "none"}`,
+    `Launch: ${report.launch.message}`,
+    "Approval, apply, revert, policy, credentials, and trusted identity are not model-facing.",
+    "",
+  ].join("\n");
+}
+
+function stableStringArray(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right));
 }
 
 async function tools(args: string[]): Promise<number> {
@@ -7538,10 +7946,13 @@ async function onboard(args: string[]): Promise<number> {
   }
   process.stdout.write("Synapsor Runner own-database onboarding\n");
   process.stdout.write("You will inspect metadata, choose one table/view, confirm safety rules, and generate semantic MCP tools without writing JSON by hand.\n\n");
-  const outputPath = outputArg(rest) ?? "synapsor.runner.json";
-  const storePath = optionalArg(rest, "--store") ?? "./.synapsor/local.db";
-  const scripted = isScriptedOnboardingArgs(rest);
-  const result = scripted ? await init(["--non-interactive", ...rest]) : await runInitWizard(["--wizard", ...rest]);
+  const startedAt = new Date().toISOString();
+  const openWorkbench = rest.includes("--open-ui");
+  const initArgs = rest.filter((value) => value !== "--open-ui" && value !== "--no-open");
+  const outputPath = outputArg(initArgs) ?? "synapsor.runner.json";
+  const storePath = optionalArg(initArgs, "--store") ?? "./.synapsor/local.db";
+  const scripted = isScriptedOnboardingArgs(initArgs);
+  const result = scripted ? await init(["--non-interactive", ...initArgs]) : await runInitWizard(["--wizard", ...initArgs]);
   if (result !== 0) return result;
   if (rest.includes("--dry-run")) return 0;
   process.stdout.write("\nValidation:\n");
@@ -7556,7 +7967,19 @@ async function onboard(args: string[]): Promise<number> {
   process.stdout.write(`1. Serve MCP:\n   ${cliCommandName()} mcp serve --config ${outputPath} --store ${storePath}\n`);
   process.stdout.write(`2. Open local UI:\n   ${cliCommandName()} ui --open --tour --config ${outputPath} --store ${storePath}\n`);
   process.stdout.write("3. Approve/apply only after setting a trusted write credential and reviewing the proposal.\n");
-  return configCode === 0 && smokeCode === 0 ? 0 : 1;
+  const ready = configCode === 0 && smokeCode === 0;
+  if (ready) {
+    await recordOwnDataActivationTiming({
+      manifestPath: path.join(path.dirname(path.resolve(outputPath)), ".synapsor/onboarding.json"),
+      startedAt,
+    });
+  }
+  if (!ready) return 1;
+  if (openWorkbench) {
+    process.stdout.write("\nOpening the local first-safe-action workbench. Approval and apply remain outside MCP.\n");
+    return ui(["--open", "--tour", "--config", outputPath, "--store", storePath]);
+  }
+  return 0;
 }
 
 async function demo(args: string[]): Promise<number> {
@@ -7584,6 +8007,7 @@ async function quickDemo(args: string[]): Promise<number> {
 }
 
 async function tryCommand(args: string[]): Promise<number> {
+  if (optionalArg(args, "--from-env")) return tryOwnData(args);
   const allowed = new Set(["--prove", "--yes", "--no-open", "--json", "--no-color", "--state-dir"]);
   assertKnownOptions(args, allowed, "try");
   const json = args.includes("--json");
@@ -7608,6 +8032,21 @@ async function tryCommand(args: string[]): Promise<number> {
     process.stdout.write(formatTryResult(result));
   }
   return result.ok ? 0 : 1;
+}
+
+async function tryOwnData(args: string[]): Promise<number> {
+  if (args.includes("--state-dir")) throw new Error("try --from-env uses the project .synapsor store; --state-dir is only for the isolated synthetic proof");
+  if (args.includes("--json")) throw new Error("try --from-env does not support --json during reviewed own-data onboarding");
+  const delegated = args.filter((arg) => !new Set(["--prove", "--no-open", "--no-color"]).has(arg));
+  if (!optionalArg(delegated, "--mode")) delegated.push("--mode", "read_only");
+  process.stdout.write([
+    "Synapsor Runner own-data proof",
+    "This path inspects the selected staging database. It will not use or fall back to synthetic demo data.",
+    `Mode: ${optionalArg(delegated, "--mode")}. The source is not mutated during onboarding, MCP preview, or read-only validation.`,
+    "A proposal-capable review mode still keeps approval and apply outside MCP.",
+    "",
+  ].join("\n"));
+  return start(delegated);
 }
 
 async function reviewTryProposal(
@@ -8175,6 +8614,9 @@ async function auditGenerate(args: string[]): Promise<number> {
   if (!outputDir) {
     throw new Error("audit generate requires --output <separate-candidate-directory>");
   }
+  if (args.includes("--open-ui") && (args.includes("--json") || optionalArg(args, "--format") === "json")) {
+    throw new Error("audit generate --open-ui cannot be combined with JSON output");
+  }
   const { target, payload } = await resolveMcpAuditInput(args);
   const result = await generateAuditCandidateDirectory({
     manifest: payload,
@@ -8182,6 +8624,8 @@ async function auditGenerate(args: string[]): Promise<number> {
     outputDir,
     force: args.includes("--force"),
   });
+  const candidateConfig = path.join(result.output_dir, "synapsor.candidate.runner.json");
+  const candidateStore = path.join(result.output_dir, ".synapsor/candidate-shadow.db");
   if (args.includes("--json") || optionalArg(args, "--format") === "json") {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return 0;
@@ -8200,7 +8644,12 @@ async function auditGenerate(args: string[]): Promise<number> {
     "- production configuration was not changed.",
     "",
     `Review ${path.join(result.output_dir, "REVIEW.md")} before copying any definition into an active contract.`,
+    `Open the blocked candidate workbench: ${cliCommandName()} ui --open --tour --config ${shellQuote(candidateConfig)} --store ${shellQuote(candidateStore)}`,
   ].join("\n")}\n`);
+  if (args.includes("--open-ui")) {
+    process.stdout.write("\nOpening the local candidate workbench. The candidate has no source or writeback authority.\n");
+    return ui(["--open", "--tour", "--config", candidateConfig, "--store", candidateStore]);
+  }
   return 0;
 }
 
@@ -9089,7 +9538,10 @@ async function recipesInit(args: string[]): Promise<number> {
     delete spec.transition_guards;
   }
   const generated = generateRunnerConfigFromSpec(spec);
-  await writeGeneratedOnboardingFiles(outputArg(args) ?? "synapsor.runner.json", generated, args.includes("--force"));
+  assertGeneratedReviewActivation(args, spec, "recipes init");
+  await writeGeneratedOnboardingFiles(outputArg(args) ?? "synapsor.runner.json", generated, spec, args.includes("--force"), {
+    activationConfirmed: args.includes("--yes"),
+  });
   process.stdout.write(`initialized recipe ${recipe.id}\n`);
   process.stdout.write("Review the generated table and column names against your staging database before serving MCP tools.\n");
   return 0;
@@ -9376,7 +9828,9 @@ function builtInMcpAuditExample(example: string): unknown {
 }
 
 function isRunnerConfigLike(value: unknown): boolean {
-  return isRecord(value) && value.version === 1 && Array.isArray(value.capabilities);
+  return isRecord(value)
+    && value.version === 1
+    && (Array.isArray(value.capabilities) || Array.isArray(value.contracts));
 }
 
 async function fetchRemoteMcpTools(target: string, args: string[], timeoutMs: number): Promise<unknown> {
@@ -9408,8 +9862,13 @@ async function fetchRemoteMcpTools(target: string, args: string[], timeoutMs: nu
 async function fetchStdioMcpTools(commandText: string, timeoutMs: number): Promise<unknown> {
   const [command, ...commandArgs] = splitCommand(commandText);
   if (!command) throw new Error("mcp audit stdio target requires a command");
+  return fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs);
+}
+
+async function fetchStdioMcpToolsCommand(command: string, commandArgs: string[], timeoutMs: number, cwd?: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, commandArgs, {
+      ...(cwd ? { cwd } : {}),
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -9452,6 +9911,16 @@ async function fetchStdioMcpTools(commandText: string, timeoutMs: number): Promi
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
     child.stdin.end();
   });
+}
+
+function mcpAuditToolNames(payload: unknown): string[] {
+  const envelope = isRecord(payload) && isRecord(payload.result) ? payload.result : payload;
+  if (!isRecord(envelope) || !Array.isArray(envelope.tools)) {
+    throw new Error("MCP tools/list response did not contain a tools array");
+  }
+  const names = envelope.tools.map((tool) => isRecord(tool) && typeof tool.name === "string" ? tool.name : "");
+  if (names.some((name) => !name)) throw new Error("MCP tools/list response contained a tool without a name");
+  return names;
 }
 
 async function proposals(args: string[]): Promise<number> {
@@ -9534,6 +10003,44 @@ async function metrics(args: string[]): Promise<number> {
   } finally {
     store.close();
   }
+}
+
+async function activation(args: string[]): Promise<number> {
+  const [requested, ...tail] = args;
+  const subcommand = requested && !requested.startsWith("-") ? requested : "show";
+  const rest = subcommand === "show" || subcommand === "export" ? (requested === subcommand ? tail : args) : args;
+  if (subcommand !== "show" && subcommand !== "export") {
+    usage(["activation"]);
+    return 2;
+  }
+  assertKnownOptions(rest, new Set(["--project-root", "--config", "--store", "--try-state", "--format", "--json", "--out", "--output"]), `activation ${subcommand}`);
+  const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const configPath = path.resolve(projectRoot, optionalArg(rest, "--config") ?? defaultConfigPath);
+  const config = await optionalRuntimeConfig(configPath);
+  if (config?.storage?.shared_postgres?.mode === "runtime_store") {
+    throw new Error("activation report is a local onboarding measurement and does not inspect a shared Cloud/Postgres runtime ledger");
+  }
+  const configuredStore = config?.storage?.sqlite_path;
+  const storePath = optionalArg(rest, "--store") ?? configuredStore ?? defaultStorePath;
+  const report = await buildLocalActivationReport({
+    projectRoot,
+    storePath,
+    ...(optionalArg(rest, "--try-state") ? { tryStateDir: optionalArg(rest, "--try-state") } : {}),
+  });
+  const format = optionalArg(rest, "--format") ?? (rest.includes("--json") || subcommand === "export" ? "json" : "text");
+  if (format !== "text" && format !== "json") throw new Error("activation --format must be text or json");
+  const output = optionalArg(rest, "--out") ?? optionalArg(rest, "--output");
+  if (subcommand === "export" && !output) throw new Error("activation export requires --out <report.json>");
+  const rendered = format === "json" ? `${JSON.stringify(report, null, 2)}\n` : formatLocalActivationReport(report);
+  if (output) {
+    const destination = path.resolve(projectRoot, output);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, rendered, { encoding: "utf8", mode: 0o600 });
+    process.stdout.write(`Local activation report written to ${output}. No telemetry was transmitted.\n`);
+  } else {
+    process.stdout.write(rendered);
+  }
+  return 0;
 }
 
 async function workerCommand(args: string[]): Promise<number> {
@@ -10345,7 +10852,12 @@ function formatShadowStudyReport(report: ShadowStudyReport): string {
     `stale / conflict: ${report.stale_conflicts}`,
     `unmatched: ${report.unmatched_cases}`,
     `invalid / unsafe scope attempts: ${report.invalid_or_unsafe_scope_attempts}`,
+    `trust stage: ${report.trust_progression.current_stage.replaceAll("_", " ")}`,
+    `sample readiness: ${report.trust_progression.insufficient_sample_size ? `insufficient (minimum ${report.trust_progression.minimum_policy_sample_size} exact numeric examples)` : "eligible for a human-reviewed bounded-policy suggestion"}`,
     values ? `amount/value: min=${values.minimum} median=${values.median} p95=${values.p95} max=${values.maximum} total=${values.total}` : "amount/value: n/a",
+    "",
+    "Trust progression:",
+    ...report.trust_progression.stages.map((item) => `  ${item.status.toUpperCase()} ${item.name}: ${item.detail}`),
     "",
     "By capability:",
     ...Object.entries(report.by_capability).map(([capability, counts]) =>
@@ -13858,6 +14370,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "activity",
     "events",
     "metrics",
+    "activation",
     "worker",
     "store",
     "shadow",
@@ -13925,6 +14438,7 @@ Commands:
   activity    Search local evidence/replay ledger
   events      Tail or push local proposal/writeback lifecycle events
   metrics     Export tenant/capability operational counters
+  activation  Inspect/export the local try-to-first-proposal funnel
   worker      Run or inspect the supervised local writeback queue
   store       Inspect and maintain the local SQLite ledger
   shadow      Compare shadow proposals with authoritative outcomes
@@ -13960,6 +14474,7 @@ Examples:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} propose billing.propose_late_fee_waiver --sample
   ${cmd} audit ./synapsor.runner.json
+  ${cmd} activation show --config ./synapsor.runner.json --store ./.synapsor/local.db
 
 Global options:
   --secrets-provider aws-secretsmanager-cli --secret-map-env SYNAPSOR_SECRET_MAP
@@ -14016,6 +14531,7 @@ in runner config.
   ${cmd} effect result init --fixture ./effects/late-fee.json --out ./effects/late-fee.result.json
   ${cmd} effect run --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json [--format text|json|junit]
   ${cmd} effect run --dataset ./effects/dataset.json --results-dir ./effects/results [--format text|json|junit]
+  ${cmd} effect run --dataset ./effects/dataset.json --adapter node --adapter-arg ./app/effect-adapter.mjs --result-origin deterministic-application [--format text|json|junit]
   ${cmd} effect accept --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json --actor <operator> --reason <reviewed-change> --in-place --yes
 
 Create a versioned effect baseline from an existing proposal replay or shadow
@@ -14027,6 +14543,11 @@ Runner evaluates imported results offline and never applies a write. Evidence is
 snapshotted from the existing ledger. A new source read is rejected unless
 --allow-live-read is explicit. Baselines never update silently: acceptance
 requires an operator identity, reason, --yes, and --in-place or a new output.
+The command adapter launches an adopter-owned executable without a shell and
+without ambient database/token credentials. It must emit one result JSON on
+stdout and declare whether it is deterministic application logic or an external
+model. Runner cannot sandbox code that loads its own credentials, so adapters
+must remain propose-only and run against fixtures or disposable sources.
 This complements contract test; it does not replace contract conformance.
 `,
     report: `Usage:
@@ -14116,7 +14637,10 @@ Options:
 
 With --from-env, run the guided own-database setup: inspect schema, choose one
 object, create trusted context, generate semantic MCP tools, run/print a smoke
-call, and print MCP/UI next steps.
+call, and open the secured localhost first-action workbench in an interactive
+terminal. Pass --no-open for scripts and CI. A valid config/boundary handshake
+does not count as a real own-data read; the workbench Test step completes only
+after a scoped tool call is recorded in the local ledger.
 
 With no flags, start the legacy cloud-linked writeback polling worker from the
 worker environment config. Prefer \`${cmd} runner start\` for that worker path
@@ -14169,12 +14693,36 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp install cursor --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp status cursor --project [--check-launch]
+  ${cmd} mcp uninstall cursor --project [--dry-run]
   ${cmd} mcp audit --example dangerous-db-mcp
   ${cmd} mcp audit ./tools-list.json
   ${cmd} mcp audit generate ./tools-list.json --output ./synapsor-audit-candidates
 
 Use stdio for local MCP clients that launch the runner. Use Streamable HTTP for standard HTTP MCP clients. Use serve-http only when you explicitly want the lightweight JSON-RPC bridge.
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
+`,
+    "mcp install": `Usage:
+  ${cmd} mcp install cursor --project [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db] [--dry-run] [--yes]
+
+Preview, confirm, and merge a project-scoped Synapsor entry into .cursor/mcp.json.
+Runner preserves other servers/settings, creates a backup before changing an
+existing file, records explicit ownership, and never writes database URLs,
+credentials, trusted identity, approval, apply, revert, or policy authority.
+`,
+    "mcp status": `Usage:
+  ${cmd} mcp status cursor --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
+
+Verify Runner's project-scoped Cursor ownership marker and print the exact
+reviewed model-facing tools. --check-launch performs a real stdio initialize +
+tools/list handshake with the configured command.
+`,
+    "mcp uninstall": `Usage:
+  ${cmd} mcp uninstall cursor --project [--project-root .] [--dry-run] [--yes] [--json]
+
+Remove only the Runner-owned Synapsor entry. Other Cursor MCP servers and
+project settings are preserved, and edited/unowned entries fail closed.
 `,
     tools: `Usage:
   ${cmd} tools list --config ./synapsor.runner.json --store ./.synapsor/local.db
@@ -14335,7 +14883,7 @@ default 10000ms wait with --shared-ledger-lock-timeout-ms.
   ${cmd} audit --example dangerous-db-mcp --format json
   ${cmd} audit --example dangerous-db-mcp --format markdown
   ${cmd} audit --example dangerous-db-mcp --format sarif
-  ${cmd} audit generate --example dangerous-db-mcp --output ./synapsor-audit-candidates
+  ${cmd} audit generate --example dangerous-db-mcp --output ./synapsor-audit-candidates [--open-ui]
   ${cmd} audit generate ./tools-list.json --output ./synapsor-audit-candidates [--force]
   ${cmd} audit ./synapsor.runner.json
   ${cmd} audit --mcp-config ./claude_desktop_config.json
@@ -14346,7 +14894,8 @@ Default text groups repeated findings into the top three root causes. Use
 --verbose for every finding. Candidate generation uses the same scanner and
 writes a separate canonical contract, shadow-only scaffold, deny/redaction
 tests, and before/after tool surface. It never activates or rewrites production
-configuration.
+configuration. --open-ui opens the blocked candidate in the secured localhost
+workbench; the source map and writeback remain empty until separately reviewed.
 
 Static MCP/database risk review only. This is not a security guarantee.
 `,
@@ -14477,6 +15026,19 @@ Show or push local proposal/writeback lifecycle events such as proposal_created,
 Export Prometheus/OpenMetrics counters for proposals, approvals, rejections,
 successful applies, conflicts, and failures, grouped by trusted tenant and
 reviewed capability. No database credentials or business-row values are emitted.
+`,
+    activation: `Usage:
+  ${cmd} activation show [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} activation show --json
+  ${cmd} activation export --out ./.synapsor/activation-report.json
+  ${cmd} activation show --try-state ./custom-try-container
+
+Inspect the local try -> own-data onboarding -> Cursor -> first read -> first
+proposal funnel. The report derives timestamps from owned try state, the
+onboarding manifest, the Cursor ownership marker, and the local SQLite ledger.
+It contains no database rows, object IDs, tenant IDs, credentials, or project
+paths and sends no telemetry. Product activation time excludes initial npm
+download/cache population; record cold npx timing separately.
 `,
     worker: `Usage:
   ${cmd} worker run --yes --config ./synapsor.runner.json --store ./.synapsor/local.db

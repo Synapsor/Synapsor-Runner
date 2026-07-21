@@ -10,6 +10,38 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.5.2 (prepared, not published)
+
+### First safe action in an existing application
+
+- `start --from-env DATABASE_URL` and
+  `try --prove --from-env DATABASE_URL` now converge on one own-data
+  onboarding path. It inspects a staging database read-only, asks the developer
+  to choose trusted scope and one reviewed action, emits canonical files, and
+  never substitutes synthetic data after an own-data failure.
+- The localhost workbench presents Project, Data source, Trust scope, Action,
+  Agent, Test, and Review plus an exact proposal Data PR. Test is complete only
+  after a scoped tool call records query audit, not after config validation.
+- Project-scoped Cursor install/status/uninstall previews and owns only its MCP
+  entry, preserves other entries, and launches the exact Runner version.
+  Approval, apply, revert, credentials, and trusted identity stay outside MCP.
+- Local activation reports measure proof, onboarding, Cursor, first read, and
+  first proposal without telemetry or business identifiers. Product time
+  excludes initial package download; cold `npx` time is reported separately
+  as an observed environment-specific measurement.
+- Optional TypeScript authoring emits the same canonical Spec contract. Shadow
+  trust progression and provider-neutral effect regression remain
+  non-activating and preserve deterministic/external-model provenance.
+- MCP audit candidates can open directly in the secured workbench, and the
+  release includes the host-compatibility matrix and support/billing reference
+  workflow.
+- The package now requires Node 22.13.0 or newer, the first Node 22 release
+  where Runner's `node:sqlite` dependency is available without an experimental
+  runtime flag. Older Node versions fail immediately with an actionable error.
+
+Prepared package version: `@synapsor/runner@1.5.2`. Spec, DSL, and Cloud CLI
+packages are unchanged. Nothing has been published by this repository change.
+
 ## 1.5.1 (prepared, not published)
 
 ### Safe disposable state ownership
@@ -768,7 +800,7 @@ not change and must not be republished for this release.
   CDC, managed runner fleets, compliance exports, production SLA, or C++ DBMS
   internals.
 - The local store is single-node SQLite for local/dev/staging usage.
-- Node >= 22.5.0 is required because the local ledger uses Node's
+- Node >= 22.13.0 is required because the local ledger uses Node's unflagged
   `node:sqlite` runtime. Use a supported Node runtime or the Docker-backed
   source demo path.
 

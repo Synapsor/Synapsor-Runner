@@ -141,7 +141,7 @@ const manifest = {
   compatibility: {
     platforms: ["darwin", "win32", "linux"],
     runtimes: {
-      node: ">=22.5.0",
+      node: ">=22.13.0",
     },
   },
   user_config: {

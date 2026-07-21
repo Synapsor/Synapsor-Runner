@@ -48,7 +48,7 @@ run audit --example dangerous-db-mcp >/dev/null
 run mcp serve-streamable-http --help >/dev/null
 run mcp serve-http --help >/dev/null
 run demo --quick --no-interactive >/dev/null
-run recipes init billing.late_fee_waiver --force >/dev/null
+run recipes init billing.late_fee_waiver --yes --force >/dev/null
 run up --config ./synapsor.runner.json --store ./.synapsor/try/ledger.db --dry-run > up.txt
 grep -F "Synapsor Runner review-mode up" up.txt >/dev/null
 grep -F "Serve now: no" up.txt >/dev/null

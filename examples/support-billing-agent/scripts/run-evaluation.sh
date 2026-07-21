@@ -23,10 +23,9 @@ corepack pnpm runner shadow case import \
   --input "$ROOT_DIR/examples/support-billing-agent/shadow-study/cases.jsonl" \
   --store "$STORE_PATH" >/dev/null
 
-corepack pnpm runner shadow outcome import \
-  --study sst_support_reference \
-  --input "$ROOT_DIR/examples/support-billing-agent/shadow-study/outcomes.jsonl" \
-  --store "$STORE_PATH" >/dev/null
+corepack pnpm build:runner-package >/dev/null
+node "$ROOT_DIR/examples/support-billing-agent/app/record-shadow-outcomes.mjs" \
+  "$STORE_PATH" sst_support_reference >/dev/null
 
 corepack pnpm runner shadow report \
   --study sst_support_reference \
@@ -54,7 +53,9 @@ NODE
 
 corepack pnpm runner effect run \
   --dataset "$ROOT_DIR/fixtures/effects/dataset.json" \
-  --results-dir "$ROOT_DIR/fixtures/effects/results" \
+  --adapter node \
+  --adapter-arg "$ROOT_DIR/examples/support-billing-agent/app/effect-adapter.mjs" \
+  --result-origin deterministic-application \
   --format json \
   --out "$EFFECT_PATH" >/dev/null
 

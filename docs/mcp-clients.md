@@ -62,14 +62,38 @@ repository file.
 
 ### Cursor
 
-For one repository, place the project template at `.cursor/mcp.json`. For a
-global setup, merge `cursor-global.mcp.json` through Cursor's MCP settings and
-replace every `<absolute-path-to-bundle>` marker. Restart the MCP server from
-Cursor settings after editing.
+Prefer Runner's owned project lifecycle for one repository:
+
+```bash
+synapsor-runner mcp install cursor --project --dry-run \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+synapsor-runner mcp install cursor --project --yes \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+synapsor-runner mcp status cursor --project --check-launch
+```
+
+Runner previews the merge, backs up an existing `.cursor/mcp.json`, preserves
+other MCP servers/settings, writes an exact-version `npx` invocation, and
+tracks only its own entry with an integrity marker. Repeating install is
+idempotent. `mcp uninstall cursor --project --yes` removes only that intact,
+Runner-owned entry and also creates a backup.
+
+For global setup, merge `cursor-global.mcp.json` through Cursor's MCP settings
+and replace every `<absolute-path-to-bundle>` marker. Restart the MCP server
+from Cursor settings after editing.
 
 The model-facing list should contain only the contract's inspect/propose tools.
 If Cursor reports a missing config or store, use absolute paths and rerun
 `tools preview` from the same working directory.
+
+Cursor can be configured to auto-run model-facing tools. Synapsor therefore
+never exposes approval, apply, revert, policy activation, trusted identity, or
+credentials as MCP tools. Inline MCP App review is not assumed for Cursor; use
+the secured localhost workbench or operator CLI. No Add to Cursor deep link is
+generated because Runner has not verified a currently documented generic
+payload for this server. See [Host Compatibility](host-compatibility.md).
 
 ### OpenAI Agents SDK
 
