@@ -196,6 +196,46 @@ shadow actions cannot commit. Review/writeback generation requires final
 confirmation (`--yes` in a noninteractive command) and still gives the model no
 approval or apply tool.
 
+### Draft another Safe Action with a coding agent
+
+After a reviewed read capability exists, describe one business action instead
+of hand-authoring a complete contract:
+
+```bash
+synapsor-runner start \
+  --action plan_credit \
+  --description "Propose one reviewed customer plan credit" \
+  --based-on support.inspect_customer
+```
+
+Runner writes `synapsor/actions/support.propose_plan_credit.ts` and scoped
+agent instructions. The file is an inert scaffold. It contains explicit
+authority questions for trusted scope, visible and kept-out fields, allowed
+effect, conflict guard, bounds, approval, and executor. Creating or editing it
+does not change the active contract or MCP tool list.
+
+Give the exact prompt printed by the command to Cursor or another coding
+agent. The agent may inspect project/schema evidence, complete the restricted
+TypeScript object, and run deterministic validation:
+
+```bash
+synapsor-runner action validate \
+  ./synapsor/actions/support.propose_plan_credit.ts
+```
+
+Runner statically parses rather than imports the file. A successful validation
+writes a digest-addressed **disabled draft**, a plain-language explanation,
+and exact static allow/deny/effect tests under `.synapsor/drafts/`. It cannot
+activate a tool.
+
+In the secured Workbench, run **Preview exact staging Data PR**. The preview
+may perform the reviewed scoped read and write proposal evidence to the local
+ledger, but it cannot mutate the source. Review the exact effect, type
+`ACTIVATE` plus the complete displayed digest, and confirm activation yourself.
+There is intentionally no CLI or MCP command a coding agent can use to
+activate the draft. If the host does not refresh `tools/list`, reconnect the
+MCP server after activation as the Workbench instructs.
+
 ## 5. Add the reviewed tools to Cursor
 
 After setting trusted environment values, preview and install a project-scoped

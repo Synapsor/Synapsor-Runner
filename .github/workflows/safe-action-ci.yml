@@ -1,0 +1,59 @@
+name: safe-action-ci
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/safe-action-ci.yml"
+      - "apps/runner/src/safe-action*"
+      - "apps/runner/src/contract-testing*"
+      - "examples/support-plan-credit/**"
+      - "scripts/verify-safe-action-team-ci.mjs"
+      - "schemas/synapsor.contract-tests.schema.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/safe-action-ci.yml"
+      - "apps/runner/src/safe-action*"
+      - "apps/runner/src/contract-testing*"
+      - "examples/support-plan-credit/**"
+      - "scripts/verify-safe-action-team-ci.mjs"
+      - "schemas/synapsor.contract-tests.schema.json"
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-boundary:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: synapsor_runner_plan_credit
+          POSTGRES_USER: synapsor_admin
+          POSTGRES_PASSWORD: synapsor_admin_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U synapsor_admin -d synapsor_runner_plan_credit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      SYNAPSOR_SAFE_ACTION_ADMIN_URL: postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:5432/synapsor_runner_plan_credit
+      SYNAPSOR_SAFE_ACTION_READ_URL: postgresql://synapsor_reader:synapsor_reader_password@127.0.0.1:5432/synapsor_runner_plan_credit
+      SYNAPSOR_SAFE_ACTION_WRITE_URL: postgresql://synapsor_writer:synapsor_writer_password@127.0.0.1:5432/synapsor_runner_plan_credit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm verify:safe-action-team
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: safe-action-contract-tests
+          path: tmp/safe-action-team-ci/

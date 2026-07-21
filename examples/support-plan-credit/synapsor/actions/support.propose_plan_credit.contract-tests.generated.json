@@ -1,0 +1,221 @@
+{
+  "$schema": "https://schemas.synapsor.ai/synapsor.contract-tests.schema.json",
+  "version": 1,
+  "name": "support.propose_plan_credit generated contract boundary",
+  "tests": [
+    {
+      "id": "support.propose_plan_credit-operator-boundary",
+      "kind": "operator_boundary",
+      "capability": "support.propose_plan_credit"
+    },
+    {
+      "id": "support.propose_plan_credit-proposal-effect",
+      "kind": "proposal_effect",
+      "capability": "support.propose_plan_credit",
+      "expected": {
+        "action": "grant_plan_credit",
+        "operation": {
+          "kind": "update"
+        },
+        "allowed_fields": [
+          "plan_credit_cents",
+          "credit_reason"
+        ],
+        "patch": {
+          "plan_credit_cents": {
+            "from_arg": "credit_cents"
+          },
+          "credit_reason": {
+            "from_arg": "reason"
+          }
+        },
+        "numeric_bounds": {
+          "plan_credit_cents": {
+            "minimum": 1,
+            "maximum": 50000
+          }
+        },
+        "transition_guards": {},
+        "conflict_guard": {
+          "column": "updated_at"
+        },
+        "approval": {
+          "mode": "policy",
+          "policy": "support_propose_plan_credit_auto_approval",
+          "required_role": "support_reviewer"
+        },
+        "writeback": {
+          "mode": "direct_sql"
+        },
+        "max_rows": 1
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-kept-out-fields",
+      "kind": "hide_fields",
+      "capability": "support.propose_plan_credit",
+      "args": {
+        "customer_id": "replace-customer_id",
+        "credit_cents": 1,
+        "reason": "replace-reason"
+      },
+      "trusted_context": {
+        "tenant_id": "replace-with-test-tenant",
+        "principal": "contract_test"
+      },
+      "fields": [
+        "card_token",
+        "raw_payment_method",
+        "internal_risk_score",
+        "private_notes"
+      ]
+    },
+    {
+      "id": "support.propose_plan_credit-conflict-guard",
+      "kind": "conflict_guard",
+      "capability": "support.propose_plan_credit",
+      "expected": {
+        "column": "updated_at"
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-trusted-scope",
+      "kind": "trusted_scope",
+      "capability": "support.propose_plan_credit",
+      "expected": {
+        "context": "support_agent_context",
+        "tenant_key": "tenant_id",
+        "tenant_binding": "tenant_id",
+        "tenant_authority": {
+          "source": "environment",
+          "key": "SYNAPSOR_TENANT_ID",
+          "required": true
+        },
+        "principal_binding": "principal",
+        "principal_authority": {
+          "source": "environment",
+          "key": "SYNAPSOR_PRINCIPAL",
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-evidence-required",
+      "kind": "evidence_requirement",
+      "capability": "support.propose_plan_credit",
+      "expected": {
+        "required": true,
+        "query_audit": true
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-approval-boundary",
+      "kind": "approval_boundary",
+      "capability": "support.propose_plan_credit",
+      "expected": {
+        "approval": {
+          "mode": "policy",
+          "policy": "support_propose_plan_credit_auto_approval",
+          "required_role": "support_reviewer"
+        },
+        "policy": {
+          "kind": "approval",
+          "limits": [
+            {
+              "kind": "count",
+              "max": 20,
+              "period": "day",
+              "scope": "tenant_policy"
+            },
+            {
+              "field": "plan_credit_cents",
+              "kind": "total",
+              "max": 100000,
+              "period": "day",
+              "scope": "tenant_policy"
+            }
+          ],
+          "mode": "green",
+          "name": "support_propose_plan_credit_auto_approval",
+          "rules": [
+            {
+              "field": "plan_credit_cents",
+              "max": 2500
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-allowed-effect",
+      "kind": "tool_allow",
+      "capability": "support.propose_plan_credit",
+      "args": {
+        "customer_id": "replace-customer_id",
+        "credit_cents": 1,
+        "reason": "replace-reason"
+      },
+      "trusted_context": {
+        "tenant_id": "replace-with-test-tenant",
+        "principal": "contract_test"
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-other-tenant-denied",
+      "kind": "tool_deny",
+      "capability": "support.propose_plan_credit",
+      "args": {
+        "customer_id": "replace-with-other-tenant-customer_id",
+        "credit_cents": 1,
+        "reason": "replace-reason"
+      },
+      "trusted_context": {
+        "tenant_id": "replace-with-test-tenant",
+        "principal": "contract_test"
+      },
+      "expected_code": "NOT_FOUND_IN_TENANT"
+    },
+    {
+      "id": "support.propose_plan_credit-source-unchanged",
+      "kind": "source_unchanged_before_approval",
+      "capability": "support.propose_plan_credit",
+      "args": {
+        "customer_id": "replace-customer_id",
+        "credit_cents": 1,
+        "reason": "replace-reason"
+      },
+      "trusted_context": {
+        "tenant_id": "replace-with-test-tenant",
+        "principal": "contract_test"
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-customer_id-constraints",
+      "kind": "argument_constraint",
+      "capability": "support.propose_plan_credit",
+      "argument": "customer_id",
+      "expected": {
+        "max_length": 128
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-credit_cents-constraints",
+      "kind": "argument_constraint",
+      "capability": "support.propose_plan_credit",
+      "argument": "credit_cents",
+      "expected": {
+        "minimum": 1,
+        "maximum": 50000
+      }
+    },
+    {
+      "id": "support.propose_plan_credit-reason-constraints",
+      "kind": "argument_constraint",
+      "capability": "support.propose_plan_credit",
+      "argument": "reason",
+      "expected": {
+        "max_length": 500
+      }
+    }
+  ]
+}

@@ -51,7 +51,7 @@ Use the published stable Runner for the public-facing recording:
 
 ```bash
 SYNAPSOR_DEMO_RUNNER_MODE=published \
-SYNAPSOR_DEMO_RUNNER_VERSION=0.1.12 \
+SYNAPSOR_DEMO_RUNNER_VERSION=1.5.3 \
 corepack pnpm demo:video
 ```
 
@@ -84,6 +84,36 @@ docs/launch/asset-manifest.md
 ```
 
 The `out/` directory is ignored by Git.
+
+## 36-Second Safe Action Cut
+
+The adoption cut uses the same real disposable PostgreSQL flow without a Cloud
+account. One command resets the fixture, records proposal/approval/apply/retry,
+proves a second stale proposal fails with `VERSION_CONFLICT`, renders large
+captioned frames, and verifies the media:
+
+```bash
+SYNAPSOR_DEMO_RUNNER_MODE=local corepack pnpm demo:safe-action
+```
+
+After a product capture already exists, rerender visual-only changes with:
+
+```bash
+corepack pnpm demo:safe-action:from-results
+```
+
+Output:
+
+```text
+docs/launch/out/synapsor-safe-action-demo.mp4
+docs/launch/out/synapsor-safe-action-demo.gif
+docs/launch/out/synapsor-safe-action-poster.jpg
+```
+
+The verifier requires a 36-second 1920x1080 H.264 silent MP4, checks the
+recorded source-unchanged, one-row receipt, retry, and stale-conflict evidence,
+and scans all three assets for secret or local-path markers. The public website
+uses the MP4 and poster with an English WebVTT caption track.
 
 ## Development Draft
 

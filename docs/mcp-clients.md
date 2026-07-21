@@ -15,6 +15,11 @@ The complete copy-paste templates live in:
 - every local `synapsor-runner contract bundle` output;
 - every downloadable Synapsor Cloud runner bundle.
 
+For one shared proposal call across Claude Code, Codex, VS Code, OpenAI Agents,
+LangChain/LangGraph, Google ADK, LlamaIndex, and generic MCP clients, see
+[Client And Framework Recipes](client-recipes.md). Each recipe states whether
+it is host-tested, configuration-tested, protocol-tested, or recipe-only.
+
 Before connecting a client, validate the local boundary:
 
 ```bash

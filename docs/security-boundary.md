@@ -36,6 +36,7 @@ The model does not receive:
 - a generic `execute_sql` tool;
 - arbitrary table, schema, or column names;
 - database URLs or credentials;
+- contract activation tools;
 - approval tools;
 - commit/writeback tools;
 - trusted tenant or principal authority as ordinary model arguments.
@@ -83,6 +84,18 @@ explicit host-level administrative boundary.
 
 Proposal tools read the current row through the read credential, store evidence
 and an exact before/after diff, and leave the source database unchanged.
+
+Code-first Safe Actions do not create authority when a file is edited. Runner
+parses the restricted TypeScript object without importing or executing it,
+compiles it into a digest-addressed disabled canonical draft, and keeps the
+active contract pointer unchanged. Activation is available only in the
+session-token/CSRF-protected localhost Workbench after a matching real staging
+proposal proves `source_database_changed:false`; the operator must confirm the
+complete digest. A proposal remains pinned to the active contract digest it was
+created under, so later activation cannot reinterpret an old approval. Cloud-
+linked projects route activation through Cloud governance instead of the local
+control. No model-facing MCP tool can validate-and-activate, approve, apply, or
+revert.
 
 The local proposal store rejects obvious credential material before persistence:
 database URLs, bearer tokens, Synapsor runner tokens, private-key blocks, and
@@ -145,11 +158,13 @@ database identifiers such as `../private`, `id/../../tenant_id`, or
 `status; DROP TABLE tickets` before adapter execution. Local CLI file paths
 remain explicit user-provided paths; they are not model-facing authority.
 
-Local review can happen through the CLI or `synapsor-runner ui`. The UI is a localhost
-review surface with a per-run session token and CSRF protection for
-approve/reject actions. It does not expose raw SQL, database URLs, write
-credentials, approval tools, commit tools, or controls that widen reviewed
-tables/columns.
+Local review can happen through the CLI or `synapsor-runner ui`. The UI is a
+localhost review surface with a per-run session token and CSRF protection for
+approve/reject and Safe Action draft controls. Activation additionally requires
+a matching source-unchanged preview plus the complete digest. These operator
+controls are not MCP tools. The UI does not expose raw SQL, database URLs, or
+write credentials, and it does not let a model widen reviewed tables, columns,
+scope, policy, or executor authority.
 
 Contract lint and tests are review aids rather than a proof of complete
 security. Capability breadth can still drift as narrow tools accumulate;

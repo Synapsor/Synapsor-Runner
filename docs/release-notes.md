@@ -10,6 +10,36 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.5.3 (prepared, not published)
+
+### Intent to Safe Action
+
+- `start --action <name> --description <intent>` creates one inert TypeScript
+  Safe Action scaffold from an existing reviewed read boundary. Project-scoped
+  instructions let a coding agent complete and validate only the draft.
+- `action validate` statically parses the restricted object and emits a
+  digest-addressed disabled canonical draft, explanation, and deterministic
+  allow/deny/effect tests. It does not import adopter code, activate the action,
+  or alter the active MCP tool catalog.
+- The secured Workbench runs one real source-unchanged staging Data PR before
+  activation and requires `ACTIVATE` plus the complete digest. Cloud-linked
+  projects use governed Cloud activation. Existing proposals remain bound to
+  the exact active contract digest they were created under.
+- The package includes a current-format Cursor plugin with
+  `/synapsor-protect`, diagnostics, deterministic package verification, and
+  project-safe MCP wiring. Cursor host claims remain evidence-labeled; a stable
+  UI pass and Marketplace submission are owner gates.
+- MCP audit now renders a model-authority map and opt-in bypass evidence as
+  text, JSON, Markdown, or SARIF. A checked-in GitHub Actions workflow and Safe
+  Action team CI are deterministic and non-mutating.
+- Proposal-only integration recipes cover Claude Code, Codex, VS Code, OpenAI
+  Agents, LangChain/LangGraph, Google ADK, LlamaIndex, and generic MCP clients.
+- The first two README screens, public website, article, discovery routes, and
+  36-second evidence-backed demo now lead with the own-project Data PR path.
+
+Prepared package version: `@synapsor/runner@1.5.3`. Spec, DSL, and Cloud CLI
+packages are unchanged. Nothing has been published by this repository change.
+
 ## 1.5.2 (prepared, not published)
 
 ### First safe action in an existing application

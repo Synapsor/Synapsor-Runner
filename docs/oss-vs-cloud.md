@@ -22,6 +22,7 @@ runtime stay local.
 | Contract source | Local files reviewed in Git | Shared registry with immutable versions and digests |
 | Trusted context | Local environment/session bindings | Registered bindings plus deployment-specific Cloud session context |
 | Capabilities | Local semantic MCP tools | Registry, version history, and capability inspection |
+| Safe Action activation | Explicit digest-confirmed local Workbench activation after a source-unchanged staging Data PR | Governed Cloud activation and immutable registry version; local coding agents still cannot activate |
 | Evidence and replay | Local SQLite ledger by default; optional shared Postgres runtime store | Redacted shared chronology and references; full evidence payload stays local by default |
 | Approval | Local CLI or localhost UI | Human-authenticated shared approval inbox; unavailable to MCP/Runner tokens |
 | Writeback | Guarded one-row CRUD, fixed/frozen bounded sets, or app-owned executor | Durable approval/job/lease coordination; the local Runner rechecks and executes |
@@ -36,6 +37,8 @@ runtime stay local.
 - direct access to Postgres or MySQL;
 - the process that executes guarded writeback;
 - local development ledgers when Cloud linkage is not enabled.
+- local disabled Safe Action drafts, project agent instructions, and source
+  database preview/writeback execution.
 
 Cloud contract registration does not require uploading database credentials or
 business rows. A Runner bundle contains the normalized contract, placeholder

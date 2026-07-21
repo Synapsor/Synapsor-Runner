@@ -23,6 +23,10 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 02 Why Raw SQL Is Dangerous
 
+- [Choose The Smallest Safe Database Boundary](alternatives.md): compare raw
+  database MCP, direct read-only access, hand-built application tools, and
+  Synapsor Runner, including when each is sufficient and what remains outside
+  Runner's protection.
 - [Security Boundary](security-boundary.md): what the model can and cannot see.
 - [Why Synapsor Over Prompt And Application
   Guardrails](why-synapsor-vs-app-guardrails.md): where SQL authority lives,
@@ -49,6 +53,9 @@ no-database demo, wire your database, then read deeper concepts.
   activation report.
 - [Use Your Own Database](use-your-own-database.md): short entry point that
   links to the canonical own-database guide.
+- [Fresh-Developer Usability Protocol](fresh-developer-usability.md): the
+  repeatable five-person launch gate, timing rules, safety blockers, and honest
+  reporting template. External participant results are not yet claimed.
 - [Doctor](doctor.md): redacted setup checks, handler probes, direct SQL
   writeback probes, and receipt-table guidance.
 - [Database-Enforced Scope](database-enforced-scope.md): application-level
@@ -65,6 +72,14 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 05 Generate Capabilities
 
+- [Connect Your Own
+  Database](getting-started-own-database.md#draft-another-safe-action-with-a-coding-agent):
+  describe one action, let a coding agent complete only the restricted
+  TypeScript draft, validate it deterministically, preview an exact staging
+  Data PR, and activate the reviewed digest outside MCP.
+- [Cursor Plugin](cursor-plugin.md): project-scoped `/synapsor-protect`, Safe
+  Action diagnostics, package verification, and the explicit no-activation
+  boundary.
 - [Reviewed Prisma, Drizzle, And OpenAPI
   Candidates](schema-api-candidates.md): turn structural developer artifacts
   into deterministic, disabled canonical review candidates without executing
@@ -101,6 +116,10 @@ no-database demo, wire your database, then read deeper concepts.
   another stdio MCP client.
 - [MCP Client Configs](mcp-clients.md): complete Claude, Cursor, OpenAI Agents,
   generic stdio, and Streamable HTTP templates.
+- [Client And Framework Recipes](client-recipes.md): one proposal-only
+  support-plan-credit flow for Claude Code, Codex, VS Code, OpenAI Agents,
+  LangChain/LangGraph, Google ADK, LlamaIndex, and generic MCP clients, with
+  explicit evidence labels.
 - `examples/claude-desktop-postgres/`: copy-paste Claude Desktop config for the
   Postgres billing fixture.
 - `examples/cursor-postgres/`: copy-paste Cursor config for the Postgres

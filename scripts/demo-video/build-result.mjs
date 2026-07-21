@@ -36,6 +36,11 @@ const inspect = await json("inspect.json");
 const proposal = await json("proposal.json");
 const beforeApproval = await json("proposal-before-approval.json");
 const afterApply = await json("proposal-after-apply.json");
+const staleProposal = await json("stale-proposal.json");
+const staleBeforeApply = await json("stale-proposal-before-apply.json");
+const staleAfterApply = await json("stale-proposal-after-apply.json");
+const specPackage = JSON.parse(await readFile(path.join(repoRoot, "packages/spec/package.json"), "utf8"));
+const dslPackage = JSON.parse(await readFile(path.join(repoRoot, "packages/dsl/package.json"), "utf8"));
 const contractSource = await readFile(path.join(repoRoot, "examples/support-plan-credit/contract.synapsor.sql"), "utf8");
 const audit = await text("audit.md");
 const auditSummary = audit.match(/Findings: HIGH (\d+) \| MEDIUM (\d+) \| LOW (\d+)/);
@@ -60,11 +65,20 @@ const source = {
   before: sourceRow(await text("source-before.txt")),
   after_proposal: sourceRow(await text("source-after-proposal.txt")),
   after_apply: sourceRow(await text("source-after-apply.txt")),
+  after_stale_refusal: sourceRow(await text("source-after-stale.txt")),
 };
 if (source.before.plan_credit_cents !== 0 || source.after_proposal.plan_credit_cents !== 0) {
   throw new Error("source changed before approval");
 }
 if (source.after_apply.plan_credit_cents !== 10000) throw new Error("guarded writeback did not apply expected credit");
+if (source.after_stale_refusal.plan_credit_cents !== 10000 || source.after_stale_refusal.credit_reason !== "SLA outage ticket SUP-481") {
+  throw new Error("stale proposal changed the reviewed business fields");
+}
+if (staleProposal.source_database_changed !== false) throw new Error("stale-check proposal mutated source database");
+if (staleBeforeApply.proposal?.state !== "pending_review") throw new Error("expected stale-check proposal to require review");
+if (staleAfterApply.proposal?.state !== "conflict") throw new Error(`expected stale-check conflict, got ${staleAfterApply.proposal?.state}`);
+const staleTranscript = await text("stale-apply.txt");
+if (!/VERSION_CONFLICT|conflict/i.test(staleTranscript)) throw new Error("stale apply transcript does not prove a conflict");
 
 let cloud = { complete: false };
 try {
@@ -82,8 +96,8 @@ const result = {
     commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim(),
     runner_mode: runnerMode,
     runner_version: runnerVersion,
-    spec_version: "0.1.4",
-    dsl_version: "0.1.4",
+    spec_version: specPackage.version,
+    dsl_version: dslPackage.version,
   },
   audit: {
     tools_inspected: Number(audit.match(/Tools inspected: (\d+)/)?.[1] ?? 0),
@@ -149,6 +163,16 @@ const result = {
     checks: ["proposal approved", "primary key matched", "tenant guard matched", "allowed columns only", "conflict guard passed", "affected rows: 1"],
     transcript: await text("apply.txt"),
     retry_transcript: await text("apply-retry.txt"),
+  },
+  stale_conflict: {
+    proposal_id: staleProposal.proposal_id,
+    capability: staleProposal.action,
+    diff: staleProposal.diff,
+    state_before_apply: "approved",
+    state_after_apply: staleAfterApply.proposal.state,
+    source_database_changed: false,
+    source_after_refusal: source.after_stale_refusal,
+    transcript: staleTranscript,
   },
   replay: {
     replay_id: `replay_${proposal.proposal_id}`,

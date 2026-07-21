@@ -11,6 +11,8 @@ describe("project context detection", () => {
     await fs.writeFile(path.join(root, "prisma/schema.prisma"), "this is deliberately not executable", "utf8");
     await fs.writeFile(path.join(root, "drizzle.config.ts"), "throw new Error('must not execute')", "utf8");
     await fs.writeFile(path.join(root, "openapi.yaml"), "openapi: 3.1.0\n", "utf8");
+    await fs.writeFile(path.join(root, "schema.sql"), "select 'must not execute';\n", "utf8");
+    await fs.mkdir(path.join(root, "migrations"));
     await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ dependencies: { next: "15", "drizzle-orm": "1" } }), "utf8");
     await fs.writeFile(path.join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
     await fs.writeFile(path.join(root, ".env.example"), [
@@ -31,6 +33,8 @@ describe("project context detection", () => {
       { kind: "prisma", path: "prisma/schema.prisma" },
       { kind: "drizzle", path: "drizzle.config.ts" },
       { kind: "openapi", path: "openapi.yaml" },
+      { kind: "sql", path: "schema.sql" },
+      { kind: "sql", path: "migrations/" },
     ]);
     expect(JSON.stringify(result)).not.toMatch(/super-secret|mysql:\/\//i);
     expect(formatProjectDetection(result)).toContain(".env values were not read");

@@ -4,27 +4,27 @@
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml?query=branch%3Amain)
 
+**Let AI agents change real application data without giving the model SQL.**
+
 **MCP connects the agent. Synapsor controls the commit.**
 
-Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It
-gives agents reviewed business actions instead of `execute_sql`, saves risky
-changes as proposals, and keeps database credentials, approval, and writeback
-outside the model-facing surface.
+Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It gives
+agents reviewed business actions, records proposed changes as exact Data PRs,
+and keeps credentials, activation, approval, and commit authority outside the
+model-facing surface.
 
-The shortest path is: prove the boundary -> audit an existing MCP setup ->
-connect staging -> review one action -> add it to Cursor -> inspect the first
-exact Data PR.
+## Prove The Boundary In Four Seconds
 
-## Prove It In 60 Seconds
-
-First, prove the boundary without a database, Docker, config, MCP client, LLM,
-or account:
+No database, Docker, config, MCP client, LLM, or account is required:
 
 ```bash
 npx -y @synapsor/runner try --prove
 ```
 
-The embedded synthetic source requests a $55 waiver and shows:
+The four-second product measurement begins after package resolution. A cold
+`npx` download is recorded separately because registry and network time vary.
+
+The embedded synthetic source requests a $55 waiver and proves:
 
 ```text
 Proposed effect: late_fee_cents: 5500 -> 0
@@ -35,10 +35,64 @@ Stale apply refused: yes
 ```
 
 Review happens outside the model-facing tools. The command stores inspectable
-state under `./.synapsor/try/` and does not test your database connection.
-`demo --quick` remains a noninteractive compatibility alias.
+state under `./.synapsor/try/`; it teaches the boundary and does not claim to
+test your database connection. `demo --quick` remains a noninteractive compatibility alias.
 
-Next, audit a typical raw-SQL MCP server:
+## Protect One Action In Your Application
+
+Start with a staging database and a read-only credential. Runner inspects
+metadata, creates one reviewed read boundary, and opens the secured localhost
+Workbench:
+
+```bash
+npm install -g @synapsor/runner
+export DATABASE_URL="postgresql://runner_reader:REPLACE_ME@db.example.com:5432/app?sslmode=require"
+synapsor-runner start --from-env DATABASE_URL --schema public
+```
+
+Describe one business action. This creates an inert TypeScript draft; it does
+not add a tool or change the active contract:
+
+```bash
+synapsor-runner start \
+  --action plan_credit \
+  --description "Propose one reviewed customer plan credit" \
+  --based-on support.inspect_customer
+```
+
+Add the reviewed tools to the current Cursor project:
+
+```bash
+synapsor-runner mcp install cursor --project \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+In Cursor, use the Workbench's exact prompt. The checked-in project
+instructions require the coding agent to draft and validate the action while
+leaving effect review and activation to you. Once activated, a request such as
+"give CUS-3001 a $25 plan credit" can only create a semantic proposal:
+
+```text
+Data PR  wrp_...
+Action   support.propose_plan_credit on CUS-3001
+Effect   plan_credit_cents: 0 -> 2500
+Source unchanged before approval: Yes
+```
+
+Review the exact effect in the secured Workbench, select **Approve outside
+MCP**, then run the displayed guarded apply command from a trusted terminal.
+The agent has no approval or commit tool. Runner rechecks scope, policy, row
+version, bounds, and idempotency before returning a receipt; a retry cannot
+duplicate the mutation and a stale proposal conflicts.
+
+See the [own-database guide](docs/getting-started-own-database.md) for the full
+staging path and [Cursor plugin guide](docs/cursor-plugin.md) for
+`/synapsor-protect` and the plugin boundary.
+
+## Audit An Existing MCP Server
+
+Audit a typical raw-SQL MCP server without launching or calling one:
 
 ```bash
 npx -y @synapsor/runner audit --example dangerous-db-mcp
@@ -53,9 +107,10 @@ npx -y @synapsor/runner audit ./tools-list.json
 It flags raw SQL, arbitrary identifiers, model-controlled authority,
 model-facing approval/writeback, and missing conflict or idempotency signals.
 It does not call business tools. See [MCP Database Risk
-Review](docs/mcp-audit.md) for supported workflows and limits.
-
-Then [connect a staging database](#connect-a-staging-database).
+Review](docs/mcp-audit.md) for local manifests, selected-server checks, CI,
+SARIF, evidence labels, and limits. You may not need Runner: use the
+[alternatives guide](docs/alternatives.md) to compare direct read-only access,
+hand-built tools, and this reviewed boundary.
 
 ## Safety Model
 
@@ -108,72 +163,16 @@ credentials. See [Database scope] and the
 
 ## Connect A Staging Database
 
-Start with staging and a read-only credential. Keep database permissions,
-views, and RLS.
+The setup above stores environment-variable names, not connection strings, and
+never falls back to synthetic data if inspection fails. Keep staging, database
+permissions, restricted views, and RLS underneath Runner. Bind trusted tenant
+and principal values in the launching process, then review the exact field and
+tool surface before connecting Cursor.
 
-```bash
-npm install -g @synapsor/runner
-export DATABASE_URL="postgresql://runner_reader:REPLACE_ME@db.example.com:5432/app?sslmode=require"
-synapsor-runner start --from-env DATABASE_URL --schema public
-```
-
-The wizard inspects metadata, generates one canonical reviewed contract,
-previews the exact MCP tools, and opens the secured localhost first-action
-workbench in an interactive terminal. It stores environment-variable names,
-not connection strings. Use `--no-open` for scripts and CI.
-
-To enter the same own-data path directly from the synthetic proof, run:
-
-```bash
-synapsor-runner try --prove --from-env DATABASE_URL
-```
-
-This defaults to a read-only action and never falls back to synthetic data if
-inspection fails.
-
-The generated action is a tenant-scoped read with an explicit field allowlist,
-kept-out fields, and required evidence. See the [own-database
-guide](docs/getting-started-own-database.md) for the generated contract and
-[schema/API candidates](docs/schema-api-candidates.md) for disabled Prisma,
-Drizzle, or OpenAPI review candidates.
-
-Set the trusted values in the process that launches Runner, then validate and
-preview the exact model-facing boundary before connecting an MCP client:
-
-```bash
-export SYNAPSOR_TENANT_ID="acme"
-export SYNAPSOR_PRINCIPAL="local-developer"
-synapsor-runner config validate --config ./synapsor.runner.json
-synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
-synapsor-runner mcp install cursor --project --config ./synapsor.runner.json --store ./.synapsor/local.db
-synapsor-runner mcp status cursor --project --check-launch
-```
-
-The project installer previews and confirms a merge into `.cursor/mcp.json`,
-backs up existing configuration, preserves other MCP servers, and writes only
-an exact-version `npx` command plus local paths. It never writes database URLs,
-trusted tenant/principal values, approval, or apply authority. Cursor receives
-only reviewed read/proposal tools; review and commit remain in the local UI or
-operator CLI. See the [host compatibility matrix](docs/host-compatibility.md).
-
-Inspect or export the local, telemetry-free activation funnel at any time:
-
-```bash
-synapsor-runner activation show --config ./synapsor.runner.json --store ./.synapsor/local.db
-synapsor-runner activation export --out ./.synapsor/activation-report.json
-```
-
-Product activation timings start after package installation. Cold `npx`
-download time is recorded separately and is not presented as a universal
-network-speed claim.
-
-For proposal capabilities and writes, follow the
-[complete own-database guide](docs/getting-started-own-database.md). Reviewed
-single-row INSERT, UPDATE, and DELETE can use Runner's guarded direct
-writeback. Fixed-predicate [bounded sets](docs/bounded-set-writeback.md) and
-[reviewed compensation](docs/reversible-change-sets.md) remain explicit,
-bounded operator workflows. Free-form, unbounded, cross-table, or external
-effects use an [app-owned executor](docs/writeback-executors.md).
+The [complete own-database guide](docs/getting-started-own-database.md) covers
+validation, scoped reads, disabled Prisma/Drizzle/OpenAPI candidates, guarded
+single-row writes, and app-owned executors. Use the [host compatibility
+matrix](docs/host-compatibility.md) for accurately tested client behavior.
 
 ## Review And Prove Your Contract
 

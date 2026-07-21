@@ -50,6 +50,42 @@ network connection or connecting to a database. From a source checkout,
 `corepack pnpm verify:adoption` runs this boundary check plus the no-database
 quick demo and MCP config validation.
 
+## Clone And Validate The Same Safe Action
+
+The checked-in code-first action is
+[`synapsor/actions/support.propose_plan_credit.ts`](synapsor/actions/support.propose_plan_credit.ts).
+It is a reviewable frontend for the same canonical JSON contract, not another
+runtime format. Editing it cannot change active tools.
+
+After cloning the repository and installing dependencies, another developer can
+run the deterministic team gate without a database or Cloud account:
+
+```bash
+corepack pnpm install --frozen-lockfile
+corepack pnpm verify:safe-action-team
+```
+
+The verifier copies this example to a disposable directory, compiles the action
+only as a disabled draft, compares the regenerated boundary tests with the
+checked-in file, proves the config and active contract are unchanged, and emits
+text, JSON, and JUnit reports under `tmp/safe-action-team-ci/`. Its static gate
+covers the exact proposal effect, trusted scope, evidence requirement, approval
+policy, operator separation, kept-out fields, argument bounds, and conflict
+guard. It performs no approval, activation, source read, or source mutation.
+
+The same gate runs in
+[`safe-action-ci.yml`](https://github.com/Synapsor/Synapsor-Runner/blob/main/.github/workflows/safe-action-ci.yml).
+CI adds a disposable PostgreSQL service and runs the generated allowed-effect,
+cross-tenant-denial, and source-unchanged assertions. It uses an amount above
+the auto-approval threshold, performs no approval or apply, and requires source
+rows and source receipt state to remain equivalent before and after the live
+suite.
+For a real staging preview, each developer supplies their own
+`PLAN_CREDIT_POSTGRES_READ_URL`, `PLAN_CREDIT_POSTGRES_WRITE_URL`,
+`SYNAPSOR_TENANT_ID`, and `SYNAPSOR_PRINCIPAL` outside Git, then follows the
+Quick Start below. Cursor receives the same proposal-only tools; activation,
+approval, and apply remain outside the agent.
+
 ## Quick Start
 
 ```bash
@@ -199,9 +235,19 @@ shape without guessing which state should change.
 Copy the matching template from [`mcp-client-examples/`](mcp-client-examples/):
 
 - Claude Desktop: `claude-desktop.json`
+- Claude Code: `claude-code.sh`
+- Codex: `codex.config.toml`
 - Cursor project/global: `cursor-project.mcp.json`, `cursor-global.mcp.json`
+- VS Code: `vscode.mcp.json`
 - OpenAI Agents SDK: stdio and Streamable HTTP TypeScript examples
-- generic MCP: stdio and Streamable HTTP JSON examples
+- LangChain/LangGraph: `langchain.mjs`
+- Google ADK: `google-adk.py`
+- LlamaIndex: `llamaindex.py`
+- generic MCP: stdio and Streamable HTTP JSON and JavaScript examples
+
+See [Client And Framework Recipes](../../docs/client-recipes.md) for current
+official references, exact proposal input, evidence labels, and the mechanical
+verification gate.
 
 For Streamable HTTP, run:
 

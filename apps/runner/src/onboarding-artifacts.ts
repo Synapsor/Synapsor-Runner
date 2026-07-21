@@ -12,7 +12,7 @@ export type ProjectDetectionSummary = {
   root: string;
   package_manager?: "pnpm" | "npm" | "yarn" | "bun";
   frameworks: string[];
-  schema_inputs: Array<{ kind: "prisma" | "drizzle" | "openapi" | "synapsor"; path: string }>;
+  schema_inputs: Array<{ kind: "prisma" | "drizzle" | "openapi" | "sql" | "synapsor"; path: string }>;
   database_env_names: string[];
 };
 

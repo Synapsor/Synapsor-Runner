@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CompletionItemKind,
   createConnection,
@@ -13,6 +16,8 @@ import {
 } from "vscode-languageserver/node.js";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { formatAgentDsl, validateAgentDsl } from "@synapsor/dsl";
+import { normalizeContract } from "@synapsor/spec";
+import { parseSafeActionSource, validateSafeActionCapability, type SafeActionDiagnostic } from "./safe-action.js";
 
 type HoverEntry = { title: string; detail: string; reference: string };
 
@@ -63,6 +68,26 @@ export function lspDiagnosticsForSource(source: string): Diagnostic[] {
     ...result.errors.map((issue) => diagnosticForIssue(source, issue, DiagnosticSeverity.Error)),
     ...result.warnings.map((issue) => diagnosticForIssue(source, issue, DiagnosticSeverity.Warning)),
   ].sort((left, right) => left.range.start.line - right.range.start.line || left.range.start.character - right.range.start.character || String(left.code).localeCompare(String(right.code)));
+}
+
+export async function lspDiagnosticsForDocument(uri: string, source: string): Promise<Diagnostic[]> {
+  const filePath = localFilePath(uri);
+  if (!filePath || !isSafeActionPath(filePath)) return lspDiagnosticsForSource(source);
+  try {
+    const capability = parseSafeActionSource(source, filePath);
+    const projectRoot = path.resolve(path.dirname(filePath), "../..");
+    const configPath = path.join(projectRoot, "synapsor.runner.json");
+    const config = await readRegularJson(configPath, "Runner config");
+    if (!Array.isArray(config.contracts) || config.contracts.length !== 1 || typeof config.contracts[0] !== "string") {
+      return [safeActionProjectDiagnostic(source, "SAFE_ACTION_SINGLE_CONTRACT_REQUIRED", "Safe Action editor validation requires exactly one canonical contract reference in synapsor.runner.json.")];
+    }
+    const contractPath = path.resolve(path.dirname(configPath), config.contracts[0]);
+    if (!isInside(projectRoot, contractPath)) return [safeActionProjectDiagnostic(source, "SAFE_ACTION_CONTRACT_OUTSIDE_PROJECT", "The active canonical contract must stay inside the project for Safe Action editor validation.")];
+    const contract = normalizeContract(await readRegularJson(contractPath, "canonical contract"));
+    return validateSafeActionCapability(capability, contract, config).map((diagnostic) => diagnosticForSafeAction(source, diagnostic));
+  } catch (error) {
+    return [diagnosticForSafeActionError(source, error)];
+  }
 }
 
 export function lspCompletionsForSource(source: string, line: number): CompletionItem[] {
@@ -127,23 +152,24 @@ export async function runLanguageServer(): Promise<number> {
   };
 
   connection.onInitialize(() => result);
-  const publish = (document: TextDocument): void => {
-    connection.sendDiagnostics({ uri: document.uri, diagnostics: lspDiagnosticsForSource(document.getText()) });
+  const publish = async (document: TextDocument): Promise<void> => {
+    connection.sendDiagnostics({ uri: document.uri, diagnostics: await lspDiagnosticsForDocument(document.uri, document.getText()) });
   };
-  documents.onDidOpen((event) => publish(event.document));
-  documents.onDidChangeContent((event) => publish(event.document));
+  documents.onDidOpen((event) => { void publish(event.document); });
+  documents.onDidChangeContent((event) => { void publish(event.document); });
   documents.onDidClose((event) => connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] }));
   connection.onCompletion((params) => {
     const document = documents.get(params.textDocument.uri);
-    return document ? lspCompletionsForSource(document.getText(), params.position.line) : [];
+    return document && !isSafeActionUri(document.uri) ? lspCompletionsForSource(document.getText(), params.position.line) : [];
   });
   connection.onHover((params) => {
     const document = documents.get(params.textDocument.uri);
-    return document ? lspHoverForSource(document.getText(), params.position.line, params.position.character) : null;
+    return document && !isSafeActionUri(document.uri) ? lspHoverForSource(document.getText(), params.position.line, params.position.character) : null;
   });
   connection.onDocumentFormatting((params) => {
     const document = documents.get(params.textDocument.uri);
     if (!document) return [];
+    if (isSafeActionUri(document.uri)) return [];
     try {
       return lspFormatEdits(document.getText());
     } catch {
@@ -153,6 +179,80 @@ export async function runLanguageServer(): Promise<number> {
   documents.listen(connection);
   connection.listen();
   return await new Promise<number>((resolve) => connection.onExit(() => resolve(0)));
+}
+
+function diagnosticForSafeAction(source: string, issue: SafeActionDiagnostic): Diagnostic {
+  const location = safeActionPathLocation(source, issue.path);
+  return {
+    range: { start: location, end: { line: location.line, character: location.character + 1 } },
+    severity: issue.severity === "error" ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
+    code: issue.code,
+    source: "synapsor-safe-action",
+    message: issue.message,
+  };
+}
+
+function diagnosticForSafeActionError(source: string, error: unknown): Diagnostic {
+  const message = error instanceof Error ? error.message : String(error);
+  const parenthesized = message.match(/\((\d+),(\d+)\):\s*([A-Z][A-Z0-9_]+):\s*([^\n]+)/);
+  const colonLocation = message.match(/\b([A-Z][A-Z0-9_]+)\b\s+[^\n]*?:(\d+):(\d+):\s*([^\n]+)/);
+  const simple = message.match(/\b([A-Z][A-Z0-9_]+)\b:\s*([^\n]+)/);
+  const line = Math.max(0, Number(parenthesized?.[1] ?? colonLocation?.[2] ?? 1) - 1);
+  const character = Math.max(0, Number(parenthesized?.[2] ?? colonLocation?.[3] ?? 1) - 1);
+  const sourceLine = source.split(/\r?\n/)[line] ?? "";
+  return {
+    range: { start: { line, character: Math.min(character, sourceLine.length) }, end: { line, character: Math.min(Math.max(character + 1, 1), sourceLine.length || 1) } },
+    severity: DiagnosticSeverity.Error,
+    code: parenthesized?.[3] ?? colonLocation?.[1] ?? simple?.[1] ?? "SAFE_ACTION_EDITOR_VALIDATION_FAILED",
+    source: "synapsor-safe-action",
+    message: parenthesized?.[4] ?? colonLocation?.[4] ?? simple?.[2] ?? "Safe Action editor validation failed closed. Run action validate for complete diagnostics.",
+  };
+}
+
+function safeActionProjectDiagnostic(source: string, code: string, message: string): Diagnostic {
+  return diagnosticForSafeAction(source, { severity: "error", code, message });
+}
+
+function safeActionPathLocation(source: string, issuePath?: string): { line: number; character: number } {
+  const segment = issuePath?.split(".").filter(Boolean).at(-1);
+  if (!segment) return { line: 0, character: 0 };
+  const lines = source.split(/\r?\n/);
+  for (const [line, text] of lines.entries()) {
+    const character = text.indexOf(segment);
+    if (character >= 0) return { line, character };
+  }
+  return { line: 0, character: 0 };
+}
+
+async function readRegularJson(filePath: string, label: string): Promise<Record<string, unknown>> {
+  const stat = await fs.lstat(filePath);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`SAFE_ACTION_PROJECT_FILE_INVALID: ${label} must be a regular non-symlink file.`);
+  const value: unknown = JSON.parse(await fs.readFile(filePath, "utf8"));
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`SAFE_ACTION_PROJECT_FILE_INVALID: ${label} must contain a JSON object.`);
+  return value as Record<string, unknown>;
+}
+
+function localFilePath(uri: string): string | undefined {
+  try {
+    return uri.startsWith("file:") ? fileURLToPath(uri) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isSafeActionUri(uri: string): boolean {
+  const filePath = localFilePath(uri);
+  return Boolean(filePath && isSafeActionPath(filePath));
+}
+
+function isSafeActionPath(filePath: string): boolean {
+  const normalized = filePath.split(path.sep).join("/");
+  return normalized.endsWith(".ts") && normalized.includes("/synapsor/actions/");
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
 function diagnosticForIssue(

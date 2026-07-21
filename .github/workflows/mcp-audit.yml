@@ -1,0 +1,51 @@
+name: mcp-audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/mcp-audit.yml"
+      - "fixtures/mcp-audit/**"
+      - "packages/worker-core/src/mcp-audit.ts"
+      - "schemas/mcp-audit-report.schema.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mcp-audit.yml"
+      - "fixtures/mcp-audit/**"
+      - "packages/worker-core/src/mcp-audit.ts"
+      - "schemas/mcp-audit-report.schema.json"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm build:runner-package
+      - name: Verify deterministic dangerous fixture
+        run: |
+          node apps/runner/dist/cli.js audit fixtures/mcp-audit/dangerous-tools-list.json --format json > dangerous-audit.json
+          node -e 'const r=require("./dangerous-audit.json"); if(!r.findings.some((f)=>f.code==="GENERIC_SQL_TOOL")) process.exit(1)'
+      - name: Create SARIF for the reviewed proposal surface
+        run: node apps/runner/dist/cli.js audit fixtures/mcp-audit/reviewed-proposal-tools-list.json --format sarif > mcp-audit.sarif
+      - name: Verify SARIF shape
+        run: node -e 'const fs=require("node:fs"); const r=JSON.parse(fs.readFileSync("./mcp-audit.sarif", "utf8")); if(r.version!=="2.1.0" || !Array.isArray(r.runs)) process.exit(1)'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synapsor-mcp-audit
+          path: |
+            dangerous-audit.json
+            mcp-audit.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: github.event_name != 'pull_request'
+        with:
+          sarif_file: mcp-audit.sarif

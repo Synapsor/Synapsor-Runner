@@ -8,6 +8,23 @@ TARBALL="${SYNAPSOR_RUNNER_TARBALL:-}"
 REMOVE_TARBALL=0
 COMPOSE_FILE="$ROOT/examples/mcp-postgres-billing/docker-compose.yml"
 
+now_ms() {
+  node -e 'process.stdout.write(String(Date.now()))'
+}
+
+host_postgres_port_ready() {
+  node -e '
+    const net = require("node:net");
+    const socket = net.connect({ host: "127.0.0.1", port: 55433 });
+    socket.once("connect", () => socket.end());
+    socket.once("error", () => process.exit(1));
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      process.exit(1);
+    });
+  '
+}
+
 cleanup() {
   docker compose -f "$COMPOSE_FILE" down -v >/dev/null 2>&1 || true
   rm -rf "$TEMP_DIR"
@@ -44,7 +61,11 @@ docker compose -f "$COMPOSE_FILE" up -d >/dev/null
 
 READY=0
 for _ in $(seq 1 90); do
-  if docker exec synapsor_runner_mcp_postgres_billing pg_isready -U synapsor_admin -d synapsor_runner_mcp_billing >/dev/null 2>&1; then
+  READY_LOGS="$(docker logs synapsor_runner_mcp_postgres_billing 2>&1 | grep -cF "database system is ready to accept connections" || true)"
+  if [[ "$READY_LOGS" -ge 2 ]] \
+    && docker exec synapsor_runner_mcp_postgres_billing psql -U synapsor_reader -d synapsor_runner_mcp_billing -tAc \
+      "SELECT 1 FROM public.invoices LIMIT 1" >/dev/null 2>&1 \
+    && host_postgres_port_ready; then
     READY=1
     break
   fi
@@ -64,6 +85,7 @@ export DATABASE_URL="postgresql://synapsor_reader:synapsor_reader_password@local
 export SYNAPSOR_DATABASE_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_password@localhost:55433/synapsor_runner_mcp_billing"
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="packed_own_db_smoke"
+PRODUCT_STARTED_MS="$(now_ms)"
 
 npx synapsor-runner onboard db \
   --from-env DATABASE_URL \
@@ -119,6 +141,7 @@ npx synapsor-runner smoke call billing.propose_invoice_update \
   --json '{"invoice_id":"INV-3001","reason":"packed verifier waiver"}' \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db > proposal.out
+FIRST_PROPOSAL_MS="$(now_ms)"
 grep -F '"ok": true' proposal.out >/dev/null
 grep -F '"state": "review_required"' proposal.out >/dev/null
 grep -F '"id": "wrp_' proposal.out >/dev/null
@@ -127,6 +150,7 @@ npx synapsor-runner proposals approve latest --yes --store ./.synapsor/local.db 
 grep -F "approved" approve.out >/dev/null
 
 npx synapsor-runner apply latest --config ./synapsor.runner.json --store ./.synapsor/local.db > apply.out
+FIRST_RECEIPT_MS="$(now_ms)"
 grep -E "Guarded writeback (applied|already applied)" apply.out >/dev/null
 
 docker exec synapsor_runner_mcp_postgres_billing psql -U synapsor_admin -d synapsor_runner_mcp_billing -tAc \
@@ -136,4 +160,7 @@ grep -F "0|packed verifier waiver" invoice-after.txt >/dev/null
 npx synapsor-runner activity search --object invoice:INV-3001 --store ./.synapsor/local.db > activity.txt
 grep -F "INV-3001" activity.txt >/dev/null
 
+printf 'packed own-database product timing: first_proposal_ms=%s first_receipt_ms=%s\n' \
+  "$((FIRST_PROPOSAL_MS - PRODUCT_STARTED_MS))" \
+  "$((FIRST_RECEIPT_MS - PRODUCT_STARTED_MS))"
 echo "packed own-database onboarding verified in $TEMP_DIR"

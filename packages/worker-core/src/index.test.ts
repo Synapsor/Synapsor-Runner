@@ -264,7 +264,8 @@ describe("worker core", () => {
             properties: {
               sql: { type: "string" },
               tenant_id: { type: "string" },
-              table_name: { type: "string" }
+              table_name: { type: "string" },
+              where: { type: "string" }
             }
           }
         }
@@ -277,7 +278,17 @@ describe("worker core", () => {
     expect(report.findings.map((finding) => finding.code)).toContain("WRITE_TOOL_ACCEPTS_ARBITRARY_SQL");
     expect(report.findings.map((finding) => finding.code)).toContain("MODEL_CONTROLLED_TRUST_SCOPE");
     expect(report.findings.map((finding) => finding.code)).toContain("ARBITRARY_IDENTIFIER_INPUT");
+    expect(report.findings.map((finding) => finding.code)).toContain("ARBITRARY_PREDICATE_INPUT");
+    expect(report.authority_map.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ authority: "raw_query_tools", status: "observed", tools: ["execute_sql"] }),
+      expect.objectContaining({ authority: "model_controlled_trust", status: "observed", tools: ["execute_sql"] }),
+      expect.objectContaining({ authority: "arbitrary_predicate_inputs", status: "observed", tools: ["execute_sql"] }),
+      expect.objectContaining({ authority: "database_enforcement", status: "outside_static_audit_visibility" }),
+    ]));
+    expect(report.findings.every((finding) => finding.remediation_url.includes(`#finding-${finding.code.toLowerCase().replaceAll("_", "-")}`))).toBe(true);
     expect(formatMcpAuditReport(report)).toContain(MCP_AUDIT_DISCLAIMER);
+    expect(formatMcpAuditReport(report)).toContain("Model-authority map:");
+    expect(formatMcpAuditReport(report)).not.toContain("Overall risk");
     expect(formatMcpAuditReport(report)).toContain("Top distinct risks:");
     expect(formatMcpAuditReport(report)).not.toContain("WRITE_TOOL_ACCEPTS_ARBITRARY_SQL  execute_sql");
     expect(formatMcpAuditVerboseReport(report)).toContain("WRITE_TOOL_ACCEPTS_ARBITRARY_SQL  execute_sql");
@@ -379,6 +390,49 @@ describe("worker core", () => {
     expect(report.findings.map((finding) => finding.code)).not.toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");
     expect(report.findings.map((finding) => finding.code)).not.toContain("NO_IDEMPOTENCY_FIELD");
     expect(report.findings.map((finding) => finding.code)).not.toContain("NO_CONFLICT_GUARD");
+    expect(report.authority_map.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ authority: "semantic_proposal_tools", status: "observed", tools: ["billing.propose_late_fee_waiver"] }),
+      expect.objectContaining({ authority: "direct_write_tools", status: "not_observed", tools: [] }),
+    ]));
+  });
+
+  it("reports configured MCP bypass authority without executing unobserved servers", () => {
+    const report = auditMcpManifest({
+      mcpServers: {
+        synapsor: {
+          command: "npx",
+          args: ["-y", "-p", "@synapsor/runner", "synapsor-runner", "mcp", "serve"],
+        },
+        direct_database: {
+          command: "node",
+          args: ["./dangerous-server.mjs"],
+          tools: [
+            {
+              name: "execute_sql",
+              description: "Execute arbitrary SQL",
+              inputSchema: { type: "object", properties: { sql: { type: "string" } } },
+            },
+          ],
+        },
+      },
+    }, { target: "/home/alice/project/.cursor/mcp.json" });
+
+    expect(report.target).toBe("~/project/.cursor/mcp.json");
+    expect(report.bypass_check).toMatchObject({
+      mode: "static_config",
+      direct_bypass_observed: true,
+      unverified_servers: 1,
+    });
+    expect(report.summary.tools_inspected).toBe(1);
+    expect(report.authority_map.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ authority: "raw_query_tools", status: "observed", tools: ["execute_sql"] }),
+    ]));
+    expect(report.bypass_check?.servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ server: "direct_database", status: "observed_direct_authority", tools_observed: ["execute_sql"] }),
+      expect.objectContaining({ server: "synapsor", status: "requires_operator_verification", tools_observed: [] }),
+    ]));
+    expect(report.findings.map((finding) => finding.code)).toContain("MCP_BYPASS_DIRECT_AUTHORITY");
+    expect(formatMcpAuditReport(report)).toContain("Configured-server bypass check:");
   });
 });
 

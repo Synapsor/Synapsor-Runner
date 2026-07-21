@@ -19,7 +19,12 @@ mkdir -p "$DEMO_VIDEO_STATE_DIR"
 chmod 700 "$DEMO_VIDEO_STATE_DIR"
 
 if [[ "${1:-}" != "--keep-media" ]]; then
-  rm -f "$DEMO_VIDEO_MP4" "$DEMO_VIDEO_GIF"
+  rm -f \
+    "$DEMO_VIDEO_MP4" \
+    "$DEMO_VIDEO_GIF" \
+    "$DEMO_VIDEO_SHORT_MP4" \
+    "$DEMO_VIDEO_SHORT_GIF" \
+    "$DEMO_VIDEO_SHORT_POSTER"
 fi
 
 "$SCRIPT_DIR/seed.sh"

@@ -105,6 +105,7 @@ import { runEffectCommandAdapter } from "./effect-command.js";
 import { generateAuditCandidateDirectory } from "./audit-candidates.js";
 import { buildLocalActivationReport, formatLocalActivationReport, recordOwnDataActivationTiming } from "./activation-report.js";
 import type { SchemaCandidateFormat } from "./schema-candidates.js";
+import { compileSafeActionDraft, safeActionStatus, scaffoldSafeAction, SafeActionValidationError } from "./safe-action.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -467,6 +468,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "propose") return propose(rest);
   if (command === "audit") return audit(rest);
   if (command === "start") return start(rest);
+  if (command === "action") return actionCommand(rest);
   if (command === "up") return up(rest);
   if (command === "runner") return runnerCommand(rest);
   if (command === "cloud") return cloud(rest);
@@ -6266,6 +6268,18 @@ export async function verifyLocalWritebackAuthority(
       if (proposal.proposal_hash !== job.approval_id) {
         throw new Error("writeback approval/proposal digest does not match local proposal");
       }
+      const proposalContract = proposal.change_set.contract;
+      const reviewedContract = matching.contract_provenance;
+      if (reviewedContract) {
+        if (!proposalContract?.digest) {
+          throw new Error("local proposal is missing the immutable active contract digest");
+        }
+        if (proposalContract.digest !== reviewedContract.digest) {
+          throw new Error("local proposal contract digest does not match the active reviewed contract; create and review a new proposal");
+        }
+      } else if (proposalContract?.digest) {
+        throw new Error("local proposal is bound to a contract digest, but the active reviewed capability has no matching contract provenance");
+      }
       const proposalPrincipalScope = proposal.change_set.guards.principal_scope;
       if (reviewedPrincipalColumn) {
         if (!proposalPrincipalScope || proposalPrincipalScope.column !== reviewedPrincipalColumn || proposalPrincipalScope.value === undefined) {
@@ -6408,6 +6422,7 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
 }
 
 async function start(args: string[] = []): Promise<number> {
+  if (args.includes("--action")) return startSafeAction(args);
   if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
     if (args.length > 0) {
       const openWorkbench = process.stdin.isTTY && process.stdout.isTTY && !args.includes("--no-open") && !args.includes("--dry-run");
@@ -6431,6 +6446,196 @@ async function start(args: string[] = []): Promise<number> {
     return onboard(["db", "--from-env", databaseEnv, "--open-ui"]);
   }
   return startWorker(args);
+}
+
+async function startSafeAction(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--action", "--description", "--based-on", "--config", "--project-root", "--force", "--json"]), "start --action");
+  const actionName = optionalArg(args, "--action");
+  const description = optionalArg(args, "--description");
+  if (!actionName) throw new Error("start --action requires a business action name, for example --action refund_order");
+  if (!description) throw new Error("start --action requires --description so the intended business effect is reviewable");
+  const projectRoot = optionalArg(args, "--project-root") ?? process.cwd();
+  const result = await scaffoldSafeAction({
+    projectRoot,
+    configPath: optionalArg(args, "--config"),
+    actionName,
+    description,
+    basedOnCapability: optionalArg(args, "--based-on"),
+    force: args.includes("--force"),
+  });
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ ok: true, state: "disabled_scaffold", ...result }, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write([
+    "Synapsor Safe Action Composer",
+    "",
+    `Action: ${result.action_name}`,
+    `Draft source: ${result.source_path}`,
+    `Inherited read boundary: ${result.based_on_capability}`,
+    `Base contract: ${result.base_contract_path}`,
+    `Agent instructions: ${result.instructions.canonical}`,
+    `Detected project evidence: ${result.project_context.schema_inputs.map((item) => `${item.kind}:${item.path}`).join(", ") || "none"}`,
+    `Detected database environment names: ${result.project_context.database_env_names.join(", ") || "none"} (values were not read)`,
+    "State: disabled scaffold (active Runner tools are unchanged)",
+    "",
+    "Authority questions the coding agent must leave for explicit review:",
+    ...result.authority_questions.map((item) => `  - ${item.field}: ${item.question}\n    Source: ${item.source}`),
+    "",
+    "Give your coding agent this task:",
+    `  Complete ${result.source_path} using the existing application and schema. Keep trusted tenant/principal values out of model arguments. Resolve every __REVIEW_*__ placeholder, add deterministic allow/deny/effect coverage, and run:`,
+    `  ${cliCommandName()} action validate ${result.source_path}`,
+    "  Leave the result disabled. Do not edit active contract artifacts or claim activation.",
+    "",
+    "After validation, open the secured local Workbench for human effect review and activation.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function actionCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "validate" || subcommand === "compile") return validateSafeActionCommand(rest);
+  if (subcommand === "watch") return watchSafeActionCommand(rest);
+  if (subcommand === "status") return safeActionStatusCommand(rest);
+  usage(["action"]);
+  return 2;
+}
+
+async function validateSafeActionCommand(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--json"]), "action validate");
+  const sourcePath = positional(args, 0);
+  if (!sourcePath) throw new Error("action validate requires a TypeScript Safe Action source path");
+  try {
+    const result = await compileSafeActionDraft({
+      projectRoot: optionalArg(args, "--project-root"),
+      configPath: optionalArg(args, "--config"),
+      sourcePath,
+    });
+    const payload = {
+      ok: result.manifest.validation.ok,
+      state: result.manifest.state,
+      action_name: result.manifest.action_name,
+      draft_digest: result.manifest.draft_contract_digest,
+      draft_contract: result.manifest.draft_contract_path,
+      generated_tests: result.manifest.generated_tests_path,
+      lint_report: result.manifest.validation.lint_report_path,
+      explanation: result.manifest.validation.explanation_path,
+      static_test_report: result.manifest.validation.static_test_report_path,
+      lint_summary: result.manifest.validation.lint_summary,
+      blocking_lint_issues: result.manifest.validation.blocking_lint_issues,
+      static_test_summary: result.manifest.validation.static_test_summary,
+      live_tests_pending: result.manifest.validation.live_tests_pending,
+      unresolved_authority: result.manifest.unresolved_authority,
+      diagnostics: result.manifest.diagnostics,
+      active_tools_changed: false,
+      source_database_changed: false,
+    };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write(formatSafeActionValidation(payload));
+    return payload.ok ? 0 : 1;
+  } catch (error) {
+    if (!(error instanceof SafeActionValidationError) || !args.includes("--json")) throw error;
+    process.stdout.write(`${JSON.stringify({ ok: false, state: "blocked", diagnostics: error.diagnostics, active_tools_changed: false, source_database_changed: false }, null, 2)}\n`);
+    return 1;
+  }
+}
+
+async function watchSafeActionCommand(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--json", "--once"]), "action watch");
+  const sourcePath = positional(args, 0);
+  if (!sourcePath) throw new Error("action watch requires a TypeScript Safe Action source path");
+  const run = async () => {
+    try {
+      return await validateSafeActionCommand([sourcePath, ...flagWithValue(args, "--config"), ...flagWithValue(args, "--project-root"), ...(args.includes("--json") ? ["--json"] : [])]);
+    } catch (error) {
+      if (error instanceof SafeActionValidationError) {
+        if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: false, state: "blocked", diagnostics: error.diagnostics }, null, 2)}\n`);
+        else process.stderr.write(`${error.message}\n`);
+        return 1;
+      }
+      throw error;
+    }
+  };
+  const initial = await run();
+  if (args.includes("--once")) return initial;
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const watchedPath = path.resolve(projectRoot, sourcePath);
+  process.stderr.write(`Watching disabled Safe Action draft: ${watchedPath}\nActive tools will not reload or change. Press Ctrl+C to stop.\n`);
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    for await (const event of fs.watch(watchedPath, { signal: controller.signal })) {
+      if (event.eventType === "change" || event.eventType === "rename") await run();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).name !== "AbortError") throw error;
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+  return 0;
+}
+
+async function safeActionStatusCommand(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--project-root", "--json"]), "action status");
+  const status = await safeActionStatus(optionalArg(args, "--project-root"));
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, ...status }, null, 2)}\n`);
+  else process.stdout.write([
+    "Synapsor Safe Action status",
+    `Draft: ${status.draft ? `${status.draft.action_name} (${status.draft.state}, ${status.draft.draft_contract_digest})` : "none"}`,
+    `Active: ${status.active ? `${status.active.action_name} (${status.active.contract_digest})` : "not managed by Safe Action activation"}`,
+    `Draft matches active: ${status.draft_matches_active ? "yes" : "no"}`,
+    "Activation is available only in the secured localhost Workbench, never through MCP or this CLI command.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+function formatSafeActionValidation(input: {
+  ok: boolean;
+  action_name: string;
+  draft_digest: string;
+  draft_contract: string;
+  generated_tests: string;
+  lint_report: string;
+  explanation: string;
+  static_test_report: string;
+  lint_summary: { errors: number; warnings: number; info: number };
+  blocking_lint_issues: number;
+  static_test_summary: { passed: number; failed: number; total: number };
+  live_tests_pending: string[];
+  unresolved_authority: string[];
+  diagnostics: Array<{ severity: string; code: string; message: string }>;
+}): string {
+  return [
+    `Synapsor Safe Action draft: ${input.ok ? "valid" : "blocked"}`,
+    `Action: ${input.action_name}`,
+    `Disabled draft digest: ${input.draft_digest}`,
+    `Canonical draft: ${input.draft_contract}`,
+    `Generated contract tests: ${input.generated_tests}`,
+    `Strict incremental lint: ${input.blocking_lint_issues === 0 ? "PASS" : "BLOCKED"} (${input.lint_summary.errors} error / ${input.lint_summary.warnings} warning / ${input.lint_summary.info} info; inherited warnings remain visible)`,
+    `Static generated tests: ${input.static_test_summary.failed === 0 ? "PASS" : "FAIL"} (${input.static_test_summary.passed}/${input.static_test_summary.total})`,
+    `Live staging tests pending: ${input.live_tests_pending.length}`,
+    `Lint report: ${input.lint_report}`,
+    `Reviewer explanation: ${input.explanation}`,
+    `Static test report: ${input.static_test_report}`,
+    `Warnings: ${input.diagnostics.filter((item) => item.severity === "warning").length}`,
+    ...(input.unresolved_authority.length ? ["Unresolved authority:", ...input.unresolved_authority.map((item) => `  - ${item}`)] : []),
+    "Active Runner tools changed: no",
+    "Source database changed: no",
+    input.ok
+      ? "Next: open the secured localhost Workbench and review the exact digest/effect before activation."
+      : "Next: resolve every blocking lint/test finding, then validate a new disabled draft.",
+    "",
+  ].join("\n");
+}
+
+function flagWithValue(args: string[], flag: string): string[] {
+  const value = optionalArg(args, flag);
+  return value ? [flag, value] : [];
 }
 
 function preferredDetectedDatabaseEnv(names: string[], env: NodeJS.ProcessEnv): string | undefined {
@@ -8566,7 +8771,7 @@ async function mcpAudit(args: string[]): Promise<number> {
     throw new Error("audit --format must be text, json, markdown, or sarif");
   }
   const { target, payload } = await resolveMcpAuditInput(args);
-  const report = auditMcpManifest(payload, { target });
+  const report = auditMcpManifest(payload, { target, liveSelectedServer: optionalArg(args, "--live-server") });
   if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   else if (format === "markdown") process.stdout.write(formatMcpAuditMarkdown(report));
   else if (format === "sarif") process.stdout.write(formatMcpAuditSarif(report));
@@ -9811,15 +10016,61 @@ async function readMcpAuditTarget(target: string, args: string[], timeoutMs: num
     return fetchStdioMcpTools(command, timeoutMs);
   }
   const parsed = JSON.parse(await fs.readFile(target, "utf8"));
+  const liveServer = optionalArg(args, "--live-server");
+  if (liveServer) {
+    if (!optionalArg(args, "--mcp-config")) throw new Error("audit --live-server requires --mcp-config <path>");
+    if (!args.includes("--yes")) throw new Error("audit --live-server executes the selected configured MCP command and requires --yes after operator review");
+    return attachSelectedLiveMcpTools(parsed, liveServer, target, timeoutMs);
+  }
   if (isRunnerConfigLike(parsed)) {
     const runtime = createMcpRuntime(loadRuntimeConfigFromFile(target), { storePath: ":memory:" });
     try {
       return { tools: runtime.listTools() };
-  } finally {
-    await runtime.close();
+    } finally {
+      await runtime.close();
+    }
   }
-}
   return parsed;
+}
+
+async function attachSelectedLiveMcpTools(input: unknown, serverName: string, configPath: string, timeoutMs: number): Promise<unknown> {
+  if (!isRecord(input) || !isRecord(input.mcpServers)) throw new Error("MCP client config must contain an mcpServers object");
+  const rawServer = input.mcpServers[serverName];
+  if (!isRecord(rawServer)) throw new Error(`MCP client config does not contain server ${serverName}`);
+  if (typeof rawServer.command !== "string" || !rawServer.command.trim()) {
+    throw new Error("audit --live-server currently supports explicitly reviewed stdio commands only; use --url for a remote MCP endpoint");
+  }
+  if (/[\u0000-\u001f\u007f]/.test(rawServer.command)) throw new Error("configured MCP command contains control characters");
+  if (!Array.isArray(rawServer.args) || rawServer.args.some((item) => typeof item !== "string" || /[\u0000\u000a\u000d]/.test(item))) {
+    throw new Error("configured MCP stdio args must be an array of strings without control characters");
+  }
+  const resolvedConfigPath = path.resolve(configPath);
+  const configDirectory = path.dirname(resolvedConfigPath);
+  const workspace = path.basename(configDirectory) === ".cursor"
+    ? path.dirname(configDirectory)
+    : configDirectory;
+  const expandWorkspace = (value: string): string => {
+    const expanded = value.replaceAll("${workspaceFolder}", workspace).replaceAll("${pathSeparator}", path.sep).replaceAll("${/}", path.sep);
+    if (/\$\{[^}]+\}/.test(expanded)) throw new Error("audit --live-server refuses unresolved config interpolation; export tools/list explicitly instead");
+    return expanded;
+  };
+  const command = expandWorkspace(rawServer.command);
+  const commandArgs = rawServer.args.map((item) => expandWorkspace(item));
+  process.stderr.write(`Audit consent: querying tools/list from configured server ${serverName}; no business tool will be called.\n`);
+  const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, workspace);
+  const envelope = isRecord(response) && isRecord(response.result) ? response.result : response;
+  if (!isRecord(envelope) || !Array.isArray(envelope.tools)) throw new Error("selected MCP server tools/list response did not contain a tools array");
+  return {
+    ...input,
+    mcpServers: {
+      ...input.mcpServers,
+      [serverName]: {
+        ...rawServer,
+        tools: envelope.tools,
+        x_synapsor_audit_live_tools_list: true,
+      },
+    },
+  };
 }
 
 function builtInMcpAuditExample(example: string): unknown {
@@ -13023,6 +13274,7 @@ function firstPositional(args: string[]): string | undefined {
     "--lookup-arg",
     "--mode",
     "--mcp-config",
+    "--live-server",
     "--namespace",
     "--numeric-bound",
     "--now",
@@ -13883,31 +14135,52 @@ function formatMcpAuditMarkdown(report: McpAuditReport): string {
   const lines = [
     "# Synapsor MCP Database Risk Review",
     "",
-    `- Target: ${report.target}`,
-    `- Generated at: ${report.generated_at}`,
+    `- Target: \`${escapeMcpAuditMarkdown(report.target)}\``,
+    `- Generated at: \`${escapeMcpAuditMarkdown(report.generated_at)}\``,
     `- Tools inspected: ${report.summary.tools_inspected}`,
     `- Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
     `- Total findings: ${report.summary.total_findings}`,
     "",
     `> ${report.disclaimer}`,
     "",
+    "## Model-authority map",
+    "",
+    "| Authority | Evidence status | Observed tools |",
+    "| --- | --- | --- |",
+    ...report.authority_map.items.map((item) =>
+      `| ${escapeMcpAuditMarkdown(item.label)} | \`${item.status}\` | ${item.tools.length > 0 ? item.tools.map((tool) => `\`${escapeMcpAuditMarkdown(tool)}\``).join(", ") : "None"} |`),
+    "",
+    escapeMcpAuditMarkdown(report.authority_map.visibility_limit),
+    "",
   ];
+  if (report.bypass_check) {
+    lines.push("## Configured-server bypass check", "");
+    lines.push(`Mode: \`${report.bypass_check.mode}\``);
+    lines.push("");
+    lines.push("| Server | Transport | Status | Observed tools |", "| --- | --- | --- | --- |");
+    for (const server of report.bypass_check.servers) {
+      lines.push(`| \`${escapeMcpAuditMarkdown(server.server)}\` | \`${server.transport}\` | \`${server.status}\` | ${server.tools_observed.length > 0 ? server.tools_observed.map((tool) => `\`${escapeMcpAuditMarkdown(tool)}\``).join(", ") : "None"} |`);
+    }
+    lines.push("", escapeMcpAuditMarkdown(report.bypass_check.warning), "");
+  }
   if (report.findings.length === 0) {
     lines.push("No obvious database-commit risks were detected in the static manifest.", "");
     lines.push("This does not prove the MCP server or its tools are secure.", "");
   } else {
     lines.push("## Findings", "");
     for (const finding of report.findings) {
-      lines.push(`### ${finding.severity}: ${finding.code}${finding.tool ? ` (${finding.tool})` : ""}`);
+      lines.push(`### ${finding.severity}: ${finding.code}${finding.tool ? ` (\`${escapeMcpAuditMarkdown(finding.tool)}\`)` : ""}`);
       lines.push("");
       lines.push(finding.message);
       lines.push("");
       if (finding.evidence.length > 0) {
         lines.push("Evidence:");
-        for (const evidence of finding.evidence) lines.push(`- ${evidence}`);
+        for (const evidence of finding.evidence) lines.push(`- ${escapeMcpAuditMarkdown(evidence)}`);
         lines.push("");
       }
       lines.push(`Recommendation: ${finding.recommendation}`);
+      lines.push("");
+      lines.push(`[Remediation guide](${finding.remediation_url})`);
       lines.push("");
     }
   }
@@ -13919,6 +14192,14 @@ function formatMcpAuditMarkdown(report: McpAuditReport): string {
   lines.push("- keep replay/evidence handles for later review.");
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function escapeMcpAuditMarkdown(value: string): string {
+  return value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/([\\`*_\[\]<>|])/g, "\\$1");
 }
 
 function stringField(record: unknown, key: string): string | undefined {
@@ -14349,6 +14630,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "propose",
     "audit",
     "start",
+    "action",
     "up",
     "runner",
     "cloud",
@@ -14413,6 +14695,7 @@ Commands:
   try          Run the complete no-account proposal-to-commit proof
   inspect      Inspect a Postgres/MySQL schema
   start        Start guided own-database setup, or no-arg legacy worker polling
+  action       Validate/watch disabled TypeScript Safe Action drafts
   up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
   config       Validate local synapsor.runner.json wiring
@@ -14452,6 +14735,8 @@ Examples:
   ${cmd} try
   ${cmd} try --prove --yes --no-open
   ${cmd} start --from-env DATABASE_URL
+  ${cmd} start --action refund_order --description "Propose one reviewed order refund"
+  ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
   ${cmd} onboard db --from-env DATABASE_URL
   ${cmd} inspect --from-env DATABASE_URL
@@ -14631,6 +14916,7 @@ Options:
 `,
     start: `Usage:
   ${cmd} start --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
+  ${cmd} start --action refund_order --description "Propose one reviewed order refund" [--based-on billing.inspect_order]
   ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
   ${cmd} runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} start
@@ -14647,6 +14933,21 @@ worker environment config. Prefer \`${cmd} runner start\` for that worker path
 so it is not confused with first-run onboarding. Add \`--once\` with both
 \`--config\` and \`--store\` for a bounded claim/apply cycle that still rechecks
 the local reviewed contract and proposal before writeback.
+`,
+    action: `Usage:
+  ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts [--config ./synapsor.runner.json]
+  ${cmd} action watch ./synapsor/actions/billing.propose_refund_order.ts
+  ${cmd} action status [--json]
+
+Parse the restricted code-first TypeScript authoring subset without importing
+or executing agent-authored code. A successful validation writes a canonical,
+digest-addressed disabled draft and deterministic contract-test artifact.
+Editing or validating a draft never changes active Runner tools or source data.
+
+There is intentionally no action activate CLI command. Activation requires
+review of the exact digest and unresolved-authority checklist in the secured
+localhost Workbench. Activation, approval, apply, commit, and revert remain
+outside model-facing MCP tools.
 `,
     inspect: `Usage:
   ${cmd} inspect --from-env DATABASE_URL [--engine auto|postgres|mysql] [--schema public] [--json]
@@ -14887,6 +15188,7 @@ default 10000ms wait with --shared-ledger-lock-timeout-ms.
   ${cmd} audit generate ./tools-list.json --output ./synapsor-audit-candidates [--force]
   ${cmd} audit ./synapsor.runner.json
   ${cmd} audit --mcp-config ./claude_desktop_config.json
+  ${cmd} audit --mcp-config ./.cursor/mcp.json --live-server synapsor --yes
   ${cmd} audit --stdio "node ./server.js"
   ${cmd} audit --url http://localhost:3000/mcp
 
@@ -14897,7 +15199,10 @@ tests, and before/after tool surface. It never activates or rewrites production
 configuration. --open-ui opens the blocked candidate in the secured localhost
 workbench; the source map and writeback remain empty until separately reviewed.
 
-Static MCP/database risk review only. This is not a security guarantee.
+Static MCP/database risk review only by default. --mcp-config never launches
+configured commands unless one exact --live-server is named with --yes. Live
+mode calls only initialize and tools/list, never a business tool. This is not a
+security guarantee.
 `,
     doctor: `Usage:
   ${cmd} doctor --config synapsor.runner.json

@@ -214,6 +214,7 @@ function cursorEntry(configPath: string, storePath: string, packageSpec: string 
     throw new Error("Cursor Runner package spec must be a non-empty package reference without control characters");
   }
   return {
+    type: "stdio",
     command: "npx",
     args: ["-y", "-p", resolvedPackage, "synapsor-runner", "mcp", "serve", "--config", configPath, "--store", storePath],
   };

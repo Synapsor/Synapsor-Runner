@@ -4,10 +4,11 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { createMcpRuntime, loadRuntimeConfigFromFile, type RuntimeConfig, type TrustedContext } from "@synapsor-runner/mcp-server";
 import { loadReviewedContract } from "./contract-tools.js";
+import type { SynapsorContract } from "@synapsor/spec";
 
 export type ContractTestAssertion = {
   id: string;
-  kind: "tool_allow" | "tool_deny" | "cross_principal_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "source_unchanged_before_approval" | "operator_boundary";
+  kind: "tool_allow" | "tool_deny" | "cross_principal_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "proposal_effect" | "conflict_guard" | "trusted_scope" | "evidence_requirement" | "approval_boundary" | "source_unchanged_before_approval" | "operator_boundary";
   capability: string;
   args?: Record<string, unknown>;
   trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" };
@@ -47,7 +48,7 @@ export type ContractTestReport = {
 };
 
 const kinds = new Set<ContractTestAssertion["kind"]>([
-  "tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary",
+  "tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "proposal_effect", "conflict_guard", "trusted_scope", "evidence_requirement", "approval_boundary", "source_unchanged_before_approval", "operator_boundary",
 ]);
 
 export async function loadContractTestManifest(filePath: string): Promise<ContractTestManifest> {
@@ -97,7 +98,7 @@ export async function runContractTests(input: {
         if (requiresLive(test) || (input.live && test.kind === "hide_fields" && test.args && test.trusted_context)) {
           await runLiveAssertion(test, config, env, path.join(tempDir, `${safeId(test.id)}.db`));
         } else {
-          await runStaticAssertion(test, config);
+          await runStaticAssertion(test, config, reviewed.contract);
         }
         results.push({ id: test.id, kind: test.kind, capability: test.capability, status: "passed", code: "PASS", message: "assertion passed", duration_ms: Date.now() - started });
       } catch (error) {
@@ -137,7 +138,7 @@ export function formatContractTestReport(report: ContractTestReport, format: "te
   ].join("\n")}\n`;
 }
 
-async function runStaticAssertion(test: ContractTestAssertion, config: RuntimeConfig): Promise<void> {
+async function runStaticAssertion(test: ContractTestAssertion, config: RuntimeConfig, contract: SynapsorContract): Promise<void> {
   const capability = config.capabilities?.find((candidate) => candidate.name === test.capability);
   if (!capability) throw new ContractAssertionFailure("CAPABILITY_NOT_FOUND", `capability ${test.capability} is not served`);
   if (test.kind === "operator_boundary") {
@@ -184,7 +185,94 @@ async function runStaticAssertion(test: ContractTestAssertion, config: RuntimeCo
     if (expectedBounds !== undefined && !isDeepStrictEqual(capability.operation?.aggregate_bounds ?? [], expectedBounds)) throw new ContractAssertionFailure("AGGREGATE_CAP_MISMATCH", "aggregate bounds differ from expected");
     return;
   }
+  if (test.kind === "proposal_effect") {
+    const reviewed = contract.capabilities.find((candidate) => candidate.name === test.capability);
+    if (!reviewed?.proposal) throw new ContractAssertionFailure("PROPOSAL_NOT_FOUND", `${test.capability} is not a reviewed proposal capability`);
+    const actual = proposalEffectSnapshot(reviewed);
+    if (!isDeepStrictEqual(actual, test.expected ?? {})) {
+      throw new ContractAssertionFailure("PROPOSAL_EFFECT_MISMATCH", "reviewed proposal effect differs from the expected checked-in mutation, approval, bounds, or writeback authority");
+    }
+    return;
+  }
+  if (test.kind === "conflict_guard") {
+    const reviewed = contract.capabilities.find((candidate) => candidate.name === test.capability);
+    if (!reviewed?.proposal) throw new ContractAssertionFailure("PROPOSAL_NOT_FOUND", `${test.capability} is not a reviewed proposal capability`);
+    if (!isDeepStrictEqual(reviewed.proposal.conflict_guard ?? {}, test.expected ?? {})) {
+      throw new ContractAssertionFailure("CONFLICT_GUARD_MISMATCH", "reviewed expected-version/conflict guard differs from the checked-in expectation");
+    }
+    return;
+  }
+  if (test.kind === "trusted_scope") {
+    const reviewed = contract.capabilities.find((candidate) => candidate.name === test.capability);
+    if (!reviewed) throw new ContractAssertionFailure("CAPABILITY_NOT_FOUND", `capability ${test.capability} is not reviewed`);
+    if (!isDeepStrictEqual(trustedScopeSnapshot(reviewed, contract), test.expected ?? {})) {
+      throw new ContractAssertionFailure("TRUSTED_SCOPE_MISMATCH", "reviewed tenant/principal scope differs from the checked-in expectation");
+    }
+    return;
+  }
+  if (test.kind === "evidence_requirement") {
+    const reviewed = contract.capabilities.find((candidate) => candidate.name === test.capability);
+    if (!reviewed) throw new ContractAssertionFailure("CAPABILITY_NOT_FOUND", `capability ${test.capability} is not reviewed`);
+    if (!isDeepStrictEqual(reviewed.evidence ?? {}, test.expected ?? {})) {
+      throw new ContractAssertionFailure("EVIDENCE_REQUIREMENT_MISMATCH", "reviewed evidence requirements differ from the checked-in expectation");
+    }
+    return;
+  }
+  if (test.kind === "approval_boundary") {
+    const reviewed = contract.capabilities.find((candidate) => candidate.name === test.capability);
+    if (!reviewed?.proposal) throw new ContractAssertionFailure("PROPOSAL_NOT_FOUND", `${test.capability} is not a reviewed proposal capability`);
+    if (!isDeepStrictEqual(approvalBoundarySnapshot(reviewed, contract), test.expected ?? {})) {
+      throw new ContractAssertionFailure("APPROVAL_BOUNDARY_MISMATCH", "reviewed approval mode, role, rules, or limits differ from the checked-in expectation");
+    }
+    return;
+  }
   throw new ContractAssertionFailure("LIVE_TEST_REQUIRED", `${test.kind} requires --live`);
+}
+
+export function proposalEffectSnapshot(capability: SynapsorContract["capabilities"][number]): Record<string, unknown> {
+  const proposal = capability.proposal!;
+  return JSON.parse(JSON.stringify({
+    action: proposal.action,
+    operation: proposal.operation ?? { kind: "update", cardinality: "single" },
+    allowed_fields: proposal.allowed_fields,
+    patch: proposal.patch,
+    numeric_bounds: proposal.numeric_bounds ?? {},
+    transition_guards: proposal.transition_guards ?? {},
+    conflict_guard: proposal.conflict_guard ?? {},
+    approval: proposal.approval ?? {},
+    writeback: proposal.writeback ?? { mode: "direct_sql" },
+    max_rows: capability.max_rows ?? proposal.operation?.max_rows ?? 1,
+  })) as Record<string, unknown>;
+}
+
+export function trustedScopeSnapshot(
+  capability: SynapsorContract["capabilities"][number],
+  contract: SynapsorContract,
+): Record<string, unknown> {
+  const context = contract.contexts.find((candidate) => candidate.name === capability.context);
+  const tenantBinding = context?.bindings.find((binding) => binding.name === context.tenant_binding);
+  const principalBinding = context?.bindings.find((binding) => binding.name === context.principal_binding);
+  return JSON.parse(JSON.stringify({
+    context: capability.context,
+    tenant_key: capability.subject.tenant_key,
+    tenant_binding: context?.tenant_binding,
+    tenant_authority: tenantBinding ? { source: tenantBinding.source, key: tenantBinding.key, required: tenantBinding.required === true } : null,
+    principal_binding: context?.principal_binding,
+    principal_authority: principalBinding ? { source: principalBinding.source, key: principalBinding.key, required: principalBinding.required === true } : null,
+  })) as Record<string, unknown>;
+}
+
+export function approvalBoundarySnapshot(
+  capability: SynapsorContract["capabilities"][number],
+  contract: SynapsorContract,
+): Record<string, unknown> {
+  const approval = capability.proposal?.approval ?? {};
+  const policyName = typeof approval.policy === "string" ? approval.policy : undefined;
+  const policy = policyName ? contract.policies?.find((candidate) => candidate.name === policyName) : undefined;
+  return JSON.parse(JSON.stringify({
+    approval,
+    policy: policy ?? null,
+  })) as Record<string, unknown>;
 }
 
 async function runLiveAssertion(test: ContractTestAssertion, config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): Promise<void> {
@@ -251,7 +339,11 @@ async function runLiveAssertion(test: ContractTestAssertion, config: RuntimeConf
     }
     if (!ok) throw new ContractAssertionFailure(code ?? "TOOL_CALL_FAILED", `tool call failed with ${code ?? "unknown safe code"}`);
     if (test.kind === "source_unchanged_before_approval") {
-      if (result.source_database_changed !== false || !isRecord(result.proposal)) throw new ContractAssertionFailure("PROPOSAL_BOUNDARY_FAILED", "proposal call did not prove unchanged source plus saved proposal");
+      const review = isRecord(result.proposal) ? result.proposal : undefined;
+      if (result.source_database_changed !== false || !review) throw new ContractAssertionFailure("PROPOSAL_BOUNDARY_FAILED", "proposal call did not prove unchanged source plus saved proposal");
+      if (review.state !== "review_required" || review.approval_required !== true) {
+        throw new ContractAssertionFailure("PRE_APPROVAL_STATE_MISMATCH", `source-unchanged test requires a pending human review, not policy approval (state ${String(review.state)}, approval_required ${String(review.approval_required)})`);
+      }
       return;
     }
     if (test.kind === "hide_fields") {
