@@ -20,7 +20,7 @@ or account:
 npx -y @synapsor/runner try --prove
 ```
 
-The embedded source requests a $55 waiver and shows:
+The embedded synthetic source requests a $55 waiver and shows:
 
 ```text
 Proposed effect: late_fee_cents: 5500 -> 0

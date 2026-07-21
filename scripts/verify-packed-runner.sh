@@ -31,6 +31,7 @@ TARBALL="$PACKAGE_DIR/$PACK_FILE"
 cd "$TEMP_DIR"
 npm init -y >/dev/null
 npm install "$TARBALL" >/dev/null
+STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
 test -f "$PACKED_ROOT/docs/mcp-apps.md"
@@ -74,7 +75,7 @@ grep -F "restart-safe retry: yes" quick-details.txt >/dev/null
 grep -F "Evidence: ev_wrp_try_INV_3001" quick-details.txt >/dev/null
 npx synapsor-runner demo inspect > inspect.txt
 grep -F "Synapsor try inspection" inspect.txt >/dev/null
-grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store .synapsor/try/ledger.db" inspect.txt >/dev/null
+grep -F "synapsor-runner proposals show wrp_try_INV_3001 --store $STORE_PATH" inspect.txt >/dev/null
 npx synapsor-runner demo inspect --npx > inspect-npx.txt
 grep -F "npx -y -p @synapsor/runner synapsor-runner proposals show wrp_try_INV_3001" inspect-npx.txt >/dev/null
 npx synapsor-runner events webhook --url http://127.0.0.1:8788/synapsor/events --kind proposal_created --store ./.synapsor/try/ledger.db --dry-run > events-webhook.txt

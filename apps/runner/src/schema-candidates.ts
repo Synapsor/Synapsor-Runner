@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { assertSafeManagedOutputPath, readManagedOutputMarker } from "./managed-output.js";
 import ts from "typescript";
 import { parseDocument } from "yaml";
 import { validateContract, type ArgumentSpec, type CapabilitySpec, type SynapsorContract } from "@synapsor/spec";
@@ -141,7 +142,7 @@ export async function generateSchemaCandidateDirectory(input: {
 }): Promise<SchemaCandidateGenerationResult> {
   const source = await readBoundedInput(input.inputPath);
   const parsed = parseSchemaCandidateSource(input.format, source, input.inputPath);
-  const outputDir = path.resolve(input.outputDir);
+  const outputDir = await assertSafeManagedOutputPath(input.outputDir);
   const existed = await pathExists(outputDir);
   if (existed) {
     if (!input.force) {
@@ -159,7 +160,10 @@ export async function generateSchemaCandidateDirectory(input: {
     await fs.writeFile(path.join(temporary, REVIEW_JSON_FILE), json(bundle.review), "utf8");
     await fs.writeFile(path.join(temporary, REVIEW_FILE), bundle.reviewMarkdown, "utf8");
     await fs.writeFile(path.join(temporary, SCHEMA_CANDIDATE_MARKER), json(bundle.marker), "utf8");
-    if (existed) await fs.rm(outputDir, { recursive: true, force: true });
+    if (existed) {
+      await assertOwnedDirectory(outputDir);
+      await fs.rm(outputDir, { recursive: true, force: true });
+    }
     await fs.rename(temporary, outputDir);
   } catch (error) {
     await fs.rm(temporary, { recursive: true, force: true });
@@ -1262,7 +1266,7 @@ async function readBoundedInput(inputPath: string): Promise<string> {
 
 async function assertOwnedDirectory(directory: string): Promise<void> {
   try {
-    const marker = JSON.parse(await fs.readFile(path.join(directory, SCHEMA_CANDIDATE_MARKER), "utf8")) as Record<string, unknown>;
+    const marker = await readManagedOutputMarker(directory, SCHEMA_CANDIDATE_MARKER);
     if (marker.schema_version !== SCHEMA_CANDIDATE_VERSION || marker.owner !== "@synapsor/runner") {
       throw new Error("marker mismatch");
     }

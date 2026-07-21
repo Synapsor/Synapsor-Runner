@@ -13,6 +13,7 @@ import {
   type ExecutionReceiptV1,
   type WritebackJobV1,
 } from "@synapsor-runner/protocol";
+import { prepareTryState } from "./try-state.js";
 
 const capabilityName = "billing.propose_late_fee_waiver";
 const operationId = "op_try_waive_INV_3001_v1";
@@ -152,12 +153,18 @@ export type TryExperienceResult = {
 };
 
 export async function runTryExperience(options: TryExperienceOptions): Promise<TryExperienceResult> {
-  const root = path.resolve(options.root_dir ?? "./.synapsor/try");
+  const state = await prepareTryState(options.root_dir);
+  try {
+    return await runManagedTryExperience(options, state.root);
+  } finally {
+    await state.release();
+  }
+}
+
+async function runManagedTryExperience(options: TryExperienceOptions, root: string): Promise<TryExperienceResult> {
   const sourcePath = path.join(root, "source.json");
   const storePath = path.join(root, "ledger.db");
   const configPath = path.join(root, "synapsor.runner.json");
-  await fs.rm(root, { recursive: true, force: true });
-  await fs.mkdir(root, { recursive: true });
   await writeJsonAtomic(sourcePath, initialSourceState());
   await writeJsonAtomic(configPath, demoUiConfig(storePath));
   options.on_stage?.("source_ready", {

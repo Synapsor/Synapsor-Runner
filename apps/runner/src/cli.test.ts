@@ -337,7 +337,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.5.0");
+      expect(output.join("").trim()).toBe("1.5.1");
     }
   });
 
@@ -588,6 +588,15 @@ describe("runner cli", () => {
       actor: "deterministic_simulated_agent",
       proposal: { state: "applied" },
       receipt: { status: "applied", rows_affected: 1 },
+    });
+
+    output.length = 0;
+    await expect(main(["demo", "inspect", "--json", "--state-dir", tempDir])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      mode: "embedded_demo",
+      proposal_id: result.proposal.proposal_id,
+      store: result.paths.ledger,
+      approval_and_apply: "outside MCP",
     });
   });
 
@@ -939,13 +948,14 @@ describe("runner cli", () => {
       output.length = 0;
       await expect(main(["demo", "inspect"])).resolves.toBe(0);
       let text = output.join("");
+      const storePath = path.join(tempDir, ".synapsor/try/ledger.db");
       expect(text).toContain("Synapsor try inspection");
       expect(text).toContain("1. Proposal summary");
-      expect(text).toContain("synapsor-runner proposals show wrp_try_INV_3001 --store .synapsor/try/ledger.db");
-      expect(text).toContain("synapsor-runner evidence show ev_wrp_try_INV_3001 --store .synapsor/try/ledger.db");
-      expect(text).toContain("synapsor-runner activity search --object invoice:INV-3001 --store .synapsor/try/ledger.db");
-      expect(text).toContain("synapsor-runner replay show wrp_try_INV_3001 --store .synapsor/try/ledger.db");
-      await fs.access(path.join(tempDir, ".synapsor/try/ledger.db"));
+      expect(text).toContain(`synapsor-runner proposals show wrp_try_INV_3001 --store ${storePath}`);
+      expect(text).toContain(`synapsor-runner evidence show ev_wrp_try_INV_3001 --store ${storePath}`);
+      expect(text).toContain(`synapsor-runner activity search --object invoice:INV-3001 --store ${storePath}`);
+      expect(text).toContain(`synapsor-runner replay show wrp_try_INV_3001 --store ${storePath}`);
+      await fs.access(storePath);
 
       output.length = 0;
       await expect(main(["demo", "inspect", "--npx"])).resolves.toBe(0);
@@ -1206,7 +1216,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.4.2",
         "@synapsor/dsl": "1.4.3",
-        "@synapsor/runner": "1.5.0",
+        "@synapsor/runner": "1.5.1",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {

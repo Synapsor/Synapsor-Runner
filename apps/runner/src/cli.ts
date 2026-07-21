@@ -82,6 +82,7 @@ import { runLanguageServer } from "./language-server.js";
 import { createComplianceReport, formatComplianceReport, readComplianceReport, verifyComplianceReport } from "./compliance-report.js";
 import { decideGraduatedTrustRecommendation, evaluateGraduatedTrust, formatGraduatedTrustEvaluation, markGraduatedTrustArtifactExported, prepareGraduatedTrustArtifact } from "./graduated-trust.js";
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
+import { resolveReadableTryStateRoot } from "./try-state.js";
 import {
   acceptEffectBaseline,
   compareEffectResult,
@@ -7741,7 +7742,7 @@ function yesNo(value: boolean): "yes" | "no" {
 async function demoInspect(args: string[]): Promise<number> {
   const allowed = new Set(["--npx", "--json", "--state-dir"]);
   assertKnownOptions(args, allowed, "demo inspect");
-  const stateDir = optionalArg(args, "--state-dir") ?? "./.synapsor/try";
+  const stateDir = await resolveReadableTryStateRoot(optionalArg(args, "--state-dir"));
   const storePath = path.join(stateDir, "ledger.db");
   try {
     await fs.access(storePath);
@@ -13970,18 +13971,23 @@ Global options:
   ${cmd} try --prove
   ${cmd} try --yes --no-open
   ${cmd} try --json --yes --no-open
+  ${cmd} try --prove --state-dir ./tmp/synapsor-state
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
 the real semantic proposal/ledger/writeback lifecycle against an isolated
-embedded demo source.
+synthetic embedded demo source.
 
 The default path shows scoped evidence, the exact business diff, explicit
 operator review outside MCP, guarded commit, receipt, and replay. --prove also
 demonstrates restart-safe retry, changed-intent idempotency rejection, stale
 conflict, and non-mutating replay. --yes is valid only for this isolated demo
 and CI; it does not grant model authority.
-`,
+
+--state-dir selects a caller-owned container. Runner stores the disposable
+proof in a marked managed child, preserves unrelated files, and refuses
+protected or symlinked paths.
+	`,
     config: `Usage:
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json

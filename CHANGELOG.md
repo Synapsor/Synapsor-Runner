@@ -1,6 +1,30 @@
 # Changelog
 
-## 1.5.0 (prepared, not published)
+## 1.5.1 (prepared, not published)
+
+### Safe ownership for disposable try state
+
+- Stops `try` from recursively deleting a caller-provided `--state-dir`.
+  Custom paths are now unowned containers; Runner writes into a marked managed
+  child and removes only its known direct state files.
+- Rejects filesystem roots, home/cwd/repository paths and their ancestors,
+  parent traversal, symlinked path components, unmarked lookalike directories,
+  and managed files replaced by links. Unrelated caller files are preserved.
+- Adds an atomic per-state lease. Concurrent runs fail clearly, while a valid
+  lease left by a dead process can recover without broad cleanup.
+- Keeps `demo inspect --state-dir` aligned with the managed-child layout and
+  safely adopts only the known legacy default `.synapsor/try` file set.
+- Hardens explicit `--force` replacement for generated schema and MCP-audit
+  candidate directories against protected paths, symlinked ancestors, and
+  linked or invalid ownership markers.
+- Consistently identifies the embedded `try` source as synthetic.
+- Updates the packaged YAML parser to `2.8.3`, which includes the upstream
+  deeply nested collection denial-of-service fix.
+- Corrects the repository's stale publication wording for the live `1.5.0`
+  release. Only `@synapsor/runner` is staged at `1.5.1`; Spec, DSL, and Cloud
+  CLI versions remain unchanged.
+
+## 1.5.0 (2026-07-20)
 
 ### Complete guarded-action developer proof
 
@@ -31,9 +55,8 @@
 - Rewrites the README around the complete `try --prove` outcome, keeps MCP
   audit immediately second, names each isolation boundary precisely, and
   reconciles release documentation with the live npm registry.
-- Stages only `@synapsor/runner@1.5.0`; `@synapsor/spec@1.4.2`,
+- Published only `@synapsor/runner@1.5.0`; `@synapsor/spec@1.4.2`,
   `@synapsor/dsl@1.4.3`, and `@synapsor/cli@0.1.0-beta.1` remain unchanged.
-  Nothing is published by this change.
 
 ## 1.4.123 (2026-07-17)
 
