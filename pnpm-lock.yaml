@@ -44,6 +44,9 @@ importers:
       '@synapsor/handler':
         specifier: workspace:*
         version: link:packages/handler
+      '@synapsor/runner':
+        specifier: workspace:*
+        version: link:apps/runner
       '@synapsor/spec':
         specifier: workspace:*
         version: link:packages/spec
@@ -77,6 +80,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
+      '@synapsor/spec':
+        specifier: ^1.4.2
+        version: 1.4.2
       jose:
         specifier: 6.2.3
         version: 6.2.3
@@ -865,6 +871,11 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@synapsor/spec@1.4.2':
+    resolution: {integrity: sha512-35JBfwEeEv9p3fpgzj0b8g5dpfNcbMD6AXGfbC3PQsNG0HEA6nEaCUBnXnBEuawbTl6ocl7EsfYRAKp6+bL84Q==}
+    engines: {node: '>=22.5.0'}
+    hasBin: true
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -2118,6 +2129,8 @@ snapshots:
     optional: true
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@synapsor/spec@1.4.2': {}
 
   '@types/chai@5.2.3':
     dependencies:

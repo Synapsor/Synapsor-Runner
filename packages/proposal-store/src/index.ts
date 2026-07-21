@@ -451,6 +451,17 @@ export type ShadowStudyReport = {
     sample_size: number;
     active: false;
   }>;
+  trust_progression: {
+    current_stage: "observe" | "compare" | "manual_review" | "suggested_bounded_policy";
+    minimum_policy_sample_size: 5;
+    insufficient_sample_size: boolean;
+    stages: Array<{
+      name: "Observe" | "Compare" | "Manual review" | "Suggested bounded policy";
+      status: "complete" | "current" | "locked";
+      detail: string;
+    }>;
+    automatic_activation: false;
+  };
   comparisons: ShadowStudyComparison[];
   generated_at: string;
 };
@@ -4056,6 +4067,7 @@ export class ProposalStore {
         left.case_id.localeCompare(right.case_id)
       )
       .slice(0, 10);
+    const suggestedPolicies = suggestedShadowPolicies(comparisons);
     return {
       study,
       total_tasks_observed: comparisons.length,
@@ -4074,7 +4086,8 @@ export class ProposalStore {
       by_capability: byCapability,
       by_decision_reason: byDecisionReason,
       highest_risk_disagreements: highestRisk,
-      suggested_policies: suggestedShadowPolicies(comparisons),
+      suggested_policies: suggestedPolicies,
+      trust_progression: shadowTrustProgression(comparisons, suggestedPolicies),
       comparisons,
       generated_at: latestIsoTimestamp([
         study.updated_at,
@@ -5810,6 +5823,44 @@ function suggestedShadowPolicies(
     });
   }
   return suggestions;
+}
+
+function shadowTrustProgression(
+  comparisons: ShadowStudyComparison[],
+  suggestions: ShadowStudyReport["suggested_policies"],
+): ShadowStudyReport["trust_progression"] {
+  const outcomes = comparisons.filter((item) => item.outcome !== undefined).length;
+  const comparable = comparisons.filter((item) => item.comparable).length;
+  const exact = comparisons.filter((item) => item.status === "exact_agreement").length;
+  const currentStage = comparisons.length === 0
+    ? "observe"
+    : outcomes === 0
+      ? "compare"
+      : suggestions.length === 0
+        ? "manual_review"
+        : "suggested_bounded_policy";
+  const stageOrder = ["observe", "compare", "manual_review", "suggested_bounded_policy"] as const;
+  const currentIndex = stageOrder.indexOf(currentStage);
+  const details = {
+    observe: `${comparisons.length} task${comparisons.length === 1 ? "" : "s"} observed without source mutation.`,
+    compare: `${outcomes} authoritative outcome${outcomes === 1 ? "" : "s"}; ${comparisons.length - outcomes} unmatched.`,
+    manual_review: `${comparable} comparable task${comparable === 1 ? "" : "s"}; ${exact} exact agreement${exact === 1 ? "" : "s"}. At least 5 exact numeric examples are required before a bounded-policy suggestion.`,
+    suggested_bounded_policy: suggestions.length > 0
+      ? `${suggestions.length} inactive bounded-policy suggestion${suggestions.length === 1 ? "" : "s"}; a human must review and activate any contract change separately.`
+      : "No policy suggestion is available.",
+  };
+  const labels = ["Observe", "Compare", "Manual review", "Suggested bounded policy"] as const;
+  return {
+    current_stage: currentStage,
+    minimum_policy_sample_size: 5,
+    insufficient_sample_size: suggestions.length === 0,
+    stages: stageOrder.map((stage, index) => ({
+      name: labels[index]!,
+      status: index < currentIndex ? "complete" : index === currentIndex ? "current" : "locked",
+      detail: details[stage],
+    })),
+    automatic_activation: false,
+  };
 }
 
 function safeSqliteFailure(_error: unknown, fallback: string): string {

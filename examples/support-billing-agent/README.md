@@ -63,6 +63,21 @@ The demo proves:
 - the shadow report compares cases with authoritative human outcomes before the
   effect fixture checks the expected business change.
 
+The app-owned integration files make those two evaluation paths reusable:
+
+- `app/contract.ts` is the code-first TypeScript form of the reviewed late-fee
+  action and compiles to the same canonical spec as JSON/DSL;
+- `app/record-shadow-outcomes.mjs` records authoritative app outcomes through
+  `@synapsor/runner/shadow` without approval or source mutation;
+- `app/effect-adapter.mjs` emits one deterministic, propose-only result through
+  the provider-neutral command adapter;
+- `.github/workflows/effect-regression.yml` runs the effect check and uploads
+  JUnit output for relevant pull requests.
+
+This repository result is deterministic application evidence, not an external
+model benchmark. Use `--result-origin external-model` only when your adapter
+actually invokes a model.
+
 RLS is defense in depth, not a claim that a fully compromised Runner process is
 contained. A process that can choose arbitrary trusted context or replace the
 database credential remains outside this guarantee. Production deployments
@@ -107,6 +122,9 @@ Relevant files:
 - `scripts/run-demo.sh`
 - `scripts/run-evaluation.sh`
 - `app/README.md`
+- `app/contract.ts`
+- `app/record-shadow-outcomes.mjs`
+- `app/effect-adapter.mjs`
 - `shadow-study/cases.jsonl` and `shadow-study/outcomes.jsonl`: deterministic
   true-shadow reference data for agent-versus-authoritative-outcome reports.
 

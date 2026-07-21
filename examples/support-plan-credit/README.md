@@ -15,7 +15,7 @@ policy-tier demonstration.
 ## Prerequisites
 
 - Docker
-- Node 22.5+
+- Node 22.13+
 - Port `55438` available
 
 Install the stable CLI once for the commands below:

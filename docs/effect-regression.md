@@ -103,6 +103,42 @@ synapsor-runner effect run \
 Dataset fixture paths are relative and cannot escape the dataset directory.
 Each result is named `<fixture_id>.result.json`.
 
+### Run an application-owned adapter
+
+For a real application harness, Runner can launch one provider-neutral command
+directly, without a shell:
+
+```bash
+synapsor-runner effect run \
+  --dataset ./effects/dataset.json \
+  --adapter node \
+  --adapter-arg ./app/effect-adapter.mjs \
+  --result-origin deterministic-application \
+  --format junit \
+  --out ./artifacts/effect-results.xml
+```
+
+Use `--result-origin external-model` when the adapter actually calls a model.
+The origin is included in text, JSON, and JUnit provenance so deterministic
+application results are not presented as model evidence.
+
+Runner starts the command with `shell: false`, a bounded argument list,
+timeout/output limits, and a minimal environment that omits ambient database
+URLs and tokens. It sets `SYNAPSOR_EFFECT_MODE=propose_only`,
+`SYNAPSOR_EFFECT_FIXTURE_PATH`, and
+`SYNAPSOR_EFFECT_SOURCE_DATABASE_CHANGED=false`. The command must emit exactly
+one canonical result JSON document to stdout.
+
+This is a process boundary, not a sandbox. Adopter-owned code can deliberately
+load its own credentials, so keep the adapter propose-only and point it at
+fixtures or an explicitly disposable source. Runner still rejects every result
+that reports source mutation.
+
+The repository's working example is
+[`examples/support-billing-agent/app/effect-adapter.mjs`](../examples/support-billing-agent/app/effect-adapter.mjs),
+and [`.github/workflows/effect-regression.yml`](https://github.com/Synapsor/Synapsor-Runner/blob/main/.github/workflows/effect-regression.yml)
+runs it and uploads JUnit output on relevant pull requests.
+
 ## Accept An Intentional Change
 
 Runner never updates a baseline during `run` or `compare`. After reviewing an
@@ -133,10 +169,11 @@ Commit the accepted fixture and review it like application code.
 ## Boundaries
 
 - This is not a general agent workflow engine.
-- This does not execute a provider command or application code.
+- Offline `--result`/`--results-dir` mode executes no provider command or
+  application code. `--adapter` explicitly executes the adopter-owned command
+  under the bounded process contract above.
 - This does not prove model quality outside the imported observations.
 - This complements [`contract test`](contract-testing.md); a contract can
   conform while an agent's proposed business effect still regresses.
 - Replay remains read-only. Creating an effect fixture does not replay or
   reapply the original write.
-

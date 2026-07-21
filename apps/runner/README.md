@@ -4,12 +4,16 @@
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml?query=branch%3Amain)
 
-**Approve the exact business effect, not an opaque tool call.**
+**MCP connects the agent. Synapsor controls the commit.**
 
 Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It
 gives agents reviewed business actions instead of `execute_sql`, saves risky
 changes as proposals, and keeps database credentials, approval, and writeback
 outside the model-facing surface.
+
+The shortest path is: prove the boundary -> audit an existing MCP setup ->
+connect staging -> review one action -> add it to Cursor -> inspect the first
+exact Data PR.
 
 ## Prove It In 60 Seconds
 
@@ -113,37 +117,25 @@ export DATABASE_URL="postgresql://runner_reader:REPLACE_ME@db.example.com:5432/a
 synapsor-runner start --from-env DATABASE_URL --schema public
 ```
 
-The wizard inspects metadata, generates reviewed capabilities, previews MCP
-tools, and prints smoke/serve commands. It stores environment-variable names,
-not connection strings.
+The wizard inspects metadata, generates one canonical reviewed contract,
+previews the exact MCP tools, and opens the secured localhost first-action
+workbench in an interactive terminal. It stores environment-variable names,
+not connection strings. Use `--no-open` for scripts and CI.
 
-[Generate disabled review candidates from Prisma, Drizzle, or
-OpenAPI.](docs/schema-api-candidates.md)
+To enter the same own-data path directly from the synthetic proof, run:
 
-The generated capability is a tenant-scoped read with an explicit column
-allowlist and required evidence. See the [own-database
-guide](docs/getting-started-own-database.md) for the full configuration.
-
-```json
-{
-  "name": "billing.inspect_invoice",
-  "kind": "read",
-  "source": "app_postgres",
-  "target": {
-    "schema": "public",
-    "table": "invoices",
-    "primary_key": "id",
-    "tenant_key": "tenant_id"
-  },
-  "args": {
-    "invoice_id": { "type": "string", "required": true, "max_length": 128 }
-  },
-  "lookup": { "id_from_arg": "invoice_id" },
-  "visible_columns": ["id", "tenant_id", "status", "late_fee_cents", "updated_at"],
-  "evidence": "required",
-  "max_rows": 1
-}
+```bash
+synapsor-runner try --prove --from-env DATABASE_URL
 ```
+
+This defaults to a read-only action and never falls back to synthetic data if
+inspection fails.
+
+The generated action is a tenant-scoped read with an explicit field allowlist,
+kept-out fields, and required evidence. See the [own-database
+guide](docs/getting-started-own-database.md) for the generated contract and
+[schema/API candidates](docs/schema-api-candidates.md) for disabled Prisma,
+Drizzle, or OpenAPI review candidates.
 
 Set the trusted values in the process that launches Runner, then validate and
 preview the exact model-facing boundary before connecting an MCP client:
@@ -153,24 +145,35 @@ export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local-developer"
 synapsor-runner config validate --config ./synapsor.runner.json
 synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
-synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp install cursor --project --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp status cursor --project --check-launch
 ```
+
+The project installer previews and confirms a merge into `.cursor/mcp.json`,
+backs up existing configuration, preserves other MCP servers, and writes only
+an exact-version `npx` command plus local paths. It never writes database URLs,
+trusted tenant/principal values, approval, or apply authority. Cursor receives
+only reviewed read/proposal tools; review and commit remain in the local UI or
+operator CLI. See the [host compatibility matrix](docs/host-compatibility.md).
+
+Inspect or export the local, telemetry-free activation funnel at any time:
+
+```bash
+synapsor-runner activation show --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner activation export --out ./.synapsor/activation-report.json
+```
+
+Product activation timings start after package installation. Cold `npx`
+download time is recorded separately and is not presented as a universal
+network-speed claim.
 
 For proposal capabilities and writes, follow the
 [complete own-database guide](docs/getting-started-own-database.md). Reviewed
 single-row INSERT, UPDATE, and DELETE can use Runner's guarded direct
-writeback. Runner also supports tightly [bounded set
-writes](docs/bounded-set-writeback.md): fixed-predicate UPDATE/DELETE and
-exact-review batch INSERT, with human approval, a hard 100-row ceiling, atomic
-apply, and exact receipts. Free-form predicates, unbounded or cross-table work,
-and external effects go through an [app-owned
-executor](docs/writeback-executors.md) after approval.
-
-Direct writes can use [reviewed
-compensation](docs/reversible-change-sets.md). Receipts capture a
-bounded inverse; `synapsor-runner revert <proposal_id>` creates a separately
-approved proposal. This is not rollback, time travel, or app-owned
-compensation.
+writeback. Fixed-predicate [bounded sets](docs/bounded-set-writeback.md) and
+[reviewed compensation](docs/reversible-change-sets.md) remain explicit,
+bounded operator workflows. Free-form, unbounded, cross-table, or external
+effects use an [app-owned executor](docs/writeback-executors.md).
 
 ## Review And Prove Your Contract
 
@@ -202,18 +205,11 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 - MCP proposal, evidence, and replay handles are references rather than bearer
   authority: resource reads re-check the owning tenant and principal against
   the current trusted session.
-- Same-tenant owner/assignee isolation uses a reviewed
-  [`PRINCIPAL SCOPE KEY`](docs/capability-authoring.md#same-tenant-principal-row-scope)
-  composed with mandatory tenant scope; `test:principal-scope` proves generic
-  cross-principal denial and evidence-handle isolation on Postgres and MySQL.
-- `test:live-apply`, `test:guarded-crud`, `test:bounded-set`, and
-  `test:reversible` run disposable PostgreSQL/MySQL scenarios. They prove no
-  pre-approval mutation, guarded single-row CRUD, idempotent retry,
-  fail-closed conflicts, bounded atomic sets, exact receipts, and reviewed
-  compensation.
-- The C++/Cloud round-trip verifier exports normalized contracts, validates
-  them with `@synapsor/spec`, and loads them in Runner. The shared contract and
-  verification commands are documented in [Conformance](docs/conformance.md).
+- `test:principal-scope`, `test:live-apply`, `test:guarded-crud`,
+  `test:bounded-set`, and `test:reversible` prove cross-principal denial,
+  no pre-approval mutation, guarded writes, idempotent retry, conflicts,
+  bounded atomic sets, receipts, and reviewed compensation on disposable
+  PostgreSQL/MySQL fixtures.
 
 Runner is a narrow agent/database safety boundary, not a replacement for
 least-privilege database access, host security, or application authorization.
@@ -224,12 +220,9 @@ See [Security Boundary](docs/security-boundary.md) and
 
 ## Operate The Approval Loop
 
-Policies combine per-proposal and daily ceilings; exceeding one routes to human
-review. Operators get batch apply, metrics, structured logs, and optional
-signed roles. Local SQLite is the default; bounded fleets can use verified HTTP
-claims, asymmetric JWT sessions, and a shared Postgres `runtime_store`.
-`smoke call` follows that store and never falls back to SQLite. Use `/healthz`
-for liveness and `/readyz` for dependency readiness. See
+Policies can combine per-proposal and aggregate ceilings; exceeding one routes
+to human review. Local SQLite is the default, while bounded fleets can use
+verified HTTP claims and a shared Postgres runtime store. See
 [Production](docs/production.md), [Runner Config](docs/runner-config-reference.md),
 and [Small Runner Fleets](docs/running-a-runner-fleet.md).
 
@@ -242,16 +235,11 @@ and [Small Runner Fleets](docs/running-a-runner-fleet.md).
 | `@synapsor/dsl` | SQL-like authoring that compiles contexts, capabilities, and workflow declarations into canonical contract JSON. |
 | `@synapsor/cli` | Synapsor Cloud administration, contract governance, human review, Runner connections, and shared audit records. |
 
-Runner executes locally. The spec is shared by Runner and Cloud/C++; the DSL
-is its reviewable source format. Start with [Capability
-Authoring](docs/capability-authoring.md). Use `.synapsor.sql` for generic SQL
-highlighting; legacy `.synapsor` files produce the same contract JSON.
-
-Use the [DSL Reference](docs/dsl-reference.md) for exact authoring grammar and
-the [Runner Config Reference](docs/runner-config-reference.md) for every wiring
-key, default, and path-resolution rule. The
-[Store Lifecycle guide](docs/store-lifecycle.md) explains ledger sensitivity,
-owner-only permissions, inspection commands, and retention.
+Runner, JSON, `.synapsor.sql`, and the optional TypeScript
+`@synapsor/runner/authoring` frontend all use the same canonical spec. The
+`@synapsor/runner/shadow` helper records app-owned outcomes without granting
+write authority. Start with [Capability Authoring](docs/capability-authoring.md)
+and the [Runner Config Reference](docs/runner-config-reference.md).
 
 ## OSS And Cloud
 

@@ -169,6 +169,12 @@ describe("MCP audit candidate generation", () => {
       expect(result.output_dir).toBe(output);
 
       writes.length = 0;
+      await fs.rm(output, { recursive: true, force: true });
+      await expect(main(["audit", "generate", source, "--output", output])).resolves.toBe(0);
+      expect(writes.join("")).toContain("Open the blocked candidate workbench:");
+      expect(writes.join("")).toContain("synapsor-runner ui --open --tour");
+
+      writes.length = 0;
       await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "sarif"])).resolves.toBe(0);
       const sarif = JSON.parse(writes.join(""));
       expect(sarif).toMatchObject({

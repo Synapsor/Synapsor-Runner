@@ -1,0 +1,38 @@
+name: effect-regression
+
+on:
+  pull_request:
+    paths:
+      - "apps/runner/**"
+      - "packages/**"
+      - "fixtures/effects/**"
+      - "examples/support-billing-agent/**"
+      - ".github/workflows/effect-regression.yml"
+  workflow_dispatch:
+
+jobs:
+  reference-effect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm build:runner-package
+      - name: Compare the deterministic support/billing effect
+        run: |
+          mkdir -p tmp/effect-regression
+          corepack pnpm runner effect run \
+            --dataset ./fixtures/effects/dataset.json \
+            --adapter node \
+            --adapter-arg ./examples/support-billing-agent/app/effect-adapter.mjs \
+            --result-origin deterministic-application \
+            --format junit \
+            --out ./tmp/effect-regression/junit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synapsor-effect-regression
+          path: tmp/effect-regression/junit.xml

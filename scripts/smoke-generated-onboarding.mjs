@@ -262,6 +262,8 @@ async function exerciseGeneratedOnboarding(scenario) {
       "SYNAPSOR_DATABASE_READ_URL",
       "--write-url-env",
       "SYNAPSOR_DATABASE_WRITE_URL",
+      "--receipt-mode",
+      "source_precreated",
       ...(scenario.schema ? ["--schema", scenario.schema] : []),
       "--table",
       scenario.table,
@@ -283,32 +285,38 @@ async function exerciseGeneratedOnboarding(scenario) {
       scenario.allowedColumns,
       "--approval-role",
       "local_reviewer",
+      "--yes",
       "--output",
       paths.config,
       ...scenario.patchFlags,
     ], { cwd: workDir });
 
+    const generatedConfig = JSON.parse(fs.readFileSync(paths.config, "utf8"));
+    const contractReference = Array.isArray(generatedConfig.contracts) ? generatedConfig.contracts[0] : undefined;
+    assert(typeof contractReference === "string", "Generated config is missing its canonical contract reference", generatedConfig);
+    const generatedContractPath = path.resolve(path.dirname(paths.config), contractReference);
     assertNoSecrets([
       paths.config,
+      generatedContractPath,
       path.join(workDir, ".env.example"),
       path.join(workDir, ".synapsor", "mcp", "generic-stdio.json"),
       path.join(workDir, ".synapsor", "mcp", "claude-desktop.json"),
       path.join(workDir, ".synapsor", "mcp", "cursor.json"),
       path.join(workDir, ".synapsor", "mcp", "vscode.json"),
     ], scenario);
-    const generatedConfig = JSON.parse(fs.readFileSync(paths.config, "utf8"));
-    const generatedProposal = generatedConfig.capabilities.find((capability) => capability.kind === "proposal");
-    assert(Boolean(generatedProposal), "Generated proposal capability missing", generatedConfig);
+    const generatedContract = JSON.parse(fs.readFileSync(generatedContractPath, "utf8"));
+    const generatedProposal = generatedContract.capabilities?.find((capability) => capability.kind === "proposal");
+    assert(Boolean(generatedProposal), "Generated proposal capability missing from canonical contract", generatedContract);
     if (scenario.expectedNumericBounds) {
       assert(
-        JSON.stringify(generatedProposal.numeric_bounds) === JSON.stringify(scenario.expectedNumericBounds),
+        JSON.stringify(generatedProposal.proposal?.numeric_bounds) === JSON.stringify(scenario.expectedNumericBounds),
         "Generated numeric bounds missing",
         generatedProposal,
       );
     }
     if (scenario.expectedTransitionGuards) {
       assert(
-        JSON.stringify(generatedProposal.transition_guards) === JSON.stringify(scenario.expectedTransitionGuards),
+        JSON.stringify(generatedProposal.proposal?.transition_guards) === JSON.stringify(scenario.expectedTransitionGuards),
         "Generated transition guards missing",
         generatedProposal,
       );
@@ -331,16 +339,16 @@ async function exerciseGeneratedOnboarding(scenario) {
       assert(!names.some((name) => /execute_sql|run_query|approve|commit/i.test(name)), "Unsafe model-facing tool exposed", names);
 
       const inspected = structured(await client.callTool({ name: scenario.inspectTool, arguments: scenario.inspectArgs }));
-      assert(inspected.status === "ok", "Inspect tool failed", inspected);
-      assert(inspected.source_database_mutated === false, "Inspect mutated source", inspected);
-      assert(inspected.trusted_context?.tenant_id === "acme", "Trusted tenant context missing", inspected);
+      assert(inspected.ok === true && inspected.kind === "read", "Inspect tool failed", inspected);
+      assert(inspected.source_database_changed === false, "Inspect mutated source", inspected);
+      assert(inspected._meta?.tenant_id === "acme", "Trusted tenant context missing", inspected);
 
       const proposed = structured(await client.callTool({ name: scenario.proposalTool, arguments: scenario.proposalArgs }));
-      assert(proposed.status === "review_required", "Proposal did not require review", proposed);
-      assert(proposed.diff?.[scenario.diffColumn]?.before === scenario.expectedBefore, "Proposal diff before value wrong", proposed);
-      assert(proposed.diff?.[scenario.diffColumn]?.proposed === scenario.expectedProposed, "Proposal diff proposed value wrong", proposed);
-      assert(proposed.source_database_mutated === false, "Proposal mutated source", proposed);
-      firstProposalId = String(proposed.proposal_id);
+      assert(proposed.ok === true && proposed.proposal?.state === "review_required", "Proposal did not require review", proposed);
+      assert(proposed.proposal?.diff?.[scenario.diffColumn]?.before === scenario.expectedBefore, "Proposal diff before value wrong", proposed);
+      assert(proposed.proposal?.diff?.[scenario.diffColumn]?.proposed === scenario.expectedProposed, "Proposal diff proposed value wrong", proposed);
+      assert(proposed.source_database_changed === false, "Proposal mutated source", proposed);
+      firstProposalId = String(proposed.proposal?.id);
     });
 
     const unchanged = dockerSql(scenario, scenario.unchangedSql);
@@ -361,8 +369,8 @@ async function exerciseGeneratedOnboarding(scenario) {
     let staleProposalId = "";
     await withMcpClient(scenario, paths, async (client) => {
       const proposed = structured(await client.callTool({ name: scenario.proposalTool, arguments: scenario.staleProposalArgs }));
-      staleProposalId = String(proposed.proposal_id);
-      assert(proposed.status === "review_required", "Stale proposal was not created", proposed);
+      staleProposalId = String(proposed.proposal?.id);
+      assert(proposed.ok === true && proposed.proposal?.state === "review_required", "Stale proposal was not created", proposed);
     });
     dockerSql(scenario, scenario.staleMutateSql);
     runner(scenario, ["proposals", "approve", staleProposalId, "--store", paths.store, "--actor", "local_reviewer", "--yes"]);

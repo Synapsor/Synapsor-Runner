@@ -16,6 +16,7 @@ const knownStateFiles = new Set([
   "ledger.db-journal",
   "ledger.db-shm",
   "ledger.db-wal",
+  "activation.json",
 ]);
 
 const knownTemporaryFile = /^(?:source\.json|synapsor\.runner\.json)\.\d+\.[0-9a-f]{12}\.tmp$/;

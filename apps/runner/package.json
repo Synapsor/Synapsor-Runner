@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Stop giving AI agents execute_sql; expose reviewed Postgres/MySQL MCP actions with proposals, approval, writeback, and replay.",
   "license": "Apache-2.0",
   "type": "module",
@@ -8,6 +8,14 @@
     "synapsor-runner": "dist/cli.js"
   },
   "exports": {
+    "./authoring": {
+      "types": "./dist/authoring.d.ts",
+      "import": "./dist/authoring.mjs"
+    },
+    "./shadow": {
+      "types": "./dist/shadow.d.ts",
+      "import": "./dist/shadow.mjs"
+    },
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "import": "./dist/runtime.mjs"
@@ -23,6 +31,12 @@
     "dist/runtime.mjs",
     "dist/runtime.d.ts",
     "dist/runtime.d.ts.map",
+    "dist/authoring.mjs",
+    "dist/authoring.d.ts",
+    "dist/authoring.d.ts.map",
+    "dist/shadow.mjs",
+    "dist/shadow.d.ts",
+    "dist/shadow.d.ts.map",
     "docs/**/*.md",
     "examples/dangerous-mcp-tools.json",
     "examples/app-owned-writeback/**",
@@ -65,7 +79,7 @@
     "model-context-protocol"
   ],
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "tsc -b && node ../../scripts/build-runner-package.mjs",
@@ -74,6 +88,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@synapsor/spec": "^1.4.2",
     "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pdf-lib": "1.17.1",

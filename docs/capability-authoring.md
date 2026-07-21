@@ -22,6 +22,49 @@ store path, MCP transport settings, and local development flags. The model sees
 semantic capabilities such as `billing.inspect_invoice`, not raw SQL, table
 names, write credentials, approval tools, or commit tools.
 
+## Code-First TypeScript Path
+
+Applications that prefer TypeScript can author the same canonical contract
+through the optional `@synapsor/runner/authoring` frontend:
+
+```ts
+import { defineCapability } from "@synapsor/runner/authoring";
+
+export const waiveLateFee = defineCapability({
+  name: "billing.propose_late_fee_waiver",
+  kind: "proposal",
+  context: "local_operator",
+  source: "app_postgres",
+  subject: { resource: "billing.invoice", primary_key: "id", tenant_key: "tenant_id" },
+  args: {
+    invoice_id: { type: "string", required: true, max_length: 128 },
+    reason: { type: "string", required: true, max_length: 500 },
+  },
+  lookup: { id_from_arg: "invoice_id" },
+  visible_fields: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+  kept_out_fields: ["card_token", "internal_risk_note"],
+  evidence: { required: true, query_audit: true },
+  max_rows: 1,
+  proposal: {
+    action: "waive_late_fee",
+    operation: { kind: "update" },
+    allowed_fields: ["late_fee_cents", "waiver_reason"],
+    patch: { late_fee_cents: { fixed: 0 }, waiver_reason: { from_arg: "reason" } },
+    numeric_bounds: { late_fee_cents: { minimum: 0, maximum: 10000 } },
+    conflict_guard: { column: "updated_at" },
+    approval: { mode: "human", required_role: "billing_lead" },
+    writeback: { mode: "direct_sql" },
+  },
+});
+```
+
+Compose typed resources, contexts, capabilities, workflows, and policies with
+`defineContract`, then use `contractJson` to write reviewable canonical JSON.
+`compileContract` validates and normalizes through `@synapsor/spec`; this API
+does not add semantics, raw SQL, or model-controlled predicates. The flagship
+[support/billing action](../examples/support-billing-agent/app/contract.ts)
+uses this frontend. JSON and DSL remain supported and conformance-equivalent.
+
 ## Contract/DSL Path
 
 Write a small DSL contract:

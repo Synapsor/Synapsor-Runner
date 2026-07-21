@@ -4,30 +4,40 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT/apps/runner"
 TEMP_DIR="$(mktemp -d)"
-TARBALL=""
+TARBALL="${SYNAPSOR_RUNNER_TARBALL:-}"
+REMOVE_TARBALL=0
 COMPOSE_FILE="$ROOT/examples/mcp-postgres-billing/docker-compose.yml"
 
 cleanup() {
   docker compose -f "$COMPOSE_FILE" down -v >/dev/null 2>&1 || true
   rm -rf "$TEMP_DIR"
-  if [[ -n "$TARBALL" && -f "$TARBALL" ]]; then
+  if [[ "$REMOVE_TARBALL" == "1" && -n "$TARBALL" && -f "$TARBALL" ]]; then
     rm -f "$TARBALL"
   fi
 }
 trap cleanup EXIT
 
-cd "$ROOT"
-corepack pnpm build:runner-package >/dev/null
+if [[ -n "$TARBALL" ]]; then
+  if [[ ! -f "$TARBALL" ]]; then
+    echo "SYNAPSOR_RUNNER_TARBALL does not name a file: $TARBALL" >&2
+    exit 1
+  fi
+  TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
+else
+  cd "$ROOT"
+  corepack pnpm build:runner-package >/dev/null
 
-cd "$PACKAGE_DIR"
-PACK_OUTPUT="$(npm pack --silent)"
-PACK_FILE="$(printf "%s\n" "$PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
-if [[ -z "$PACK_FILE" ]]; then
-  echo "npm pack did not print a tarball filename" >&2
-  printf "%s\n" "$PACK_OUTPUT" >&2
-  exit 1
+  cd "$PACKAGE_DIR"
+  PACK_OUTPUT="$(npm pack --silent)"
+  PACK_FILE="$(printf "%s\n" "$PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
+  if [[ -z "$PACK_FILE" ]]; then
+    echo "npm pack did not print a tarball filename" >&2
+    printf "%s\n" "$PACK_OUTPUT" >&2
+    exit 1
+  fi
+  TARBALL="$PACKAGE_DIR/$PACK_FILE"
+  REMOVE_TARBALL=1
 fi
-TARBALL="$PACKAGE_DIR/$PACK_FILE"
 
 docker compose -f "$COMPOSE_FILE" down -v >/dev/null 2>&1 || true
 docker compose -f "$COMPOSE_FILE" up -d >/dev/null

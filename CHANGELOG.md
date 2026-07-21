@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.5.2 (prepared, not published)
+
+### First safe action in an existing application
+
+- Establishes one canonical path from an existing application and staging
+  Postgres/MySQL database to a reviewed semantic action, scoped evidence, exact
+  proposal/Data PR, external human review, guarded apply, receipt, and replay.
+  Own-data failures stop honestly and never fall back to synthetic data.
+- Generates a canonical contract and local Runner wiring from read-only schema
+  inspection while detecting Prisma, Drizzle, OpenAPI, known database
+  environment names, and existing Synapsor files without executing adopter
+  code. The happy path requires no hand-written JSON or DSL.
+- Adds a focused localhost workbench for Project, Data source, Trust scope,
+  Action, Agent, Test, and Review. Configuration validation alone no longer
+  marks Test complete; a scoped read must create query-audit evidence first.
+- Adds safe project-scoped Cursor install, status, and uninstall with preview,
+  merge, backup, ownership/integrity checks, exact-version launch, and
+  preservation of unrelated MCP entries. Approval, apply, revert, credentials,
+  and trusted identity remain outside the model-facing MCP surface.
+- Adds local-only activation reports for proof, own-data onboarding, Cursor,
+  first read, and first proposal. Product timing explicitly excludes initial
+  package download; separately reported cold `npx` timing is environment-
+  specific. No activation telemetry or business identifiers are transmitted.
+- Adds optional `@synapsor/runner/authoring` and
+  `@synapsor/runner/shadow` exports. TypeScript authoring emits the same
+  canonical public contract, while shadow progression and provider-neutral
+  effect regression remain non-activating and label deterministic versus
+  external-model evidence.
+- Connects MCP audit candidates directly to the secured workbench and keeps
+  audit prominent in the README and docs. Adds an explicit host-compatibility
+  matrix and a packaged support/billing first-action reference workflow.
+- Corrects the supported runtime floor to Node 22.13.0, where `node:sqlite` is
+  available without an experimental flag, and fails earlier runtimes before
+  loading the Runner bundle.
+- Prepares only `@synapsor/runner@1.5.2`; `@synapsor/spec@1.4.2`,
+  `@synapsor/dsl@1.4.3`, and the Cloud CLI remain unchanged.
+
 ## 1.5.1 (prepared, not published)
 
 ### Safe ownership for disposable try state

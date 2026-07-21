@@ -28,11 +28,11 @@ inspect your schema
 -> choose one table/view
 -> choose trusted scope and visible fields
 -> optionally choose proposal/writeback rules
--> generate synapsor.runner.json
+-> generate synapsor.runner.json + canonical synapsor.contract.json
 -> preview MCP tools exposed to the model
 -> run a local smoke check of the tool boundary
 -> optionally write .synapsor/smoke-input.json for one real row
--> print mcp serve and local UI commands
+-> open the secured localhost first-action workbench in an interactive terminal
 ```
 
 It does not print your database URL, put the URL in MCP client config, expose
@@ -42,6 +42,11 @@ credentials.
 `start --from-env` is the shortest public command for first-run onboarding.
 `onboard db --from-env DATABASE_URL` is the same explicit path if you prefer the
 older command name in scripts.
+
+Interactive `start` opens the focused local workbench after config validation
+and an MCP boundary handshake. Use `--no-open` for CI or scripts. That handshake
+proves the reviewed tool surface; the workbench's **Test** step remains pending
+until a real scoped read is recorded in the local ledger.
 
 During the wizard, provide the optional sample object id if you know one safe
 row in the selected table. Runner writes `./.synapsor/smoke-input.json` with
@@ -185,6 +190,55 @@ The wizard:
   required trusted env vars are present;
 - writes the generated config, `.env.example`, and MCP client snippets only
   after final confirmation.
+
+The generated action is explicit about its activation state. Read-only and
+shadow actions cannot commit. Review/writeback generation requires final
+confirmation (`--yes` in a noninteractive command) and still gives the model no
+approval or apply tool.
+
+## 5. Add the reviewed tools to Cursor
+
+After setting trusted environment values, preview and install a project-scoped
+entry without hand-editing `.cursor/mcp.json`:
+
+```bash
+synapsor-runner mcp install cursor --project --dry-run \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+synapsor-runner mcp install cursor --project --yes \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+synapsor-runner mcp status cursor --project --check-launch
+```
+
+Runner merges rather than replaces existing MCP servers, creates a backup,
+records an integrity marker, and is idempotent. The entry uses an exact Runner
+version and contains no database URL, trusted tenant/principal value, approval,
+apply, or revert authority. Remove only the Runner-owned entry with:
+
+```bash
+synapsor-runner mcp uninstall cursor --project --yes
+```
+
+See the [host compatibility matrix](host-compatibility.md) for the precise
+Cursor evidence and MCP Apps limitation.
+
+## 6. Inspect local activation evidence
+
+Runner records bounded timing milestones locally. It does not transmit them:
+
+```bash
+synapsor-runner activation show \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+synapsor-runner activation export \
+  --out ./.synapsor/activation-report.json
+```
+
+Product activation time begins after package installation; initial npm
+resolution/download/cache time is measured separately when evaluating cold
+`npx` behavior. The report contains milestone timing/status only, not source
+rows, object IDs, tenant IDs, credentials, or project paths.
 
 For proposal modes, the current runner supports explicit field-update mappings such as:
 

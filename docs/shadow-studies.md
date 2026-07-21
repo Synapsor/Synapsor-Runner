@@ -142,6 +142,41 @@ synapsor-runner shadow outcome import \
   --store ./.synapsor/local.db
 ```
 
+For the normal application path, record the trusted outcome directly instead
+of assembling JSONL. `@synapsor/runner/shadow` writes through the same scope,
+effect-shape, and secret checks as the import command:
+
+```js
+import { createShadowOutcomeRecorder } from "@synapsor/runner/shadow";
+
+const recorder = createShadowOutcomeRecorder({
+  storePath: "./.synapsor/local.db",
+  studyId: "sst_support_pilot",
+  actor: "support_application",
+  source: "support-audit-log",
+});
+
+try {
+  recorder.record({
+    requestId: "request_123",
+    tenantId: "acme",
+    businessObject: "invoice",
+    objectId: "INV-3001",
+    disposition: "applied",
+    actualEffect: {
+      before: { late_fee_cents: 5500 },
+      after: { late_fee_cents: 0 },
+      patch: { late_fee_cents: 0 },
+    },
+  });
+} finally {
+  recorder.close();
+}
+```
+
+The application owns the truth of this outcome. The helper does not read or
+mutate the source database and cannot approve a shadow proposal.
+
 ## Review The Report
 
 ```bash
@@ -160,6 +195,16 @@ classifies exact, partial, disagreement, human rejection/no action, policy
 denial, unable-to-propose, stale/conflict, unmatched, and unsafe-scope cases.
 It also includes amount distributions, capability/reason breakdowns, and
 risk-ranked disagreements.
+
+The report also shows the explicit trust progression:
+
+```text
+Observe -> Compare -> Manual review -> Suggested bounded policy
+```
+
+It reports an insufficient sample size until the minimum comparable evidence
+exists. A suggested policy remains an inactive review artifact; the report
+never widens or activates the contract.
 
 Close a completed study:
 
@@ -187,10 +232,8 @@ synapsor-runner shadow case import \
   --input ./examples/support-billing-agent/shadow-study/cases.jsonl \
   --store ./.synapsor/shadow-reference.db
 
-synapsor-runner shadow outcome import \
-  --study sst_support_reference \
-  --input ./examples/support-billing-agent/shadow-study/outcomes.jsonl \
-  --store ./.synapsor/shadow-reference.db
+node ./examples/support-billing-agent/app/record-shadow-outcomes.mjs \
+  ./.synapsor/shadow-reference.db sst_support_reference
 
 synapsor-runner shadow report \
   --study sst_support_reference \
