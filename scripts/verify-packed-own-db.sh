@@ -61,7 +61,7 @@ docker compose -f "$COMPOSE_FILE" up -d >/dev/null
 
 READY=0
 for _ in $(seq 1 90); do
-  READY_LOGS="$(docker logs synapsor_runner_mcp_postgres_billing 2>&1 | rg -c "database system is ready to accept connections" || true)"
+  READY_LOGS="$(docker logs synapsor_runner_mcp_postgres_billing 2>&1 | grep -cF "database system is ready to accept connections" || true)"
   if [[ "$READY_LOGS" -ge 2 ]] \
     && docker exec synapsor_runner_mcp_postgres_billing psql -U synapsor_reader -d synapsor_runner_mcp_billing -tAc \
       "SELECT 1 FROM public.invoices LIMIT 1" >/dev/null 2>&1 \

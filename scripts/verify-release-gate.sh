@@ -44,7 +44,7 @@ run "$ROOT/scripts/verify-packed-own-db.sh"
 run node "$ROOT/scripts/check-license-content.mjs"
 
 log "No install-looking @synapsor/handler references in public docs/examples"
-if rg -n "@synapsor/handler" \
+if grep -R -n "@synapsor/handler" \
   "$ROOT/README.md" \
   "$ROOT/apps/runner/README.md" \
   "$ROOT/docs" \
