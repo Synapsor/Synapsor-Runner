@@ -11,10 +11,11 @@ synapsor-runner contract test \
   --config ./synapsor.runner.json
 ```
 
-Static mode checks tool exposure, operator-only boundaries, argument limits,
-transition guards, bounded-set caps, and other assertions that do not require a
-database. Add `--live` to call the actual MCP runtime for scoped reads,
-proposals, evidence/replay redaction, and source-unchanged checks.
+Static mode checks tool exposure, operator-only boundaries, trusted scope,
+evidence and approval requirements, exact proposal effects, conflict guards,
+argument limits, transition guards, bounded-set caps, and other assertions that
+do not require a database. Add `--live` to call the actual MCP runtime for
+scoped reads, proposals, evidence/replay redaction, and source-unchanged checks.
 
 ```bash
 synapsor-runner contract test \
@@ -37,9 +38,10 @@ Summary: 6 passed / 0 failed / 6 total
 ```
 
 Supported assertions cover valid scoped tools, cross-tenant denial,
-same-tenant cross-principal denial, kept-out
-fields, argument constraints, transition guards, set caps, unchanged source
-state before approval, and the absence of model-facing approval/writeback.
+same-tenant cross-principal denial, trusted tenant/principal scope, required
+evidence, approval-policy boundaries, kept-out fields, argument constraints,
+transition guards, set caps, unchanged source state before approval, and the
+absence of model-facing approval/writeback.
 Trusted tenant and principal values belong in test setup, not tool arguments.
 
 Use `cross_principal_deny` to prove both the allowed and denied sides of one

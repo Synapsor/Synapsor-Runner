@@ -266,6 +266,7 @@ describe("runner cli", () => {
     const commands = [
       ["--help"],
       ["start", "--help"],
+      ["action", "--help"],
       ["up", "--help"],
       ["inspect", "--help"],
       ["init", "--help"],
@@ -358,8 +359,65 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.5.2");
+      expect(output.join("").trim()).toBe("1.5.3");
     }
+  });
+
+  it("starts and validates a disabled code-first Safe Action without activating it", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-safe-action-"));
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.copyFile(workspacePath("packages/spec/examples/guarded-writeback.contract.json"), contractPath);
+    await fs.writeFile(configPath, `${JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "SYNAPSOR_DATABASE_READ_URL",
+          write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+        },
+      },
+    }, null, 2)}\n`);
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "start",
+      "--action", "refund_order",
+      "--description", "Propose one reviewed order refund.",
+      "--project-root", tempDir,
+    ])).resolves.toBe(0);
+    const startText = output.join("");
+    expect(startText).toContain("State: disabled scaffold");
+    expect(startText).toMatch(/active Runner tools are unchanged/i);
+    expect(startText).toContain("proposal.allowed_fields / patch");
+    const sourcePath = path.join(tempDir, "synapsor/actions/billing.propose_refund_order.ts");
+    let source = await fs.readFile(sourcePath, "utf8");
+    source = source
+      .replace("__REVIEW_OPERATION__", "update")
+      .replaceAll("__REVIEW_MUTATION_COLUMN__", "late_fee_cents")
+      .replace("__REVIEW_MODEL_ARGUMENT__", "reason")
+      .replace("__REVIEW_APPROVER_ROLE__", "billing_lead")
+      .replace("__REVIEW_WRITEBACK_MODE__", "direct_sql");
+    await fs.writeFile(sourcePath, source);
+
+    output.length = 0;
+    await expect(main(["action", "validate", "./synapsor/actions/billing.propose_refund_order.ts", "--project-root", tempDir, "--json"])).resolves.toBe(0);
+    const validation = JSON.parse(output.join(""));
+    expect(validation).toMatchObject({ ok: true, state: "disabled_draft", active_tools_changed: false, source_database_changed: false });
+    expect(validation.draft_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(JSON.parse(await fs.readFile(configPath, "utf8")).contracts).toEqual(["./synapsor.contract.json"]);
+    await expect(fs.access(path.join(tempDir, ".synapsor/active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    output.length = 0;
+    await expect(main(["action", "status", "--project-root", tempDir, "--json"])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({ ok: true, draft: { state: "disabled_draft" }, draft_matches_active: false });
   });
 
   it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
@@ -1065,9 +1123,11 @@ describe("runner cli", () => {
     expect(text).toContain("Synapsor MCP database risk review");
     expect(text).toContain("Target: example:dangerous-db-mcp");
     expect(text).toContain("Top distinct risks:");
+    expect(text).toContain("Model-authority map:");
     expect(text).toContain("The model can shape database authority");
     expect(text).toContain("Commit or approval authority is model-callable");
     expect(text).not.toContain("WRITE_WITHOUT_PROPOSAL_BOUNDARY");
+    expect(text).not.toContain("Overall risk");
 
     output.length = 0;
     await expect(main(["audit", "--example", "dangerous-db-mcp", "--verbose"])).resolves.toBe(0);
@@ -1078,12 +1138,28 @@ describe("runner cli", () => {
 
     output.length = 0;
     await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "json"])).resolves.toBe(0);
-    expect(JSON.parse(output.join("")).target).toBe("example:dangerous-db-mcp");
+    const jsonReport = JSON.parse(output.join(""));
+    expect(jsonReport.target).toBe("example:dangerous-db-mcp");
+    expect(jsonReport.authority_map.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ authority: "raw_query_tools", status: "observed" }),
+      expect.objectContaining({ authority: "operator_and_writeback_enforcement", status: "outside_static_audit_visibility" }),
+    ]));
 
     output.length = 0;
     await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "markdown"])).resolves.toBe(0);
     expect(output.join("")).toContain("# Synapsor MCP Database Risk Review");
+    expect(output.join("")).toContain("## Model-authority map");
+    expect(output.join("")).toContain("Remediation guide");
     expect(output.join("")).toContain("## Safer Shape");
+
+    output.length = 0;
+    await expect(main(["audit", "--example", "dangerous-db-mcp", "--format", "sarif"])).resolves.toBe(0);
+    const sarif = JSON.parse(output.join(""));
+    expect(sarif.version).toBe("2.1.0");
+    expect(sarif.runs[0].properties.authorityMap.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ authority: "raw_query_tools", status: "observed" }),
+    ]));
+    expect(sarif.runs[0].tool.driver.rules[0].helpUri).toMatch(/^https:\/\/github\.com\/Synapsor\/Synapsor-Runner\/blob\/main\/docs\/mcp-audit\.md#finding-/);
   });
 
   it("validates, normalizes, and bundles canonical Synapsor contracts", async () => {
@@ -1302,7 +1378,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.4.2",
         "@synapsor/dsl": "1.4.3",
-        "@synapsor/runner": "1.5.2",
+        "@synapsor/runner": "1.5.3",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -3899,6 +3975,7 @@ END
       ...structuredClone(changeSet),
       action: "billing.propose_late_fee_waiver",
       source: { ...structuredClone(changeSet.source), source_id: "local_postgres" },
+      contract: { digest: contractDigest, version: "0.1.0" },
       integrity: { proposal_hash: proposalHash },
     });
     proposalStore.close();
@@ -3940,6 +4017,66 @@ END
     }, configPath, storePath, { cloudApproved: true })).rejects.toThrow(/does not match any reviewed proposal capability|allowlist/);
   });
 
+  it("fails local apply closed when activation changed after proposal review", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-local-contract-authority-"));
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor", "local.db");
+    await fs.copyFile(workspacePath("packages/spec/examples/guarded-writeback.contract.json"), contractPath);
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "SYNAPSOR_DATABASE_READ_URL",
+          write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+        },
+      },
+    }), "utf8");
+    const reviewed = loadRuntimeConfigFromFile(configPath).capabilities?.find((capability) => capability.name === "billing.propose_late_fee_waiver");
+    const contractDigest = reviewed?.contract_provenance?.digest as `sha256:${string}`;
+    expect(contractDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const proposalHash = `sha256:${"f".repeat(64)}`;
+    const store = new ProposalStore(storePath);
+    store.createProposal({
+      ...structuredClone(changeSet),
+      action: "billing.propose_late_fee_waiver",
+      source: { ...structuredClone(changeSet.source), source_id: "local_postgres" },
+      contract: { digest: contractDigest, version: "0.1.0" },
+      integrity: { proposal_hash: proposalHash },
+    });
+    store.approveProposal("wrp_cli", { approver: "local_reviewer", proposal_hash: proposalHash, proposal_version: 1 });
+    store.close();
+    const job = parseWritebackJob({
+      protocol_version: "1.0",
+      job_id: "wbj_local_contract_authority",
+      proposal_id: "wrp_cli",
+      approval_id: proposalHash,
+      source_id: "local_postgres",
+      engine: "postgres",
+      target: {
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "id", value: "INV-CLI" },
+        tenant_guard: { column: "tenant_id", value: "acme" },
+      },
+      allowed_columns: ["late_fee_cents", "waiver_reason"],
+      patch: { late_fee_cents: 0, waiver_reason: "customer requested review" },
+      conflict_guard: { kind: "version_column", column: "updated_at", expected_value: "2026-06-20T14:31:08Z" },
+      idempotency_key: proposalHash,
+      lease_expires_at: "2099-07-15T00:00:00Z",
+    });
+    await expect(verifyLocalWritebackAuthority(job, configPath, storePath)).resolves.toBeUndefined();
+
+    const changedContract = JSON.parse(await fs.readFile(contractPath, "utf8"));
+    changedContract.metadata.description = "A newly activated contract with a distinct reviewed digest.";
+    await fs.writeFile(contractPath, JSON.stringify(changedContract), "utf8");
+    await expect(verifyLocalWritebackAuthority(job, configPath, storePath)).rejects.toThrow(/proposal contract digest.*active reviewed contract/i);
+  });
+
   it("hydrates fingerprint-only Cloud principal scope from the immutable local proposal", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cloud-principal-authority-"));
     const contractPath = path.join(tempDir, "synapsor.contract.json");
@@ -3976,6 +4113,7 @@ END
       ...structuredClone(changeSet),
       action: "billing.propose_late_fee_waiver",
       source: { ...structuredClone(changeSet.source), source_id: "local_postgres" },
+      contract: { digest: contractDigest, version: "0.1.0" },
       guards: { ...structuredClone(changeSet.guards), principal_scope: principalScope },
       integrity: { proposal_hash: proposalHash },
     };
@@ -4187,6 +4325,78 @@ END
     expect(report.findings.map((finding: { code: string }) => finding.code)).toContain("MODEL_CALLABLE_COMMIT_OR_APPROVAL");
     expect(report.summary.tools_inspected).toBe(1);
   });
+
+  it("audits configured MCP bypasses statically and launches only one explicitly consented server", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor audit workspace with spaces-"));
+    const cursorDir = path.join(tempDir, ".cursor");
+    const configPath = path.join(cursorDir, "mcp.json");
+    const markerPath = path.join(tempDir, "server-started.txt");
+    const serverPath = path.join(tempDir, "server.mjs");
+    await fs.mkdir(cursorDir, { recursive: true });
+    await fs.writeFile(serverPath, `
+      import fs from "node:fs";
+      import readline from "node:readline";
+      fs.writeFileSync(${JSON.stringify(markerPath)}, "started");
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.on("line", (line) => {
+        const msg = JSON.parse(line);
+        if (msg.method === "initialize") {
+          process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-11-25", capabilities: {}, serverInfo: { name: "dangerous", version: "1" } } }) + "\\n");
+        }
+        if (msg.method === "tools/list") {
+          process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "execute_sql", description: "Execute arbitrary SQL", inputSchema: { type: "object", properties: { sql: { type: "string" } } } }] } }) + "\\n");
+        }
+      });
+    `, "utf8");
+    await fs.writeFile(configPath, JSON.stringify({
+      mcpServers: {
+        synapsor: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "-p", "@synapsor/runner@1.5.3", "synapsor-runner", "mcp", "serve"],
+        },
+        direct_database: {
+          type: "stdio",
+          command: process.execPath,
+          args: ["${workspaceFolder}/server.mjs"],
+        },
+      },
+    }, null, 2), "utf8");
+
+    const output: string[] = [];
+    const stderr: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["audit", "--mcp-config", configPath, "--json"])).resolves.toBe(0);
+    const staticReport = JSON.parse(output.join(""));
+    expect(staticReport.bypass_check).toMatchObject({ mode: "static_config", direct_bypass_observed: false, unverified_servers: 2 });
+    await expect(fs.access(markerPath)).rejects.toThrow();
+
+    output.length = 0;
+    await expect(main(["audit", "--mcp-config", configPath, "--live-server", "direct_database", "--json"]))
+      .rejects.toThrow(/requires --yes/);
+    await expect(fs.access(markerPath)).rejects.toThrow();
+
+    output.length = 0;
+    await expect(main(["audit", "--mcp-config", configPath, "--live-server", "direct_database", "--yes", "--json", "--timeout-ms", "5000"]))
+      .resolves.toBe(0);
+    const liveReport = JSON.parse(output.join(""));
+    expect(liveReport.bypass_check).toMatchObject({ mode: "selected_live_tools_list", direct_bypass_observed: true, unverified_servers: 1 });
+    expect(liveReport.bypass_check.servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ server: "direct_database", status: "observed_direct_authority", tools_observed: ["execute_sql"] }),
+      expect.objectContaining({ server: "synapsor", status: "requires_operator_verification" }),
+    ]));
+    expect(liveReport.findings.map((finding: { code: string }) => finding.code)).toContain("MCP_BYPASS_DIRECT_AUTHORITY");
+    expect(stderr.join("")).toContain("querying tools/list from configured server direct_database");
+    await expect(fs.readFile(markerPath, "utf8")).resolves.toBe("started");
+  }, 15_000);
 
   it("prints MCP client configuration snippets without secrets", async () => {
     const output: string[] = [];

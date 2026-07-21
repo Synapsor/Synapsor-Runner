@@ -36,6 +36,10 @@ STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
 test -f "$PACKED_ROOT/docs/mcp-apps.md"
 grep -F "text/html;profile=mcp-app" "$PACKED_ROOT/docs/mcp-apps.md" >/dev/null
+test -f "$PACKED_ROOT/docs/alternatives.md"
+test -f "$PACKED_ROOT/docs/client-recipes.md"
+test -f "$PACKED_ROOT/docs/cursor-plugin.md"
+test -f "$PACKED_ROOT/docs/fresh-developer-usability.md"
 test -f "$PACKED_ROOT/docs/effect-regression.md"
 test -f "$PACKED_ROOT/schemas/effect-fixture.schema.json"
 test -f "$PACKED_ROOT/schemas/effect-result.schema.json"
@@ -125,6 +129,40 @@ if npx synapsor-runner audit generate --example dangerous-db-mcp --output ./audi
   echo "packed audit candidate generation unexpectedly overwrote an existing directory" >&2
   exit 1
 fi
+
+SAFE_ACTION_PROJECT="$TEMP_DIR/safe action project"
+cp -R "$PACKED_ROOT/examples/support-plan-credit" "$SAFE_ACTION_PROJECT"
+npx synapsor-runner start \
+  --action second_credit \
+  --description "Propose one second reviewed plan credit" \
+  --based-on support.inspect_customer \
+  --project-root "$SAFE_ACTION_PROJECT" > safe-action-start.txt
+grep -F "State: disabled scaffold" safe-action-start.txt >/dev/null
+grep -F "active Runner tools are unchanged" safe-action-start.txt >/dev/null
+test -f "$SAFE_ACTION_PROJECT/synapsor/actions/support.propose_second_credit.ts"
+test ! -e "$SAFE_ACTION_PROJECT/.synapsor/active.json"
+npx synapsor-runner action validate \
+  "$SAFE_ACTION_PROJECT/synapsor/actions/support.propose_plan_credit.ts" \
+  --project-root "$SAFE_ACTION_PROJECT" \
+  --json > safe-action-validation.json
+node --input-type=module - safe-action-validation.json "$SAFE_ACTION_PROJECT" <<'NODE'
+import fs from "node:fs";
+import path from "node:path";
+const result = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const projectRoot = process.argv[3];
+if (!result.ok || result.state !== "disabled_draft") throw new Error("packed Safe Action did not validate as a disabled draft");
+if (result.active_tools_changed !== false || result.source_database_changed !== false) throw new Error("packed Safe Action validation changed authority or source data");
+if (!/^sha256:[a-f0-9]{64}$/.test(result.draft_digest)) throw new Error("packed Safe Action validation omitted its digest");
+if (fs.existsSync(path.join(projectRoot, ".synapsor", "active.json"))) throw new Error("packed Safe Action validation created an active artifact");
+NODE
+npx synapsor-runner action status --project-root "$SAFE_ACTION_PROJECT" --json > safe-action-status.json
+node --input-type=module - safe-action-status.json <<'NODE'
+import fs from "node:fs";
+const status = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (!status.ok || status.draft?.state !== "disabled_draft" || status.draft_matches_active !== false) {
+  throw new Error("packed Safe Action status did not preserve draft/active separation");
+}
+NODE
 npx synapsor-runner init from-prisma \
   "$PACKED_ROOT/fixtures/generators/prisma/schema.prisma" \
   --output ./prisma-candidates >/dev/null

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.3 (prepared, not published)
+
+### Intent to Safe Action
+
+- Adds one code-first Safe Action Composer from a reviewed read boundary to a
+  restricted TypeScript draft, canonical contract, plain-language explanation,
+  and deterministic allow/deny/effect tests. Runner statically parses the file
+  and never imports or executes adopter code while deciding authority.
+- Keeps every generated action disabled until a human reviews a real staging
+  Data PR in the secured Workbench and explicitly activates the complete
+  digest. Editing, validating, or watching a draft cannot change active MCP
+  tools; proposals remain pinned to their active contract digest.
+- Adds current Cursor project/plugin packaging, `/synapsor-protect`, live Safe
+  Action diagnostics, owned install/uninstall, and an honest host matrix.
+  Activation, approval, apply, credentials, and trusted identity stay outside
+  the model-facing surface.
+- Extends MCP audit with evidence-labeled authority maps, explicitly consented
+  selected-server bypass checks, text/JSON/Markdown/SARIF output, fixtures, and
+  a non-mutating GitHub Actions workflow.
+- Adds a checked-in Safe Action CI workflow plus verified proposal-only recipes
+  for Claude Code, Codex, VS Code, OpenAI Agents, LangChain/LangGraph, Google
+  ADK, LlamaIndex, and generic MCP clients.
+- Reframes the README and website around one existing-application Data PR,
+  publishes an honest alternatives guide, and adds a deterministic 36-second
+  support-plan-credit cut backed by real PostgreSQL proposal, receipt, retry,
+  and stale-conflict evidence.
+- Prepares only `@synapsor/runner@1.5.3`; `@synapsor/spec@1.4.2`,
+  `@synapsor/dsl@1.4.3`, and the Cloud CLI remain unchanged.
+
 ## 1.5.2 (prepared, not published)
 
 ### First safe action in an existing application

@@ -4,10 +4,17 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { buildProposalReviewView, loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
+import { buildProposalReviewView, createMcpRuntime, loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions } from "@synapsor-runner/protocol";
 import { cursorProjectStatus } from "./cursor-project.js";
+import {
+  activateSafeActionDraft,
+  prepareSafeActionPreview,
+  recordSafeActionEffectPreview,
+  safeActionStatus,
+  type SafeActionStatus,
+} from "./safe-action.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -21,7 +28,20 @@ export type LocalUiOptions = {
   allowRemoteBind?: boolean;
   tour?: boolean;
   storeAccess?: LocalUiStoreAccess;
+  safeActionPreview?: SafeActionPreview;
 };
+
+export type SafeActionPreview = (input: {
+  projectRoot: string;
+  configPath: string;
+  storePath: string;
+  args: JsonRecord;
+}) => Promise<{
+  draft_digest: `sha256:${string}`;
+  proposal_id: string;
+  proposal_hash: string;
+  source_database_changed: boolean;
+}>;
 
 export type LocalUiStoreAccess = <T>(
   mode: "read" | "write",
@@ -49,11 +69,13 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const token = options.token ?? crypto.randomBytes(24).toString("base64url");
   const csrfToken = options.csrfToken ?? crypto.randomBytes(24).toString("base64url");
   const storeAccess = options.storeAccess ?? localStoreAccess(storePath);
+  const projectRoot = path.resolve(path.dirname(configPath));
+  const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
   const bootstrapState = { consumed: false };
 
   const server = createServer(async (request, response) => {
     try {
-      await handleRequest({ request, response, configPath, storePath, storeAccess, token, csrfToken, tour: options.tour === true, bootstrapState });
+      await handleRequest({ request, response, configPath, storePath, projectRoot, storeAccess, safeActionPreview, token, csrfToken, tour: options.tour === true, bootstrapState });
     } catch (error) {
       sendJson(response, 500, {
         ok: false,
@@ -94,13 +116,15 @@ async function handleRequest(input: {
   response: ServerResponse;
   configPath: string;
   storePath: string;
+  projectRoot: string;
   storeAccess: LocalUiStoreAccess;
+  safeActionPreview: SafeActionPreview;
   token: string;
   csrfToken: string;
   tour: boolean;
   bootstrapState: { consumed: boolean };
 }): Promise<void> {
-  const { request, response, configPath, storePath, storeAccess, token, csrfToken, tour, bootstrapState } = input;
+  const { request, response, configPath, storePath, projectRoot, storeAccess, safeActionPreview, token, csrfToken, tour, bootstrapState } = input;
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
   if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
     if (url.searchParams.get("token") !== token || bootstrapState.consumed) {
@@ -142,7 +166,54 @@ async function handleRequest(input: {
       proposals: store.listProposals(),
       queryAuditCount: store.listQueryAudit().length,
     }));
-    sendJson(response, 200, buildWorkbench(config, manifest, cursorState, activity.proposals, activity.queryAuditCount));
+    const actionStatus = await safeActionStatus(projectRoot);
+    sendJson(response, 200, buildWorkbench(config, manifest, cursorState, activity.proposals, activity.queryAuditCount, actionStatus));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/preview") {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Safe Action preview" });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (!isRecord(body.args)) throw new Error("Safe Action preview requires an args object");
+    const preview = await safeActionPreview({ projectRoot, configPath, storePath, args: body.args });
+    const manifest = await recordSafeActionEffectPreview({
+      projectRoot,
+      draftDigest: preview.draft_digest,
+      proposalId: preview.proposal_id,
+      proposalHash: preview.proposal_hash,
+      sourceDatabaseChanged: preview.source_database_changed,
+    });
+    sendJson(response, 200, { ok: true, preview: manifest.effect_preview, source_database_changed: false });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/activate") {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Safe Action activation" });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked contract activation must use the governed Cloud contract-version workflow." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.expected_digest !== "string" || typeof body.confirmation !== "string") throw new Error("Safe Action activation requires expected_digest and confirmation");
+    const active = await activateSafeActionDraft({
+      projectRoot,
+      configPath,
+      expectedDigest: body.expected_digest,
+      confirmation: body.confirmation,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      active,
+      tools_list_changed: false,
+      reconnect_required: true,
+      message: "The immutable contract is active. Restart or reconnect the MCP client so it reloads the reviewed tool list.",
+    });
     return;
   }
 
@@ -277,6 +348,35 @@ async function handleRequest(input: {
   sendJson(response, 404, { ok: false, error: "not found" });
 }
 
+async function executeSafeActionPreview(input: {
+  projectRoot: string;
+  configPath: string;
+  storePath: string;
+  args: JsonRecord;
+}): ReturnType<SafeActionPreview> {
+  const prepared = await prepareSafeActionPreview({ projectRoot: input.projectRoot, configPath: input.configPath });
+  const previewConfigPath = path.resolve(input.projectRoot, prepared.config_path);
+  const runtime = createMcpRuntime(loadRuntimeConfigFromFile(previewConfigPath), { storePath: input.storePath });
+  try {
+    const result = await runtime.callTool(prepared.capability, input.args);
+    const proposalId = typeof result.proposal_id === "string" ? result.proposal_id : "";
+    const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : "";
+    if (!proposalId || !proposalHash) throw new Error("Safe Action preview did not create an immutable proposal");
+    if (result.source_database_changed === true || result.source_database_mutated === true) throw new Error("Safe Action preview unexpectedly changed source data");
+    const proposal = await runtime.store.getProposal(proposalId);
+    if (!proposal || proposal.proposal_hash !== proposalHash) throw new Error("Safe Action preview proposal is missing from the reviewed ledger");
+    if (proposal.change_set.contract?.digest !== prepared.draft_digest) throw new Error("Safe Action preview proposal is not pinned to the current draft digest");
+    return {
+      draft_digest: prepared.draft_digest,
+      proposal_id: proposalId,
+      proposal_hash: proposalHash,
+      source_database_changed: false,
+    };
+  } finally {
+    await runtime.close();
+  }
+}
+
 async function readRunnerConfig(configPath: string): Promise<JsonRecord> {
   const raw = await fs.readFile(configPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
@@ -398,6 +498,7 @@ function buildWorkbench(
   cursorState: "not_installed" | "installed" | "unowned" | "tampered",
   proposals: StoredProposal[],
   queryAuditCount: number,
+  safeAction: SafeActionStatus,
 ): JsonRecord {
   const project = asRecord(manifest?.project);
   const source = asRecord(manifest?.source);
@@ -410,6 +511,7 @@ function buildWorkbench(
   const validation = validateRunnerCapabilityConfig(config);
   const latest = proposals.at(0);
   const generated = Boolean(manifest);
+  const cursorPrompt = buildCursorSafeActionPrompt(safeAction, proposalCapability);
   return {
     ok: validation.ok && capabilities.length > 0,
     title: "First safe action",
@@ -443,9 +545,29 @@ function buildWorkbench(
       writeback: action.writeback ?? "not recorded",
       activation_confirmed: safety.developer_confirmed_activation === true,
     },
-    cursor: { state: cursorState },
+    cursor: {
+      state: cursorState,
+      connection_status: cursorState === "installed" ? "project_configuration_installed" : "not_verified",
+      prompt: cursorPrompt,
+      prompt_deeplink: `cursor://anysphere.cursor-deeplink/prompt?text=${encodeURIComponent(cursorPrompt)}`,
+      prompt_web_link: `https://cursor.com/link/prompt?text=${encodeURIComponent(cursorPrompt)}`,
+      plugin_scope: "workspace",
+      plugin_status: "local-validation-ready; Marketplace submission not yet completed",
+      tools: capabilities.map((capability) => String(capability.name ?? "")).filter(Boolean),
+      proposal_waiting: !latest,
+      next_step: latest
+        ? `Review ${latest.proposal_id} in this secured localhost Workbench.`
+        : "Keep this Workbench open. It will update when Cursor creates the first proposal; no follow-up CLI command is required.",
+    },
+    safe_action: safeAction,
     latest_proposal: latest ? summarizeProposal(latest) : null,
   };
+}
+
+function buildCursorSafeActionPrompt(safeAction: SafeActionStatus, proposalCapability: JsonRecord | undefined): string {
+  const actionName = safeAction.draft?.action_name
+    ?? (typeof proposalCapability?.name === "string" ? proposalCapability.name : "one reviewed business action");
+  return `Use /synapsor-protect to make ${actionName} safe for an agent. Inspect this project, draft only a disabled TypeScript Safe Action, keep trusted tenant/principal values outside model arguments, keep sensitive or unknown fields out, run deterministic validation and tests, and leave effect review and activation to me in the secured Synapsor Workbench.`;
 }
 
 function stage(name: string, status: "complete" | "ready" | "blocked", detail: string): JsonRecord {
@@ -650,6 +772,7 @@ h1 { margin: 0 0 4px; font-size: 28px; }
 h2 { margin: 0 0 12px; font-size: 18px; }
 p { color: var(--muted); line-height: 1.5; }
 .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+.grid > * { min-width:0; }
 .tour-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; }
 .card { background:white; border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 8px 28px rgba(15,23,42,.05); }
 .full { grid-column: 1 / -1; }
@@ -904,6 +1027,116 @@ async function loadWorkbench() {
   root.append(activation);
   if (payload.action && payload.action.kept_out_fields && payload.action.kept_out_fields.length) {
     root.append(el("p", { text: "Kept out of the model-facing action: " + payload.action.kept_out_fields.join(", ") }));
+  }
+  const cursor = payload.cursor || {};
+  const cursorPanel = el("div", { class: "card", style: "box-shadow:none;margin-top:16px" });
+  cursorPanel.append(el("div", { class: "detail-head" }, [
+    el("div", {}, [el("h3", { text: "Add the action to Cursor", style: "margin:0" }), el("div", { class: "sub", text: "Project-scoped, proposal-only MCP" })]),
+    chip(cursor.state === "installed" ? "Project MCP configured" : "MCP connection not verified", cursor.state === "installed" ? "ok" : cursor.state === "not_installed" ? "wait" : "bad"),
+  ]));
+  cursorPanel.append(el("p", { text: "Copy this exact first prompt. Cursor may draft and validate the disabled action; only you can review and activate its digest here." }));
+  const prompt = document.createElement("textarea");
+  prompt.rows = 5;
+  prompt.readOnly = true;
+  prompt.value = String(cursor.prompt || "");
+  prompt.setAttribute("aria-label", "Copyable Cursor Safe Action prompt");
+  const copyPromptStatus = el("div", { class: "status-line", text: String(cursor.next_step || "") });
+  const copyPrompt = el("button", { class: "secondary", text: "Copy Cursor prompt", onclick: async () => {
+    await navigator.clipboard.writeText(prompt.value);
+    copyPromptStatus.textContent = "Prompt copied. Cursor still requires you to review and submit it.";
+  } });
+  const openCursor = el("button", { text: "Open in Cursor", onclick: () => {
+    window.location.href = String(cursor.prompt_deeplink || cursor.prompt_web_link || "#");
+  } });
+  cursorPanel.append(prompt, el("div", { class: "actions" }, [copyPrompt, openCursor]), copyPromptStatus);
+  cursorPanel.append(el("p", { class: "sub", text: "Cursor-visible tools: " + ((cursor.tools || []).join(", ") || "none until a reviewed contract is active") }));
+  cursorPanel.append(el("p", { class: "sub", text: "Connection evidence: " + String(cursor.connection_status || "not_verified") + ". Use mcp status --check-launch for a real Runner initialize/tools-list handshake; host GUI connection still requires Cursor verification." }));
+  if (cursor.proposal_waiting) {
+    cursorPanel.append(el("div", { class: "callout", text: "Waiting for Cursor to create the first exact proposal. Source data remains unchanged; this page checks the local ledger only." }));
+  } else {
+    const reviewButton = el("button", { text: "Review the first Data PR", onclick: async () => {
+      await loadProposals();
+      if (state.firstId) await loadDetail(state.firstId);
+      byId("proposals").scrollIntoView({ behavior: "smooth", block: "start" });
+    } });
+    cursorPanel.append(el("div", { class: "actions" }, reviewButton));
+  }
+  root.append(cursorPanel);
+  const safeAction = payload.safe_action || {};
+  if (safeAction.draft) {
+    const draft = safeAction.draft;
+    const validation = draft.validation || {};
+    const panel = el("div", { class: "card", style: "box-shadow:none;margin-top:16px" });
+    panel.append(el("div", { class: "detail-head" }, [
+      el("div", {}, [el("h3", { text: "Disabled Safe Action draft", style: "margin:0" }), el("div", { class: "sub", text: draft.action_name })]),
+      chip(draft.state === "activated" ? "Activated artifact" : "Not active", draft.state === "activated" ? "ok" : "wait"),
+    ]));
+    const kv = el("dl", { class: "kv" });
+    kv.append(
+      el("dt", { text: "Draft digest" }), el("dd", { text: draft.draft_contract_digest }),
+      el("dt", { text: "Source" }), el("dd", { text: draft.source_path }),
+      el("dt", { text: "Active tools changed by editing" }), el("dd", { text: "No" }),
+      el("dt", { text: "Unresolved authority" }), el("dd", { text: String((draft.unresolved_authority || []).length) }),
+      el("dt", { text: "Incremental strict lint" }), el("dd", { text: validation.blocking_lint_issues === 0 ? "Passed" : "Blocked: " + String(validation.blocking_lint_issues || 0) + " new/error finding(s)" }),
+      el("dt", { text: "Static contract tests" }), el("dd", { text: validation.static_test_summary ? String(validation.static_test_summary.passed) + "/" + String(validation.static_test_summary.total) + " passed" : "Missing" }),
+      el("dt", { text: "Live staging tests" }), el("dd", { text: String((validation.live_tests_pending || []).length) + " pending exact source/scope input" }),
+    );
+    panel.append(kv);
+    panel.append(el("div", { class: "tour-grid" }, [
+      el("section", {}, [el("strong", { text: "Agent can" }), el("p", { text: "Edit the TypeScript draft and run deterministic validation/tests." })]),
+      el("section", {}, [el("strong", { text: "Agent cannot" }), el("p", { text: "Activate, approve, apply, commit, choose tenant authority, or access write credentials." })]),
+      el("section", {}, [el("strong", { text: "Operator reviews" }), el("p", { text: "Exact staging effect, final digest, approval role, bounds, and executor authority." })]),
+    ]));
+    if (draft.state === "disabled_draft" && validation.ok !== true) {
+      panel.append(el("div", { class: "callout bad", text: "Preview and activation are blocked. Resolve the listed lint/static-test findings, then validate a new disabled digest." }));
+    }
+    if (draft.state === "disabled_draft" && validation.ok === true) {
+      const args = document.createElement("textarea");
+      args.rows = 6;
+      args.value = JSON.stringify(safeAction.preview_args || {}, null, 2);
+      args.setAttribute("aria-label", "Safe Action staging preview arguments");
+      const status = el("div", { class: "status-line", text: draft.effect_preview
+        ? "Preview recorded: " + draft.effect_preview.proposal_id + " (source unchanged)."
+        : "Run one real staging proposal preview. It may read scoped data and write the proposal ledger, but it cannot apply the source mutation." });
+      const previewButton = el("button", { text: "Preview exact staging Data PR", onclick: async () => {
+        previewButton.disabled = true;
+        try {
+          const preview = await api("/api/actions/preview", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ args: JSON.parse(args.value) }) });
+          status.textContent = "Preview recorded: " + preview.preview.proposal_id + " (source unchanged). Review the Data PR below, then confirm the exact digest.";
+          await loadProposals();
+          if (preview.preview.proposal_id) await loadDetail(preview.preview.proposal_id);
+          await loadWorkbench();
+        } catch (error) {
+          status.textContent = error.message;
+          previewButton.disabled = false;
+        }
+      } });
+      panel.append(el("p", { text: "Staging preview arguments" }), args, el("div", { class: "actions" }, previewButton), status);
+      if (draft.effect_preview) {
+        const confirmation = document.createElement("input");
+        confirmation.placeholder = "ACTIVATE " + draft.draft_contract_digest;
+        confirmation.setAttribute("aria-label", "Safe Action activation confirmation");
+        const activateStatus = el("div", { class: "status-line", text: "Type ACTIVATE followed by the complete digest. Activation is not available through MCP or CLI." });
+        const activateButton = el("button", { text: "Activate reviewed immutable artifact", onclick: async () => {
+          activateButton.disabled = true;
+          try {
+            const result = await api("/api/actions/activate", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ expected_digest: draft.draft_contract_digest, confirmation: confirmation.value }) });
+            activateStatus.textContent = result.message;
+            await loadWorkbench();
+            await loadTools();
+          } catch (error) {
+            activateStatus.textContent = error.message;
+            activateButton.disabled = false;
+          }
+        } });
+        activateButton.disabled = true;
+        confirmation.addEventListener("input", () => { activateButton.disabled = confirmation.value !== "ACTIVATE " + draft.draft_contract_digest; });
+        panel.append(el("p", { text: "Explicit operator activation" }), confirmation, el("div", { class: "actions" }, activateButton), activateStatus);
+      }
+    }
+    if (safeAction.active) panel.append(el("div", { class: "callout", text: "Active immutable digest: " + safeAction.active.contract_digest + ". Reconnect or restart the MCP client to reload tools." }));
+    panel.append(rawJson("View draft/active state", safeAction));
+    root.append(panel);
   }
 }
 async function loadTools() {
@@ -1238,6 +1471,18 @@ async function loadDetail(proposalId) {
 async function init() {
   await Promise.all([loadWorkbench(), loadSummary(), loadTools(), loadProposals(), loadShadowReport()]);
   if (state.firstId && !state.selected) await loadDetail(state.firstId);
+  window.setInterval(async () => {
+    if (state.firstId) return;
+    try {
+      await loadProposals();
+      if (state.firstId) {
+        await loadWorkbench();
+        await loadDetail(state.firstId);
+      }
+    } catch (_) {
+      // Keep the current operator view intact during a transient local poll failure.
+    }
+  }, 2000);
 }
 init().catch((error) => {
   document.body.textContent = error.message;

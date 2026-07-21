@@ -10,6 +10,7 @@
     "disclaimer",
     "generated_at",
     "summary",
+    "authority_map",
     "findings"
   ],
   "properties": {
@@ -59,6 +60,99 @@
         }
       }
     },
+    "authority_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "visibility_limit"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "authority",
+              "label",
+              "status",
+              "tools",
+              "evidence"
+            ],
+            "properties": {
+              "authority": { "type": "string" },
+              "label": { "type": "string" },
+              "status": {
+                "enum": [
+                  "observed",
+                  "not_observed",
+                  "requires_operator_verification",
+                  "outside_static_audit_visibility"
+                ]
+              },
+              "tools": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "evidence": { "type": "string" }
+            }
+          }
+        },
+        "visibility_limit": { "type": "string" }
+      }
+    },
+    "bypass_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "servers",
+        "direct_bypass_observed",
+        "unverified_servers",
+        "warning"
+      ],
+      "properties": {
+        "mode": {
+          "enum": ["static_config", "selected_live_tools_list"]
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "server",
+              "status",
+              "transport",
+              "tools_observed",
+              "evidence",
+              "remediation"
+            ],
+            "properties": {
+              "server": { "type": "string" },
+              "status": {
+                "enum": [
+                  "observed_direct_authority",
+                  "no_direct_authority_observed",
+                  "requires_operator_verification"
+                ]
+              },
+              "transport": { "enum": ["stdio", "remote", "unknown"] },
+              "tools_observed": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "evidence": { "type": "string" },
+              "remediation": { "type": "string" }
+            }
+          }
+        },
+        "direct_bypass_observed": { "type": "boolean" },
+        "unverified_servers": { "type": "integer", "minimum": 0 },
+        "warning": { "type": "string" }
+      }
+    },
     "findings": {
       "type": "array",
       "items": {
@@ -69,7 +163,8 @@
           "code",
           "message",
           "evidence",
-          "recommendation"
+          "recommendation",
+          "remediation_url"
         ],
         "properties": {
           "severity": {
@@ -96,6 +191,10 @@
           },
           "recommendation": {
             "type": "string"
+          },
+          "remediation_url": {
+            "type": "string",
+            "format": "uri"
           }
         }
       }

@@ -11,6 +11,10 @@ or SDK. The simplest local-client contract is stdio. Standard HTTP MCP is
 available through Streamable HTTP when your agent connects to a long-running
 Runner service.
 
+The checked [Client And Framework Recipes](client-recipes.md) use one shared
+`support.propose_plan_credit` flow and distinguish host evidence from standard
+MCP protocol evidence.
+
 Proposal tools also advertise a standard display-only
 [MCP App](mcp-apps.md). Supporting hosts discover it from tool metadata;
 other clients keep the same text/JSON proposal result. Approval and apply

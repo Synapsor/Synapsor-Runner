@@ -1,5 +1,22 @@
 # Synapsor Launch Demo Script
 
+## Short Safe Action Cut (36 seconds)
+
+1. Cursor request: ask for one reviewed support plan credit.
+2. Semantic proposal: show the real capability, proposal id, and evidence id.
+3. Exact Data PR: show the before/proposed credit and reason.
+4. Source unchanged: prove PostgreSQL remains at the before value.
+5. Outside-MCP approval: show the operator-only Workbench control.
+6. Guarded commit: show one affected row and the real receipt hash.
+7. Idempotent retry: show no second mutation and the unchanged source value.
+8. Stale refusal: show the separately approved proposal ending in
+   `VERSION_CONFLICT`, zero affected rows, and no overwrite.
+
+Every identifier and database value rendered in this cut must come from
+`.synapsor/demo-video/results.json`. The Cursor request is the narrative host;
+the semantic call and every lifecycle result are captured from the same
+project-scoped MCP/Runner boundary and disposable support-plan-credit fixture.
+
 Target: 177 seconds, caption-led, synthetic data only.
 
 The recording harness renders these scenes from the actual output captured by

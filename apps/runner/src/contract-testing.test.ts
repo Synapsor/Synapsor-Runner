@@ -39,20 +39,51 @@ describe("adopter contract tests", () => {
     });
   });
 
-  it("runs static visibility, argument, transition, and set-cap assertions against the exact contract", async () => {
+  it("runs static visibility, scope, evidence, approval, effect, and conflict assertions against the exact contract", async () => {
     const fixture = await writeFixture();
     await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [
       { id: "hidden", kind: "hide_fields", capability: "support.propose", fields: ["private_notes"] },
       { id: "arg-bound", kind: "argument_constraint", capability: "support.propose", argument: "amount", expected: { minimum: 1, maximum: 25 } },
       { id: "transition", kind: "transition_guard", capability: "support.propose", expected: { status: { allowed: { open: ["closed"] } } } },
       { id: "set-cap", kind: "set_cap", capability: "support.propose", expected: { max_rows: 2, aggregate_bounds: [{ column: "amount", measure: "before", maximum: 50 }] } },
+      { id: "conflict", kind: "conflict_guard", capability: "support.propose", expected: { column: "updated_at" } },
+      { id: "scope", kind: "trusted_scope", capability: "support.propose", expected: {
+        context: "trusted",
+        tenant_key: "tenant_id",
+        tenant_binding: "tenant_id",
+        tenant_authority: { source: "environment", key: "TENANT", required: true },
+        principal_binding: "principal",
+        principal_authority: { source: "environment", key: "PRINCIPAL", required: true },
+      } },
+      { id: "evidence", kind: "evidence_requirement", capability: "support.propose", expected: { required: true, query_audit: true } },
+      { id: "approval", kind: "approval_boundary", capability: "support.propose", expected: {
+        approval: { mode: "human", required_role: "reviewer" },
+        policy: null,
+      } },
+      { id: "effect", kind: "proposal_effect", capability: "support.propose", expected: {
+        action: "close_cases",
+        operation: {
+          kind: "update", cardinality: "set", max_rows: 2,
+          selection: { all: [{ column: "status", operator: "eq", value: "open" }] },
+          aggregate_bounds: [{ column: "amount", measure: "before", maximum: 50 }],
+          version_advance: { column: "updated_at", strategy: "integer_increment" },
+        },
+        allowed_fields: ["status", "amount"],
+        patch: { status: { fixed: "closed" }, amount: { from_arg: "amount" } },
+        numeric_bounds: {},
+        transition_guards: { status: { allowed: { open: ["closed"] } } },
+        conflict_guard: { column: "updated_at" },
+        approval: { mode: "human", required_role: "reviewer" },
+        writeback: { mode: "direct_sql" },
+        max_rows: 1,
+      } },
     ] }, null, 2));
 
     const report = await runContractTests({ ...fixture, live: false });
     expect(report.ok, JSON.stringify(report.tests, null, 2)).toBe(true);
-    expect(report.summary).toEqual({ passed: 4, failed: 0, total: 4 });
+    expect(report.summary).toEqual({ passed: 9, failed: 0, total: 9 });
     expect(JSON.parse(formatContractTestReport(report, "json"))).toEqual(report);
-    expect(formatContractTestReport(report, "junit")).toContain('tests="4" failures="0"');
+    expect(formatContractTestReport(report, "junit")).toContain('tests="9" failures="0"');
   });
 
   it("proves approval and writeback controls stay outside the model-facing tool surface", async () => {
@@ -77,10 +108,23 @@ describe("adopter contract tests", () => {
     await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [
       { id: "leak", kind: "hide_fields", capability: "support.propose", fields: ["id"] },
       { id: "wrong-cap", kind: "set_cap", capability: "support.propose", expected: { max_rows: 9 } },
+      { id: "wrong-conflict", kind: "conflict_guard", capability: "support.propose", expected: { column: "version" } },
+      { id: "wrong-scope", kind: "trusted_scope", capability: "support.propose", expected: { context: "wrong" } },
+      { id: "wrong-evidence", kind: "evidence_requirement", capability: "support.propose", expected: { required: false } },
+      { id: "wrong-approval", kind: "approval_boundary", capability: "support.propose", expected: { approval: { mode: "human" }, policy: null } },
+      { id: "wrong-effect", kind: "proposal_effect", capability: "support.propose", expected: { action: "different" } },
     ] }));
     const report = await runContractTests({ ...fixture, live: false });
     expect(report.ok).toBe(false);
-    expect(report.tests.map((test) => test.code)).toEqual(["HIDDEN_FIELD_EXPOSED", "SET_CAP_MISMATCH"]);
+    expect(report.tests.map((test) => test.code)).toEqual([
+      "HIDDEN_FIELD_EXPOSED",
+      "SET_CAP_MISMATCH",
+      "CONFLICT_GUARD_MISMATCH",
+      "TRUSTED_SCOPE_MISMATCH",
+      "EVIDENCE_REQUIREMENT_MISMATCH",
+      "APPROVAL_BOUNDARY_MISMATCH",
+      "PROPOSAL_EFFECT_MISMATCH",
+    ]);
   });
 
   it("refuses live tests against a remote or non-disposable database by default", async () => {

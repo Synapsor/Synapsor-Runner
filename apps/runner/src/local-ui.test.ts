@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { startLocalUiServer } from "./local-ui.js";
+import { compileSafeActionDraft } from "./safe-action.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v2",
@@ -219,6 +220,11 @@ describe("local UI", () => {
       expect(html).toContain("Synapsor Runner Local UI");
       expect(html).toContain("Commit-safe MCP in one loop");
       expect(html).toContain("First safe action");
+      expect(html).toContain("Add the action to Cursor");
+      expect(html).toContain("Copy Cursor prompt");
+      expect(html).toContain("Open in Cursor");
+      expect(html).toContain("Waiting for Cursor to create the first exact proposal");
+      expect(html).toContain("window.setInterval");
       expect(html).toContain("Data PR");
       expect(html).toContain("Agent requested a change");
       expect(html).toContain("Source database changed:");
@@ -232,6 +238,7 @@ describe("local UI", () => {
       expect(html).toContain("Shadow studies");
       expect(html).toContain("@media (max-width: 600px)");
       expect(html).toContain(".data-pr-head .kv, .step .kv { grid-template-columns:1fr");
+      expect(html).toContain(".grid > * { min-width:0; }");
       expect(html).toContain('actor.setAttribute("aria-label", "Reviewer identity")');
       expect(html).toContain('reason.setAttribute("aria-label", "Reason for approval or rejection")');
       expect(html).toContain("csrf-token");
@@ -254,6 +261,16 @@ describe("local UI", () => {
         kept_out_fields: ["card_token", "internal_risk_score"],
         activation_confirmed: true,
       });
+      expect(workbench.cursor).toMatchObject({
+        state: "not_installed",
+        connection_status: "not_verified",
+        plugin_scope: "workspace",
+        proposal_waiting: false,
+        tools: ["billing.inspect_invoice", "billing.propose_invoice_update"],
+      });
+      expect(workbench.cursor.prompt).toContain("Use /synapsor-protect");
+      expect(workbench.cursor.prompt).toContain("disabled TypeScript Safe Action");
+      expect(workbench.cursor.prompt_deeplink).toMatch(/^cursor:\/\/anysphere\.cursor-deeplink\/prompt\?text=/);
       expect(JSON.stringify(workbench)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret/i);
 
       const summary = await getJson(`${baseUrl}/api/summary`, headers);
@@ -384,6 +401,112 @@ describe("local UI", () => {
         status: "ready",
         detail: expect.stringContaining("run the reviewed read tool"),
       });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps Safe Action activation behind CSRF, an exact preview digest, and explicit Workbench confirmation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-safe-action-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    const sourcePath = path.join(tempDir, "synapsor/actions/refund.ts");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+    await fs.copyFile(path.resolve(process.cwd(), "packages/spec/examples/guarded-writeback.contract.json"), contractPath);
+    await fs.writeFile(configPath, `${JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: { engine: "postgres", read_url_env: "SYNAPSOR_DATABASE_READ_URL", write_url_env: "SYNAPSOR_DATABASE_WRITE_URL" },
+      },
+      contracts: ["./synapsor.contract.json"],
+    }, null, 2)}\n`);
+    await fs.writeFile(sourcePath, `import { defineCapability } from "@synapsor/runner/authoring";
+export default defineCapability({
+  name: "billing.propose_refund_order", description: "Propose one reviewed refund.", kind: "proposal",
+  context: "local_operator", source: "local_postgres", subject: { resource: "billing_invoices" },
+  args: { invoice_id: { type: "string", required: true, max_length: 128 }, amount_cents: { type: "number", required: true, minimum: 1, maximum: 5000 }, reason: { type: "string", required: true, max_length: 500 } },
+  lookup: { id_from_arg: "invoice_id" }, visible_fields: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+  kept_out_fields: ["card_token", "internal_risk_score", "customer_email"], evidence: { required: true, query_audit: true }, max_rows: 1,
+  proposal: { action: "refund_order", operation: { kind: "update" }, allowed_fields: ["late_fee_cents", "waiver_reason"],
+    patch: { late_fee_cents: { from_arg: "amount_cents" }, waiver_reason: { from_arg: "reason" } }, numeric_bounds: { late_fee_cents: { minimum: 1, maximum: 5000 } },
+    conflict_guard: { column: "updated_at" }, approval: { mode: "human", required_role: "billing_lead" }, writeback: { mode: "direct_sql" } },
+});
+`);
+    const draft = (await compileSafeActionDraft({ projectRoot: tempDir, sourcePath })).manifest;
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      token: "action-token",
+      csrfToken: "action-csrf",
+      safeActionPreview: async ({ args }) => {
+        expect(args).toEqual({ invoice_id: "INV-1", amount_cents: 2500, reason: "reviewed refund" });
+        return {
+          draft_digest: draft.draft_contract_digest,
+          proposal_id: "wrp_safe_action_preview",
+          proposal_hash: `sha256:${"9".repeat(64)}`,
+          source_database_changed: false,
+        };
+      },
+    });
+    const baseUrl = `http://${server.host}:${server.port}`;
+    const headers = { "x-synapsor-ui-token": "action-token" };
+    const mutationHeaders = { ...headers, "x-synapsor-csrf": "action-csrf" };
+    try {
+      const landing = await fetch(`${baseUrl}/`, { headers });
+      const html = await landing.text();
+      expect(html).toContain("Disabled Safe Action draft");
+      expect(html).toContain("Preview exact staging Data PR");
+      expect(html).toContain("Activate reviewed immutable artifact");
+      expect(html).toContain("Activation is not available through MCP or CLI");
+
+      const workbench = await getJson(`${baseUrl}/api/workbench`, headers);
+      expect(workbench.safe_action).toMatchObject({
+        draft: {
+          state: "disabled_draft",
+          draft_contract_digest: draft.draft_contract_digest,
+          validation: { ok: true, blocking_lint_issues: 0, static_test_summary: { failed: 0 } },
+        },
+        draft_matches_active: false,
+      });
+      expect(workbench.cursor).toMatchObject({
+        proposal_waiting: true,
+        prompt: expect.stringContaining("billing.propose_refund_order"),
+      });
+      const noCsrf = await fetch(`${baseUrl}/api/actions/preview`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(noCsrf.status).toBe(403);
+      const earlyActivation = await fetch(`${baseUrl}/api/actions/activate`, {
+        method: "POST",
+        headers: { ...mutationHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ expected_digest: draft.draft_contract_digest, confirmation: `ACTIVATE ${draft.draft_contract_digest}` }),
+      });
+      expect(earlyActivation.status).toBe(500);
+      expect(await earlyActivation.text()).toContain("SAFE_ACTION_EFFECT_PREVIEW_REQUIRED");
+
+      const preview = await postJson(`${baseUrl}/api/actions/preview`, mutationHeaders, {
+        args: { invoice_id: "INV-1", amount_cents: 2500, reason: "reviewed refund" },
+      });
+      expect(preview).toMatchObject({ ok: true, source_database_changed: false, preview: { proposal_id: "wrp_safe_action_preview" } });
+      const wrong = await fetch(`${baseUrl}/api/actions/activate`, {
+        method: "POST",
+        headers: { ...mutationHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ expected_digest: draft.draft_contract_digest, confirmation: "ACTIVATE wrong" }),
+      });
+      expect(wrong.status).toBe(500);
+      expect(await wrong.text()).toContain("SAFE_ACTION_CONFIRMATION_REQUIRED");
+
+      const activated = await postJson(`${baseUrl}/api/actions/activate`, mutationHeaders, {
+        expected_digest: draft.draft_contract_digest,
+        confirmation: `ACTIVATE ${draft.draft_contract_digest}`,
+      });
+      expect(activated).toMatchObject({ ok: true, reconnect_required: true, tools_list_changed: false, active: { contract_digest: draft.draft_contract_digest } });
+      expect(JSON.parse(await fs.readFile(configPath, "utf8")).contracts[0]).toMatch(/^\.\/\.synapsor\/active\//);
     } finally {
       await server.close();
     }

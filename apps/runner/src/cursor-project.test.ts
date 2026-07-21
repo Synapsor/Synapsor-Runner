@@ -21,6 +21,7 @@ describe("Cursor project MCP lifecycle", () => {
       mcpServers: {
         existing: { command: "node" },
         synapsor: {
+          type: "stdio",
           command: "npx",
           args: ["-y", "-p", `@synapsor/runner@${runnerPackage.version}`, "synapsor-runner", "mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
         },
@@ -87,6 +88,29 @@ describe("Cursor project MCP lifecycle", () => {
     await fs.rm(path.join(custom, "custom.runner.json"));
     expect((await cursorProjectStatus(custom)).paths.configArgument).toBe("./custom.runner.json");
     await expect(uninstallCursorProject({ projectRoot: custom })).resolves.toMatchObject({ changed: true });
+  });
+
+  it("keeps workspace paths with spaces as single Cursor arguments and accepts an intentional package pin", async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor cursor spaces "));
+    const root = path.join(parent, "application with spaces");
+    await fs.mkdir(root);
+    await fs.writeFile(path.join(root, "synapsor.runner.json"), "{}\n", "utf8");
+
+    const installed = await installCursorProject({
+      projectRoot: root,
+      packageSpec: "@synapsor/runner@1.5.3",
+      now: "2026-07-20T00:00:00.000Z",
+    });
+    expect(installed.entry).toEqual({
+      type: "stdio",
+      command: "npx",
+      args: [
+        "-y", "-p", "@synapsor/runner@1.5.3", "synapsor-runner", "mcp", "serve",
+        "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db",
+      ],
+    });
+    expect((await cursorProjectStatus(root)).state).toBe("installed");
+    await expect(uninstallCursorProject({ projectRoot: root })).resolves.toMatchObject({ changed: true });
   });
 });
 

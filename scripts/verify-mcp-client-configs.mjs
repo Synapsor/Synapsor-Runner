@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Client } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js";
 import { StdioClientTransport } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js";
@@ -18,8 +19,20 @@ const flagshipFiles = [
   "generic-stdio.json",
   "generic-streamable-http.json",
 ];
-const unsafeToolName = /execute_sql|run_query|approve|commit/i;
-const secretValue = /:\/\/[^/\s:@]+:[^@\s/]+@|syn_wbr_|bearer\s+|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
+const adjacentRecipeFiles = [
+  "README.md",
+  "claude-code.sh",
+  "codex.config.toml",
+  "vscode.mcp.json",
+  "langchain.mjs",
+  "google-adk.py",
+  "llamaindex.py",
+  "generic-stdio.mjs",
+  "generic-streamable-http.mjs",
+];
+const unsafeToolName = /execute_sql|run_query|approve|apply|commit|activate|revert|rollback|undo/i;
+const unsafeRecipeCommand = /synapsor-runner\s+(?:proposals\s+(?:approve|reject)|apply|revert|action\s+activate)\b/i;
+const secretValue = /:\/\/[^/\s:@]+:[^@\s/]+@|syn_wbr_|bearer\s+(?!\$\{|\$[A-Z_])[^\s"'`]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(path.join(configDir, file), "utf8"));
@@ -126,10 +139,10 @@ async function verifyFlagshipTools() {
       cwd: root,
       env: {
         ...process.env,
-        PLAN_CREDIT_POSTGRES_READ_URL: "postgresql://localhost/not-used-for-tools-list",
-        PLAN_CREDIT_POSTGRES_WRITE_URL: "postgresql://localhost/not-used-for-tools-list",
-        SYNAPSOR_TENANT_ID: "acme",
-        SYNAPSOR_PRINCIPAL: "client_config_verifier",
+        PLAN_CREDIT_POSTGRES_READ_URL: process.env.PLAN_CREDIT_POSTGRES_READ_URL || "postgresql://localhost/not-used-for-tools-list",
+        PLAN_CREDIT_POSTGRES_WRITE_URL: process.env.PLAN_CREDIT_POSTGRES_WRITE_URL || "postgresql://localhost/not-used-for-tools-list",
+        SYNAPSOR_TENANT_ID: process.env.SYNAPSOR_TENANT_ID || "acme",
+        SYNAPSOR_PRINCIPAL: process.env.SYNAPSOR_PRINCIPAL || "client_config_verifier",
       },
       stderr: "pipe",
     });
@@ -142,9 +155,74 @@ async function verifyFlagshipTools() {
       }
       const unsafe = names.filter((name) => unsafeToolName.test(name));
       if (unsafe.length) throw new Error(`unsafe flagship tools exposed: ${unsafe.join(", ")}`);
+      if (process.env.SYNAPSOR_CLIENT_RECIPES_CALL === "1") {
+        const result = await client.callTool({
+          name: "support.propose_plan_credit",
+          arguments: {
+            customer_id: "CUS-3001",
+            credit_cents: 2500,
+            reason: "SLA outage ticket SUP-481",
+          },
+        });
+        if (result.isError) throw new Error(`flagship proposal call failed: ${JSON.stringify(result)}`);
+        const rendered = JSON.stringify(result);
+        if (!rendered.includes("source_database_changed") || !rendered.includes("false")) {
+          throw new Error(`proposal result did not prove source_database_changed:false: ${rendered}`);
+        }
+        console.log("support-plan-credit: proposal call verified without source mutation");
+      }
     } finally {
       await client.close();
     }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function checkedSpawn(command, args, options = {}) {
+  const result = spawnSync(command, args, { encoding: "utf8", ...options });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed (${result.status}):\n${result.stderr || result.stdout}`);
+  }
+  return result;
+}
+
+function syntaxCheckRecipe(file, filePath) {
+  if (file.endsWith(".mjs")) {
+    checkedSpawn(process.execPath, ["--check", filePath]);
+  } else if (file.endsWith(".py")) {
+    checkedSpawn("python3", [
+      "-c",
+      "import pathlib,sys; p=pathlib.Path(sys.argv[1]); compile(p.read_text(encoding='utf-8'), str(p), 'exec')",
+      filePath,
+    ]);
+  } else if (file.endsWith(".sh")) {
+    checkedSpawn("bash", ["-n", filePath]);
+  } else if (file.endsWith(".toml")) {
+    checkedSpawn("python3", [
+      "-c",
+      "import pathlib,sys,tomllib; tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))",
+      filePath,
+    ]);
+  } else if (file.endsWith(".json")) {
+    JSON.parse(fs.readFileSync(filePath, "utf8"));
+  }
+}
+
+function verifyInstalledCliConfiguration(command, args, environmentName) {
+  const version = spawnSync(command, ["--version"], { encoding: "utf8" });
+  if (version.error?.code === "ENOENT") {
+    console.log(`${environmentName}: CLI unavailable; configuration parser check skipped`);
+    return;
+  }
+  if (version.status !== 0) throw new Error(`${environmentName}: --version failed`);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `synapsor-${environmentName}-config-`));
+  try {
+    const env = { ...process.env, HOME: tempDir, CODEX_HOME: path.join(tempDir, ".codex") };
+    fs.mkdirSync(env.CODEX_HOME, { recursive: true });
+    checkedSpawn(command, args, { cwd: root, env });
+    console.log(`${environmentName}: current CLI accepted the stdio configuration (${version.stdout.trim()})`);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -192,6 +270,49 @@ for (const file of flagshipFiles) {
   }
   console.log(`support-plan-credit/${file}: parsed and safety-scanned`);
 }
+
+for (const file of adjacentRecipeFiles) {
+  const filePath = path.join(flagshipConfigDir, file);
+  const content = fs.readFileSync(filePath, "utf8");
+  if (/\/(?:home|Users)\//.test(content)) throw new Error(`${file}: contains a machine-specific absolute path`);
+  if (secretValue.test(content)) throw new Error(`${file}: contains a possible secret`);
+  if (unsafeRecipeCommand.test(content)) throw new Error(`${file}: embeds model-adjacent approval/apply authority`);
+  syntaxCheckRecipe(file, filePath);
+  console.log(`support-plan-credit/${file}: syntax-checked and safety-scanned`);
+}
+
+const proposalRecipeText = adjacentRecipeFiles
+  .map((file) => fs.readFileSync(path.join(flagshipConfigDir, file), "utf8"))
+  .join("\n");
+for (const required of [
+  "support.inspect_customer",
+  "support.propose_plan_credit",
+  "source_database_changed",
+  "human review",
+]) {
+  if (!proposalRecipeText.toLowerCase().includes(required.toLowerCase())) {
+    throw new Error(`adjacent recipes missing shared boundary text: ${required}`);
+  }
+}
+
+verifyInstalledCliConfiguration("claude", [
+  "mcp", "add-json", "--scope", "user", "synapsor",
+  JSON.stringify({
+    type: "stdio",
+    command: "npx",
+    args: [
+      "-y", "-p", "@synapsor/runner", "synapsor-runner", "mcp", "serve",
+      "--config", "./examples/support-plan-credit/synapsor.runner.json",
+      "--store", "./tmp/support-plan-credit/local.db",
+    ],
+  }),
+], "claude-code");
+verifyInstalledCliConfiguration("codex", [
+  "mcp", "add", "synapsor", "--",
+  "npx", "-y", "-p", "@synapsor/runner", "synapsor-runner", "mcp", "serve",
+  "--config", "./examples/support-plan-credit/synapsor.runner.json",
+  "--store", "./tmp/support-plan-credit/local.db",
+], "codex");
 
 await verifyFlagshipTools();
 console.log("support-plan-credit: stdio tools/list verified");

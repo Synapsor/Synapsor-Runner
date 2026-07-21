@@ -19,7 +19,7 @@
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "kind": {
-            "enum": ["tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "source_unchanged_before_approval", "operator_boundary"]
+            "enum": ["tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "proposal_effect", "conflict_guard", "trusted_scope", "evidence_requirement", "approval_boundary", "source_unchanged_before_approval", "operator_boundary"]
           },
           "capability": { "type": "string", "minLength": 1 },
           "args": { "type": "object" },

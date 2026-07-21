@@ -1,8 +1,10 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { lspCompletionsForSource, lspDiagnosticsForSource, lspFormatEdits, lspHoverForSource } from "./language-server.js";
+import { lspCompletionsForSource, lspDiagnosticsForDocument, lspDiagnosticsForSource, lspFormatEdits, lspHoverForSource } from "./language-server.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const children = new Set<ReturnType<typeof spawn>>();
@@ -37,6 +39,40 @@ describe("Synapsor contract language server", () => {
     expect(lspCompletionsForSource(source, line).map((item) => item.label)).toContain("MAX ROWS");
     expect(JSON.stringify(lspHoverForSource(source, line, 3))).toContain("model-controlled predicates are rejected");
     expect(lspFormatEdits(source.replace("  MAX ROWS", "MAX ROWS"))[0]?.newText).toContain("MAX ROWS 25");
+  });
+
+  it("diagnoses restricted TypeScript Safe Actions without compiling or activating them", async () => {
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-safe-action-lsp-"));
+    try {
+      const sourcePath = path.join(project, "synapsor", "actions", "refund.ts");
+      await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+      await fs.copyFile(path.join(root, "packages/spec/examples/guarded-writeback.contract.json"), path.join(project, "synapsor.contract.json"));
+      await fs.writeFile(path.join(project, "synapsor.runner.json"), JSON.stringify({
+        version: 1,
+        mode: "review",
+        contracts: ["./synapsor.contract.json"],
+        sources: { local_postgres: { engine: "postgres", read_url_env: "READ_URL", write_url_env: "WRITE_URL" } },
+      }));
+      const valid = safeActionSource();
+      const uri = pathToFileURL(sourcePath).href;
+      expect(await lspDiagnosticsForDocument(uri, valid)).toEqual([]);
+      const trustedArg = valid.replace(
+        'invoice_id: { type: "string", required: true, max_length: 128 },',
+        'invoice_id: { type: "string", required: true, max_length: 128 }, tenant_id: { type: "string", required: true, max_length: 64 },',
+      );
+      expect(await lspDiagnosticsForDocument(uri, trustedArg)).toContainEqual(expect.objectContaining({
+        code: "SAFE_ACTION_TRUSTED_ARG_FORBIDDEN",
+        severity: 1,
+        source: "synapsor-safe-action",
+      }));
+      expect(await lspDiagnosticsForDocument(uri, valid.replace("patch: {", "patch: buildPatch({"))).toContainEqual(expect.objectContaining({
+        code: "SAFE_ACTION_TYPESCRIPT_PARSE",
+        source: "synapsor-safe-action",
+      }));
+      await expect(fs.access(path.join(project, ".synapsor"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(project, { recursive: true, force: true });
+    }
   });
 
   it("serves initialize, diagnostics, completion, hover, formatting, shutdown, and exit over stdio", async () => {
@@ -155,5 +191,21 @@ CREATE CAPABILITY health.flag_cases
   APPROVAL ROLE health_reviewer
   WRITEBACK DIRECT SQL
 END
+`;
+}
+
+function safeActionSource(): string {
+  return `import { defineCapability } from "@synapsor/runner/authoring";
+export default defineCapability({
+  name: "billing.propose_refund", description: "Propose one bounded refund.", kind: "proposal",
+  context: "local_operator", source: "local_postgres", subject: { resource: "billing_invoices" },
+  args: { invoice_id: { type: "string", required: true, max_length: 128 }, reason: { type: "string", required: true, max_length: 500 } },
+  lookup: { id_from_arg: "invoice_id" },
+  visible_fields: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+  kept_out_fields: ["internal_risk_score", "card_token"], evidence: { required: true, query_audit: true }, max_rows: 1,
+  proposal: { action: "refund", operation: { kind: "update" }, allowed_fields: ["late_fee_cents", "waiver_reason"],
+    patch: { late_fee_cents: { fixed: 0 }, waiver_reason: { from_arg: "reason" } }, conflict_guard: { column: "updated_at" },
+    approval: { mode: "human", required_role: "billing_reviewer" }, writeback: { mode: "direct_sql" } },
+});
 `;
 }

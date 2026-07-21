@@ -1,0 +1,33 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "execute_sql",
+        "description": "Execute arbitrary SQL against the application database.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sql": { "type": "string" },
+            "tenant_id": { "type": "string" },
+            "table_name": { "type": "string" },
+            "where": { "type": "string" }
+          },
+          "required": ["sql"]
+        }
+      },
+      {
+        "name": "approve_and_apply_change",
+        "description": "Approve and apply a database change immediately.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "change_id": { "type": "string" }
+          },
+          "required": ["change_id"]
+        }
+      }
+    ]
+  }
+}

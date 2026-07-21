@@ -2,12 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ProjectDetectionSummary } from "./onboarding-artifacts.js";
 
-const schemaCandidates: Array<{ kind: "prisma" | "drizzle" | "openapi" | "synapsor"; paths: string[] }> = [
+const schemaCandidates: Array<{ kind: "prisma" | "drizzle" | "openapi" | "sql" | "synapsor"; paths: string[] }> = [
   { kind: "prisma", paths: ["prisma/schema.prisma", "schema.prisma"] },
   { kind: "drizzle", paths: ["drizzle.config.ts", "drizzle.config.js", "drizzle.config.mjs", "drizzle.config.cjs", "src/schema.ts", "src/db/schema.ts"] },
   { kind: "openapi", paths: ["openapi.yaml", "openapi.yml", "openapi.json", "swagger.yaml", "swagger.yml", "swagger.json"] },
+  { kind: "sql", paths: ["schema.sql", "db/schema.sql", "database/schema.sql", "sql/schema.sql"] },
   { kind: "synapsor", paths: ["synapsor.runner.json", "synapsor.contract.json", "contract.synapsor.sql", "contract.synapsor"] },
 ];
+const migrationDirectories = ["migrations", "db/migrations", "database/migrations", "prisma/migrations", "drizzle"];
 
 const databaseEnvPattern = /^(?:DATABASE_URL|POSTGRES(?:QL)?_URL|MYSQL_URL|DB_URL|SYNAPSOR_DATABASE_(?:READ|WRITE)_URL)$/;
 
@@ -23,6 +25,9 @@ export async function detectProjectContext(
         schemaInputs.push({ kind: candidate.kind, path: normalizeRelative(relativePath) });
       }
     }
+  }
+  for (const relativePath of migrationDirectories) {
+    if (await isDirectory(path.join(resolvedRoot, relativePath))) schemaInputs.push({ kind: "sql", path: `${normalizeRelative(relativePath)}/` });
   }
 
   const packageJson = await readJsonObject(path.join(resolvedRoot, "package.json"));
@@ -100,6 +105,16 @@ async function isRegularFile(filePath: string): Promise<boolean> {
   try {
     const stat = await fs.lstat(filePath);
     return stat.isFile() && !stat.isSymbolicLink();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function isDirectory(filePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.lstat(filePath);
+    return stat.isDirectory() && !stat.isSymbolicLink();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;

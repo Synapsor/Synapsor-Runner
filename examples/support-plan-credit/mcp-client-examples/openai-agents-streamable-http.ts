@@ -10,7 +10,7 @@ await synapsor.connect();
 try {
   const agent = new Agent({
     name: "Support operations agent",
-    instructions: "Use only Synapsor business tools. Inspect evidence before proposing a plan credit.",
+    instructions: "Use only the listed Synapsor business tools. Inspect evidence before proposing a plan credit. Never request approval or apply authority; stop for human review outside the agent.",
     mcpServers: [synapsor],
   });
   const result = await run(agent, "Inspect customer CUS-3001 and propose a $25 plan credit for SLA outage ticket SUP-481.");

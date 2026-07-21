@@ -1,0 +1,24 @@
+# Merge this table into a trusted project's .codex/config.toml and start Codex
+# from the repository root. Credentials and trusted scope remain inherited
+# environment variables; do not add their values here.
+[mcp_servers.synapsor]
+command = "npx"
+args = [
+  "-y",
+  "-p",
+  "@synapsor/runner",
+  "synapsor-runner",
+  "mcp",
+  "serve",
+  "--config",
+  "./examples/support-plan-credit/synapsor.runner.json",
+  "--store",
+  "./tmp/support-plan-credit/local.db",
+]
+
+# Prompt:
+# List the Synapsor tools, then call support.propose_plan_credit with
+# customer_id CUS-3001, credit_cents 2500, and reason "SLA outage ticket
+# SUP-481". Confirm source_database_changed is false and stop for human review
+# outside Codex. Never request an approval, apply, commit, activation, or revert
+# MCP tool.

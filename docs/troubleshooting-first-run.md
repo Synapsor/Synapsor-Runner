@@ -12,6 +12,52 @@ Use JSON for automation:
 npx -y -p @synapsor/runner synapsor-runner doctor --first-run --json
 ```
 
+## Safe Action Draft Does Not Appear As A Tool
+
+This is expected before activation. `start --action`, agent edits, `action
+validate`, and `action watch` can create or refresh only a disabled draft. They
+must not alter the active model-facing tools.
+
+Check status without exposing credentials:
+
+```bash
+synapsor-runner action status --json
+synapsor-runner tools preview \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+Open the secured Workbench, run the real source-unchanged staging Data PR
+preview, review the complete digest, and activate it there. There is
+intentionally no activation CLI command to hand to a coding agent.
+
+## Activated Tool Does Not Appear In Cursor
+
+Some MCP hosts do not refresh `tools/list` for a running stdio session. First
+confirm that Runner's active tool surface changed:
+
+```bash
+synapsor-runner action status --json
+synapsor-runner mcp status cursor --project --check-launch
+```
+
+Then reconnect or restart the project MCP server as directed by the Workbench.
+Do not work around a stale host session by adding approval, apply, activation,
+credentials, tenant values, or raw SQL to the Cursor configuration.
+
+## Safe Action Validation Reports Review Placeholders
+
+The composer fails closed while any `__REVIEW_*__` authority placeholder or
+dynamic TypeScript expression remains. Review the reported field and source,
+then make the authority explicit in the restricted `defineCapability({...})`
+object. Runner will not infer trusted tenant/principal bindings, hidden fields,
+write columns, bounds, conflict guards, approval, or executor authority from
+application code.
+
+Use the generated explanation and test manifest after validation. Do not edit
+digest-addressed files under `.synapsor/drafts/` or `.synapsor/active/`; edit
+the TypeScript source and validate again.
+
 ## Smoke Proposal Missing From Another Runner
 
 What happened:

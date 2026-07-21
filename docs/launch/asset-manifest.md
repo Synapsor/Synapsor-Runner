@@ -2,6 +2,9 @@
 
 Publication status: **NOT PUBLISHED - awaiting manual review**
 
+This manifest identifies the historical long-form asset recorded with Runner
+0.1.12. It is not the current package version or the 1.5.3 Safe Action cut.
+
 ## Source
 
 - OSS commit: `b33b1f58d1bce30b18974943bfd59e0a2779b9a7`

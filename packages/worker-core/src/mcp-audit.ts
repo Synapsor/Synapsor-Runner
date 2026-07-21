@@ -10,6 +10,43 @@ export type McpAuditFinding = {
   message: string;
   evidence: string[];
   recommendation: string;
+  remediation_url: string;
+};
+
+export type McpAuditEvidenceStatus =
+  | "observed"
+  | "not_observed"
+  | "requires_operator_verification"
+  | "outside_static_audit_visibility";
+
+export type McpAuditAuthorityItem = {
+  authority: string;
+  label: string;
+  status: McpAuditEvidenceStatus;
+  tools: string[];
+  evidence: string;
+};
+
+export type McpAuditAuthorityMap = {
+  items: McpAuditAuthorityItem[];
+  visibility_limit: string;
+};
+
+export type McpAuditBypassServer = {
+  server: string;
+  status: "observed_direct_authority" | "no_direct_authority_observed" | "requires_operator_verification";
+  transport: "stdio" | "remote" | "unknown";
+  tools_observed: string[];
+  evidence: string;
+  remediation: string;
+};
+
+export type McpAuditBypassCheck = {
+  mode: "static_config" | "selected_live_tools_list";
+  servers: McpAuditBypassServer[];
+  direct_bypass_observed: boolean;
+  unverified_servers: number;
+  warning: string;
 };
 
 export type McpAuditReport = {
@@ -24,6 +61,8 @@ export type McpAuditReport = {
     low: number;
     total_findings: number;
   };
+  authority_map: McpAuditAuthorityMap;
+  bypass_check?: McpAuditBypassCheck;
   findings: McpAuditFinding[];
 };
 
@@ -128,6 +167,17 @@ const ARBITRARY_IDENTIFIER_FIELDS = [
   "databasename",
 ];
 
+const ARBITRARY_PREDICATE_FIELDS = [
+  "filter",
+  "filters",
+  "where",
+  "whereclause",
+  "predicate",
+  "predicates",
+  "condition",
+  "conditions",
+];
+
 const IDEMPOTENCY_FIELDS = ["idempotencykey", "requestid", "requestkey", "dedupekey"];
 const CONFLICT_FIELDS = [
   "expectedversion",
@@ -189,7 +239,7 @@ const ROOT_CAUSE_DEFINITIONS: Record<McpAuditRootCause, {
 
 export function auditMcpManifest(
   input: unknown,
-  options: { target?: string; generatedAt?: string } = {},
+  options: { target?: string; generatedAt?: string; liveSelectedServer?: string } = {},
 ): McpAuditReport {
   const tools = collectTools(input);
   const findings: McpAuditFinding[] = [];
@@ -198,8 +248,11 @@ export function auditMcpManifest(
     auditTool(tool, findings);
   }
 
-  if (tools.length === 0) {
-    findings.push({
+  const bypassCheck = inspectMcpClientConfigBypass(input, options.liveSelectedServer);
+  if (bypassCheck) addBypassFindings(findings, bypassCheck);
+
+  if (tools.length === 0 && !bypassCheck) {
+    addFinding(findings, {
       severity: "MEDIUM",
       code: "NO_TOOLS_FOUND",
       message: "No MCP tools were found in the provided target.",
@@ -216,6 +269,8 @@ export function auditMcpManifest(
     disclaimer: MCP_AUDIT_DISCLAIMER,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     summary,
+    authority_map: buildMcpAuthorityMapFromTools(tools),
+    ...(bypassCheck ? { bypass_check: bypassCheck } : {}),
     findings,
   };
 }
@@ -229,8 +284,12 @@ export function formatMcpAuditReport(report: McpAuditReport): string {
     "",
     `Tools inspected: ${report.summary.tools_inspected}`,
     `Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
-    `Overall risk: ${overallMcpAuditRisk(report).toLowerCase()}`,
+    "",
+    "Model-authority map:",
+    ...report.authority_map.items.map((item) => `- ${item.status}: ${item.label}${item.tools.length ? ` (${item.tools.join(", ")})` : ""}`),
   ];
+
+  appendTextBypassCheck(lines, report.bypass_check);
 
   if (report.findings.length === 0) {
     lines.push("", "No obvious database-commit risks were detected in the static manifest.");
@@ -261,8 +320,11 @@ export function formatMcpAuditVerboseReport(report: McpAuditReport): string {
     "",
     `Tools inspected: ${report.summary.tools_inspected}`,
     `Findings: HIGH ${report.summary.high} | MEDIUM ${report.summary.medium} | LOW ${report.summary.low}`,
-    `Overall risk: ${overallMcpAuditRisk(report).toLowerCase()}`,
+    "",
+    "Model-authority map:",
+    ...report.authority_map.items.map((item) => `- ${item.status}: ${item.label}${item.tools.length ? ` (${item.tools.join(", ")})` : ""}`),
   ];
+  appendTextBypassCheck(lines, report.bypass_check);
   if (report.findings.length === 0) {
     lines.push("", "No obvious database-commit risks were detected in the static manifest.");
     lines.push("This does not prove the MCP server or its tools are secure.");
@@ -276,6 +338,7 @@ export function formatMcpAuditVerboseReport(report: McpAuditReport): string {
       lines.push(`       Evidence: ${finding.evidence.join("; ")}`);
     }
     lines.push(`       Recommendation: ${finding.recommendation}`);
+    lines.push(`       Remediation: ${finding.remediation_url}`);
   }
   lines.push(
     "",
@@ -299,7 +362,8 @@ export function formatMcpAuditSarif(report: McpAuditReport): string {
         id: code,
         name: code.toLowerCase(),
         shortDescription: { text: finding.message },
-        help: { text: finding.recommendation },
+        help: { text: `${finding.recommendation} ${finding.remediation_url}` },
+        helpUri: finding.remediation_url,
         defaultConfiguration: { level: sarifLevel(finding.severity) },
         properties: { securitySeverity: finding.severity },
       };
@@ -335,17 +399,41 @@ export function formatMcpAuditSarif(report: McpAuditReport): string {
             affectedTool: finding.tool,
             evidence: finding.evidence,
             recommendation: finding.recommendation,
+            remediationUrl: finding.remediation_url,
           },
         })),
         properties: {
           schemaVersion: report.schema_version,
           disclaimer: report.disclaimer,
           toolsInspected: report.summary.tools_inspected,
+          authorityMap: report.authority_map,
+          bypassCheck: report.bypass_check,
         },
       },
     ],
   };
   return `${JSON.stringify(sarif, null, 2)}\n`;
+}
+
+export function buildMcpAuthorityMap(input: unknown): McpAuditAuthorityMap {
+  return buildMcpAuthorityMapFromTools(collectTools(input));
+}
+
+export function inspectMcpClientConfigBypass(input: unknown, liveSelectedServer?: string): McpAuditBypassCheck | undefined {
+  if (!isRecord(input)) return undefined;
+  const rawServers = isRecord(input.mcpServers) ? input.mcpServers : isRecord(input.servers) ? input.servers : undefined;
+  if (!rawServers) return undefined;
+  const servers = Object.entries(rawServers)
+    .filter(([, value]) => isRecord(value))
+    .map(([name, raw]) => inspectConfiguredServer(name, raw as JsonRecord, liveSelectedServer))
+    .sort((left, right) => left.server.localeCompare(right.server));
+  return {
+    mode: liveSelectedServer ? "selected_live_tools_list" : "static_config",
+    servers,
+    direct_bypass_observed: servers.some((server) => server.status === "observed_direct_authority"),
+    unverified_servers: servers.filter((server) => server.status === "requires_operator_verification").length,
+    warning: "Synapsor cannot govern calls routed to another model-visible MCP server. Static configuration cannot prove the tools a command serves; inspect tools/list explicitly before granting model access.",
+  };
 }
 
 export function groupMcpAuditFindings(report: McpAuditReport): McpAuditFindingGroup[] {
@@ -454,6 +542,18 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
       evidence: evidenceFor(tool, `Identifier-like fields: ${matchingFields(propertyNames, ARBITRARY_IDENTIFIER_FIELDS).join(", ")}.`),
       recommendation:
         "Move identifiers into reviewed configuration. Model arguments should carry business values, not table/schema/column names.",
+    });
+  }
+
+  if (hasAny(normalizedProperties, ARBITRARY_PREDICATE_FIELDS)) {
+    addFinding(findings, {
+      severity: "HIGH",
+      code: "ARBITRARY_PREDICATE_INPUT",
+      tool: tool.name,
+      message: "Tool accepts a free-form filter, predicate, WHERE clause, or condition as model input.",
+      evidence: evidenceFor(tool, `Predicate-like fields: ${matchingFields(propertyNames, ARBITRARY_PREDICATE_FIELDS).join(", ")}.`),
+      recommendation:
+        "Move row selection into reviewed capability metadata. Model arguments may select only bounded business values explicitly allowed by that fixed predicate.",
     });
   }
 
@@ -591,9 +691,9 @@ function toolSignals(tool: ToolCandidate): McpAuditToolShape["signals"] {
   const proposalBoundary =
     /\b(proposal|propose|change[- ]?set|review[- ]?required|approval|approve[- ]?required|guarded writeback|trusted worker)\b/.test(text);
   const modelCallableCommit =
-    /(^|[._-])(approve|commit|apply|settle|merge)[._-]?(proposal|write|change|writeback)([._-]|$)/.test(lowerToolName) ||
-    /(^|[._-])(proposal|write|change|writeback)[._-]?(approve|commit|apply|settle|merge)([._-]|$)/.test(lowerToolName) ||
-    (/\b(approve|commit|apply|settle|merge)\b/.test(text) &&
+    /(^|[._-])(approve|commit|apply|settle|merge|revert|rollback|undo)[._-]?(proposal|write|change|writeback)([._-]|$)/.test(lowerToolName) ||
+    /(^|[._-])(proposal|write|change|writeback)[._-]?(approve|commit|apply|settle|merge|revert|rollback|undo)([._-]|$)/.test(lowerToolName) ||
+    (/\b(approve|commit|apply|settle|merge|revert|rollback|undo)\b/.test(text) &&
       !/\b(propose|proposal|review[- ]?required|approval[- ]?required)\b/.test(text));
   return {
     generic_sql: genericSql,
@@ -641,6 +741,12 @@ function collectTools(input: unknown): ToolCandidate[] {
     for (const [key, child] of Object.entries(value)) {
       if (key === "tools" && Array.isArray(child)) {
         child.forEach((tool, index) => addTool(tool, `${path}.${key}[${index}]`));
+        continue;
+      }
+      if (["mcpServers", "servers"].includes(key) && isRecord(child)) {
+        for (const [serverName, server] of Object.entries(child)) {
+          visit(server, `${path}.${key}.${safeFieldName(serverName)}`, depth + 1);
+        }
         continue;
       }
       if (["result", "data", "adapter", "mcpServers", "servers", "server", "manifest"].includes(key)) {
@@ -720,6 +826,147 @@ function collectSchemaPropertyNames(schema: unknown): Set<string> {
   return names;
 }
 
+function buildMcpAuthorityMapFromTools(tools: ToolCandidate[]): McpAuditAuthorityMap {
+  const select = (predicate: (tool: ToolCandidate) => boolean): string[] => [...new Set(tools.filter(predicate).map((tool) => tool.name))].sort();
+  const status = (matches: string[]): McpAuditEvidenceStatus => matches.length > 0 ? "observed" : "not_observed";
+  const semanticReads = select((tool) => {
+    const signals = toolSignals(tool);
+    return signals.read_like && !signals.write_like;
+  });
+  const proposals = select((tool) => {
+    const signals = toolSignals(tool);
+    return signals.proposal_boundary && signals.write_like;
+  });
+  const directWrites = select((tool) => {
+    const signals = toolSignals(tool);
+    return signals.write_like && !signals.proposal_boundary;
+  });
+  const rawQuery = select((tool) => toolSignals(tool).generic_sql);
+  const identifiers = select((tool) => hasAny(new Set([...collectSchemaPropertyNames(tool.inputSchema)].map(normalizeToken)), ARBITRARY_IDENTIFIER_FIELDS));
+  const predicates = select((tool) => hasAny(new Set([...collectSchemaPropertyNames(tool.inputSchema)].map(normalizeToken)), ARBITRARY_PREDICATE_FIELDS));
+  const modelTrust = select((tool) => hasAny(new Set([...collectSchemaPropertyNames(tool.inputSchema)].map(normalizeToken)), MODEL_CONTROLLED_SCOPE_FIELDS));
+  const modelCommit = select((tool) => toolSignals(tool).model_callable_commit);
+  const structured = select(hasStructuredOutput);
+  const conflictOrIdempotency = select((tool) => {
+    const fields = new Set([
+      ...collectSchemaPropertyNames(tool.inputSchema),
+      ...collectSchemaPropertyNames(tool.outputSchema),
+    ].map(normalizeToken));
+    return hasAny(fields, IDEMPOTENCY_FIELDS) || hasAny(fields, CONFLICT_FIELDS)
+      || hasAny(fields, ["retryable", "errorcode", "runtimecode", "receiptid", "receipthash", "alreadyapplied", "conflict"]);
+  });
+  return {
+    items: [
+      authorityItem("semantic_read_tools", "Semantic read tools", status(semanticReads), semanticReads, `${semanticReads.length} tool(s) look read-only from names, descriptions, schemas, and annotations.`),
+      authorityItem("semantic_proposal_tools", "Semantic proposal tools", status(proposals), proposals, `${proposals.length} tool(s) visibly stop at a proposal/review boundary.`),
+      authorityItem("direct_write_tools", "Direct model-callable write tools", status(directWrites), directWrites, `${directWrites.length} tool(s) look write-capable without a visible proposal boundary.`),
+      authorityItem("raw_query_tools", "Raw SQL or arbitrary-query tools", status(rawQuery), rawQuery, `${rawQuery.length} tool(s) match generic SQL/query authority.`),
+      authorityItem("arbitrary_identifier_inputs", "Model-controlled table, column, schema, or database inputs", status(identifiers), identifiers, `${identifiers.length} tool(s) expose identifier-like input fields.`),
+      authorityItem("arbitrary_predicate_inputs", "Model-controlled filters, predicates, WHERE clauses, or conditions", status(predicates), predicates, `${predicates.length} tool(s) expose predicate-like input fields.`),
+      authorityItem("model_controlled_trust", "Model-controlled tenant, principal, source, approval, or version inputs", status(modelTrust), modelTrust, `${modelTrust.length} tool(s) expose trust-like input fields.`),
+      authorityItem("model_visible_commit", "Model-visible approval, apply, commit, settle, merge, or revert authority", status(modelCommit), modelCommit, `${modelCommit.length} tool(s) look capable of crossing the review boundary.`),
+      authorityItem("structured_output", "Structured output schema", status(structured), structured, `${structured.length}/${tools.length} inspected tool(s) declare structured output.`),
+      authorityItem("conflict_idempotency_signals", "Observable conflict, retry, idempotency, or receipt signals", status(conflictOrIdempotency), conflictOrIdempotency, `${conflictOrIdempotency.length}/${tools.length} inspected tool(s) expose one or more machine-readable signals.`),
+      authorityItem("sensitive_field_completeness", "Completeness of sensitive-field classification", "requires_operator_verification", [], "Tool metadata cannot establish that every sensitive field was identified or kept out."),
+      authorityItem("database_enforcement", "Database roles, views, RLS, grants, and pooled-session scope reset", "outside_static_audit_visibility", [], "tools/list does not reveal database-enforced isolation or connection-pool behavior."),
+      authorityItem("operator_and_writeback_enforcement", "Operator identity, approval integrity, guarded writeback, atomicity, and receipt durability", "outside_static_audit_visibility", [], "These controls execute outside the model-facing MCP catalog and require runtime/configuration evidence."),
+    ],
+    visibility_limit: "This map records only structural evidence visible in the supplied manifest or tools/list. It does not execute business tools or prove runtime, database, identity, network, or operational enforcement.",
+  };
+}
+
+function authorityItem(
+  authority: string,
+  label: string,
+  status: McpAuditEvidenceStatus,
+  tools: string[],
+  evidence: string,
+): McpAuditAuthorityItem {
+  return { authority, label, status, tools, evidence };
+}
+
+function inspectConfiguredServer(name: string, raw: JsonRecord, liveSelectedServer?: string): McpAuditBypassServer {
+  const tools = collectTools(raw);
+  const direct = tools.filter((tool) => {
+    const signals = toolSignals(tool);
+    return signals.generic_sql || signals.model_callable_commit || (signals.write_like && !signals.proposal_boundary);
+  });
+  const transport: McpAuditBypassServer["transport"] = typeof raw.command === "string"
+    ? "stdio"
+    : typeof raw.url === "string"
+      ? "remote"
+      : "unknown";
+  const safeName = safeToolName(name);
+  if (direct.length > 0) {
+    return {
+      server: safeName,
+      status: "observed_direct_authority",
+      transport,
+      tools_observed: [...new Set(tools.map((tool) => tool.name))].sort(),
+      evidence: `Observed direct/raw/commit-like tools in ${liveSelectedServer === name ? "the explicitly requested live tools/list" : "supplied tool metadata"}: ${direct.map((tool) => tool.name).sort().join(", ")}.`,
+      remediation: "Disable or remove this model-visible server, constrain it to a separately reviewed read-only surface, or route the business action through Synapsor. Synapsor cannot govern calls that bypass Runner.",
+    };
+  }
+  if (tools.length > 0) {
+    return {
+      server: safeName,
+      status: "no_direct_authority_observed",
+      transport,
+      tools_observed: [...new Set(tools.map((tool) => tool.name))].sort(),
+      evidence: `No direct/raw/commit-like tool was observed in ${liveSelectedServer === name ? "the explicitly requested live tools/list" : "supplied tool metadata"}.`,
+      remediation: "Keep reviewing runtime and database controls; absence from tools/list is not proof of complete security.",
+    };
+  }
+  const structuralText = `${name} ${typeof raw.command === "string" ? raw.command : ""} ${Array.isArray(raw.args) ? raw.args.filter((item) => typeof item === "string").join(" ") : ""}`.toLowerCase();
+  const databaseHint = /(?:postgres|mysql|sqlite|supabase|database|sql)/.test(structuralText);
+  const runnerHint = /synapsor-runner/.test(structuralText);
+  return {
+    server: safeName,
+    status: "requires_operator_verification",
+    transport,
+    tools_observed: [],
+    evidence: runnerHint
+      ? "The config points to Synapsor Runner, but static config does not reveal its active tools/list."
+      : databaseHint
+        ? "The server name or command looks database-related, but static config contains no tool metadata."
+        : "Static config contains no tool metadata for this server.",
+    remediation: `Review this server's tools/list explicitly before enabling it for a model. Use --live-server ${safeName} --yes only after reviewing the configured command, or audit an exported tools/list file.`,
+  };
+}
+
+function addBypassFindings(findings: McpAuditFinding[], bypass: McpAuditBypassCheck): void {
+  for (const server of bypass.servers) {
+    if (server.status === "observed_direct_authority") {
+      addFinding(findings, {
+        severity: "HIGH",
+        code: "MCP_BYPASS_DIRECT_AUTHORITY",
+        tool: server.server,
+        message: "Another configured MCP server exposes direct write, raw query, or model-callable commit authority that can bypass Synapsor.",
+        evidence: [server.evidence],
+        recommendation: server.remediation,
+      });
+    } else if (server.status === "requires_operator_verification") {
+      addFinding(findings, {
+        severity: "LOW",
+        code: "MCP_SERVER_TOOL_SURFACE_UNVERIFIED",
+        tool: server.server,
+        message: "Configured MCP server tool authority was not visible to the static audit.",
+        evidence: [server.evidence],
+        recommendation: server.remediation,
+      });
+    }
+  }
+}
+
+function appendTextBypassCheck(lines: string[], bypass: McpAuditBypassCheck | undefined): void {
+  if (!bypass) return;
+  lines.push("", "Configured-server bypass check:");
+  for (const server of bypass.servers) {
+    lines.push(`- ${server.status}: ${server.server} (${server.transport})${server.tools_observed.length > 0 ? `; tools ${server.tools_observed.join(", ")}` : ""}`);
+  }
+  lines.push(bypass.warning);
+}
+
 function summarizeFindings(findings: McpAuditFinding[], toolsInspected: number): McpAuditReport["summary"] {
   return {
     tools_inspected: toolsInspected,
@@ -737,7 +984,7 @@ function rootCauseForFinding(code: string): McpAuditRootCause {
     return "WRITE_SAFETY_GAPS";
   }
   if (code === "NO_STRUCTURED_OUTPUT_SCHEMA") return "UNSTRUCTURED_TOOL_CONTRACT";
-  if (["GENERIC_SQL_TOOL", "WRITE_TOOL_ACCEPTS_ARBITRARY_SQL", "ARBITRARY_IDENTIFIER_INPUT", "WRITE_WITHOUT_PROPOSAL_BOUNDARY"].includes(code)) {
+  if (["GENERIC_SQL_TOOL", "WRITE_TOOL_ACCEPTS_ARBITRARY_SQL", "ARBITRARY_IDENTIFIER_INPUT", "ARBITRARY_PREDICATE_INPUT", "WRITE_WITHOUT_PROPOSAL_BOUNDARY", "MCP_BYPASS_DIRECT_AUTHORITY"].includes(code)) {
     return "UNBOUNDED_DATABASE_AUTHORITY";
   }
   return "REVIEWABILITY_GAPS";
@@ -778,22 +1025,38 @@ export function redactMcpAuditTarget(target: string): string {
     const executable = target.slice("stdio:".length).trim().split(/\s+/, 1)[0] ?? "command";
     return `stdio:${safeToolName(executable)}`;
   }
-  return redactPotentialSecretText(target).slice(0, 512);
+  return redactPotentialSecretText(target)
+    .replace(/^\/home\/[^/]+\//, "~/")
+    .replace(/^\/Users\/[^/]+\//, "~/")
+    .replace(/^[A-Za-z]:\\Users\\[^\\]+\\/i, "~\\")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .slice(0, 512);
 }
 
-function addFinding(findings: McpAuditFinding[], finding: McpAuditFinding): void {
+function addFinding(
+  findings: McpAuditFinding[],
+  finding: Omit<McpAuditFinding, "remediation_url"> & { remediation_url?: string },
+): void {
   const key = `${finding.severity}:${finding.code}:${finding.tool ?? ""}`;
   if (findings.some((existing) => `${existing.severity}:${existing.code}:${existing.tool ?? ""}` === key)) {
     return;
   }
-  findings.push(finding);
+  findings.push({
+    ...finding,
+    remediation_url: finding.remediation_url ?? remediationUrlForFinding(finding.code),
+  });
+}
+
+function remediationUrlForFinding(code: string): string {
+  const anchor = code.toLowerCase().replace(/_/g, "-");
+  return `https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/mcp-audit.md#finding-${anchor}`;
 }
 
 function isWriteLike(text: string, annotations: JsonRecord): boolean {
   if (annotations.destructiveHint === true || annotations.readOnlyHint === false) {
     return true;
   }
-  return /\b(update|insert|delete|upsert|write|mutate|refund|waive|charge|cancel|commit|approve|settle|apply|merge|resolve|close|create|drop|alter)\b/.test(
+  return /\b(update|insert|delete|upsert|write|mutate|refund|waive|charge|cancel|commit|approve|settle|apply|merge|revert|rollback|undo|resolve|close|create|drop|alter)\b/.test(
     text,
   );
 }

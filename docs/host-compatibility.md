@@ -14,7 +14,13 @@ that a specific editor renders an extension or protects app-only controls.
 | Generic stdio MCP client | Protocol-tested | Official MCP SDK initialization, tool listing, calls, resources, and display-only Apps metadata are covered in the suite. |
 | Generic Streamable HTTP MCP client | Protocol-tested | Official MCP SDK sessions, signed context, secret rotation, JWKS, mTLS, aliases, and session isolation are covered. |
 | Claude Desktop | Protocol-tested | Packaged stdio configuration and MCP transport are tested; manual host UI behavior varies by version and remains a release checklist item. |
-| OpenAI Agents SDK | Protocol-tested | Packaged stdio/Streamable HTTP examples and OpenAI-safe aliases are tested. |
+| Claude Code | Configuration-tested and protocol-tested | Claude Code 2.1.216 accepted the secret-free stdio configuration through `mcp add-json`; the same command completed MCP `tools/list`. A manual model-driven proposal call remains a release gate. |
+| Codex | Configuration-tested and protocol-tested | Codex CLI 0.144.6 accepted the secret-free stdio configuration through `codex mcp add`; the same command completed MCP `tools/list`. A manual model-driven proposal call remains a release gate. |
+| VS Code | Protocol-tested | The checked `.vscode/mcp.json` shape is parsed and the same stdio command completes MCP `tools/list`; manual editor UI behavior is not claimed. |
+| OpenAI Agents SDK | Recipe-checked and protocol-tested | Packaged stdio/Streamable HTTP examples are syntax/safety checked and OpenAI-safe aliases are protocol-tested. The exact SDK agent call remains protocol-only until run with an owner-supplied API key. |
+| LangChain/LangGraph | Recipe-checked, protocol-only | The current `@langchain/mcp-adapters` recipe lists tools, rejects unsafe authority, and calls the proposal tool. The framework runtime has not been executed in this release environment. |
+| Google ADK | Recipe-checked, protocol-only | The current `McpToolset`/`StdioConnectionParams` recipe exposes only the two reviewed tools. The framework runtime has not been executed in this release environment. |
+| LlamaIndex | Recipe-checked, protocol-only | The current `BasicMCPClient` recipe lists tools and calls the proposal tool. The framework runtime has not been executed in this release environment. |
 
 ## Cursor Project Setup
 
@@ -36,6 +42,9 @@ Primary references:
 - [Cursor MCP documentation](https://cursor.com/docs/context/mcp)
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 - [MCP Apps specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
+
+All adjacent-host source links, runnable snippets, shared proposal input, and
+verification commands are in [Client And Framework Recipes](client-recipes.md).
 
 ## Authority Fallback
 

@@ -1,0 +1,60 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "billing.inspect_invoice",
+        "description": "Inspect one tenant-scoped invoice through reviewed visible fields.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "invoice_id": { "type": "string", "maxLength": 128 }
+          },
+          "required": ["invoice_id"]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string" },
+            "evidence_bundle_id": { "type": "string" }
+          },
+          "required": ["status", "evidence_bundle_id"]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false
+        },
+        "x_synapsor_test_fixture": "billing-invoice-safe"
+      },
+      {
+        "name": "billing.propose_late_fee_waiver",
+        "description": "Create an exact evidence-backed proposal for review before trusted writeback.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "invoice_id": { "type": "string", "maxLength": 128 },
+            "reason": { "type": "string", "maxLength": 500 }
+          },
+          "required": ["invoice_id", "reason"]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string" },
+            "proposal_id": { "type": "string" },
+            "receipt_hash": { "type": "string" },
+            "retryable": { "type": "boolean" },
+            "source_database_changed": { "type": "boolean" }
+          },
+          "required": ["status", "proposal_id", "source_database_changed"]
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false
+        },
+        "x_synapsor_test_fixture": "billing-waiver-proposal-safe"
+      }
+    ]
+  }
+}

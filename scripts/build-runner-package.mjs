@@ -152,6 +152,7 @@ const packageRoot = resolve(root, "apps/runner");
 await cp(resolve(root, "README.md"), resolve(packageRoot, "README.md"));
 
 const publicDocs = [
+  "alternatives.md",
   "README.md",
   "app-owned-executors.md",
   "benchmarks/bounded-set-local.md",
@@ -161,12 +162,15 @@ const publicDocs = [
   "cloud-mode.md",
   "cloud-push.md",
   "compliance-reports.md",
+  "client-recipes.md",
   "contract-review.md",
   "contract-testing.md",
+  "cursor-plugin.md",
   "current-scope.md",
   "database-enforced-scope.md",
   "doctor.md",
   "effect-regression.md",
+  "fresh-developer-usability.md",
   "getting-started-own-database.md",
   "guarded-crud-writeback.md",
   "graduated-trust.md",
