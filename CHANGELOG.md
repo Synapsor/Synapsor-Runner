@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.4 (prepared, not published)
+## 1.5.4 (published 2026-07-22)
 
 ### Networked MCP authentication hardening
 
@@ -39,7 +39,7 @@
   boundary while making Runner fail closed with
   `SESSION_BINDING_UNSUPPORTED`. Runner-targeted DSL validation, contract load,
   lint/explain, and runtime no longer allow an environment fallback.
-- Prepares `@synapsor/runner@1.5.4` and `@synapsor/dsl@1.4.4`;
+- Published `@synapsor/runner@1.5.4` and `@synapsor/dsl@1.4.4`;
   `@synapsor/spec@1.4.2` and the Cloud CLI remain unchanged.
 
 ## 1.5.3 (published 2026-07-21)
