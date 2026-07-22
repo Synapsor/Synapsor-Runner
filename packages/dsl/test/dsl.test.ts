@@ -55,6 +55,29 @@ describe("@synapsor/dsl", () => {
     expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
   });
 
+  it("preserves canonical SESSION syntax but rejects it for the Runner target", () => {
+    const canonical = enumArgumentSource("ARG risk_level STRING ENUM('low', 'high') REQUIRED")
+      .replace("FROM ENVIRONMENT SYNAPSOR_TENANT_ID", "FROM SESSION tenant_id");
+
+    expect(validateAgentDsl(canonical)).toMatchObject({ ok: true, errors: [] });
+    expect(compileAgentDsl(canonical).contexts[0]?.bindings[0]).toMatchObject({ source: "session", key: "tenant_id" });
+    expect(validateAgentDsl(canonical, { target: "runner" })).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ code: "SESSION_BINDING_UNSUPPORTED" })],
+    });
+  });
+
+  it.each([
+    ["ENVIRONMENT", "SYNAPSOR_TENANT_ID"],
+    ["HTTP_CLAIM", "tenant_id"],
+    ["CLOUD_SESSION", "tenant_id"],
+    ["STATIC_DEV", "demo_tenant"],
+  ])("accepts explicit %s bindings for the Runner target", (sourceName, key) => {
+    const source = enumArgumentSource("ARG risk_level STRING ENUM('low', 'high') REQUIRED")
+      .replace("FROM ENVIRONMENT SYNAPSOR_TENANT_ID", `FROM ${sourceName} ${key}`);
+    expect(validateAgentDsl(source, { target: "runner" })).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("rejects principal scope without a required principal binding", () => {
     const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8")
       .replace("BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED", "BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL")
@@ -225,6 +248,69 @@ END
       kind: "update",
       version_advance: { column: "updated_at", strategy: "database_generated" },
     });
+  });
+
+  it("requires an exact or explicitly acknowledged weak guard for UPDATE", () => {
+    const source = planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`).replace("  CONFLICT GUARD updated_at\n", "");
+
+    expect(validateAgentDsl(source)).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ code: "UPDATE_CONFLICT_GUARD_REQUIRED" })],
+    });
+    expect(() => compileAgentDsl(source)).toThrow(/UPDATE_CONFLICT_GUARD_REQUIRED/);
+  });
+
+  it("compiles an unmistakable weak row-hash acknowledgement and warns", () => {
+    const source = planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`).replace("  CONFLICT GUARD updated_at", "  CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED");
+    const result = compileAgentDslWithWarnings(source);
+
+    expect(result.contract.capabilities[0]?.proposal?.conflict_guard).toEqual({ weak_guard_ack: true });
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "WEAK_CONFLICT_GUARD_ACKNOWLEDGED",
+        message: expect.stringContaining("captured projection"),
+      }),
+    ]));
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(result.contract);
+    expect(parseAgentDsl(source).capabilities[0]?.weakConflictGuardAcknowledged).toBe(true);
+  });
+
+  it("forbids weak row-hash guards for DELETE, reversible UPDATE, and bounded-set UPDATE", () => {
+    const weak = (source: string) => source.replace("  CONFLICT GUARD updated_at", "  CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED");
+
+    expect(() => compileAgentDsl(weak(crudSource(`
+  PROPOSE ACTION delete_credit DELETE
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`)))).toThrow(/DELETE_CONFLICT_GUARD_REQUIRED/);
+
+    expect(() => compileAgentDsl(weak(crudSource(`
+  PROPOSE ACTION adjust_credit UPDATE
+  ALLOW WRITE amount_cents
+  PATCH amount_cents = ARG amount_cents
+  ADVANCE VERSION updated_at USING INTEGER INCREMENT
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+  REVERSIBLE
+`)))).toThrow(/REVERSIBILITY_CONFLICT_GUARD_REQUIRED/);
+
+    expect(() => compileAgentDsl(weak(crudSource(`
+  PROPOSE ACTION close_overdue UPDATE SET
+  SELECT WHERE status = 'overdue'
+  MAX ROWS 10
+  MAX TOTAL balance_cents BEFORE 50000
+  ALLOW WRITE status
+  PATCH status = 'closed'
+  ADVANCE VERSION updated_at USING INTEGER INCREMENT
+  APPROVAL ROLE support_reviewer
+  WRITEBACK DIRECT SQL
+`)))).toThrow(/SET_EXACT_CONFLICT_GUARD_REQUIRED/);
   });
 
   it("compiles guarded INSERT deduplication and guarded DELETE", () => {
@@ -557,6 +643,7 @@ CREATE CAPABILITY support.propose_plan_credit
   ON public.accounts
   PRIMARY KEY id
   TENANT KEY tenant_id
+  CONFLICT GUARD updated_at
   LOOKUP account_id BY id
   ARG account_id STRING REQUIRED MAX LENGTH 128
   ARG amount_cents NUMBER REQUIRED

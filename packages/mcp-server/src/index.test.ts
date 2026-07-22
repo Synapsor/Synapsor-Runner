@@ -2,7 +2,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { get as httpsGet, type RequestOptions } from "node:https";
-import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -13,7 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import * as mcpAppsSdk from "@modelcontextprotocol/ext-apps";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps";
-import { SignJWT, exportJWK, generateKeyPair } from "jose";
+import { SignJWT, exportJWK, exportSPKI, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -559,6 +559,42 @@ describe("local Synapsor MCP runtime", () => {
       ]);
     } finally {
       runtime.close();
+    }
+  });
+
+  it("rejects canonical SESSION bindings instead of falling through to environment", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-contract-session-"));
+    const contract = JSON.parse(fs.readFileSync(path.resolve(testDir, "../../spec/examples/guarded-writeback.contract.json"), "utf8"));
+    for (const binding of contract.contexts[0].bindings) {
+      binding.source = "session";
+      binding.key = binding.name === "tenant_id" ? "SYNAPSOR_TENANT_ID" : "SYNAPSOR_PRINCIPAL";
+    }
+    fs.writeFileSync(path.join(tempDir, "synapsor.contract.json"), JSON.stringify(contract));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      contracts: ["./synapsor.contract.json"],
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+    }));
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    process.env.SYNAPSOR_TENANT_ID = "must-not-be-read";
+    process.env.SYNAPSOR_PRINCIPAL = "must-not-be-read";
+    try {
+      expect(() => loadRuntimeConfigFromFile(configPath)).toThrow(/SESSION_BINDING_UNSUPPORTED[\s\S]*HTTP_CLAIM[\s\S]*CLOUD_SESSION/);
+    } finally {
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID;
+      else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL;
+      else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
     }
   });
 
@@ -2647,6 +2683,493 @@ describe("local Synapsor MCP runtime", () => {
     })).rejects.toMatchObject({ code: "HTTP_DEV_NO_AUTH_UNSAFE_HOST" });
   });
 
+  it("refuses remote cleartext before bind unless an explicit authenticated channel posture is selected", async () => {
+    const strongToken = "7f5b9e12c4a846d3b09871ef65a2d4c97b1e38f06ac245d9";
+    const remote = structuredClone(config);
+    remote.http_security = {
+      deployment: "single_tenant",
+      allowed_hosts: ["127.0.0.1"],
+    };
+    await expect(startStreamableHttpMcpServer({
+      config: remote,
+      host: "0.0.0.0",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: strongToken },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_REMOTE_CLEARTEXT_REFUSED" });
+
+    remote.http_security.channel = "direct_tls";
+    await expect(startStreamableHttpMcpServer({
+      config: remote,
+      host: "0.0.0.0",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: strongToken },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_TLS_MATERIAL_REQUIRED" });
+
+    remote.http_security.channel = "trusted_tls_proxy";
+    const proxyServer = await startStreamableHttpMcpServer({
+      config: remote,
+      host: "0.0.0.0",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: strongToken },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    await proxyServer.close();
+
+    const weakRemote = structuredClone(remote);
+    await expect(startStreamableHttpMcpServer({
+      config: weakRemote,
+      host: "0.0.0.0",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: "weak" },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_AUTH_TOKEN_WEAK" });
+  });
+
+  it("keeps insecure HTTP break glass authenticated and emits a prominent warning", async () => {
+    const token = "45f9be80ac3712d64e8a095bc731f4e26ad095b7c8e3f104";
+    const breakGlass = structuredClone(config);
+    breakGlass.http_security = {
+      deployment: "single_tenant",
+      channel: "insecure_http_break_glass",
+      allowed_hosts: ["127.0.0.1"],
+    };
+    const log = new PassThrough();
+    let output = "";
+    log.on("data", (chunk) => { output += String(chunk); });
+    const server = await startHttpMcpServer({
+      config: breakGlass,
+      host: "0.0.0.0",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: token },
+      log,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      expect((await httpRpc(server.port, undefined, "tools/list", {})).status).toBe(401);
+      expect((await httpRpc(server.port, token, "tools/list", {})).status).toBe(200);
+      expect(output).toContain("SECURITY WARNING");
+      expect(output).toContain("insecure cleartext break glass");
+      expect(output).not.toContain(token);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("accepts only active and one previous opaque endpoint token during rotation", async () => {
+    const active = "9ecb3165f8074a2d93be615c08f427ad16e390bf5c2847da";
+    const previous = "21d4a8f365bc709e14af82c631d9e507f48a2bd7356c190e";
+    const rotating = structuredClone(config);
+    rotating.http_security = {
+      deployment: "loopback",
+      static_token: {
+        active_env: "SYNAPSOR_ACTIVE_HTTP_TOKEN",
+        previous_env: "SYNAPSOR_PREVIOUS_HTTP_TOKEN",
+      },
+    };
+    const server = await startHttpMcpServer({
+      config: rotating,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_ACTIVE_HTTP_TOKEN: active,
+        SYNAPSOR_PREVIOUS_HTTP_TOKEN: previous,
+      },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      expect((await httpRpc(server.port, active, "tools/list", {})).status).toBe(200);
+      expect((await httpRpc(server.port, previous, "tools/list", {})).status).toBe(200);
+      expect((await httpRpc(server.port, "0f4e9a6b7c8d1e2f30415263748596a0bcdef123456789ab", "tools/list", {})).status).toBe(401);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("pins an initialized Streamable HTTP session to one opaque endpoint token", async () => {
+    const active = "9ecb3165f8074a2d93be615c08f427ad16e390bf5c2847da";
+    const previous = "21d4a8f365bc709e14af82c631d9e507f48a2bd7356c190e";
+    const rotating = structuredClone(config);
+    rotating.http_security = {
+      deployment: "loopback",
+      static_token: {
+        active_env: "SYNAPSOR_ACTIVE_HTTP_TOKEN",
+        previous_env: "SYNAPSOR_PREVIOUS_HTTP_TOKEN",
+      },
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: rotating,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_ACTIVE_HTTP_TOKEN: active,
+        SYNAPSOR_PREVIOUS_HTTP_TOKEN: previous,
+      },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${active}` } },
+    });
+    const client = new Client({ name: "active-token-client", version: "1.0.0" });
+    try {
+      await client.connect(transport);
+      const takeover = await fetch(server.url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${previous}`,
+          "content-type": "application/json",
+          "mcp-session-id": transport.sessionId!,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      });
+      expect(takeover.status).toBe(401);
+      await expect(takeover.json()).resolves.toEqual({ ok: false, error: "unauthorized" });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("validates present Origin and Host exactly while preserving native clients without Origin", async () => {
+    const originConfig = structuredClone(config);
+    originConfig.http_security = {
+      deployment: "loopback",
+      allowed_origins: ["https://client.example"],
+      allowed_hosts: ["127.0.0.1"],
+    };
+    const server = await startHttpMcpServer({
+      config: originConfig,
+      storePath: ":memory:",
+      port: 0,
+      devNoAuth: true,
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      expect((await fetch(server.url.replace(/\/mcp$/, "/healthz"))).status).toBe(200);
+      const accepted = await fetch(server.url.replace(/\/mcp$/, "/healthz"), { headers: { origin: "https://client.example" } });
+      expect(accepted.status).toBe(200);
+      expect(accepted.headers.get("access-control-allow-origin")).toBe("https://client.example");
+      expect((await fetch(server.url.replace(/\/mcp$/, "/healthz"), { headers: { origin: "https://evil.example" } })).status).toBe(403);
+      expect((await rawHttpGet(server.port, "/healthz", { host: "evil.example" })).status).toBe(403);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("bounds Streamable HTTP request bodies, headers, and concurrent sessions", async () => {
+    const token = "31f9a7e2c48b650d9f1e3a7c5b82064d9e17c3f5a8b2046d";
+    const bounded = structuredClone(config);
+    bounded.http_security = {
+      deployment: "loopback",
+      limits: {
+        max_request_bytes: 1024,
+        max_header_bytes: 4096,
+        max_sessions: 1,
+        session_idle_timeout_seconds: 10,
+        request_timeout_ms: 1000,
+        headers_timeout_ms: 1000,
+        keep_alive_timeout_ms: 1000,
+        max_connections: 8,
+      },
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: bounded,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: token },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "bounds-test", version: "1" } } };
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    });
+    const client = new Client({ name: "capacity-holder", version: "1.0.0" });
+    try {
+      const oversized = await fetch(server.url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ ...initialize, padding: "x".repeat(2048) }),
+      });
+      expect(oversized.status).toBe(413);
+      await expect(oversized.json()).resolves.toEqual({ ok: false, error: "request_too_large" });
+
+      const oversizedHeader = await fetch(server.url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "x-test-padding": "x".repeat(5000),
+        },
+        body: JSON.stringify(initialize),
+      });
+      expect(oversizedHeader.status).toBe(431);
+
+      const partial = startPartialInitialize(server.port, token);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const handshakeExhausted = await fetch(server.url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(initialize),
+      });
+      expect(handshakeExhausted.status).toBe(503);
+      partial.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      await client.connect(transport);
+      const exhausted = await fetch(server.url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(initialize),
+      });
+      expect(exhausted.status).toBe(503);
+      await expect(exhausted.json()).resolves.toMatchObject({ error: "session_capacity_exhausted", retryable: true });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("serves RFC 9728 protected-resource metadata and scope-aware Bearer challenges", async () => {
+    const secret = "a-production-length-session-secret-32-bytes-minimum";
+    const shared = structuredClone(config);
+    shared.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    shared.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "https://runner.example/mcp",
+      clock_skew_seconds: 0,
+    };
+    shared.http_security = {
+      deployment: "shared",
+      oauth_resource: {
+        resource: "https://runner.example/mcp",
+        authorization_servers: ["https://identity.example"],
+        scopes_supported: ["synapsor:mcp"],
+        required_scopes: ["synapsor:mcp"],
+        resource_name: "Synapsor Runner",
+      },
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: shared,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_SESSION_JWT_SECRET: secret },
+      log: false,
+      readRow: async ({ context }) => ({ row: { ...fixtureRow, tenant_id: context.tenant_id }, rowCount: 1 }),
+    });
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "auth-test", version: "1" } } };
+    try {
+      const unauthorized = await fetch(server.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(initialize),
+      });
+      expect(unauthorized.status).toBe(401);
+      expect(unauthorized.headers.get("www-authenticate")).toContain('resource_metadata="https://runner.example/.well-known/oauth-protected-resource/mcp"');
+      expect(unauthorized.headers.get("www-authenticate")).toContain('scope="synapsor:mcp"');
+
+      const metadata = await fetch(`http://127.0.0.1:${server.port}/.well-known/oauth-protected-resource/mcp`);
+      expect(metadata.status).toBe(200);
+      await expect(metadata.json()).resolves.toMatchObject({
+        resource: "https://runner.example/mcp",
+        authorization_servers: ["https://identity.example"],
+        scopes_supported: ["synapsor:mcp"],
+        bearer_methods_supported: ["header"],
+      });
+
+      const expires = Math.floor(Date.now() / 1000) + 600;
+      const wrongScope = signedSessionToken(secret, { sub: "alice", tenant_id: "acme", iss: "https://identity.example", aud: "https://runner.example/mcp", exp: expires, scope: "other:scope" });
+      const forbidden = await fetch(server.url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${wrongScope}`, "content-type": "application/json" },
+        body: JSON.stringify(initialize),
+      });
+      expect(forbidden.status).toBe(403);
+      expect(forbidden.headers.get("www-authenticate")).toContain('error="insufficient_scope"');
+
+      const valid = signedSessionToken(secret, { sub: "alice", tenant_id: "acme", iss: "https://identity.example", aud: "https://runner.example/mcp", exp: expires, scope: "synapsor:mcp" });
+      const transport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { authorization: `Bearer ${valid}` } } });
+      const client = new Client({ name: "oauth-resource-test", version: "1.0.0" });
+      await client.connect(transport);
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("billing.inspect_invoice");
+      await client.close();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves a shared ES256 claims profile through the official MCP client", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("ES256", { extractable: true });
+    const shared = structuredClone(config);
+    shared.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    shared.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["ES256"],
+      public_key_env: "SYNAPSOR_SESSION_PUBLIC_KEY",
+      issuer: "https://identity.example",
+      audience: "https://runner.example/mcp",
+      clock_skew_seconds: 0,
+    };
+    shared.http_security = {
+      deployment: "shared",
+      oauth_resource: {
+        resource: "https://runner.example/mcp",
+        authorization_servers: ["https://identity.example"],
+        required_scopes: ["synapsor:mcp"],
+      },
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: shared,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_SESSION_PUBLIC_KEY: await exportSPKI(publicKey) },
+      log: false,
+      readRow: async ({ context }) => ({ row: { ...fixtureRow, tenant_id: context.tenant_id }, rowCount: 1 }),
+    });
+    const token = await new SignJWT({ tenant_id: "acme", scope: "synapsor:mcp" })
+      .setProtectedHeader({ alg: "ES256", kid: "session-es256-1" })
+      .setSubject("agent-es256")
+      .setIssuer("https://identity.example")
+      .setAudience("https://runner.example/mcp")
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 300)
+      .sign(privateKey);
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    });
+    const client = new Client({ name: "es256-client", version: "1.0.0" });
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-ES256" } });
+      expect(result.structuredContent).toMatchObject({
+        trusted_context: { tenant_id: "acme", principal: "agent-es256", provenance: "http_claims" },
+      });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("reauthenticates every existing Streamable HTTP session request and rejects an expired JWT", async () => {
+    const secret = "a-production-length-session-secret-32-bytes-minimum";
+    const sessionConfig = structuredClone(config);
+    sessionConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    sessionConfig.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+      clock_skew_seconds: 0,
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: sessionConfig,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_SESSION_JWT_SECRET: secret },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const token = signedSessionToken(secret, {
+      sub: "alice",
+      tenant_id: "acme",
+      iss: "https://identity.example",
+      aud: "synapsor-runner",
+      exp: Math.floor(Date.now() / 1000) + 2,
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    });
+    const client = new Client({ name: "expiring-client", version: "1.0.0" });
+    try {
+      await client.connect(transport);
+      expect(transport.sessionId).toBeTruthy();
+      await new Promise((resolve) => setTimeout(resolve, 2_200));
+      const expired = await fetch(server.url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "mcp-session-id": transport.sessionId!,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      });
+      expect(expired.status).toBe(401);
+      await expect(expired.json()).resolves.toEqual({ ok: false, error: "unauthorized" });
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  }, 10_000);
+
+  it("rejects missing, non-scalar, oversized, and control-character trusted-context claims generically", async () => {
+    const secret = "a-production-length-session-secret-32-bytes-minimum";
+    const sessionConfig = structuredClone(config);
+    sessionConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    sessionConfig.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+      clock_skew_seconds: 0,
+    };
+    const server = await startStreamableHttpMcpServer({
+      config: sessionConfig,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_SESSION_JWT_SECRET: secret },
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const base = {
+      sub: "alice",
+      tenant_id: "acme",
+      iss: "https://identity.example",
+      aud: "synapsor-runner",
+      exp: Math.floor(Date.now() / 1000) + 300,
+    };
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claim-test", version: "1" } } };
+    try {
+      const unsafeClaims = [
+        { ...base, tenant_id: undefined },
+        { ...base, tenant_id: 42 },
+        { ...base, sub: "x".repeat(129) },
+        { ...base, sub: "alice\nadmin" },
+      ];
+      for (const claims of unsafeClaims) {
+        const response = await fetch(server.url, {
+          method: "POST",
+          headers: { authorization: `Bearer ${signedSessionToken(secret, claims)}`, "content-type": "application/json" },
+          body: JSON.stringify(initialize),
+        });
+        expect(response.status).toBe(401);
+        await expect(response.json()).resolves.toEqual({ ok: false, error: "unauthorized" });
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves authenticated HTTP MCP tools, calls, and resources without exposing secrets", async () => {
     const token = "test-http-token";
     const databaseUrl = "postgresql://reader:secret@db.example/app";
@@ -2855,11 +3378,16 @@ describe("local Synapsor MCP runtime", () => {
 
     const unsafeConfig = structuredClone(config);
     unsafeConfig.metrics = { enabled: true };
+    unsafeConfig.http_security = {
+      deployment: "single_tenant",
+      channel: "trusted_tls_proxy",
+      allowed_hosts: ["127.0.0.1"],
+    };
     await expect(startHttpMcpServer({
       config: unsafeConfig,
       host: "0.0.0.0",
       port: 0,
-      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: mcpToken },
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: "7f5b9e12c4a846d3b09871ef65a2d4c97b1e38f06ac245d9" },
       log: false,
       readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
     })).rejects.toMatchObject({ code: "METRICS_AUTH_REQUIRED" });
@@ -3027,7 +3555,7 @@ describe("local Synapsor MCP runtime", () => {
         body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "tools/list", params: {} }),
       });
       expect(mismatch.status).toBe(401);
-      await expect(mismatch.json()).resolves.toMatchObject({ error: "session_auth_mismatch" });
+      await expect(mismatch.json()).resolves.toMatchObject({ error: "unauthorized" });
 
       await globexClient.connect(globexTransport);
       const globex = await globexClient.callTool({ name: "billing.inspect_invoice", arguments: { invoice_id: "INV-B" } });
@@ -3191,6 +3719,7 @@ describe("local Synapsor MCP runtime", () => {
 
   it("requires client certificates when Streamable HTTP mTLS is enabled", async () => {
     const certs = generateMtlsFixture();
+    const untrusted = generateMtlsFixture();
     const token = "test-mtls-token";
     const server = await startStreamableHttpMcpServer({
       config,
@@ -3214,9 +3743,32 @@ describe("local Synapsor MCP runtime", () => {
         cert: certs.clientCert,
         key: certs.clientKey,
       })).resolves.toMatchObject({ ok: true, transport: "streamable-http" });
+      await expect(httpsJson(healthzUrl, {
+        ca: certs.ca,
+        cert: untrusted.clientCert,
+        key: untrusted.clientKey,
+      })).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      await expect(httpsJson(healthzUrl, {
+        ca: certs.ca,
+        cert: certs.expiredClientCert,
+        key: certs.expiredClientKey,
+      })).rejects.toThrow();
     } finally {
       await server.close();
     }
+  }, 15_000);
+
+  it("refuses invalid Runner-owned TLS material before binding", async () => {
+    await expect(startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: "test-invalid-tls-token" },
+      log: false,
+      tls: { cert: "not-a-certificate", key: "not-a-private-key" },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    })).rejects.toMatchObject({ code: "HTTP_TLS_MATERIAL_INVALID" });
   });
 
   it("can expose OpenAI-safe Streamable HTTP tool aliases while preserving canonical names", async () => {
@@ -3322,7 +3874,15 @@ function signedSessionToken(secret: string, claims: Record<string, unknown>): st
   return `${header}.${payload}.${signature}`;
 }
 
-function generateMtlsFixture(): { ca: string; serverCert: string; serverKey: string; clientCert: string; clientKey: string } {
+function generateMtlsFixture(): {
+  ca: string;
+  serverCert: string;
+  serverKey: string;
+  clientCert: string;
+  clientKey: string;
+  expiredClientCert: string;
+  expiredClientKey: string;
+} {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-mtls-"));
   const run = (args: string[]) => execFileSync("openssl", args, { cwd: dir, stdio: "ignore" });
   run(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1", "-subj", "/CN=Synapsor Test CA", "-keyout", "ca.key", "-out", "ca.crt"]);
@@ -3332,12 +3892,16 @@ function generateMtlsFixture(): { ca: string; serverCert: string; serverKey: str
   fs.writeFileSync(path.join(dir, "client.ext"), "extendedKeyUsage=clientAuth\n");
   run(["req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=synapsor-test-client", "-keyout", "client.key", "-out", "client.csr"]);
   run(["x509", "-req", "-in", "client.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-out", "client.crt", "-days", "1", "-sha256", "-extfile", "client.ext"]);
+  run(["req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=synapsor-expired-client", "-keyout", "expired-client.key", "-out", "expired-client.csr"]);
+  run(["x509", "-req", "-in", "expired-client.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAserial", "ca.srl", "-out", "expired-client.crt", "-days", "0", "-sha256", "-extfile", "client.ext"]);
   return {
     ca: fs.readFileSync(path.join(dir, "ca.crt"), "utf8"),
     serverCert: fs.readFileSync(path.join(dir, "server.crt"), "utf8"),
     serverKey: fs.readFileSync(path.join(dir, "server.key"), "utf8"),
     clientCert: fs.readFileSync(path.join(dir, "client.crt"), "utf8"),
     clientKey: fs.readFileSync(path.join(dir, "client.key"), "utf8"),
+    expiredClientCert: fs.readFileSync(path.join(dir, "expired-client.crt"), "utf8"),
+    expiredClientKey: fs.readFileSync(path.join(dir, "expired-client.key"), "utf8"),
   };
 }
 
@@ -3372,4 +3936,46 @@ function httpRpc(
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
+}
+
+function rawHttpGet(
+  port: number,
+  requestPath: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      host: "127.0.0.1",
+      port,
+      path: requestPath,
+      method: "GET",
+      headers,
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      response.on("end", () => resolve({
+        status: response.statusCode ?? 0,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+function startPartialInitialize(port: number, token: string): ReturnType<typeof httpRequest> {
+  const request = httpRequest({
+    host: "127.0.0.1",
+    port,
+    path: "/mcp",
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "content-length": "1024",
+    },
+  });
+  request.on("error", () => undefined);
+  request.write('{"jsonrpc":"2.0","id":1,"method":"initialize","params":');
+  return request;
 }

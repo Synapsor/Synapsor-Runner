@@ -160,7 +160,31 @@ async function boundedJwksFetch(
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  if (response.ok) validatePublicJwks(body);
   return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
+function validatePublicJwks(body: Uint8Array): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    throw new Error("JWKS response is not valid JSON");
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.keys) || parsed.keys.length > 128) {
+    throw new Error("JWKS response must contain a bounded keys array");
+  }
+  const privateMembers = new Set(["d", "p", "q", "dp", "dq", "qi", "oth", "k"]);
+  for (const key of parsed.keys) {
+    if (!isRecord(key) || typeof key.kty !== "string") throw new Error("JWKS contains an invalid key");
+    if (key.kty === "oct" || Object.keys(key).some((member) => privateMembers.has(member))) {
+      throw new Error("JWKS must contain public verification keys only");
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function trimmedEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {

@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "1.5.3",
+  "version": "1.5.4",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -74,6 +74,8 @@
     "verify:dsl-sources": "./scripts/verify-dsl-source-paths.sh",
     "verify:public-commands": "./scripts/verify-public-commands.sh",
     "verify:packed-runner": "./scripts/verify-packed-runner.sh",
+    "verify:packed-network-auth": "node scripts/verify-packed-network-auth.mjs",
+    "verify:packed-lifecycle": "node scripts/verify-packed-lifecycle.mjs",
     "verify:packed-cloud-cli": "./scripts/verify-packed-cloud-cli.sh",
     "verify:packed-own-db": "./scripts/verify-packed-own-db.sh",
     "verify:safe-action-preview": "./scripts/verify-safe-action-preview.sh",

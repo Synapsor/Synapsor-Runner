@@ -8,7 +8,7 @@ surface.
 ## Start Runner
 
 ```bash
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
@@ -16,6 +16,11 @@ npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
   --alias-mode openai
 ```
+
+For this loopback/single-service example, the operator provisions that same
+opaque value to the Runner process and the Python client through protected
+environment injection. HTTP `Bearer` describes how the credential is sent; it
+does not make the opaque value a JWT, and Runner does not issue it.
 
 `--alias-mode openai` is important because OpenAI function/tool names cannot
 contain dots. Runner exposes names such as `billing__inspect_invoice` to the
@@ -28,7 +33,8 @@ model and maps calls back to canonical Synapsor capability names such as
 npx -y -p @synapsor/runner synapsor-runner mcp client-config \
   --client openai-agents \
   --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db
+  --store ./.synapsor/local.db \
+  --client-access-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
 ```
 
 The generated output includes:
@@ -40,6 +46,14 @@ The generated output includes:
 
 It does not include database URLs, passwords, write credentials, API keys, or
 bearer token values.
+
+For a shared deployment, configure `http_claims`, asymmetric `session_auth`, and
+`http_security.oauth_resource`, then use a separate env name such as
+`SYNAPSOR_MCP_ACCESS_TOKEN`. Your configured identity provider issues that
+short-lived token for the protected-resource audience; Runner validates it on
+every request but never stores end-user passwords or issues/refreshes tokens.
+The generated client URL is the configured HTTPS protected resource. See
+[HTTP MCP](http-mcp.md) for the complete profile and TLS/proxy requirements.
 
 ## Sanity Check
 

@@ -365,7 +365,12 @@ describe("local UI", () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-contract-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
     const contractPath = path.join(tempDir, "support.contract.json");
-    await fs.copyFile(path.resolve(process.cwd(), "packages/spec/examples/support-refund.contract.json"), contractPath);
+    const contract = JSON.parse(await fs.readFile(path.resolve(process.cwd(), "packages/spec/examples/support-refund.contract.json"), "utf8"));
+    contract.contexts[0].bindings = [
+      { name: "tenant_id", source: "environment", key: "SYNAPSOR_TENANT_ID", required: true },
+      { name: "principal", source: "environment", key: "SYNAPSOR_PRINCIPAL", required: true },
+    ];
+    await fs.writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`, "utf8");
     await fs.writeFile(configPath, `${JSON.stringify({
       version: 1,
       mode: "review",

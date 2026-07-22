@@ -49,10 +49,13 @@ developer path. Streamable HTTP implements MCP initialize/session behavior over
 an authenticated `/mcp` endpoint. The JSON-RPC bridge is intentionally smaller
 and does not implement MCP initialize/session behavior.
 
-HTTP requires bearer auth by default:
+HTTP requires Bearer authentication by default. `Bearer` is the HTTP
+presentation scheme; for this loopback example it carries one opaque random
+endpoint token, not a user identity or JWT. The operator generates it and
+provisions the same environment value to Runner and the authorized client:
 
 ```bash
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
@@ -88,8 +91,10 @@ npx -y -p @synapsor/runner synapsor-runner tools preview \
   --alias-mode openai
 ```
 
-Use private networking/TLS before exposing HTTP MCP beyond localhost. Details:
-[HTTP MCP](http-mcp.md).
+Do not distribute one opaque token to unrelated users or tenants. A
+non-loopback service also needs direct TLS or an explicitly trusted TLS proxy;
+a shared service uses short-lived signed JWTs issued by your identity provider,
+with tenant/principal bound from verified claims. Details: [HTTP MCP](http-mcp.md).
 
 ## Generate A Client Snippet
 
@@ -142,8 +147,10 @@ npx -y -p @synapsor/runner synapsor-runner mcp configure \
 When the destination already exists, Synapsor Runner creates a timestamped
 backup before writing. Noninteractive scripts must add `--yes`.
 
-The command writes only the local stdio MCP command and args. It does not write
-database URLs or passwords into the client config.
+The command writes only command arguments and, for HTTP clients, credential
+environment references plus external authorization metadata. It never writes
+database URLs, passwords, token values, client secrets, or refresh tokens into
+the generated client config.
 
 No separate Apps flag is required. A compatible host discovers
 `ui://synapsor/proposal-review.html` from proposal-tool metadata. The app can
@@ -165,8 +172,6 @@ the current `latest` release.
 For standard app/server HTTP MCP mode:
 
 ```bash
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
-
 npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --config ./examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -174,6 +179,8 @@ npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
 ```
 
 For the smaller JSON-RPC bridge, use `synapsor-runner mcp serve-http` instead.
+The bridge is not standard Streamable HTTP and cannot provide claim-bound MCP
+sessions, so do not use it for a shared identity deployment.
 
 ## Generic stdio Client
 
@@ -195,9 +202,9 @@ For the smaller JSON-RPC bridge, use `synapsor-runner mcp serve-http` instead.
         "./.synapsor/local.db"
       ],
       "env": {
-        "BILLING_POSTGRES_READ_URL": "postgresql://synapsor_reader:...@localhost:55433/synapsor_runner_mcp_billing",
-        "SYNAPSOR_TENANT_ID": "acme",
-        "SYNAPSOR_PRINCIPAL": "local_billing_agent"
+        "BILLING_POSTGRES_READ_URL": "${BILLING_POSTGRES_READ_URL}",
+        "SYNAPSOR_TENANT_ID": "${SYNAPSOR_TENANT_ID}",
+        "SYNAPSOR_PRINCIPAL": "${SYNAPSOR_PRINCIPAL}"
       }
     }
   }
@@ -264,6 +271,12 @@ examples/mcp-client-configs/vscode.json
 ```
 
 Each example uses the same stdio command/args/env structure. Replace the placeholder environment variables in your client settings or shell environment.
+
+These checked-in desktop examples use stdio, which is the recommended local
+path for Claude Desktop, Cursor, and VS Code. The OpenAI Agents SDK recipe is
+syntax-checked, and the HTTP endpoint is interoperability-tested with the
+official MCP TypeScript client; repository CI does not claim to exercise an
+identity-provider login inside every third-party host.
 
 Do not add a write database URL to the MCP server environment unless you are intentionally running a local review/writeback demo. For normal read/proposal tool calls, use the read URL and trusted context values only.
 

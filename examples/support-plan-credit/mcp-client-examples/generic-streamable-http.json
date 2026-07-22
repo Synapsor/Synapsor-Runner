@@ -1,5 +1,8 @@
 {
   "name": "synapsor-runner",
   "transport": "streamable-http",
-  "url": "http://127.0.0.1:8766/mcp"
+  "url": "http://127.0.0.1:8766/mcp",
+  "headers_from_env": {
+    "Authorization": "Bearer $SYNAPSOR_RUNNER_HTTP_TOKEN"
+  }
 }

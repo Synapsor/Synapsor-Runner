@@ -183,7 +183,7 @@ async function sessionToken(session, tenant, subject) {
     .setProtectedHeader({ alg: "RS256", kid: "fleet-session-1" })
     .setSubject(subject)
     .setIssuer("https://fleet.example.invalid")
-    .setAudience("synapsor-runner-fleet")
+    .setAudience("https://runner-fleet.example.invalid/mcp")
     .setIssuedAt()
     .setExpirationTime("10m")
     .sign(key);
@@ -197,7 +197,7 @@ async function writeRuntimeConfig(session, alice, bob) {
     algorithms: ["RS256"],
     public_key_path: session.publicPath,
     issuer: "https://fleet.example.invalid",
-    audience: "synapsor-runner-fleet",
+    audience: "https://runner-fleet.example.invalid/mcp",
     tenant_claim: "tenant_id",
     principal_claim: "sub",
     clock_skew_seconds: 10,
@@ -239,6 +239,8 @@ async function writeSmokeRuntimeConfig(configPath) {
     provider: "static_dev",
     values: { tenant_id: "acme", principal: "smoke-cli-owner" },
   };
+  config.http_security = { ...config.http_security, deployment: "loopback" };
+  delete config.http_security.oauth_resource;
   delete config.rate_limits;
   delete config.metrics;
   config.capabilities = config.capabilities
@@ -317,6 +319,13 @@ async function verifyRuntimeStoreSmokeCall(configPath, pool, identity) {
   const replay = parseCliJson(runner(["replay", "show", "--proposal", proposalId, "--config", configPath, "--store", bridgeB, "--json"]));
   assert(replay.proposal?.proposal_id === proposalId && replay.evidence?.some((entry) => entry.evidence_bundle_id === evidenceId),
     "Runner B could not replay the smoke-call proposal", replay);
+  const lifecycle = parseCliJson(runner(["lifecycle", "show", `evidence:${evidenceId}`, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(lifecycle.schema_version === "synapsor.lifecycle-view.v1"
+    && lifecycle.proposal?.proposal_id === proposalId
+    && lifecycle.evidence?.bundles?.some((entry) => entry.evidence_bundle_id === evidenceId)
+    && lifecycle.writeback?.latest_outcome === null
+    && lifecycle.proposal?.source_database_mutated === false,
+  "Runner B could not inspect the complete pending lifecycle from the shared runtime store", lifecycle);
   assert(!fs.existsSync(bridgeB), "runtime-store read commands persisted an authoritative local bridge", { bridgeB });
 
   const statusAfter = parseCliJson(runner([
@@ -384,6 +393,14 @@ async function verifyRuntimeStoreSmokeCall(configPath, pool, identity) {
   const appliedState = parseCliJson(runner(["proposals", "show", proposalId, "--config", configPath, "--store", bridgeB, "--json"]));
   assert(appliedState.proposal?.state === "applied" && appliedState.receipts?.length === 1,
     "smoke-call receipt/replay state was not durable in the shared ledger", appliedState);
+  const appliedLifecycle = parseCliJson(runner(["lifecycle", "show", `proposal:${proposalId}`, "--config", configPath, "--store", bridgeB, "--json"]));
+  assert(appliedLifecycle.proposal?.state === "applied"
+    && appliedLifecycle.proposal?.source_database_mutated === true
+    && appliedLifecycle.writeback?.receipts?.length === 1
+    && appliedLifecycle.writeback?.latest_outcome?.status === "applied"
+    && appliedLifecycle.timeline?.some((entry) => entry.kind === "writeback_applied"),
+  "shared runtime-store lifecycle view did not preserve the applied receipt chain", appliedLifecycle);
+  assert(!fs.existsSync(bridgeB), "shared lifecycle inspection persisted an authoritative local bridge", { bridgeB });
 
   const unavailableConfig = JSON.parse(await fsp.readFile(configPath, "utf8"));
   unavailableConfig.storage.shared_postgres.url_env = "SYNAPSOR_UNAVAILABLE_LEDGER_URL";

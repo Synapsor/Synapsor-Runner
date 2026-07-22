@@ -293,6 +293,80 @@
         "max_response_bytes": { "type": "integer", "minimum": 1024, "maximum": 10485760 }
       }
     },
+    "http_security": {
+      "description": "Runner-only deployment security for networked MCP. Credential values remain in environment or secret-manager wiring and never enter portable contracts.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deployment": {
+          "description": "Trust topology. shared requires signed per-session http_claims identity; single_tenant may use one opaque service token.",
+          "enum": ["loopback", "single_tenant", "shared"]
+        },
+        "channel": {
+          "description": "How a remote listener is protected in transit. insecure_http_break_glass is unsafe and still requires authentication.",
+          "enum": ["direct_tls", "trusted_tls_proxy", "insecure_http_break_glass"]
+        },
+        "static_token": {
+          "description": "Environment-variable names for the current opaque endpoint token and at most one previous rotation token.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "active_env": { "$ref": "#/$defs/env_name" },
+            "previous_env": { "$ref": "#/$defs/env_name" }
+          }
+        },
+        "oauth_resource": {
+          "description": "RFC 9728 metadata for Runner as an OAuth protected resource. The external authorization server issues tokens; Runner only verifies them.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resource", "authorization_servers"],
+          "properties": {
+            "resource": { "type": "string", "pattern": "^https://" },
+            "authorization_servers": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^https://" }
+            },
+            "scopes_supported": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/oauth_scope" } },
+            "required_scopes": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/oauth_scope" } },
+            "resource_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "resource_documentation": { "type": "string", "pattern": "^https://" }
+          }
+        },
+        "allowed_origins": {
+          "description": "Exact browser origins accepted on HTTP MCP requests. Native clients may omit Origin. Wildcards are forbidden.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^https?://[^/*]+(?::[0-9]+)?$" }
+        },
+        "allowed_hosts": {
+          "description": "Exact HTTP Host authorities accepted by the direct listener or trusted proxy. Forwarded host headers are never authority.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(?:\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.-]+)(?::[0-9]{1,5})?$" }
+        },
+        "limits": {
+          "description": "Bounded HTTP request, header, connection, and session resource limits.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_request_bytes": { "type": "integer", "minimum": 1024, "maximum": 16777216 },
+            "max_header_bytes": { "type": "integer", "minimum": 4096, "maximum": 65536 },
+            "max_sessions": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "session_idle_timeout_seconds": { "type": "integer", "minimum": 10, "maximum": 86400 },
+            "request_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 300000 },
+            "headers_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 120000 },
+            "keep_alive_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 120000 },
+            "max_connections": { "type": "integer", "minimum": 1, "maximum": 100000 }
+          }
+        }
+      }
+    },
     "cloud": {
       "type": "object",
       "additionalProperties": false,
@@ -346,6 +420,12 @@
     "env_name": {
       "type": "string",
       "pattern": "^[A-Z_][A-Z0-9_]*$"
+    },
+    "oauth_scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[!#-\\[\\]-~]+$"
     },
     "identifier": {
       "type": "string",

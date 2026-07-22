@@ -1,9 +1,13 @@
 import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";
 
 // Start Runner with --alias-mode openai so model-visible tool names are valid OpenAI function names.
+const token = process.env.SYNAPSOR_RUNNER_HTTP_TOKEN;
+if (!token) throw new Error("set SYNAPSOR_RUNNER_HTTP_TOKEN in the launching environment");
+
 const synapsor = new MCPServerStreamableHttp({
   name: "Synapsor Runner",
   url: "http://127.0.0.1:8766/mcp",
+  requestInit: { headers: { Authorization: `Bearer ${token}` } },
 });
 
 await synapsor.connect();

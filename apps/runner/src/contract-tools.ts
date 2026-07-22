@@ -107,6 +107,7 @@ export async function loadReviewedContract(sourcePath: string): Promise<LoadedRe
 
 export function explainContract(contract: SynapsorContract): ContractExplanation {
   const contexts = new Map(contract.contexts.map((context) => [context.name, context]));
+  const hasSessionBinding = contract.contexts.some((context) => context.bindings.some((binding) => binding.source === "session"));
   return {
     contract: {
       name: contract.metadata?.name ?? "unnamed contract",
@@ -135,6 +136,7 @@ export function explainContract(contract: SynapsorContract): ContractExplanation
       "The model receives reviewed semantic capabilities, never raw SQL or database credentials.",
       "Tenant and principal authority come from trusted context bindings, not model arguments.",
       "Proposal capabilities save intent; approval and writeback stay outside MCP/model authority.",
+      ...(hasSessionBinding ? ["This canonical contract contains FROM SESSION. Synapsor Runner rejects that provider; use ENVIRONMENT, verified HTTP_CLAIM, or verified CLOUD_SESSION for Runner deployments."] : []),
       "This explanation summarizes the reviewed contract. It does not replace schema classification, database permissions, or human review.",
     ],
   };
@@ -160,6 +162,18 @@ export function lintContract(
 
   for (const warning of options.dslWarnings ?? []) {
     add({ code: `DSL_${warning.code}`, severity: "warning", path: `line:${warning.line}:${warning.column}`, message: warning.message });
+  }
+
+  for (const [contextIndex, context] of contract.contexts.entries()) {
+    for (const [bindingIndex, binding] of context.bindings.entries()) {
+      if (binding.source !== "session") continue;
+      add({
+        code: "SESSION_BINDING_UNSUPPORTED",
+        severity: "error",
+        path: `$.contexts[${contextIndex}].bindings[${bindingIndex}].source`,
+        message: `${context.name}.${binding.name} uses canonical SESSION binding, which Synapsor Runner does not implement. Use ENVIRONMENT, verified HTTP_CLAIM, or verified CLOUD_SESSION.`,
+      });
+    }
   }
 
   const configSources = recordKeys(options.runnerConfig?.sources);
@@ -190,6 +204,14 @@ export function lintContract(
       add({ code: "RUNNER_SOURCE_UNRESOLVED", severity: "error", path: `${base}.source`, message: `${capability.name} references source ${capability.source}, which is absent from runner config.` });
     }
     const writeback = capability.proposal?.writeback;
+    if (capability.proposal?.conflict_guard?.weak_guard_ack === true) {
+      add({
+        code: "WEAK_CONFLICT_GUARD_ACKNOWLEDGED",
+        severity: "warning",
+        path: `${base}.proposal.conflict_guard`,
+        message: `${capability.name} uses a weak row-hash guard over the captured projection and may miss concurrent changes outside that projection; prefer an exact version column.`,
+      });
+    }
     if (writeback?.mode === "app_handler" && (!writeback.executor || (options.runnerConfig && !configExecutors.has(writeback.executor)))) {
       add({ code: "APP_HANDLER_EXECUTOR_UNRESOLVED", severity: "error", path: `${base}.proposal.writeback.executor`, message: `${capability.name} requires a configured app-handler executor.` });
     }
@@ -305,6 +327,13 @@ function explainCapability(capability: CapabilitySpec, context?: AgentContextSpe
       row_cap: proposal.operation?.max_rows ?? 1,
       aggregate_bounds: proposal.operation?.aggregate_bounds ?? [],
       conflict_guard: proposal.conflict_guard ?? {},
+      conflict_guard_assurance: proposal.conflict_guard?.column
+        ? `exact optimistic-concurrency check on reviewed version column ${proposal.conflict_guard.column}`
+        : proposal.conflict_guard?.weak_guard_ack === true
+          ? "WEAK row hash over the captured projection; may miss concurrent changes outside that projection"
+          : proposal.operation?.kind === "insert"
+            ? "not applicable to INSERT; deterministic deduplication supplies retry protection"
+            : "missing",
       approval: proposal.approval ?? { mode: "human" },
       writeback: proposal.writeback ?? { mode: "none" },
       reversibility: proposal.reversibility?.mode ?? "not declared",
@@ -380,6 +409,7 @@ function formatExplanationMarkdown(explanation: ContractExplanation): string {
     }
     if (capability.proposal) {
       lines.push(`- Proposal: ${String(capability.proposal.operation)} ${String(capability.proposal.cardinality)} action \`${String(capability.proposal.action)}\``);
+      lines.push(`- Conflict guard: ${String(capability.proposal.conflict_guard_assurance)}`);
       lines.push(`- Approval: \`${JSON.stringify(capability.proposal.approval)}\``);
       lines.push(`- Writeback: \`${JSON.stringify(capability.proposal.writeback)}\``);
       lines.push(`- Reversibility: ${String(capability.proposal.reversibility)}`);

@@ -19,6 +19,24 @@ The local Runner still keeps database credentials in your environment. MCP
 client config snippets contain command paths and Runner arguments, not database
 URLs or write credentials.
 
+Keep Cloud and MCP credentials distinct:
+
+| Credential | Purpose | Issuer/provisioner | Never substitutes for |
+| --- | --- | --- | --- |
+| Cloud user session | Human control-panel/CLI identity and subscription/RBAC checks | Synapsor Cloud identity system | MCP tenant identity or database access |
+| Cloud service/API key | Contract push and scoped Cloud administration | Synapsor Cloud | MCP endpoint access |
+| Source-scoped Runner token | Runner registration, heartbeat, lease, activity, and result calls for one Cloud source | Synapsor Cloud Connect Runner flow | Model-facing MCP access or operator approval |
+| Opaque MCP endpoint token | Loopback or explicitly single-tenant HTTP endpoint access | Customer operator/secret manager | User/tenant identity |
+| Signed MCP access JWT | Shared HTTP client identity and verified tenant/principal claims | Customer identity provider/authorization server | Cloud subscription credential or DB role |
+| Operator credential | Activation, approval, apply, reconcile, dead-letter, and revert authority | Customer operator identity system | Model-facing MCP capability |
+| Database/handler credential | Local read or trusted post-approval effect | Customer secret manager/database/application | Cloud or MCP authentication |
+
+Cloud-linked mode does not require networked MCP: a desktop client can still
+launch the local Runner over stdio. If the local Runner exposes Streamable HTTP,
+the same [HTTP MCP](http-mcp.md) channel and identity profiles apply. Cloud API
+keys and source-scoped Runner tokens are never accepted as shortcuts for MCP
+session authentication.
+
 ## Trust Boundary
 
 ```text

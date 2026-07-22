@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/dsl",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "SQL-like Synapsor authoring frontend for canonical @synapsor/spec contracts.",
   "license": "Apache-2.0",
   "type": "module",

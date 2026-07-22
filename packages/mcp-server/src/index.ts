@@ -5,9 +5,11 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
+import { createSecureContext } from "node:tls";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import {
   registerAppResource,
@@ -198,6 +200,34 @@ export type RuntimeConfig = {
     jwks_cooldown_seconds?: number;
     fetch_timeout_ms?: number;
     max_response_bytes?: number;
+  };
+  http_security?: {
+    deployment?: "loopback" | "single_tenant" | "shared";
+    channel?: "direct_tls" | "trusted_tls_proxy" | "insecure_http_break_glass";
+    static_token?: {
+      active_env?: string;
+      previous_env?: string;
+    };
+    oauth_resource?: {
+      resource: string;
+      authorization_servers: string[];
+      scopes_supported?: string[];
+      required_scopes?: string[];
+      resource_name?: string;
+      resource_documentation?: string;
+    };
+    allowed_origins?: string[];
+    allowed_hosts?: string[];
+    limits?: {
+      max_request_bytes?: number;
+      max_header_bytes?: number;
+      max_sessions?: number;
+      session_idle_timeout_seconds?: number;
+      request_timeout_ms?: number;
+      headers_timeout_ms?: number;
+      keep_alive_timeout_ms?: number;
+      max_connections?: number;
+    };
   };
   rate_limits?: {
     enabled?: boolean;
@@ -610,8 +640,11 @@ export type HttpMcpServerOptions = {
   host?: string;
   port?: number;
   authTokenEnv?: string;
+  previousAuthTokenEnv?: string;
   devNoAuth?: boolean;
   corsOrigin?: string;
+  trustedTlsProxy?: boolean;
+  unsafeAllowCleartextHttp?: boolean;
   env?: NodeJS.ProcessEnv;
   log?: false | { write(chunk: string): unknown };
   resultFormat?: ResultFormat;
@@ -697,8 +730,48 @@ type StreamableHttpSession = {
   runtime: McpRuntime;
   sessionId?: string;
   authFingerprint: string;
+  lastSeenAt: number;
   closed?: boolean;
 };
+
+type HttpDeployment = "loopback" | "single_tenant" | "shared";
+type HttpChannel = "loopback_cleartext" | "direct_tls" | "trusted_tls_proxy" | "insecure_http_break_glass";
+
+type ResolvedHttpLimits = {
+  maxRequestBytes: number;
+  maxHeaderBytes: number;
+  maxSessions: number;
+  sessionIdleTimeoutMs: number;
+  requestTimeoutMs: number;
+  headersTimeoutMs: number;
+  keepAliveTimeoutMs: number;
+  maxConnections: number;
+};
+
+type ResolvedOauthResource = {
+  metadata: Record<string, unknown>;
+  metadataUrl: string;
+  metadataPath: string;
+  requiredScopes: string[];
+};
+
+type ResolvedHttpSecurity = {
+  deployment: HttpDeployment;
+  channel: HttpChannel;
+  activeToken?: string;
+  previousToken?: string;
+  activeTokenEnv: string;
+  previousTokenEnv?: string;
+  weakStaticToken: boolean;
+  allowedOrigins: Set<string>;
+  allowedHosts: string[];
+  limits: ResolvedHttpLimits;
+  oauth?: ResolvedOauthResource;
+};
+
+type StreamableAuthenticationResult =
+  | { ok: true; authentication: StreamableAuthentication }
+  | { ok: false; status: 401 | 403; error: "unauthorized" | "insufficient_scope" };
 
 type MetricsEndpointAccess = {
   enabled: boolean;
@@ -1336,13 +1409,19 @@ function mergeContractIntoRuntimeConfig(config: RuntimeConfig, contract: Synapso
 }
 
 function runtimeContextFromSpec(context: AgentContextSpec): NonNullable<RuntimeConfig["contexts"]>[string] {
+  const unsupportedSessionBinding = context.bindings.find((binding) => binding.source === "session");
+  if (unsupportedSessionBinding) {
+    throw new Error(
+      `SESSION_BINDING_UNSUPPORTED: context ${context.name} binding ${unsupportedSessionBinding.name} uses canonical SESSION source, but Synapsor Runner has no generic web-session trust provider. Use ENVIRONMENT for local stdio, HTTP_CLAIM for verified HTTP JWT claims, or CLOUD_SESSION for verified Cloud-linked identity.`,
+    );
+  }
   const tenantBinding = context.bindings.find((binding) => binding.name === context.tenant_binding) ?? context.bindings.find((binding) => binding.name === "tenant_id");
   const principalBinding = context.bindings.find((binding) => binding.name === context.principal_binding) ?? context.bindings.find((binding) => binding.name === "principal");
   const provider = context.bindings.some((binding) => binding.source === "environment") ? "environment"
     : context.bindings.some((binding) => binding.source === "cloud_session") ? "cloud_session"
       : context.bindings.some((binding) => binding.source === "http_claim") ? "http_claims"
         : context.bindings.some((binding) => binding.source === "static_dev") ? "static_dev"
-          : "environment";
+          : (() => { throw new Error(`TRUSTED_CONTEXT_BINDING_UNSUPPORTED: context ${context.name} has no binding source supported by Synapsor Runner.`); })();
   return {
     provider,
     tenant_binding: context.tenant_binding,
@@ -1800,26 +1879,283 @@ export async function serveStdio(options: { configPath?: string; storePath?: str
   });
 }
 
+function resolveHttpSecurity(
+  config: RuntimeConfig,
+  options: HttpMcpServerOptions,
+  host: string,
+  env: NodeJS.ProcessEnv,
+  usesSessionAuth: boolean,
+): ResolvedHttpSecurity {
+  const configured = config.http_security;
+  const loopback = isLoopbackHost(host);
+  if (options.devNoAuth && !loopback) {
+    throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
+  }
+  const deployment = configured?.deployment ?? (loopback ? "loopback" : undefined);
+  if (!deployment) {
+    throw new McpRuntimeError(
+      "HTTP_REMOTE_DEPLOYMENT_REQUIRED",
+      "A non-loopback listener requires http_security.deployment single_tenant or shared.",
+    );
+  }
+  if (!loopback && deployment === "loopback") {
+    throw new McpRuntimeError("HTTP_LOOPBACK_PROFILE_REMOTE", "http_security.deployment loopback cannot bind a non-loopback listener.");
+  }
+  if (deployment === "shared" && !usesSessionAuth) {
+    throw new McpRuntimeError("HTTP_SHARED_SESSION_AUTH_REQUIRED", "Shared HTTP deployment requires signed per-session http_claims identity.");
+  }
+  if (deployment !== "shared" && usesSessionAuth && !loopback) {
+    throw new McpRuntimeError("HTTP_SHARED_DEPLOYMENT_REQUIRED", "Remote http_claims identity requires http_security.deployment shared.");
+  }
+
+  const optionChannels = [
+    options.trustedTlsProxy ? "trusted_tls_proxy" : undefined,
+    options.unsafeAllowCleartextHttp ? "insecure_http_break_glass" : undefined,
+  ].filter((value): value is NonNullable<RuntimeConfig["http_security"]>["channel"] => Boolean(value));
+  if (optionChannels.length > 1) {
+    throw new McpRuntimeError("HTTP_CHANNEL_CONFLICT", "Choose only one of trusted TLS proxy or unsafe cleartext break-glass mode.");
+  }
+  const requestedChannel = optionChannels[0] ?? configured?.channel;
+  if (options.tls && requestedChannel && requestedChannel !== "direct_tls") {
+    throw new McpRuntimeError("HTTP_CHANNEL_CONFLICT", "Runner-owned TLS cannot be combined with trusted-proxy or insecure-cleartext channel declarations.");
+  }
+  let channel: HttpChannel;
+  if (options.tls) channel = "direct_tls";
+  else if (requestedChannel === "direct_tls") {
+    throw new McpRuntimeError("HTTP_TLS_MATERIAL_REQUIRED", "http_security.channel direct_tls requires Runner TLS certificate and key material.");
+  } else if (requestedChannel === "trusted_tls_proxy") channel = "trusted_tls_proxy";
+  else if (requestedChannel === "insecure_http_break_glass") channel = "insecure_http_break_glass";
+  else if (loopback) channel = "loopback_cleartext";
+  else {
+    throw new McpRuntimeError(
+      "HTTP_REMOTE_CLEARTEXT_REFUSED",
+      "Refusing non-loopback cleartext HTTP. Configure Runner-owned TLS, an explicit trusted TLS proxy, or --unsafe-allow-cleartext-http break glass.",
+    );
+  }
+
+  if (options.devNoAuth && channel === "insecure_http_break_glass") {
+    throw new McpRuntimeError("HTTP_BREAK_GLASS_AUTH_REQUIRED", "Unsafe cleartext break-glass mode never disables authentication.");
+  }
+  if (options.devNoAuth && deployment !== "loopback") {
+    throw new McpRuntimeError("HTTP_DEV_NO_AUTH_PROFILE_INVALID", "--dev-no-auth is valid only for a loopback development deployment.");
+  }
+
+  const activeTokenEnv = options.authTokenEnv ?? configured?.static_token?.active_env ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
+  const previousTokenEnv = options.previousAuthTokenEnv ?? configured?.static_token?.previous_env;
+  if (previousTokenEnv && previousTokenEnv === activeTokenEnv) {
+    throw new McpRuntimeError("HTTP_TOKEN_ENV_REUSED", "Active and previous HTTP token environment variables must be different.");
+  }
+  const activeToken = options.devNoAuth || usesSessionAuth ? undefined : envValue(env, activeTokenEnv);
+  const previousToken = options.devNoAuth || usesSessionAuth || !previousTokenEnv ? undefined : envValue(env, previousTokenEnv);
+  if (!options.devNoAuth && !usesSessionAuth && !activeToken) {
+    throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${activeTokenEnv} is not set. HTTP MCP requires bearer auth by default.`);
+  }
+  if (previousTokenEnv && !usesSessionAuth && !options.devNoAuth && !previousToken) {
+    throw new McpRuntimeError("HTTP_PREVIOUS_AUTH_TOKEN_MISSING", `${previousTokenEnv} is configured for rotation but is not set.`);
+  }
+  if (activeToken && previousToken && constantTimeTokenEquals(activeToken, previousToken)) {
+    throw new McpRuntimeError("HTTP_TOKEN_ROTATION_DUPLICATE", "Active and previous HTTP endpoint tokens must differ.");
+  }
+  const weakStaticToken = Boolean(activeToken && !strongOpaqueToken(activeToken)) || Boolean(previousToken && !strongOpaqueToken(previousToken));
+  if (!loopback && !usesSessionAuth && weakStaticToken) {
+    throw new McpRuntimeError("HTTP_AUTH_TOKEN_WEAK", "Non-loopback static endpoint tokens must contain at least 32 bytes of high-entropy secret material.");
+  }
+
+  const configuredOrigins = configured?.allowed_origins ?? [];
+  const allowedOrigins = new Set(configuredOrigins);
+  if (options.corsOrigin) {
+    if (!isExactHttpOrigin(options.corsOrigin)) {
+      throw new McpRuntimeError("HTTP_CORS_ORIGIN_INVALID", "--cors-origin must be one exact HTTP(S) origin; wildcards, paths, credentials, query, and fragments are forbidden.");
+    }
+    allowedOrigins.add(options.corsOrigin);
+  }
+
+  const allowedHosts = configured?.allowed_hosts?.map((value) => value.toLowerCase()) ?? defaultAllowedHosts(host);
+  if (!loopback && allowedHosts.length === 0) {
+    throw new McpRuntimeError("HTTP_ALLOWED_HOSTS_REQUIRED", "Non-loopback HTTP requires http_security.allowed_hosts with exact public/direct Host authorities.");
+  }
+
+  const rawLimits = configured?.limits;
+  const limits: ResolvedHttpLimits = {
+    maxRequestBytes: rawLimits?.max_request_bytes ?? 1_048_576,
+    maxHeaderBytes: rawLimits?.max_header_bytes ?? 16_384,
+    maxSessions: rawLimits?.max_sessions ?? 1_024,
+    sessionIdleTimeoutMs: (rawLimits?.session_idle_timeout_seconds ?? 900) * 1_000,
+    requestTimeoutMs: rawLimits?.request_timeout_ms ?? 30_000,
+    headersTimeoutMs: rawLimits?.headers_timeout_ms ?? 10_000,
+    keepAliveTimeoutMs: rawLimits?.keep_alive_timeout_ms ?? 5_000,
+    maxConnections: rawLimits?.max_connections ?? 2_048,
+  };
+
+  const oauth = configured?.oauth_resource ? resolveOauthResource(configured.oauth_resource) : undefined;
+  if (deployment === "shared") {
+    if (!oauth) throw new McpRuntimeError("HTTP_OAUTH_RESOURCE_REQUIRED", "Shared HTTP deployment requires RFC 9728 protected-resource metadata.");
+    const auth = config.session_auth;
+    if (!auth?.issuer || !auth.audience) {
+      throw new McpRuntimeError("HTTP_JWT_ISSUER_AUDIENCE_REQUIRED", "Shared HTTP deployment requires exact session_auth issuer and audience/resource.");
+    }
+    if (auth.audience !== configured?.oauth_resource?.resource) {
+      throw new McpRuntimeError("HTTP_RESOURCE_AUDIENCE_MISMATCH", "session_auth.audience must exactly match http_security.oauth_resource.resource.");
+    }
+  }
+
+  return {
+    deployment,
+    channel,
+    activeToken,
+    previousToken,
+    activeTokenEnv,
+    previousTokenEnv,
+    weakStaticToken,
+    allowedOrigins,
+    allowedHosts,
+    limits,
+    oauth,
+  };
+}
+
+function resolveOauthResource(input: NonNullable<NonNullable<RuntimeConfig["http_security"]>["oauth_resource"]>): ResolvedOauthResource {
+  const resource = new URL(input.resource);
+  const pathname = resource.pathname === "/" ? "" : resource.pathname.replace(/\/$/, "");
+  const metadataPath = `/.well-known/oauth-protected-resource${pathname}`;
+  const metadataUrl = new URL(metadataPath || "/.well-known/oauth-protected-resource", resource.origin).toString();
+  const metadata = OAuthProtectedResourceMetadataSchema.parse({
+    resource: input.resource,
+    authorization_servers: input.authorization_servers,
+    ...(input.scopes_supported ? { scopes_supported: input.scopes_supported } : {}),
+    bearer_methods_supported: ["header"],
+    ...(input.resource_name ? { resource_name: input.resource_name } : {}),
+    ...(input.resource_documentation ? { resource_documentation: input.resource_documentation } : {}),
+  }) as Record<string, unknown>;
+  return { metadata, metadataUrl, metadataPath, requiredScopes: input.required_scopes ?? [] };
+}
+
+function defaultAllowedHosts(host: string): string[] {
+  if (!isLoopbackHost(host)) {
+    return host === "0.0.0.0" || host === "::" ? [] : [host.toLowerCase()];
+  }
+  return ["localhost", "127.0.0.1", "[::1]", host.toLowerCase()];
+}
+
+function applyHttpServerLimits(server: Server, limits: ResolvedHttpLimits): void {
+  server.requestTimeout = limits.requestTimeoutMs;
+  server.headersTimeout = limits.headersTimeoutMs;
+  server.keepAliveTimeout = limits.keepAliveTimeoutMs;
+  server.maxConnections = limits.maxConnections;
+}
+
+function validateTlsMaterial(tls: HttpMcpServerOptions["tls"]): void {
+  if (!tls) return;
+  try {
+    createSecureContext({ cert: tls.cert, key: tls.key, ca: tls.ca });
+  } catch {
+    throw new McpRuntimeError("HTTP_TLS_MATERIAL_INVALID", "HTTP TLS certificate, private key, or CA material is invalid.");
+  }
+}
+
+function validateHttpRequestSecurity(request: IncomingMessage, response: ServerResponse, security: ResolvedHttpSecurity): boolean {
+  if ((request.url?.length ?? 0) > 8_192) {
+    writeJson(response, 414, { ok: false, error: "uri_too_long" });
+    return false;
+  }
+  const host = headerValue(request.headers.host);
+  if (!host || !hostAllowed(host, security.allowedHosts)) {
+    writeJson(response, 403, { ok: false, error: "host_forbidden" });
+    return false;
+  }
+  const origin = headerValue(request.headers.origin);
+  if (origin && !security.allowedOrigins.has(origin)) {
+    writeJson(response, 403, { ok: false, error: "origin_forbidden" });
+    return false;
+  }
+  setHttpSecurityHeaders(response);
+  if (origin) setCorsHeaders(response, origin);
+  return true;
+}
+
+function hostAllowed(rawHost: string, allowedHosts: string[]): boolean {
+  const actual = parseHostAuthority(rawHost);
+  if (!actual) return false;
+  return allowedHosts.some((allowed) => {
+    const expected = parseHostAuthority(allowed);
+    if (!expected || expected.hostname !== actual.hostname) return false;
+    return expected.port ? expected.port === actual.port : true;
+  });
+}
+
+function parseHostAuthority(value: string): { hostname: string; port: string } | undefined {
+  if (!value || value !== value.trim() || /[\s,/?#\\]/.test(value)) return undefined;
+  try {
+    const parsed = new URL(`http://${value}`);
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return undefined;
+    return { hostname: parsed.hostname.toLowerCase(), port: parsed.port };
+  } catch {
+    return undefined;
+  }
+}
+
+function isExactHttpOrigin(value: string): boolean {
+  if (value === "*" || value === "null") return false;
+  try {
+    const origin = new URL(value);
+    return (origin.protocol === "http:" || origin.protocol === "https:")
+      && !origin.username && !origin.password && origin.pathname === "/" && !origin.search && !origin.hash
+      && origin.origin === value;
+  } catch {
+    return false;
+  }
+}
+
+function setHttpSecurityHeaders(response: ServerResponse): void {
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("referrer-policy", "no-referrer");
+}
+
+function strongOpaqueToken(token: string): boolean {
+  if (Buffer.byteLength(token, "utf8") < 32) return false;
+  if (new Set(token).size < 12) return false;
+  return !/^(.)\1+$/.test(token) && !/(?:password|secret|token|changeme|example|development)/i.test(token);
+}
+
+function httpAuthChallenge(security: ResolvedHttpSecurity, insufficientScope = false): string {
+  const parts = ["Bearer"];
+  if (insufficientScope) parts.push('error="insufficient_scope"');
+  if (security.oauth) {
+    parts.push(`resource_metadata="${security.oauth.metadataUrl}"`);
+    if (security.oauth.requiredScopes.length) parts.push(`scope="${security.oauth.requiredScopes.join(" ")}"`);
+  }
+  return parts.join(" ");
+}
+
+function maybeServeOauthMetadata(request: IncomingMessage, response: ServerResponse, security: ResolvedHttpSecurity, pathname: string): boolean {
+  if (!security.oauth || request.method !== "GET") return false;
+  if (pathname !== security.oauth.metadataPath && pathname !== "/.well-known/oauth-protected-resource") return false;
+  writeJson(response, 200, security.oauth.metadata);
+  return true;
+}
+
+function writeAuthenticationFailure(response: ServerResponse, security: ResolvedHttpSecurity, status: 401 | 403, error: string): void {
+  response.setHeader("www-authenticate", httpAuthChallenge(security, status === 403));
+  writeJson(response, status, { ok: false, error });
+}
+
 export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Promise<HttpMcpServerHandle> {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 8765;
-  const authTokenEnv = options.authTokenEnv ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
   const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
-  const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
-
-  if (devNoAuth && !isLoopbackHost(host)) {
-    throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
-  }
+  assertValidRunnerCapabilityConfig(config);
   if (configUsesHttpClaims(config)) {
     throw new McpRuntimeError("HTTP_CLAIMS_REQUIRES_STREAMABLE", "http_claims trusted context requires spec MCP Streamable HTTP sessions; the legacy JSON-RPC bridge cannot bind per-session context.");
   }
-
-  const authToken = devNoAuth ? undefined : envValue(env, authTokenEnv);
-  if (!devNoAuth && !authToken) {
-    throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. HTTP MCP requires bearer auth by default.`);
+  const security = resolveHttpSecurity(config, options, host, env, false);
+  const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
+  if (options.tls?.requestClientCert && !options.tls.ca) {
+    throw new McpRuntimeError("MTLS_CA_REQUIRED", "HTTP mTLS requires a CA bundle when client certificates are required.");
   }
+  validateTlsMaterial(options.tls);
 
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
@@ -1835,19 +2171,29 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
     cloudTools,
   });
   const readinessCheck = options.readinessCheck ?? (() => checkRunnerReadiness(config, env));
-  const server = createServer((request, response) => {
+  const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
     void handleHttpMcpRequest({
       request,
       response,
       runtime,
-      authToken,
       devNoAuth,
-      corsOrigin: options.corsOrigin,
+      security,
       readinessCheck,
       metricsAccess,
       metricsProvider: () => renderRuntimeMetrics(runtime.store, runtime.poolMetrics(), runtime.rateLimitMetrics(), readinessCheck),
     });
-  });
+  };
+  const server = options.tls
+    ? createHttpsServer({
+      cert: options.tls.cert,
+      key: options.tls.key,
+      ca: options.tls.ca,
+      requestCert: options.tls.requestClientCert === true,
+      rejectUnauthorized: options.tls.requestClientCert === true,
+      maxHeaderSize: security.limits.maxHeaderBytes,
+    }, requestHandler)
+    : createServer({ maxHeaderSize: security.limits.maxHeaderBytes }, requestHandler);
+  applyHttpServerLimits(server, security.limits);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -1865,12 +2211,17 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
   const address = server.address() as AddressInfo;
   const actualHost = address.address === "::" ? host : address.address;
   const actualPort = address.port;
-  const url = `http://${actualHost}:${actualPort}/mcp`;
+  const scheme = options.tls ? "https" : "http";
+  const url = `${scheme}://${actualHost}:${actualPort}/mcp`;
 
   if (options.log !== false) {
     const log = options.log ?? process.stderr;
     log.write(`Synapsor Runner HTTP MCP listening on ${url}\n`);
-    log.write(devNoAuth ? "Auth: disabled for localhost development only\n" : `Auth: bearer token from ${authTokenEnv}\n`);
+    log.write(`Channel: ${security.channel}; deployment: ${security.deployment}\n`);
+    if (options.tls) log.write(options.tls.requestClientCert ? "TLS: enabled, client certificates required in addition to Bearer auth\n" : "TLS: enabled\n");
+    log.write(devNoAuth ? "Auth: disabled for loopback development only\n" : `Auth: opaque Bearer endpoint token from ${security.activeTokenEnv}${security.previousTokenEnv ? `; previous rotation token from ${security.previousTokenEnv}` : ""}\n`);
+    if (security.weakStaticToken) log.write("Auth warning: loopback endpoint token is shorter or more predictable than the production requirement; generate at least 32 random bytes.\n");
+    if (security.channel === "insecure_http_break_glass") log.write("SECURITY WARNING: remote Bearer traffic is using explicit insecure cleartext break glass. Credentials and data can be intercepted.\n");
     log.write(`Config: ${options.configPath ?? "synapsor.runner.json"}\n`);
     log.write(`Store: ${options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db"}\n`);
   }
@@ -1886,24 +2237,16 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
 export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions = {}): Promise<HttpMcpServerHandle> {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 8766;
-  const authTokenEnv = options.authTokenEnv ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const env = options.env ?? process.env;
   const devNoAuth = options.devNoAuth === true;
   const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
   assertValidRunnerCapabilityConfig(config);
   const usesSessionAuth = configUsesHttpClaims(config);
+  const security = resolveHttpSecurity(config, options, host, env, usesSessionAuth);
   const metricsAccess = resolveMetricsEndpointAccess(config, env, host);
 
-  if (devNoAuth && !isLoopbackHost(host)) {
-    throw new McpRuntimeError("HTTP_DEV_NO_AUTH_UNSAFE_HOST", "--dev-no-auth is only allowed with localhost or 127.0.0.1.");
-  }
   if (devNoAuth && usesSessionAuth) {
     throw new McpRuntimeError("HTTP_CLAIMS_AUTH_REQUIRED", "http_claims trusted context cannot run with --dev-no-auth.");
-  }
-
-  const authToken = devNoAuth || usesSessionAuth ? undefined : envValue(env, authTokenEnv);
-  if (!devNoAuth && !usesSessionAuth && !authToken) {
-    throw new McpRuntimeError("HTTP_AUTH_TOKEN_MISSING", `${authTokenEnv} is not set. Streamable HTTP MCP requires bearer auth by default.`);
   }
   assertRuntimeStoreStartupReady(config, env);
   const sessionVerifier = usesSessionAuth
@@ -1913,6 +2256,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   if (options.tls?.requestClientCert && !options.tls.ca) {
     throw new McpRuntimeError("MTLS_CA_REQUIRED", "Streamable HTTP mTLS requires a CA bundle when client certificates are required.");
   }
+  validateTlsMaterial(options.tls);
 
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
@@ -1928,6 +2272,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const sharedResources = createMcpRuntimeSharedResources(config, env, options.readRow, Date.now, options.credentialResolver);
   const sessions = new Map<string, StreamableHttpSession>();
   const openSessions = new Set<StreamableHttpSession>();
+  const initializingSessions = { count: 0 };
   const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
     void handleStreamableHttpMcpRequest({
       request,
@@ -1940,12 +2285,12 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       env,
       toolNameStyle: options.toolNameStyle,
       resultFormat: options.resultFormat,
-      authToken,
       sessionVerifier,
       devNoAuth,
-      corsOrigin: options.corsOrigin,
+      security,
       sessions,
       openSessions,
+      initializingSessions,
       readinessCheck,
       metricsAccess,
       metricsProvider: () => renderRuntimeMetrics(sharedStore, sharedResources.poolMetrics(), sharedResources.rateLimitMetrics(), readinessCheck),
@@ -1958,8 +2303,14 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       ca: options.tls.ca,
       requestCert: options.tls.requestClientCert === true,
       rejectUnauthorized: options.tls.requestClientCert === true,
+      maxHeaderSize: security.limits.maxHeaderBytes,
     }, requestHandler)
-    : createServer(requestHandler);
+    : createServer({ maxHeaderSize: security.limits.maxHeaderBytes }, requestHandler);
+  applyHttpServerLimits(server, security.limits);
+  const sessionReaper = setInterval(() => {
+    void pruneExpiredStreamableSessions(sessions, openSessions, security.limits.sessionIdleTimeoutMs, Date.now());
+  }, Math.min(30_000, Math.max(1_000, Math.floor(security.limits.sessionIdleTimeoutMs / 2))));
+  sessionReaper.unref?.();
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -1970,6 +2321,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       });
     });
   } catch (error) {
+    clearInterval(sessionReaper);
     await cloudSynchronizer?.stop();
     await closeStreamableSessions(openSessions);
     await sharedResources.close();
@@ -1986,12 +2338,16 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   if (options.log !== false) {
     const log = options.log ?? process.stderr;
     log.write(`Synapsor Runner Streamable HTTP MCP listening on ${url}\n`);
-    if (options.tls) log.write(options.tls.requestClientCert ? "TLS: enabled, client certificates required\n" : "TLS: enabled\n");
+    log.write(`Channel: ${security.channel}; deployment: ${security.deployment}\n`);
+    if (options.tls) log.write(options.tls.requestClientCert ? "TLS: enabled, client certificates required in addition to Bearer auth\n" : "TLS: enabled\n");
     log.write(devNoAuth
       ? "Auth: disabled for localhost development only\n"
       : usesSessionAuth
-        ? `Auth: signed per-session JWT (${config.session_auth?.provider})\n`
-        : `Auth: bearer token from ${authTokenEnv}\n`);
+        ? `Auth: signed per-session JWT (${config.session_auth?.provider}); issuer and resource checked on every request\n`
+        : `Auth: opaque Bearer endpoint token from ${security.activeTokenEnv}${security.previousTokenEnv ? `; previous rotation token from ${security.previousTokenEnv}` : ""}\n`);
+    if (security.oauth) log.write(`OAuth resource metadata: ${security.oauth.metadataUrl}\n`);
+    if (security.weakStaticToken) log.write("Auth warning: loopback endpoint token is shorter or more predictable than the production requirement; generate at least 32 random bytes.\n");
+    if (security.channel === "insecure_http_break_glass") log.write("SECURITY WARNING: remote Bearer traffic is using explicit insecure cleartext break glass. Credentials and data can be intercepted.\n");
     for (const assurance of describeIsolationAssurance(config)) {
       log.write(`Isolation ${assurance.source}: ${assurance.mode}; trusted context: ${assurance.trusted_context.request_binding}\n`);
       if (assurance.warning) log.write(`Isolation warning ${assurance.source}: ${assurance.warning}\n`);
@@ -2004,7 +2360,10 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     host: actualHost,
     port: actualPort,
     url,
-    close: () => closeStreamableHttpServer(server, openSessions, sharedResources, sharedStore, cloudSynchronizer),
+    close: () => {
+      clearInterval(sessionReaper);
+      return closeStreamableHttpServer(server, openSessions, sharedResources, sharedStore, cloudSynchronizer);
+    },
   };
 }
 
@@ -2019,26 +2378,27 @@ async function handleStreamableHttpMcpRequest(input: {
   env: NodeJS.ProcessEnv;
   toolNameStyle?: ToolNameStyle;
   resultFormat?: ResultFormat;
-  authToken?: string;
   sessionVerifier?: JwtVerifier;
   devNoAuth: boolean;
-  corsOrigin?: string;
+  security: ResolvedHttpSecurity;
   sessions: Map<string, StreamableHttpSession>;
   openSessions: Set<StreamableHttpSession>;
+  initializingSessions: { count: number };
   readinessCheck: () => Promise<ReadinessReport>;
   metricsAccess: MetricsEndpointAccess;
   metricsProvider: () => Promise<string>;
 }): Promise<void> {
-  const { request, response, config, storePath, sharedStore, sharedResources, cloudTools, env, toolNameStyle, resultFormat, authToken, sessionVerifier, devNoAuth, corsOrigin, sessions, openSessions, readinessCheck, metricsAccess, metricsProvider } = input;
+  const { request, response, config, storePath, sharedStore, sharedResources, cloudTools, env, toolNameStyle, resultFormat, sessionVerifier, devNoAuth, security, sessions, openSessions, initializingSessions, readinessCheck, metricsAccess, metricsProvider } = input;
   try {
-    setCorsHeaders(response, corsOrigin);
-    if (request.method === "OPTIONS" && corsOrigin) {
+    if (!validateHttpRequestSecurity(request, response, security)) return;
+    if (request.method === "OPTIONS" && request.headers.origin) {
       response.statusCode = 204;
       response.end();
       return;
     }
 
     const url = new URL(request.url ?? "/", "http://localhost");
+    if (maybeServeOauthMetadata(request, response, security, url.pathname)) return;
     if (request.method === "GET" && url.pathname === "/healthz") {
       writeJson(response, 200, {
         ok: true,
@@ -2061,11 +2421,14 @@ async function handleStreamableHttpMcpRequest(input: {
       writeJson(response, 404, { ok: false, error: "not_found" });
       return;
     }
-    const authentication = await authenticateStreamableRequest(config, request.headers.authorization, sessionVerifier, authToken, devNoAuth);
-    if (!authentication) {
-      writeJson(response, 401, { ok: false, error: "unauthorized" });
+    const authResult = await authenticateStreamableRequest(config, request.headers.authorization, sessionVerifier, security, devNoAuth);
+    if (!authResult.ok) {
+      writeAuthenticationFailure(response, security, authResult.status, authResult.error);
       return;
     }
+    const authentication = authResult.authentication;
+
+    await pruneExpiredStreamableSessions(sessions, openSessions, security.limits.sessionIdleTimeoutMs, Date.now());
 
     const sessionId = headerValue(request.headers["mcp-session-id"]);
     if (sessionId) {
@@ -2075,9 +2438,10 @@ async function handleStreamableHttpMcpRequest(input: {
         return;
       }
       if (existing.authFingerprint !== authentication.fingerprint) {
-        writeJson(response, 401, { ok: false, error: "session_auth_mismatch" });
+        writeAuthenticationFailure(response, security, 401, "unauthorized");
         return;
       }
+      existing.lastSeenAt = Date.now();
       await existing.transport.handleRequest(request, response);
       return;
     }
@@ -2087,47 +2451,65 @@ async function handleStreamableHttpMcpRequest(input: {
       return;
     }
 
-    const parsedBody = JSON.parse(await readRequestBody(request)) as unknown;
-    if (!containsInitializeRequest(parsedBody)) {
-      writeJson(response, 400, jsonRpcError(requestIdFromPayload(parsedBody), -32000, "First Streamable HTTP MCP request must be initialize."));
+    if (openSessions.size + initializingSessions.count >= security.limits.maxSessions) {
+      response.setHeader("retry-after", "1");
+      writeJson(response, 503, { ok: false, error: "session_capacity_exhausted", retryable: true, retry_after_ms: 1000 });
       return;
     }
+    initializingSessions.count += 1;
+    let initializingSession: StreamableHttpSession | undefined;
+    try {
+      const parsedBody = JSON.parse(await readRequestBody(request, security.limits.maxRequestBytes)) as unknown;
+      if (!containsInitializeRequest(parsedBody)) {
+        writeJson(response, 400, jsonRpcError(requestIdFromPayload(parsedBody), -32000, "First Streamable HTTP MCP request must be initialize."));
+        return;
+      }
 
-    let session: StreamableHttpSession | undefined;
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      onsessioninitialized: (newSessionId) => {
-        if (session) {
-          session.sessionId = newSessionId;
-          sessions.set(newSessionId, session);
-        }
-      },
-      onsessionclosed: (closedSessionId) => {
-        const closed = sessions.get(closedSessionId);
-        if (closed) {
-          disposeStreamableSession(closed, sessions, openSessions);
-        }
-      },
-    });
-    const runtime = createMcpRuntime(config, {
-      env,
-      storePath,
-      store: sharedStore,
-      sharedResources,
-      resultFormat,
-      cloudTools,
-      trustedContext: authentication.context,
-    });
-    session = { transport, runtime, authFingerprint: authentication.fingerprint };
-    openSessions.add(session);
-    transport.onclose = () => {
-      if (session) disposeStreamableSession(session, sessions, openSessions);
-    };
-    await createSynapsorMcpServer(runtime, { toolNameStyle }).connect(transport);
-    await transport.handleRequest(request, response, parsedBody);
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+        onsessioninitialized: (newSessionId) => {
+          if (initializingSession) {
+            initializingSession.sessionId = newSessionId;
+            sessions.set(newSessionId, initializingSession);
+          }
+        },
+        onsessionclosed: (closedSessionId) => {
+          const closed = sessions.get(closedSessionId);
+          if (closed) {
+            disposeStreamableSession(closed, sessions, openSessions);
+          }
+        },
+      });
+      const runtime = createMcpRuntime(config, {
+        env,
+        storePath,
+        store: sharedStore,
+        sharedResources,
+        resultFormat,
+        cloudTools,
+        trustedContext: authentication.context,
+      });
+      initializingSession = { transport, runtime, authFingerprint: authentication.fingerprint, lastSeenAt: Date.now() };
+      openSessions.add(initializingSession);
+      transport.onclose = () => {
+        if (initializingSession) disposeStreamableSession(initializingSession, sessions, openSessions);
+      };
+      await createSynapsorMcpServer(runtime, { toolNameStyle }).connect(transport);
+      await transport.handleRequest(request, response, parsedBody);
+    } catch (error) {
+      if (initializingSession) {
+        disposeStreamableSession(initializingSession, sessions, openSessions);
+        await initializingSession.transport.close().catch(() => undefined);
+      }
+      throw error;
+    } finally {
+      initializingSessions.count -= 1;
+    }
   } catch (error) {
-    const message = sanitizeHttpError(error, authToken);
-    if (!response.headersSent) writeJson(response, 200, jsonRpcError(null, -32000, message));
+    const message = sanitizeHttpError(error, security.activeToken, security.previousToken);
+    if (!response.headersSent && error instanceof McpRuntimeError && error.code === "HTTP_BODY_TOO_LARGE") {
+      writeJson(response, 413, { ok: false, error: "request_too_large" });
+    } else if (!response.headersSent) writeJson(response, 200, jsonRpcError(null, -32000, message));
     else response.end();
   }
 }
@@ -2136,17 +2518,17 @@ async function handleHttpMcpRequest(input: {
   request: IncomingMessage;
   response: ServerResponse;
   runtime: McpRuntime;
-  authToken?: string;
   devNoAuth: boolean;
-  corsOrigin?: string;
+  security: ResolvedHttpSecurity;
   readinessCheck: () => Promise<ReadinessReport>;
   metricsAccess: MetricsEndpointAccess;
   metricsProvider: () => Promise<string>;
 }): Promise<void> {
-  const { request, response, runtime, authToken, devNoAuth, corsOrigin, readinessCheck, metricsAccess, metricsProvider } = input;
+  const { request, response, runtime, devNoAuth, security, readinessCheck, metricsAccess, metricsProvider } = input;
   try {
-    setCommonHttpHeaders(response, corsOrigin);
-    if (request.method === "OPTIONS" && corsOrigin) {
+    setCommonHttpHeaders(response);
+    if (!validateHttpRequestSecurity(request, response, security)) return;
+    if (request.method === "OPTIONS" && request.headers.origin) {
       response.statusCode = 204;
       response.end();
       return;
@@ -2179,12 +2561,12 @@ async function handleHttpMcpRequest(input: {
       writeJson(response, 405, { ok: false, error: "method_not_allowed" });
       return;
     }
-    if (!devNoAuth && !validBearerToken(request.headers.authorization, authToken ?? "")) {
-      writeJson(response, 401, { ok: false, error: "unauthorized" });
+    if (!devNoAuth && !validBearerTokens(request.headers.authorization, [security.activeToken, security.previousToken])) {
+      writeAuthenticationFailure(response, security, 401, "unauthorized");
       return;
     }
 
-    const body = await readRequestBody(request);
+    const body = await readRequestBody(request, security.limits.maxRequestBytes);
     const payload = JSON.parse(body) as unknown;
     if (!isRecord(payload)) {
       writeJson(response, 400, jsonRpcError(null, -32600, "JSON-RPC request must be an object."));
@@ -2201,11 +2583,14 @@ async function handleHttpMcpRequest(input: {
     writeJson(response, 200, {
       jsonrpc: "2.0",
       id,
-      result: sanitizeHttpPayload(result, authToken),
+      result: sanitizeHttpPayload(result, security.activeToken, security.previousToken),
     });
   } catch (error) {
-    const message = sanitizeHttpError(error, authToken);
-    writeJson(response, 200, jsonRpcError(null, -32000, message));
+    const message = sanitizeHttpError(error, security.activeToken, security.previousToken);
+    if (!response.headersSent && error instanceof McpRuntimeError && error.code === "HTTP_BODY_TOO_LARGE") {
+      writeJson(response, 413, { ok: false, error: "request_too_large" });
+    } else if (!response.headersSent) writeJson(response, 200, jsonRpcError(null, -32000, message));
+    else response.end();
   }
 }
 
@@ -2254,11 +2639,23 @@ function httpToolMetadata(tool: LocalToolMetadata): Record<string, unknown> {
 }
 
 function validBearerToken(header: string | undefined, expected: string): boolean {
-  if (!header?.startsWith("Bearer ")) return false;
-  const actual = header.slice("Bearer ".length);
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+  return validBearerTokens(header, [expected]);
+}
+
+function validBearerTokens(header: string | undefined, expected: Array<string | undefined>): boolean {
+  const actual = bearerToken(header);
+  if (!actual) return false;
+  let matched = 0;
+  for (const candidate of expected.filter((value): value is string => Boolean(value))) {
+    matched |= Number(constantTimeTokenEquals(actual, candidate));
+  }
+  return matched === 1;
+}
+
+function constantTimeTokenEquals(actual: string, expected: string): boolean {
+  const actualDigest = crypto.createHash("sha256").update(actual, "utf8").digest();
+  const expectedDigest = crypto.createHash("sha256").update(expected, "utf8").digest();
+  return crypto.timingSafeEqual(actualDigest, expectedDigest);
 }
 
 function resolveMetricsEndpointAccess(config: RuntimeConfig, env: NodeJS.ProcessEnv, host: string): MetricsEndpointAccess {
@@ -2508,22 +2905,27 @@ async function authenticateStreamableRequest(
   config: RuntimeConfig,
   authorization: string | undefined,
   sessionVerifier: JwtVerifier | undefined,
-  staticToken: string | undefined,
+  security: ResolvedHttpSecurity,
   devNoAuth: boolean,
-): Promise<StreamableAuthentication | undefined> {
-  if (devNoAuth) return { fingerprint: "dev-no-auth" };
+): Promise<StreamableAuthenticationResult> {
+  if (devNoAuth) return { ok: true, authentication: { fingerprint: "dev-no-auth" } };
   const token = bearerToken(authorization);
-  if (!token) return undefined;
+  if (!token) return { ok: false, status: 401, error: "unauthorized" };
   if (!configUsesHttpClaims(config)) {
-    if (!staticToken || !validBearerToken(authorization, staticToken)) return undefined;
-    return { fingerprint: tokenFingerprint(token) };
+    if (!validBearerTokens(authorization, [security.activeToken, security.previousToken])) {
+      return { ok: false, status: 401, error: "unauthorized" };
+    }
+    return { ok: true, authentication: { fingerprint: tokenFingerprint(token) } };
   }
   try {
-    if (!sessionVerifier) return undefined;
+    if (!sessionVerifier) return { ok: false, status: 401, error: "unauthorized" };
     const context = await verifySessionJwt(config, token, sessionVerifier);
-    return { fingerprint: tokenFingerprint(token), context };
-  } catch {
-    return undefined;
+    return { ok: true, authentication: { fingerprint: tokenFingerprint(token), context } };
+  } catch (error) {
+    if (error instanceof McpRuntimeError && error.code === "HTTP_INSUFFICIENT_SCOPE") {
+      return { ok: false, status: 403, error: "insufficient_scope" };
+    }
+    return { ok: false, status: 401, error: "unauthorized" };
   }
 }
 
@@ -2534,13 +2936,36 @@ async function verifySessionJwt(config: RuntimeConfig, token: string, verifier: 
   const tenant = safeSessionClaim(claims[auth.tenant_claim ?? "tenant_id"]);
   const principal = safeSessionClaim(claims[auth.principal_claim ?? "sub"]);
   if (!tenant || !principal) throw new Error("JWT trusted context claims are missing or unsafe");
+  const requiredScopes = config.http_security?.oauth_resource?.required_scopes ?? [];
+  if (requiredScopes.length > 0) {
+    const granted = safeJwtScopes(claims.scope, claims.scp);
+    if (!requiredScopes.every((scope) => granted.has(scope))) {
+      throw new McpRuntimeError("HTTP_INSUFFICIENT_SCOPE", "JWT does not grant the required MCP resource scope.");
+    }
+  }
   return { tenant_id: tenant, principal, provenance: "http_claims" };
 }
 
 function bearerToken(header: string | undefined): string | undefined {
-  if (!header?.startsWith("Bearer ")) return undefined;
-  const token = header.slice("Bearer ".length).trim();
-  return token || undefined;
+  const match = /^Bearer[ \t]+([^\s,]+)$/i.exec(header ?? "");
+  const token = match?.[1];
+  return token && token.length <= 16_384 ? token : undefined;
+}
+
+function safeJwtScopes(scope: unknown, scp: unknown): Set<string> {
+  const values: string[] = [];
+  if (typeof scope === "string" && scope.length <= 8_192 && !/[\u0000-\u001f\u007f]/.test(scope)) {
+    values.push(...scope.split(/\s+/).filter(Boolean));
+  } else if (scope !== undefined) {
+    throw new Error("JWT scope claim is unsafe");
+  }
+  if (Array.isArray(scp) && scp.length <= 64 && scp.every((value) => typeof value === "string" && value.length <= 128 && !/[\s\u0000-\u001f\u007f]/.test(value))) {
+    values.push(...scp);
+  } else if (scp !== undefined) {
+    throw new Error("JWT scp claim is unsafe");
+  }
+  if (values.length > 128 || values.some((value) => value.length > 128)) throw new Error("JWT scope claim is unsafe");
+  return new Set(values);
 }
 
 function tokenFingerprint(token: string): string {
@@ -2648,14 +3073,14 @@ function writeJson(response: ServerResponse, statusCode: number, payload: unknow
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
-async function readRequestBody(request: IncomingMessage): Promise<string> {
+async function readRequestBody(request: IncomingMessage, maxBytes = 1_048_576): Promise<string> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.length;
-    if (bytes > 1024 * 1024) {
-      throw new McpRuntimeError("HTTP_BODY_TOO_LARGE", "HTTP MCP request body exceeds 1 MiB.");
+    if (bytes > maxBytes) {
+      throw new McpRuntimeError("HTTP_BODY_TOO_LARGE", `HTTP MCP request body exceeds the configured ${maxBytes}-byte limit.`);
     }
     chunks.push(buffer);
   }
@@ -2670,23 +3095,23 @@ function jsonRpcError(id: unknown, code: number, message: string): Record<string
   };
 }
 
-function sanitizeHttpError(error: unknown, authToken?: string): string {
+function sanitizeHttpError(error: unknown, ...authTokens: Array<string | undefined>): string {
   const raw = error instanceof Error ? error.message : String(error);
-  return sanitizeHttpString(raw, authToken);
+  return sanitizeHttpString(raw, ...authTokens);
 }
 
-function sanitizeHttpPayload(value: unknown, authToken?: string): unknown {
-  if (typeof value === "string") return sanitizeHttpString(value, authToken);
-  if (Array.isArray(value)) return value.map((item) => sanitizeHttpPayload(item, authToken));
+function sanitizeHttpPayload(value: unknown, ...authTokens: Array<string | undefined>): unknown {
+  if (typeof value === "string") return sanitizeHttpString(value, ...authTokens);
+  if (Array.isArray(value)) return value.map((item) => sanitizeHttpPayload(item, ...authTokens));
   if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeHttpPayload(item, authToken)]));
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeHttpPayload(item, ...authTokens)]));
   }
   return value;
 }
 
-function sanitizeHttpString(value: string, authToken?: string): string {
+function sanitizeHttpString(value: string, ...authTokens: Array<string | undefined>): string {
   let redacted = value.replace(/(?:postgres(?:ql)?|mysql):\/\/[^\s"']+/gi, "[redacted-database-url]");
-  if (authToken) redacted = redacted.split(authToken).join("[redacted-token]");
+  for (const authToken of authTokens) if (authToken) redacted = redacted.split(authToken).join("[redacted-token]");
   return redacted;
 }
 
@@ -2728,6 +3153,19 @@ async function closeStreamableSessions(sessions: Set<StreamableHttpSession>): Pr
     sessions.delete(session);
     await session.transport.close().catch(() => undefined);
     disposeStreamableSession(session);
+  }
+}
+
+async function pruneExpiredStreamableSessions(
+  sessions: Map<string, StreamableHttpSession>,
+  openSessions: Set<StreamableHttpSession>,
+  idleTimeoutMs: number,
+  now: number,
+): Promise<void> {
+  const expired = [...openSessions].filter((session) => now - session.lastSeenAt >= idleTimeoutMs);
+  for (const session of expired) {
+    disposeStreamableSession(session, sessions, openSessions);
+    await session.transport.close().catch(() => undefined);
   }
 }
 

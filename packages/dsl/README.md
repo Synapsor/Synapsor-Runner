@@ -56,8 +56,8 @@ semantic editor highlighting.
 ## CLI
 
 ```bash
-synapsor-dsl validate ./contract.synapsor.sql [--strict]
-synapsor-dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json [--strict]
+synapsor-dsl validate ./contract.synapsor.sql [--strict] [--target canonical|runner]
+synapsor-dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json [--strict] [--target canonical|runner]
 ```
 
 Runner also exposes:
@@ -68,7 +68,9 @@ synapsor-runner dsl compile ./contract.synapsor.sql --out ./synapsor.contract.js
 ```
 
 `--strict` treats safety warnings as errors. Use it in CI for reviewed proposal
-contracts.
+contracts. `--target runner` also rejects canonical constructs that Runner does
+not execute, including `FROM SESSION`. The `synapsor-runner dsl` commands select
+the Runner target automatically.
 
 Continue from authored DSL to a local/Cloud-compatible contract with:
 
@@ -112,7 +114,9 @@ try {
 - `CREATE AGENT CONTEXT`
 - `CREATE CAPABILITY`
 - `CREATE AGENT WORKFLOW`
-- `BIND ... FROM SESSION|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM`
+- `BIND ... FROM SESSION|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM` in
+  the language-neutral grammar; Runner rejects `SESSION` rather than treating
+  it as environment input
 - `USING CONTEXT`
 - `DESCRIPTION`
 - `RETURNS HINT`
@@ -120,7 +124,10 @@ try {
 - `PRIMARY KEY`
 - `TENANT KEY`
 - `PRINCIPAL SCOPE KEY` for a tenant-additive trusted owner/assignee row lock
-- `CONFLICT GUARD`
+- exact `CONFLICT GUARD column`
+- explicit legacy `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` for ordinary
+  single-row source-DB UPDATE only; omission fails and the weak form warns that
+  projection hashing can miss changes outside the captured fields
 - `ARG`
 - `ARG ... DESCRIPTION`
 - `ARG ... MIN ... MAX ...` for `NUMBER`

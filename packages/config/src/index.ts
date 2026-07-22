@@ -18,7 +18,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -40,6 +40,15 @@ const SESSION_AUTH_KEYS = new Set([
   "provider", "secret_env", "previous_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
   "issuer", "audience", "tenant_claim", "principal_claim", "clock_skew_seconds", "jwks_cache_seconds",
   "jwks_cooldown_seconds", "fetch_timeout_ms", "max_response_bytes",
+]);
+const HTTP_SECURITY_KEYS = new Set(["deployment", "channel", "static_token", "oauth_resource", "allowed_origins", "allowed_hosts", "limits"]);
+const HTTP_STATIC_TOKEN_KEYS = new Set(["active_env", "previous_env"]);
+const HTTP_OAUTH_RESOURCE_KEYS = new Set([
+  "resource", "authorization_servers", "scopes_supported", "required_scopes", "resource_name", "resource_documentation",
+]);
+const HTTP_LIMIT_KEYS = new Set([
+  "max_request_bytes", "max_header_bytes", "max_sessions", "session_idle_timeout_seconds",
+  "request_timeout_ms", "headers_timeout_ms", "keep_alive_timeout_ms", "max_connections",
 ]);
 const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
 const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
@@ -205,6 +214,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validatePolicies(input.policies, strict, errors);
   validateOperatorIdentity(input.operator_identity, strict, errors);
   validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
+  validateHttpSecurity(input.http_security, input.session_auth, input.trusted_context, input.contexts, strict, errors, warnings);
   validateRateLimits(input.rate_limits, strict, errors);
   validateMetrics(input.metrics, strict, errors);
   validateGraduatedTrust(input.graduated_trust, strict, errors);
@@ -215,6 +225,193 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateHttpSecurity(
+  value: unknown,
+  sessionAuth: unknown,
+  trustedContext: unknown,
+  contexts: unknown,
+  strict: boolean,
+  errors: ConfigIssue[],
+  warnings: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.http_security", code: "HTTP_SECURITY_NOT_OBJECT", message: "http_security must be a Runner deployment configuration object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, HTTP_SECURITY_KEYS, "$.http_security", errors);
+  const deployment = value.deployment;
+  if (deployment !== undefined && deployment !== "loopback" && deployment !== "single_tenant" && deployment !== "shared") {
+    errors.push({ path: "$.http_security.deployment", code: "INVALID_HTTP_DEPLOYMENT", message: "http_security.deployment must be loopback, single_tenant, or shared." });
+  }
+  const channel = value.channel;
+  if (channel !== undefined && channel !== "direct_tls" && channel !== "trusted_tls_proxy" && channel !== "insecure_http_break_glass") {
+    errors.push({ path: "$.http_security.channel", code: "INVALID_HTTP_CHANNEL", message: "http_security.channel must be direct_tls, trusted_tls_proxy, or insecure_http_break_glass." });
+  }
+  validateHttpStaticToken(value.static_token, strict, errors);
+  validateHttpOauthResource(value.oauth_resource, strict, errors);
+  validateExactOrigins(value.allowed_origins, errors);
+  validateAllowedHosts(value.allowed_hosts, errors);
+  validateHttpLimits(value.limits, strict, errors);
+
+  const contextsUseClaims = (isRecord(trustedContext) && trustedContext.provider === "http_claims")
+    || (isRecord(contexts) && Object.values(contexts).some((context) => isRecord(context) && context.provider === "http_claims"));
+  if (deployment === "shared") {
+    if (!contextsUseClaims) {
+      errors.push({ path: "$.http_security.deployment", code: "SHARED_HTTP_CLAIMS_REQUIRED", message: "shared HTTP deployment requires http_claims trusted context so tenant and principal come from verified per-session identity." });
+    }
+    if (!isRecord(sessionAuth)) {
+      errors.push({ path: "$.session_auth", code: "SHARED_HTTP_SESSION_AUTH_REQUIRED", message: "shared HTTP deployment requires signed session_auth." });
+    } else {
+      if (!isNonEmptyString(sessionAuth.issuer)) errors.push({ path: "$.session_auth.issuer", code: "SHARED_HTTP_ISSUER_REQUIRED", message: "shared HTTP deployment requires an exact JWT issuer." });
+      if (!isNonEmptyString(sessionAuth.audience)) errors.push({ path: "$.session_auth.audience", code: "SHARED_HTTP_AUDIENCE_REQUIRED", message: "shared HTTP deployment requires an exact JWT audience/resource." });
+      if (sessionAuth.provider === "jwt_hs256") {
+        warnings.push({ path: "$.session_auth.provider", code: "SHARED_HTTP_HS256_WARNING", message: "Shared HTTP uses a symmetric JWT verification key. Prefer jwt_asymmetric with RS256/ES256 and JWKS for production." });
+      }
+    }
+    if (!isRecord(value.oauth_resource)) {
+      errors.push({ path: "$.http_security.oauth_resource", code: "SHARED_HTTP_OAUTH_RESOURCE_REQUIRED", message: "shared HTTP deployment requires RFC 9728 protected-resource metadata for an external authorization server." });
+    } else if (isRecord(sessionAuth) && isNonEmptyString(sessionAuth.audience) && value.oauth_resource.resource !== sessionAuth.audience) {
+      errors.push({ path: "$.http_security.oauth_resource.resource", code: "HTTP_RESOURCE_AUDIENCE_MISMATCH", message: "oauth_resource.resource must exactly match session_auth.audience so tokens are bound to this Runner resource." });
+    }
+  }
+  if (deployment !== "shared" && value.oauth_resource !== undefined && !contextsUseClaims) {
+    errors.push({ path: "$.http_security.oauth_resource", code: "HTTP_OAUTH_CLAIMS_REQUIRED", message: "OAuth protected-resource metadata requires signed http_claims session identity." });
+  }
+}
+
+function validateHttpStaticToken(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.http_security.static_token", code: "HTTP_STATIC_TOKEN_NOT_OBJECT", message: "http_security.static_token must contain environment-variable names only." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, HTTP_STATIC_TOKEN_KEYS, "$.http_security.static_token", errors);
+  if (value.active_env !== undefined && !isEnvName(value.active_env)) {
+    errors.push({ path: "$.http_security.static_token.active_env", code: "INVALID_HTTP_TOKEN_ENV", message: "active_env must name the environment variable containing the opaque endpoint token." });
+  }
+  if (value.previous_env !== undefined && !isEnvName(value.previous_env)) {
+    errors.push({ path: "$.http_security.static_token.previous_env", code: "INVALID_HTTP_PREVIOUS_TOKEN_ENV", message: "previous_env must name the one previous token accepted during an operator-controlled rotation window." });
+  }
+  if (value.active_env !== undefined && value.active_env === value.previous_env) {
+    errors.push({ path: "$.http_security.static_token.previous_env", code: "HTTP_TOKEN_ENV_REUSED", message: "active_env and previous_env must be different environment variables." });
+  }
+}
+
+function validateHttpOauthResource(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.http_security.oauth_resource", code: "HTTP_OAUTH_RESOURCE_NOT_OBJECT", message: "oauth_resource must describe this Runner protected resource and its external authorization server." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, HTTP_OAUTH_RESOURCE_KEYS, "$.http_security.oauth_resource", errors);
+  if (!isHttpsUrl(value.resource)) {
+    errors.push({ path: "$.http_security.oauth_resource.resource", code: "INVALID_HTTP_OAUTH_RESOURCE", message: "oauth_resource.resource must be an HTTPS URL for the exact public MCP endpoint." });
+  }
+  if (!Array.isArray(value.authorization_servers) || value.authorization_servers.length < 1 || value.authorization_servers.length > 8) {
+    errors.push({ path: "$.http_security.oauth_resource.authorization_servers", code: "HTTP_AUTHORIZATION_SERVERS_REQUIRED", message: "oauth_resource.authorization_servers must contain 1 through 8 external authorization-server HTTPS issuer URLs." });
+  } else {
+    value.authorization_servers.forEach((server, index) => {
+      if (!isHttpsUrl(server)) errors.push({ path: `$.http_security.oauth_resource.authorization_servers[${index}]`, code: "INVALID_HTTP_AUTHORIZATION_SERVER", message: "authorization server URLs must use HTTPS and contain no credentials, query, or fragment." });
+    });
+  }
+  for (const key of ["scopes_supported", "required_scopes"] as const) {
+    const scopes = value[key];
+    if (scopes !== undefined && (!Array.isArray(scopes) || scopes.length < 1 || scopes.length > 64 || scopes.some((scope) => !isOAuthScope(scope)))) {
+      errors.push({ path: `$.http_security.oauth_resource.${key}`, code: "INVALID_HTTP_OAUTH_SCOPES", message: `${key} must contain 1 through 64 unique, visible OAuth scope strings.` });
+    } else if (Array.isArray(scopes) && new Set(scopes).size !== scopes.length) {
+      errors.push({ path: `$.http_security.oauth_resource.${key}`, code: "DUPLICATE_HTTP_OAUTH_SCOPE", message: `${key} must not contain duplicate scopes.` });
+    }
+  }
+  if (Array.isArray(value.required_scopes) && Array.isArray(value.scopes_supported)) {
+    for (const scope of value.required_scopes) {
+      if (!value.scopes_supported.includes(scope)) errors.push({ path: "$.http_security.oauth_resource.required_scopes", code: "UNSUPPORTED_HTTP_OAUTH_SCOPE", message: `Required scope ${String(scope)} is not listed in scopes_supported.` });
+    }
+  }
+  if (value.resource_name !== undefined && (!isNonEmptyString(value.resource_name) || value.resource_name.trim().length > 128)) {
+    errors.push({ path: "$.http_security.oauth_resource.resource_name", code: "INVALID_HTTP_RESOURCE_NAME", message: "resource_name must be 1 through 128 characters." });
+  }
+  if (value.resource_documentation !== undefined && !isHttpsUrl(value.resource_documentation)) {
+    errors.push({ path: "$.http_security.oauth_resource.resource_documentation", code: "INVALID_HTTP_RESOURCE_DOCUMENTATION", message: "resource_documentation must be an HTTPS URL without credentials, query, or fragment." });
+  }
+}
+
+function validateExactOrigins(value: unknown, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > 32) {
+    errors.push({ path: "$.http_security.allowed_origins", code: "INVALID_HTTP_ALLOWED_ORIGINS", message: "allowed_origins must be an array of at most 32 exact origins." });
+    return;
+  }
+  value.forEach((origin, index) => {
+    if (!isExactHttpOrigin(origin)) errors.push({ path: `$.http_security.allowed_origins[${index}]`, code: "INVALID_HTTP_ALLOWED_ORIGIN", message: "Each allowed origin must be an exact HTTP(S) origin; wildcards, credentials, paths, query strings, and fragments are forbidden." });
+  });
+  if (new Set(value).size !== value.length) errors.push({ path: "$.http_security.allowed_origins", code: "DUPLICATE_HTTP_ALLOWED_ORIGIN", message: "allowed_origins must not contain duplicates." });
+}
+
+function validateAllowedHosts(value: unknown, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 32 || value.some((host) => !isAllowedHost(host))) {
+    errors.push({ path: "$.http_security.allowed_hosts", code: "INVALID_HTTP_ALLOWED_HOSTS", message: "allowed_hosts must contain 1 through 32 exact host or host:port authorities; wildcards and forwarded-host syntax are forbidden." });
+  } else if (new Set(value.map((host) => String(host).toLowerCase())).size !== value.length) {
+    errors.push({ path: "$.http_security.allowed_hosts", code: "DUPLICATE_HTTP_ALLOWED_HOST", message: "allowed_hosts must not contain duplicates." });
+  }
+}
+
+function validateHttpLimits(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.http_security.limits", code: "HTTP_LIMITS_NOT_OBJECT", message: "http_security.limits must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, HTTP_LIMIT_KEYS, "$.http_security.limits", errors);
+  for (const [key, minimum, maximum] of [
+    ["max_request_bytes", 1024, 16 * 1024 * 1024],
+    ["max_header_bytes", 4096, 64 * 1024],
+    ["max_sessions", 1, 100_000],
+    ["session_idle_timeout_seconds", 10, 86_400],
+    ["request_timeout_ms", 1000, 300_000],
+    ["headers_timeout_ms", 1000, 120_000],
+    ["keep_alive_timeout_ms", 1000, 120_000],
+    ["max_connections", 1, 100_000],
+  ] as const) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || Number(value[key]) < minimum || Number(value[key]) > maximum)) {
+      errors.push({ path: `$.http_security.limits.${key}`, code: "INVALID_HTTP_LIMIT", message: `${key} must be an integer from ${minimum} through ${maximum}.` });
+    }
+  }
+}
+
+function isHttpsUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+function isExactHttpOrigin(value: unknown): boolean {
+  if (typeof value !== "string" || value === "*" || value === "null") return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash
+      && url.origin === value;
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedHost(value: unknown): boolean {
+  return typeof value === "string" && value.length <= 255 && value === value.trim()
+    && !/[\s,/*\\?#]/.test(value) && !value.includes("://")
+    && /^(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(?::\d{1,5})?$/.test(value);
+}
+
+function isOAuthScope(value: unknown): boolean {
+  return typeof value === "string" && value.length >= 1 && value.length <= 128 && /^[\x21\x23-\x5b\x5d-\x7e]+$/.test(value);
 }
 
 function validateGovernance(value: unknown, strict: boolean, errors: ConfigIssue[]): void {

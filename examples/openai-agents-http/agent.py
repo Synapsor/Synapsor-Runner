@@ -13,14 +13,14 @@ except ImportError as exc:
 
 
 async def main() -> None:
-    required = ["OPENAI_API_KEY", "SYNAPSOR_RUNNER_HTTP_URL", "SYNAPSOR_RUNNER_HTTP_TOKEN"]
+    required = ["OPENAI_API_KEY", "SYNAPSOR_RUNNER_HTTP_URL", "SYNAPSOR_MCP_ACCESS_TOKEN"]
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
 
     invoice_id = os.environ.get("SYNAPSOR_INVOICE_ID", "INV-3001")
     mcp_url = os.environ["SYNAPSOR_RUNNER_HTTP_URL"]
-    token = os.environ["SYNAPSOR_RUNNER_HTTP_TOKEN"]
+    token = os.environ["SYNAPSOR_MCP_ACCESS_TOKEN"]
 
     async with MCPServerStreamableHttp(
         params={

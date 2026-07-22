@@ -40,7 +40,7 @@ OpenAI Agents Streamable HTTP example smoke passed.
 export DATABASE_URL="<postgres-or-mysql-read-url>"
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="openai_agent_demo"
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
@@ -48,6 +48,10 @@ npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
   --alias-mode openai
 ```
+
+The operator must provision that same opaque value to the authorized client.
+It is endpoint access for this loopback/single-service example, not user or
+tenant identity. Do not put it in source code or the client config.
 
 ## Terminal 2: Run The Agent
 
@@ -58,7 +62,7 @@ pip install -r requirements.txt
 
 export OPENAI_API_KEY="..."
 export SYNAPSOR_RUNNER_HTTP_URL="http://127.0.0.1:8766/mcp"
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-token"
+read -rsp "Provisioned Synapsor endpoint token: " SYNAPSOR_MCP_ACCESS_TOKEN; printf '\n'; export SYNAPSOR_MCP_ACCESS_TOKEN
 export SYNAPSOR_INVOICE_ID="INV-3001"
 
 python agent.py
@@ -74,5 +78,7 @@ Expected behavior:
 - no SQL/write/approval tool is exposed to the model;
 - evidence/query audit are saved in the local Runner store.
 
-For production-like deployment, keep HTTP MCP behind private networking/TLS,
-bearer auth, and rate limits. See [HTTP MCP](../../docs/http-mcp.md).
+For production-like deployment, non-loopback HTTP requires Runner TLS or an
+explicitly trusted TLS proxy. A shared user/tenant service uses a short-lived
+signed access token from an external identity provider rather than distributing
+one opaque token. See [HTTP MCP](../../docs/http-mcp.md).

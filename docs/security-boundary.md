@@ -39,7 +39,38 @@ The model does not receive:
 - contract activation tools;
 - approval tools;
 - commit/writeback tools;
+- MCP endpoint tokens, JWTs, refresh tokens, client secrets, or TLS keys;
 - trusted tenant or principal authority as ordinary model arguments.
+
+## Network transport and identity
+
+Local stdio is the preferred one-client path. The MCP client launches Runner and
+communicates over the child process's standard input/output, so Runner opens no
+network listener and HTTP authentication does not apply.
+
+A listening HTTP endpoint has no inherent client identity. Runner therefore
+requires Bearer authentication by default. On loopback or an explicitly
+single-tenant service, Bearer may carry one high-entropy opaque endpoint token;
+that token only answers "may this service call the endpoint?" and is not a user
+or tenant identity. Shared services require signed per-session JWTs, preferably
+RS256/ES256 from an external identity provider, with exact issuer,
+audience/resource, time, scope, tenant, and principal validation on every
+request. An MCP session ID only routes protocol state and never authenticates a
+caller.
+
+Non-loopback HTTP refuses to bind unless Runner owns TLS, an explicitly trusted
+TLS proxy protects the public and private hops, or an authenticated emergency
+cleartext break-glass mode is selected. TLS protects the channel; mTLS also
+authenticates a workload certificate but does not replace per-user/tenant claims
+in a shared service. Exact Origin and Host policy, request/session limits, and
+credential-pinned MCP sessions narrow browser, DNS-rebinding, exhaustion, and
+session-swap attacks.
+
+These controls remain independent: transport authentication permits endpoint
+access; verified session claims provide tenant/principal context; the contract
+authorizes semantic capabilities; database roles/RLS constrain the connection;
+operator identity authorizes activation, approval, apply, reconcile, and
+revert. See [HTTP MCP](http-mcp.md).
 
 Reviewed aggregate tools expose one scalar only. Their function, column,
 tenant key, optional equality selection, and minimum-group threshold are fixed
@@ -47,9 +78,13 @@ in the contract; the model receives no predicate arguments or member rows.
 Suppression reduces single-record inference but does not replace statistical
 privacy review. See [Bounded Aggregate Reads](aggregate-reads.md).
 
-Trusted context comes from local configuration, environment bindings, or Cloud
-session context in Cloud mode. Tenant, principal, and authorization scope must
-not be accepted from the model as authority.
+Trusted context comes from operator-controlled process bindings for local or
+explicitly single-tenant use, verified signed HTTP claims for a shared service,
+or verified Cloud session context in Cloud mode. Tenant, principal, and
+authorization scope must not be accepted from the model as authority.
+Canonical `SESSION` content is rejected by Runner with
+`SESSION_BINDING_UNSUPPORTED`; Runner never aliases it to environment values,
+arbitrary headers, MCP metadata, or model arguments.
 
 With a shared credential, these checks are application-level enforcement and
 depend on Runner's fixed predicate implementation. Optional PostgreSQL RLS mode

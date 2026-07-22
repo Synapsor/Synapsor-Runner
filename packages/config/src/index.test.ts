@@ -133,6 +133,21 @@ describe("runner capability config validation", () => {
       fetch_timeout_ms: 3000,
       max_response_bytes: 1048576,
     };
+    const sharedHttp = structuredClone(asymmetricSession) as any;
+    sharedHttp.session_auth.audience = "https://runner.example/mcp";
+    sharedHttp.http_security = {
+      deployment: "shared",
+      channel: "trusted_tls_proxy",
+      oauth_resource: {
+        resource: "https://runner.example/mcp",
+        authorization_servers: ["https://identity.example"],
+        scopes_supported: ["synapsor:mcp"],
+        required_scopes: ["synapsor:mcp"],
+      },
+      allowed_origins: ["https://agent.example"],
+      allowed_hosts: ["runner.example"],
+      limits: { max_sessions: 500, session_idle_timeout_seconds: 900 },
+    };
     const sharedLedger = structuredClone(safeConfig) as any;
     sharedLedger.storage = {
       sqlite_path: "./.synapsor/local.db",
@@ -266,7 +281,7 @@ describe("runner capability config validation", () => {
       }],
     };
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -431,6 +446,74 @@ describe("runner capability config validation", () => {
     delete config.session_auth.public_key_env;
     config.session_auth.algorithms = ["HS256"];
     expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("INVALID_SESSION_AUTH_ALGORITHMS");
+  });
+
+  it("validates networked MCP deployment security without accepting credential values", () => {
+    const config = mutableConfig();
+    config.trusted_context = { provider: "http_claims", values: { tenant_id_key: "tenant_id", principal_key: "sub" } };
+    config.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256"],
+      jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+      issuer: "https://identity.example",
+      audience: "https://runner.example/mcp",
+    };
+    config.http_security = {
+      deployment: "shared",
+      channel: "trusted_tls_proxy",
+      oauth_resource: {
+        resource: "https://runner.example/mcp",
+        authorization_servers: ["https://identity.example"],
+        scopes_supported: ["synapsor:mcp"],
+        required_scopes: ["synapsor:mcp"],
+        resource_name: "Synapsor Runner",
+        resource_documentation: "https://synapsor.ai/docs/http-mcp",
+      },
+      allowed_origins: ["https://agent.example"],
+      allowed_hosts: ["runner.example"],
+      limits: {
+        max_request_bytes: 1_048_576,
+        max_header_bytes: 16_384,
+        max_sessions: 500,
+        session_idle_timeout_seconds: 900,
+        request_timeout_ms: 30_000,
+        headers_timeout_ms: 10_000,
+        keep_alive_timeout_ms: 5_000,
+        max_connections: 1_000,
+      },
+    };
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+    config.http_security.oauth_resource.resource = "https://other.example/mcp";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("HTTP_RESOURCE_AUDIENCE_MISMATCH");
+    config.http_security.oauth_resource.resource = "https://runner.example/mcp";
+    config.http_security.allowed_origins = ["*"];
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("INVALID_HTTP_ALLOWED_ORIGIN");
+    config.http_security.allowed_origins = ["https://agent.example/path"];
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("INVALID_HTTP_ALLOWED_ORIGIN");
+    config.http_security.allowed_origins = ["https://agent.example"];
+    config.http_security.static_token = { active_env: "literal secret", previous_env: "SYNAPSOR_PREVIOUS_HTTP_TOKEN" };
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("INVALID_HTTP_TOKEN_ENV");
+  });
+
+  it("requires signed claims and RFC 9728 metadata for shared HTTP deployment", () => {
+    const config = mutableConfig();
+    config.http_security = { deployment: "shared", channel: "direct_tls" };
+    const result = validateRunnerCapabilityConfig(config);
+    expect(result.errors.map((error) => error.code)).toEqual(expect.arrayContaining([
+      "SHARED_HTTP_CLAIMS_REQUIRED",
+      "SHARED_HTTP_SESSION_AUTH_REQUIRED",
+      "SHARED_HTTP_OAUTH_RESOURCE_REQUIRED",
+    ]));
+
+    config.http_security = {
+      deployment: "single_tenant",
+      channel: "trusted_tls_proxy",
+      static_token: { active_env: "SYNAPSOR_RUNNER_HTTP_TOKEN", previous_env: "SYNAPSOR_RUNNER_PREVIOUS_HTTP_TOKEN" },
+      allowed_hosts: ["runner.internal:8766"],
+    };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+    config.http_security.static_token.previous_env = "SYNAPSOR_RUNNER_HTTP_TOKEN";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("HTTP_TOKEN_ENV_REUSED");
   });
 
   it("rejects claims sessions whose effective capability context is environment-bound", () => {

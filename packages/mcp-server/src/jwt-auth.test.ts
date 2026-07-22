@@ -73,6 +73,8 @@ describe("JWT verification", () => {
     }, { TEST_JWKS_URL: `http://127.0.0.1:${address.port}/jwks` });
     try {
       await expect(verifier(await signedToken(first.privateKey, "RS256", "key-1"))).resolves.toMatchObject({ payload: { sub: "agent-17" } });
+      await expect(verifier(await signedToken(first.privateKey, "RS256", "key-1"))).resolves.toMatchObject({ payload: { sub: "agent-17" } });
+      expect(requests).toBe(1);
       keys = [firstJwk, secondJwk];
       await new Promise((resolve) => setTimeout(resolve, 1100));
       await expect(verifier(await signedToken(second.privateKey, "RS256", "key-2"))).resolves.toMatchObject({ protectedHeader: { kid: "key-2" } });
@@ -84,6 +86,7 @@ describe("JWT verification", () => {
 
   it("rejects bad claims, algorithm confusion, private PEM, redirects, and oversized JWKS", async () => {
     const rsa = await generateKeyPair("RS256", { extractable: true });
+    const otherRsa = await generateKeyPair("RS256", { extractable: true });
     const ec = await generateKeyPair("ES256", { extractable: true });
     const verifier = createJwtVerifier({
       provider: "jwt_asymmetric",
@@ -102,6 +105,23 @@ describe("JWT verification", () => {
       .setExpirationTime(now() - 60)
       .sign(rsa.privateKey);
     await expect(verifier(expired)).rejects.toThrow();
+    const notYetValid = await new SignJWT({ tenant_id: "acme" })
+      .setProtectedHeader({ alg: "RS256", kid: "rsa" })
+      .setSubject("agent-17")
+      .setIssuer("https://identity.example")
+      .setAudience("synapsor-runner")
+      .setNotBefore(now() + 300)
+      .setExpirationTime(now() + 600)
+      .sign(rsa.privateKey);
+    await expect(verifier(notYetValid)).rejects.toThrow();
+    const missingExpiry = await new SignJWT({ tenant_id: "acme" })
+      .setProtectedHeader({ alg: "RS256", kid: "rsa" })
+      .setSubject("agent-17")
+      .setIssuer("https://identity.example")
+      .setAudience("synapsor-runner")
+      .sign(rsa.privateKey);
+    await expect(verifier(missingExpiry)).rejects.toThrow();
+    await expect(verifier(await signedToken(otherRsa.privateKey, "RS256", "rsa"))).rejects.toThrow();
     await expect(verifier(await signedToken(ec.privateKey, "ES256", "ec"))).rejects.toThrow();
 
     expect(() => createJwtVerifier({
@@ -132,6 +152,49 @@ describe("JWT verification", () => {
         }, { TEST_JWKS_URL: `http://127.0.0.1:${address.port}/${path}` });
         await expect(remote(await signedToken(rsa.privateKey, "RS256", "rsa"))).rejects.toThrow(pattern);
       }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("fails remote JWKS closed on timeout, malformed JSON, private keys, unknown kid, and unsafe URLs", async () => {
+    const rsa = await generateKeyPair("RS256", { extractable: true });
+    const publicJwk = { ...await exportJWK(rsa.publicKey), kid: "known", alg: "RS256", use: "sig" };
+    const privateJwk = { ...await exportJWK(rsa.privateKey), kid: "private", alg: "RS256", use: "sig" };
+    let requests = 0;
+    const server = createServer((request, response) => {
+      requests += 1;
+      if (request.url === "/timeout") return;
+      response.writeHead(200, { "content-type": "application/json" });
+      if (request.url === "/malformed") response.end("{not-json");
+      else if (request.url === "/private") response.end(JSON.stringify({ keys: [privateJwk] }));
+      else response.end(JSON.stringify({ keys: [publicJwk] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("JWKS test server did not bind");
+    const remote = (pathname: string, timeout = 1000) => createJwtVerifier({
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256"],
+      jwks_url_env: "TEST_JWKS_URL",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+      fetch_timeout_ms: timeout,
+      jwks_cooldown_seconds: 1,
+      max_response_bytes: 8192,
+    }, { TEST_JWKS_URL: `http://127.0.0.1:${address.port}/${pathname}` });
+    try {
+      await expect(remote("timeout", 50)(await signedToken(rsa.privateKey, "RS256", "known"))).rejects.toThrow();
+      await expect(remote("malformed")(await signedToken(rsa.privateKey, "RS256", "known"))).rejects.toThrow(/valid JSON/);
+      await expect(remote("private")(await signedToken(rsa.privateKey, "RS256", "private"))).rejects.toThrow(/public verification keys only/);
+      const beforeUnknown = requests;
+      await expect(remote("public")(await signedToken(rsa.privateKey, "RS256", "unknown"))).rejects.toThrow();
+      expect(requests - beforeUnknown).toBeLessThanOrEqual(2);
+      expect(() => createJwtVerifier({
+        provider: "jwt_asymmetric",
+        algorithms: ["RS256"],
+        jwks_url_env: "TEST_JWKS_URL",
+      }, { TEST_JWKS_URL: "http://identity.example/jwks" })).toThrow(/HTTPS/);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

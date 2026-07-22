@@ -54,6 +54,34 @@ describe("contract review tooling", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("fails Runner lint and explains the boundary for canonical SESSION bindings", async () => {
+    const loaded = await loadReviewedContract(fixture);
+    loaded.contract.contexts[0]!.bindings[0]!.source = "session";
+
+    const result = lintContract(loaded.contract);
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code: "SESSION_BINDING_UNSUPPORTED",
+      severity: "error",
+    }));
+    expect(result.ok).toBe(false);
+    expect(formatContractExplanation(explainContract(loaded.contract), "markdown")).toContain("Synapsor Runner rejects that provider");
+  });
+
+  it("warns when a canonical contract explicitly accepts weak projection hashing", async () => {
+    const loaded = await loadReviewedContract(fixture);
+    loaded.contract.capabilities[0]!.proposal!.conflict_guard = { weak_guard_ack: true };
+
+    const result = lintContract(loaded.contract);
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code: "WEAK_CONFLICT_GUARD_ACKNOWLEDGED",
+      severity: "warning",
+      message: expect.stringContaining("captured projection"),
+    }));
+    expect(formatContractExplanation(explainContract(loaded.contract), "markdown")).toContain(
+      "Conflict guard: WEAK row hash over the captured projection",
+    );
+  });
+
   it("accepts canonical JSON as the same review source", async () => {
     const temp = path.join(root, ".synapsor-contract-tools-test.json");
     const loaded = await loadReviewedContract(fixture);

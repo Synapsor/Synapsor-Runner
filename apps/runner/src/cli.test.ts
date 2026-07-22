@@ -359,7 +359,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.5.3");
+      expect(output.join("").trim()).toBe("1.5.4");
     }
   });
 
@@ -876,6 +876,58 @@ describe("runner cli", () => {
     ])).rejects.toThrow(/Local store appears active.*Refusing serve/);
   });
 
+  it("resolves HTTP endpoint token env names as CLI override, config, then legacy default", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-http-token-env-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const config = httpHandlerConfig() as any;
+    config.storage = { sqlite_path: ":memory:" };
+    config.http_security = {
+      deployment: "loopback",
+      static_token: { active_env: "SYNAPSOR_TEST_CONFIGURED_HTTP_TOKEN" },
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+
+    const envNames = [
+      "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      "SYNAPSOR_TEST_CONFIGURED_HTTP_TOKEN",
+      "SYNAPSOR_TEST_OVERRIDE_HTTP_TOKEN",
+    ] as const;
+    const previous = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
+    process.env.SYNAPSOR_RUNNER_HTTP_TOKEN = "legacy-default-present";
+    delete process.env.SYNAPSOR_TEST_CONFIGURED_HTTP_TOKEN;
+    delete process.env.SYNAPSOR_TEST_OVERRIDE_HTTP_TOKEN;
+    try {
+      for (const command of ["serve-streamable-http", "serve-http"] as const) {
+        await expect(main([
+          "mcp",
+          command,
+          "--config",
+          configPath,
+          "--store",
+          ":memory:",
+        ])).rejects.toThrow(/SYNAPSOR_TEST_CONFIGURED_HTTP_TOKEN is not set/);
+      }
+
+      process.env.SYNAPSOR_TEST_CONFIGURED_HTTP_TOKEN = "configured-token-present";
+      await expect(main([
+        "mcp",
+        "serve-streamable-http",
+        "--config",
+        configPath,
+        "--store",
+        ":memory:",
+        "--auth-token-env",
+        "SYNAPSOR_TEST_OVERRIDE_HTTP_TOKEN",
+      ])).rejects.toThrow(/SYNAPSOR_TEST_OVERRIDE_HTTP_TOKEN is not set/);
+    } finally {
+      for (const name of envNames) {
+        const value = previous[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it("does not create a local store lease for Postgres runtime-store MCP serving", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-runtime-store-lease-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -1293,6 +1345,37 @@ describe("runner cli", () => {
     });
   });
 
+  it("rejects canonical SESSION bindings in Runner validate and compile without environment fallback", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-session-"));
+    const source = (await fs.readFile(workspacePath("packages/dsl/examples/billing-late-fee.synapsor.sql"), "utf8"))
+      .replace("FROM ENVIRONMENT SYNAPSOR_TENANT_ID", "FROM SESSION SYNAPSOR_TENANT_ID");
+    const dslPath = path.join(tempDir, "contract.synapsor.sql");
+    const contractPath = path.join(tempDir, "synapsor.contract.json");
+    await fs.writeFile(dslPath, source, "utf8");
+
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    process.env.SYNAPSOR_TENANT_ID = "must-not-authorize-session";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      await expect(main(["dsl", "validate", dslPath])).resolves.toBe(1);
+      expect(output.join("")).toContain("SESSION_BINDING_UNSUPPORTED");
+      expect(output.join("")).not.toContain("must-not-authorize-session");
+
+      output.length = 0;
+      await expect(main(["dsl", "compile", dslPath, "--out", contractPath])).resolves.toBe(1);
+      expect(output.join("")).toContain("SESSION_BINDING_UNSUPPORTED");
+      await expect(fs.access(contractPath)).rejects.toThrow();
+    } finally {
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID;
+      else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+    }
+  });
+
   it("accepts both DSL source extensions and emits equivalent canonical JSON", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-dsl-extensions-"));
     const source = await fs.readFile(workspacePath("packages/dsl/examples/billing-late-fee.synapsor.sql"), "utf8");
@@ -1377,8 +1460,8 @@ describe("runner cli", () => {
       expect(seenRequest.body?.local_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.4.2",
-        "@synapsor/dsl": "1.4.3",
-        "@synapsor/runner": "1.5.3",
+        "@synapsor/dsl": "1.4.4",
+        "@synapsor/runner": "1.5.4",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -1514,6 +1597,7 @@ CREATE CAPABILITY support.propose_plan_credit
   PROPOSE ACTION grant_plan_credit
   ALLOW WRITE credit_requested_cents
   PATCH credit_requested_cents = ARG amount_cents
+  CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED
   WRITEBACK NONE
 END
 `, "utf8");
@@ -1537,7 +1621,9 @@ END
     });
     await expect(main(["dsl", "validate", fixture, "--json"])).resolves.toBe(1);
     expect(output.join("")).toContain("LOOKUP_COLUMN_UNSUPPORTED");
-    await expect(main(["dsl", "compile", fixture, "--strict"])).rejects.toThrow(/LOOKUP_COLUMN_UNSUPPORTED/);
+    output.length = 0;
+    await expect(main(["dsl", "compile", fixture, "--strict"])).resolves.toBe(1);
+    expect(output.join("")).toContain("LOOKUP_COLUMN_UNSUPPORTED");
   });
 
   it("compiles DSL-authored numeric bounds into a contract enforced by runtime proposals", async () => {
@@ -3020,6 +3106,78 @@ END
     }
   });
 
+  it("reports a redacted shared HTTP auth, proxy, resource, limit, and rate-scope posture", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-http-security-doctor-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: { engine: "postgres", read_url_env: "APP_POSTGRES_READ_URL" },
+      },
+      trusted_context: { provider: "http_claims" },
+      session_auth: {
+        provider: "jwt_asymmetric",
+        algorithms: ["ES256"],
+        jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+        issuer: "https://identity.example",
+        audience: "https://runner.example/mcp",
+      },
+      http_security: {
+        deployment: "shared",
+        channel: "trusted_tls_proxy",
+        oauth_resource: {
+          resource: "https://runner.example/mcp",
+          authorization_servers: ["https://identity.example"],
+          required_scopes: ["synapsor:mcp"],
+        },
+        allowed_hosts: ["runner.example"],
+        allowed_origins: ["https://app.example"],
+        limits: { max_request_bytes: 65536, max_header_bytes: 8192, max_sessions: 100, session_idle_timeout_seconds: 300 },
+      },
+      rate_limits: { enabled: true, default: { requests: 60, window_seconds: 60 } },
+      capabilities: [{
+        name: "billing.inspect_invoice",
+        kind: "read",
+        source: "app_postgres",
+        target: { schema: "public", table: "invoices", primary_key: "id", tenant_key: "tenant_id" },
+        args: { invoice_id: { type: "string", required: true, max_length: 128 } },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "status"],
+        evidence: "required",
+        max_rows: 1,
+      }],
+    }), "utf8");
+    const oldJwks = process.env.SYNAPSOR_SESSION_JWKS_URL;
+    process.env.SYNAPSOR_SESSION_JWKS_URL = "https://identity.example/.well-known/jwks.json";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main([
+        "doctor", "--config", configPath, "--json",
+        "--transport", "streamable-http", "--host", "0.0.0.0", "--trusted-tls-proxy",
+      ])).resolves.toBe(1);
+      const text = output.join("");
+      const report = JSON.parse(text);
+      expect(report.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "http-security:deployment", level: "pass", message: expect.stringContaining("shared") }),
+        expect.objectContaining({ name: "http-security:channel", level: "warn", message: expect.stringContaining("TLS-terminating proxy") }),
+        expect.objectContaining({ name: "http-security:authentication", level: "pass", message: expect.stringContaining("jwt_asymmetric") }),
+        expect.objectContaining({ name: "http-security:oauth-resource", level: "pass", message: expect.stringContaining("synapsor:mcp") }),
+        expect.objectContaining({ name: "http-security:origin-cors", level: "pass", message: expect.stringContaining("https://app.example") }),
+        expect.objectContaining({ name: "http-security:limits", level: "pass", message: expect.stringContaining("65536") }),
+        expect.objectContaining({ name: "http-security:rate-limit-scope", level: "warn", message: expect.stringContaining("this Runner process only") }),
+      ]));
+      expect(text).not.toMatch(/BEGIN (?:PRIVATE KEY|CERTIFICATE)|Bearer\s+\S+|postgres(?:ql)?:\/\//i);
+    } finally {
+      if (oldJwks === undefined) delete process.env.SYNAPSOR_SESSION_JWKS_URL; else process.env.SYNAPSOR_SESSION_JWKS_URL = oldJwks;
+    }
+  });
+
   it("probes direct SQL writeback safely when requested by doctor", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-doctor-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -4264,6 +4422,13 @@ END
       workspacePath("packages/spec/examples/support-refund.contract.json"),
       path.join(configDir, "support.contract.json"),
     );
+    const contractPath = path.join(configDir, "support.contract.json");
+    const contract = JSON.parse(await fs.readFile(contractPath, "utf8"));
+    contract.contexts[0].bindings = [
+      { name: "tenant_id", source: "environment", key: "SYNAPSOR_TENANT_ID", required: true },
+      { name: "principal", source: "environment", key: "SYNAPSOR_PRINCIPAL", required: true },
+    ];
+    await fs.writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`, "utf8");
     const configPath = path.join(configDir, "synapsor.runner.json");
     await fs.writeFile(configPath, JSON.stringify({
       version: 1,
@@ -4506,8 +4671,8 @@ END
     expect(snippet.transport).toBe("streamable-http");
     expect(snippet.start_server).toMatchObject({
       command: "synapsor-runner",
-      env: { SYNAPSOR_RUNNER_HTTP_TOKEN: "<set-a-random-local-token>" },
     });
+    expect(snippet.start_server).not.toHaveProperty("env");
     expect(snippet.start_server.args).toEqual(expect.arrayContaining([
       "serve-streamable-http",
       "--alias-mode",
@@ -4515,6 +4680,12 @@ END
     ]));
     expect(snippet.openai_agents_sdk.python).toContain("MCPServerStreamableHttp");
     expect(snippet.openai_agents_sdk.url).toBe("http://127.0.0.1:8766/mcp");
+    expect(snippet.authentication).toMatchObject({
+      mode: "opaque-static",
+      server_endpoint_token_env: "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      client_access_token_env: "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      credential_value_embedded: false,
+    });
     expect(snippet.tool_names.model_visible_with_alias_mode_openai).toBe("billing__inspect_invoice");
     expect(snippet.agent_instructions.recommended_system_prompt).toContain("propose-first pattern");
     expect(snippet.agent_instructions.recommended_system_prompt).toContain("source_database_changed: true");
@@ -4536,6 +4707,120 @@ END
       "./.synapsor/local.db",
     ])).resolves.toBe(0);
     expect(JSON.parse(output.join("")).start_server.args).toContain("--alias-mode");
+  });
+
+  it("prints shared JWT client provisioning references without embedding an access token", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-jwt-client-config-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: ":memory:" },
+      sources: { app_postgres: { engine: "postgres", read_url_env: "APP_POSTGRES_READ_URL" } },
+      trusted_context: { provider: "http_claims" },
+      session_auth: {
+        provider: "jwt_asymmetric",
+        algorithms: ["ES256"],
+        public_key_env: "SYNAPSOR_SESSION_PUBLIC_KEY",
+        issuer: "https://identity.example",
+        audience: "https://runner.example/mcp",
+      },
+      http_security: {
+        deployment: "shared",
+        oauth_resource: {
+          resource: "https://runner.example/mcp",
+          authorization_servers: ["https://identity.example"],
+          required_scopes: ["synapsor:mcp"],
+        },
+      },
+      capabilities: [{
+        name: "billing.inspect_invoice",
+        kind: "read",
+        source: "app_postgres",
+        target: { schema: "public", table: "invoices", primary_key: "id", tenant_key: "tenant_id" },
+        args: { invoice_id: { type: "string", required: true } },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id"],
+      }],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "mcp", "client-config", "--client", "openai-agents",
+      "--config", configPath,
+      "--store", ":memory:",
+      "--client-access-token-env", "MY_IDP_ACCESS_TOKEN",
+    ])).resolves.toBe(0);
+    const text = output.join("");
+    const snippet = JSON.parse(text);
+    expect(snippet.start_server).toBeUndefined();
+    expect(snippet.openai_agents_sdk.url).toBe("https://runner.example/mcp");
+    expect(snippet.authentication).toEqual(expect.objectContaining({
+      mode: "signed-jwt",
+      protected_resource: "https://runner.example/mcp",
+      authorization_servers: ["https://identity.example"],
+      client_access_token_env: "MY_IDP_ACCESS_TOKEN",
+      provisioned_by: "configured_identity_provider",
+      credential_value_embedded: false,
+    }));
+    expect(snippet.openai_agents_sdk.headers_from_env.Authorization).toBe("Bearer $MY_IDP_ACCESS_TOKEN");
+    expect(text).not.toMatch(/eyJ[A-Za-z0-9_-]+\.|BEGIN PRIVATE KEY|Bearer\s+(?!\$)[A-Za-z0-9._~+/=-]{16,}/);
+  });
+
+  it("uses CLI, config, then default token env precedence in generated HTTP client config", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-static-client-config-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const config = httpHandlerConfig() as any;
+    config.http_security = {
+      deployment: "loopback",
+      static_token: { active_env: "SYNAPSOR_CONFIGURED_ENDPOINT_TOKEN" },
+    };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "mcp", "client-config", "--client", "openai-agents",
+      "--config", configPath,
+      "--store", ":memory:",
+    ])).resolves.toBe(0);
+    const configured = JSON.parse(output.join(""));
+    expect(configured.authentication).toMatchObject({
+      server_endpoint_token_env: "SYNAPSOR_CONFIGURED_ENDPOINT_TOKEN",
+      client_access_token_env: "SYNAPSOR_CONFIGURED_ENDPOINT_TOKEN",
+      credential_value_embedded: false,
+    });
+    expect(configured.start_server.args).toEqual(expect.arrayContaining([
+      "--auth-token-env",
+      "SYNAPSOR_CONFIGURED_ENDPOINT_TOKEN",
+    ]));
+
+    output.length = 0;
+    await expect(main([
+      "mcp", "client-config", "--client", "openai-agents",
+      "--config", configPath,
+      "--store", ":memory:",
+      "--auth-token-env", "SYNAPSOR_OVERRIDE_ENDPOINT_TOKEN",
+      "--client-access-token-env", "SYNAPSOR_CLIENT_ACCESS_TOKEN",
+    ])).resolves.toBe(0);
+    const overridden = JSON.parse(output.join(""));
+    expect(overridden.authentication).toMatchObject({
+      server_endpoint_token_env: "SYNAPSOR_OVERRIDE_ENDPOINT_TOKEN",
+      client_access_token_env: "SYNAPSOR_CLIENT_ACCESS_TOKEN",
+      credential_value_embedded: false,
+    });
+    expect(overridden.start_server.args).toEqual(expect.arrayContaining([
+      "--auth-token-env",
+      "SYNAPSOR_OVERRIDE_ENDPOINT_TOKEN",
+    ]));
+    expect(output.join("")).not.toMatch(/Bearer\s+(?!\$)[A-Za-z0-9._~+/=-]{16,}/);
   });
 
   it("supports absolute MCP client snippets and smokes the configured tool boundary", async () => {
@@ -4728,6 +5013,56 @@ END
       if (oldUrl === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_URL; else process.env.SYNAPSOR_TEST_HANDLER_URL = oldUrl;
       if (oldToken === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_TOKEN; else process.env.SYNAPSOR_TEST_HANDLER_TOKEN = oldToken;
       if (oldSigningSecret === undefined) delete process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET; else process.env.SYNAPSOR_TEST_HANDLER_SIGNING_SECRET = oldSigningSecret;
+    }
+  });
+
+  it("surfaces explicitly acknowledged weak conflict guards consistently in preview and doctor", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-weak-guard-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor", "local.db");
+    const config = httpHandlerConfig() as any;
+    config.storage = { sqlite_path: storePath };
+    config.capabilities[0].conflict_guard = { weak_guard_ack: true };
+    await fs.writeFile(configPath, JSON.stringify(config), "utf8");
+
+    const oldRead = process.env.APP_POSTGRES_READ_URL;
+    const oldTenant = process.env.SYNAPSOR_TENANT_ID;
+    const oldPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    delete process.env.APP_POSTGRES_READ_URL;
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    process.env.SYNAPSOR_PRINCIPAL = "local_operator";
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      await expect(main(["tools", "preview", "--config", configPath, "--store", storePath, "--json"])).resolves.toBe(0);
+      const preview = JSON.parse(output.join(""));
+      expect(preview.capability_details[0].conflict_guard).toEqual({
+        mode: "weak_projection_hash",
+        assurance: "apply compares a hash of the captured projection",
+        warning: "may miss concurrent changes outside the captured projection; prefer an exact version column",
+      });
+
+      output.length = 0;
+      await expect(main(["tools", "preview", "--config", configPath, "--store", storePath])).resolves.toBe(0);
+      expect(output.join("")).toContain("conflict guard: WEAK projection hash (explicitly acknowledged)");
+      expect(output.join("")).toContain("WARNING: may miss concurrent changes outside the captured projection");
+
+      output.length = 0;
+      await expect(main(["doctor", "--config", configPath, "--json"])).resolves.toBe(1);
+      const doctor = JSON.parse(output.join(""));
+      expect(doctor.checks).toContainEqual(expect.objectContaining({
+        name: "capability:billing.waive_late_fee:conflict-guard",
+        level: "warn",
+        message: expect.stringContaining("captured projection"),
+      }));
+    } finally {
+      if (oldRead === undefined) delete process.env.APP_POSTGRES_READ_URL; else process.env.APP_POSTGRES_READ_URL = oldRead;
+      if (oldTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID; else process.env.SYNAPSOR_TENANT_ID = oldTenant;
+      if (oldPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL; else process.env.SYNAPSOR_PRINCIPAL = oldPrincipal;
     }
   });
 
@@ -5248,6 +5583,7 @@ END
     expect(text).toContain("Approval:\nrequired outside MCP");
     expect(text).toContain("late_fee_cents: 5500 -> 0");
     expect(text).toContain("More detail:");
+    expect(text).toContain(`synapsor-runner lifecycle show proposal:wrp_cli --details --store ${storePath}`);
     expect(text).not.toContain("proposal hash");
     expect(text).not.toContain("proposal version");
     expect(text).not.toContain("conflict guard");
@@ -5353,6 +5689,7 @@ END
     expect(text).toContain("1 query audit record");
     expect(text).toContain("1 evidence item");
     expect(text).toContain("Next:");
+    expect(text).toContain(`synapsor-runner lifecycle show replay:replay_wrp_cli --details --store ${storePath}`);
     expect(text).not.toContain("proposal hash");
     expect(text).not.toContain("conflict guard");
     expect(text).not.toContain("sha256:evidence");
@@ -5412,6 +5749,7 @@ END
     expect(output.join("")).toContain("1 evidence item");
     expect(output.join("")).toContain("1 query audit record");
     expect(output.join("")).toContain("Next:");
+    expect(output.join("")).toContain(`synapsor-runner lifecycle show evidence:ev_cli --store ${storePath}`);
     output.length = 0;
     await expect(main(["evidence", "show", "ev_cli", "--details", "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("Evidence bundle: ev_cli");
@@ -5435,6 +5773,7 @@ END
     expect(output.join("")).toContain("Query audit 1");
     expect(output.join("")).toContain("Rows returned:");
     expect(output.join("")).toContain("More detail:");
+    expect(output.join("")).toContain(`synapsor-runner lifecycle show audit:1 --store ${storePath}`);
     output.length = 0;
     await expect(main(["query-audit", "show", "1", "--details", "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("Parameters redacted: yes");
@@ -5447,6 +5786,7 @@ END
     expect(output.join("")).toContain("Receipt rct_000001");
     expect(output.join("")).toContain("Status: applied");
     expect(output.join("")).toContain("More detail:");
+    expect(output.join("")).toContain(`synapsor-runner lifecycle show receipt:1 --store ${storePath}`);
     output.length = 0;
     await expect(main(["receipts", "show", "1", "--details", "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("Receipt: 1");
@@ -5457,6 +5797,7 @@ END
     expect(output.join("")).toContain("Found 1 local interaction");
     expect(output.join("")).toContain("proposal: wrp_cli");
     expect(output.join("")).toContain("Next:");
+    expect(output.join("")).toContain(`synapsor-runner lifecycle show proposal:wrp_cli --store ${storePath}`);
     output.length = 0;
     await expect(main(["activity", "search", "--evidence", "ev_cli", "--store", storePath])).resolves.toBe(0);
     expect(output.join("")).toContain("proposal: wrp_cli");

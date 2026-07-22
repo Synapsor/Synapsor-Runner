@@ -21,8 +21,7 @@ No database, Docker, config, MCP client, LLM, or account is required:
 npx -y @synapsor/runner try --prove
 ```
 
-The four-second product measurement begins after package resolution. A cold
-`npx` download is recorded separately because registry and network time vary.
+Timing begins after package resolution; cold `npx` download time varies.
 
 The embedded synthetic source requests a $55 waiver and proves:
 
@@ -34,9 +33,9 @@ Restart-safe retry: yes; duplicate mutations: 0
 Stale apply refused: yes
 ```
 
-Review happens outside the model-facing tools. The command stores inspectable
-state under `./.synapsor/try/`; it teaches the boundary and does not claim to
-test your database connection. `demo --quick` remains a noninteractive compatibility alias.
+Review happens outside model-facing tools. State is stored under
+`./.synapsor/try/`; this proves the boundary, not your database connection.
+`demo --quick` remains a noninteractive compatibility alias.
 
 ## Protect One Action In Your Application
 
@@ -86,9 +85,15 @@ The agent has no approval or commit tool. Runner rechecks scope, policy, row
 version, bounds, and idempotency before returning a receipt; a retry cannot
 duplicate the mutation and a stale proposal conflicts.
 
-See the [own-database guide](docs/getting-started-own-database.md) for the full
-staging path and [Cursor plugin guide](docs/cursor-plugin.md) for
-`/synapsor-protect` and the plugin boundary.
+Inspect the latest lifecycle without copying an id:
+
+```bash
+synapsor-runner lifecycle --details --store ./.synapsor/local.db
+```
+
+See the [own-database guide](docs/getting-started-own-database.md),
+[Cursor plugin guide](docs/cursor-plugin.md), and
+[store lifecycle guide](docs/store-lifecycle.md) for the complete paths.
 
 ## Audit An Existing MCP Server
 
@@ -155,10 +160,12 @@ not make raw SQL or prompt-injection-prone clients safe.
 | `postgres_rls` | PostgreSQL also checks transaction-bound tenant/principal scope. Arbitrary trusted-context or credential control remains outside this guarantee. |
 | `tenant_bound` | Authenticated context selects a restricted per-tenant credential or process. |
 
-Stdio commonly trusts process environment; shared HTTP must use verified signed
-claims. Model arguments, query parameters, and arbitrary tenant headers are
-never trusted. MySQL has no native RLS; use restricted views or tenant
-credentials. See [Database scope] and the
+Use stdio; no socket opens. HTTP requires authentication; non-loopback
+listeners require TLS or an explicit trusted TLS proxy. Shared services require
+signed claims. Model-controlled input and MCP session IDs never establish
+identity. See [HTTP MCP].
+MySQL has no native RLS; use restricted views or tenant credentials. See
+[Database scope] and the
 [build-vs-adopt guide](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Connect A Staging Database
@@ -216,6 +223,7 @@ See [Security Boundary](docs/security-boundary.md) and
 [Current Limitations](docs/limitations.md).
 
 [Database scope]: docs/database-enforced-scope.md
+[HTTP MCP]: docs/http-mcp.md
 
 ## Operate The Approval Loop
 

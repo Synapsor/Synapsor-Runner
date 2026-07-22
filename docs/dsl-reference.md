@@ -29,7 +29,7 @@ END
 
 | Clause | Meaning |
 | --- | --- |
-| `BIND name FROM source key [REQUIRED]` | Defines trusted context. Sources: `SESSION`, `ENV`/`ENVIRONMENT`, `CLOUD_SESSION`, `STATIC_DEV`, `HTTP_CLAIM`. Model tool arguments cannot set these bindings. |
+| `BIND name FROM source key [REQUIRED]` | Defines trusted context. Canonical sources: `SESSION`, `ENV`/`ENVIRONMENT`, `CLOUD_SESSION`, `STATIC_DEV`, `HTTP_CLAIM`. Model tool arguments cannot set these bindings. Runner rejects `SESSION`; use one of its implemented verified providers described below. |
 | `TENANT BINDING name` | Selects the binding used for tenant scope. Defaults to a binding named `tenant_id`. |
 | `PRINCIPAL BINDING name` | Selects the actor binding. Defaults to a binding named `principal`. |
 
@@ -65,15 +65,56 @@ END
 | `TENANT KEY column` | Required in DSL 0.1. Adds trusted tenant scope to every read/write. |
 | `PRINCIPAL SCOPE KEY column` | Optional tenant-additive row lock. Runner binds this fixed column to the context's required trusted `PRINCIPAL BINDING`; it is never a model argument. |
 | `CONFLICT GUARD column` | Captures the row-version value for exact guarded writeback. Prefer a monotonic version or native-precision timestamp. |
+| `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` | Explicitly accepts a weaker hash over the captured projection for a legacy, ordinary single-row source-DB UPDATE. It may miss concurrent changes outside that projection and is never equivalent to a version column. |
+
+An UPDATE proposal must choose one of those guard clauses. Omitting the clause
+is a compile error; the compiler never silently selects the weak form. The weak
+form is rejected for INSERT, DELETE, reversible writes, bounded sets, and
+Runner-ledger authority. `contract lint`, `contract explain`, `doctor`, and
+`tools preview` all identify it prominently.
+
+To migrate a legacy DSL file that omitted the guard, inspect the target schema
+and add an exact source column:
+
+```sql
+  CONFLICT GUARD version
+```
+
+Use a monotonic integer/version column when available, or a native-precision
+`updated_at` maintained by the database. If a legacy source has no usable
+version column and the capability is an ordinary single-row UPDATE using
+source-DB receipt authority, the explicit weak clause keeps the previous
+projection-hash behavior while recording the reduced assurance in review
+output. Do not use it as a production-equivalent substitute for a real version
+column.
 
 `PRINCIPAL SCOPE KEY` means `tenant_key = trusted tenant AND
 principal_scope_key = trusted principal`. It cannot replace tenant scope,
 default to all rows, or be overridden by an argument. The principal binding
-must be required and come from a trusted provider such as `ENVIRONMENT`,
-`HTTP_CLAIM`, `SESSION`, or `CLOUD_SESSION`. For networked multi-user serving,
-use signed HTTP claims. See the complete
+must be required and come from a trusted Runner provider: `ENVIRONMENT`,
+verified `HTTP_CLAIM`, verified `CLOUD_SESSION`, or explicit
+`STATIC_DEV` for development only. For networked multi-user serving, use
+signed HTTP claims. Canonical `SESSION` is implemented by C++/Cloud but is
+rejected by Runner; Runner never aliases it to environment variables. See the complete
 [`principal-row-scope.synapsor.sql`](../fixtures/dsl/principal-row-scope.synapsor.sql)
 example.
+
+### Migrating `FROM SESSION` for Runner
+
+Choose the provider that owns the verified identity at the Runner boundary:
+
+- local stdio or one trusted process: `FROM ENVIRONMENT`; export the named
+  values before starting Runner;
+- Streamable HTTP: `FROM HTTP_CLAIM`; configure signed JWT verification and
+  bind only verified claims;
+- Cloud embedding: `FROM CLOUD_SESSION`; use the verified Cloud session
+  supplied by the control plane; or
+- disposable development only: `FROM STATIC_DEV`.
+
+`synapsor-runner dsl validate` and `dsl compile` target Runner and fail with
+`SESSION_BINDING_UNSUPPORTED` before serving. The standalone DSL accepts the
+canonical syntax by default for other implementations; pass `--target runner`
+to request the same fail-closed Runner validation.
 
 ## Arguments and lookup
 
