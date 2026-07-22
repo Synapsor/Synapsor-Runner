@@ -134,6 +134,18 @@ export type StoredWritebackReceipt = {
   source_table?: string;
 };
 
+export type StoredWritebackJob = {
+  writeback_job_id: string;
+  proposal_id: string;
+  proposal_hash: string;
+  status: string;
+  kind: "direct_sql" | "app_handler";
+  payload: Record<string, unknown>;
+  normalized_job?: WritebackJob;
+  created_at: string;
+  updated_at: string;
+};
+
 export type WritebackIntentStatus =
   | "intent_recorded"
   | "applying"
@@ -2021,6 +2033,12 @@ export class ProposalStore {
     return rows.map((row) => rowToProposal(row)).filter((proposal): proposal is StoredProposal => proposal !== undefined);
   }
 
+  countProposals(filters: ProposalSearchFilters = {}): number {
+    const query = buildProposalCountQuery(filters);
+    const row = this.db.prepare(query.sql).get(...query.params);
+    return isRecord(row) ? Number(row.count ?? 0) : 0;
+  }
+
   listEvidenceBundles(filters: EvidenceSearchFilters = {}): StoredEvidenceBundle[] {
     const query = buildEvidenceQuery(filters);
     const rows = this.db.prepare(query.sql).all(...query.params);
@@ -2051,6 +2069,21 @@ export class ProposalStore {
     const prefix = "replay_";
     const proposalId = replayId.startsWith(prefix) ? replayId.slice(prefix.length) : replayId;
     return this.replay(proposalId);
+  }
+
+  getStoredReplay(replayId: string): ProposalReplayRecord | undefined {
+    const row = this.db.prepare("SELECT * FROM replay_records WHERE replay_id = ?").get(replayId);
+    return rowToStoredReplay(row);
+  }
+
+  getStoredReplayForProposal(proposalId: string): ProposalReplayRecord | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM replay_records
+      WHERE proposal_id = ?
+      ORDER BY created_at DESC, replay_id DESC
+      LIMIT 1
+    `).get(proposalId);
+    return rowToStoredReplay(row);
   }
 
   proposalIdForEvidence(evidenceBundleId: string): string | undefined {
@@ -2400,6 +2433,24 @@ export class ProposalStore {
       });
     });
     return job;
+  }
+
+  getWritebackJob(writebackJobId: string): StoredWritebackJob | undefined {
+    return rowToWritebackJob(this.db.prepare("SELECT * FROM writeback_jobs WHERE writeback_job_id = ?").get(writebackJobId));
+  }
+
+  listWritebackJobs(options: { proposal_id?: string; limit?: number } = {}): StoredWritebackJob[] {
+    const clauses: string[] = [];
+    const values: SQLInputValue[] = [];
+    if (options.proposal_id) {
+      clauses.push("proposal_id = ?");
+      values.push(options.proposal_id);
+    }
+    const limit = Math.min(Math.max(options.limit ?? 100, 1), 1000);
+    return this.db.prepare(`SELECT * FROM writeback_jobs${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY created_at ASC, writeback_job_id ASC LIMIT ?`)
+      .all(...values, limit)
+      .map(rowToWritebackJob)
+      .filter((job): job is StoredWritebackJob => Boolean(job));
   }
 
   claimWritebackIntent(jobInput: unknown, runnerId: string): WritebackIntentClaim {
@@ -4544,6 +4595,21 @@ function inWhere(column: string, values: string[]): { sql: string; params: strin
 }
 
 function buildProposalQuery(filters: ProposalSearchFilters): SqlQuery {
+  const { clauses, params } = proposalQueryParts(filters);
+  const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  return {
+    sql: `SELECT * FROM proposals${where} ORDER BY created_at DESC, proposal_id DESC${filters.limit ? " LIMIT ?" : ""}`,
+    params: filters.limit ? [...params, filters.limit] : params,
+  };
+}
+
+function buildProposalCountQuery(filters: ProposalSearchFilters): SqlQuery {
+  const { clauses, params } = proposalQueryParts(filters);
+  const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  return { sql: `SELECT COUNT(*) AS count FROM proposals${where}`, params };
+}
+
+function proposalQueryParts(filters: ProposalSearchFilters): { clauses: string[]; params: SqlParam[] } {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
   addEqual(clauses, params, "proposal_id", filters.proposal);
@@ -4555,7 +4621,7 @@ function buildProposalQuery(filters: ProposalSearchFilters): SqlQuery {
   addEqual(clauses, params, "action", filters.capability ?? filters.action);
   addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
-  return finishQuery("SELECT * FROM proposals", clauses, params, filters.limit);
+  return { clauses, params };
 }
 
 function buildEvidenceQuery(filters: EvidenceSearchFilters): SqlQuery {
@@ -5189,6 +5255,77 @@ function rowToReceipt(row: unknown): StoredWritebackReceipt | undefined {
     source_id: row.source_id == null ? undefined : String(row.source_id),
     source_table: row.source_table == null ? undefined : String(row.source_table),
   };
+}
+
+function rowToWritebackJob(row: unknown): StoredWritebackJob | undefined {
+  if (!isRecord(row)) return undefined;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(String(row.job_json));
+  } catch {
+    throw new ProposalStoreError("WRITEBACK_JOB_CORRUPT", `writeback job ${String(row.writeback_job_id)} payload is not valid JSON`);
+  }
+  if (!isRecord(payload)) {
+    throw new ProposalStoreError("WRITEBACK_JOB_CORRUPT", `writeback job ${String(row.writeback_job_id)} payload is not an object`);
+  }
+  const handler = payload.schema_version === "synapsor.handler-writeback.v1";
+  let normalizedJob: WritebackJob | undefined;
+  if (!handler) {
+    try {
+      normalizedJob = parseWritebackJob(payload);
+    } catch {
+      throw new ProposalStoreError("WRITEBACK_JOB_CORRUPT", `writeback job ${String(row.writeback_job_id)} payload is not a supported writeback protocol`);
+    }
+  }
+  const payloadJobId = handler ? payload.writeback_job_id : normalizedJob?.job_id;
+  const payloadProposalId = handler ? payload.proposal_id : normalizedJob?.proposal_id;
+  const payloadProposalHash = handler ? payload.proposal_hash : normalizedJob?.approval_id;
+  if (
+    payloadJobId !== String(row.writeback_job_id)
+    || payloadProposalId !== String(row.proposal_id)
+    || payloadProposalHash !== String(row.proposal_hash)
+  ) {
+    throw new ProposalStoreError("WRITEBACK_JOB_CORRUPT", `writeback job ${String(row.writeback_job_id)} index fields do not match its payload`);
+  }
+  return {
+    writeback_job_id: String(row.writeback_job_id),
+    proposal_id: String(row.proposal_id),
+    proposal_hash: String(row.proposal_hash),
+    status: String(row.status),
+    kind: handler ? "app_handler" : "direct_sql",
+    payload,
+    ...(normalizedJob ? { normalized_job: normalizedJob } : {}),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+function rowToStoredReplay(row: unknown): ProposalReplayRecord | undefined {
+  if (!isRecord(row)) return undefined;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(String(row.payload_json));
+  } catch {
+    throw new ProposalStoreError("REPLAY_RECORD_CORRUPT", `replay ${String(row.replay_id)} payload is not valid JSON`);
+  }
+  if (!isRecord(payload) || !isRecord(payload.proposal)) {
+    throw new ProposalStoreError("REPLAY_RECORD_CORRUPT", `replay ${String(row.replay_id)} payload is not a supported replay record`);
+  }
+  const replayId = String(row.replay_id);
+  const proposalId = String(row.proposal_id);
+  if (
+    payload.replay_id !== replayId
+    || payload.proposal.proposal_id !== proposalId
+    || !Array.isArray(payload.approvals)
+    || !Array.isArray(payload.events)
+    || !Array.isArray(payload.receipts)
+    || !Array.isArray(payload.query_audit)
+    || !Array.isArray(payload.evidence)
+    || typeof payload.generated_at !== "string"
+  ) {
+    throw new ProposalStoreError("REPLAY_RECORD_CORRUPT", `replay ${replayId} index fields do not match its payload`);
+  }
+  return payload as unknown as ProposalReplayRecord;
 }
 
 function rowToWritebackIntent(row: unknown): StoredWritebackIntent | undefined {

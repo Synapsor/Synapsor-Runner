@@ -10,7 +10,48 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.5.3 (prepared, not published)
+## 1.5.4 (prepared, not published)
+
+### Networked MCP authentication hardening
+
+- Local stdio still opens no network listener and needs no HTTP credential.
+  Loopback HTTP remains authenticated by default with an operator-provisioned
+  opaque token.
+- Remote HTTP now refuses to bind over an undeclared cleartext channel. Operators
+  must use Runner-owned TLS, explicitly declare a trusted TLS proxy, or select an
+  authenticated and prominently diagnosed break-glass posture.
+- Opaque endpoint tokens are constrained to local or explicit single-tenant use.
+  Remote use requires adequate entropy; one active and one previous env-provided
+  value support bounded rotation without logging either value.
+- Shared deployments require signed per-session identity and `http_claims`
+  trusted context. Runner revalidates issuer, audience/resource, time, scope,
+  tenant, principal, signature, and algorithm on every request and rejects token
+  or identity swaps inside an MCP session.
+- RFC 9728 protected-resource metadata and Bearer challenges let compatible MCP
+  clients discover the configured external authorization server. Runner verifies
+  access tokens but does not implement user login or token issuance.
+- TLS/mTLS preflight, public-only bounded JWKS handling, exact Origin/Host checks,
+  request/session bounds, doctor diagnostics, client recipes, and fleet examples
+  now share one documented deployment ladder.
+- `lifecycle`, `lifecycle show`, and `lifecycle show latest` now inspect the
+  newest complete proposal lifecycle without an id. Filters and known
+  proposal/evidence/replay/job/intent/receipt/audit handles resolve a stable,
+  read-only `synapsor.lifecycle-view.v1` domain document across local SQLite
+  and shared PostgreSQL runtime stores.
+- DSL UPDATE authoring now requires an exact `CONFLICT GUARD <column>` instead
+  of silently choosing projection hashing. A reviewer-visible weak compatibility
+  clause remains only for ordinary single-row source-DB UPDATE and is rejected
+  for the stronger operation modes.
+- Runner rejects canonical `FROM SESSION` with
+  `SESSION_BINDING_UNSUPPORTED` rather than treating its key as a process
+  environment variable. Explicit ENVIRONMENT, verified HTTP_CLAIM, verified
+  CLOUD_SESSION, and STATIC_DEV behavior remains distinct.
+
+Prepared package versions: `@synapsor/runner@1.5.4` and
+`@synapsor/dsl@1.4.4`. `@synapsor/spec@1.4.2` and the Cloud CLI are
+unchanged. Nothing has been published by this repository change.
+
+## 1.5.3 (published 2026-07-21)
 
 ### Intent to Safe Action
 
@@ -37,8 +78,8 @@ for the Synapsor Cloud CLI.
 - The first two README screens, public website, article, discovery routes, and
   36-second evidence-backed demo now lead with the own-project Data PR path.
 
-Prepared package version: `@synapsor/runner@1.5.3`. Spec, DSL, and Cloud CLI
-packages are unchanged. Nothing has been published by this repository change.
+Published package version: `@synapsor/runner@1.5.3`. Spec, DSL, and Cloud CLI
+packages were unchanged.
 
 ## 1.5.2 (prepared, not published)
 

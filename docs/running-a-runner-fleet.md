@@ -1,6 +1,6 @@
 # Running A Small Runner Fleet
 
-Synapsor Runner 1.1 supports a bounded small-fleet deployment. It does not
+Synapsor Runner supports a bounded small-fleet deployment. It does not
 turn the OSS package into Synapsor Cloud and it does not promise an unbounded,
 multi-region, or SLA-backed control plane.
 
@@ -32,7 +32,7 @@ model-facing approval/apply tools as blockers. Audit is a static review, not a
 security proof; follow it with `tools preview`, `doctor`, and the live fleet
 verification.
 
-## What 1.1 Guarantees
+## What The Bounded Fleet Guarantees
 
 With `storage.shared_postgres.mode = "runtime_store"`:
 
@@ -116,7 +116,7 @@ Use asymmetric verification for a networked fleet:
     "algorithms": ["RS256"],
     "jwks_url_env": "SYNAPSOR_SESSION_JWKS_URL",
     "issuer": "https://identity.example",
-    "audience": "synapsor-runner",
+    "audience": "https://runner.example/mcp",
     "tenant_claim": "tenant_id",
     "principal_claim": "sub",
     "clock_skew_seconds": 30,
@@ -124,9 +124,27 @@ Use asymmetric verification for a networked fleet:
     "jwks_cooldown_seconds": 30,
     "fetch_timeout_ms": 3000,
     "max_response_bytes": 1048576
+  },
+  "http_security": {
+    "deployment": "shared",
+    "channel": "trusted_tls_proxy",
+    "oauth_resource": {
+      "resource": "https://runner.example/mcp",
+      "authorization_servers": ["https://identity.example"],
+      "scopes_supported": ["synapsor:mcp"],
+      "required_scopes": ["synapsor:mcp"]
+    },
+    "allowed_hosts": ["runner.example"],
+    "allowed_origins": ["https://agent-console.example"]
   }
 }
 ```
+
+The external identity provider issues the short-lived client JWT for resource
+`https://runner.example/mcp`; Runner only verifies it. The load balancer must
+terminate TLS and prevent direct access to the private Runner listeners. If
+Runner owns TLS instead, use protected certificate/key env references and set
+`channel` to `direct_tls`.
 
 Every served capability context must bind tenant and principal from
 `HTTP_CLAIM`. Runner rejects an environment-bound contract mixed into this
@@ -146,6 +164,12 @@ redirects, oversized responses, unknown algorithms, `none`, missing/unknown
 material. Unknown `kid` triggers at most one controlled refresh. For offline
 deployments, configure one public PEM through `public_key_env` or
 `public_key_path`; never place a private key in Runner config.
+
+Runner publishes RFC 9728 protected-resource metadata at the path derived from
+the public resource and returns scope-aware Bearer challenges. The identity
+provider, not Runner, owns user login, client registration, token issuance, and
+refresh. An MCP session ID is only protocol state; every request is
+reauthenticated and remains pinned to the initialized credential identity.
 
 ## Ledger And Source Pools
 
@@ -329,12 +353,13 @@ configured handler timeout. A hard kill is recoverable through leases and
 source-side idempotency receipts, but should remain an incident signal.
 
 Rotate JWKS keys by publishing the new `kid`, waiting at least the configured
-cache lifetime, switching issuers, then retiring the old key. Rotate metrics,
-handler, database, and ledger credentials independently through their named
-environment variables.
+cache lifetime while issuers sign with the new key, then retiring the old key.
+Do not casually change the issuer or protected-resource audience during a key
+rotation. Rotate TLS/mTLS, metrics, handler, database, and ledger credentials
+independently through their named environment variables.
 
-Only homogeneous Runner 1.1 instances are verified by `test:fleet`. Mixed
-1.0/1.1 operation is not claimed. For rolling upgrades:
+Only homogeneous Runner instances at the release under test are verified by
+`test:fleet`. Mixed-version operation is not claimed. For rolling upgrades:
 
 1. back up and verify the ledger;
 2. run schema/config validation with the target version;
@@ -351,8 +376,12 @@ roll back the full fleet. Never mix versions merely because both are `1.x`.
 
 ## TLS Boundary
 
-Terminate public TLS or mTLS at a trusted load balancer, or configure Runner's
-tested TLS/mTLS options directly. Keep Runner-to-database TLS verification on,
-use private networking where possible, restrict `/metrics`, and never forward
-untrusted identity headers as claims. The bearer JWT itself, not a proxy-added
-tenant header, is the session authority.
+Terminate public TLS or mTLS at a trusted load balancer and declare
+`channel: trusted_tls_proxy`, or configure Runner's tested TLS/mTLS options
+directly. A proxy declaration is a security assertion: firewall the private
+listener so clients cannot bypass the proxy, protect the private hop, and
+preserve an allowed Host. Keep Runner-to-database TLS verification on, use
+private networking where possible, and restrict `/metrics` separately. The
+verified Bearer JWT itself, not a proxy-added tenant/principal header, is the
+session authority. See [HTTP MCP](http-mcp.md) for channel flags, limits, and
+doctor checks.

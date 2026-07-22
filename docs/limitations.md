@@ -41,7 +41,9 @@ enterprise SLA.
 - Primary-key guard.
 - Tenant guard.
 - Allowed-column validation.
-- Version-column or explicit weak row-hash conflict guard.
+- Exact version-column conflict guards, plus an explicit legacy
+  `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` escape hatch for ordinary
+  single-row source-DB UPDATE only.
 - Idempotency receipts.
 - Named local trusted contexts for capability configs.
 - Capability recipes that generate reviewed starter configs.
@@ -134,7 +136,12 @@ Do not describe external approval as merge.
 
 ## Weak Conflict Guards
 
-A version/timestamp column is the preferred conflict guard. A weak row-hash guard can be acknowledged for local/dev use, but it should not be presented as equivalent to a durable version column.
+A version/timestamp column is the preferred conflict guard. UPDATE authoring
+fails if no guard is declared. A weak row-hash guard can be selected only with
+the reviewer-visible `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` clause for a
+narrow ordinary single-row source-DB UPDATE. It hashes the captured projection,
+may miss concurrent changes outside that projection, and must not be presented
+as equivalent to a durable version column.
 
 Runner-ledger UPDATE and DELETE require an exact guard; UPDATE must advance it
 inside the source transaction. INSERT requires a reviewed source-unique dedup

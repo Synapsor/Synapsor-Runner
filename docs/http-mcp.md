@@ -1,24 +1,48 @@
 # HTTP MCP
 
-Use HTTP MCP when an app, server-side agent, container, or Python/Node process
-needs to connect to a long-running Synapsor Runner service.
+Use HTTP when an application, server-side agent, container, or remote MCP client
+connects to a long-running Synapsor Runner. Prefer stdio when one local desktop
+client can launch Runner directly: stdio opens no network socket and needs no
+HTTP credential, TLS setup, OAuth flow, or MCP HTTP session.
 
-Use stdio MCP when a local MCP client such as Claude Desktop, Cursor, or a
-local agent tool can launch Synapsor Runner directly.
+Runner provides:
 
-Synapsor Runner has two HTTP modes:
+- `mcp serve-streamable-http`: standard MCP Streamable HTTP using the official
+  MCP SDK. This is the normal HTTP endpoint.
+- `mcp serve-http`: a legacy JSON-RPC bridge with `tools/list`, `tools/call`, and
+  `resources/read`. It has the same network-channel hardening but no standard
+  MCP session and therefore cannot use per-session `http_claims` identity.
 
-- `mcp serve-streamable-http`: spec-compatible MCP Streamable HTTP. Use this
-  when an MCP SDK/client expects `initialize`, session IDs, POST/GET/DELETE, and
-  standard HTTP MCP behavior.
-- `mcp serve-http`: a lightweight authenticated JSON-RPC bridge for
-  `tools/list`, `tools/call`, and `resources/read`. Use this when your app wants
-  simple POST calls or an explicit wrapper around Runner tools.
+## Authentication Concepts
 
-## Start Standard Streamable HTTP MCP
+These are separate controls:
+
+| Control | Meaning |
+| --- | --- |
+| TLS | Encrypts the network channel and authenticates the server certificate. |
+| mTLS | Also authenticates a client workload certificate. It supplements Bearer auth in Runner. |
+| HTTP Bearer | The HTTP presentation scheme: `Authorization: Bearer <credential>`. It does not imply that the credential is a JWT. |
+| Opaque endpoint token | One high-entropy service credential for loopback or an explicitly single-tenant service. It is not user or tenant identity. |
+| Signed JWT | A short-lived identity-provider-issued access token whose signature, algorithm, issuer, audience/resource, time, scope, tenant, and principal claims Runner verifies. |
+| MCP session ID | Routes requests to initialized MCP state. It is not authentication. |
+| Trusted context | The tenant and principal Runner binds after authentication. Model arguments, arbitrary headers, query strings, forwarded headers, and MCP metadata are never trusted context. |
+
+Runner does not issue endpoint tokens, JWTs, refresh tokens, or end-user
+passwords. An operator generates and distributes an opaque token out of band.
+For a shared deployment, an external identity provider or authorization server
+issues JWT access tokens; Runner is only the protected resource that verifies
+them.
+
+## Deployment Profiles
+
+### Local loopback with an opaque token
+
+Generate at least 32 random bytes. The same environment variable must be
+available to Runner and the authorized local client; the value is never placed
+in config JSON or a generated client file.
 
 ```bash
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 synapsor-runner mcp serve-streamable-http \
   --host 127.0.0.1 \
@@ -26,19 +50,6 @@ synapsor-runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
-```
-
-For OpenAI Agents SDK, expose OpenAI-safe aliases because OpenAI function names
-cannot contain dots:
-
-```bash
-synapsor-runner mcp serve-streamable-http \
-  --host 127.0.0.1 \
-  --port 8766 \
-  --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db \
-  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
-  --alias-mode openai
 ```
 
 Equivalent unified command:
@@ -50,34 +61,57 @@ synapsor-runner mcp serve \
   --port 8766 \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+```
+
+`--dev-no-auth` is accepted only for an explicit loopback development run. It
+is refused for wildcard, private-network, and public binds.
+
+### Remote single-tenant service
+
+Declare the service and channel in Runner deployment config. This wiring is not
+part of the portable Synapsor contract:
+
+```json
+{
+  "http_security": {
+    "deployment": "single_tenant",
+    "channel": "trusted_tls_proxy",
+    "static_token": {
+      "active_env": "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      "previous_env": "SYNAPSOR_RUNNER_HTTP_TOKEN_PREVIOUS"
+    },
+    "allowed_hosts": ["runner.internal.example"],
+    "allowed_origins": ["https://agent-console.example"]
+  }
+}
+```
+
+The supported protected channels are:
+
+1. Runner-owned TLS, selected by supplying certificate and key env references.
+2. `trusted_tls_proxy`, where a trusted proxy terminates TLS and a firewall or
+   private network prevents direct client access to Runner.
+3. `insecure_http_break_glass`, an authenticated but interceptable emergency
+   mode. It emits a security warning and is not appropriate for normal use.
+
+A non-loopback listener with no explicit channel refuses to start before it
+binds. Break glass never disables authentication.
+
+Trusted TLS proxy:
+
+```bash
+synapsor-runner mcp serve-streamable-http \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --trusted-tls-proxy \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
-  --alias-mode openai
+  --previous-auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN_PREVIOUS
 ```
 
-The model sees aliases such as `billing__inspect_invoice`. MCP tool metadata
-still includes `synapsor.canonical_tool_name`, and Runner maps calls back to
-the canonical Synapsor capability such as `billing.inspect_invoice`. Use
-`--alias-mode both` only during migrations where some clients still need
-canonical dotted names.
-
-Defaults:
-
-```text
-host: 127.0.0.1
-port: 8766
-auth: bearer token required
-cors: disabled
-sessions: in-memory
-```
-
-Use `/mcp` as the MCP endpoint. Cheap process liveness is available at
-`/healthz`; dependency readiness is available at `/readyz`. When separately
-enabled and authorized, OpenMetrics is available at `/metrics`.
-
-## TLS And mTLS
-
-For a non-local long-running service, terminate TLS at a trusted proxy or start
-Runner with env-backed PEM material:
+Runner-owned TLS:
 
 ```bash
 export SYNAPSOR_TLS_CERT_PEM="$(cat ./server.crt)"
@@ -93,7 +127,7 @@ synapsor-runner mcp serve-streamable-http \
   --tls-key-env SYNAPSOR_TLS_KEY_PEM
 ```
 
-To require client certificates:
+For mTLS, add a protected client CA bundle:
 
 ```bash
 export SYNAPSOR_TLS_CA_PEM="$(cat ./client-ca.crt)"
@@ -110,16 +144,148 @@ synapsor-runner mcp serve-streamable-http \
   --require-client-cert
 ```
 
-The CLI reads PEM contents from environment variables and never prints them.
-Runner-owned mTLS currently protects the Streamable HTTP MCP boundary. For
-app-owned `http_handler` executors, terminate mTLS in your service mesh/proxy
-or handler process and keep bearer/signature checks enabled in the handler.
+mTLS authenticates a workload certificate in addition to the Bearer credential.
+It does not turn a shared opaque token into per-user or per-tenant identity.
 
-## Start The JSON-RPC Bridge
+### Shared multi-user or multi-tenant service
+
+Use verified signed session identity. A static endpoint token is intentionally
+insufficient as trusted tenant/principal authority.
+
+```json
+{
+  "trusted_context": {
+    "provider": "http_claims",
+    "values": {
+      "tenant_id_key": "tenant_id",
+      "principal_key": "sub"
+    }
+  },
+  "session_auth": {
+    "provider": "jwt_asymmetric",
+    "algorithms": ["ES256"],
+    "jwks_url_env": "SYNAPSOR_SESSION_JWKS_URL",
+    "issuer": "https://identity.example",
+    "audience": "https://runner.example/mcp",
+    "tenant_claim": "tenant_id",
+    "principal_claim": "sub",
+    "clock_skew_seconds": 30
+  },
+  "http_security": {
+    "deployment": "shared",
+    "channel": "trusted_tls_proxy",
+    "oauth_resource": {
+      "resource": "https://runner.example/mcp",
+      "authorization_servers": ["https://identity.example"],
+      "scopes_supported": ["synapsor:mcp"],
+      "required_scopes": ["synapsor:mcp"],
+      "resource_name": "Synapsor Runner"
+    },
+    "allowed_hosts": ["runner.example"],
+    "allowed_origins": ["https://agent-console.example"]
+  }
+}
+```
+
+The identity provider publishes the public JWKS URL stored in
+`SYNAPSOR_SESSION_JWKS_URL`. The client obtains a short-lived access token from
+that provider through the provider-supported OAuth/OIDC flow and sends it in the
+Bearer header. Runner then validates, on every request including requests for an
+existing MCP session:
+
+- allowed `RS256` or `ES256` algorithm and signature;
+- public `kid` selection and bounded JWKS refresh/cache behavior;
+- exact issuer and audience/resource;
+- expiry, not-before, and configured clock skew;
+- configured required scopes;
+- bounded scalar tenant and principal claims.
+
+The audience must exactly equal `http_security.oauth_resource.resource`.
+Unverified headers such as `X-Tenant-Id` and all `Forwarded`/`X-Forwarded-*`
+values never become trusted identity.
+
+Runner exposes RFC 9728 protected-resource metadata at the current MCP path:
+
+```text
+/.well-known/oauth-protected-resource/mcp
+```
+
+An unauthenticated MCP request receives a `401` Bearer challenge containing the
+`resource_metadata` URL. A valid token missing a required scope receives `403`
+with `insufficient_scope`. Runner does not implement a proprietary login or
+refresh-token service.
+
+## Opaque Token Rotation
+
+Runner accepts one active token and, only when configured, one previous token:
 
 ```bash
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+```
 
+1. Move the old active value to the previous secret slot.
+2. Have the secret manager inject that old value as
+   `SYNAPSOR_RUNNER_HTTP_TOKEN_PREVIOUS`, then put a new random value in the
+   active slot.
+3. Restart/roll Runner instances and update authorized clients.
+4. Remove `previous_env` and its secret after the bounded rollout window.
+
+Runner never accepts an unbounded key history. Existing MCP sessions are pinned
+to the exact credential used at initialization, so swapping active and previous
+tokens cannot take over another session.
+
+## Origin, Host, CORS, And Request Bounds
+
+- Every present browser `Origin` must exactly match `allowed_origins`; otherwise
+  Runner returns `403`. Native MCP clients may omit `Origin`.
+- Wildcard CORS and the `null` origin are rejected.
+- Every request `Host` must match `allowed_hosts` (or the safe loopback default).
+  This is independent of tenant identity and limits DNS-rebinding-style access.
+- Forwarded host and identity headers are never trusted automatically.
+- Request body, header, connection, request-time, session-count, and idle-session
+  limits have bounded defaults and can be tightened under `http_security.limits`.
+
+```json
+{
+  "http_security": {
+    "limits": {
+      "max_request_bytes": 65536,
+      "max_header_bytes": 8192,
+      "max_sessions": 500,
+      "session_idle_timeout_seconds": 300,
+      "request_timeout_ms": 15000,
+      "headers_timeout_ms": 5000,
+      "keep_alive_timeout_ms": 5000,
+      "max_connections": 1000
+    }
+  }
+}
+```
+
+Session and connection limits are per Runner process. Capability rate limits and
+ledger state become fleet-wide only when the shared PostgreSQL runtime store is
+configured.
+
+## Health, Readiness, And Metrics
+
+`/healthz` is unauthenticated and intentionally minimal:
+
+```json
+{
+  "ok": true,
+  "status": "live",
+  "transport": "streamable-http"
+}
+```
+
+`/readyz` reports bounded dependency status codes without credentials or raw
+infrastructure errors. `/metrics` is disabled unless separately configured and
+uses its own authorization; the MCP endpoint credential does not implicitly
+grant metrics access.
+
+## Legacy JSON-RPC Bridge
+
+```bash
 synapsor-runner mcp serve-http \
   --host 127.0.0.1 \
   --port 8765 \
@@ -128,193 +294,42 @@ synapsor-runner mcp serve-http \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
 ```
 
-Defaults:
+The bridge has equivalent remote channel, TLS/mTLS, static-token rotation,
+Origin/Host, and request-bound enforcement. It rejects `http_claims` because it
+does not implement standard MCP sessions. Use Streamable HTTP for a shared
+identity deployment and for standard MCP SDK clients.
 
-```text
-host: 127.0.0.1
-port: 8765
-auth: bearer token required
-cors: disabled
-```
-
-Bridge scope: `serve-http` does not implement MCP Streamable HTTP
-`initialize`/session behavior. Standard SDK HTTP MCP clients should use
-`serve-streamable-http` instead.
-
-Startup output prints the URL, config path, store path, and token environment
-variable name. It does not print token values or database URLs.
-
-## Health Check
-
-```bash
-curl -i http://127.0.0.1:8766/healthz
-curl -i http://127.0.0.1:8765/healthz
-curl -i http://127.0.0.1:8766/readyz
-```
-
-The health endpoint is secret-free:
-
-```json
-{
-  "ok": true,
-  "transport": "streamable-http",
-  "tools": 1,
-  "mode": "read_only"
-}
-```
-
-## List Tools Through The JSON-RPC Bridge
-
-Unauthorized requests fail:
+An authorized bridge request references the environment value at runtime:
 
 ```bash
 curl -i \
+  -H "Authorization: Bearer ${SYNAPSOR_RUNNER_HTTP_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   http://127.0.0.1:8765/mcp
 ```
 
-Authorized requests include the bearer token:
+## Diagnose Before Serving
 
 ```bash
-curl -i \
-  -H "Authorization: Bearer dev-local-token" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  http://127.0.0.1:8765/mcp
-```
-
-The tool catalog should contain semantic tools such as:
-
-```text
-billing.inspect_invoice
-billing.propose_late_fee_waiver
-```
-
-It should not contain:
-
-```text
-execute_sql
-raw_sql
-approval tools
-commit/apply tools
-database URLs
-write credentials
-model-controlled tenant authority
-arbitrary table or column names
-```
-
-## Call A Tool Through The JSON-RPC Bridge
-
-```bash
-curl -i \
-  -H "Authorization: Bearer dev-local-token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "tools/call",
-    "params": {
-      "name": "billing.inspect_invoice",
-      "arguments": { "invoice_id": "INV-3001" }
-    }
-  }' \
-  http://127.0.0.1:8765/mcp
-```
-
-The response includes scoped data, trusted context, evidence handles, and
-`source_database_mutated: false`. The agent still does not receive SQL,
-database credentials, or approval/commit authority.
-
-## Read Evidence Or Replay Resources Through The JSON-RPC Bridge
-
-Use `resources/read` with a `synapsor://...` handle returned by a tool call:
-
-```bash
-curl -i \
-  -H "Authorization: Bearer dev-local-token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 3,
-    "method": "resources/read",
-    "params": { "uri": "synapsor://evidence/ev_..." }
-  }' \
-  http://127.0.0.1:8765/mcp
-```
-
-## CORS
-
-CORS is disabled by default. If a local browser app needs access during
-development, allow one explicit origin:
-
-```bash
-synapsor-runner mcp serve-http \
+synapsor-runner doctor \
   --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db \
-  --cors-origin http://localhost:3000
+  --transport streamable-http \
+  --host 127.0.0.1 \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
 ```
 
-Do not use wildcard CORS for a model-facing database tool service.
+For a remote proxy deployment add `--host 0.0.0.0 --trusted-tls-proxy`; for
+Runner-owned TLS add the same TLS env-name flags used at startup. Doctor reports
+the transport, bind scope, channel, auth/identity mode, issuer/audience/resource,
+key readiness, token strength/rotation, Origin/Host policy, limits, rate-limit
+scope, and database isolation assurance without printing credential values.
 
-## Network Exposure
+## Model-Facing Boundary
 
-Synapsor Runner binds to `127.0.0.1` by default.
-
-If you explicitly bind to all interfaces:
-
-```bash
-synapsor-runner mcp serve-http --host 0.0.0.0
-```
-
-the CLI prints a warning. Treat this as a production-like service:
-
-- keep bearer auth enabled;
-- use TLS or a trusted reverse proxy;
-- prefer private networking;
-- add rate limits and request-size limits at the edge;
-- do not log request bodies by default;
-- rotate the bearer token if it is exposed.
-
-`--dev-no-auth` is accepted only on `localhost` or `127.0.0.1`. It fails closed
-with `--host 0.0.0.0`.
-
-## Trusted Context
-
-Tenant and principal values must come from trusted configuration such as
-environment variables or a server-side session. HTTP request arguments cannot
-override trusted fields such as:
-
-```text
-tenant_id
-principal
-principal_id
-project_id
-source_id
-allowed_columns
-approval_identity
-```
-
-Use `read_only` mode first. Proposal/review mode should use a separate trusted
-write path and a separate write credential. The model-facing HTTP MCP endpoint
-must not receive write credentials.
-
-## OpenAI Agents SDK
-
-See:
-
-```text
-examples/openai-agents-http/
-examples/openai-agents-stdio/
-```
-
-Both examples use the MCP client integration from the OpenAI Agents SDK when it
-is available. The stdio example launches Runner as a child process. The HTTP
-example connects to `synapsor-runner mcp serve-streamable-http` through
-`MCPServerStreamableHttp`. Use the JSON-RPC bridge only when you intentionally
-want a small app-owned wrapper instead of standard HTTP MCP.
-
-The boundary is the same in both modes: the agent calls a semantic Synapsor
-tool, not raw SQL. OpenAI-facing examples use `--alias-mode openai` so
-the model sees OpenAI-valid aliases while Runner preserves canonical Synapsor
-tool names in metadata.
+HTTP transport does not change authority. MCP clients receive reviewed semantic
+capabilities, never raw SQL, database credentials, endpoint credentials,
+approval/apply/reconcile/revert tools, token minting, or token refresh. Keep
+least-privilege DB roles and PostgreSQL RLS or tenant-bound credentials under
+Runner where practical; transport authentication does not replace database or
+operator authorization.

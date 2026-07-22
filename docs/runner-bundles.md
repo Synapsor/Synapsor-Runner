@@ -67,8 +67,13 @@ npx -y -p @synapsor/runner synapsor-runner cloud sync latest \
 
 For the OpenAI Agents SDK, use the included TypeScript examples. Their stdio
 command enables `--alias-mode openai`; the Streamable HTTP example includes the
-matching server command. Claude, Cursor, and generic templates use canonical
-dotted capability names.
+matching server command and reads its Bearer credential from
+`SYNAPSOR_RUNNER_HTTP_TOKEN`. The generic HTTP template uses the same environment
+reference. Neither file embeds a credential value. An operator generates and
+provisions the opaque token to the Runner process and authorized client; use a
+signed identity-provider token instead for shared multi-user deployments. See
+[HTTP MCP](http-mcp.md). Claude, Cursor, and generic stdio templates use
+canonical dotted capability names and need no HTTP credential.
 
 Approval and writeback remain outside the model-facing MCP tool surface. Use
 `proposals`, `apply`, `receipts`, and `replay` from a trusted operator shell.

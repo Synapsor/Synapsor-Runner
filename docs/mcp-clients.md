@@ -115,19 +115,25 @@ metadata preserves the canonical dotted Synapsor capability name.
 ## Streamable HTTP
 
 ```bash
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+
 synapsor-runner mcp serve \
   --transport streamable-http \
   --alias-mode openai \
   --host 127.0.0.1 \
   --port 8766 \
   --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db
+  --store ./.synapsor/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
 ```
 
 Connect a standard Streamable HTTP MCP client to
-`http://127.0.0.1:8766/mcp`. Keep it on loopback for local development. For a
-network deployment, terminate TLS, require authentication, restrict network
-access, and follow the [production guide](production.md).
+`http://127.0.0.1:8766/mcp` with `Authorization: Bearer` loaded from the same
+protected environment value. Keep it on loopback for local development. A
+non-loopback listener refuses to bind without direct TLS, an explicitly trusted
+TLS proxy, or authenticated emergency break glass. Shared deployments require
+identity-provider-issued signed claims. Follow [HTTP MCP](http-mcp.md) and the
+[production guide](production.md).
 
 Use `--alias-mode openai` for the OpenAI Agents SDK. Omit it for clients that
 accept canonical dotted names, or use `--alias-mode both` only during a planned

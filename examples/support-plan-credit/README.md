@@ -252,13 +252,16 @@ verification gate.
 For Streamable HTTP, run:
 
 ```bash
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+
 synapsor-runner mcp serve \
   --transport streamable-http \
   --alias-mode openai \
   --host 127.0.0.1 \
   --port 8766 \
   --config examples/support-plan-credit/synapsor.runner.json \
-  --store ./tmp/support-plan-credit/local.db
+  --store ./tmp/support-plan-credit/local.db \
+  --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
 ```
 
 The OpenAI client receives `support__inspect_customer` and
@@ -266,6 +269,8 @@ The OpenAI client receives `support__inspect_customer` and
 tool metadata and results. For Claude, Cursor, or generic MCP clients, omit
 `--alias-mode openai` to expose `support.inspect_customer` and
 `support.propose_plan_credit`. Approval and apply remain outside MCP.
+The HTTP client reads the same opaque endpoint token from its protected
+environment; no token value belongs in the checked-in recipe.
 
 ## How The Policy Is Governed
 

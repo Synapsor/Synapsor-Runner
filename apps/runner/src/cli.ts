@@ -106,6 +106,7 @@ import { generateAuditCandidateDirectory } from "./audit-candidates.js";
 import { buildLocalActivationReport, formatLocalActivationReport, recordOwnDataActivationTiming } from "./activation-report.js";
 import type { SchemaCandidateFormat } from "./schema-candidates.js";
 import { compileSafeActionDraft, safeActionStatus, scaffoldSafeAction, SafeActionValidationError } from "./safe-action.js";
+import { buildLifecycleView, formatLifecycleDetails, formatLifecycleFirstLook, formatLifecycleList, listLifecycleSummaries, resolveLifecycleProposal } from "./lifecycle-view.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -452,6 +453,7 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (command === "language-server") return runLanguageServer();
+  if (command === "lifecycle") return lifecycle(rest);
   await maybeHydrateManagedSecrets(rest);
   if (command === "init") return init(rest);
   if (command === "inspect") return inspect(rest);
@@ -2497,7 +2499,7 @@ async function dslValidate(args: string[]): Promise<number> {
   if (!target) throw new Error("dsl validate requires a DSL source file such as contract.synapsor.sql or contract.synapsor");
   const source = await fs.readFile(target, "utf8");
   const strict = args.includes("--strict");
-  const result = validateAgentDsl(source);
+  const result = validateAgentDsl(source, { target: "runner" });
   if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (result.ok) {
@@ -2515,6 +2517,12 @@ async function dslCompile(args: string[]): Promise<number> {
   if (!target) throw new Error("dsl compile requires a DSL source file such as contract.synapsor.sql or contract.synapsor");
   const source = await fs.readFile(target, "utf8");
   const strict = args.includes("--strict");
+  const validation = validateAgentDsl(source, { target: "runner" });
+  if (!validation.ok) {
+    process.stdout.write(`dsl invalid for Synapsor Runner: ${target}\n`);
+    for (const error of validation.errors) process.stdout.write(`error ${error.line}:${error.column} ${error.code}: ${error.message}\n`);
+    return 1;
+  }
   const result = compileAgentDslWithWarnings(source);
   if (strict && result.warnings.length > 0) {
     process.stdout.write(`dsl warnings treated as errors: ${target}\n`);
@@ -3035,9 +3043,14 @@ function bundleMcpClientExamples(): Record<string, string> {
       },
     }),
     "generic-stdio.json": json({ name: "synapsor-runner", transport: "stdio", ...server }),
-    "generic-streamable-http.json": json({ name: "synapsor-runner", transport: "streamable-http", url: "http://127.0.0.1:8766/mcp" }),
+    "generic-streamable-http.json": json({
+      name: "synapsor-runner",
+      transport: "streamable-http",
+      url: "http://127.0.0.1:8766/mcp",
+      headers_from_env: { Authorization: "Bearer $SYNAPSOR_RUNNER_HTTP_TOKEN" },
+    }),
     "openai-agents-stdio.ts": `import { Agent, MCPServerStdio, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStdio({\n  name: "Synapsor Runner",\n  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db --alias-mode openai",\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
-    "openai-agents-streamable-http.ts": `import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";\n\n// Start Runner separately with: synapsor-runner mcp serve --transport streamable-http --alias-mode openai --config ./synapsor.runner.json --store ./.synapsor/local.db\nconst synapsor = new MCPServerStreamableHttp({ name: "Synapsor Runner", url: "http://127.0.0.1:8766/mcp" });\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
+    "openai-agents-streamable-http.ts": `import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";\n\n// Start Runner separately with: synapsor-runner mcp serve --transport streamable-http --alias-mode openai --config ./synapsor.runner.json --store ./.synapsor/local.db\nconst token = process.env.SYNAPSOR_RUNNER_HTTP_TOKEN;\nif (!token) throw new Error("set SYNAPSOR_RUNNER_HTTP_TOKEN in the launching environment");\nconst synapsor = new MCPServerStreamableHttp({\n  name: "Synapsor Runner",\n  url: "http://127.0.0.1:8766/mcp",\n  requestInit: { headers: { Authorization: \`Bearer \${token}\` } },\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
   };
 }
 
@@ -3262,6 +3275,32 @@ function proposalReversibilityDoctorCheck(capability: RunnerCapabilityConfig): D
     ok: true,
     level: "pass",
     message: `Reviewed compensation enabled for ${capability.operation?.cardinality === "set" ? "bounded-set" : "single-row"} ${operation.toUpperCase()}; revert creates a new approval-required proposal and never writes directly.`,
+  };
+}
+
+function proposalConflictGuardDoctorCheck(capability: RunnerCapabilityConfig): DoctorCheck | undefined {
+  if (capability.kind !== "proposal" || capabilityOperation(capability) === "insert") return undefined;
+  if (capability.conflict_guard?.column) {
+    return {
+      name: `capability:${capability.name}:conflict-guard`,
+      ok: true,
+      level: "pass",
+      message: `Exact optimistic-concurrency guard uses reviewed version column ${capability.conflict_guard.column}.`,
+    };
+  }
+  if (capability.conflict_guard?.weak_guard_ack === true) {
+    return {
+      name: `capability:${capability.name}:conflict-guard`,
+      ok: true,
+      level: "warn",
+      message: "Weak row-hash guard was explicitly acknowledged. It hashes only the captured projection and may miss concurrent changes outside that projection; prefer an exact version column.",
+    };
+  }
+  return {
+    name: `capability:${capability.name}:conflict-guard`,
+    ok: false,
+    level: "fail",
+    message: `${capabilityOperation(capability).toUpperCase()} requires an exact version-column guard or an explicitly acknowledged weak row-hash guard.`,
   };
 }
 
@@ -4064,6 +4103,7 @@ async function localDoctor(args: string[]): Promise<number> {
       checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`));
     }
   }
+  checks.push(...await httpSecurityDoctorChecks(parsed, args));
   checks.push(...await sessionAuthDoctorChecks(parsed, configPath));
 
   const sources = parsed.sources ?? {};
@@ -4071,6 +4111,8 @@ async function localDoctor(args: string[]): Promise<number> {
     for (const capability of (parsed.capabilities ?? []).filter((item) => item.kind === "proposal")) {
       checks.push(proposalWritebackResolutionDoctorCheck(parsed, capability));
       checks.push(proposalApprovalPolicyResolutionDoctorCheck(parsed, capability));
+      const conflictGuardCheck = proposalConflictGuardDoctorCheck(capability);
+      if (conflictGuardCheck) checks.push(conflictGuardCheck);
       if (capabilityWritebackMode(capability) === "direct_sql") checks.push(proposalReversibilityDoctorCheck(capability));
       if (capability.operation?.cardinality === "set") {
         const selection = capability.operation.selection?.all
@@ -4300,6 +4342,223 @@ async function cursorProjectDoctorChecks(configPath: string, expectedTools: stri
       message: `Cursor project verification failed: ${safeErrorMessage(error)}`,
     }];
   }
+}
+
+async function httpSecurityDoctorChecks(config: RuntimeConfig, args: string[]): Promise<DoctorCheck[]> {
+  const requestedTransport = optionalArg(args, "--transport") ?? "stdio";
+  if (requestedTransport === "stdio") {
+    return [{
+      name: "http-security:transport",
+      ok: true,
+      level: "pass",
+      message: "Transport is stdio: Runner opens no network listener, and the launching MCP client supplies the process environment. HTTP Bearer, TLS, CORS, and MCP HTTP sessions do not apply.",
+    }];
+  }
+  if (!new Set(["streamable-http", "http", "json-rpc-http", "jsonrpc-http"]).has(requestedTransport)) {
+    return [{
+      name: "http-security:transport",
+      ok: false,
+      level: "fail",
+      message: `Unknown network transport ${requestedTransport}. Fix: use --transport streamable-http (recommended) or --transport http for the legacy JSON-RPC bridge.`,
+    }];
+  }
+
+  const security = config.http_security;
+  const host = optionalArg(args, "--host") ?? "127.0.0.1";
+  const loopback = isDoctorLoopbackHost(host);
+  const deployment = security?.deployment ?? (loopback ? "loopback" : undefined);
+  const usesClaims = trustedContextsForDoctor(config).some((context) => context.provider === "http_claims");
+  const tlsCertEnv = optionalArg(args, "--tls-cert-env");
+  const tlsKeyEnv = optionalArg(args, "--tls-key-env");
+  const tlsCaEnv = optionalArg(args, "--tls-ca-env");
+  const cliDirectTls = Boolean(tlsCertEnv || tlsKeyEnv || tlsCaEnv || args.includes("--require-client-cert"));
+  const channel = cliDirectTls
+    ? "direct_tls"
+    : args.includes("--trusted-tls-proxy")
+      ? "trusted_tls_proxy"
+      : args.includes("--unsafe-allow-cleartext-http")
+        ? "insecure_http_break_glass"
+        : security?.channel ?? (loopback ? "loopback_cleartext" : undefined);
+  const checks: DoctorCheck[] = [{
+    name: "http-security:transport",
+    ok: true,
+    level: "pass",
+    message: `${requestedTransport} will bind ${host}; bind scope is ${loopback ? "loopback-only" : "non-loopback"}.`,
+  }];
+
+  checks.push({
+    name: "http-security:deployment",
+    ok: Boolean(deployment) && !(deployment === "loopback" && !loopback),
+    level: !deployment || (deployment === "loopback" && !loopback) ? "fail" : "pass",
+    message: !deployment
+      ? "Non-loopback HTTP has no explicit deployment profile. Fix: set http_security.deployment to single_tenant or shared."
+      : deployment === "loopback" && !loopback
+        ? "The loopback deployment profile cannot bind a non-loopback host. Fix: bind 127.0.0.1 or select and secure a single_tenant/shared profile."
+        : `Deployment profile is ${deployment}.`,
+  });
+
+  if (!channel) {
+    checks.push({
+      name: "http-security:channel",
+      ok: false,
+      level: "fail",
+      message: "Remote cleartext HTTP is refused. Fix: supply Runner TLS env references, declare a trusted TLS proxy/private hop, or use the explicitly unsafe authenticated cleartext break-glass flag only for emergency diagnostics.",
+    });
+  } else if (channel === "direct_tls") {
+    const certReady = Boolean(tlsCertEnv && envValue(process.env, tlsCertEnv));
+    const keyReady = Boolean(tlsKeyEnv && envValue(process.env, tlsKeyEnv));
+    checks.push({
+      name: "http-security:channel",
+      ok: certReady && keyReady,
+      level: certReady && keyReady ? "pass" : "fail",
+      message: certReady && keyReady
+        ? `Channel is Runner-owned TLS; certificate and private key are loaded from ${tlsCertEnv} and ${tlsKeyEnv} without printing their values.`
+        : "Channel is direct TLS but runtime certificate/key env references are not both ready. Fix: pass --tls-cert-env <ENV> --tls-key-env <ENV> with protected PEM values.",
+    });
+    if (args.includes("--require-client-cert")) {
+      const caReady = Boolean(tlsCaEnv && envValue(process.env, tlsCaEnv));
+      checks.push({
+        name: "http-security:mtls",
+        ok: caReady,
+        level: caReady ? "pass" : "fail",
+        message: caReady
+          ? `mTLS client certificates supplement Bearer authentication; trusted client CA is loaded from ${tlsCaEnv}.`
+          : "mTLS requires a trusted client CA. Fix: pass --tls-ca-env <ENV> with --require-client-cert.",
+      });
+    }
+  } else if (channel === "trusted_tls_proxy") {
+    checks.push({
+      name: "http-security:channel",
+      ok: true,
+      level: "warn",
+      message: "Channel trusts an external TLS-terminating proxy. Fix/verify: firewall Runner from direct client access, protect the proxy-to-Runner hop, preserve the original Host, and never use forwarded tenant/principal headers as identity.",
+    });
+  } else if (channel === "insecure_http_break_glass") {
+    checks.push({
+      name: "http-security:channel",
+      ok: true,
+      level: "warn",
+      message: "SECURITY WARNING: authenticated Bearer traffic will cross non-loopback cleartext HTTP. Fix: replace break-glass with Runner-owned TLS or an explicitly trusted TLS proxy immediately.",
+    });
+  } else {
+    checks.push({
+      name: "http-security:channel",
+      ok: loopback,
+      level: loopback ? "pass" : "fail",
+      message: loopback
+        ? "Channel is loopback cleartext; endpoint authentication is still required by default."
+        : "Non-loopback cleartext HTTP is not an accepted normal channel. Fix: configure direct TLS or a trusted TLS proxy.",
+    });
+  }
+
+  const devNoAuth = args.includes("--dev-no-auth");
+  if (devNoAuth) {
+    checks.push({
+      name: "http-security:authentication",
+      ok: loopback && deployment === "loopback" && channel !== "insecure_http_break_glass",
+      level: loopback && deployment === "loopback" && channel !== "insecure_http_break_glass" ? "warn" : "fail",
+      message: loopback && deployment === "loopback" && channel !== "insecure_http_break_glass"
+        ? "Authentication is explicitly disabled for loopback development only. Fix before sharing: remove --dev-no-auth and provision an endpoint token."
+        : "No-auth is forbidden for this bind/profile. Fix: remove --dev-no-auth and configure endpoint or signed-session authentication.",
+    });
+  } else if (usesClaims) {
+    const auth = config.session_auth;
+    const resource = security?.oauth_resource?.resource;
+    const issuer = auth?.issuer;
+    const audience = auth?.audience;
+    const sharedReady = deployment === "shared" && Boolean(auth && issuer && audience && resource && audience === resource);
+    checks.push({
+      name: "http-security:authentication",
+      ok: loopback ? Boolean(auth) : sharedReady,
+      level: loopback ? auth ? "pass" : "fail" : sharedReady ? "pass" : "fail",
+      message: sharedReady
+        ? `Authentication is verified per-session ${auth?.provider}; issuer ${issuer}, audience/resource ${audience}, and trusted tenant/principal claims are checked on every request.`
+        : loopback && auth
+          ? `Loopback claims authentication uses ${auth.provider}; for a shared deployment add exact issuer/audience plus RFC 9728 oauth_resource metadata.`
+          : "Shared HTTP identity is incomplete. Fix: use http_claims plus signed session_auth, exact issuer/audience, and matching http_security.oauth_resource metadata.",
+    });
+    if (security?.oauth_resource) {
+      checks.push({
+        name: "http-security:oauth-resource",
+        ok: Boolean(resource && security.oauth_resource.authorization_servers.length > 0),
+        level: resource && security.oauth_resource.authorization_servers.length > 0 ? "pass" : "fail",
+        message: `Protected resource metadata advertises ${resource ?? "no resource"}; required scopes: ${security.oauth_resource.required_scopes?.join(", ") || "none"}. Runner verifies tokens but does not issue or refresh them.`,
+      });
+    }
+  } else {
+    const activeEnv = optionalArg(args, "--auth-token-env") ?? security?.static_token?.active_env ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
+    const previousEnv = optionalArg(args, "--previous-auth-token-env") ?? security?.static_token?.previous_env;
+    const active = envValue(process.env, activeEnv);
+    const previous = previousEnv ? envValue(process.env, previousEnv) : undefined;
+    const strong = Boolean(active && isStrongEndpointTokenForDoctor(active));
+    const strengthOk = loopback ? Boolean(active) : strong;
+    checks.push({
+      name: "http-security:authentication",
+      ok: strengthOk,
+      level: !active || (!loopback && !strong) ? "fail" : strong ? "pass" : "warn",
+      message: !active
+        ? `Opaque endpoint token env ${activeEnv} is missing. Fix: generate at least 32 random bytes and provision the same value out of band to Runner and the authorized client.`
+        : strong
+          ? `Opaque endpoint token is present in ${activeEnv} with production-strength shape; it is shared service access, not tenant/user identity.`
+          : `Opaque endpoint token in ${activeEnv} is accepted only as weak loopback development input. Fix: replace it with at least 32 random bytes.`,
+    });
+    if (previousEnv) {
+      checks.push({
+        name: "http-security:static-token-rotation",
+        ok: Boolean(previous && active && previous !== active && isStrongEndpointTokenForDoctor(previous)),
+        level: previous && active && previous !== active && isStrongEndpointTokenForDoctor(previous) ? "pass" : "fail",
+        message: previous && active && previous !== active && isStrongEndpointTokenForDoctor(previous)
+          ? `One previous endpoint token is temporarily accepted from ${previousEnv}; remove it after the bounded client-rotation window.`
+          : `Previous-token rotation env ${previousEnv} is missing, weak, or duplicates the active credential. Fix the env or remove previous_env after rotation.`,
+      });
+    }
+  }
+
+  const origins = security?.allowed_origins ?? [];
+  checks.push({
+    name: "http-security:origin-cors",
+    ok: !origins.includes("*"),
+    level: origins.includes("*") ? "fail" : "pass",
+    message: origins.length === 0
+      ? "Browser CORS is disabled; native MCP clients may omit Origin."
+      : `Only exact reviewed browser origins are accepted: ${origins.join(", ")}. Wildcard CORS is forbidden.`,
+  });
+  const hosts = security?.allowed_hosts ?? (loopback ? ["localhost", "127.0.0.1", "[::1]"] : []);
+  checks.push({
+    name: "http-security:host-policy",
+    ok: hosts.length > 0,
+    level: hosts.length > 0 ? "pass" : "fail",
+    message: hosts.length > 0
+      ? `Host validation allowlist: ${hosts.join(", ")}. Forwarded Host is not identity authority.`
+      : "No exact Host allowlist is configured for a non-loopback listener. Fix: set http_security.allowed_hosts to the externally used authority names.",
+  });
+  const limits = security?.limits;
+  checks.push({
+    name: "http-security:limits",
+    ok: true,
+    level: "pass",
+    message: `HTTP bounds: request ${limits?.max_request_bytes ?? 1_048_576} bytes; headers ${limits?.max_header_bytes ?? 16_384} bytes; sessions ${limits?.max_sessions ?? 1_024}; idle ${limits?.session_idle_timeout_seconds ?? 900}s; connections ${limits?.max_connections ?? 2_048}.`,
+  });
+  const fleetRateScope = config.storage?.shared_postgres?.mode === "runtime_store" ? "shared runtime store (fleet-wide)" : "this Runner process only";
+  checks.push({
+    name: "http-security:rate-limit-scope",
+    ok: true,
+    level: config.rate_limits?.enabled && fleetRateScope.includes("process") ? "warn" : "pass",
+    message: `Operational rate limits are ${config.rate_limits?.enabled ? "enabled" : "not configured"}; accounting scope is ${fleetRateScope}.`,
+  });
+  return checks;
+}
+
+function isDoctorLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function isStrongEndpointTokenForDoctor(value: string): boolean {
+  return Buffer.byteLength(value, "utf8") >= 32
+    && new Set(value).size >= 12
+    && !/^(.)\1+$/.test(value)
+    && !/(?:password|secret|token|changeme|example|development)/i.test(value);
 }
 
 async function sessionAuthDoctorChecks(config: RuntimeConfig, configPath: string): Promise<DoctorCheck[]> {
@@ -6747,6 +7006,7 @@ async function up(args: string[] = []): Promise<number> {
     "--host",
     "--port",
     "--auth-token-env",
+    "--previous-auth-token-env",
     "--alias-mode",
     "--tool-name-style",
     "--openai-tool-aliases",
@@ -6757,6 +7017,12 @@ async function up(args: string[] = []): Promise<number> {
     "--dry-run",
     "--dev-no-auth",
     "--cors-origin",
+    "--trusted-tls-proxy",
+    "--unsafe-allow-cleartext-http",
+    "--tls-cert-env",
+    "--tls-key-env",
+    "--tls-ca-env",
+    "--require-client-cert",
     "--allow-concurrent-store",
   ]);
   assertKnownOptions(args, allowed, "up");
@@ -6778,6 +7044,10 @@ async function up(args: string[] = []): Promise<number> {
   }
   const aliasMode = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
+  const claimsAuth = trustedContextsForDoctor(config).some((context) => context.provider === "http_claims");
+  const authTokenEnv = optionalArg(args, "--auth-token-env")
+    ?? config.http_security?.static_token?.active_env
+    ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
     throw new Error(`cannot bring Runner up with invalid config: ${validation.errors.map((error) => `${error.path} ${error.code}`).join("; ")}`);
@@ -6794,7 +7064,7 @@ async function up(args: string[] = []): Promise<number> {
   ]);
   process.stdout.write(formatReviewModeUp({
     aliasMode,
-    authTokenEnv: optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+    authTokenEnv,
     boundary,
     config,
     configPath,
@@ -6803,6 +7073,7 @@ async function up(args: string[] = []): Promise<number> {
     openUi: args.includes("--open-ui"),
     port,
     resultFormat,
+    networkSecurityArgs: networkHttpSecurityArgs(args),
     serveRequested,
     storePath,
     transport,
@@ -6822,11 +7093,14 @@ async function up(args: string[] = []): Promise<number> {
     "--store", storePath,
     "--host", optionalArg(args, "--host") ?? "127.0.0.1",
     "--port", String(port),
-    "--auth-token-env", optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+    ...(claimsAuth
+      ? []
+      : ["--auth-token-env", authTokenEnv]),
     "--alias-mode", aliasMode,
     ...(resultFormat ? ["--result-format", String(resultFormat)] : []),
     ...(args.includes("--dev-no-auth") ? ["--dev-no-auth"] : []),
     ...(optionalArg(args, "--cors-origin") ? ["--cors-origin", optionalArg(args, "--cors-origin") as string] : []),
+    ...networkHttpSecurityArgs(args),
     ...(args.includes("--allow-concurrent-store") ? ["--allow-concurrent-store"] : []),
   ];
   return mcpServeStreamableHttp(serveArgs);
@@ -6843,6 +7117,7 @@ function formatReviewModeUp(input: {
   openUi: boolean;
   port: number;
   resultFormat?: ResultFormat;
+  networkSecurityArgs: string[];
   serveRequested: boolean;
   storePath: string;
   transport: string;
@@ -6877,14 +7152,27 @@ function formatReviewModeUp(input: {
       `  Serve command used by clients: ${cliCommandName()} mcp serve --config ${input.configPath} --store ${input.storePath} --alias-mode ${input.aliasMode}`,
     );
   } else {
+    const directTls = input.networkSecurityArgs.includes("--tls-cert-env");
+    const claimsAuth = trustedContextsForDoctor(input.config).some((context) => context.provider === "http_claims");
+    const channel = directTls
+      ? "direct TLS"
+      : input.networkSecurityArgs.includes("--trusted-tls-proxy")
+        ? "trusted TLS proxy/private hop"
+        : input.networkSecurityArgs.includes("--unsafe-allow-cleartext-http")
+          ? "UNSAFE cleartext break glass"
+          : "loopback cleartext";
+    const authArgs = claimsAuth ? "" : ` --auth-token-env ${input.authTokenEnv}`;
     lines.push(
-      `  Streamable HTTP endpoint: http://${input.host}:${input.port}/mcp`,
-      `  Auth token env: ${input.authTokenEnv} (${envValue(process.env, input.authTokenEnv) ? "set" : "missing"})`,
+      `  Streamable HTTP endpoint: ${directTls ? "https" : "http"}://${input.host}:${input.port}/mcp`,
+      `  Channel: ${channel}`,
+      claimsAuth
+        ? `  Auth: signed per-session ${input.config.session_auth?.provider ?? "JWT"}; Runner verifies issuer/audience and trusted tenant/principal claims.`
+        : `  Opaque endpoint token env: ${input.authTokenEnv} (${envValue(process.env, input.authTokenEnv) ? "set" : "missing"}); shared service access, not user identity.`,
       input.serveRequested
         ? input.dryRun
           ? "  Status: dry run only; server not started."
           : "  Status: starting after this checklist."
-        : `  Start command: ${cliCommandName()} up --serve --config ${input.configPath} --store ${input.storePath} --port ${input.port} --auth-token-env ${input.authTokenEnv} --alias-mode ${input.aliasMode}`,
+        : `  Start command: ${cliCommandName()} up --serve --config ${shellQuote(input.configPath)} --store ${shellQuote(input.storePath)} --port ${input.port}${authArgs} --alias-mode ${input.aliasMode}${input.networkSecurityArgs.length ? ` ${input.networkSecurityArgs.map(shellQuote).join(" ")}` : ""}`,
     );
   }
   if (input.openUi) {
@@ -8523,11 +8811,9 @@ async function mcpServeHttp(args: string[]): Promise<number> {
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8765");
   const resultFormat = resultFormatOption(args);
+  const tls = httpTlsOptions(args, process.env);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error("--port must be an integer from 1 to 65535");
-  }
-  if (host === "0.0.0.0") {
-    process.stderr.write("Warning: binding Synapsor Runner HTTP MCP to 0.0.0.0 exposes model-facing tools on the network. Use TLS, private networking, authentication, and rate limits.\n");
   }
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "legacy-jsonrpc", args.includes("--allow-concurrent-store"));
@@ -8539,10 +8825,14 @@ async function mcpServeHttp(args: string[]): Promise<number> {
       storePath,
       host,
       port,
-      authTokenEnv: optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      authTokenEnv: optionalArg(args, "--auth-token-env"),
+      previousAuthTokenEnv: optionalArg(args, "--previous-auth-token-env"),
       devNoAuth: args.includes("--dev-no-auth"),
       corsOrigin: optionalArg(args, "--cors-origin"),
+      trustedTlsProxy: args.includes("--trusted-tls-proxy"),
+      unsafeAllowCleartextHttp: args.includes("--unsafe-allow-cleartext-http"),
       resultFormat,
+      tls,
     });
   } catch (error) {
     await releaseLease();
@@ -8573,12 +8863,9 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
   const resultFormat = resultFormatOption(args);
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8766");
-  const tls = streamableHttpTlsOptions(args, process.env);
+  const tls = httpTlsOptions(args, process.env);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error("--port must be an integer from 1 to 65535");
-  }
-  if (host === "0.0.0.0") {
-    process.stderr.write("Warning: binding Synapsor Runner Streamable HTTP MCP to 0.0.0.0 exposes model-facing tools on the network. Use TLS, private networking, authentication, and rate limits.\n");
   }
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "streamable-http", args.includes("--allow-concurrent-store"));
@@ -8591,9 +8878,12 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       host,
       port,
       toolNameStyle,
-      authTokenEnv: optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      authTokenEnv: optionalArg(args, "--auth-token-env"),
+      previousAuthTokenEnv: optionalArg(args, "--previous-auth-token-env"),
       devNoAuth: args.includes("--dev-no-auth"),
       corsOrigin: optionalArg(args, "--cors-origin"),
+      trustedTlsProxy: args.includes("--trusted-tls-proxy"),
+      unsafeAllowCleartextHttp: args.includes("--unsafe-allow-cleartext-http"),
       resultFormat,
       tls,
     });
@@ -8633,13 +8923,25 @@ function assertReceiptTopologyForTransport(config: RuntimeConfig, transport: str
   }
 }
 
-function streamableHttpTlsOptions(args: string[], env: NodeJS.ProcessEnv): StreamableHttpTlsOptions | undefined {
+function networkHttpSecurityArgs(args: string[]): string[] {
+  return [
+    ...(optionalArg(args, "--previous-auth-token-env") ? ["--previous-auth-token-env", optionalArg(args, "--previous-auth-token-env") as string] : []),
+    ...(args.includes("--trusted-tls-proxy") ? ["--trusted-tls-proxy"] : []),
+    ...(args.includes("--unsafe-allow-cleartext-http") ? ["--unsafe-allow-cleartext-http"] : []),
+    ...(optionalArg(args, "--tls-cert-env") ? ["--tls-cert-env", optionalArg(args, "--tls-cert-env") as string] : []),
+    ...(optionalArg(args, "--tls-key-env") ? ["--tls-key-env", optionalArg(args, "--tls-key-env") as string] : []),
+    ...(optionalArg(args, "--tls-ca-env") ? ["--tls-ca-env", optionalArg(args, "--tls-ca-env") as string] : []),
+    ...(args.includes("--require-client-cert") ? ["--require-client-cert"] : []),
+  ];
+}
+
+function httpTlsOptions(args: string[], env: NodeJS.ProcessEnv): StreamableHttpTlsOptions | undefined {
   const certEnv = optionalArg(args, "--tls-cert-env");
   const keyEnv = optionalArg(args, "--tls-key-env");
   const caEnv = optionalArg(args, "--tls-ca-env");
   const requestClientCert = args.includes("--require-client-cert");
   if (!certEnv && !keyEnv && !caEnv && !requestClientCert) return undefined;
-  if (!certEnv || !keyEnv) throw new Error("Streamable HTTP TLS requires both --tls-cert-env and --tls-key-env.");
+  if (!certEnv || !keyEnv) throw new Error("HTTP TLS requires both --tls-cert-env and --tls-key-env.");
   const cert = envValue(env, certEnv);
   const key = envValue(env, keyEnv);
   const ca = caEnv ? envValue(env, caEnv) : undefined;
@@ -9004,14 +9306,30 @@ async function mcpConfigure(args: string[]): Promise<number> {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error("--port must be an integer from 1 to 65535");
   }
-  const authTokenEnv = optionalArg(args, "--auth-token-env") ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   if (!await fileExists(rawConfigPath)) {
     process.stderr.write(`Warning: config path does not exist yet: ${rawConfigPath}\n`);
   }
   if (transport === "stdio" && (!path.isAbsolute(configPath) || !path.isAbsolute(storePath))) {
     process.stderr.write("Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.\n");
   }
-  const snippet = mcpClientSnippet(client, configPath, storePath, { transport, aliasMode, host, port, authTokenEnv });
+  const existingConfig = await fileExists(rawConfigPath) ? await readRuntimeConfig(rawConfigPath) : undefined;
+  const claimsAuth = Boolean(existingConfig && trustedContextsForDoctor(existingConfig).some((context) => context.provider === "http_claims"));
+  const authTokenEnv = optionalArg(args, "--auth-token-env")
+    ?? existingConfig?.http_security?.static_token?.active_env
+    ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
+  const clientAccessTokenEnv = optionalArg(args, "--client-access-token-env")
+    ?? (claimsAuth ? "SYNAPSOR_MCP_ACCESS_TOKEN" : authTokenEnv);
+  const snippet = mcpClientSnippet(client, configPath, storePath, {
+    transport,
+    aliasMode,
+    host,
+    port,
+    authTokenEnv,
+    clientAccessTokenEnv,
+    authMode: claimsAuth ? "signed-jwt" : "opaque-static",
+    oauthResource: existingConfig?.http_security?.oauth_resource?.resource,
+    authorizationServers: existingConfig?.http_security?.oauth_resource?.authorization_servers,
+  });
   if (includeInstructions) {
     snippet.agent_instructions = mcpAgentInstructions(client, aliasMode);
   }
@@ -9021,7 +9339,7 @@ async function mcpConfigure(args: string[]): Promise<number> {
     await writeMcpClientSnippet(destination, client, snippet, args.includes("--yes"));
     process.stdout.write(`wrote MCP ${client} configuration to ${destination}\n`);
   } else {
-    process.stderr.write(`Paste this ${client} MCP config into your local MCP client settings. It contains command paths only, not database URLs or write credentials.\n`);
+    process.stderr.write(`Paste this ${client} MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.\n`);
     process.stderr.write("Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
     process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
   }
@@ -9045,6 +9363,10 @@ type McpClientSnippetOptions = {
   host: string;
   port: number;
   authTokenEnv: string;
+  clientAccessTokenEnv: string;
+  authMode: "opaque-static" | "signed-jwt";
+  oauthResource?: string;
+  authorizationServers?: string[];
 };
 
 function mcpClientConfigTransport(args: string[], client: string): "stdio" | "streamable-http" {
@@ -9076,8 +9398,7 @@ function serveArgsForClient(configPath: string, storePath: string, options: McpC
       options.host,
       "--port",
       String(options.port),
-      "--auth-token-env",
-      options.authTokenEnv,
+      ...(options.authMode === "opaque-static" ? ["--auth-token-env", options.authTokenEnv] : []),
     ]
     : ["mcp", "serve", "--config", configPath, "--store", storePath];
   if (options.aliasMode !== "canonical") args.push("--alias-mode", options.aliasMode);
@@ -9098,21 +9419,19 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
   }
   if (client === "openai-agents") {
     if (options.transport !== "streamable-http") throw new Error("openai-agents config output uses Streamable HTTP. Use --transport streamable-http.");
-    const url = `http://${options.host}:${options.port}/mcp`;
+    const externalProtectedResource = options.authMode === "signed-jwt" && Boolean(options.oauthResource);
+    const url = externalProtectedResource ? options.oauthResource as string : `http://${options.host}:${options.port}/mcp`;
     return {
       transport: "streamable-http",
-      start_server: {
+      ...(!externalProtectedResource ? { start_server: {
         command,
         args,
-        env: {
-          [options.authTokenEnv]: "<set-a-random-local-token>",
-        },
-      },
+      } } : {}),
       openai_agents_sdk: {
         package: "openai-agents",
         url,
         headers_from_env: {
-          Authorization: `Bearer $${options.authTokenEnv}`,
+          Authorization: `Bearer $${options.clientAccessTokenEnv}`,
         },
         python: [
           "import os",
@@ -9121,10 +9440,24 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
           "synapsor_mcp = MCPServerStreamableHttp(",
           `    params={`,
           `        "url": "${url}",`,
-          `        "headers": {"Authorization": f"Bearer {os.environ['${options.authTokenEnv}']}"},`,
+          `        "headers": {"Authorization": f"Bearer {os.environ['${options.clientAccessTokenEnv}']}"},`,
           "    }",
           ")",
         ].join("\n"),
+      },
+      authentication: {
+        mode: options.authMode,
+        bearer_presentation: true,
+        client_access_token_env: options.clientAccessTokenEnv,
+        ...(options.authMode === "opaque-static" ? {
+          server_endpoint_token_env: options.authTokenEnv,
+          provisioned_by: "operator_out_of_band",
+        } : {
+          protected_resource: options.oauthResource,
+          authorization_servers: options.authorizationServers ?? [],
+          provisioned_by: "configured_identity_provider",
+        }),
+        credential_value_embedded: false,
       },
       tool_names: {
         canonical: "billing.inspect_invoice",
@@ -9132,10 +9465,15 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
         alias_mode: options.aliasMode,
       },
       notes: [
-        "Start the local Streamable HTTP MCP server before creating the OpenAI Agents SDK server.",
+        externalProtectedResource
+          ? "Connect to the already deployed HTTPS protected resource. Runner deployment, TLS/proxy configuration, and token issuance remain operator responsibilities."
+          : "Start the local Streamable HTTP MCP server before creating the OpenAI Agents SDK server.",
         "OpenAI-facing configs should use --alias-mode openai because OpenAI function names cannot contain dots.",
         "Runner maps aliases back to canonical Synapsor capability names and includes the canonical name in MCP tool metadata.",
-        "This config contains no database URLs, write credentials, API keys, or bearer token values.",
+        options.authMode === "opaque-static"
+          ? `The operator generates one high-entropy endpoint token and provisions it out of band to both server env ${options.authTokenEnv} and authorized client env ${options.clientAccessTokenEnv}. Runner does not issue it.`
+          : `The configured identity provider issues a signed access token for the protected resource; place the short-lived client token in ${options.clientAccessTokenEnv}. Runner verifies it and never issues or refreshes it.`,
+        "This config contains no database URLs, write credentials, API keys, bearer token values, client secrets, or refresh tokens.",
       ],
     };
   }
@@ -9394,6 +9732,12 @@ type ToolPreviewCapabilityDetail = {
   fixed_selection: string[];
   aggregate_bounds: string[];
   version_guard?: string;
+  conflict_guard?: {
+    mode: "exact_version_column" | "weak_projection_hash";
+    column?: string;
+    assurance: string;
+    warning?: string;
+  };
   version_advance?: string;
   receipt_mode?: string;
   reversibility?: string;
@@ -9425,6 +9769,19 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
       fixed_selection: (capability.operation?.selection?.all ?? capability.aggregate?.selection?.all)?.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`) ?? [],
       aggregate_bounds: capability.operation?.aggregate_bounds?.map((bound) => `${bound.measure}(${bound.column}) <= ${bound.maximum}`) ?? [],
       version_guard: capability.conflict_guard?.column,
+      ...(capability.kind === "proposal" && capability.conflict_guard?.column ? {
+        conflict_guard: {
+          mode: "exact_version_column" as const,
+          column: capability.conflict_guard.column,
+          assurance: "apply must match the reviewed source version exactly",
+        },
+      } : capability.kind === "proposal" && capability.conflict_guard?.weak_guard_ack === true ? {
+        conflict_guard: {
+          mode: "weak_projection_hash" as const,
+          assurance: "apply compares a hash of the captured projection",
+          warning: "may miss concurrent changes outside the captured projection; prefer an exact version column",
+        },
+      } : {}),
       version_advance: capability.operation?.version_advance
         ? `${capability.operation.version_advance.column}:${capability.operation.version_advance.strategy}`
         : undefined,
@@ -9469,7 +9826,9 @@ function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail
         `    aggregate bounds: ${detail.aggregate_bounds.join("; ") || "missing"}`,
         "    set approval: human/operator required; policy auto-approval unavailable",
       ] : []),
-      `    version guard: ${detail.version_guard ?? "not applicable"}${detail.version_advance ? `; advance: ${detail.version_advance}` : ""}`,
+      `    conflict guard: ${detail.conflict_guard?.mode === "exact_version_column" ? `exact version column ${detail.conflict_guard.column}` : detail.conflict_guard?.mode === "weak_projection_hash" ? "WEAK projection hash (explicitly acknowledged)" : "not applicable"}${detail.version_advance ? `; advance: ${detail.version_advance}` : ""}`,
+      ...(detail.conflict_guard?.assurance ? [`    concurrency assurance: ${detail.conflict_guard.assurance}`] : []),
+      ...(detail.conflict_guard?.warning ? [`    WARNING: ${detail.conflict_guard.warning}`] : []),
       `    receipts: ${detail.receipt_mode ?? "not configured"}; approval: ${detail.approval}`,
       `    reversibility: ${detail.reversibility ?? "not applicable"}`,
     ] : []),
@@ -10183,6 +10542,47 @@ async function proposals(args: string[]): Promise<number> {
   if (subcommand === "writeback-job") return proposalsWritebackJob(rest);
   usage(["proposals"]);
   return 2;
+}
+
+async function lifecycle(args: string[]): Promise<number> {
+  const [requested, ...tail] = args;
+  if (!requested || requested.startsWith("-")) return lifecycleShow(args);
+  if (requested === "show") return lifecycleShow(tail);
+  if (requested === "list") return lifecycleList(tail);
+  usage(["lifecycle"]);
+  return 2;
+}
+
+async function lifecycleList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "lifecycle list", (bridgeStorePath) => lifecycleList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
+  assertKnownOptions(args, lifecycleListAllowedOptions, "lifecycle list");
+  const store = await openLocalStore(args);
+  try {
+    const payload = listLifecycleSummaries(store, proposalFiltersFromArgs(args));
+    process.stdout.write(args.includes("--json") ? `${JSON.stringify(payload, null, 2)}\n` : formatLifecycleList(payload));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function lifecycleShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "lifecycle show", (bridgeStorePath) => lifecycleShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+  if (bridged !== undefined) return bridged;
+  assertKnownOptions(args, lifecycleShowAllowedOptions, "lifecycle show");
+  const handle = lifecycleHandleFromArgs(args);
+  const store = await openLocalStore(args);
+  try {
+    const resolved = resolveLifecycleProposal(store, { handle, filters: lifecycleFiltersFromArgs(args) });
+    const payload = buildLifecycleView(store, resolved.proposal, resolved.selection, cliCommandName());
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else if (showDetails(args)) process.stdout.write(formatLifecycleDetails(payload));
+    else process.stdout.write(formatLifecycleFirstLook(payload));
+    return 0;
+  } finally {
+    store.close();
+  }
 }
 
 async function replay(args: string[]): Promise<number> {
@@ -11615,6 +12015,9 @@ async function eventsTail(args: string[]): Promise<number> {
         process.stdout.write("No local events found.\n");
       } else {
         for (const event of rows) process.stdout.write(formatEventLine(event, showDetails(args)));
+        if (!follow && rows.length > 0) {
+          process.stdout.write(`Inspect newest complete lifecycle:\n${cliCommandName()} lifecycle${storeOptionSuffix(args)}\n`);
+        }
       }
       return rows.length;
     } finally {
@@ -12561,6 +12964,17 @@ const proposalListAllowedOptions = new Set([
   "--to",
   "--limit",
 ]);
+const lifecycleListAllowedOptions = new Set([...proposalListAllowedOptions]);
+const lifecycleShowAllowedOptions = new Set([
+  ...proposalListAllowedOptions,
+  "--evidence",
+  "--replay",
+  "--writeback-job",
+  "--intent",
+  "--receipt",
+  "--audit",
+]);
+lifecycleShowAllowedOptions.delete("--limit");
 const evidenceListAllowedOptions = new Set([
   ...commonReadOptions,
   "--tenant",
@@ -12693,6 +13107,53 @@ function proposalFiltersFromArgs(args: string[]): ProposalSearchFilters {
     to: optionalArg(args, "--to"),
     limit: limitFromArgs(args),
   };
+}
+
+function lifecycleFiltersFromArgs(args: string[]): ProposalSearchFilters {
+  const filters = proposalFiltersFromArgs(args);
+  delete filters.proposal;
+  delete filters.limit;
+  return filters;
+}
+
+function lifecycleHandleFromArgs(args: string[]): string | undefined {
+  const typed: Array<[string, string]> = [
+    ["proposal", "--proposal"],
+    ["evidence", "--evidence"],
+    ["replay", "--replay"],
+    ["job", "--writeback-job"],
+    ["intent", "--intent"],
+    ["receipt", "--receipt"],
+    ["audit", "--audit"],
+  ];
+  const explicit = typed
+    .map(([kind, option]) => ({ kind, value: optionalArg(args, option) }))
+    .filter((item): item is { kind: string; value: string } => Boolean(item.value));
+  const positionalHandle = lifecyclePositionalHandle(args);
+  if (explicit.length + (positionalHandle ? 1 : 0) > 1) {
+    throw new Error("lifecycle show accepts exactly one positional or typed handle");
+  }
+  if (explicit[0]) return `${explicit[0].kind}:${explicit[0].value}`;
+  return positionalHandle;
+}
+
+function lifecyclePositionalHandle(args: string[]): string | undefined {
+  const flagsWithValues = new Set([
+    "--store", "--config", "--tenant", "--principal", "--capability", "--action",
+    "--object", "--object-type", "--object-id", "--status", "--state", "--source",
+    "--table", "--from", "--to", "--limit", "--proposal", "--evidence", "--replay",
+    "--writeback-job", "--intent", "--receipt", "--audit",
+  ]);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg.startsWith("--")) {
+      if (flagsWithValues.has(arg) && !arg.includes("=")) index += 1;
+      continue;
+    }
+    return arg;
+  }
+  return undefined;
 }
 
 function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
@@ -13247,6 +13708,8 @@ function firstPositional(args: string[]): string | undefined {
     "--actor",
     "--action",
     "--auth-token-env",
+    "--client-access-token-env",
+    "--previous-auth-token-env",
     "--audit",
     "--bearer-env",
     "--capability",
@@ -13281,6 +13744,9 @@ function firstPositional(args: string[]): string | undefined {
     "--object",
     "--object-id",
     "--object-type",
+    "--tls-cert-env",
+    "--tls-key-env",
+    "--tls-ca-env",
     "--object-name",
     "--older-than",
     "--output",
@@ -13446,6 +13912,7 @@ function formatProposalFirstLook(proposal: StoredProposal, storedEvidenceItemCou
     ...proposalNextCommands(proposal, proposalRef, storeSuffix).map((command) => `${command}`),
     "",
     "More detail:",
+    `${cliCommandName()} lifecycle show proposal:${proposal.proposal_id} --details${storeSuffix}`,
     `${cliCommandName()} proposals show ${proposalRef} --details${storeSuffix}`,
     "",
   ].join("\n");
@@ -13530,6 +13997,7 @@ function formatEvidenceFirstLook(evidence: StoredEvidenceBundle, storeSuffix: st
     ...evidence.items.flatMap((item, index) => formatEvidenceItem(item, index + 1)),
     "",
     "Next:",
+    `  ${cliCommandName()} lifecycle show evidence:${evidence.evidence_bundle_id}${storeSuffix}`,
     `  ${cliCommandName()} query-audit list --evidence ${evidence.evidence_bundle_id}${storeSuffix}`,
     ...(evidence.proposal_id ? [`  ${cliCommandName()} replay show --proposal ${evidence.proposal_id}${storeSuffix}`] : []),
     "",
@@ -13643,6 +14111,7 @@ function formatQueryAuditFirstLook(row: Record<string, unknown>, storeSuffix: st
     `evidence: ${row.evidence_bundle_id ?? "none"}`,
     "",
     "More detail:",
+    `${cliCommandName()} lifecycle show audit:${String(row.audit_id)}${storeSuffix}`,
     `${cliCommandName()} query-audit show ${row.audit_id} --details${storeSuffix}`,
     "",
   ].join("\n");
@@ -13703,6 +14172,7 @@ function formatReceiptFirstLook(receipt: StoredWritebackReceipt, storeSuffix: st
     receipt.source_database_mutated ? "yes" : "no",
     "",
     "Next:",
+    `${cliCommandName()} lifecycle show receipt:${receipt.receipt_id}${storeSuffix}`,
     `${cliCommandName()} replay show --proposal ${receipt.proposal_id}${storeSuffix}`,
     "",
     "More detail:",
@@ -13783,6 +14253,7 @@ function formatReplayFirstLook(replay: ProposalReplayRecord, storeSuffix: string
     ...(proposal.state === "pending_review" ? [`  ${cliCommandName()} proposals approve ${proposal.proposal_id} --yes${storeSuffix}`] : []),
     "",
     "More detail:",
+    `  ${cliCommandName()} lifecycle show replay:${replay.replay_id} --details${storeSuffix}`,
     `  ${cliCommandName()} replay show --proposal ${proposal.proposal_id} --details${storeSuffix}`,
     "",
   ].join("\n");
@@ -13998,11 +14469,14 @@ function formatActivityNext(items: Record<string, unknown>[], storeSuffix: strin
   const evidence = stringField(first, "evidence");
   const lines = ["Next:"];
   if (proposal) {
+    lines.push(`${cliCommandName()} lifecycle show proposal:${proposal}${storeSuffix}`);
     lines.push(`${cliCommandName()} proposals show ${proposal}${storeSuffix}`);
     lines.push(`${cliCommandName()} replay show --proposal ${proposal}${storeSuffix}`);
   } else if (replayId) {
+    lines.push(`${cliCommandName()} lifecycle show replay:${replayId}${storeSuffix}`);
     lines.push(`${cliCommandName()} replay show --replay ${replayId}${storeSuffix}`);
   } else if (evidence) {
+    lines.push(`${cliCommandName()} lifecycle show evidence:${evidence}${storeSuffix}`);
     lines.push(`${cliCommandName()} evidence show ${evidence}${storeSuffix}`);
   } else {
     lines.push(`${cliCommandName()} activity search --details${storeSuffix}`);
@@ -14230,6 +14704,10 @@ function showDetails(args: string[]): boolean {
 }
 
 function storeOptionSuffix(args: string[]): string {
+  if (args.includes(runtimeStoreBridgeFlag)) {
+    const configPath = optionalArg(args, "--config");
+    return configPath ? ` --config ${configPath}` : "";
+  }
   const storePath = optionalArg(args, "--store");
   return storePath ? ` --store ${storePath}` : "";
 }
@@ -14645,6 +15123,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "recipes",
     "benchmark",
     "proposals",
+    "lifecycle",
     "replay",
     "evidence",
     "query-audit",
@@ -14715,6 +15194,7 @@ Commands:
   propose      Create a local evidence-backed proposal
   audit        Review MCP/database tool risk
   proposals   Review, approve, or reject proposals
+  lifecycle   Inspect an action from proposal through receipt/replay
   evidence    Inspect local evidence bundles
   query-audit Inspect local query audit records
   receipts    Inspect guarded writeback receipts
@@ -14746,6 +15226,8 @@ Examples:
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
   ${cmd} contract explain ./contract.synapsor.sql --format markdown
   ${cmd} contract lint ./contract.synapsor.sql --strict
+  ${cmd} lifecycle --store ./.synapsor/local.db
+  ${cmd} lifecycle show --object invoice:INV-3001 --details --store ./.synapsor/local.db
   ${cmd} effect fixture create --from-replay replay_wrp_... --request "Waive the late fee" --contract ./synapsor.contract.json --store ./.synapsor/local.db --out ./effects/late-fee.json
   ${cmd} effect run --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json
   ${cmd} report --object invoice:INV-3001 --tenant tenant_acme --store ./.synapsor/local.db --format markdown
@@ -14913,6 +15395,11 @@ Options:
   --with-handler
   --open-ui
   --dry-run
+  --previous-auth-token-env <ENV>
+  --trusted-tls-proxy
+  --unsafe-allow-cleartext-http
+  --tls-cert-env <ENV> --tls-key-env <ENV>
+  --tls-ca-env <ENV> --require-client-cert
 `,
     start: `Usage:
   ${cmd} start --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
@@ -15002,6 +15489,7 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp audit generate ./tools-list.json --output ./synapsor-audit-candidates
 
 Use stdio for local MCP clients that launch the runner. Use Streamable HTTP for standard HTTP MCP clients. Use serve-http only when you explicitly want the lightweight JSON-RPC bridge.
+Stdio opens no network socket and needs no HTTP credential. Networked MCP is authenticated by default and non-loopback listeners require an explicit protected channel.
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
 `,
     "mcp install": `Usage:
@@ -15039,64 +15527,75 @@ This command never prints database URLs or write credentials.
   ${cmd} mcp serve --transport streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN [--result-format v2]
 
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
+Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
+For Streamable HTTP, Bearer may present either an operator-provisioned opaque endpoint token or an identity-provider-issued signed JWT. Runner never issues or refreshes these credentials.
 Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names. Use --alias-mode both to expose canonical and alias names.
 Use --result-format v2 to return one stable ok/summary/data/proposal/error envelope from every tool call.
 `,
     "mcp serve-streamable-http": `Usage:
-  export SYNAPSOR_RUNNER_HTTP_TOKEN=...
+  export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8766] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--alias-mode canonical|openai|both] [--result-format v1|v2]
+  ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM --tls-ca-env SYNAPSOR_TLS_CA_PEM --require-client-cert
 
 Start the spec-compatible MCP Streamable HTTP endpoint for clients and SDKs that support HTTP MCP.
-Bearer auth is required by default.
-TLS and mTLS are opt-in through environment variables; do not put PEM contents on the command line or in config JSON.
+HTTP Bearer is the credential presentation scheme. It carries either an opaque
+single-service endpoint token or a signed per-session JWT; Bearer does not make
+the credential a JWT. Runner never issues either credential. An operator creates
+and provisions the opaque token out of band. A configured identity provider
+issues JWTs for shared deployments, and Runner verifies them on every request.
+Never put token values or PEM contents on the command line or in config JSON.
 
-Alpha scope:
-  - Supports MCP initialize/session behavior through the official MCP Streamable HTTP transport.
+Behavior:
+  - Uses the official MCP Streamable HTTP initialize/session transport.
   - Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names.
   - Use --alias-mode both to expose canonical names and aliases.
   - Use --result-format v2 for the stable ok/summary/data/proposal/error envelope.
   - OpenAI aliases expose names such as billing__inspect_invoice while preserving the canonical Synapsor name in _meta.
-  - Use /mcp for the MCP endpoint and /healthz for service health.
-  - Sessions are in-memory. Restarting the runner clears active HTTP MCP sessions.
+  - Use /mcp, minimal /healthz, dependency-aware /readyz, and separately authenticated /metrics.
+  - Sessions are bounded and in-memory. Restarting Runner clears active HTTP MCP sessions.
 
 Security:
   - Defaults to 127.0.0.1:8766.
-  - Refuses to start if the auth token env var is missing.
-  - Use --dev-no-auth only for localhost development.
-  - If binding to 0.0.0.0, use TLS, private networking, authentication, and rate limits.
-  - Optional CORS: --cors-origin http://localhost:3000
+  - Authentication is required by default; --dev-no-auth is loopback-development-only.
+  - A non-loopback listener refuses to bind unless it has Runner TLS, an explicit trusted TLS proxy/private hop, or the authenticated --unsafe-allow-cleartext-http break glass.
+  - --previous-auth-token-env accepts exactly one previous opaque token during a bounded rotation window.
+  - mTLS supplements Bearer authentication; it does not replace tenant/principal claims unless your deployment is explicitly single-tenant.
+  - CORS is disabled by default. --cors-origin accepts one exact origin, never a wildcard.
+  - Shared deployments require http_claims, signed session_auth, exact issuer/audience, and RFC 9728 oauth_resource metadata in Runner config.
+  - Diagnose the exact posture with: ${cmd} doctor --config ./synapsor.runner.json --transport streamable-http --host 127.0.0.1
 `,
     "mcp serve-http": `Usage:
-  export SYNAPSOR_RUNNER_HTTP_TOKEN=...
+  export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
   ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8765] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--result-format v1|v2]
+  ${cmd} mcp serve-http --config ./synapsor.runner.json --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM
 
 Start the lightweight HTTP JSON-RPC bridge for app/server deployments that want simple POST calls.
 Bearer auth is required by default.
 
-Alpha scope: supports POST /mcp methods tools/list, tools/call, and resources/read.
+Supports POST /mcp methods tools/list, tools/call, and resources/read.
 It does not implement MCP Streamable HTTP initialize/session behavior. Use ${cmd} mcp serve-streamable-http for standard HTTP MCP clients.
 
 Security:
   - Defaults to 127.0.0.1:8765.
-  - Refuses to start if the auth token env var is missing.
-  - Use --dev-no-auth only for localhost development.
-  - If binding to 0.0.0.0, use TLS, private networking, authentication, and rate limits.
-  - Optional CORS: --cors-origin http://localhost:3000
+  - Uses the same remote-channel, static-token rotation, TLS/mTLS, Origin/Host, and request-bound enforcement as Streamable HTTP.
+  - It intentionally rejects http_claims because it has no standard MCP session on which to bind per-session identity.
+  - Use --dev-no-auth only for loopback development. Exact optional CORS: --cors-origin http://localhost:3000
 `,
     "mcp config": `Usage:
   ${cmd} mcp config [claude-desktop|cursor|generic|vscode|openai-agents] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
-  ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
-Print MCP client configuration that references the local runner command, not database URLs. Defaults to claude-desktop.
+Print MCP client configuration that references the local runner command and credential environment names, never database URLs or credential values. Defaults to claude-desktop.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
 `,
     "mcp client-config": `Usage:
   ${cmd} mcp client-config --client claude-desktop [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} mcp client-config --client cursor [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
-  ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
-Print MCP client configuration that references the local runner command, not database URLs.
+Print MCP client configuration that references the local runner command, auth metadata, and environment-variable names, not database URLs or credential values.
+Opaque endpoint tokens are generated and provisioned by the operator. Signed JWT access tokens are issued by the configured identity provider. Runner verifies them but does not issue or refresh them.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
 Use --include-instructions to include the recommended propose-first agent prompt.
 `,
@@ -15210,10 +15709,14 @@ security guarantee.
   ${cmd} doctor --config synapsor.runner.json --check-handlers
   ${cmd} doctor --config synapsor.runner.json --check-writeback
   ${cmd} doctor --config synapsor.runner.json --check-rls
+  ${cmd} doctor --config synapsor.runner.json --transport streamable-http --host 127.0.0.1 --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
+  ${cmd} doctor --config synapsor.runner.json --transport streamable-http --host 0.0.0.0 --trusted-tls-proxy
+  ${cmd} doctor --config synapsor.runner.json --transport streamable-http --host 0.0.0.0 --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM
   ${cmd} doctor --config synapsor.runner.json --report --redact --output synapsor-doctor.md
   ${cmd} doctor --first-run
 
 Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, operation-specific direct SQL writeback readiness, receipt authority, and local store stats. Reports are redacted; do not paste secrets into issues.
+With --transport streamable-http/http, doctor also reports bind scope, channel protection, auth/identity mode, issuer/audience/resource, key readiness, static-token strength/rotation, exact Origin/Host policy, request/session limits, rate-limit scope, and remediation without printing credential values.
 Use --check-writeback to verify the configured receipt mode. source_db/precreated uses rollback-only probes and never runs CREATE; source_db/auto_migrate verifies the fixed migration; runner_ledger verifies its durable intent store and requires no source receipt table.
 Use --check-rls only on a disposable or explicitly approved live PostgreSQL target to run read-only cross-tenant/principal and pooled-context canaries for sources configured with database_scope.mode=postgres_rls.
 Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_CONTROL_PLANE_URL plus the scoped worker environment.
@@ -15228,6 +15731,29 @@ Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_
 
 	Review decisions happen outside the model-facing MCP tool surface. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
 	`,
+    lifecycle: `Usage:
+  ${cmd} lifecycle [--store ./.synapsor/local.db]
+  ${cmd} lifecycle list [--tenant acme] [--capability billing.propose_late_fee_waiver] [--object invoice:INV-3001] [--status applied] [--limit 20]
+  ${cmd} lifecycle show [latest] [--details|--json]
+  ${cmd} lifecycle show --object invoice:INV-3001 --details
+  ${cmd} lifecycle show <proposal|evidence|replay|job|intent-handle> --details
+  ${cmd} lifecycle show receipt:<numeric-id> --details
+  ${cmd} lifecycle show audit:<numeric-id> --details
+
+Inspect one complete proposal lifecycle without querying internal ledger tables.
+Bare lifecycle, lifecycle show, and lifecycle show latest select the newest
+proposal deterministically. Filters select the newest match and report how many
+matched; use lifecycle list to browse all matches. Any already-known linked
+domain handle can be used as an alternate starting point. Numeric receipt and
+query-audit ids require an explicit receipt: or audit: namespace; Runner never
+guesses between domains.
+
+The command is read-only: it does not materialize replay records, create jobs or
+intents, acquire leases, contact a source database, or call Cloud. The default
+view answers what was requested, trusted scope, approval/apply state, whether
+the source changed, and the next safe command. --details prints the linked
+causal timeline; --json emits the versioned synapsor.lifecycle-view.v1 document.
+`,
     evidence: `Usage:
 	  ${cmd} evidence list [--tenant acme] [--capability billing.inspect_invoice] [--object invoice:INV-3001]
 	  ${cmd} evidence show ev_...

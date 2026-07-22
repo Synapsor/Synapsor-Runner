@@ -1,6 +1,48 @@
 # Changelog
 
-## 1.5.3 (prepared, not published)
+## 1.5.4 (prepared, not published)
+
+### Networked MCP authentication hardening
+
+- Defines explicit local-loopback, remote single-tenant, and shared multi-tenant
+  HTTP security profiles while preserving zero-configuration local stdio.
+- Refuses non-loopback cleartext listeners before bind unless the operator
+  explicitly selects a trusted TLS proxy or authenticated break-glass posture.
+  Runner-owned TLS and optional mTLS remain supported.
+- Hardens opaque endpoint tokens with environment-only provisioning, production
+  entropy checks, constant-time comparison, one bounded previous-token rotation
+  slot, and per-session credential pinning. Opaque tokens remain service access
+  credentials, not tenant or user identity.
+- Requires verified signed identity for shared deployments. Runner validates
+  algorithm, signature, issuer, audience/resource, time, scope, tenant, and
+  principal on every request, including requests for existing MCP sessions.
+- Adds RFC 9728 protected-resource metadata and standards-correct Bearer
+  challenges for external authorization servers. Runner remains a protected
+  resource and does not issue passwords, access tokens, or refresh tokens.
+- Adds exact Origin and Host policy, bounded headers/bodies/connections/sessions,
+  TLS preflight, bounded public-only JWKS handling, and safe overload responses.
+- Expands `doctor`, help, client generators, fleet examples, and deployment docs
+  so operators can distinguish TLS, Bearer presentation, opaque tokens, JWTs,
+  MCP session IDs, trusted context, database scope, and operator authority
+  without printing credential values.
+- Adds read-only, no-ID-first `lifecycle` inspection across local SQLite and
+  shared PostgreSQL runtime stores. Latest, filtered business-object lookup, and
+  proposal/evidence/replay/job/intent/receipt/audit handles resolve one typed,
+  redacted proposal-to-receipt/replay timeline without creating jobs, leases,
+  source calls, or Cloud synchronization.
+- Makes UPDATE conflict guarding exact by default in the SQL-like DSL.
+  Omitting `CONFLICT GUARD <column>` now fails. The explicit legacy
+  `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` form is limited to ordinary
+  single-row source-DB UPDATE and warns that projection hashing can miss outside
+  changes.
+- Preserves canonical `SESSION` for implementations with a real typed session
+  boundary while making Runner fail closed with
+  `SESSION_BINDING_UNSUPPORTED`. Runner-targeted DSL validation, contract load,
+  lint/explain, and runtime no longer allow an environment fallback.
+- Prepares `@synapsor/runner@1.5.4` and `@synapsor/dsl@1.4.4`;
+  `@synapsor/spec@1.4.2` and the Cloud CLI remain unchanged.
+
+## 1.5.3 (published 2026-07-21)
 
 ### Intent to Safe Action
 
@@ -26,7 +68,7 @@
   publishes an honest alternatives guide, and adds a deterministic 36-second
   support-plan-credit cut backed by real PostgreSQL proposal, receipt, retry,
   and stale-conflict evidence.
-- Prepares only `@synapsor/runner@1.5.3`; `@synapsor/spec@1.4.2`,
+- Published only `@synapsor/runner@1.5.3`; `@synapsor/spec@1.4.2`,
   `@synapsor/dsl@1.4.3`, and the Cloud CLI remain unchanged.
 
 ## 1.5.2 (prepared, not published)

@@ -196,7 +196,8 @@ reviewed runner JSON capabilities. Current parity:
 | arg `enum` | `ARG risk_level STRING ENUM('low', 'medium', 'high') REQUIRED` | 1.4.121 | Supports 1..64 same-type string, number, or boolean values; duplicates and mixed types fail compilation. |
 | proposal `numeric_bounds` | `BOUND column 1..2500`, `BOUND column ..2500`, or `BOUND column 1..` | 0.1.8 | Applies to patched numeric columns. Strict mode warns when a NUMBER arg is patched without arg min/max or a matching `BOUND`. |
 | proposal `transition_guards` | `TRANSITION status ALLOW pending -> approved\|rejected` or `TRANSITION status FROM current_status ALLOW open -> closed` | 0.1.8 | Values are state strings; use `|` for multiple target states. |
-| proposal `conflict_guard` | `CONFLICT GUARD updated_at` | 0.1 | If omitted, DSL emits an explicit weak-guard acknowledgement. Prefer a real row-version column. |
+| proposal `conflict_guard` | `CONFLICT GUARD updated_at` | 0.1 | Required for ordinary UPDATE authoring. It compiles to an exact version-column check. Omission fails instead of silently weakening concurrency protection. |
+| proposal weak `conflict_guard` | `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` | 1.4.4 | Explicit legacy escape hatch for an ordinary single-row source-DB UPDATE only. It hashes the captured projection and may miss concurrent changes outside that projection. It is rejected for DELETE, reversible writes, bounded sets, and Runner-ledger authority. |
 | proposal `approval` | `APPROVAL ROLE billing_lead` | 0.1 | Local mode records the required role; enforcement is still outside the model-facing MCP tool. |
 | proposal `approval.required_approvals` | `REQUIRE 2 APPROVALS` | 1.1 | Optional 1..10 distinct-reviewer quorum; defaults to 1. |
 | proposal `writeback` | `WRITEBACK DIRECT SQL`, `WRITEBACK APP HANDLER EXECUTOR name`, `WRITEBACK CLOUD WORKER`, `WRITEBACK NONE` | 0.1.7 | Handler URLs/tokens stay in `synapsor.runner.json`; contracts carry only the handler name. |
@@ -523,6 +524,8 @@ Canonical Synapsor names use dots, such as `billing.inspect_invoice`. Some
 clients require function-safe names. Use:
 
 ```bash
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+
 synapsor-runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -533,6 +536,8 @@ synapsor-runner mcp serve-streamable-http \
 The model sees aliases such as `billing__inspect_invoice`. Runner includes the
 canonical name in tool metadata and descriptions so audit/replay still use the
 real capability name.
+This loopback token is opaque endpoint access, not tenant identity. See
+[HTTP MCP](http-mcp.md) before using a network listener.
 
 ## Why Not `execute_sql`
 

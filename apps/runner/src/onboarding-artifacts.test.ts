@@ -49,6 +49,22 @@ const table: TableInfo = {
 };
 
 describe("canonical onboarding artifacts", () => {
+  it("rejects a generated UPDATE that omits its explicit conflict guard", () => {
+    const generated = generateRunnerConfigFromSpec(selection);
+    const proposal = (generated.config.capabilities as Array<Record<string, unknown>>)[1];
+    if (proposal) delete proposal.conflict_guard;
+
+    expect(() => buildCanonicalOnboardingArtifacts({
+      generated,
+      selection,
+      table,
+      configPath: "/workspace/app/synapsor.runner.json",
+      contractPath: "/workspace/app/synapsor.contract.json",
+      project: { root: "/workspace/app", frameworks: [], schema_inputs: [], database_env_names: [] },
+      activationConfirmed: true,
+    })).toThrow(/requires an explicit conflict guard/);
+  });
+
   it("keeps review writeback disabled until activation is explicitly confirmed", () => {
     expect(() => buildCanonicalOnboardingArtifacts({
       generated: generateRunnerConfigFromSpec(selection),

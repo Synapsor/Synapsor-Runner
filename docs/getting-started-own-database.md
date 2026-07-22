@@ -520,7 +520,7 @@ MCP client:
 ```bash
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_operator"
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 npx -y -p @synapsor/runner synapsor-runner up --serve \
   --config ./synapsor.runner.json \
@@ -543,9 +543,12 @@ npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
 ```
 
 Streamable HTTP defaults to `127.0.0.1:8766` and requires bearer auth by
-default. Use private networking/TLS before exposing it beyond localhost. See
+default. A non-loopback listener refuses to start until direct TLS, an explicitly
+trusted TLS proxy, or authenticated emergency break glass is selected. Shared
+services use signed per-session identity rather than one endpoint token. See
 [HTTP MCP](http-mcp.md). If you want the smaller JSON-RPC bridge instead, use
-`synapsor-runner mcp serve-http`.
+`synapsor-runner mcp serve-http`; it is not suitable for claim-bound shared MCP
+sessions.
 
 The model-facing MCP server exposes semantic tools such as:
 

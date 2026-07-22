@@ -33,19 +33,107 @@ sqlite3 -readonly ./.synapsor/local.db '.tables'
 Do not mutate the database directly. Its internal tables may change between
 releases and are not a public storage API; use Runner commands for automation.
 
-## Inspect the ledger
+## Inspect one complete lifecycle
 
-| Question | Command |
+Start with no id:
+
+```bash
+synapsor-runner lifecycle --store ./.synapsor/local.db
+```
+
+`lifecycle`, `lifecycle show`, and `lifecycle show latest` are exact aliases.
+They choose the newest proposal deterministically by `created_at` descending,
+then proposal id as the tie-breaker. The default view answers:
+
+- what capability and business object the model requested;
+- which trusted tenant and principal scoped it;
+- approval state and progress;
+- whether a writeback job or intent exists;
+- the latest guarded outcome and whether the source changed;
+- replay and Cloud-link status; and
+- the next safe read-only or operator command.
+
+Use `--details` for one causal proposal-to-receipt/replay timeline, or `--json`
+for one stable `synapsor.lifecycle-view.v1` JSON document:
+
+```bash
+synapsor-runner lifecycle --details --store ./.synapsor/local.db
+synapsor-runner lifecycle --json --store ./.synapsor/local.db
+```
+
+The JSON is a domain view, not a dump of internal SQLite/PostgreSQL tables.
+Absent stages are represented explicitly as empty arrays or `null`; Runner
+does not fabricate a job, receipt, replay, or Cloud synchronization.
+
+### Browse and filter without copying ids
+
+```bash
+synapsor-runner lifecycle list --limit 20 --store ./.synapsor/local.db
+synapsor-runner lifecycle show --object invoice:INV-3001 --details --store ./.synapsor/local.db
+synapsor-runner lifecycle list --tenant acme --capability billing.propose_late_fee_waiver
+synapsor-runner lifecycle show --principal support-agent-17 --status applied
+```
+
+List/show support tenant, principal, capability, business object, status/state,
+and time-window filters. Filtered `show` selects the newest match and reports
+the total match count; use `lifecycle list` to browse all matches. List JSON
+uses `synapsor.lifecycle-list.v1`.
+
+### Start from any handle you already have
+
+```bash
+synapsor-runner lifecycle show wrp_... --details
+synapsor-runner lifecycle show ev_... --details
+synapsor-runner lifecycle show replay_... --details
+synapsor-runner lifecycle show wbj_... --details
+synapsor-runner lifecycle show wbi:wbj_... --details
+synapsor-runner lifecycle show receipt:42 --details
+synapsor-runner lifecycle show audit:17 --details
+```
+
+Runner resolves proposal, evidence, replay, writeback-job, writeback-intent,
+receipt, and query-audit handles to the owning proposal. Numeric receipt and
+query-audit ids require the `receipt:` or `audit:` namespace; a bare number is
+rejected rather than guessed.
+
+Lifecycle inspection is read-only. It does not contact the source database or
+Cloud, create a writeback job, acquire a worker lease, approve, apply, reconcile,
+retry, or synchronize anything. It applies the same tenant/principal visibility
+rules and secret/kept-out-field protections as the focused views.
+
+### Shared PostgreSQL runtime store
+
+For `storage.shared_postgres.mode = "runtime_store"`, pass the reviewed config:
+
+```bash
+synapsor-runner lifecycle --config ./synapsor.runner.json
+synapsor-runner lifecycle show --object invoice:INV-3001 --details \
+  --config ./synapsor.runner.json
+```
+
+Runner reuses the existing bounded read bridge to the authoritative shared
+ledger. It does not create or synchronize a persistent local mirror during
+inspection. Connection failures fail safely; the command never falls back to an
+unrelated local store.
+
+## Focused inspection commands
+
+The existing commands remain useful when you need one record type:
+
+| Question | Focused command |
 | --- | --- |
-| What did the model propose? | `synapsor-runner proposals show <proposal-id> --details` |
+| What did the model propose? | `synapsor-runner proposals show latest --details` |
 | What data supported it? | `synapsor-runner evidence list --proposal <proposal-id>` then `evidence show <evidence-id> --details` |
 | What query was run? | `synapsor-runner query-audit list --proposal <proposal-id>` |
-| Who approved or rejected it? | `synapsor-runner proposals show <proposal-id> --details` |
 | Did guarded writeback apply? | `synapsor-runner receipts list --proposal <proposal-id>` |
-| What happened end to end? | `synapsor-runner replay show --proposal <proposal-id> --details` |
+| What replay snapshot exists? | `synapsor-runner replay show latest --details` |
 | What happened to one object? | `synapsor-runner activity search --object invoice:INV-3001` |
 | What are the latest events? | `synapsor-runner events tail` |
 | How large is the store? | `synapsor-runner store stats --store ./.synapsor/local.db` |
+
+`proposals writeback-job` is intentionally absent from inspection examples:
+it materializes a job and is therefore an operator mutation, not a read-only
+view.
 
 ## Server leases
 

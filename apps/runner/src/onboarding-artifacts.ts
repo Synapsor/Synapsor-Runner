@@ -265,6 +265,12 @@ function capabilityFromRuntime(input: {
       ? { mode: "app_handler" as const, executor }
       : { mode: "direct_sql" as const }
     : { mode: "none" as const };
+  const conflictGuard = isRecord(raw.conflict_guard)
+    ? raw.conflict_guard as { column?: string; weak_guard_ack?: boolean }
+    : undefined;
+  if (operation.kind !== "insert" && !conflictGuard) {
+    throw new Error(`capability ${capability.name} ${operation.kind.toUpperCase()} requires an explicit conflict guard; onboarding does not infer weak row-hash protection`);
+  }
   capability.proposal = {
     action: capability.name,
     operation,
@@ -273,7 +279,7 @@ function capabilityFromRuntime(input: {
     ...(isRecord(raw.numeric_bounds) ? { numeric_bounds: raw.numeric_bounds as NonNullable<CapabilitySpec["proposal"]>["numeric_bounds"] } : {}),
     ...(isRecord(raw.transition_guards) ? { transition_guards: raw.transition_guards as NonNullable<CapabilitySpec["proposal"]>["transition_guards"] } : {}),
     ...(isRecord(raw.reversibility) ? { reversibility: raw.reversibility as { mode: "reviewed_inverse" } } : {}),
-    conflict_guard: isRecord(raw.conflict_guard) ? raw.conflict_guard as { column?: string; weak_guard_ack?: boolean } : { weak_guard_ack: true },
+    ...(conflictGuard ? { conflict_guard: conflictGuard } : {}),
     approval: isRecord(raw.approval) ? raw.approval as NonNullable<NonNullable<CapabilitySpec["proposal"]>["approval"]> : { mode: "human" },
     writeback,
   };

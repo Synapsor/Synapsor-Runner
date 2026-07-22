@@ -85,7 +85,7 @@ Use Streamable HTTP when your app/server agent connects through a standard HTTP
 MCP client:
 
 ```bash
-export SYNAPSOR_RUNNER_HTTP_TOKEN="dev-local-token"
+export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
@@ -94,7 +94,10 @@ npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
 ```
 
 Streamable HTTP defaults to `127.0.0.1:8766`, requires bearer auth by default,
-and should run behind private networking/TLS before production-like exposure.
+and uses an opaque endpoint token only as shared service access, not user or
+tenant identity. Non-loopback serving requires direct TLS, an explicitly
+trusted TLS proxy, or authenticated emergency break glass; shared deployments
+require verified signed claims.
 Use `synapsor-runner mcp serve-http` only when you explicitly want the smaller
 JSON-RPC bridge. Details: [HTTP MCP](http-mcp.md).
 

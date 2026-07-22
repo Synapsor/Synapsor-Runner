@@ -36,10 +36,36 @@
     "provider": "jwt_hs256",
     "secret_env": "SYNAPSOR_SESSION_JWT_SECRET",
     "issuer": "https://fleet.example.invalid",
-    "audience": "synapsor-runner-fleet",
+    "audience": "https://runner-fleet.example.invalid/mcp",
     "tenant_claim": "tenant_id",
     "principal_claim": "sub",
     "clock_skew_seconds": 10
+  },
+  "http_security": {
+    "deployment": "shared",
+    "oauth_resource": {
+      "resource": "https://runner-fleet.example.invalid/mcp",
+      "authorization_servers": ["https://fleet.example.invalid"],
+      "resource_name": "Synthetic Synapsor Runner fleet"
+    },
+    "allowed_hosts": [
+      "127.0.0.1:8766",
+      "127.0.0.1:8871",
+      "127.0.0.1:8872",
+      "localhost:8766",
+      "localhost:8871",
+      "localhost:8872"
+    ],
+    "limits": {
+      "max_request_bytes": 65536,
+      "max_header_bytes": 8192,
+      "max_sessions": 100,
+      "session_idle_timeout_seconds": 120,
+      "request_timeout_ms": 15000,
+      "headers_timeout_ms": 5000,
+      "keep_alive_timeout_ms": 5000,
+      "max_connections": 200
+    }
   },
   "rate_limits": {
     "enabled": true,

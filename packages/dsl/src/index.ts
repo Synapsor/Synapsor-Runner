@@ -8,6 +8,7 @@ export type AgentDslAst = {
 
 export type AgentDslContextAst = {
   name: string;
+  line?: number;
   bindings: Array<{ name: string; source: "session" | "environment" | "cloud_session" | "static_dev" | "http_claim"; key: string; required?: boolean }>;
   tenantBinding?: string;
   principalBinding?: string;
@@ -27,6 +28,7 @@ export type AgentDslCapabilityAst = {
   tenantKey?: string;
   principalScopeKey?: string;
   conflictKey?: string;
+  weakConflictGuardAcknowledged?: boolean;
   lookup?: { arg: string; column: string; line?: number };
   args: Record<string, (
     | (ScalarArgumentSpec & { line?: number })
@@ -104,6 +106,10 @@ export type ValidationResult = {
 export type AgentDslCompileResult = {
   contract: SynapsorContract;
   warnings: ValidationResult["warnings"];
+};
+
+export type AgentDslValidationOptions = {
+  target?: "canonical" | "runner";
 };
 
 type Block = {
@@ -195,6 +201,11 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
           } : {}),
         });
       }
+      const conflictGuard = capability.conflictKey
+        ? { column: capability.conflictKey }
+        : capability.weakConflictGuardAcknowledged
+          ? { weak_guard_ack: true as const }
+          : undefined;
       spec.proposal = {
         action: capability.proposal.action,
         ...(capability.proposal.operation ? { operation: capability.proposal.operation } : {}),
@@ -203,7 +214,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
         ...(capability.proposal.numericBounds ? { numeric_bounds: capability.proposal.numericBounds } : {}),
         ...(capability.proposal.transitionGuards ? { transition_guards: capability.proposal.transitionGuards } : {}),
         ...(capability.proposal.reversible ? { reversibility: { mode: "reviewed_inverse" as const } } : {}),
-        conflict_guard: capability.conflictKey ? { column: capability.conflictKey } : { weak_guard_ack: true },
+        ...(conflictGuard ? { conflict_guard: conflictGuard } : {}),
         approval: autoApprovalPolicyName
           ? {
             mode: "policy",
@@ -263,9 +274,10 @@ function validatePrincipalScopeContexts(ast: AgentDslAst): void {
   }
 }
 
-export function validateAgentDsl(source: string): ValidationResult {
+export function validateAgentDsl(source: string, options: AgentDslValidationOptions = {}): ValidationResult {
   try {
     const result = compileAgentDslWithWarnings(source);
+    if (options.target === "runner") validateRunnerTarget(parseAgentDsl(source));
     return { ok: true, errors: [], warnings: result.warnings };
   } catch (error) {
     if (error instanceof AgentDslError) {
@@ -319,7 +331,7 @@ function parseBlocks(source: string): Block[] {
 }
 
 function parseContextBlock(block: Block): AgentDslContextAst {
-  const context: AgentDslContextAst = { name: block.name, bindings: [] };
+  const context: AgentDslContextAst = { name: block.name, line: block.line, bindings: [] };
   for (const item of block.body) {
     const bind = item.text.match(/^BIND\s+([A-Za-z_][A-Za-z0-9_]*)\s+FROM\s+(SESSION|ENV|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM)\s+([A-Za-z0-9_.-]+)(?:\s+REQUIRED)?$/i);
     if (bind?.[1] && bind[2] && bind[3]) {
@@ -344,6 +356,19 @@ function parseContextBlock(block: Block): AgentDslContextAst {
   context.tenantBinding ??= context.bindings.find((binding) => binding.name === "tenant_id")?.name;
   context.principalBinding ??= context.bindings.find((binding) => binding.name === "principal")?.name;
   return context;
+}
+
+function validateRunnerTarget(ast: AgentDslAst): void {
+  for (const context of ast.contexts) {
+    const binding = context.bindings.find((candidate) => candidate.source === "session");
+    if (!binding) continue;
+    throw dslError(
+      context.line ?? 1,
+      1,
+      "SESSION_BINDING_UNSUPPORTED",
+      `${context.name} binds ${binding.name} FROM SESSION, but Synapsor Runner has no generic web-session trust provider; use ENVIRONMENT for local stdio, HTTP_CLAIM for verified HTTP JWT claims, or CLOUD_SESSION for verified Cloud-linked identity`,
+    );
+  }
 }
 
 function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
@@ -402,8 +427,18 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       capability.principalScopeKey = principalScope[1];
       continue;
     }
+    if (/^CONFLICT\s+GUARD\s+WEAK\s+ROW\s+HASH\s+ACKNOWLEDGED$/i.test(item.text)) {
+      if (capability.conflictKey || capability.weakConflictGuardAcknowledged) {
+        throw dslError(item.line, 1, "DUPLICATE_CONFLICT_GUARD", `${block.name} declares CONFLICT GUARD more than once`);
+      }
+      capability.weakConflictGuardAcknowledged = true;
+      continue;
+    }
     const conflict = item.text.match(/^CONFLICT\s+GUARD\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
     if (conflict?.[1]) {
+      if (capability.conflictKey || capability.weakConflictGuardAcknowledged) {
+        throw dslError(item.line, 1, "DUPLICATE_CONFLICT_GUARD", `${block.name} declares CONFLICT GUARD more than once`);
+      }
       capability.conflictKey = conflict[1];
       continue;
     }
@@ -649,6 +684,14 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   if (capability.kind === "proposal") {
     if (!capability.proposal) throw dslError(block.line, 1, "PROPOSAL_ACTION_REQUIRED", `${block.name} requires PROPOSE ACTION`);
     const operation = capability.proposal.operation?.kind ?? "update";
+    if (operation === "update" && !capability.conflictKey && !capability.weakConflictGuardAcknowledged) {
+      throw dslError(
+        block.line,
+        1,
+        "UPDATE_CONFLICT_GUARD_REQUIRED",
+        `${block.name} UPDATE requires CONFLICT GUARD <column>; use CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED only for a deliberately accepted legacy source-db UPDATE`,
+      );
+    }
     if (operation !== "delete" && Object.keys(capability.proposal.patch).length === 0) {
       throw dslError(block.line, 1, "PROPOSAL_PATCH_REQUIRED", `${block.name} ${operation.toUpperCase()} proposal requires at least one PATCH line`);
     }
@@ -660,6 +703,9 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     }
     if (operation === "delete" && !capability.conflictKey) {
       throw dslError(block.line, 1, "DELETE_CONFLICT_GUARD_REQUIRED", `${block.name} DELETE requires CONFLICT GUARD`);
+    }
+    if (operation === "insert" && capability.weakConflictGuardAcknowledged) {
+      throw dslError(block.line, 1, "INSERT_WEAK_CONFLICT_GUARD_FORBIDDEN", `${block.name} INSERT uses source-enforced DEDUP KEY identity; a weak row-hash guard is not applicable`);
     }
     if (operation === "insert" && !capability.proposal.operation?.deduplication) {
       throw dslError(block.line, 1, "INSERT_DEDUP_KEY_REQUIRED", `${block.name} INSERT requires DEDUP KEY backed by an inspected source UNIQUE constraint`);
@@ -677,6 +723,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     }
     if (capability.proposal.operation?.cardinality === "set") {
       const set = capability.proposal.operation;
+      if (operation !== "insert" && !capability.conflictKey) throw dslError(block.line, 1, "SET_EXACT_CONFLICT_GUARD_REQUIRED", `${block.name} bounded set write requires an exact CONFLICT GUARD <column>`);
       if (!set.max_rows || set.max_rows > 100) throw dslError(block.line, 1, "SET_MAX_ROWS_REQUIRED", `${block.name} bounded set write requires MAX ROWS 1..100 after PROPOSE ACTION`);
       if (!set.aggregate_bounds?.length) throw dslError(block.line, 1, "SET_AGGREGATE_BOUND_REQUIRED", `${block.name} bounded set write requires MAX TOTAL <column> BEFORE|AFTER|ABSOLUTE DELTA <maximum>`);
       if (capability.proposal.autoApprovalRules?.length) throw dslError(block.line, 1, "SET_AUTO_APPROVAL_FORBIDDEN", `${block.name} bounded set writes require human/operator approval in the first release`);
@@ -729,6 +776,14 @@ function collectDslWarnings(ast: AgentDslAst): ValidationResult["warnings"] {
     }
     if (!capability.returnsHint) {
       warnings.push({ line, column: 1, code: "RETURNS_HINT_RECOMMENDED", message: `${capability.name} is a proposal capability without RETURNS HINT.` });
+    }
+    if (capability.weakConflictGuardAcknowledged) {
+      warnings.push({
+        line,
+        column: 1,
+        code: "WEAK_CONFLICT_GUARD_ACKNOWLEDGED",
+        message: `${capability.name} explicitly uses a weak row-hash guard. It hashes only the captured projection and may miss concurrent changes to columns outside that projection; prefer CONFLICT GUARD <version-column>.`,
+      });
     }
     for (const [column, binding] of Object.entries(capability.proposal.patch)) {
       if (!binding.from_arg) continue;

@@ -373,7 +373,7 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
       } : {}),
       ...(spec.numeric_bounds ? { numeric_bounds: spec.numeric_bounds } : {}),
       ...(spec.transition_guards ? { transition_guards: spec.transition_guards } : {}),
-      conflict_guard: spec.conflict_column ? { column: spec.conflict_column } : { weak_guard_ack: true },
+      ...(spec.conflict_column ? { conflict_guard: { column: spec.conflict_column } } : {}),
       approval: { mode: "human", required_role: spec.approval?.required_role ?? "local_reviewer" },
     });
   }
@@ -1027,7 +1027,9 @@ function validateSelectionSpec(spec: OnboardingSelectionSpec): void {
     if (!spec.deduplication.components.some((component) => component.source === "proposal_id")) throw new Error("selection INSERT deduplication requires proposal_id.");
     if (spec.tenant_key && !spec.deduplication.components.some((component) => component.source === "trusted_tenant" && component.column === spec.tenant_key)) throw new Error("selection INSERT deduplication requires trusted_tenant on tenant_key.");
   }
-  if (operation === "delete" && !spec.conflict_column) throw new Error("selection DELETE requires an exact conflict_column.");
+  if (spec.mode !== "read_only" && (operation === "update" || operation === "delete") && !spec.conflict_column) {
+    throw new Error(`selection ${operation.toUpperCase()} requires an inspected exact conflict_column; onboarding never generates a weak row-hash guard silently.`);
+  }
   if (spec.version_advance && operation !== "update") throw new Error("selection version_advance is valid only for UPDATE.");
   if (spec.version_advance && spec.version_advance.column !== spec.conflict_column) throw new Error("selection version_advance column must match conflict_column.");
   if (spec.receipts) {

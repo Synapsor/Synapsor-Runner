@@ -36,6 +36,7 @@ Unknown keys fail when `strict` is true (the default).
 | `approvals` | No | Local approval overrides. |
 | `operator_identity` | No | Verified operator identity and apply-role wiring for approve/reject/apply. |
 | `session_auth` | HTTP claims | HS256 development or asymmetric RS256/ES256 session-token verification. |
+| `http_security` | Networked HTTP | Deployment profile, protected channel, endpoint-token env names, OAuth protected-resource metadata, exact Origin/Host policy, and request/session bounds. |
 | `rate_limits` | No | Operational fixed-window limits; fleet-wide only with shared `runtime_store`. |
 | `metrics` | No | Separately authorized scrapeable HTTP metrics. Disabled by default. |
 | `graduated_trust` | No | Off-by-default, operator-only policy recommendation criteria and kill switch. |
@@ -212,8 +213,16 @@ Providers are `environment`, `static_dev`, `http_claims`, and `cloud_session`.
 Capabilities may reference a context by name. The model never receives tenant
 or principal as an overridable argument.
 
-For multi-tenant Streamable HTTP services, use `http_claims` plus signed
-session auth:
+The language-neutral canonical contract can preserve a `session` binding for
+implementations such as C++/Cloud that own a typed session boundary. Runner has
+no generic web-session provider and rejects it with
+`SESSION_BINDING_UNSUPPORTED`; it never treats the key as an environment
+variable. Use `environment` for local stdio, verified `http_claims` for shared
+Streamable HTTP, or verified `cloud_session` for Cloud embedding.
+
+For controlled loopback development, `http_claims` can use an HS256 session
+token. Runner holds the symmetric signing/verification secret in this mode, so
+it is not the recommended shared production profile:
 
 ```json
 {
@@ -229,7 +238,7 @@ session auth:
     "secret_env": "SYNAPSOR_SESSION_JWT_SECRET",
     "previous_secret_env": "SYNAPSOR_PREVIOUS_SESSION_JWT_SECRET",
     "issuer": "https://identity.example",
-    "audience": "synapsor-runner"
+    "audience": "https://runner.example/mcp"
   }
 }
 ```
@@ -239,16 +248,24 @@ the active secret first, then the previous secret. Existing MCP sessions remain
 bound to the exact token fingerprint, so clients cannot swap tenant/principal
 identity inside an initialized session.
 
-For networked deployments prefer asymmetric public-key verification:
+For a shared networked deployment, use asymmetric public-key verification and
+declare the protected resource and channel explicitly:
 
 ```json
 {
+  "trusted_context": {
+    "provider": "http_claims",
+    "values": {
+      "tenant_id_key": "tenant_id",
+      "principal_key": "sub"
+    }
+  },
   "session_auth": {
     "provider": "jwt_asymmetric",
-    "algorithms": ["RS256"],
+    "algorithms": ["RS256", "ES256"],
     "jwks_url_env": "SYNAPSOR_SESSION_JWKS_URL",
     "issuer": "https://identity.example",
-    "audience": "synapsor-runner",
+    "audience": "https://runner.example/mcp",
     "tenant_claim": "tenant_id",
     "principal_claim": "sub",
     "clock_skew_seconds": 30,
@@ -256,6 +273,19 @@ For networked deployments prefer asymmetric public-key verification:
     "jwks_cooldown_seconds": 30,
     "fetch_timeout_ms": 3000,
     "max_response_bytes": 1048576
+  },
+  "http_security": {
+    "deployment": "shared",
+    "channel": "trusted_tls_proxy",
+    "oauth_resource": {
+      "resource": "https://runner.example/mcp",
+      "authorization_servers": ["https://identity.example"],
+      "scopes_supported": ["synapsor:mcp"],
+      "required_scopes": ["synapsor:mcp"],
+      "resource_name": "Synapsor Runner"
+    },
+    "allowed_origins": ["https://agent-console.example"],
+    "allowed_hosts": ["runner.example"]
   }
 }
 ```
@@ -267,6 +297,66 @@ timeout/size bounded and do not follow redirects. Private JWK fields are
 rejected. Every effective named context in an `http_claims` server must bind
 tenant and principal from claims; environment/static contradictions fail with
 `TRUSTED_CONTEXT_PROVIDER_CONFLICT` before serving.
+
+`session_auth` verifies identity; it does not issue access tokens. The external
+identity provider identified by `issuer` issues a short-lived token whose
+audience is the exact protected-resource URL. Runner fetches only public JWKS
+material and validates the configured claims on every request. Required OAuth
+scopes are declared under `http_security.oauth_resource`.
+
+## HTTP security
+
+`http_security` is Runner deployment wiring, not part of a portable contract:
+
+```json
+{
+  "http_security": {
+    "deployment": "single_tenant",
+    "channel": "trusted_tls_proxy",
+    "static_token": {
+      "active_env": "SYNAPSOR_RUNNER_HTTP_TOKEN",
+      "previous_env": "SYNAPSOR_RUNNER_HTTP_TOKEN_PREVIOUS"
+    },
+    "allowed_origins": ["https://agent-console.example"],
+    "allowed_hosts": ["runner.internal.example"],
+    "limits": {
+      "max_request_bytes": 65536,
+      "max_header_bytes": 8192,
+      "max_sessions": 500,
+      "session_idle_timeout_seconds": 300,
+      "request_timeout_ms": 15000,
+      "headers_timeout_ms": 5000,
+      "keep_alive_timeout_ms": 5000,
+      "max_connections": 1000
+    }
+  }
+}
+```
+
+- `deployment` is `loopback`, `single_tenant`, or `shared`. Shared requires
+  verified signed `http_claims`, exact issuer/audience, and RFC 9728
+  `oauth_resource` metadata.
+- `channel` is `direct_tls`, `trusted_tls_proxy`, or the explicitly unsafe
+  `insecure_http_break_glass`. A non-loopback listener without one refuses to
+  bind. Break glass remains authenticated.
+- `static_token` names one active and optionally one previous environment
+  variable. It is opaque service access for loopback/single-tenant use, not
+  tenant identity. Values never belong in config.
+- `oauth_resource.resource` is the exact HTTPS MCP endpoint and must equal
+  `session_auth.audience`. `authorization_servers` names external issuers;
+  Runner does not implement login or token refresh.
+- `allowed_origins` contains exact browser origins; an omitted browser Origin
+  remains valid for native clients. Wildcards are forbidden.
+- `allowed_hosts` contains exact direct/public Host authorities. Forwarded Host
+  and forwarded identity headers are not trusted automatically.
+- `limits` bounds bodies, headers, concurrent sessions/connections, idle
+  sessions, and HTTP timing. Defaults are documented in [HTTP MCP](http-mcp.md).
+
+Runner-owned TLS certificate, key, and optional client-CA PEM values are passed
+by environment references on the serve command (`--tls-cert-env`,
+`--tls-key-env`, `--tls-ca-env`, `--require-client-cert`). Private TLS material
+does not go in this JSON file. A trusted-proxy channel assumes firewall/private
+network controls prevent clients from bypassing that proxy.
 
 ## Contracts and embedded capabilities
 

@@ -46,11 +46,11 @@ services:
       SYNAPSOR_SESSION_JWT_SECRET: synthetic-fleet-session-secret-change-before-use-0001
       SYNAPSOR_METRICS_TOKEN: synthetic-fleet-metrics-token-change-before-use
     ports:
-      - "8871:8766"
+      - "127.0.0.1:8871:8766"
     volumes:
       - ./synapsor.runner.json:/config/synapsor.runner.json:ro
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD-SHELL", "NODE_TLS_REJECT_UNAUTHORIZED=0 node -e \"fetch('https://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -66,11 +66,11 @@ services:
         condition: service_healthy
     environment: *runner_environment
     ports:
-      - "8872:8766"
+      - "127.0.0.1:8872:8766"
     volumes:
       - ./synapsor.runner.json:/config/synapsor.runner.json:ro
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD-SHELL", "NODE_TLS_REJECT_UNAUTHORIZED=0 node -e \"fetch('https://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 2s
       timeout: 5s
       retries: 30

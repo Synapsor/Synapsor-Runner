@@ -27,12 +27,21 @@ does not fit either direct boundary.
 
 | Operation | Required source guard | Direct-write behavior |
 | --- | --- | --- |
-| `UPDATE` | Primary key, trusted tenant, exact version/conflict column | Patches only allowlisted columns and affects exactly one row. In Runner-ledger mode, the version must advance in the same source transaction. |
+| `UPDATE` | Primary key, trusted tenant, and normally an exact version/conflict column | Patches only allowlisted columns and affects exactly one row. In Runner-ledger mode, the exact version must advance in the same source transaction. |
 | `INSERT` | Source `PRIMARY KEY` or `UNIQUE` constraint over the reviewed dedup identity | Runner injects tenant and proposal-derived identity values, inserts only allowlisted fields, and requires exactly one row. |
 | `DELETE` | Primary key, trusted tenant, exact version column | Deletes exactly one reviewed row. Hard delete requires human/operator approval and is refused when Runner detects write triggers or widening cascades. Prefer soft delete as guarded `UPDATE`. |
 
 Existing proposal capabilities with no `operation` field continue to mean
 single-row `UPDATE`.
+
+DSL authoring requires `CONFLICT GUARD <column>` for UPDATE and never silently
+chooses weak semantics. A narrow legacy single-row, non-reversible UPDATE using
+source-DB receipt authority may explicitly declare
+`CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED`. That mode hashes only the captured
+projection and may miss concurrent changes outside it. It is prominently
+reported by lint/explain/doctor/preview and is unavailable for Runner-ledger,
+DELETE, reversibility, or bounded sets. Treat it as a compatibility escape
+hatch, not equivalent protection.
 
 ## Receipt authority
 

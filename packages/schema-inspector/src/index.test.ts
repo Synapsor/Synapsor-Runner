@@ -8,6 +8,25 @@ import {
 } from "./index.js";
 
 describe("schema inspector helpers", () => {
+  it("never generates a weak UPDATE guard silently during onboarding", () => {
+    const base = {
+      version: 1 as const,
+      engine: "postgres" as const,
+      schema: "public",
+      table: "invoices",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      namespace: "billing",
+      visible_columns: ["id", "tenant_id", "amount_cents"],
+      allowed_columns: ["amount_cents"],
+      patch: { amount_cents: { from_arg: "amount_cents" } },
+    };
+
+    expect(() => generateRunnerConfigFromSpec({ ...base, mode: "review" })).toThrow(/UPDATE requires an inspected exact conflict_column/);
+    const readOnly = generateRunnerConfigFromSpec({ ...base, mode: "read_only" });
+    expect((readOnly.config.capabilities as Array<Record<string, unknown>>)).toHaveLength(1);
+  });
+
   it("generates a reviewed local runner config without secrets", () => {
     const generated = generateRunnerConfigFromSpec({
       version: 1,

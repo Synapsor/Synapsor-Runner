@@ -182,9 +182,6 @@
           "mode": "human",
           "required_role": "support_reviewer"
         },
-        "conflict_guard": {
-          "weak_guard_ack": true
-        },
         "numeric_bounds": {
           "amount_cents": {
             "maximum": 50000,

@@ -9,7 +9,7 @@ const payload = {
   sub: subject,
   tenant_id: tenant,
   iss: "https://fleet.example.invalid",
-  aud: "synapsor-runner-fleet",
+  aud: "https://runner-fleet.example.invalid/mcp",
   iat: now,
   exp: now + 600,
 };

@@ -11,6 +11,10 @@ from model arguments. Choose the database enforcement mode deliberately:
 
 These modes are defense in depth, not substitutes for least-privilege roles,
 restricted views, application authorization, or staging-first validation.
+HTTP endpoint authentication is another independent layer: it establishes who
+may call Runner and, for signed shared sessions, which trusted tenant/principal
+claims are bound. It does not turn `application_scope` into database-enforced
+isolation. See [HTTP MCP](http-mcp.md).
 
 ## Default: Application-Level Scope
 
@@ -49,6 +53,10 @@ with environment-bound capabilities.
 For shared production HTTP, prefer asymmetric JWT verification so Runner holds
 only public verification material. HS256 remains useful for local development
 and controlled deployments but gives Runner access to the signing secret.
+Also declare `http_security.deployment: shared`, an exact HTTPS
+audience/protected resource, a direct-TLS or trusted-proxy channel, and exact
+Host/Origin policy. A static endpoint token cannot supply shared tenant or
+principal identity.
 
 Run `doctor --json` or `tools preview --json` to inspect the effective
 per-source assurance mode and trusted-context binding. Server startup prints
