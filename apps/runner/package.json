@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Stop giving AI agents execute_sql; expose reviewed Postgres/MySQL MCP actions with proposals, approval, writeback, and replay.",
   "license": "Apache-2.0",
   "type": "module",
@@ -85,12 +85,14 @@
   },
   "scripts": {
     "build": "tsc -b && node ../../scripts/build-runner-package.mjs",
+    "check:publish-manifest": "node ../../scripts/check-runner-publish-manifest.mjs --source",
+    "prepublishOnly": "node ../../scripts/check-runner-publish-manifest.mjs --source --require-pnpm",
     "prepack": "cd ../.. && corepack pnpm build:runner-package",
     "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@synapsor/spec": "workspace:^",
+    "@synapsor/spec": "workspace:^1.5.0",
     "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pdf-lib": "1.17.1",

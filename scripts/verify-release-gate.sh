@@ -39,6 +39,7 @@ run corepack pnpm --dir "$ROOT" test:first-run
 
 run "$ROOT/scripts/verify-public-commands.sh"
 run "$ROOT/scripts/verify-local-runner.sh"
+run node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source
 run "$ROOT/scripts/verify-packed-runner.sh"
 run "$ROOT/scripts/verify-packed-own-db.sh"
 run node "$ROOT/scripts/check-license-content.mjs"
@@ -54,8 +55,8 @@ if grep -R -n "@synapsor/handler" \
   exit 1
 fi
 
-log "Runner package dry run"
-(cd "$ROOT/apps/runner" && npm pack --dry-run)
+log "Runner pnpm publish dry run"
+(cd "$ROOT/apps/runner" && corepack pnpm publish --dry-run --access public --no-git-checks)
 
 run git -C "$ROOT" diff --check
 

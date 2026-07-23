@@ -1,6 +1,25 @@
 # Changelog
 
-## 1.6.1 (prepared, not published)
+## 1.6.2 (prepared, not published)
+
+### Registry-installable packaging hotfix
+
+- Keeps Runner linked to the local `@synapsor/spec@1.5.0` workspace during
+  development while requiring pnpm to transform that dependency to the public
+  `^1.5.0` range in the release tarball.
+- Adds a `prepublishOnly` fail-closed guard that rejects `npm publish` and
+  requires `corepack pnpm publish`. It also rejects unexpected `workspace:`,
+  `file:`, `link:`, `portal:`, absolute-path, or incorrect Spec dependencies.
+- Changes the packed Runner release gate to inspect pnpm's actual transformed
+  tarball manifest and install that tarball by itself from a clean project.
+  This reproduces the public `npx` dependency-resolution path instead of
+  masking it with a simultaneously packed local Spec.
+- Contains the same proposal/evidence freshness runtime behavior prepared in
+  `1.6.1`; this patch changes packaging and version surfaces only.
+- Prepares only `@synapsor/runner@1.6.2`. `@synapsor/spec@1.5.0` and
+  `@synapsor/dsl@1.5.0` remain unchanged.
+
+## 1.6.1 (published 2026-07-23; install-broken)
 
 ### Fail-closed proposal and evidence freshness
 
@@ -26,8 +45,9 @@
 - Preserves existing contract normalization/digests, DSL, tools lists,
   approval paths, receipts, and deployments when the optional overlay is
   absent. `@synapsor/spec` and `@synapsor/dsl` remain at 1.5.0.
-- Prepares only `@synapsor/runner@1.6.1`. Nothing is published, tagged, pushed,
-  or released by this change.
+- Published with `@synapsor/spec: "workspace:^"` in the registry manifest,
+  causing clean npm/npx installs to fail with `EUNSUPPORTEDPROTOCOL`.
+  Superseded by the `1.6.2` packaging hotfix and should remain deprecated.
 
 ## 1.6.0 (published 2026-07-23)
 

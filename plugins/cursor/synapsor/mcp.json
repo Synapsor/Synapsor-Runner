@@ -6,7 +6,7 @@
       "args": [
         "-y",
         "-p",
-        "@synapsor/runner@1.6.1",
+        "@synapsor/runner@1.6.2",
         "synapsor-runner",
         "mcp",
         "serve",
