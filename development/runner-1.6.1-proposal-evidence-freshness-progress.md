@@ -1,5 +1,11 @@
 # Runner 1.6.1 Proposal and Evidence Freshness Progress
 
+> Post-publication correction (2026-07-23): Runner 1.6.1 was published through
+> `npm publish`, which retained `@synapsor/spec: "workspace:^"` in the registry
+> manifest. Clean npm/npx installs fail with `EUNSUPPORTEDPROTOCOL`. The
+> owner-run commands near the original end of this historical handoff are
+> superseded by the Runner 1.6.2 packaging hotfix. Do not republish 1.6.1.
+
 ## Objective
 
 Implement `/home/sandesh-tiwari/Desktop/C++/goal.txt` on
@@ -428,44 +434,10 @@ No Cloud/C++/website files have been changed.
 
 ## Remaining Work
 
-No implementation or verification work remains in this goal.
-
-External release actions require explicit owner authorization:
-
-1. review and commit the feature branch;
-2. merge/push;
-3. publish only `@synapsor/runner@1.6.1`;
-4. move Runner's `next` tag;
-5. verify npm/npx and create/push `v1.6.1`.
-
-## Owner-Run Release Commands
-
-Publish only Runner; Spec and DSL remain unchanged at 1.5.0:
-
-```bash
-cd /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner
-npm publish --access public
-npm dist-tag add @synapsor/runner@1.6.1 next
-```
-
-Registry and installed-artifact verification:
-
-```bash
-npm view @synapsor/runner@1.6.1 version repository.url readmeFilename bin license
-npm dist-tag ls @synapsor/runner
-npx -y -p @synapsor/runner@1.6.1 synapsor-runner --version
-npx -y -p @synapsor/runner@1.6.1 synapsor-runner audit --example dangerous-db-mcp
-npx -y -p @synapsor/runner@1.6.1 synapsor-runner try --prove --yes --no-open
-```
-
-After the reviewed release commit is on `main`:
-
-```bash
-cd /home/sandesh-tiwari/Desktop/C++/synapsor-runner
-git tag -a v1.6.1 -m "Synapsor Runner 1.6.1"
-git push origin v1.6.1
-gh release create v1.6.1 --title "Synapsor Runner 1.6.1" --generate-notes
-```
+The freshness implementation is complete, but the original 1.6.1 npm artifact
+is not installable. Release work continues in the Runner 1.6.2 packaging
+hotfix. The obsolete 1.6.1 npm/tag commands were removed so this historical
+handoff cannot cause a second bad publication.
 
 ## Blockers
 

@@ -3,11 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT/apps/runner"
-SPEC_PACKAGE_DIR="$ROOT/packages/spec"
 TEMP_DIR="$(mktemp -d)"
 TARBALL=""
-SPEC_TARBALL=""
 EXPECTED_VERSION="$(node -e "console.log(require('$PACKAGE_DIR/package.json').version)")"
+EXPECTED_SPEC_VERSION="$(node -e "console.log(require('$ROOT/packages/spec/package.json').version)")"
 
 cleanup() {
   rm -rf "$TEMP_DIR"
@@ -19,16 +18,16 @@ trap cleanup EXIT
 
 cd "$ROOT"
 corepack pnpm build:runner-package >/dev/null
-
-cd "$SPEC_PACKAGE_DIR"
-SPEC_PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
-SPEC_PACK_FILE="$(printf "%s\n" "$SPEC_PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
-if [[ -z "$SPEC_PACK_FILE" ]]; then
-  echo "Spec pack did not print a tarball filename" >&2
-  printf "%s\n" "$SPEC_PACK_OUTPUT" >&2
+node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source
+if npm_config_user_agent="npm/11 node/v22 linux x64" \
+  node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source --require-pnpm \
+  >/dev/null 2>&1; then
+  echo "Runner publish guard unexpectedly accepted npm publish" >&2
   exit 1
 fi
-SPEC_TARBALL="$TEMP_DIR/$(basename "$SPEC_PACK_FILE")"
+npm_config_user_agent="pnpm/10.14.0 npm/? node/v22 linux x64" \
+  node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source --require-pnpm \
+  >/dev/null
 
 cd "$PACKAGE_DIR"
 PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
@@ -40,9 +39,20 @@ if [[ -z "$PACK_FILE" ]]; then
 fi
 TARBALL="$TEMP_DIR/$(basename "$PACK_FILE")"
 
+mkdir -p "$TEMP_DIR/unpacked"
+tar -xzf "$TARBALL" -C "$TEMP_DIR/unpacked"
+node "$ROOT/scripts/check-runner-publish-manifest.mjs" --packed \
+  "$TEMP_DIR/unpacked/package/package.json" \
+  "$EXPECTED_SPEC_VERSION"
+
+# pnpm passes private npm-config environment keys to child scripts. Current npm
+# warns about those keys on every npx invocation, so keep this clean-install
+# verification focused on the package under test.
+unset npm_config_verify_deps_before_run npm_config__jsr_registry
+
 cd "$TEMP_DIR"
 npm init -y >/dev/null
-npm install "$SPEC_TARBALL" "$TARBALL" >/dev/null
+npm install "$TARBALL" --ignore-scripts --no-audit --no-fund >/dev/null
 STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"

@@ -10,7 +10,25 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.1 (prepared, not published)
+## 1.6.2 (prepared, not published)
+
+### Registry-installable packaging hotfix
+
+- Runner remains linked to the local Spec workspace during development, while
+  pnpm must transform that link to the public `@synapsor/spec@^1.5.0` range in
+  the release tarball.
+- A publish lifecycle guard rejects `npm publish`, requires
+  `corepack pnpm publish`, and rejects unexpected local dependency protocols or
+  incorrect Spec ranges.
+- The release gate inspects pnpm's transformed tarball manifest and installs
+  the Runner tarball alone in a clean project before invoking its CLI. The test
+  therefore exercises the dependency-resolution path used by public `npx`.
+- Runtime behavior is unchanged from the proposal/evidence freshness release.
+
+Prepared package version: `@synapsor/runner@1.6.2`.
+`@synapsor/spec@1.5.0` and `@synapsor/dsl@1.5.0` remain unchanged.
+
+## 1.6.1 (published 2026-07-23; install-broken)
 
 ### Fail-closed proposal and evidence freshness
 
@@ -33,9 +51,10 @@ for the Synapsor Cloud CLI.
 - Existing contracts, exact digests, DSL, model-facing tool lists, and
   non-freshness deployments keep their prior behavior.
 
-Prepared package version: `@synapsor/runner@1.6.1`.
-`@synapsor/spec@1.5.0` and `@synapsor/dsl@1.5.0` are unchanged. Nothing has
-been published by this repository change.
+The `1.6.1` registry manifest accidentally retained
+`@synapsor/spec: "workspace:^"`. Clean npm and npx installs reject that local
+workspace protocol with `EUNSUPPORTEDPROTOCOL`. The version should remain
+deprecated and is superseded by `1.6.2`. Spec and DSL were unaffected.
 
 ## 1.6.0 (published 2026-07-23)
 

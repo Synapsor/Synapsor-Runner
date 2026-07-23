@@ -90,7 +90,7 @@ importers:
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
       '@synapsor/spec':
-        specifier: workspace:^
+        specifier: workspace:^1.5.0
         version: link:../../packages/spec
       jose:
         specifier: 6.2.3
