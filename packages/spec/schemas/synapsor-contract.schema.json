@@ -362,6 +362,247 @@
         "minimum_group_size": { "type": "integer", "minimum": 2, "maximum": 1000000 }
       }
     },
+    "protectedReadValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "fixed": { "$ref": "#/$defs/scalar" },
+        "from_arg": { "$ref": "#/$defs/safeIdentifier" }
+      },
+      "oneOf": [
+        {
+          "required": ["fixed"],
+          "not": { "required": ["from_arg"] }
+        },
+        {
+          "required": ["from_arg"],
+          "not": { "required": ["fixed"] }
+        }
+      ]
+    },
+    "protectedReadPredicate": {
+      "type": "object",
+      "required": ["field", "operator"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "relationship": { "$ref": "#/$defs/safeIdentifier" },
+        "operator": { "enum": ["eq", "neq", "lt", "lte", "gt", "gte", "in"] },
+        "value": { "$ref": "#/$defs/protectedReadValue" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/scalar" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "operator": { "const": "in" } },
+            "required": ["operator"]
+          },
+          "then": {
+            "required": ["values"],
+            "not": { "required": ["value"] }
+          },
+          "else": {
+            "required": ["value"],
+            "not": { "required": ["values"] }
+          }
+        }
+      ]
+    },
+    "protectedReadRelationship": {
+      "type": "object",
+      "required": ["name", "schema", "table", "primary_key", "tenant_key", "local_key", "target_key", "cardinality", "max_fan_out"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/safeIdentifier" },
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "primary_key": { "$ref": "#/$defs/safeIdentifier" },
+        "tenant_key": { "$ref": "#/$defs/safeIdentifier" },
+        "principal_scope_key": { "$ref": "#/$defs/safeIdentifier" },
+        "local_key": { "$ref": "#/$defs/safeIdentifier" },
+        "target_key": { "$ref": "#/$defs/safeIdentifier" },
+        "cardinality": { "const": "many_to_one" },
+        "max_fan_out": { "const": 1 }
+      }
+    },
+    "protectedReadMeasure": {
+      "type": "object",
+      "required": ["name", "function"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/safeIdentifier" },
+        "function": { "enum": ["count", "count_distinct", "sum", "avg"] },
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "relationship": { "$ref": "#/$defs/safeIdentifier" }
+      }
+    },
+    "protectedReadDimension": {
+      "type": "object",
+      "required": ["name", "field"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/safeIdentifier" },
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "relationship": { "$ref": "#/$defs/safeIdentifier" }
+      }
+    },
+    "protectedReadTimeBucket": {
+      "type": "object",
+      "required": ["name", "field", "bucket"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/safeIdentifier" },
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "bucket": { "enum": ["day", "week", "month"] },
+        "relationship": { "$ref": "#/$defs/safeIdentifier" }
+      }
+    },
+    "protectedReadAggregate": {
+      "type": "object",
+      "required": ["counted_entity", "measures", "top_n", "minimum_group_size"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "counted_entity": { "const": "subject" },
+        "measures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/protectedReadMeasure" }
+        },
+        "dimensions": {
+          "type": "array",
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/protectedReadDimension" }
+        },
+        "time_bucket": { "$ref": "#/$defs/protectedReadTimeBucket" },
+        "comparison": {
+          "type": "object",
+          "required": ["field", "ranges"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "$ref": "#/$defs/safeIdentifier" },
+            "relationship": { "$ref": "#/$defs/safeIdentifier" },
+            "ranges": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "required": ["start", "end"],
+                "additionalProperties": false,
+                "properties": {
+                  "start": { "$ref": "#/$defs/protectedReadValue" },
+                  "end": { "$ref": "#/$defs/protectedReadValue" }
+                }
+              }
+            }
+          }
+        },
+        "order_by": {
+          "type": "object",
+          "required": ["kind", "direction"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["measure", "time_bucket"] },
+            "measure": { "$ref": "#/$defs/safeIdentifier" },
+            "direction": { "enum": ["asc", "desc"] }
+          }
+        },
+        "top_n": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "minimum_group_size": { "type": "integer", "minimum": 2, "maximum": 1000000 }
+      }
+    },
+    "protectedReadLimits": {
+      "type": "object",
+      "required": [
+        "max_rows",
+        "max_groups",
+        "max_response_cells",
+        "max_response_bytes",
+        "statement_timeout_ms",
+        "max_queries_per_session",
+        "max_extracted_cells_per_session",
+        "max_differencing_queries",
+        "rate_limit_per_minute"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "max_rows": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_groups": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_response_cells": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "max_response_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "statement_timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+        "max_queries_per_session": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "max_extracted_cells_per_session": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "max_differencing_queries": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "rate_limit_per_minute": { "type": "integer", "minimum": 1, "maximum": 120 }
+      }
+    },
+    "protectedRead": {
+      "type": "object",
+      "required": ["version", "mode", "boundary_digest", "generation_lock_fingerprint", "limits"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "version": { "const": "1" },
+        "mode": { "enum": ["rows", "aggregate"] },
+        "boundary_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "generation_lock_fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "predicates": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/protectedReadPredicate" }
+        },
+        "relationship": { "$ref": "#/$defs/protectedReadRelationship" },
+        "row_order_by": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["field", "direction"],
+            "additionalProperties": false,
+            "properties": {
+              "field": { "$ref": "#/$defs/safeIdentifier" },
+              "direction": { "enum": ["asc", "desc"] }
+            }
+          }
+        },
+        "aggregate": { "$ref": "#/$defs/protectedReadAggregate" },
+        "limits": { "$ref": "#/$defs/protectedReadLimits" }
+      }
+    },
     "numericBound": {
       "type": "object",
       "additionalProperties": false,
@@ -423,7 +664,8 @@
         "evidence": { "$ref": "#/$defs/evidenceRequirement" },
         "max_rows": { "type": "integer", "minimum": 1 },
         "proposal": { "$ref": "#/$defs/proposalAction" },
-        "aggregate": { "$ref": "#/$defs/aggregateRead" }
+        "aggregate": { "$ref": "#/$defs/aggregateRead" },
+        "protected_read": { "$ref": "#/$defs/protectedRead" }
       }
     },
     "workflow": {

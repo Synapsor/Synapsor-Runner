@@ -1,6 +1,15 @@
 import crypto from "node:crypto";
 import { z } from "zod";
 
+export {
+  PrivacyBoundaryError,
+  enforcePrivacyBudgets,
+  shapePrivacySuppressedGroups,
+  type PrivacyBoundaryErrorCode,
+  type PrivacyBudgetLimits,
+  type PrivacyBudgetSnapshot,
+} from "./privacy-boundary.js";
+
 type CanonicalJson = null | boolean | number | string | CanonicalJson[] | { [key: string]: CanonicalJson };
 
 /** Serialize reviewed protocol data independently of object insertion order. */

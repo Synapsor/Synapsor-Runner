@@ -12,7 +12,10 @@ trap cleanup EXIT
 
 cd "$ROOT"
 corepack pnpm build:runner-package >/dev/null
-npm pack "$PACKAGE_DIR" --pack-destination "$TEMP_DIR" --silent >/dev/null
+cd "$ROOT/packages/spec"
+corepack pnpm pack --pack-destination "$TEMP_DIR" >/dev/null
+cd "$PACKAGE_DIR"
+corepack pnpm pack --pack-destination "$TEMP_DIR" >/dev/null
 
 cd "$TEMP_DIR"
 npm init -y >/dev/null

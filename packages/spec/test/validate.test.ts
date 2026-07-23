@@ -61,6 +61,77 @@ describe("@synapsor/spec validation", () => {
     expect(codes).toContain("AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED");
   });
 
+  it("accepts a digest-bound protected PM aggregate with reviewed dimensions and bounded arguments", () => {
+    const contract = protectedAggregateContract();
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]).toMatchObject({
+      kind: "aggregate_read",
+      args: {
+        period_start: { type: "string", required: true, max_length: 32 },
+        period_end: { type: "string", required: true, max_length: 32 },
+      },
+      visible_fields: [],
+      protected_read: {
+        version: "1",
+        mode: "aggregate",
+        aggregate: {
+          counted_entity: "subject",
+          measures: [
+            { name: "churned_accounts", function: "count" },
+            { name: "affected_customers", function: "count_distinct", field: "customer_id" },
+          ],
+          dimensions: [
+            { name: "region", field: "region" },
+            { name: "reason", field: "churn_reason" },
+          ],
+          time_bucket: { name: "churn_week", field: "churned_at", bucket: "week" },
+          minimum_group_size: 5,
+          top_n: 20,
+        },
+      },
+    });
+  });
+
+  it("rejects widening, unsafe scope fields, unbound arguments, and fan-out in protected reads", () => {
+    const contract = protectedAggregateContract();
+    const capability = contract.capabilities[0];
+    capability.args.unused = { type: "string", required: true };
+    capability.protected_read.predicates.push({
+      field: "tenant_id",
+      operator: "eq",
+      value: { from_arg: "period_start" },
+    });
+    capability.protected_read.relationship = {
+      name: "customer",
+      schema: "public",
+      table: "customers",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      local_key: "customer_id",
+      target_key: "id",
+      cardinality: "many_to_many",
+      max_fan_out: 20,
+    };
+    capability.kept_out_fields.push("customer_id");
+    capability.evidence.query_audit = false;
+
+    const codes = validateContract(contract).errors.map((error) => error.code);
+    expect(codes).toContain("PROTECTED_READ_UNUSED_ARG");
+    expect(codes).toContain("PROTECTED_FIELD_FORBIDDEN");
+    expect(codes).toContain("PROTECTED_RELATIONSHIP_CARDINALITY_FORBIDDEN");
+    expect(codes).toContain("PROTECTED_RELATIONSHIP_LOCAL_KEY_FORBIDDEN");
+    expect(codes).toContain("PROTECTED_READ_EVIDENCE_REQUIRED");
+  });
+
+  it("does not synthesize protected-read fields into legacy canonical contracts", () => {
+    const legacy = readJson("fixtures/valid/basic-read.contract.json");
+    const normalized = normalizeContract(legacy);
+
+    expect(normalized).toEqual(JSON.parse(JSON.stringify(normalized)));
+    expect(normalized.capabilities.every((capability) => capability.protected_read === undefined)).toBe(true);
+  });
+
   it("accepts typed argument enums and rejects non-canonical enum values", () => {
     const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
     contract.capabilities[0].args.risk_level = { type: "string", required: true, enum: ["low", "medium", "high"] };
@@ -433,6 +504,63 @@ function aggregateReadContract(): Record<string, any> {
       column: "balance_cents",
       selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
       minimum_group_size: 5,
+    },
+  };
+  delete contract.capabilities[0].lookup;
+  return contract;
+}
+
+function protectedAggregateContract(): Record<string, any> {
+  const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
+  contract.capabilities[0] = {
+    ...contract.capabilities[0],
+    name: "analytics.churn_contributors_by_week",
+    description: "Describe reviewed weekly churn contributors without exposing member rows.",
+    returns_hint: "Returns privacy-suppressed weekly groups and reviewed aggregate measures.",
+    kind: "aggregate_read",
+    args: {
+      period_start: { type: "string", required: true, max_length: 32 },
+      period_end: { type: "string", required: true, max_length: 32 },
+    },
+    visible_fields: [],
+    kept_out_fields: ["email", "notes"],
+    evidence: { required: true, query_audit: true },
+    protected_read: {
+      version: "1",
+      mode: "aggregate",
+      boundary_digest: `sha256:${"a".repeat(64)}`,
+      generation_lock_fingerprint: `sha256:${"b".repeat(64)}`,
+      predicates: [
+        { field: "status", operator: "eq", value: { fixed: "churned" } },
+        { field: "churned_at", operator: "gte", value: { from_arg: "period_start" } },
+        { field: "churned_at", operator: "lt", value: { from_arg: "period_end" } },
+      ],
+      aggregate: {
+        counted_entity: "subject",
+        measures: [
+          { name: "churned_accounts", function: "count" },
+          { name: "affected_customers", function: "count_distinct", field: "customer_id" },
+        ],
+        dimensions: [
+          { name: "region", field: "region" },
+          { name: "reason", field: "churn_reason" },
+        ],
+        time_bucket: { name: "churn_week", field: "churned_at", bucket: "week" },
+        order_by: { kind: "measure", measure: "churned_accounts", direction: "desc" },
+        top_n: 20,
+        minimum_group_size: 5,
+      },
+      limits: {
+        max_rows: 50,
+        max_groups: 50,
+        max_response_cells: 500,
+        max_response_bytes: 65536,
+        statement_timeout_ms: 3000,
+        max_queries_per_session: 40,
+        max_extracted_cells_per_session: 4000,
+        max_differencing_queries: 6,
+        rate_limit_per_minute: 20,
+      },
     },
   };
   delete contract.capabilities[0].lookup;

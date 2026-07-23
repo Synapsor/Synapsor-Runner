@@ -168,6 +168,84 @@ Aggregate reads cannot declare model arguments, lookup, visible row fields,
 proposal clauses, joins, grouping, or arbitrary expressions. See [Bounded
 Aggregate Reads](aggregate-reads.md).
 
+## Protected named reads
+
+`PROTECTED READ` is the public DSL emitted by Protect This Query. It freezes a
+successful local authoring plan into a named capability. It is not the
+temporary `app.explore_data` plan grammar and it is not a generic query AST.
+
+This aggregate example is representative:
+
+```sql
+CREATE CAPABILITY analytics.churn_contributors_by_week
+  DESCRIPTION 'Describe reviewed weekly churn contributors.'
+  RETURNS HINT 'Returns privacy-suppressed reviewed groups.'
+  USING CONTEXT analytics_operator
+  SOURCE local_postgres
+  ON public.account_churn
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ARG period_start STRING REQUIRED MAX LENGTH 32
+  ARG period_end STRING REQUIRED MAX LENGTH 32
+  PROTECTED READ AGGREGATE
+  BOUNDARY DIGEST sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  GENERATION LOCK sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  PROTECTED FILTER status EQ FIXED 'churned'
+  PROTECTED FILTER churned_at GTE ARG period_start
+  PROTECTED FILTER churned_at LT ARG period_end
+  MEASURE churned_accounts COUNT ROWS
+  MEASURE affected_customers COUNT DISTINCT customer_id
+  GROUP DIMENSION region BY region
+  GROUP DIMENSION reason BY churn_reason
+  TIME DIMENSION churn_week BY WEEK OF churned_at
+  AGGREGATE ORDER BY MEASURE churned_accounts DESC
+  TOP 20 GROUPS
+  MIN GROUP SIZE 5
+  KEEP OUT email, private_notes
+  REQUIRE EVIDENCE
+  PROTECTED LIMITS ROWS 50 GROUPS 50 CELLS 500 BYTES 65536 TIMEOUT MS 3000 QUERIES 40 EXTRACTED CELLS 4000 DIFFERENCING 6 RATE PER MINUTE 20
+END
+```
+
+In that example, uppercase phrases such as `PROTECTED READ AGGREGATE`,
+`BOUNDARY DIGEST`, `MEASURE`, `GROUP DIMENSION`, and `TOP ... GROUPS` are DSL
+keywords. Names such as `analytics.churn_contributors_by_week`,
+`churned_accounts`, `affected_customers`, `region`, and `churn_week` are
+user-reviewed identifiers. Table/column references such as
+`public.account_churn`, `customer_id`, and `churned_at` come from inspected
+schema evidence and are frozen into the capability.
+
+The protected clauses mean:
+
+| Clause | Reviewed meaning |
+| --- | --- |
+| `PROTECTED READ ROWS` / `AGGREGATE` | Selects a frozen row or aggregate protected-read shape. |
+| `BOUNDARY DIGEST sha256:...` | Binds the capability to the exact human-activated exploration authority. |
+| `GENERATION LOCK sha256:...` | Binds it to the reviewed schema, role/grant/RLS posture, compiler, and Spec fingerprint. |
+| `PROTECTED RELATIONSHIP name ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk TENANT KEY tenant [PRINCIPAL SCOPE KEY principal]` | Freezes at most one inspected, reviewed many-to-one path with fan-out one. |
+| `PROTECTED FILTER field OP FIXED value` | Freezes a reviewed literal. `OP` is `EQ`, `NEQ`, `LT`, `LTE`, `GT`, `GTE`, or bounded fixed-list `IN`. |
+| `PROTECTED FILTER field OP ARG name` | Allows only one declared typed/bounded argument at that reviewed literal position. |
+| `ALLOW READ ...` / `ROW ORDER BY ...` | Freezes row projection and up to three fixed sort fields for row mode. |
+| `MEASURE alias COUNT ROWS` | Counts the reviewed subject entity. |
+| `MEASURE alias COUNT DISTINCT field` | Counts distinct values of a field approved for aggregate use; the raw values need not be visible. |
+| `MEASURE alias SUM|AVG field` | Uses an explicitly approved aggregate-safe numeric measure. |
+| `GROUP DIMENSION alias BY field` | Freezes a reviewed categorical grouping. |
+| `TIME DIMENSION alias BY DAY|WEEK|MONTH OF field` | Freezes one reviewed timestamp and bucket. |
+| `COMPARE RANGE field FROM value TO value` | Freezes at most two bounded reviewed time ranges. |
+| `TOP n GROUPS` / `MIN GROUP SIZE n` | Fixes output breadth and cohort suppression. |
+| `PROTECTED LIMITS ...` | Fixes row/group/response/time/query/extraction/differencing/rate budgets; MCP arguments cannot widen them. |
+
+Protect normally generates this verbose authority block so that reviewers do
+not have to transcribe digests or limits. The generated DSL compiles through
+`@synapsor/dsl` into the optional default-deny `protected_read` field in the
+canonical Spec. Existing contracts with no `protected_read` field normalize
+and hash exactly as before.
+
+Protected row and aggregate capabilities can be served after exact-digest
+activation even when temporary Scoped Explore is disabled. Production never
+needs or advertises `app.explore_data`. See [Auto Boundary, Scoped Explore, And
+Protect](auto-boundary-and-scoped-explore.md).
+
 ## Read surface and evidence
 
 ```sql

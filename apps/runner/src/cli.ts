@@ -10,10 +10,10 @@ import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CloudControlClient, CloudControlError, ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, bindPostgresTrustedScope, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, preflightGeneratedAuthority, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
-import { bindPostgresRlsScope, createPostgresPool, inspectPostgresRlsTarget, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration, type PostgresRlsOperation } from "@synapsor-runner/postgres";
+import { createPostgresPool, inspectPostgresRlsTarget, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration, type PostgresRlsOperation } from "@synapsor-runner/postgres";
 import {
   PostgresWritebackIntentStore,
   ProposalStore,
@@ -107,6 +107,15 @@ import { buildLocalActivationReport, formatLocalActivationReport, recordOwnDataA
 import type { SchemaCandidateFormat } from "./schema-candidates.js";
 import { compileSafeActionDraft, safeActionStatus, scaffoldSafeAction, SafeActionValidationError } from "./safe-action.js";
 import { buildLifecycleView, formatLifecycleDetails, formatLifecycleFirstLook, formatLifecycleList, listLifecycleSummaries, resolveLifecycleProposal } from "./lifecycle-view.js";
+import {
+  buildAutoBoundary,
+  compareGenerationLock,
+  loadStructuredProjectEvidence,
+  writeAutoBoundaryArtifacts,
+  type GenerationLock,
+} from "./auto-boundary.js";
+import { serveScopedExploreStdio } from "./authoring-mcp.js";
+import { prepareScopedExplore } from "./scoped-explore.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -470,6 +479,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "propose") return propose(rest);
   if (command === "audit") return audit(rest);
   if (command === "start") return start(rest);
+  if (command === "boundary") return boundaryCommand(rest);
   if (command === "action") return actionCommand(rest);
   if (command === "up") return up(rest);
   if (command === "runner") return runnerCommand(rest);
@@ -4068,6 +4078,24 @@ async function localDoctor(args: string[]): Promise<number> {
   if (validation.ok) {
     parsed = await readRuntimeConfig(configPath);
   }
+  if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
+    try {
+      await preflightGeneratedAuthority(parsed, process.env);
+      checks.push({
+        name: "generated-authority:current",
+        ok: true,
+        level: "pass",
+        message: "Generated protected authority matches its exact lock, current schema, database role, grants, ownership, and RLS posture.",
+      });
+    } catch (error) {
+      checks.push({
+        name: "generated-authority:current",
+        ok: false,
+        level: "fail",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   checks.push(...await sharedPostgresLedgerDoctorChecks(parsed));
   checks.push(...graduatedTrustDoctorChecks(parsed));
   const governance = await cloudLinkedGovernanceDoctorStatus(parsed, args, checks);
@@ -4289,20 +4317,27 @@ async function cursorProjectDoctorChecks(configPath: string, expectedTools: stri
         message: status.message,
       }];
     }
+    const authoring = isCursorAuthoringEntry(status.entry);
+    const authoringTools = ["app.describe_data", "app.explore_data"];
+    const reviewedTools = authoring ? authoringTools : expectedTools;
     const recordedConfig = path.resolve(projectRoot, status.paths.configArgument);
     const configMatches = recordedConfig === path.resolve(configPath);
     const checks: DoctorCheck[] = [{
       name: "cursor-project:installation",
-      ok: configMatches,
-      level: configMatches ? "pass" : "fail",
-      message: configMatches
-        ? `Runner owns an intact project Cursor entry for ${status.paths.configArgument}.`
+      ok: authoring || configMatches,
+      level: authoring || configMatches ? "pass" : "fail",
+      message: authoring
+        ? "Runner owns an intact local authoring Cursor entry; it does not depend on a production Runner config."
+        : configMatches
+          ? `Runner owns an intact project Cursor entry for ${status.paths.configArgument}.`
         : `Cursor entry points to ${status.paths.configArgument}, but doctor inspected ${path.resolve(configPath)}.`,
     }, {
       name: "cursor-project:model-tools",
-      ok: expectedTools.length > 0,
-      level: expectedTools.length > 0 ? "pass" : "fail",
-      message: `Reviewed model-facing tools: ${expectedTools.join(", ") || "none"}. Approval, apply, revert, policy, credentials, and trusted identity remain outside MCP.`,
+      ok: reviewedTools.length > 0,
+      level: reviewedTools.length > 0 ? "pass" : "fail",
+      message: authoring
+        ? `Authoring tools: ${authoringTools.join(", ")}. Scoped Explore remains local development/staging only; activation, approval, apply, revert, credentials, and trusted identity remain outside MCP.`
+        : `Reviewed model-facing tools: ${expectedTools.join(", ") || "none"}. Approval, apply, revert, policy, credentials, and trusted identity remain outside MCP.`,
     }];
     if (!args.includes("--check-cursor")) {
       checks.push({
@@ -4324,14 +4359,14 @@ async function cursorProjectDoctorChecks(configPath: string, expectedTools: stri
     if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new Error("--timeout-ms must be an integer from 100 to 120000");
     const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, projectRoot);
     const liveTools = mcpAuditToolNames(response);
-    const matches = stableStringArray(liveTools).join("\n") === stableStringArray(expectedTools).join("\n");
+    const matches = stableStringArray(liveTools).join("\n") === stableStringArray(reviewedTools).join("\n");
     checks.push({
       name: "cursor-project:launch",
       ok: matches,
       level: matches ? "pass" : "fail",
       message: matches
         ? `Configured Cursor command started and exposed exactly ${liveTools.length} reviewed tool(s).`
-        : `Configured command exposed ${liveTools.join(", ") || "no tools"}; expected ${expectedTools.join(", ") || "no tools"}.`,
+        : `Configured command exposed ${liveTools.join(", ") || "no tools"}; expected ${reviewedTools.join(", ") || "no tools"}.`,
     });
     return checks;
   } catch (error) {
@@ -4901,12 +4936,10 @@ async function verifyPostgresRlsCanary(
   const client = await pool.connect();
   const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
   const primaryKey = quotePostgresIdentifier(capability.target.primary_key);
-  const bind = async (tenantId: string, principal: string) => bindPostgresRlsScope(client, {
-    mode: "postgres_rls",
-    tenantSetting: scope.tenant_setting,
-    principalSetting: scope.principal_setting,
-    tenantId,
+  const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, scope, {
+    tenant_id: tenantId,
     principal,
+    provenance: "environment",
   });
   try {
     await client.query("BEGIN");
@@ -4916,10 +4949,13 @@ async function verifyPostgresRlsCanary(
     const id = visible.rows[0]?.id;
     if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
 
-    for (const [tenantId, principal] of [
+    const deniedScopes: Array<[string, string]> = [
       [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
-      [context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`],
-    ] as Array<[string, string]>) {
+      ...(scope.principal_setting
+        ? [[context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
+        : []),
+    ];
+    for (const [tenantId, principal] of deniedScopes) {
       await client.query("BEGIN");
       const before = await client.query(
         "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
@@ -5858,6 +5894,9 @@ function writebackDatabaseScope(
   if (job.target.principal_scope?.value !== undefined && principal !== String(job.target.principal_scope.value)) {
     throw new Error("POSTGRES_RLS_PRINCIPAL_CONTEXT_MISMATCH");
   }
+  if (!scope.principal_setting) {
+    throw new Error("POSTGRES_RLS_PRINCIPAL_SETTING_REQUIRED_FOR_WRITEBACK");
+  }
   return {
     mode: "postgres_rls",
     tenantSetting: scope.tenant_setting,
@@ -6682,8 +6721,17 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
 
 async function start(args: string[] = []): Promise<number> {
   if (args.includes("--action")) return startSafeAction(args);
+  if (await shouldEnterAutoBoundary(args)) return startAutoBoundary(args);
   if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
     if (args.length > 0) {
+      if (!process.stdin.isTTY && !isScriptedOnboardingArgs(args)) {
+        const sourceEnv = optionalArg(args, "--from-env") ?? "DATABASE_URL";
+        throw new Error(
+          `Fresh Auto Boundary onboarding requires an interactive terminal. ` +
+          `For automation, use --from-env ${sourceEnv} with --table <table> and --yes, ` +
+          `or pass --answers <answers.json>.`,
+        );
+      }
       const openWorkbench = process.stdin.isTTY && process.stdout.isTTY && !args.includes("--no-open") && !args.includes("--dry-run");
       return onboard(["db", ...args, ...(openWorkbench && !args.includes("--open-ui") ? ["--open-ui"] : [])]);
     }
@@ -6705,6 +6753,160 @@ async function start(args: string[] = []): Promise<number> {
     return onboard(["db", "--from-env", databaseEnv, "--open-ui"]);
   }
   return startWorker(args);
+}
+
+async function shouldEnterAutoBoundary(args: string[]): Promise<boolean> {
+  if (!optionalArg(args, "--from-env")) return false;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+  const establishedRoutingFlags = [
+    "--table",
+    "--answers",
+    "--mode",
+    "--yes",
+    "--non-interactive",
+    "--dry-run",
+    "--json",
+    "--inspection-json",
+    "--spec",
+    "--starter",
+    "--output",
+    "--out",
+    "-o",
+    "--action",
+    "--writeback",
+    "--single-tenant-dev",
+    "--tenant-key",
+  ];
+  if (establishedRoutingFlags.some((flag) => args.includes(flag))) return false;
+  if (await fileExists(path.resolve("synapsor.runner.json"))) return false;
+  if (await fileExists(path.resolve("synapsor.contract.json"))) return false;
+  return true;
+}
+
+async function startAutoBoundary(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--force"]), "start --from-env Auto Boundary");
+  const sourceEnv = optionalArg(args, "--from-env");
+  if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
+  const project = await detectProjectContext(process.cwd());
+  process.stdout.write(formatProjectDetection(project));
+  process.stdout.write("Inspecting the whole selected schema in an enforced read-only metadata transaction. No source rows are sampled.\n");
+  const inspection = await inspectDatabase({
+    engine: (optionalArg(args, "--engine") ?? "auto") as InspectEngine,
+    databaseUrlEnv: sourceEnv,
+    schema: optionalArg(args, "--schema"),
+    env: process.env,
+  });
+  process.stdout.write(summarizeInspection(inspection));
+  const evidence = await loadStructuredProjectEvidence(project);
+  const build = buildAutoBoundary({
+    inspection,
+    project,
+    parsedEvidence: evidence.parsed,
+    existingContracts: evidence.existingContracts,
+    sourceEnv,
+  });
+  const result = await writeAutoBoundaryArtifacts({
+    projectRoot: project.root,
+    build,
+    force: args.includes("--force"),
+  });
+  process.stdout.write([
+    "",
+    "Auto Boundary draft",
+    `  objects inspected: ${build.review.summary.objects}`,
+    `  exact-row read drafts: ${result.draft_reads}`,
+    `  blocked objects: ${result.blocked_objects}`,
+    `  sensitive fields kept out by suggestion: ${build.review.summary.sensitive_fields_kept_out}`,
+    `  RLS policies found: ${build.review.summary.rls_policies}`,
+    `  candidate contract: ${displayPath(path.join(result.root, "synapsor.candidate.contract.json"))}`,
+    `  review report: ${displayPath(path.join(result.root, "REVIEW.md"))}`,
+    "  state: disabled and unreviewed; active Runner tools are unchanged",
+    "",
+    "Review tenant/principal scope, field exposure, aggregate permissions, relationships, privacy budgets, and the exact database role before enabling own-data exploration.",
+    `After activation, install the local authoring tools in Cursor: ${cliCommandName()} mcp install cursor --project --authoring --project-root ${displayPath(project.root)} --yes`,
+    "Scoped Explore is never registered on production, shared HTTP, or Streamable HTTP.",
+    "",
+  ].join("\n"));
+  if (evidence.warnings.length) {
+    process.stdout.write(`Static evidence warnings:\n${evidence.warnings.map((warning) => `  - ${warning}`).join("\n")}\n`);
+  }
+  if (args.includes("--no-open")) return 0;
+  return ui(["--open", "--boundary-root", result.root]);
+}
+
+async function boundaryCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "draft") {
+    assertKnownOptions(rest, new Set(["--from-env", "--engine", "--schema", "--project-root", "--force", "--json"]), "boundary draft");
+    const sourceEnv = optionalArg(rest, "--from-env");
+    if (!sourceEnv) throw new Error("boundary draft requires --from-env <DATABASE_URL_ENV_NAME>.");
+    const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+    const project = await detectProjectContext(projectRoot);
+    const inspection = await inspectDatabase({
+      engine: (optionalArg(rest, "--engine") ?? "auto") as InspectEngine,
+      databaseUrlEnv: sourceEnv,
+      schema: optionalArg(rest, "--schema"),
+      env: process.env,
+    });
+    const evidence = await loadStructuredProjectEvidence(project);
+    const build = buildAutoBoundary({
+      inspection,
+      project,
+      parsedEvidence: evidence.parsed,
+      existingContracts: evidence.existingContracts,
+      sourceEnv,
+    });
+    const result = await writeAutoBoundaryArtifacts({ projectRoot, build, force: rest.includes("--force") });
+    if (rest.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ ok: true, activation: "disabled_unreviewed", ...result }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`Generated disabled Auto Boundary draft at ${displayPath(result.root)}.\nReview it in the local Workbench; active Runner tools are unchanged.\n`);
+    }
+    return 0;
+  }
+  if (subcommand === "diff") {
+    assertKnownOptions(rest, new Set(["--project-root", "--engine", "--schema", "--json"]), "boundary diff");
+    const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+    const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
+    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
+    const inspection = await inspectDatabase({
+      engine: (optionalArg(rest, "--engine") ?? lock.engine) as InspectEngine,
+      databaseUrlEnv: lock.source_env,
+      schema: optionalArg(rest, "--schema"),
+      env: process.env,
+    });
+    const comparison = compareGenerationLock(lock, inspection);
+    if (rest.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: comparison.current, ...comparison }, null, 2)}\n`);
+    else process.stdout.write(comparison.current
+      ? "Generation lock matches the current schema and database-role posture.\n"
+      : `Generation lock is stale:\n${comparison.changes.map((change) => `  - ${change}`).join("\n")}\n`);
+    return comparison.current ? 0 : 1;
+  }
+  if (subcommand === "status") {
+    assertKnownOptions(rest, new Set(["--project-root", "--json"]), "boundary status");
+    const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+    const review = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/review-report.json"), "utf8")) as Record<string, unknown>;
+    const payload = {
+      ok: true,
+      activation: review.activation,
+      generated_contract_digest: lock.generated_contract_digest,
+      schema_fingerprint: lock.schema_fingerprint,
+      role_posture_fingerprint: lock.role_posture_fingerprint,
+      protected_authority: lock.protected_authority,
+    };
+    if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write([
+      `Auto Boundary state: ${payload.activation}`,
+      `Candidate digest: ${payload.generated_contract_digest}`,
+      `Generated resources: ${payload.protected_authority.length}`,
+      "Active Runner tools are unchanged until secured Workbench activation.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+  usage(["boundary"]);
+  return 2;
 }
 
 async function startSafeAction(args: string[]): Promise<number> {
@@ -7773,8 +7975,14 @@ async function cloudConnect(args: string[]): Promise<number> {
 async function mcp(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "serve") return mcpServe(rest);
-  if (subcommand === "serve-http") return mcpServeHttp(rest);
-  if (subcommand === "serve-streamable-http") return mcpServeStreamableHttp(rest);
+  if (subcommand === "serve-http") {
+    if (rest.includes("--authoring")) throw new Error("Scoped Explore is authoring-only and is never available over HTTP.");
+    return mcpServeHttp(rest);
+  }
+  if (subcommand === "serve-streamable-http") {
+    if (rest.includes("--authoring")) throw new Error("Scoped Explore is authoring-only and is never available over Streamable HTTP.");
+    return mcpServeStreamableHttp(rest);
+  }
   if (subcommand === "audit") return audit(rest);
   if (subcommand === "config") return mcpConfig(rest);
   if (subcommand === "client-config") return mcpConfigure(rest);
@@ -7790,21 +7998,29 @@ async function mcp(args: string[]): Promise<number> {
 async function mcpProjectInstall(args: string[]): Promise<number> {
   const [client, ...rest] = args;
   if (client !== "cursor") throw new Error("mcp install currently supports cursor only");
-  assertKnownOptions(rest, new Set(["--project", "--project-root", "--config", "--store", "--dry-run", "--yes", "--json"]), "mcp install cursor");
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--config", "--store", "--authoring", "--dry-run", "--yes", "--json"]), "mcp install cursor");
   if (!rest.includes("--project")) {
     throw new Error("mcp install cursor requires --project so Runner changes only the current project's .cursor/mcp.json");
   }
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const authoring = rest.includes("--authoring");
   const configPath = optionalArg(rest, "--config") ?? "./synapsor.runner.json";
   const storePath = optionalArg(rest, "--store") ?? "./.synapsor/local.db";
-  const absoluteConfig = path.resolve(projectRoot, configPath);
-  await readRuntimeConfig(absoluteConfig);
-  const boundary = await inspectMcpToolBoundary(["--config", absoluteConfig, "--store", ":memory:"]);
-  if (!boundary.ok) {
-    throw new Error(`Cursor install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
+  let toolNames: string[];
+  if (authoring) {
+    await prepareScopedExplore({ projectRoot, transport: "stdio", env: process.env });
+    toolNames = ["app.describe_data", "app.explore_data"];
+  } else {
+    const absoluteConfig = path.resolve(projectRoot, configPath);
+    await readRuntimeConfig(absoluteConfig);
+    const boundary = await inspectMcpToolBoundary(["--config", absoluteConfig, "--store", ":memory:"]);
+    if (!boundary.ok) {
+      throw new Error(`Cursor install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
+    }
+    toolNames = boundary.names;
   }
-  const preview = await previewCursorProjectInstall({ projectRoot, configPath, storePath });
-  const report = cursorProjectLifecycleReport(preview, boundary.names);
+  const preview = await previewCursorProjectInstall({ projectRoot, configPath, storePath, authoring });
+  const report = cursorProjectLifecycleReport(preview, toolNames, authoring);
   const json = rest.includes("--json");
   if (rest.includes("--dry-run") || preview.action === "unchanged") {
     if (json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -7813,7 +8029,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   }
   if (!json) process.stdout.write(formatCursorProjectPreview(report));
   await confirmDangerousAction(rest, `Install the reviewed Synapsor MCP entry in ${path.relative(projectRoot, preview.paths.destination)}?`);
-  const installed = await installCursorProject({ projectRoot, configPath, storePath });
+  const installed = await installCursorProject({ projectRoot, configPath, storePath, authoring });
   if (json) {
     process.stdout.write(`${JSON.stringify({ ...report, action: installed.action, installed: true, backup: installed.backup ?? null }, null, 2)}\n`);
   } else {
@@ -7831,6 +8047,7 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
   if (!rest.includes("--project")) throw new Error("mcp status cursor requires --project");
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
   const status = await cursorProjectStatus(projectRoot);
+  const authoring = status.state === "installed" && isCursorAuthoringEntry(status.entry);
   let tools: string[] = [];
   let launch: { checked: boolean; ok: boolean; message: string } = {
     checked: false,
@@ -7838,12 +8055,19 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
     message: "Launch probe not requested; pass --check-launch to execute the configured stdio tools/list handshake.",
   };
   if (status.state === "installed") {
-    const configPath = path.resolve(projectRoot, status.paths.configArgument);
-    const boundary = await inspectMcpToolBoundary(["--config", configPath, "--store", ":memory:"]);
-    tools = boundary.names;
-    if (!boundary.ok) {
-      launch = { checked: false, ok: false, message: `Static tool boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}` };
-    } else if (rest.includes("--check-launch")) {
+    let staticBoundaryOk = true;
+    if (authoring) {
+      tools = ["app.describe_data", "app.explore_data"];
+    } else {
+      const configPath = path.resolve(projectRoot, status.paths.configArgument);
+      const boundary = await inspectMcpToolBoundary(["--config", configPath, "--store", ":memory:"]);
+      tools = boundary.names;
+      staticBoundaryOk = boundary.ok;
+      if (!boundary.ok) {
+        launch = { checked: false, ok: false, message: `Static tool boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}` };
+      }
+    }
+    if (staticBoundaryOk && rest.includes("--check-launch")) {
       const entry = status.entry;
       const command = typeof entry?.command === "string" ? entry.command : "";
       const commandArgs = Array.isArray(entry?.args) && entry.args.every((value) => typeof value === "string") ? entry.args as string[] : [];
@@ -7863,10 +8087,11 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
   const report = {
     ok: status.state === "installed" && launch.ok,
     state: status.state,
+    mode: authoring ? "authoring" : "runtime",
     message: status.message,
     destination: path.relative(projectRoot, status.paths.destination),
-    config: status.paths.configArgument,
-    store: status.paths.storeArgument,
+    config: authoring ? null : status.paths.configArgument,
+    store: authoring ? null : status.paths.storeArgument,
     tools,
     not_exposed_to_mcp: defaultBlockedToolSurface(),
     launch,
@@ -7909,13 +8134,15 @@ async function mcpProjectUninstall(args: string[]): Promise<number> {
 function cursorProjectLifecycleReport(
   preview: Awaited<ReturnType<typeof previewCursorProjectInstall>>,
   tools: string[],
+  authoring = false,
 ): Record<string, unknown> {
   return {
     ok: true,
     action: preview.action,
+    mode: authoring ? "authoring" : "runtime",
     destination: path.relative(preview.paths.projectRoot, preview.paths.destination),
-    config: preview.paths.configArgument,
-    store: preview.paths.storeArgument,
+    config: authoring ? null : preview.paths.configArgument,
+    store: authoring ? null : preview.paths.storeArgument,
     preserves_other_servers: true,
     credentials_in_cursor_config: false,
     tools,
@@ -7927,9 +8154,11 @@ function formatCursorProjectPreview(report: Record<string, unknown>): string {
   const tools = Array.isArray(report.tools) ? report.tools.join(", ") : "";
   return [
     `Cursor project MCP ${String(report.action)} preview`,
+    `Mode: ${String(report.mode)}`,
     `Destination: ${String(report.destination)}`,
-    `Runner config: ${String(report.config)}`,
-    `Runner store: ${String(report.store)}`,
+    ...(report.mode === "authoring"
+      ? ["Project root: .", "Transport: local stdio only"]
+      : [`Runner config: ${String(report.config)}`, `Runner store: ${String(report.store)}`]),
     `Model-facing tools: ${tools || "none"}`,
     "Approval, apply, revert, policy, credentials, and trusted identity stay outside MCP.",
     "Other Cursor MCP servers and project settings are preserved.",
@@ -7941,21 +8170,29 @@ function formatCursorProjectStatus(report: {
   ok: boolean;
   state: string;
   message: string;
+  mode: string;
   destination: string;
-  config: string;
+  config: string | null;
   tools: string[];
   launch: { checked: boolean; ok: boolean; message: string };
 }): string {
   return [
     `Cursor project MCP: ${report.state}`,
     report.message,
+    `Mode: ${report.mode}`,
     `Destination: ${report.destination}`,
-    `Runner config: ${report.config}`,
+    ...(report.mode === "authoring" ? ["Project root: ."] : [`Runner config: ${report.config}`]),
     `Model-facing tools: ${report.tools.join(", ") || "none"}`,
     `Launch: ${report.launch.message}`,
     "Approval, apply, revert, policy, credentials, and trusted identity are not model-facing.",
     "",
   ].join("\n");
+}
+
+function isCursorAuthoringEntry(entry: Record<string, unknown> | undefined): boolean {
+  return Array.isArray(entry?.args)
+    && entry.args.every((value) => typeof value === "string")
+    && entry.args.includes("--authoring");
 }
 
 function stableStringArray(values: string[]): string[] {
@@ -8772,6 +9009,16 @@ function formatTryInspect(
 
 async function mcpServe(args: string[]): Promise<number> {
   const transport = optionalArg(args, "--transport") ?? "stdio";
+  if (args.includes("--authoring")) {
+    if (transport !== "stdio") {
+      throw new Error("Scoped Explore is authoring-only and may be served only over local stdio.");
+    }
+    assertKnownOptions(args, new Set(["--authoring", "--project-root", "--transport"]), "mcp serve --authoring");
+    await serveScopedExploreStdio({
+      projectRoot: path.resolve(optionalArg(args, "--project-root") ?? process.cwd()),
+    });
+    return 0;
+  }
   if (transport === "streamable-http") return mcpServeStreamableHttp(args);
   if (transport === "http" || transport === "json-rpc-http" || transport === "jsonrpc-http") return mcpServeHttp(args);
   if (transport !== "stdio") throw new Error("--transport must be stdio, streamable-http, or http");
@@ -9521,6 +9768,7 @@ async function smokeCall(args: string[]): Promise<number> {
   const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? defaultStorePath;
   const config = await readRuntimeConfig(configPath);
   const env = envWithDemoDefaults(config, configPath);
+  await preflightGeneratedAuthority(config, env);
   const runtime = createMcpRuntime(config, { storePath, env });
   try {
     const tools = runtime.listTools();
@@ -9745,7 +9993,20 @@ type ToolPreviewCapabilityDetail = {
   max_rows: number;
   aggregate?: string;
   minimum_group_size?: number;
+  protected_aggregate?: boolean;
+  aggregate_dimensions?: string[];
 };
+
+function formatProtectedPredicate(
+  predicate: NonNullable<NonNullable<RuntimeCapabilityConfig["protected_read"]>["predicates"]>[number],
+): string {
+  const field = `${predicate.relationship ? `${predicate.relationship}.` : ""}${predicate.field}`;
+  if (predicate.operator === "in") return `${field} in (${predicate.values.map(formatScalar).join(", ")})`;
+  const value = "fixed" in predicate.value
+    ? formatScalar(predicate.value.fixed)
+    : `arg:${predicate.value.from_arg}`;
+  return `${field} ${predicate.operator} ${value}`;
+}
 
 function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabilityDetail[] {
   return (config.capabilities ?? []).map((capability) => {
@@ -9766,7 +10027,9 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
       } : {}),
       writable_columns: capability.allowed_columns ?? [],
       dedup_columns: capability.operation?.deduplication?.components.map((component) => component.column) ?? [],
-      fixed_selection: (capability.operation?.selection?.all ?? capability.aggregate?.selection?.all)?.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`) ?? [],
+      fixed_selection: capability.protected_read?.predicates?.map(formatProtectedPredicate)
+        ?? (capability.operation?.selection?.all ?? capability.aggregate?.selection?.all)?.map((term) => `${term.column} ${term.operator} ${formatScalar(term.value)}`)
+        ?? [],
       aggregate_bounds: capability.operation?.aggregate_bounds?.map((bound) => `${bound.measure}(${bound.column}) <= ${bound.maximum}`) ?? [],
       version_guard: capability.conflict_guard?.column,
       ...(capability.kind === "proposal" && capability.conflict_guard?.column ? {
@@ -9796,11 +10059,31 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
       approval: capability.kind === "proposal"
         ? `${capability.approval?.mode ?? "human"}${capability.approval?.required_role ? ` role=${capability.approval.required_role}` : ""} quorum=${capability.approval?.required_approvals ?? 1}`
         : "not applicable",
-      max_rows: capability.kind === "aggregate_read" ? 0 : cardinality === "set" ? capability.operation?.max_rows ?? 0 : capability.max_rows ?? 1,
+      max_rows: capability.protected_read?.mode === "aggregate"
+        ? capability.protected_read.limits.max_groups
+        : capability.kind === "aggregate_read"
+          ? 0
+          : cardinality === "set"
+            ? capability.operation?.max_rows ?? 0
+            : capability.max_rows ?? 1,
       aggregate: capability.aggregate
         ? `${capability.aggregate.function.toUpperCase()}(${capability.aggregate.function === "count" && capability.aggregate.count_mode !== "non_null" ? "*" : capability.aggregate.column})`
+        : capability.protected_read?.mode === "aggregate"
+          ? capability.protected_read.aggregate?.measures
+            .map((measure) => `${measure.function.toUpperCase()}(${measure.field ?? "*"}) AS ${measure.name}`)
+            .join(", ")
         : undefined,
-      minimum_group_size: capability.aggregate?.minimum_group_size,
+      minimum_group_size: capability.aggregate?.minimum_group_size
+        ?? capability.protected_read?.aggregate?.minimum_group_size,
+      protected_aggregate: capability.protected_read?.mode === "aggregate",
+      aggregate_dimensions: capability.protected_read?.mode === "aggregate"
+        ? [
+          ...(capability.protected_read.aggregate?.dimensions?.map((dimension) => dimension.name) ?? []),
+          ...(capability.protected_read.aggregate?.time_bucket
+            ? [capability.protected_read.aggregate.time_bucket.name]
+            : []),
+        ]
+        : undefined,
     };
   });
 }
@@ -9809,8 +10092,10 @@ function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail
   if (details.length === 0) return ["  - (none)"];
   return details.flatMap((detail) => [
     `  - ${detail.name}: ${detail.kind}${detail.operation ? ` ${detail.cardinality === "set" ? "BOUNDED SET " : "SINGLE-ROW "}${detail.operation.toUpperCase()}` : ""}`,
-    detail.kind === "aggregate_read"
-      ? `    target: ${detail.target}; output: one ${detail.aggregate} scalar; minimum group size: ${detail.minimum_group_size}`
+    detail.kind === "aggregate_read" && detail.protected_aggregate
+      ? `    target: ${detail.target}; reviewed measures: ${detail.aggregate}; dimensions: ${detail.aggregate_dimensions?.join(", ") || "none"}; max groups: ${detail.max_rows}; minimum cohort: ${detail.minimum_group_size}`
+      : detail.kind === "aggregate_read"
+        ? `    target: ${detail.target}; output: one ${detail.aggregate} scalar; minimum group size: ${detail.minimum_group_size}`
       : `    target: ${detail.target}; max rows: ${detail.max_rows}`,
     `    tenant: ${detail.tenant_source}`,
     ...(detail.principal_source ? [`    principal row lock: ${detail.principal_source} (AND tenant)`] : []),
@@ -11034,6 +11319,8 @@ async function shadow(args: string[]): Promise<number> {
 
 async function ui(args: string[]): Promise<number> {
   const portArg = optionalArg(args, "--port");
+  const boundaryRoot = optionalArg(args, "--boundary-root");
+  const boundaryProjectRoot = boundaryRoot ? path.resolve(boundaryRoot, "../..") : undefined;
   const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
   const config = await optionalRuntimeConfig(configPath);
   const configuredStorePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
@@ -11055,6 +11342,8 @@ async function ui(args: string[]): Promise<number> {
     port: portArg ? Number(portArg) : 0,
     allowRemoteBind: args.includes("--allow-remote-bind"),
     tour: args.includes("--tour"),
+    boundaryRoot,
+    projectRoot: boundaryProjectRoot,
   });
   process.stdout.write(`Synapsor Runner local UI: ${server.url}\n`);
   if (args.includes("--open")) {
@@ -15108,6 +15397,7 @@ function isKnownTopLevelCommand(command: string): boolean {
     "propose",
     "audit",
     "start",
+    "boundary",
     "action",
     "up",
     "runner",
@@ -15402,24 +15692,46 @@ Options:
   --tls-ca-env <ENV> --require-client-cert
 `,
     start: `Usage:
-  ${cmd} start --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
+  ${cmd} start --from-env DATABASE_URL [--schema public]
+  ${cmd} start --from-env DATABASE_URL --table invoices [--mode read_only|shadow|review]
+  ${cmd} start --from-env DATABASE_URL --answers ./answers.json --yes
   ${cmd} start --action refund_order --description "Propose one reviewed order refund" [--based-on billing.inspect_order]
   ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
   ${cmd} runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} start
 
-With --from-env, run the guided own-database setup: inspect schema, choose one
-object, create trusted context, generate semantic MCP tools, run/print a smoke
-call, and open the secured localhost first-action workbench in an interactive
-terminal. Pass --no-open for scripts and CI. A valid config/boundary handshake
-does not count as a real own-data read; the workbench Test step completes only
-after a scoped tool call is recorded in the local ledger.
+A fresh interactive --from-env invocation with no existing config, selector, or
+automation input scans the whole schema, combines deterministic database,
+Prisma, Drizzle, OpenAPI, and existing Synapsor evidence, emits a disabled
+DSL-first Auto Boundary draft, and opens the secured local Workbench. It never
+samples source rows or uses an LLM.
+
+Established --table, --answers, onboard db, --mode, noninteractive, JSON, and
+CI routes retain the guided one-object behavior and never unexpectedly prompt
+or open a browser. A valid config/boundary handshake does not count as a real
+own-data read.
 
 With no flags, start the legacy cloud-linked writeback polling worker from the
 worker environment config. Prefer \`${cmd} runner start\` for that worker path
 so it is not confused with first-run onboarding. Add \`--once\` with both
 \`--config\` and \`--store\` for a bounded claim/apply cycle that still rechecks
 the local reviewed contract and proposal before writeback.
+`,
+    boundary: `Usage:
+  ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
+  ${cmd} boundary status [--project-root .] [--json]
+  ${cmd} boundary diff [--project-root .] [--json]
+  ${cmd} mcp install cursor --project --authoring --project-root . --yes
+
+Draft the whole deterministic application boundary without opening a browser,
+inspect its disabled state, and compare the generation lock with the current
+schema and exact database role/grant/RLS posture. Drafting and diffing never
+activate authority or read source rows.
+
+Only the secured local Workbench can activate the exact development/staging
+exploration-boundary digest. After activation, --authoring installs exactly
+app.describe_data and app.explore_data in the current Cursor project. Scoped
+Explore remains local stdio only and is absent from production and remote HTTP.
 `,
     action: `Usage:
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts [--config ./synapsor.runner.json]
@@ -15481,6 +15793,7 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp install cursor --project --authoring [--project-root .] [--dry-run]
   ${cmd} mcp install cursor --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} mcp status cursor --project [--check-launch]
   ${cmd} mcp uninstall cursor --project [--dry-run]
@@ -15493,12 +15806,18 @@ Stdio opens no network socket and needs no HTTP credential. Networked MCP is aut
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
 `,
     "mcp install": `Usage:
+  ${cmd} mcp install cursor --project --authoring [--project-root .] [--dry-run] [--yes]
   ${cmd} mcp install cursor --project [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db] [--dry-run] [--yes]
 
 Preview, confirm, and merge a project-scoped Synapsor entry into .cursor/mcp.json.
 Runner preserves other servers/settings, creates a backup before changing an
 existing file, records explicit ownership, and never writes database URLs,
 credentials, trusted identity, approval, apply, revert, or policy authority.
+--authoring installs the active local development/staging Scoped Explore
+boundary with exactly app.describe_data and app.explore_data. It validates the
+current generation lock and database role before installation and never uses a
+runtime config. Re-run without --authoring after Protect activates a production
+named capability.
 `,
     "mcp status": `Usage:
   ${cmd} mcp status cursor --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
@@ -15524,10 +15843,12 @@ This command never prints database URLs or write credentials.
 `,
     "mcp serve": `Usage:
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio] [--read-only] [--local] [--alias-mode canonical|openai|both] [--result-format v1|v2]
+  ${cmd} mcp serve --authoring --project-root .
   ${cmd} mcp serve --transport streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN [--result-format v2]
 
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
 Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
+The explicit --authoring route exposes only app.describe_data and app.explore_data after a local human activates the current development/staging boundary. It refuses HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner.
 For Streamable HTTP, Bearer may present either an operator-provisioned opaque endpoint token or an identity-provider-issued signed JWT. Runner never issues or refreshes these credentials.
 Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names. Use --alias-mode both to expose canonical and alias names.
 Use --result-format v2 to return one stable ok/summary/data/proposal/error envelope from every tool call.

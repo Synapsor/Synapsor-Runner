@@ -1,5 +1,26 @@
 # Reviewed Candidates From Prisma, Drizzle, And OpenAPI
 
+Runner 1.6.0 uses these same bounded static parsers as evidence in the
+whole-application [Auto Boundary](auto-boundary-and-scoped-explore.md) flow.
+The database catalog remains authoritative for database structure; Prisma,
+Drizzle, OpenAPI, and existing Synapsor definitions contribute deterministic
+names, relationships, and structured review evidence. None of them
+independently grant authority.
+
+For a fresh interactive staging project, prefer:
+
+```bash
+synapsor-runner start --from-env DATABASE_URL
+```
+
+That combines all detected structured sources into one disabled candidate
+graph, generation lock, and Workbench review. It never executes adopter code,
+samples source rows before activation, uses an LLM, or overwrites an active
+contract.
+
+The individual commands below remain useful for CI, focused review, and
+backward-compatible workflows.
+
 Use these generators after schema or API inspection when you want a review
 starting point without granting authority:
 
@@ -42,10 +63,16 @@ They do not decide which tenant or principal is authoritative, which fields are
 safe to expose, which writes are valid, business bounds, approval policy, or
 auto-approval. A field-name heuristic is not data classification.
 
-Review `generation-review.json` and `REVIEW.md`, replace every
+In the individual-generator path, review `generation-review.json` and
+`REVIEW.md`, replace every
 `review_required_*` placeholder, run the generated tests and a
 [Shadow study](shadow-studies.md), then deliberately copy reviewed definitions
 into an active contract through code review.
+
+In Auto Boundary, Workbench presents the unresolved scope, field, aggregate,
+relationship, privacy, and role-posture decisions together. Exact-digest
+activation enables only the reviewed local authoring boundary. Generated named
+capabilities still begin disabled and require their own activation.
 
 ## Input Safety
 

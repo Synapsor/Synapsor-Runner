@@ -11,6 +11,9 @@ importers:
       '@anthropic-ai/mcpb':
         specifier: 2.1.2
         version: 2.1.2
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@3.25.76)
       '@synapsor-runner/config':
         specifier: workspace:*
         version: link:packages/config
@@ -53,9 +56,15 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.21
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
       tsx:
         specifier: ^4.20.0
         version: 4.22.4
@@ -81,8 +90,8 @@ importers:
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
       '@synapsor/spec':
-        specifier: ^1.4.2
-        version: 1.4.2
+        specifier: workspace:^
+        version: link:../../packages/spec
       jose:
         specifier: 6.2.3
         version: 6.2.3
@@ -111,6 +120,9 @@ importers:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
@@ -119,6 +131,10 @@ importers:
         version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)(yaml@2.8.3)
 
   packages/config:
+    dependencies:
+      '@synapsor/spec':
+        specifier: workspace:*
+        version: link:../spec
     devDependencies:
       ajv:
         specifier: ^8.17.1
@@ -146,7 +162,7 @@ importers:
   packages/dsl:
     dependencies:
       '@synapsor/spec':
-        specifier: workspace:^1.4.2
+        specifier: workspace:^1.5.0
         version: link:../spec
     devDependencies:
       typescript:
@@ -201,6 +217,9 @@ importers:
       '@synapsor-runner/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@synapsor-runner/schema-inspector':
+        specifier: workspace:*
+        version: link:../schema-inspector
       '@synapsor/spec':
         specifier: workspace:*
         version: link:../spec
@@ -296,6 +315,9 @@ importers:
 
   packages/schema-inspector:
     dependencies:
+      '@synapsor-runner/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       mysql2:
         specifier: ^3.11.0
         version: 3.22.5(@types/node@22.19.21)
@@ -871,11 +893,6 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
-  '@synapsor/spec@1.4.2':
-    resolution: {integrity: sha512-35JBfwEeEv9p3fpgzj0b8g5dpfNcbMD6AXGfbC3PQsNG0HEA6nEaCUBnXnBEuawbTl6ocl7EsfYRAKp6+bL84Q==}
-    engines: {node: '>=22.5.0'}
-    hasBin: true
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -2129,8 +2146,6 @@ snapshots:
     optional: true
 
   '@standard-schema/spec@1.1.0': {}
-
-  '@synapsor/spec@1.4.2': {}
 
   '@types/chai@5.2.3':
     dependencies:

@@ -1,5 +1,6 @@
 import mysql from "mysql2/promise";
 import { Pool } from "pg";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 
 export type SourceEngine = "postgres" | "mysql";
 export type InspectEngine = SourceEngine | "auto";
@@ -7,6 +8,8 @@ export type InspectEngine = SourceEngine | "auto";
 export type ColumnInfo = {
   name: string;
   data_type: string;
+  comment?: string;
+  enum_values?: string[];
   nullable: boolean;
   default?: string;
   generated: boolean;
@@ -58,18 +61,55 @@ export type IndexInfo = {
   definition?: string;
 };
 
+export type CheckConstraintInfo = {
+  name: string;
+  definition: string;
+};
+
+export type RowLevelSecurityPolicyInfo = {
+  name: string;
+  command: "ALL" | "SELECT" | "INSERT" | "UPDATE" | "DELETE" | string;
+  permissive: boolean;
+  roles: string[];
+  using_expression?: string;
+  check_expression?: string;
+};
+
+export type RelationPrivilegeInfo = {
+  select: boolean;
+  insert: boolean;
+  update: boolean;
+  delete: boolean;
+  truncate: boolean;
+  references: boolean;
+  trigger: boolean;
+};
+
+export type RelationRolePosture = {
+  owner: string;
+  current_role_is_owner: boolean;
+  current_role_can_assume_owner: boolean;
+  privileges: RelationPrivilegeInfo;
+  row_security_forced: boolean | "unsupported" | "unknown";
+  row_security_effective_for_current_role: boolean | "unsupported" | "unknown";
+};
+
 export type TableInfo = {
   schema: string;
   name: string;
   type: "table" | "view";
   writable: boolean;
+  comment?: string;
   columns: ColumnInfo[];
   primary_key: string[];
   unique_constraints: UniqueConstraintInfo[];
+  check_constraints?: CheckConstraintInfo[];
   foreign_keys: ForeignKeyInfo[];
   referenced_by?: ReferencingForeignKeyInfo[];
   write_triggers?: TriggerInfo[];
   row_level_security?: boolean | "unknown";
+  row_level_security_policies?: RowLevelSecurityPolicyInfo[];
+  role_posture?: RelationRolePosture;
   indexes: IndexInfo[];
   suggestions: {
     tenant_columns: string[];
@@ -174,6 +214,15 @@ export type SchemaInspection = {
   engine: SourceEngine;
   server_version: string;
   current_user: string;
+  role_posture?: {
+    verified: boolean;
+    superuser: boolean | "unsupported" | "unknown";
+    bypass_rls: boolean | "unsupported" | "unknown";
+    read_only: boolean;
+    writable_relations: string[];
+    owned_relations: string[];
+    reasons: string[];
+  };
   inspected_at: string;
   schemas: string[];
   tables: TableInfo[];
@@ -187,6 +236,63 @@ export type InspectOptions = {
   statementTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
 };
+
+export function schemaFingerprintForInspection(inspection: SchemaInspection): `sha256:${string}` {
+  return canonicalJsonDigest({
+    engine: inspection.engine,
+    schemas: [...inspection.schemas].sort(),
+    tables: inspection.tables.map((table) => ({
+      schema: table.schema,
+      name: table.name,
+      type: table.type,
+      columns: table.columns.map((column) => ({
+        name: column.name,
+        data_type: column.data_type,
+        nullable: column.nullable,
+        default: column.default ?? null,
+        generated: column.generated,
+        identity: column.identity ?? false,
+        enum_values: column.enum_values ?? [],
+      })),
+      primary_key: table.primary_key,
+      unique_constraints: table.unique_constraints,
+      check_constraints: table.check_constraints ?? [],
+      foreign_keys: table.foreign_keys,
+      referenced_by: table.referenced_by ?? [],
+      write_triggers: table.write_triggers ?? [],
+      row_level_security: table.row_level_security ?? "unknown",
+      row_level_security_policies: table.row_level_security_policies ?? [],
+      indexes: table.indexes.map((index) => ({
+        name: index.name,
+        columns: index.columns ?? [],
+        unique: index.unique ?? false,
+        definition: index.definition ?? null,
+      })),
+    })),
+  });
+}
+
+export function rolePostureFingerprint(inspection: SchemaInspection): `sha256:${string}` {
+  return canonicalJsonDigest({
+    engine: inspection.engine,
+    current_user: inspection.current_user,
+    role: inspection.role_posture ?? {
+      verified: false,
+      superuser: "unknown",
+      bypass_rls: "unknown",
+      read_only: false,
+      writable_relations: [],
+      owned_relations: [],
+      reasons: ["missing role posture"],
+    },
+    relations: inspection.tables.map((table) => ({
+      resource: `${table.schema}.${table.name}`,
+      posture: table.role_posture ?? null,
+      rls: table.row_level_security ?? "unknown",
+      policies: table.row_level_security_policies ?? [],
+    })),
+  });
+}
 
 export type OnboardingSelectionSpec = {
   version?: 1;
@@ -278,6 +384,12 @@ const SENSITIVE_PATTERNS = [
   /\bcvv\b/i,
   /refresh[_-]?token/i,
   /oauth/i,
+  /(?:^|[_-])email(?:$|[_-])/i,
+  /(?:^|[_-])phone(?:$|[_-])/i,
+  /(?:^|[_-])(?:street_)?address(?:$|[_-])/i,
+  /(?:^|[_-])(?:date_of_birth|birth_date|dob)(?:$|[_-])/i,
+  /(?:^|[_-])risk[_-]?score(?:$|[_-])/i,
+  /(?:^|[_-])private[_-]?(?:note|notes|data)(?:$|[_-])/i,
 ];
 const LARGE_OR_BINARY_TYPES = new Set([
   "bytea",
@@ -429,10 +541,12 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
 }
 
 export function summarizeInspection(inspection: SchemaInspection): string {
+  const rolePosture = inspection.role_posture;
   const lines = [
     `Engine: ${inspection.engine}`,
     `Server: ${inspection.server_version}`,
     `Current user: ${inspection.current_user}`,
+    `Role posture: ${rolePosture?.verified ? "verified" : "unverified"}; ${rolePosture?.read_only ? "read-only" : "not read-only"}`,
     `Schemas: ${inspection.schemas.join(", ") || "(none)"}`,
     `Objects: ${inspection.tables.length}`,
   ];
@@ -459,14 +573,25 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
   try {
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Number(options.statementTimeoutMs ?? 3000)}`);
-    const version = await client.query("SELECT version() AS version, current_user AS current_user");
+    const version = await client.query<{
+      version: string;
+      current_user: string;
+      superuser: boolean;
+      bypass_rls: boolean;
+    }>(
+      `SELECT version() AS version, current_user AS current_user,
+              role.rolsuper AS superuser, role.rolbypassrls AS bypass_rls
+       FROM pg_catalog.pg_roles role
+       WHERE role.rolname = current_user`,
+    );
     const schemas = await client.query<{ schema_name: string }>(
       `SELECT schema_name FROM information_schema.schemata
        WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
        ORDER BY schema_name`,
     );
     const tables = await client.query<RawTable>(
-      `SELECT table_schema AS schema, table_name AS name, table_type AS type
+      `SELECT table_schema AS schema, table_name AS name, table_type AS type,
+              pg_catalog.obj_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class') AS comment
        FROM information_schema.tables
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
@@ -477,7 +602,19 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
     const columns = await client.query<RawColumn>(
       `SELECT table_schema AS schema, table_name AS table_name, column_name AS name,
               data_type, udt_name, is_nullable, column_default AS column_default,
-              is_generated, is_identity, ordinal_position
+              is_generated, is_identity, ordinal_position,
+              pg_catalog.col_description(
+                (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass,
+                ordinal_position
+              ) AS comment,
+              CASE WHEN data_type = 'USER-DEFINED' THEN (
+                SELECT array_agg(enum_value.enumlabel ORDER BY enum_value.enumsortorder)
+                FROM pg_catalog.pg_type enum_type
+                JOIN pg_catalog.pg_namespace enum_ns ON enum_ns.oid = enum_type.typnamespace
+                JOIN pg_catalog.pg_enum enum_value ON enum_value.enumtypid = enum_type.oid
+                WHERE enum_type.typname = information_schema.columns.udt_name
+                  AND enum_ns.nspname = information_schema.columns.udt_schema
+              ) ELSE NULL END AS enum_values
        FROM information_schema.columns
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
@@ -542,10 +679,54 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       [options.schema ?? null],
     );
     const rowSecurity = await client.query<RawRowSecurity>(
-      `SELECT n.nspname AS schema, c.relname AS table_name, c.relrowsecurity AS enabled
+      `SELECT n.nspname AS schema, c.relname AS table_name,
+              c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced
        FROM pg_catalog.pg_class c
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
        WHERE c.relkind IN ('r', 'p')
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR n.nspname = $1)
+       ORDER BY n.nspname, c.relname`,
+      [options.schema ?? null],
+    );
+    const checks = await client.query<RawCheckConstraint>(
+      `SELECT n.nspname AS schema, c.relname AS table_name, con.conname AS name,
+              pg_catalog.pg_get_constraintdef(con.oid, true) AS definition
+       FROM pg_catalog.pg_constraint con
+       JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE con.contype = 'c'
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR n.nspname = $1)
+       ORDER BY n.nspname, c.relname, con.conname`,
+      [options.schema ?? null],
+    );
+    const rlsPolicies = await client.query<RawRlsPolicy>(
+      `SELECT schemaname AS schema, tablename AS table_name, policyname AS name,
+              cmd AS command, permissive, pg_catalog.to_json(roles) AS roles,
+              qual AS using_expression, with_check AS check_expression
+       FROM pg_catalog.pg_policies
+       WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR schemaname = $1)
+       ORDER BY schemaname, tablename, policyname`,
+      [options.schema ?? null],
+    );
+    const relationRolePosture = await client.query<RawRelationRolePosture>(
+      `SELECT n.nspname AS schema, c.relname AS table_name,
+              pg_catalog.pg_get_userbyid(c.relowner) AS owner,
+              c.relowner = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user) AS current_role_is_owner,
+              pg_catalog.pg_has_role(current_user, c.relowner, 'MEMBER') AS current_role_can_assume_owner,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'SELECT') AS can_select,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'INSERT') AS can_insert,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'UPDATE') AS can_update,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'DELETE') AS can_delete,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'TRUNCATE') AS can_truncate,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'REFERENCES') AS can_references,
+              pg_catalog.has_table_privilege(current_user, c.oid, 'TRIGGER') AS can_trigger,
+              c.relforcerowsecurity AS row_security_forced
+       FROM pg_catalog.pg_class c
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relkind IN ('r', 'p', 'v', 'm')
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
        ORDER BY n.nspname, c.relname`,
@@ -564,6 +745,11 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       engine: "postgres",
       server_version: String(version.rows[0]?.version ?? "unknown"),
       current_user: String(version.rows[0]?.current_user ?? "unknown"),
+      role: {
+        verified: version.rowCount === 1,
+        superuser: Boolean(version.rows[0]?.superuser),
+        bypass_rls: Boolean(version.rows[0]?.bypass_rls),
+      },
       schemas: schemas.rows.map((row) => row.schema_name),
       tables: tables.rows,
       columns: columns.rows,
@@ -572,6 +758,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       indexes: indexes.rows,
       triggers: triggers.rows,
       rowSecurity: rowSecurity.rows,
+      checks: checks.rows,
+      rlsPolicies: rlsPolicies.rows,
+      relationRolePosture: relationRolePosture.rows,
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -595,7 +784,8 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        ORDER BY schema_name`,
     );
     const [tableRows] = await connection.query<mysql.RowDataPacket[]>(
-      `SELECT table_schema AS \`schema\`, table_name AS name, table_type AS type
+      `SELECT table_schema AS \`schema\`, table_name AS name, table_type AS type,
+              table_comment AS comment
        FROM information_schema.tables
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
@@ -606,7 +796,8 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     const [columnRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, column_name AS name,
               data_type, column_type AS udt_name, is_nullable,
-              column_default, extra AS is_generated, extra AS is_identity, ordinal_position AS ordinal_position
+              column_default, extra AS is_generated, extra AS is_identity,
+              ordinal_position AS ordinal_position, column_comment AS comment
        FROM information_schema.columns
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
@@ -670,11 +861,33 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        ORDER BY table_schema, table_name, index_name`,
       [schemaParam, schemaParam],
     );
+    const [grantRows] = await connection.query<mysql.RowDataPacket[]>("SHOW GRANTS FOR CURRENT_USER");
+    const mysqlRole = mysqlRolePosture(grantRows.map((row) => String(Object.values(row)[0] ?? "")));
+    const relationRolePosture = (tableRows as Array<Record<string, unknown>>).map((row): RawRelationRolePosture => ({
+      schema: String(row.schema),
+      table_name: String(row.name),
+      owner: "",
+      current_role_is_owner: false,
+      current_role_can_assume_owner: false,
+      can_select: mysqlRole.canSelect,
+      can_insert: mysqlRole.canWrite,
+      can_update: mysqlRole.canWrite,
+      can_delete: mysqlRole.canWrite,
+      can_truncate: mysqlRole.canWrite,
+      can_references: mysqlRole.canWrite,
+      can_trigger: mysqlRole.canWrite,
+      row_security_forced: false,
+    }));
     await connection.query("COMMIT").catch(() => undefined);
     return normalizeInspection({
       engine: "mysql",
       server_version: String(versionRows[0]?.version ?? "unknown"),
       current_user: String(versionRows[0]?.current_user ?? "unknown"),
+      role: {
+        verified: true,
+        superuser: "unsupported",
+        bypass_rls: "unsupported",
+      },
       schemas: schemaRows.map((row) => String(row.schema_name)),
       tables: tableRows as RawTable[],
       columns: columnRows as RawColumn[],
@@ -689,6 +902,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       })),
       triggers: triggerRows as RawTrigger[],
       rowSecurity: [],
+      relationRolePosture,
     });
   } catch (error) {
     await connection.query("ROLLBACK").catch(() => undefined);
@@ -698,7 +912,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
   }
 }
 
-type RawTable = { schema: string; name: string; type: string };
+type RawTable = { schema: string; name: string; type: string; comment?: string | null };
 type RawColumn = {
   schema: string;
   table_name: string;
@@ -710,6 +924,8 @@ type RawColumn = {
   is_generated?: string | null;
   is_identity?: string | null;
   ordinal_position: number;
+  comment?: string | null;
+  enum_values?: string[] | null;
 };
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
 type RawForeignKey = {
@@ -725,12 +941,43 @@ type RawForeignKey = {
 };
 type RawIndex = { schema: string; table_name: string; name: string; definition?: string; columns?: string[]; unique?: boolean };
 type RawTrigger = { schema: string; table_name: string; name: string; timing: string; orientation: string; event: string };
-type RawRowSecurity = { schema: string; table_name: string; enabled: boolean };
+type RawRowSecurity = { schema: string; table_name: string; enabled: boolean; forced?: boolean };
+type RawCheckConstraint = { schema: string; table_name: string; name: string; definition: string };
+type RawRlsPolicy = {
+  schema: string;
+  table_name: string;
+  name: string;
+  command: string;
+  permissive: boolean | string;
+  roles?: unknown;
+  using_expression?: string | null;
+  check_expression?: string | null;
+};
+type RawRelationRolePosture = {
+  schema: string;
+  table_name: string;
+  owner: string;
+  current_role_is_owner: boolean;
+  current_role_can_assume_owner: boolean;
+  can_select: boolean;
+  can_insert: boolean;
+  can_update: boolean;
+  can_delete: boolean;
+  can_truncate: boolean;
+  can_references: boolean;
+  can_trigger: boolean;
+  row_security_forced: boolean;
+};
 
 function normalizeInspection(input: {
   engine: SourceEngine;
   server_version: string;
   current_user: string;
+  role?: {
+    verified: boolean;
+    superuser: boolean | "unsupported" | "unknown";
+    bypass_rls: boolean | "unsupported" | "unknown";
+  };
   schemas: string[];
   tables: RawTable[];
   columns: RawColumn[];
@@ -739,6 +986,9 @@ function normalizeInspection(input: {
   indexes: RawIndex[];
   triggers: RawTrigger[];
   rowSecurity: RawRowSecurity[];
+  checks?: RawCheckConstraint[];
+  rlsPolicies?: RawRlsPolicy[];
+  relationRolePosture?: RawRelationRolePosture[];
 }): SchemaInspection {
   const columnsByTable = groupBy(input.columns, (row) => tableKey(row.schema, row.table_name));
   const keysByTable = groupBy(input.keyColumns, (row) => tableKey(row.schema, row.table_name));
@@ -747,6 +997,11 @@ function normalizeInspection(input: {
   const indexesByTable = groupBy(input.indexes, (row) => tableKey(row.schema, row.table_name));
   const triggersByTable = groupBy(input.triggers, (row) => tableKey(row.schema, row.table_name));
   const rowSecurityByTable = new Map(input.rowSecurity.map((row) => [tableKey(row.schema, row.table_name), Boolean(row.enabled)]));
+  const checksByTable = groupBy(input.checks ?? [], (row) => tableKey(row.schema, row.table_name));
+  const policiesByTable = groupBy(input.rlsPolicies ?? [], (row) => tableKey(row.schema, row.table_name));
+  const roleByTable = new Map((input.relationRolePosture ?? []).map((row) => [tableKey(row.schema, row.table_name), row]));
+  const superuser = input.role?.superuser ?? (input.engine === "postgres" ? "unknown" : "unsupported");
+  const bypassRls = input.role?.bypass_rls ?? (input.engine === "postgres" ? "unknown" : "unsupported");
   const tables = input.tables.map((raw): TableInfo => {
     const key = tableKey(raw.schema, raw.name);
     const rawColumns = columnsByTable.get(key) ?? [];
@@ -757,18 +1012,33 @@ function normalizeInspection(input: {
     const default_visible_columns = columns
       .filter((column) => !column.suggestions.sensitive && !column.suggestions.large_or_binary)
       .map((column) => column.name);
+    const role = roleByTable.get(key);
+    const rowSecurityEnabled = input.engine === "postgres" ? (rowSecurityByTable.get(key) ?? false) : false;
+    const policies = (policiesByTable.get(key) ?? []).map((policy): RowLevelSecurityPolicyInfo => ({
+      name: policy.name,
+      command: String(policy.command).toUpperCase(),
+      permissive: policy.permissive === true || String(policy.permissive).toUpperCase() === "PERMISSIVE",
+      roles: normalizePolicyRoles(policy.roles),
+      ...(policy.using_expression ? { using_expression: policy.using_expression } : {}),
+      ...(policy.check_expression ? { check_expression: policy.check_expression } : {}),
+    }));
+    const rolePosture = role ? normalizeRelationRolePosture(role, rowSecurityEnabled, policies, superuser, bypassRls) : undefined;
     return {
       schema: raw.schema,
       name: raw.name,
       type: raw.type.toUpperCase().includes("VIEW") ? "view" : "table",
       writable: raw.type.toUpperCase().includes("TABLE"),
+      ...(raw.comment ? { comment: raw.comment } : {}),
       columns,
       primary_key,
       unique_constraints,
+      check_constraints: (checksByTable.get(key) ?? []).map((check) => ({ name: check.name, definition: check.definition })),
       foreign_keys: normalizeForeignKeys(fksByTable.get(key) ?? []),
       referenced_by: normalizeReferencingForeignKeys(incomingFksByTable.get(key) ?? []),
       write_triggers: normalizeTriggers(triggersByTable.get(key) ?? []),
-      row_level_security: input.engine === "postgres" ? (rowSecurityByTable.get(key) ?? false) : false,
+      row_level_security: rowSecurityEnabled,
+      row_level_security_policies: policies,
+      ...(rolePosture ? { role_posture: rolePosture } : {}),
       indexes: (indexesByTable.get(key) ?? []).map((index) => ({
         name: index.name,
         columns: index.columns,
@@ -783,15 +1053,46 @@ function normalizeInspection(input: {
       },
     };
   });
+  const writableRelations = tables
+    .filter((table) => relationIsWriteCapable(table))
+    .map((table) => `${table.schema}.${table.name}`);
+  const ownedRelations = tables
+    .filter((table) => table.role_posture?.current_role_is_owner || table.role_posture?.current_role_can_assume_owner)
+    .map((table) => `${table.schema}.${table.name}`);
+  const roleVerified = input.role?.verified === true && tables.every((table) => table.role_posture !== undefined);
+  const roleReasons = [
+    ...(superuser === true ? ["current role is a database superuser"] : []),
+    ...(bypassRls === true ? ["current role has BYPASSRLS"] : []),
+    ...(ownedRelations.length ? [`current role owns or can assume the owner of ${ownedRelations.length} inspected relation(s)`] : []),
+    ...(writableRelations.length ? [`current role has write authority on ${writableRelations.length} inspected relation(s)`] : []),
+    ...(!roleVerified ? ["effective role posture could not be fully verified"] : []),
+  ];
   return {
     engine: input.engine,
     server_version: input.server_version,
     current_user: input.current_user,
+    role_posture: {
+      verified: roleVerified,
+      superuser: superuser,
+      bypass_rls: bypassRls,
+      read_only: roleVerified && superuser !== true && bypassRls !== true && writableRelations.length === 0 && ownedRelations.length === 0,
+      writable_relations: writableRelations,
+      owned_relations: ownedRelations,
+      reasons: roleReasons,
+    },
     inspected_at: new Date().toISOString(),
     schemas: input.schemas,
     tables,
     warnings: ["Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."],
   };
+}
+
+function normalizePolicyRoles(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((role) => typeof role !== "string")) {
+    throw new Error("PostgreSQL returned an invalid structured RLS policy role list.");
+  }
+  return value.map(String).sort();
 }
 
 function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
@@ -801,6 +1102,8 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   return {
     name,
     data_type: String(column.data_type || column.udt_name || "unknown"),
+    ...(column.comment ? { comment: column.comment } : {}),
+    ...(column.enum_values?.length ? { enum_values: column.enum_values.map(String) } : {}),
     nullable: String(column.is_nullable).toUpperCase() === "YES",
     default: column.column_default ?? undefined,
     generated: /always|stored|virtual|generated/i.test(String(column.is_generated ?? "")),
@@ -814,6 +1117,57 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
       large_or_binary: LARGE_OR_BINARY_TYPES.has(type) || /blob|binary|bytea|vector/i.test(type),
     },
   };
+}
+
+function normalizeRelationRolePosture(
+  role: RawRelationRolePosture,
+  rowSecurityEnabled: boolean,
+  policies: RowLevelSecurityPolicyInfo[],
+  superuser: boolean | "unsupported" | "unknown",
+  bypassRls: boolean | "unsupported" | "unknown",
+): RelationRolePosture {
+  const selectPolicies = policies.filter((policy) => policy.command === "ALL" || policy.command === "SELECT");
+  const ownerBypass = role.current_role_is_owner || role.current_role_can_assume_owner;
+  const rlsEffective = rowSecurityEnabled
+    ? superuser === true || bypassRls === true
+      ? false
+      : ownerBypass && !role.row_security_forced
+        ? false
+        : selectPolicies.length > 0
+          ? true
+          : "unknown"
+    : false;
+  return {
+    owner: role.owner,
+    current_role_is_owner: Boolean(role.current_role_is_owner),
+    current_role_can_assume_owner: Boolean(role.current_role_can_assume_owner),
+    privileges: {
+      select: Boolean(role.can_select),
+      insert: Boolean(role.can_insert),
+      update: Boolean(role.can_update),
+      delete: Boolean(role.can_delete),
+      truncate: Boolean(role.can_truncate),
+      references: Boolean(role.can_references),
+      trigger: Boolean(role.can_trigger),
+    },
+    row_security_forced: Boolean(role.row_security_forced),
+    row_security_effective_for_current_role: rlsEffective,
+  };
+}
+
+function relationIsWriteCapable(table: TableInfo): boolean {
+  const privileges = table.role_posture?.privileges;
+  if (!privileges) return true;
+  return privileges.insert || privileges.update || privileges.delete || privileges.truncate || privileges.trigger;
+}
+
+function mysqlRolePosture(grants: string[]): { canSelect: boolean; canWrite: boolean } {
+  const normalized = grants.map((grant) => grant.toUpperCase());
+  const canSelect = normalized.some((grant) => /\bGRANT\b[\s\S]*\b(?:SELECT|ALL PRIVILEGES)\b/.test(grant));
+  const canWrite = normalized.some((grant) =>
+    /\bGRANT\b[\s\S]*\b(?:ALL PRIVILEGES|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRIGGER|EXECUTE|CREATE VIEW)\b/.test(grant),
+  );
+  return { canSelect, canWrite };
 }
 
 function constraintColumns(rows: RawKeyColumn[], kind: string): UniqueConstraintInfo[] {

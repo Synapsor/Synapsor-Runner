@@ -165,6 +165,23 @@ describe("database-enforced trusted scope", () => {
     );
   });
 
+  it("binds only the tenant setting for a tenant-only reviewed RLS scope", async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 1 }));
+    await bindPostgresTrustedScope({ query }, {
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+    }, {
+      tenant_id: "acme",
+      principal: "unused-principal",
+      provenance: "environment",
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      "SELECT set_config($1, $2, true)",
+      ["app.tenant_id", "acme"],
+    );
+  });
+
   it("partitions tenant-resolved credentials by trusted scope and fails closed", async () => {
     const resolver = {
       id: "app_credentials",

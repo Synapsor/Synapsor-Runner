@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/dsl",
-  "version": "1.4.4",
+  "version": "1.5.0",
   "description": "SQL-like Synapsor authoring frontend for canonical @synapsor/spec contracts.",
   "license": "Apache-2.0",
   "type": "module",
@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@synapsor/spec": "workspace:^1.4.2"
+    "@synapsor/spec": "workspace:^1.5.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

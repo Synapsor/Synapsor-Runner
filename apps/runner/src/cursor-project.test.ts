@@ -98,18 +98,43 @@ describe("Cursor project MCP lifecycle", () => {
 
     const installed = await installCursorProject({
       projectRoot: root,
-      packageSpec: "@synapsor/runner@1.5.3",
+      packageSpec: "@synapsor/runner@1.6.0",
       now: "2026-07-20T00:00:00.000Z",
     });
     expect(installed.entry).toEqual({
       type: "stdio",
       command: "npx",
       args: [
-        "-y", "-p", "@synapsor/runner@1.5.3", "synapsor-runner", "mcp", "serve",
+        "-y", "-p", "@synapsor/runner@1.6.0", "synapsor-runner", "mcp", "serve",
         "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db",
       ],
     });
     expect((await cursorProjectStatus(root)).state).toBe("installed");
+    await expect(uninstallCursorProject({ projectRoot: root })).resolves.toMatchObject({ changed: true });
+  });
+
+  it("installs authoring-only Cursor wiring without requiring a runtime config", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cursor-authoring-"));
+    const preview = await previewCursorProjectInstall({ projectRoot: root, authoring: true });
+    expect(preview.entry).toEqual({
+      type: "stdio",
+      command: "npx",
+      args: [
+        "-y",
+        "-p",
+        `@synapsor/runner@${runnerPackage.version}`,
+        "synapsor-runner",
+        "mcp",
+        "serve",
+        "--authoring",
+        "--project-root",
+        ".",
+      ],
+    });
+    await installCursorProject({ projectRoot: root, authoring: true });
+    const status = await cursorProjectStatus(root);
+    expect(status.state).toBe("installed");
+    expect(status.entry?.args).toContain("--authoring");
     await expect(uninstallCursorProject({ projectRoot: root })).resolves.toMatchObject({ changed: true });
   });
 });

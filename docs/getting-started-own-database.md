@@ -1,62 +1,66 @@
 # Connect Your Own Database
 
-Use this path after the Docker demo passes and you want to try Synapsor Runner
-against a staging or disposable Postgres/MySQL database.
+Use this path after the synthetic proof passes and you want to try Synapsor
+Runner against a staging or disposable Postgres/MySQL database.
 
 Do not start with your most sensitive production database. Runner is a
-commit-safety runtime for reviewed single-row business actions, not a
-production certification.
+reviewed data boundary, not a production certification.
 
 If you only ran `synapsor-runner demo --quick`, you have tested the fixture-only
 teaching path and local ledger commands. This page is the real own-database
-path: it inspects your Postgres/MySQL metadata and generates reviewed semantic
-tools from your selections.
+path. Auto Boundary inspects the whole selected schema, combines deterministic
+database/Prisma/Drizzle/OpenAPI/Synapsor evidence, and generates disabled
+review artifacts without sampling source rows or using an LLM.
 
 ## Fast path
 
-Set one read-only database URL and run the public guided path:
+Set a dedicated SELECT-only, non-owner database URL plus trusted development
+scope and run the public guided path:
 
 ```bash
 export DATABASE_URL="<postgres-or-mysql-read-url>"
+export SYNAPSOR_TENANT_ID="<staging-tenant>"
+export SYNAPSOR_PRINCIPAL="<developer-id>"
 npx -y -p @synapsor/runner synapsor-runner start --from-env DATABASE_URL
 ```
 
-That command does the useful local mini-Synapsor path:
+A fresh interactive project with no existing config, selector, or automation
+input follows:
 
 ```text
-inspect your schema
--> choose one table/view
--> choose trusted scope and visible fields
--> optionally choose proposal/writeback rules
--> generate synapsor.runner.json + canonical synapsor.contract.json
--> preview MCP tools exposed to the model
--> run a local smoke check of the tool boundary
--> optionally write .synapsor/smoke-input.json for one real row
--> open the secured localhost first-action workbench in an interactive terminal
+inspect the whole selected schema and structured application artifacts
+-> draft disabled public DSL, canonical JSON, tests, and generation lock
+-> review scope, fields, analytics permissions, relationships, and budgets
+-> activate the exact exploration-boundary digest in local Workbench
+-> install exactly app.describe_data and app.explore_data in Cursor
+-> ask a bounded row or PM-style aggregate question against staging
+-> Protect This Query into a disabled named capability
+-> activate that exact digest and remove broad Explore
+-> serve only the named protected capability in production
 ```
 
 It does not print your database URL, put the URL in MCP client config, expose
 `execute_sql`, expose approval/commit tools, or give the model write
-credentials.
+credentials. Before boundary activation it does not read source rows.
 
 `start --from-env` is the shortest public command for first-run onboarding.
-`onboard db --from-env DATABASE_URL` is the same explicit path if you prefer the
-older command name in scripts.
+Read [Auto Boundary, Scoped Explore, And
+Protect](auto-boundary-and-scoped-explore.md) for the complete command and
+security reference.
 
-Interactive `start` opens the focused local workbench after config validation
-and an MCP boundary handshake. Use `--no-open` for CI or scripts. That handshake
-proves the reviewed tool surface; the workbench's **Test** step remains pending
-until a real scoped read is recorded in the local ledger.
+Established routes remain unchanged. `--table`, `--answers`, `onboard db`,
+explicit `init` flags, existing configs, headless startup, JSON output, and CI
+do not enter Auto Boundary, prompt unexpectedly, open a browser, rescan an
+existing project, or require a generation lock. For example:
 
-During the wizard, provide the optional sample object id if you know one safe
-row in the selected table. Runner writes `./.synapsor/smoke-input.json` with
-that id and prints the exact `smoke call` command. If you skip it, use
-`--json '{"<lookup_arg>":"<real_id>"}'` when you are ready to test one real
-row.
+```bash
+synapsor-runner start --from-env DATABASE_URL --table invoices --no-open
+synapsor-runner onboard db --from-env DATABASE_URL --answers ./answers.json
+```
 
-The rest of this page shows the same flow step by step using the public
-`synapsor-runner ...` CLI. From a source checkout, use `./bin/synapsor-runner ...` if the
-global binary is not linked yet.
+The rest of this page documents those established one-object/manual routes.
+They remain supported for existing projects and automation. From a source
+checkout, use `./bin/synapsor-runner ...` if the global binary is not linked.
 
 From a source checkout, `./scripts/use-your-db.sh` runs the same kind of
 guided flow plus local repository checks.

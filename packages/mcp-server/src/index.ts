@@ -24,8 +24,13 @@ import {
 } from "@synapsor-runner/control-plane-client";
 import { assertPostgresRlsTarget, createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type CloudOutboxItem, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { canonicalJsonDigest, principalScopeFingerprint, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3, type RunnerActivityV1, type RunnerProposalV1, type WritebackResult } from "@synapsor-runner/protocol";
-import { isNumericProposalField, normalizeContract, type AgentContextSpec, type AggregateReadSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
+import { PrivacyBoundaryError, canonicalJsonDigest, enforcePrivacyBudgets, principalScopeFingerprint, protocolVersions, shapePrivacySuppressedGroups, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3, type RunnerActivityV1, type RunnerProposalV1, type WritebackResult } from "@synapsor-runner/protocol";
+import {
+  inspectDatabase,
+  rolePostureFingerprint,
+  schemaFingerprintForInspection,
+} from "@synapsor-runner/schema-inspector";
+import { isNumericProposalField, normalizeContract, type AgentContextSpec, type AggregateReadSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ProtectedReadSpec, type ProtectedReadValueSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -75,7 +80,7 @@ export type RuntimeDatabaseScopeConfig =
   | {
     mode: "postgres_rls";
     tenant_setting: string;
-    principal_setting: string;
+    principal_setting?: string;
   };
 
 export type RuntimeCredentialScopeConfig =
@@ -138,9 +143,11 @@ export type RuntimeCapabilityConfig = {
   args: Record<string, RuntimeArgConfig>;
   lookup: { id_from_arg: string };
   visible_columns: string[];
+  kept_out_fields?: string[];
   evidence?: "required" | "optional" | string;
   max_rows?: number;
   aggregate?: AggregateReadSpec;
+  protected_read?: ProtectedReadSpec;
   patch?: Record<string, { fixed?: Scalar; from_arg?: string; from_item?: string }>;
   allowed_columns?: string[];
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
@@ -302,6 +309,10 @@ export type RuntimeConfig = {
     sync_interval_ms?: number;
     max_attempts?: number;
     outbox_retention_days?: number;
+  };
+  generated_authority?: {
+    generation_lock_path: string;
+    enforcement: "required";
   };
 };
 
@@ -814,8 +825,16 @@ export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cw
   const governance = config.governance?.connection_file
     ? { ...config.governance, connection_file: path.resolve(baseDir, config.governance.connection_file) }
     : config.governance;
+  const generatedAuthority = config.generated_authority?.generation_lock_path
+    ? { ...config.generated_authority, generation_lock_path: path.resolve(baseDir, config.generated_authority.generation_lock_path) }
+    : config.generated_authority;
   if (!Array.isArray(config.contracts) || config.contracts.length === 0) {
-    return governance === config.governance ? config : { ...config, governance };
+    if (governance === config.governance && generatedAuthority === config.generated_authority) return config;
+    return {
+      ...config,
+      ...(governance ? { governance } : {}),
+      ...(generatedAuthority ? { generated_authority: generatedAuthority } : {}),
+    };
   }
   const seenCapabilities = new Map<string, string>();
   const seenPolicies = new Map<string, string>();
@@ -828,6 +847,7 @@ export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cw
   const resolved: RuntimeConfig = {
     ...config,
     ...(governance ? { governance } : {}),
+    ...(generatedAuthority ? { generated_authority: generatedAuthority } : {}),
     contexts: { ...(config.contexts ?? {}) },
     capabilities: [...(config.capabilities ?? [])],
     policies: [...(config.policies ?? [])],
@@ -1461,9 +1481,11 @@ function runtimeCapabilityFromSpec(
     args: capability.args,
     lookup: capability.lookup ?? { id_from_arg: Object.keys(capability.args)[0] ?? "id" },
     visible_columns: capability.visible_fields,
+    ...(capability.kept_out_fields ? { kept_out_fields: capability.kept_out_fields } : {}),
     evidence: capability.evidence?.required === false ? "optional" : "required",
     ...(capability.max_rows ? { max_rows: capability.max_rows } : {}),
     ...(capability.aggregate ? { aggregate: capability.aggregate } : {}),
+    ...(capability.protected_read ? { protected_read: capability.protected_read } : {}),
   };
   if (capability.kind === "proposal" && capability.proposal) {
     runtime.patch = capability.proposal.patch;
@@ -1510,6 +1532,7 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   const cloudTools = options.cloudTools ?? [];
   const resultFormat = options.resultFormat ?? config.result_format ?? 1;
   const trustedContext = options.trustedContext;
+  const privacySessionId = crypto.randomBytes(32).toString("base64url");
   if (config.governance?.mode === "cloud_linked") loadCloudLinkedConnection(config, env);
   const cloudSynchronizer = ownsStore && config.governance?.mode === "cloud_linked"
     ? new CloudLinkedSynchronizer(config, store, env)
@@ -1534,10 +1557,10 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
         }
         if (resultFormat === 2) {
           assertStoreAvailable();
-          return await callConfiguredToolV2({ config, env, store, readRow, cloudClient, trustedContext, name, args });
+          return await callConfiguredToolV2({ config, env, store, readRow, cloudClient, trustedContext, privacySessionId, name, args });
         }
         assertStoreAvailable();
-        return await callConfiguredTool({ config, env, store, readRow, cloudClient, trustedContext, name, args });
+        return await callConfiguredTool({ config, env, store, readRow, cloudClient, trustedContext, privacySessionId, name, args });
       } catch (error) {
         logToolRejection(error, config, env, capability, name, trustedContext);
         if (resultFormat === 2) return errorEnvelopeFromError(error, capability, name);
@@ -1652,6 +1675,121 @@ export async function preflightPostgresDatabaseScope(
       client?.release();
       await pool.end();
     }
+  }
+}
+
+type GeneratedAuthorityLock = {
+  schema_version: "synapsor.generation-lock.v1";
+  compiler_version: string;
+  spec_version: string;
+  engine: SourceEngine;
+  source_env: string;
+  schema_fingerprint: `sha256:${string}`;
+  role_posture_fingerprint: `sha256:${string}`;
+  evidence_fingerprint: `sha256:${string}`;
+  generated_contract_digest: `sha256:${string}`;
+  reviewed_overrides_digest: `sha256:${string}`;
+  protected_authority: string[];
+};
+
+/**
+ * Generated protected reads remain executable only while the exact reviewed
+ * generation lock, source schema, database role, grants, ownership, and RLS
+ * posture are current. Legacy/manual configurations do not carry
+ * generated_authority and return without database inspection.
+ */
+export async function preflightGeneratedAuthority(
+  inputConfig: RuntimeConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  inspect: typeof inspectDatabase = inspectDatabase,
+): Promise<void> {
+  const config = resolveRuntimeConfig(inputConfig);
+  const protectedCapabilities = localCapabilities(config).filter((capability) => capability.protected_read);
+  if (protectedCapabilities.length === 0) return;
+
+  const generatedAuthority = config.generated_authority;
+  if (!generatedAuthority || generatedAuthority.enforcement !== "required") {
+    throw new McpRuntimeError(
+      "GENERATED_AUTHORITY_LOCK_REQUIRED",
+      "Generated protected capabilities require generated_authority.enforcement=required and an exact generation lock path.",
+    );
+  }
+
+  let lock: GeneratedAuthorityLock;
+  try {
+    lock = JSON.parse(fs.readFileSync(generatedAuthority.generation_lock_path, "utf8")) as GeneratedAuthorityLock;
+  } catch (error) {
+    throw new McpRuntimeError(
+      "GENERATION_LOCK_UNAVAILABLE",
+      `Unable to load the generated-authority lock${error instanceof SyntaxError ? " because it is not valid JSON" : ""}.`,
+    );
+  }
+  assertGeneratedAuthorityLockShape(lock);
+  const lockFingerprint = canonicalJsonDigest(lock);
+
+  for (const capability of protectedCapabilities) {
+    if (capability.protected_read!.generation_lock_fingerprint !== lockFingerprint) {
+      throw new McpRuntimeError(
+        "GENERATION_LOCK_DIGEST_MISMATCH",
+        `Protected capability ${capability.name} is not bound to the exact configured generation lock.`,
+      );
+    }
+    const source = config.sources?.[capability.source];
+    if (!source || source.engine !== lock.engine || source.read_url_env !== lock.source_env) {
+      throw new McpRuntimeError(
+        "GENERATION_LOCK_SOURCE_MISMATCH",
+        `Protected capability ${capability.name} no longer uses the source and read credential posture captured by its generation lock.`,
+      );
+    }
+  }
+
+  const inspection = await inspect({
+    engine: lock.engine,
+    databaseUrlEnv: lock.source_env,
+    statementTimeoutMs: Math.min(...protectedCapabilities.map((capability) =>
+      capability.protected_read!.limits.statement_timeout_ms)),
+    env,
+  });
+  const schemaFingerprint = schemaFingerprintForInspection(inspection);
+  const postureFingerprint = rolePostureFingerprint(inspection);
+  const changes = [
+    ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata"] : []),
+    ...(postureFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture"] : []),
+  ];
+  if (changes.length > 0) {
+    throw new McpRuntimeError(
+      "GENERATED_AUTHORITY_DRIFT",
+      `Generated protected authority is stale because ${changes.join(" and ")} changed. Rescan, review the semantic diff, regenerate, and activate a new digest.`,
+    );
+  }
+  const role = inspection.role_posture;
+  if (!role?.verified || !role.read_only || role.superuser !== false || role.bypass_rls !== false
+    || role.writable_relations.length > 0 || role.owned_relations.length > 0) {
+    throw new McpRuntimeError(
+      "GENERATED_AUTHORITY_ROLE_UNSAFE",
+      "Generated protected authority requires a verified non-owner, non-superuser, non-BYPASSRLS, demonstrably read-only database role.",
+    );
+  }
+}
+
+function assertGeneratedAuthorityLockShape(value: GeneratedAuthorityLock): void {
+  const digest = /^sha256:[a-f0-9]{64}$/;
+  if (!value || value.schema_version !== "synapsor.generation-lock.v1"
+    || value.compiler_version !== "1.6.0"
+    || value.spec_version !== "1.5.0"
+    || (value.engine !== "postgres" && value.engine !== "mysql")
+    || !/^[A-Z_][A-Z0-9_]*$/.test(value.source_env)
+    || !digest.test(value.schema_fingerprint)
+    || !digest.test(value.role_posture_fingerprint)
+    || !digest.test(value.evidence_fingerprint)
+    || !digest.test(value.generated_contract_digest)
+    || !digest.test(value.reviewed_overrides_digest)
+    || !Array.isArray(value.protected_authority)
+    || value.protected_authority.some((item) => typeof item !== "string")) {
+    throw new McpRuntimeError(
+      "GENERATION_LOCK_INVALID",
+      "The generated-authority lock is malformed or belongs to an unsupported compiler/spec version.",
+    );
   }
 }
 
@@ -1841,6 +1979,7 @@ export async function serveStdio(options: { configPath?: string; storePath?: str
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
     throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
   }
+  await preflightGeneratedAuthority(config, process.env);
   await preflightPostgresDatabaseScope(config, process.env, options.credentialResolver);
   const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, process.env) : undefined;
   const runtime = createMcpRuntime(config, {
@@ -2161,6 +2300,7 @@ export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Pr
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
     throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
   }
+  await preflightGeneratedAuthority(config, env);
   await preflightPostgresDatabaseScope(config, env, options.credentialResolver);
   const runtime = createMcpRuntime(config, {
     env,
@@ -2262,6 +2402,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
     throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
   }
+  await preflightGeneratedAuthority(config, env);
   await preflightPostgresDatabaseScope(config, env, options.credentialResolver);
   const sharedStorePath = options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
   const sharedStore = createDefaultRuntimeStore(config, env, sharedStorePath);
@@ -3230,7 +3371,8 @@ function localCapabilities(config: RuntimeConfig): RuntimeCapabilityConfig[] {
 
 function listedLocalCapabilities(config: RuntimeConfig): RuntimeCapabilityConfig[] {
   const capabilities = localCapabilities(config);
-  if (config.mode === "read_only") return capabilities.filter((capability) => capability.kind === "read");
+  if (config.mode === "read_only") return capabilities.filter((capability) =>
+    capability.kind === "read" || capability.kind === "aggregate_read");
   return capabilities;
 }
 
@@ -3330,6 +3472,7 @@ async function callConfiguredTool(input: {
   readRow: DbRowReader;
   cloudClient?: CloudAdapterClient;
   trustedContext?: TrustedContext;
+  privacySessionId?: string;
   name: string;
   args: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
@@ -3354,6 +3497,9 @@ async function callConfiguredTool(input: {
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
   const context = resolveTrustedContext(input.config, input.env, capability, input.trustedContext);
+  if (capability.protected_read) {
+    await enforceProtectedReadBudget(input.store, capability, context, input.args, input.privacySessionId ?? "direct-call");
+  }
   const operation = capability.kind === "proposal" ? capability.operation?.kind ?? "update" : "update";
   const setOperation = isSetCapability(capability);
   const batchInsert = setOperation && operation === "insert";
@@ -3368,6 +3514,18 @@ async function callConfiguredTool(input: {
       context,
       env: input.env,
     });
+  if (capability.protected_read) {
+    return recordProtectedRead({
+      capability,
+      sourceName: capability.source,
+      context,
+      current,
+      store: input.store,
+      mode: input.config.mode,
+      privacySessionId: input.privacySessionId ?? "direct-call",
+      args: input.args,
+    });
+  }
   if (capability.kind === "aggregate_read") {
     return recordAggregateRead({ capability, sourceName: capability.source, context, current, store: input.store, mode: input.config.mode });
   }
@@ -3645,6 +3803,298 @@ async function callConfiguredTool(input: {
   };
 }
 
+async function enforceProtectedReadBudget(
+  store: ProposalRuntimeStore,
+  capability: RuntimeCapabilityConfig,
+  context: TrustedContext,
+  args: Record<string, unknown>,
+  privacySessionId: string,
+): Promise<void> {
+  const protectedRead = capability.protected_read;
+  if (!protectedRead) return;
+  if (!store.listQueryAudit) {
+    throw new McpRuntimeError("PROTECTED_PRIVACY_LEDGER_REQUIRED", "Protected reads require a durable query-audit store so extraction and differencing budgets fail closed.");
+  }
+  const sessionFingerprint = protectedReadSessionFingerprint(capability, context, privacySessionId);
+  const records = await store.listQueryAudit({ capability: capability.name, limit: 10_000 });
+  const matching = records.filter((record) => {
+    const payload = isRecord(record.payload) ? record.payload : {};
+    return payload.protected_read_version === "synapsor.protected-read.v1"
+      && payload.session_fingerprint === sessionFingerprint
+      && payload.boundary_digest === protectedRead.boundary_digest;
+  });
+  const now = Date.now();
+  const lastMinute = matching.filter((record) => {
+    const timestamp = typeof record.created_at === "string" ? Date.parse(record.created_at) : Number.NaN;
+    return Number.isFinite(timestamp) && timestamp >= now - 60_000;
+  }).length;
+  const extractedCells = matching.reduce((sum, record) => {
+    const payload = isRecord(record.payload) ? record.payload : {};
+    return sum + (typeof payload.returned_cells === "number" ? payload.returned_cells : 0);
+  }, 0);
+  const estimatedCells = protectedRead.mode === "rows"
+    ? protectedRead.limits.max_rows * capability.visible_columns.length
+    : protectedAggregateMaximumCells(protectedRead);
+  let differencingAttempts = 0;
+  if (protectedRead.mode === "aggregate") {
+    const currentArgs = protectedReadArgumentFingerprint(args, privacySessionId);
+    const priorArgumentShapes = new Set(matching.flatMap((record) => {
+      const payload = isRecord(record.payload) ? record.payload : {};
+      return typeof payload.argument_fingerprint === "string" ? [payload.argument_fingerprint] : [];
+    }));
+    differencingAttempts = priorArgumentShapes.has(currentArgs) ? 0 : priorArgumentShapes.size;
+  }
+  try {
+    enforcePrivacyBudgets({
+      limits: protectedRead.limits,
+      snapshot: {
+        query_count: matching.length,
+        queries_last_minute: lastMinute,
+        extracted_cells: extractedCells,
+        differencing_attempts: differencingAttempts,
+      },
+      estimated_response_cells: estimatedCells,
+      aggregate: protectedRead.mode === "aggregate",
+    });
+  } catch (error) {
+    if (error instanceof PrivacyBoundaryError) {
+      const code = {
+        QUERY_BUDGET_EXHAUSTED: "PROTECTED_QUERY_BUDGET_EXHAUSTED",
+        RATE_LIMIT_EXHAUSTED: "PROTECTED_QUERY_RATE_LIMITED",
+        EXTRACTION_BUDGET_EXHAUSTED: "PROTECTED_EXTRACTION_BUDGET_EXHAUSTED",
+        DIFFERENCING_BUDGET_EXHAUSTED: "PROTECTED_DIFFERENCING_BUDGET_EXHAUSTED",
+        GROUP_LIMIT_EXCEEDED: "PROTECTED_RESPONSE_TOO_LARGE",
+        INVALID_COHORT_SIZE: "PROTECTED_COHORT_INVALID",
+      }[error.code];
+      throw new McpRuntimeError(code, error.message);
+    }
+    throw error;
+  }
+}
+
+async function recordProtectedRead(input: {
+  capability: RuntimeCapabilityConfig;
+  sourceName: string;
+  context: TrustedContext;
+  current: { row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number };
+  store: ProposalRuntimeStore;
+  mode: RunnerMode;
+  privacySessionId: string;
+  args: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const protectedRead = input.capability.protected_read;
+  if (!protectedRead) throw new McpRuntimeError("PROTECTED_READ_REQUIRED", "Protected read authority is missing.");
+  const rows = input.current.rows ?? (input.current.rowCount ? [input.current.row] : []);
+  let data: Record<string, unknown>;
+  let returnedCount = 0;
+  let returnedCells = 0;
+  let suppressedGroups = 0;
+
+  if (protectedRead.mode === "rows") {
+    if (rows.length > protectedRead.limits.max_rows) {
+      throw new McpRuntimeError("PROTECTED_RESPONSE_TOO_LARGE", "Protected row result exceeded its immutable row limit.");
+    }
+    const visibleRows = rows.map((row) =>
+      Object.fromEntries(input.capability.visible_columns.map((column) => [column, scalar(row[column])])));
+    returnedCount = visibleRows.length;
+    returnedCells = visibleRows.length * input.capability.visible_columns.length;
+    data = { rows: visibleRows };
+  } else {
+    const aggregate = protectedRead.aggregate;
+    if (!aggregate) throw new McpRuntimeError("PROTECTED_AGGREGATE_REQUIRED", "Protected aggregate authority is missing.");
+    const outputFields = [
+      ...(aggregate.dimensions ?? []).map((dimension) => dimension.name),
+      ...(aggregate.time_bucket ? [aggregate.time_bucket.name] : []),
+      ...aggregate.measures.map((measure) => measure.name),
+      ...(aggregate.comparison ? ["__period"] : []),
+    ];
+    const normalized = rows.map((row) => {
+      const output: Record<string, unknown> = {};
+      output.__cohort_size = row.__cohort_size;
+      for (const dimension of aggregate.dimensions ?? []) output[dimension.name] = scalar(row[dimension.name]);
+      if (aggregate.time_bucket) output[aggregate.time_bucket.name] = scalar(row[aggregate.time_bucket.name]);
+      for (const measure of aggregate.measures) output[measure.name] = finiteAggregateNumber(row[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID");
+      if (aggregate.comparison) output.__period = scalar(row.__period);
+      return output;
+    });
+    let shaped;
+    try {
+      shaped = shapePrivacySuppressedGroups({
+        rows: normalized,
+        output_fields: outputFields,
+        cohort_field: "__cohort_size",
+        minimum_cohort_size: aggregate.minimum_group_size,
+        maximum_groups: protectedRead.limits.max_groups,
+        top_n: aggregate.top_n,
+        ...(aggregate.comparison
+          ? { period_field: "__period", periods: ["period_1", "period_2"] }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof PrivacyBoundaryError) {
+        throw new McpRuntimeError(
+          error.code === "GROUP_LIMIT_EXCEEDED" ? "PROTECTED_RESPONSE_TOO_LARGE" : "PROTECTED_COHORT_INVALID",
+          error.message,
+        );
+      }
+      throw error;
+    }
+    const boundedGroups = shaped.groups.map((group) => {
+      if (!aggregate.comparison) return group;
+      const { __period, ...rest } = group;
+      return { ...rest, period: __period };
+    });
+    returnedCount = boundedGroups.length;
+    returnedCells = shaped.returned_cells;
+    suppressedGroups = shaped.suppressed_groups;
+    data = {
+      groups: boundedGroups,
+      suppression: {
+        minimum_cohort_size: aggregate.minimum_group_size,
+        suppressed_groups: suppressedGroups,
+        totals_returned: false,
+      },
+    };
+  }
+
+  const responseBytes = Buffer.byteLength(JSON.stringify(data), "utf8");
+  if (returnedCells > protectedRead.limits.max_response_cells || responseBytes > protectedRead.limits.max_response_bytes) {
+    await recordProtectedReadAudit({
+      ...input,
+      returnedCount: 0,
+      returnedCells: 0,
+      suppressedGroups,
+      status: "refused_response_budget",
+    });
+    throw new McpRuntimeError("PROTECTED_RESPONSE_TOO_LARGE", "Protected result exceeded its immutable cell or byte limit.");
+  }
+  await recordProtectedReadAudit({
+    ...input,
+    returnedCount,
+    returnedCells,
+    suppressedGroups,
+    status: "returned",
+  });
+  const queryFingerprint = protectedReadQueryFingerprint(input.capability, input.context);
+  return {
+    status: "ok",
+    action: input.capability.name,
+    mode: input.mode,
+    business_object: {
+      type: protectedRead.mode === "aggregate" ? `${input.capability.target.table}_analysis` : `${input.capability.target.table}_protected_rows`,
+      id: queryFingerprint,
+    },
+    data,
+    trusted_context: {
+      tenant_bound: Boolean(input.capability.target.tenant_key),
+      principal_bound: Boolean(input.capability.target.principal_scope_key),
+      provenance: input.context.provenance,
+    },
+    query_audit: {
+      query_fingerprint: queryFingerprint,
+      result_values_persisted: false,
+      trusted_values_persisted: false,
+      returned_rows_or_groups: returnedCount,
+      returned_cells: returnedCells,
+    },
+    source_database_changed: false,
+    source_database_mutated: false,
+  };
+}
+
+async function recordProtectedReadAudit(input: {
+  capability: RuntimeCapabilityConfig;
+  sourceName: string;
+  context: TrustedContext;
+  current: { row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number };
+  store: ProposalRuntimeStore;
+  mode: RunnerMode;
+  privacySessionId: string;
+  args: Record<string, unknown>;
+  returnedCount: number;
+  returnedCells: number;
+  suppressedGroups: number;
+  status: string;
+}): Promise<void> {
+  const protectedRead = input.capability.protected_read!;
+  await input.store.recordQueryAudit({
+    capability: input.capability.name,
+    source_id: input.sourceName,
+    query_fingerprint: protectedReadQueryFingerprint(input.capability, input.context),
+    table_name: `${input.capability.target.schema}.${input.capability.target.table}`,
+    row_count: input.returnedCount,
+    payload: {
+      protected_read_version: "synapsor.protected-read.v1",
+      capability: input.capability.name,
+      boundary_digest: protectedRead.boundary_digest,
+      generation_lock_fingerprint: protectedRead.generation_lock_fingerprint,
+      protected_read_digest: canonicalJsonDigest(protectedRead),
+      session_fingerprint: protectedReadSessionFingerprint(input.capability, input.context, input.privacySessionId),
+      argument_fingerprint: protectedReadArgumentFingerprint(input.args, input.privacySessionId),
+      mode: protectedRead.mode,
+      status: input.status,
+      returned_rows_or_groups: input.returnedCount,
+      returned_cells: input.returnedCells,
+      suppressed_groups: input.suppressedGroups,
+      result_values_persisted: false,
+      trusted_scope_values_persisted: false,
+      raw_sql_included: false,
+      source_database_changed: false,
+    },
+  });
+}
+
+function protectedReadSessionFingerprint(
+  capability: RuntimeCapabilityConfig,
+  context: TrustedContext,
+  privacySessionId: string,
+): `sha256:${string}` {
+  return canonicalJsonDigest({
+    session: privacySessionId,
+    capability: capability.name,
+    contract: capability.contract_provenance?.digest,
+    tenant: context.tenant_id,
+    principal: context.principal,
+  });
+}
+
+function protectedReadArgumentFingerprint(args: Record<string, unknown>, privacySessionId: string): string {
+  return `hmac-sha256:${crypto.createHmac("sha256", privacySessionId).update(canonicalJsonDigest(args)).digest("hex")}`;
+}
+
+function protectedReadQueryFingerprint(capability: RuntimeCapabilityConfig, context: TrustedContext): `sha256:${string}` {
+  const target = {
+    schema: capability.target.schema,
+    table: capability.target.table,
+    primary_key: capability.target.primary_key,
+    ...(capability.target.tenant_key ? { tenant_key: capability.target.tenant_key } : {}),
+    ...(capability.target.principal_scope_key
+      ? { principal_scope_key: capability.target.principal_scope_key }
+      : {}),
+    ...(capability.target.single_tenant_dev === undefined
+      ? {}
+      : { single_tenant_dev: capability.target.single_tenant_dev }),
+  };
+  return canonicalJsonDigest({
+    source: capability.source,
+    target,
+    protected_read_digest: canonicalJsonDigest(capability.protected_read),
+    tenant_fingerprint: canonicalJsonDigest({ tenant: context.tenant_id }),
+    principal_fingerprint: canonicalJsonDigest({ principal: context.principal }),
+  });
+}
+
+function protectedAggregateMaximumCells(protectedRead: ProtectedReadSpec): number {
+  const aggregate = protectedRead.aggregate;
+  if (!aggregate) return 0;
+  const columns = (aggregate.dimensions?.length ?? 0)
+    + (aggregate.time_bucket ? 1 : 0)
+    + aggregate.measures.length
+    + (aggregate.comparison ? 1 : 0);
+  const periods = aggregate.comparison ? aggregate.comparison.ranges.length : 1;
+  return aggregate.top_n * periods * columns;
+}
+
 async function recordAggregateRead(input: {
   capability: RuntimeCapabilityConfig;
   sourceName: string;
@@ -3760,6 +4210,7 @@ async function callConfiguredToolV2(input: {
   readRow: DbRowReader;
   cloudClient?: CloudAdapterClient;
   trustedContext?: TrustedContext;
+  privacySessionId?: string;
   name: string;
   args: Record<string, unknown>;
 }): Promise<ResultEnvelopeV2> {
@@ -4042,6 +4493,27 @@ function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
       ? Math.max(1, Math.round(error.details.retry_after_ms))
       : undefined;
     return { code: "RATE_LIMITED", message: "The trusted tenant request limit was reached. Retry after the current window.", retryable: true, ...(retryAfter ? { retry_after_ms: retryAfter } : {}) };
+  }
+  if (runtimeCode === "PROTECTED_QUERY_RATE_LIMITED") {
+    return {
+      code: "RATE_LIMITED",
+      message: "The protected capability reached its reviewed request rate. Retry after the current window.",
+      retryable: true,
+      retry_after_ms: DEFAULT_INFRA_RETRY_AFTER_MS,
+    };
+  }
+  if (runtimeCode && [
+    "PROTECTED_QUERY_BUDGET_EXHAUSTED",
+    "PROTECTED_EXTRACTION_BUDGET_EXHAUSTED",
+    "PROTECTED_DIFFERENCING_BUDGET_EXHAUSTED",
+    "PROTECTED_RESPONSE_TOO_LARGE",
+    "PROTECTED_COHORT_INVALID",
+  ].includes(runtimeCode)) {
+    return {
+      code: "POLICY_VIOLATION",
+      message: "The protected read was refused by its reviewed privacy or response boundary.",
+      retryable: false,
+    };
   }
   if (runtimeCode === "CLOUD_RATE_LIMITED") {
     const retryAfter = error instanceof McpRuntimeError && typeof error.details?.retry_after_ms === "number"
@@ -4816,26 +5288,29 @@ class RuntimeDatabasePools {
         counter.waiting -= 1;
         counter.active += 1;
         try {
-          const query = buildSelect(input.capability, "$");
-          await client.query("BEGIN");
-          if (input.source.statement_timeout_ms) await client.query(`SET LOCAL statement_timeout = ${Number(input.source.statement_timeout_ms)}`);
+          const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
+          await client.query(input.capability.protected_read ? "BEGIN READ ONLY" : "BEGIN");
+          const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
+          if (timeoutMs) await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
           if (input.source.database_scope?.mode === "postgres_rls") {
-            const preflightKey = `${poolKey}\u0000${input.capability.target.schema}\u0000${input.capability.target.table}\u0000SELECT`;
-            if (!this.postgresRlsPreflight.has(preflightKey)) {
-              await assertPostgresRlsTarget(client, {
-                schema: input.capability.target.schema,
-                table: input.capability.target.table,
-                scope: {
-                  tenantSetting: input.source.database_scope.tenant_setting,
-                  principalSetting: input.source.database_scope.principal_setting,
-                },
-                operations: ["SELECT"],
-              });
-              this.postgresRlsPreflight.add(preflightKey);
+            for (const target of protectedReadTargets(input.capability)) {
+              const preflightKey = `${poolKey}\u0000${target.schema}\u0000${target.table}\u0000SELECT`;
+              if (!this.postgresRlsPreflight.has(preflightKey)) {
+                await assertPostgresRlsTarget(client, {
+                  schema: target.schema,
+                  table: target.table,
+                  scope: {
+                    tenantSetting: input.source.database_scope.tenant_setting,
+                    principalSetting: input.source.database_scope.principal_setting,
+                  },
+                  operations: ["SELECT"],
+                });
+                this.postgresRlsPreflight.add(preflightKey);
+              }
             }
           }
           await bindPostgresTrustedScope(client, input.source.database_scope, input.context);
-          const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
+          const result = await client.query(query.sql, query.values);
           await client.query("COMMIT");
           return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
         } catch (error) {
@@ -4879,12 +5354,19 @@ class RuntimeDatabasePools {
       counter.waiting -= 1;
       counter.active += 1;
       try {
-        if (input.source.statement_timeout_ms) await connection.query("SET SESSION max_execution_time = ?", [Number(input.source.statement_timeout_ms)]).catch(() => undefined);
-        const query = buildSelect(input.capability, "?");
-        const values = queryValues(input.capability, input.args, input.context).map(scalar);
-        const [rows] = await connection.execute(query.sql, values);
-        const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-        return { row: list[0] ?? {}, rows: list, rowCount: list.length };
+        const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
+        if (timeoutMs) await connection.query("SET SESSION max_execution_time = ?", [timeoutMs]).catch(() => undefined);
+        const query = runtimeReadQuery(input.capability, "?", input.args, input.context);
+        if (input.capability.protected_read) await connection.query("START TRANSACTION READ ONLY");
+        try {
+          const [rows] = await connection.execute(query.sql, query.values.map(scalar));
+          const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+          if (input.capability.protected_read) await connection.query("COMMIT");
+          return { row: list[0] ?? {}, rows: list, rowCount: list.length };
+        } catch (error) {
+          if (input.capability.protected_read) await connection.query("ROLLBACK").catch(() => undefined);
+          throw error;
+        }
       } finally {
         counter.active -= 1;
         connection.release();
@@ -4923,10 +5405,14 @@ export async function bindPostgresTrustedScope(
   context: TrustedContext,
 ): Promise<void> {
   if (!scope || scope.mode === "application") return;
-  await client.query(
-    "SELECT set_config($1, $2, true), set_config($3, $4, true)",
-    [scope.tenant_setting, context.tenant_id, scope.principal_setting, context.principal],
-  );
+  if (scope.principal_setting) {
+    await client.query(
+      "SELECT set_config($1, $2, true), set_config($3, $4, true)",
+      [scope.tenant_setting, context.tenant_id, scope.principal_setting, context.principal],
+    );
+    return;
+  }
+  await client.query("SELECT set_config($1, $2, true)", [scope.tenant_setting, context.tenant_id]);
 }
 
 async function withPoolAcquireTimeout<T>(
@@ -4962,24 +5448,27 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
   const pool = createPostgresPool(connectionString);
   const client = await pool.connect();
   try {
-    const query = buildSelect(input.capability, "$");
-    await client.query("BEGIN");
-    if (input.source.statement_timeout_ms) {
-      await client.query(`SET LOCAL statement_timeout = ${Number(input.source.statement_timeout_ms)}`);
+    const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
+    await client.query(input.capability.protected_read ? "BEGIN READ ONLY" : "BEGIN");
+    const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
+    if (timeoutMs) {
+      await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     }
     if (input.source.database_scope?.mode === "postgres_rls") {
-      await assertPostgresRlsTarget(client, {
-        schema: input.capability.target.schema,
-        table: input.capability.target.table,
-        scope: {
-          tenantSetting: input.source.database_scope.tenant_setting,
-          principalSetting: input.source.database_scope.principal_setting,
-        },
-        operations: ["SELECT"],
-      });
+      for (const target of protectedReadTargets(input.capability)) {
+        await assertPostgresRlsTarget(client, {
+          schema: target.schema,
+          table: target.table,
+          scope: {
+            tenantSetting: input.source.database_scope.tenant_setting,
+            principalSetting: input.source.database_scope.principal_setting,
+          },
+          operations: ["SELECT"],
+        });
+      }
     }
     await bindPostgresTrustedScope(client, input.source.database_scope, input.context);
-    const result = await client.query(query.sql, queryValues(input.capability, input.args, input.context));
+    const result = await client.query(query.sql, query.values);
     await client.query("COMMIT");
     return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
   } catch (error) {
@@ -4996,20 +5485,30 @@ async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: R
   if (!uri) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const connection = await mysql.createConnection({ uri, dateStrings: true });
   try {
-    if (input.source.statement_timeout_ms) {
-      await connection.query("SET SESSION max_execution_time = ?", [Number(input.source.statement_timeout_ms)]).catch(() => undefined);
+    const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
+    if (timeoutMs) {
+      await connection.query("SET SESSION max_execution_time = ?", [timeoutMs]).catch(() => undefined);
     }
-    const query = buildSelect(input.capability, "?");
-    const values: Array<string | number | boolean | null> = queryValues(input.capability, input.args, input.context).map(scalar);
-    const [rows] = await connection.execute(query.sql, values);
-    const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-    return { row: list[0] ?? {}, rows: list, rowCount: list.length };
+    const query = runtimeReadQuery(input.capability, "?", input.args, input.context);
+    if (input.capability.protected_read) await connection.query("START TRANSACTION READ ONLY");
+    try {
+      const [rows] = await connection.execute(query.sql, query.values.map(scalar));
+      const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+      if (input.capability.protected_read) await connection.query("COMMIT");
+      return { row: list[0] ?? {}, rows: list, rowCount: list.length };
+    } catch (error) {
+      if (input.capability.protected_read) await connection.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
   } finally {
     await connection.end();
   }
 }
 
 function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" | "?"): { sql: string } {
+  if (capability.protected_read) {
+    throw new McpRuntimeError("PROTECTED_READ_ARGS_REQUIRED", "Protected reads must be compiled with their validated arguments and trusted context.");
+  }
   if (capability.kind === "aggregate_read") {
     const aggregate = capability.aggregate;
     if (!aggregate) throw new McpRuntimeError("AGGREGATE_DEFINITION_MISSING", "Aggregate capability is missing its reviewed definition.");
@@ -5051,6 +5550,177 @@ function buildSelect(capability: RuntimeCapabilityConfig, placeholderStyle: "$" 
   }
   const sql = `SELECT ${columns} FROM ${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} WHERE ${where.join(" AND ")} LIMIT ${Math.max(1, capability.max_rows ?? 1)}`;
   return { sql };
+}
+
+function runtimeReadQuery(
+  capability: RuntimeCapabilityConfig,
+  placeholderStyle: "$" | "?",
+  args: Record<string, unknown>,
+  context: TrustedContext,
+): { sql: string; values: unknown[] } {
+  if (capability.protected_read) {
+    return buildProtectedReadQuery(capability, placeholderStyle, args, context);
+  }
+  return {
+    sql: buildSelect(capability, placeholderStyle).sql,
+    values: queryValues(capability, args, context),
+  };
+}
+
+function buildProtectedReadQuery(
+  capability: RuntimeCapabilityConfig,
+  placeholderStyle: "$" | "?",
+  args: Record<string, unknown>,
+  context: TrustedContext,
+): { sql: string; values: unknown[] } {
+  const protectedRead = capability.protected_read;
+  if (!protectedRead) throw new McpRuntimeError("PROTECTED_READ_REQUIRED", "Protected read authority is missing.");
+  const relationship = protectedRead.relationship;
+  const values: unknown[] = [];
+  const bind = (value: unknown): string => {
+    values.push(value);
+    return placeholderStyle === "$" ? `$${values.length}` : "?";
+  };
+  const field = (name: string, relationshipName?: string): string => {
+    if (relationshipName !== undefined && relationshipName !== relationship?.name) {
+      throw new McpRuntimeError("PROTECTED_RELATIONSHIP_INVALID", "Protected field references an unreviewed relationship.");
+    }
+    return `${relationshipName ? "t1" : "t0"}.${quoteIdentifier(name, placeholderStyle)}`;
+  };
+  const join = relationship
+    ? ` JOIN ${quoteIdentifier(relationship.schema, placeholderStyle)}.${quoteIdentifier(relationship.table, placeholderStyle)} t1 ON t0.${quoteIdentifier(relationship.local_key, placeholderStyle)} = t1.${quoteIdentifier(relationship.target_key, placeholderStyle)}`
+    : "";
+  const scopedWhere = (): string[] => {
+    const where: string[] = [];
+    if (capability.target.tenant_key) where.push(`t0.${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`);
+    if (capability.target.principal_scope_key) where.push(`t0.${quoteIdentifier(capability.target.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`);
+    if (relationship) {
+      where.push(`t1.${quoteIdentifier(relationship.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`);
+      if (relationship.principal_scope_key) where.push(`t1.${quoteIdentifier(relationship.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`);
+    }
+    for (const predicate of protectedRead.predicates ?? []) {
+      const reference = field(predicate.field, predicate.relationship);
+      if (predicate.operator === "in") {
+        where.push(`${reference} IN (${predicate.values.map((value) => bind(value)).join(", ")})`);
+        continue;
+      }
+      const value = protectedReadValue(predicate.value, args);
+      if (value === null) {
+        if (predicate.operator !== "eq" && predicate.operator !== "neq") {
+          throw new McpRuntimeError("PROTECTED_NULL_OPERATOR_INVALID", "NULL protected predicates support only eq and neq.");
+        }
+        where.push(`${reference} IS ${predicate.operator === "neq" ? "NOT " : ""}NULL`);
+        continue;
+      }
+      const operator = {
+        eq: "=",
+        neq: "<>",
+        lt: "<",
+        lte: "<=",
+        gt: ">",
+        gte: ">=",
+      }[predicate.operator];
+      where.push(`${reference} ${operator} ${bind(value)}`);
+    }
+    return where;
+  };
+  const from = `${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} t0${join}`;
+
+  if (protectedRead.mode === "rows") {
+    const columns = capability.visible_columns.map((column) =>
+      `t0.${quoteIdentifier(column, placeholderStyle)} AS ${quoteIdentifier(column, placeholderStyle)}`);
+    const where = scopedWhere();
+    const order = protectedRead.row_order_by?.length
+      ? ` ORDER BY ${protectedRead.row_order_by.map((item) => `${field(item.field)} ${item.direction.toUpperCase()}`).join(", ")}`
+      : ` ORDER BY t0.${quoteIdentifier(capability.target.primary_key, placeholderStyle)} ASC`;
+    return {
+      sql: `SELECT ${columns.join(", ")} FROM ${from}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${order} LIMIT ${protectedRead.limits.max_rows}`,
+      values,
+    };
+  }
+
+  const aggregate = protectedRead.aggregate;
+  if (!aggregate) throw new McpRuntimeError("PROTECTED_AGGREGATE_REQUIRED", "Protected aggregate authority is missing.");
+  const aggregateQuery = (
+    range?: { start: ProtectedReadValueSpec; end: ProtectedReadValueSpec },
+    period?: "period_1" | "period_2",
+  ): string => {
+    const where = scopedWhere();
+    if (range && aggregate.comparison) {
+      const reference = field(aggregate.comparison.field, aggregate.comparison.relationship);
+      where.push(`${reference} >= ${bind(protectedReadValue(range.start, args))}`);
+      where.push(`${reference} < ${bind(protectedReadValue(range.end, args))}`);
+    }
+    const select: string[] = [];
+    const groups: string[] = [];
+    for (const dimension of aggregate.dimensions ?? []) {
+      const expression = field(dimension.field, dimension.relationship);
+      select.push(`${expression} AS ${quoteIdentifier(dimension.name, placeholderStyle)}`);
+      groups.push(expression);
+    }
+    if (aggregate.time_bucket) {
+      const expression = protectedTimeBucket(
+        field(aggregate.time_bucket.field, aggregate.time_bucket.relationship),
+        aggregate.time_bucket.bucket,
+        placeholderStyle,
+      );
+      select.push(`${expression} AS ${quoteIdentifier(aggregate.time_bucket.name, placeholderStyle)}`);
+      groups.push(expression);
+    }
+    for (const measure of aggregate.measures) {
+      const expression = measure.function === "count"
+        ? "COUNT(*)"
+        : measure.function === "count_distinct"
+          ? `COUNT(DISTINCT ${field(measure.field!, measure.relationship)})`
+          : `${measure.function.toUpperCase()}(${field(measure.field!, measure.relationship)})`;
+      select.push(`${expression} AS ${quoteIdentifier(measure.name, placeholderStyle)}`);
+    }
+    select.push(`COUNT(*) AS ${quoteIdentifier("__cohort_size", placeholderStyle)}`);
+    if (period) select.push(`'${period}' AS ${quoteIdentifier("__period", placeholderStyle)}`);
+    const order = aggregate.order_by
+      ? ` ORDER BY ${quoteIdentifier(
+        aggregate.order_by.kind === "measure" ? aggregate.order_by.measure : aggregate.time_bucket!.name,
+        placeholderStyle,
+      )} ${aggregate.order_by.direction.toUpperCase()}`
+      : groups.length
+        ? ` ORDER BY ${groups.join(", ")}`
+        : "";
+    return `SELECT ${select.join(", ")} FROM ${from}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${groups.length ? ` GROUP BY ${groups.join(", ")}` : ""}${order} LIMIT ${protectedRead.limits.max_groups + 1}`;
+  };
+  const ranges = aggregate.comparison?.ranges;
+  if (!ranges?.length) return { sql: aggregateQuery(), values };
+  const parts = ranges.map((range, index) => `(${aggregateQuery(range, index === 0 ? "period_1" : "period_2")})`);
+  return {
+    sql: `SELECT * FROM (${parts.join(" UNION ALL ")}) AS protected_periods`,
+    values,
+  };
+}
+
+function protectedReadValue(value: ProtectedReadValueSpec, args: Record<string, unknown>): unknown {
+  if ("fixed" in value) return value.fixed;
+  const resolved = args[value.from_arg];
+  if (resolved === undefined) throw new McpRuntimeError("ARGUMENT_REQUIRED", `${value.from_arg} is required.`);
+  return resolved;
+}
+
+function protectedTimeBucket(column: string, bucket: "day" | "week" | "month", placeholderStyle: "$" | "?"): string {
+  if (placeholderStyle === "$") return `date_trunc('${bucket}', ${column})`;
+  if (bucket === "day") return `DATE(${column})`;
+  if (bucket === "week") return `DATE_SUB(DATE(${column}), INTERVAL WEEKDAY(${column}) DAY)`;
+  return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+}
+
+function protectedStatementTimeout(capability: RuntimeCapabilityConfig, sourceTimeout: number | undefined): number | undefined {
+  const protectedTimeout = capability.protected_read?.limits.statement_timeout_ms;
+  if (protectedTimeout === undefined) return sourceTimeout;
+  return sourceTimeout === undefined ? protectedTimeout : Math.min(protectedTimeout, sourceTimeout);
+}
+
+function protectedReadTargets(capability: RuntimeCapabilityConfig): Array<{ schema: string; table: string }> {
+  const targets = [{ schema: capability.target.schema, table: capability.target.table }];
+  const relationship = capability.protected_read?.relationship;
+  if (relationship) targets.push({ schema: relationship.schema, table: relationship.table });
+  return targets;
 }
 
 function queryValues(capability: RuntimeCapabilityConfig, args: Record<string, unknown>, context: TrustedContext): unknown[] {

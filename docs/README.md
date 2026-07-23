@@ -47,10 +47,14 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 04 Connect Your DB
 
+- [Auto Boundary, Scoped Explore, And
+  Protect](auto-boundary-and-scoped-explore.md): deterministically inspect a
+  whole staging application, review one digest-bound boundary, ask bounded row
+  and PM-style aggregate questions in Cursor, and turn a useful query into a
+  disabled named production capability.
 - [Connect Your Own Database](getting-started-own-database.md): inspect a
-  staging Postgres/MySQL database, generate canonical reviewed artifacts, open
-  the first-action workbench, add the tools to Cursor, and inspect the local
-  activation report.
+  staging Postgres/MySQL database through the new whole-schema path or an
+  established one-object/headless route.
 - [Use Your Own Database](use-your-own-database.md): short entry point that
   links to the canonical own-database guide.
 - [Fresh-Developer Usability Protocol](fresh-developer-usability.md): the
@@ -72,6 +76,10 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 05 Generate Capabilities
 
+- [Auto Boundary, Scoped Explore, And
+  Protect](auto-boundary-and-scoped-explore.md): generate disabled public DSL
+  from deterministic schema/ORM/OpenAPI evidence, then Protect a reviewed
+  exploratory plan without giving the model SQL or activation authority.
 - [Connect Your Own
   Database](getting-started-own-database.md#draft-another-safe-action-with-a-coding-agent):
   describe one action, let a coding agent complete only the restricted
@@ -101,8 +109,8 @@ no-database demo, wire your database, then read deeper concepts.
 - [Agent Effect Regression](effect-regression.md): provider-neutral,
   propose-only fixtures that catch changed capability calls, business diffs,
   policy outcomes, tenant handling, and hidden-field behavior.
-- [Bounded Aggregate Reads](aggregate-reads.md): fixed scalar count/sum/avg,
-  tenant scope, suppression, and no-row evidence.
+- [Bounded Aggregate Reads](aggregate-reads.md): fixed production scalar
+  aggregates plus the separate authoring-only reviewed aggregate Explore path.
 
 ## 06 Serve MCP
 
@@ -172,7 +180,7 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 10 Concepts
 
-- [Current Scope](current-scope.md): compact v0.1 scope summary.
+- [Current Scope](current-scope.md): compact current 1.x scope summary.
 - [Current Limitations](limitations.md): intentional safety limits.
 - [Production-Candidate Guide](production.md): single-node and bounded-fleet
   OSS deployment scope, database roles, receipt grants, restart

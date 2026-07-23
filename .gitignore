@@ -14,6 +14,7 @@ state/
 .synapsor/
 **/.synapsor/
 docs/launch/out/
+development/runner-1.6.0-visual/
 SYNAPSOR_OSS_SPEC_PROGRESS.md
 SYNAPSOR_DEMO_VIDEO_PROGRESS.md
 apps/runner/CHANGELOG.md

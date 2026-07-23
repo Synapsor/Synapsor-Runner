@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.6.0 (prepared, not published)
+
+### Connect, Explore, Protect
+
+- Adds deterministic whole-schema Auto Boundary drafting from database
+  metadata, statically parsed Prisma/Drizzle schemas, OpenAPI documents, and
+  existing Synapsor definitions. It executes no adopter code, samples no source
+  rows before activation, uses no LLM, and emits only disabled public DSL,
+  canonical JSON, tests, review evidence, and a generation lock.
+- Adds a secured local Workbench review for trusted tenant/principal scope,
+  visible and kept-out fields, typed filters, aggregate-safe measures,
+  `count_distinct`, reviewed dimensions and time buckets, one-hop
+  relationships, cohort suppression, privacy/query budgets, and exact
+  role/grant/RLS posture. Activation binds every decision to one immutable
+  digest.
+- Adds authoring-only Scoped Explore through exactly `app.describe_data` and
+  `app.explore_data`. Row and PM-style aggregate plans contain no SQL or
+  arbitrary identifiers, run with verified read-only credentials and enforced
+  read-only transactions, and retain only normalized redacted audit metadata.
+- Adds a deliberately small aggregate grammar for counts, reviewed distinct
+  identifiers, sums/averages, categorical dimensions, day/week/month buckets,
+  bounded comparisons and top-N, optional proven many-to-one relationships,
+  cohort suppression, and durable extraction/differencing/rate budgets.
+- Adds Protect This Query. Workbench freezes a successful plan into public
+  `.synapsor.sql`, canonical `protected_read` authority, positive/deny/scope/
+  suppression/drift tests, and a disabled named capability. Human exact-digest
+  activation removes broad Explore while preserving the named production tool.
+- Adds lock-bound schema/role/grant/ownership/RLS/compiler/Spec drift checks.
+  Additive schema fields receive no authority; breaking generated-authority
+  drift fails closed until regeneration and review.
+- Preserves published 1.x contracts, exact legacy normalization/digests,
+  established CLI selectors and automation, active tools, TypeScript authoring,
+  manual/headless operation, guarded writes, Data PRs, app-owned executors, and
+  deployments without generation locks through packed compatibility fixtures.
+- Prepares `@synapsor/runner@1.6.0`, `@synapsor/dsl@1.5.0`, and
+  `@synapsor/spec@1.5.0`. Nothing is published, tagged, pushed, or released by
+  this change.
+
 ## 1.5.4 (published 2026-07-22)
 
 ### Networked MCP authentication hardening

@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String       @id
+  tenantId          String       @map("tenant_id")
+  ownerId           String       @map("owner_id")
+  region            String
+  segment           String
+  customerEmail     String       @map("customer_email")
+  internalRiskScore Int          @map("internal_risk_score")
+  churnEvents       ChurnEvent[]
+
+  @@map("accounts")
+}
+
+model ChurnEvent {
+  id                  String   @id
+  tenantId            String   @map("tenant_id")
+  ownerId             String   @map("owner_id")
+  accountId           String   @map("account_id")
+  reasonCategory      String   @map("reason_category")
+  monthlyRevenueCents Int      @map("monthly_revenue_cents")
+  churnedAt           DateTime @map("churned_at") @db.Timestamptz(6)
+  privateNote         String   @map("private_note")
+  account             Account  @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId, churnedAt])
+  @@map("churn_events")
+}

@@ -12,6 +12,104 @@ Use JSON for automation:
 npx -y -p @synapsor/runner synapsor-runner doctor --first-run --json
 ```
 
+## Fresh Start Did Not Enter Auto Boundary
+
+Auto Boundary is the default only for a fresh interactive `start --from-env`
+with no existing config, selector, answers file, machine-output flag, or other
+automation input. This preserves every established 1.x route.
+
+Check the generated state:
+
+```bash
+synapsor-runner boundary status --json
+```
+
+To draft explicitly without prompts or a browser:
+
+```bash
+synapsor-runner boundary draft \
+  --from-env DATABASE_URL \
+  --schema public \
+  --project-root . \
+  --json
+```
+
+## Scoped Explore Is Not Advertised
+
+This is correct unless all authoring prerequisites pass. Explore is disabled by
+default and never appears in production, unknown-profile, shared HTTP, remote,
+or non-loopback `tools/list`.
+
+Check:
+
+```bash
+synapsor-runner boundary status --json
+synapsor-runner boundary diff --json
+synapsor-runner mcp status cursor --project
+```
+
+The exact boundary digest must be active, the profile must explicitly be
+`development` or `staging`, the generation lock and compiler/Spec versions
+must be current, and the inspected database role must still be SELECT-only,
+non-owner, non-superuser, and not `BYPASSRLS`. Runner also enforces a read-only
+transaction for every Explore call.
+
+A write-capable, owner, superuser, `BYPASSRLS`, or unverifiable credential may
+still inspect metadata with a warning. It cannot enable source-row Explore.
+Use a dedicated staging reader instead of weakening this check.
+
+## Cursor Has Production Tools Instead Of Authoring Tools
+
+Install the managed local authoring entry only after boundary activation:
+
+```bash
+synapsor-runner mcp install cursor \
+  --project \
+  --authoring \
+  --project-root . \
+  --yes
+```
+
+Authoring status reports exactly `app.describe_data` and `app.explore_data`.
+After Protect and exact-digest activation, replace that entry with the
+production config. The protected named capability remains available while
+Explore disappears:
+
+```bash
+synapsor-runner mcp install cursor \
+  --project \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db \
+  --yes
+```
+
+## Boundary Became Stale After A Schema Or Grant Change
+
+Generated authority is bound to the schema, role, grants, ownership, RLS
+posture, compiler, and canonical Spec fingerprint:
+
+```bash
+synapsor-runner boundary diff --json
+```
+
+Additive fields receive no implicit authority. Breaking or posture drift fails
+closed only for lock-bound generated authority. Regenerate, review the semantic
+diff, and activate the new exact digest. Existing manually authored projects
+without a generation lock retain their previous behavior.
+
+## Aggregate Explore Suppressed Or Refused A Result
+
+Suppression and budget failures are security behavior, not query failures.
+Workbench shows the reviewed minimum cohort, maximum groups, response limits,
+and durable extraction/differencing budgets. You cannot widen them in a model
+argument.
+
+Use a larger legitimate cohort or protect a narrower reviewed question. Do not
+work around suppression with repeated slightly different filters: Runner
+records normalized redacted plan metadata and exhausts the differencing budget.
+Returned rows/groups, trusted tenant/principal values, credentials, and raw
+sensitive literals are not stored in the query audit.
+
 ## Safe Action Draft Does Not Appear As A Tool
 
 This is expected before activation. `start --action`, agent edits, `action

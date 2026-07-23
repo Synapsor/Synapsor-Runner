@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT/apps/runner"
+SPEC_PACKAGE_DIR="$ROOT/packages/spec"
 TEMP_DIR="$(mktemp -d)"
 TARBALL=""
+SPEC_TARBALL=""
 EXPECTED_VERSION="$(node -e "console.log(require('$PACKAGE_DIR/package.json').version)")"
 
 cleanup() {
@@ -18,19 +20,29 @@ trap cleanup EXIT
 cd "$ROOT"
 corepack pnpm build:runner-package >/dev/null
 
+cd "$SPEC_PACKAGE_DIR"
+SPEC_PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
+SPEC_PACK_FILE="$(printf "%s\n" "$SPEC_PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
+if [[ -z "$SPEC_PACK_FILE" ]]; then
+  echo "Spec pack did not print a tarball filename" >&2
+  printf "%s\n" "$SPEC_PACK_OUTPUT" >&2
+  exit 1
+fi
+SPEC_TARBALL="$TEMP_DIR/$(basename "$SPEC_PACK_FILE")"
+
 cd "$PACKAGE_DIR"
-PACK_OUTPUT="$(npm pack --silent)"
+PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
 PACK_FILE="$(printf "%s\n" "$PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
 if [[ -z "$PACK_FILE" ]]; then
   echo "npm pack did not print a tarball filename" >&2
   printf "%s\n" "$PACK_OUTPUT" >&2
   exit 1
 fi
-TARBALL="$PACKAGE_DIR/$PACK_FILE"
+TARBALL="$TEMP_DIR/$(basename "$PACK_FILE")"
 
 cd "$TEMP_DIR"
 npm init -y >/dev/null
-npm install "$TARBALL" >/dev/null
+npm install "$SPEC_TARBALL" "$TARBALL" >/dev/null
 STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
