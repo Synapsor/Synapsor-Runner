@@ -1,0 +1,38 @@
+{
+  "schema_version": "synapsor.freshness-proof.v1",
+  "proposal_id": "wrp_update_2001",
+  "proposal_hash": "sha256:update-proposal",
+  "proposal_version": 1,
+  "dependency_set_digest": "sha256:720d1300cc30f5732c864f41ef79767268095483b0bac93d871b19299886141b",
+  "checked_at": "2026-07-23T18:00:00.000Z",
+  "valid_until": "2026-07-23T18:00:30.000Z",
+  "source_adapters": [
+    {
+      "source_id": "src_billing_demo",
+      "engine": "postgres"
+    }
+  ],
+  "result": "fresh",
+  "safe_code": "FRESHNESS_FRESH",
+  "target_count": 1,
+  "supporting_count": 1,
+  "checks": [
+    {
+      "id": "target",
+      "kind": "target",
+      "status": "fresh",
+      "safe_code": "FRESHNESS_TARGET_FRESH",
+      "expected_version_digest": "sha256:cf6cbc0a5d9b4fe7d9d3fd832e5e1b05b73fa6eefdc496fd95d7268ab1d9268c",
+      "observed_version_digest": "sha256:cf6cbc0a5d9b4fe7d9d3fd832e5e1b05b73fa6eefdc496fd95d7268ab1d9268c"
+    },
+    {
+      "id": "invoice_eligibility",
+      "kind": "supporting",
+      "status": "fresh",
+      "safe_code": "FRESHNESS_DEPENDENCY_FRESH",
+      "expected_version_digest": "sha256:cf6cbc0a5d9b4fe7d9d3fd832e5e1b05b73fa6eefdc496fd95d7268ab1d9268c",
+      "observed_version_digest": "sha256:cf6cbc0a5d9b4fe7d9d3fd832e5e1b05b73fa6eefdc496fd95d7268ab1d9268c"
+    }
+  ],
+  "proof_digest": "sha256:0030e42a6f494acdfd65fb4042c917444f2c6df621fcae5021b3d7d15fdc1877"
+}

@@ -10,7 +10,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CloudControlClient, CloudControlError, ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, bindPostgresTrustedScope, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, preflightGeneratedAuthority, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, bindPostgresTrustedScope, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, evaluateProposalFreshness, preflightGeneratedAuthority, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ProposalFreshnessEvaluation, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { createPostgresPool, inspectPostgresRlsTarget, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration, type PostgresRlsOperation } from "@synapsor-runner/postgres";
@@ -42,7 +42,7 @@ import {
   type StoreStats,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
-import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type ChangeSet, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseFreshnessAuthority, parseFreshnessProof, parseWritebackJob, protocolVersions, type ChangeSet, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
@@ -5043,6 +5043,29 @@ async function directSqlWritebackDoctorChecks(
         message: `Rollback-only writer probe failed for configured target ${capability.target.schema}.${capability.target.table} (${safeDatabaseProbeError(error)}). Verify writer SELECT/${capabilityOperation(capability).toUpperCase()} on the target table and configured columns.`,
       });
     }
+    for (const dependency of proposalFreshnessDependencyCapabilities(config, capability)) {
+      try {
+        await rollbackOnlyFreshnessDependencyProbe(
+          source.engine,
+          writeUrl,
+          dependency.capability,
+          dependency.versionColumn,
+        );
+        checks.push({
+          name: `capability:${capability.name}:freshness-dependency:${dependency.id}:lock-probe`,
+          ok: true,
+          level: "pass",
+          message: `Rollback-only writer probe verified locking-read authority for freshness dependency ${dependency.capability.target.schema}.${dependency.capability.target.table} without reading or mutating business rows.`,
+        });
+      } catch (error) {
+        checks.push({
+          name: `capability:${capability.name}:freshness-dependency:${dependency.id}:lock-probe`,
+          ok: false,
+          level: "fail",
+          message: `Rollback-only locking-read probe failed for freshness dependency ${dependency.capability.target.schema}.${dependency.capability.target.table} (${safeDatabaseProbeError(error)}). Verify writer SELECT plus row-lock authority on the dependency relation; a narrow UPDATE grant on its version column is sufficient for the supported PostgreSQL/MySQL fixtures.`,
+        });
+      }
+    }
   }
   return checks;
 }
@@ -5054,12 +5077,78 @@ function directSqlProposalCapabilities(config: RuntimeConfig, sourceName: string
   });
 }
 
+function proposalFreshnessDependencyCapabilities(
+  config: RuntimeConfig,
+  proposal: RuntimeCapabilityConfig,
+): Array<{ id: string; capability: RuntimeCapabilityConfig; versionColumn: string }> {
+  const policy = config.proposal_freshness?.[proposal.name];
+  if (!policy) return [];
+  const capabilities = new Map((config.capabilities ?? []).map((capability) => [capability.name, capability]));
+  return (policy.dependencies ?? []).map((dependency) => {
+    const capability = capabilities.get(dependency.capability);
+    if (!capability) {
+      throw new Error(`reviewed freshness dependency capability is missing: ${dependency.capability}`);
+    }
+    return {
+      id: dependency.id,
+      capability,
+      versionColumn: dependency.version_column,
+    };
+  });
+}
+
 async function rollbackOnlyTargetProbe(engine: "postgres" | "mysql", databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
   if (engine === "postgres") {
     await rollbackOnlyPostgresTargetProbe(databaseUrl, capability);
     return;
   }
   await rollbackOnlyMysqlTargetProbe(databaseUrl, capability);
+}
+
+async function rollbackOnlyFreshnessDependencyProbe(
+  engine: "postgres" | "mysql",
+  databaseUrl: string,
+  capability: RuntimeCapabilityConfig,
+  versionColumn: string,
+): Promise<void> {
+  if (engine === "postgres") {
+    const pg = await dynamicImportModule<{ Pool: new (options: { connectionString: string }) => { connect(): Promise<PostgresProbeClient>; end(): Promise<void> } }>("pg");
+    const pool = new pg.Pool({ connectionString: databaseUrl });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      try {
+        const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
+        const columns = freshnessDependencyProbeColumns(capability, versionColumn).map(quotePostgresIdentifier).join(", ");
+        await client.query(`SELECT ${columns} FROM ${table} WHERE false FOR UPDATE`);
+        await client.query("ROLLBACK");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
+    } finally {
+      client.release();
+      await pool.end();
+    }
+    return;
+  }
+
+  const mysql = await dynamicImportModule<{ createConnection(options: { uri: string; dateStrings: boolean }): Promise<MysqlProbeConnection> }>("mysql2/promise");
+  const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true });
+  try {
+    await connection.beginTransaction();
+    try {
+      const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
+      const columns = freshnessDependencyProbeColumns(capability, versionColumn).map(quoteMysqlIdentifier).join(", ");
+      await connection.query(`SELECT ${columns} FROM ${table} WHERE 1 = 0 FOR UPDATE`);
+      await connection.rollback();
+    } catch (error) {
+      await connection.rollback().catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await connection.end();
+  }
 }
 
 async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
@@ -5158,6 +5247,15 @@ function proposalReadProbeColumns(capability: RunnerCapabilityConfig): string[] 
     if (capability.conflict_guard?.column) columns.add(capability.conflict_guard.column);
   }
   return [...columns];
+}
+
+function freshnessDependencyProbeColumns(capability: RuntimeCapabilityConfig, versionColumn: string): string[] {
+  return [...new Set([
+    capability.target.primary_key,
+    capability.target.tenant_key,
+    capability.target.principal_scope_key,
+    versionColumn,
+  ].filter((column): column is string => Boolean(column)))];
 }
 
 function proposalWriteProbeColumns(capability: RunnerCapabilityConfig): string[] {
@@ -6566,6 +6664,17 @@ export async function verifyLocalWritebackAuthority(
       if (proposal.proposal_hash !== job.approval_id) {
         throw new Error("writeback approval/proposal digest does not match local proposal");
       }
+      const proposalFreshness = "freshness" in proposal.change_set && proposal.change_set.freshness
+        ? parseFreshnessAuthority(proposal.change_set.freshness)
+        : undefined;
+      const jobFreshness = "freshness" in job && job.freshness
+        ? parseFreshnessAuthority(job.freshness)
+        : undefined;
+      if (Boolean(proposalFreshness) !== Boolean(jobFreshness)
+        || (proposalFreshness && jobFreshness
+          && proposalFreshness.dependency_set_digest !== jobFreshness.dependency_set_digest)) {
+        throw new Error("writeback freshness authority does not match the immutable local proposal");
+      }
       const proposalContract = proposal.change_set.contract;
       const reviewedContract = matching.contract_provenance;
       if (reviewedContract) {
@@ -6601,9 +6710,53 @@ export async function verifyLocalWritebackAuthority(
       } else if (proposalPrincipalScope) {
         throw new Error("local proposal carries principal scope outside the reviewed capability");
       }
-      if (!options.cloudApproved) await verifyStoredApprovalAuthority(config, configPath, store, proposal, matching);
+      if (!options.cloudApproved) {
+        verifyStoredFreshnessApprovalAuthority(store, proposal);
+        await verifyStoredApprovalAuthority(config, configPath, store, proposal, matching);
+      }
     } finally {
       store.close();
+    }
+  }
+}
+
+function verifyStoredFreshnessApprovalAuthority(
+  store: ProposalStore,
+  proposal: StoredProposal,
+): void {
+  if (!("freshness" in proposal.change_set) || !proposal.change_set.freshness) return;
+  const authority = parseFreshnessAuthority(proposal.change_set.freshness);
+  const approvals = store.approvals(proposal.proposal_id)
+    .filter((approval) =>
+      approval.status === "approved"
+      && approval.proposal_hash === proposal.proposal_hash
+      && approval.proposal_version === proposal.proposal_version);
+  const required = proposal.change_set.approval.required_approvals ?? 1;
+  if (new Set(approvals.map((approval) => approval.approver)).size < required) {
+    throw new Error(`proposal ${proposal.proposal_id} does not have its required freshness-bound approvals`);
+  }
+  const proofEvents = store.events(proposal.proposal_id)
+    .filter((event) => event.kind === "proposal_freshness_checked");
+  for (const approval of approvals) {
+    if (!approval.freshness_proof_digest) {
+      throw new Error(`proposal ${proposal.proposal_id} has an approval without a freshness proof`);
+    }
+    const event = proofEvents.find((candidate) => {
+      try {
+        return parseFreshnessProof(candidate.payload.proof).proof_digest === approval.freshness_proof_digest;
+      } catch {
+        return false;
+      }
+    });
+    if (!event) throw new Error(`proposal ${proposal.proposal_id} freshness proof is missing or failed integrity validation`);
+    const proof = parseFreshnessProof(event.payload.proof);
+    if (
+      proof.result !== "fresh"
+      || proof.proposal_hash !== proposal.proposal_hash
+      || proof.proposal_version !== proposal.proposal_version
+      || proof.dependency_set_digest !== authority.dependency_set_digest
+    ) {
+      throw new Error(`proposal ${proposal.proposal_id} approval freshness proof does not match immutable authority`);
     }
   }
 }
@@ -10822,6 +10975,7 @@ async function proposals(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "list") return proposalsList(rest);
   if (subcommand === "show") return proposalsShow(rest);
+  if (subcommand === "check-freshness") return proposalsCheckFreshness(rest);
   if (subcommand === "approve") return proposalsApprove(rest);
   if (subcommand === "reject") return proposalsReject(rest);
   if (subcommand === "writeback-job") return proposalsWritebackJob(rest);
@@ -11860,12 +12014,19 @@ async function proposalsShow(args: string[]): Promise<number> {
     if (!proposal) throw new Error(`proposal not found: ${resolvedProposalId}`);
     const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
     const approvalProgress = store.approvalProgress(resolvedProposalId);
-    const payload = { proposal, approval_progress: approvalProgress, events: store.events(resolvedProposalId), receipts: store.receipts(resolvedProposalId), evidence };
+    const latestFreshness = store.latestFreshnessProof(resolvedProposalId);
+    const freshness = {
+      required: "freshness" in proposal.change_set && proposal.change_set.freshness !== undefined,
+      status: latestFreshness?.result ?? ("freshness" in proposal.change_set && proposal.change_set.freshness !== undefined ? "not_checked" : "not_required"),
+      proof: latestFreshness ?? null,
+    };
+    const payload = { proposal, approval_progress: approvalProgress, freshness, events: store.events(resolvedProposalId), receipts: store.receipts(resolvedProposalId), evidence };
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     } else if (showDetails(args)) {
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
       process.stdout.write(`Approval progress: ${approvalProgress.approved}/${approvalProgress.required}${approvalProgress.rejected ? " (rejected)" : ""}\n`);
+      process.stdout.write(`Freshness: ${freshness.status}${latestFreshness ? ` checked=${latestFreshness.checked_at} proof=${latestFreshness.proof_digest}` : ""}\n`);
       process.stdout.write(formatProposalEventDetail(payload.events));
       if (args.includes("--debug")) process.stdout.write(formatProposalDebug(proposal, optionalArg(args, "--store")));
     } else {
@@ -11875,6 +12036,131 @@ async function proposalsShow(args: string[]): Promise<number> {
   } finally {
     store.close();
   }
+}
+
+const freshnessExitCodes = {
+  fresh: 0,
+  not_required: 0,
+  stale: 3,
+  unavailable: 4,
+  invalid: 5,
+  unsupported: 6,
+} as const;
+
+async function proposalsCheckFreshness(args: string[]): Promise<number> {
+  const proposalId = positional(args, 0);
+  if (!proposalId) throw new Error("proposals check-freshness requires <proposal_id|latest>");
+  const storePath = localStorePath(args);
+  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      `proposals check-freshness ${proposalId}`,
+      (bridgeStorePath) => proposalsCheckFreshness(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "proposals check-freshness", args);
+  if (sharedPostgresLedgerMirrorRequested(args, config)) {
+    return withSharedPostgresLedgerMirror(
+      args,
+      storePath,
+      `proposals check-freshness ${proposalId}`,
+      () => proposalsCheckFreshness(withoutSharedPostgresLedgerMirror(args)),
+      config,
+    );
+  }
+  const store = await openLocalStore(args);
+  try {
+    const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
+    const proposal = requireLocalProposal(store, resolvedProposalId);
+    const freshness = await evaluateAndRecordProposalFreshness({ proposal, config, configPath, store });
+    operationalLog(freshness.status === "fresh" || freshness.status === "not_required" ? "info" : "warn", "proposal_freshness_check", {
+      proposal_id: proposal.proposal_id,
+      capability: proposal.action,
+      tenant: proposal.tenant_id,
+      status: freshness.status,
+      error_code: freshness.safe_code,
+      target_count: freshness.target_count,
+      supporting_count: freshness.supporting_count,
+      ...(freshness.required ? { freshness_proof_digest: freshness.proof.proof_digest } : {}),
+      source_database_changed: false,
+    });
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(freshnessJson(freshness), null, 2)}\n`
+      : formatFreshnessResult(freshness, args.includes("--details")));
+    return freshnessExitCodes[freshness.status];
+  } finally {
+    store.close();
+  }
+}
+
+async function evaluateAndRecordProposalFreshness(input: {
+  proposal: StoredProposal;
+  config: RuntimeConfig | undefined;
+  configPath: string;
+  store: ProposalStore;
+}): Promise<ProposalFreshnessEvaluation> {
+  const required = "freshness" in input.proposal.change_set && input.proposal.change_set.freshness !== undefined;
+  if (!required) {
+    return {
+      required: false,
+      status: "not_required",
+      safe_code: "FRESHNESS_NOT_REQUIRED",
+      target_count: 0,
+      supporting_count: 0,
+    };
+  }
+  if (!input.config) {
+    throw new Error(`freshness-required proposal needs an existing --config file; not found: ${path.resolve(input.configPath)}`);
+  }
+  const result = await evaluateProposalFreshness({
+    config: input.config,
+    proposal: input.proposal,
+    env: process.env,
+  });
+  if (result.required) input.store.recordFreshnessProof(result.proof);
+  return result;
+}
+
+function freshnessJson(result: ProposalFreshnessEvaluation): Record<string, unknown> {
+  return {
+    schema_version: "synapsor.proposal-freshness-result.v1",
+    required: result.required,
+    status: result.status,
+    safe_code: result.safe_code,
+    target_count: result.target_count,
+    supporting_count: result.supporting_count,
+    ...(result.required ? { proof: result.proof } : {}),
+    source_database_changed: false,
+  };
+}
+
+function formatFreshnessResult(result: ProposalFreshnessEvaluation, details: boolean): string {
+  if (!result.required) return "Freshness: not required (legacy target guard remains enforced at apply).\n";
+  const lines = [
+    `Freshness: ${result.status}`,
+    `code: ${result.safe_code}`,
+    `target checks: ${result.target_count}`,
+    `supporting checks: ${result.supporting_count}`,
+    `checked at: ${result.proof.checked_at}`,
+    `proof: ${result.proof.proof_digest}`,
+  ];
+  if (result.status === "stale") lines.push("next: create a new source read and proposal; this proposal cannot be refreshed or approved");
+  else if (result.status === "unavailable") lines.push("next: retry the live check after the source is available; no approval was recorded");
+  else if (result.status === "invalid" || result.status === "unsupported") lines.push("next: fix the reviewed freshness configuration; no approval was recorded");
+  else lines.push("note: approval-time freshness does not replace the final apply-time revalidation");
+  if (details) {
+    for (const check of result.proof.checks) {
+      lines.push(
+        `- ${check.kind}:${check.id} ${check.status} (${check.safe_code})`
+        + `${check.expected_version_digest ? ` expected=${check.expected_version_digest}` : ""}`
+        + `${check.observed_version_digest ? ` observed=${check.observed_version_digest}` : ""}`,
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 async function proposalsApprove(args: string[]): Promise<number> {
@@ -11899,6 +12185,19 @@ async function proposalsApprove(args: string[]): Promise<number> {
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
+    const freshness = await evaluateAndRecordProposalFreshness({ proposal, config, configPath, store });
+    if (!args.includes("--json")) process.stdout.write(formatFreshnessResult(freshness, args.includes("--details")));
+    if (freshness.status !== "fresh" && freshness.status !== "not_required") {
+      if (freshness.required) {
+        store.recordFreshnessApprovalBlocked(resolvedProposalId, {
+          proof_digest: freshness.proof.proof_digest,
+          safe_code: freshness.safe_code,
+          actor: "operator",
+        });
+      }
+      if (args.includes("--json")) process.stdout.write(`${JSON.stringify(freshnessJson(freshness), null, 2)}\n`);
+      return freshnessExitCodes[freshness.status];
+    }
     await confirmDangerousAction(args, `Approve proposal ${resolvedProposalId} for guarded writeback?`);
     const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "approve", reason: optionalArg(args, "--reason") });
     const updated = store.approveProposal(resolvedProposalId, {
@@ -11908,6 +12207,7 @@ async function proposalsApprove(args: string[]): Promise<number> {
       reason: optionalArg(args, "--reason") ?? undefined,
       identity,
       require_verified_identity: Boolean(config?.operator_identity && config.operator_identity.provider !== "dev_env"),
+      freshness_proof_digest: freshness.required ? freshness.proof.proof_digest : undefined,
     });
     operationalLog("info", "operator_decision", {
       action: "approve",
@@ -11919,9 +12219,15 @@ async function proposalsApprove(args: string[]): Promise<number> {
       identity_verified: identity.verified,
       required_role: proposal.change_set.approval.required_role,
       approval_progress: `${store.approvalProgress(resolvedProposalId).approved}/${store.approvalProgress(resolvedProposalId).required}`,
+      freshness_status: freshness.status,
+      ...(freshness.required ? { freshness_proof_digest: freshness.proof.proof_digest } : {}),
     });
     const progress = store.approvalProgress(resolvedProposalId);
-    const approvalResult = { ...updated, approval_progress: progress };
+    const approvalResult = {
+      ...updated,
+      approval_progress: progress,
+      freshness: freshnessJson(freshness),
+    };
     process.stdout.write(args.includes("--json")
       ? `${JSON.stringify(approvalResult, null, 2)}\n`
       : progress.complete
@@ -16046,11 +16352,13 @@ Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_
 	  ${cmd} proposals list [--tenant acme] [--capability billing.propose_late_fee_waiver] [--object invoice:INV-3001] [--status applied]
 	  ${cmd} proposals show latest
 	  ${cmd} proposals show latest --details
+	  ${cmd} proposals check-freshness latest --config ./synapsor.runner.json --store ./.synapsor/local.db
+	  ${cmd} proposals check-freshness latest --details --json --config ./synapsor.runner.json --store ./.synapsor/local.db
 	  ${cmd} proposals approve latest --yes
 	  ${cmd} proposals reject latest --reason "..."
 	  ${cmd} proposals approve latest --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
 
-	Review decisions happen outside the model-facing MCP tool surface. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
+	Review decisions happen outside the model-facing MCP tool surface. A freshness-required approval performs the same live check automatically and binds the approval to its immutable proof. Freshness at approval improves review quality; apply rechecks again before mutation. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
 	`,
     lifecycle: `Usage:
   ${cmd} lifecycle [--store ./.synapsor/local.db]

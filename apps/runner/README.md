@@ -169,9 +169,22 @@ stale proposal conflicts. Inspect the latest lifecycle without copying an ID:
 synapsor-runner lifecycle --details --store ./.synapsor/local.db
 ```
 
+For proposals whose review depends on other source rows, Runner 1.6.1 can also
+require a live target/supporting-evidence check immediately before every local
+approval. Apply rechecks those declared same-database dependencies again inside
+the write transaction; stale evidence produces zero mutation and requires a new
+proposal:
+
+```bash
+synapsor-runner proposals check-freshness latest \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
 See the [own-database guide](docs/getting-started-own-database.md),
 [Cursor plugin guide](docs/cursor-plugin.md), and
-[store lifecycle guide](docs/store-lifecycle.md) for the complete paths.
+[proposal freshness](docs/proposal-evidence-freshness.md) and
+[store lifecycle](docs/store-lifecycle.md) guides for the complete paths.
 
 ## Safety Model
 
@@ -214,7 +227,8 @@ trust boundaries, covered threats, non-goals, and required operator controls.
 scope, kept-out fields, proposals, approval, receipts, and replay. Resource
 handles re-check tenant/principal rather than acting as bearer authority. Live
 gates cover principal denial, no pre-approval mutation, idempotency, conflict,
-bounded sets, and compensation on disposable databases.
+bounded sets, compensation, and proposal/evidence freshness on disposable
+databases.
 
 Runner is a narrow agent/database safety boundary, not a replacement for
 least-privilege database access, host security, or application authorization.

@@ -193,6 +193,7 @@ const publicDocs = [
   "openai-agents-sdk.md",
   "oss-vs-cloud.md",
   "production.md",
+  "proposal-evidence-freshness.md",
   "release-notes.md",
   "release-policy.md",
   "result-envelope-v2.md",
@@ -213,17 +214,22 @@ const publicDocs = [
   "use-your-own-database.md",
   "why-synapsor-vs-app-guardrails.md",
 ];
-const publishedCompatibilityManifest = JSON.parse(await readFile(
-  resolve(root, "fixtures/compatibility/published-1.5.4/manifest.json"),
-  "utf8",
-));
-const publishedCompatibilitySources = [
-  ...publishedCompatibilityManifest.contracts,
-  ...publishedCompatibilityManifest.dsl_sources,
-].map(({ path: source }) => [
-  source,
-  `fixtures/compatibility/published-1.5.4/sources/${source}`,
-]);
+const publishedCompatibilityBaselines = ["published-1.5.4", "published-1.6.0"];
+const publishedCompatibilityAssets = [];
+for (const baseline of publishedCompatibilityBaselines) {
+  const manifestPath = `fixtures/compatibility/${baseline}/manifest.json`;
+  const manifest = JSON.parse(await readFile(resolve(root, manifestPath), "utf8"));
+  publishedCompatibilityAssets.push([manifestPath, manifestPath]);
+  publishedCompatibilityAssets.push(
+    ...[
+      ...manifest.contracts,
+      ...manifest.dsl_sources,
+    ].map(({ path: source }) => [
+      source,
+      `fixtures/compatibility/${baseline}/sources/${source}`,
+    ]),
+  );
+}
 const releaseAssets = [
   ["CHANGELOG.md", "CHANGELOG.md"],
   ["AGENTS.md", "AGENTS.md"],
@@ -232,6 +238,7 @@ const releaseAssets = [
   ["THREAT_MODEL.md", "THREAT_MODEL.md"],
   ["TRADEMARKS.md", "TRADEMARKS.md"],
   ["llms.txt", "llms.txt"],
+  ...publishedCompatibilityAssets,
   ...publicDocs.map((name) => [`docs/${name}`, `docs/${name}`]),
   ["docs/rfcs", "docs/rfcs"],
   ["recipes", "recipes"],
@@ -251,7 +258,6 @@ const releaseAssets = [
   ["examples/support-billing-agent", "examples/support-billing-agent"],
   ["packages/dsl/examples/bounded-set-multi-term.synapsor.sql", "fixtures/dsl/bounded-set-multi-term.synapsor.sql"],
   ["packages/dsl/examples/aggregate-read.synapsor.sql", "fixtures/dsl/aggregate-read.synapsor.sql"],
-  ...publishedCompatibilitySources,
   ["fixtures", "fixtures"],
   ["schemas", "schemas"],
 ];

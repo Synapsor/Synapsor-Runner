@@ -97,6 +97,17 @@ export type LifecycleViewV1 = {
     decisions: Array<Record<string, unknown>>;
     tripped_policy_limits: unknown[];
   };
+  freshness: {
+    required: boolean;
+    target_count: number;
+    supporting_count: number;
+    latest_status: string;
+    latest_checked_at: string | null;
+    latest_proof_digest: string | null;
+    latest_safe_code: string | null;
+    approval_proofs: Array<{ approval_id: number; approver: string; proof_digest: string | null }>;
+    next_action: string;
+  };
   evidence: {
     bundles: Array<Record<string, unknown>>;
     count: number;
@@ -239,6 +250,7 @@ function buildLifecycleViewUnchecked(
   const outbox = stableBy(store.listCloudOutbox({ proposal_id: proposalId, limit: 1000 }), (item) => `${item.created_at}:${item.event_id}`);
   const governance = stableBy(store.listCloudGovernanceEvents(proposalId), (item) => `${item.created_at}:${item.event_id}`);
   const replay = store.getStoredReplayForProposal(proposalId);
+  const latestFreshness = store.latestFreshnessProof(proposalId);
 
   assertLifecycleLinks(proposal, evidence, audit, jobs, intents, receipts, worker, governance, replay);
 
@@ -262,6 +274,9 @@ function buildLifecycleViewUnchecked(
     .map((item) => asRecord(item.receipt)?.inverse)
     .filter((item) => item !== undefined)
     .map((item) => safeDomainValue(item));
+  const freshnessAuthority = asRecord(changeSet.freshness);
+  const freshnessTarget = asRecord(freshnessAuthority?.target);
+  const freshnessDependencies = Array.isArray(freshnessAuthority?.dependencies) ? freshnessAuthority.dependencies : [];
 
   return {
     schema_version: lifecycleViewSchemaVersion,
@@ -310,6 +325,27 @@ function buildLifecycleViewUnchecked(
       progress: approvalProgress,
       decisions: approvals.map(publicApproval),
       tripped_policy_limits: policyLimitTrips(events),
+    },
+    freshness: {
+      required: freshnessAuthority !== undefined,
+      target_count: latestFreshness?.target_count ?? numberValue(freshnessTarget?.member_count) ?? 0,
+      supporting_count: latestFreshness?.supporting_count ?? freshnessDependencies.length,
+      latest_status: latestFreshness?.result ?? (freshnessAuthority ? "not_checked" : "not_required"),
+      latest_checked_at: latestFreshness?.checked_at ?? null,
+      latest_proof_digest: latestFreshness?.proof_digest ?? null,
+      latest_safe_code: latestFreshness?.safe_code ?? null,
+      approval_proofs: approvals.map((item) => ({
+        approval_id: item.approval_id,
+        approver: item.approver,
+        proof_digest: item.freshness_proof_digest ?? null,
+      })),
+      next_action: latestFreshness?.result === "stale"
+        ? "Create a new source read and proposal."
+        : latestFreshness?.result === "unavailable"
+          ? "Retry the live freshness check when the source is available."
+          : freshnessAuthority && !latestFreshness
+            ? "Run proposals check-freshness before approval."
+            : "Apply still revalidates target and supporting dependencies.",
     },
     evidence: {
       bundles: evidence.map(publicEvidence),
@@ -367,6 +403,7 @@ export function formatLifecycleFirstLook(view: LifecycleViewV1): string {
     `Object: ${view.proposal.scope.business_object}:${view.proposal.scope.object_id}`,
     `Trusted scope: tenant=${view.proposal.scope.tenant_id} principal=${view.proposal.scope.principal}`,
     `Approval: ${view.approval.status} via ${view.approval.source} (${view.approval.progress.approved}/${view.approval.progress.required})`,
+    `Freshness: ${view.freshness.latest_status}; target=${view.freshness.target_count} supporting=${view.freshness.supporting_count}; proof=${view.freshness.latest_proof_digest ?? "none"}`,
     `Evidence: ${view.evidence.count} bundle${view.evidence.count === 1 ? "" : "s"}; query audit: ${view.query_audit.count}`,
     `Writeback: ${view.writeback.jobs.length ? `${view.writeback.jobs.length} job(s)` : "not created"}; ${view.writeback.intents.length ? `${view.writeback.intents.length} intent(s)` : "no intent"}`,
     `Latest outcome: ${latest ? `${String(latest.status)} rows=${String(latest.rows_affected)} source_changed=${String(latest.source_database_mutated)}` : "not applied"}`,
@@ -386,6 +423,7 @@ export function formatLifecycleDetails(view: LifecycleViewV1): string {
   const sections: Array<[string, unknown]> = [
     ["Proposal", view.proposal],
     ["Approval", view.approval],
+    ["Freshness", view.freshness],
     ["Evidence", view.evidence],
     ["Query audit", view.query_audit],
     ["Writeback", view.writeback],
@@ -516,8 +554,9 @@ function publicApproval(approval: StoredApproval): Record<string, unknown> {
       algorithm: identity.algorithm ?? null,
       issuer: identity.issuer ?? null,
       decision_hash: identity.decision_hash,
-      integrity_hash: identity.integrity_hash,
+    integrity_hash: identity.integrity_hash,
     } : null,
+    freshness_proof_digest: approval.freshness_proof_digest ?? null,
     created_at: approval.created_at,
   };
 }

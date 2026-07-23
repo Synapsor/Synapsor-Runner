@@ -25,6 +25,9 @@ Current `1.6` scope:
   explicit development-only static values;
 - evidence handles, normalized query audit, proposals, receipts, local replay,
   and read-only lifecycle inspection without copying proposal ids;
+- optional proposal/evidence freshness: live target and declared same-source
+  supporting-row checks before every approval, proof-bound human/quorum/policy
+  decisions, and atomic direct-SQL dependency revalidation at apply;
 - guarded single-row `INSERT`, `UPDATE`, and `DELETE`;
 - fixed-predicate set `UPDATE`/`DELETE` and exact-review batch `INSERT`, with
   mandatory row/value caps, frozen members, human approval, atomic execution,
@@ -62,6 +65,8 @@ Out of scope:
 - model-selected tenant/principal, activation, approval, or commit authority;
 - UPSERT, DDL, free-form predicates, unbounded writes, or cross-table direct
   transactions;
+- strict atomic freshness for app-owned handlers, APIs, or cross-source
+  dependencies; those executors own their transaction preconditions;
 - physical branching of external Postgres/MySQL or automatic rollback/time
   travel;
 - self-hosted Synapsor Cloud, an unbounded/multi-region shared ledger, a managed

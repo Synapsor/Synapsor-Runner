@@ -10,6 +10,7 @@ Start here:
 - Auto Boundary, Scoped Explore, and Protect: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/auto-boundary-and-scoped-explore.md
 - Connect a staging database: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/getting-started-own-database.md
 - Security boundary: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/security-boundary.md
+- Proposal and evidence freshness: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/proposal-evidence-freshness.md
 - Current scope: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/current-scope.md
 - Current limitations: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/limitations.md
 - DSL reference: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/dsl-reference.md

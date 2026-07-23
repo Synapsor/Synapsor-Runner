@@ -1,0 +1,76 @@
+{
+  "schema_version": "synapsor.published-compatibility.v1",
+  "published_packages": {
+    "@synapsor/runner": {
+      "version": "1.6.0",
+      "npm_shasum": "3ac934e1742184514c7eca935d7d3c1ca752bb70"
+    },
+    "@synapsor/dsl": {
+      "version": "1.5.0",
+      "npm_shasum": "45832b2e4e754bd68d195e3daf14b1c14edbc27d"
+    },
+    "@synapsor/spec": {
+      "version": "1.5.0",
+      "npm_shasum": "e167ccff21e0a511bbe0758d0a918fdd59b03b4d"
+    }
+  },
+  "contracts": [
+    {
+      "path": "packages/spec/fixtures/valid/basic-read.contract.json",
+      "source_sha256": "5ec499965f639d784603b7942390d18a3e742d79e4d510dbea470e166a743972",
+      "canonical_sha256": "9d3addfde77eb6528aae7b9e81ae0f582b5c002aa77ebb2d7381fe663f5f5b1e"
+    },
+    {
+      "path": "packages/spec/fixtures/conformance/aggregate-read/contract.json",
+      "source_sha256": "830bc208b749bb9ed6a4b4468571d58d68bc8a2b6e1072fc45fb87d1c68697e7",
+      "canonical_sha256": "ccc6ea17f449bfc207d1cea70ef3320d575c450a3904c850dcb631132c6e5602"
+    },
+    {
+      "path": "packages/spec/fixtures/conformance/proposal-capability/contract.json",
+      "source_sha256": "d4c25fb8f79f04c13bdb3daf8c18a44d4f1c61596660a67bf35d46d0f94f4100",
+      "canonical_sha256": "d895081246d41a072892b5dde6929099302492a77a229033fbfa5052cce34b18"
+    },
+    {
+      "path": "packages/spec/fixtures/conformance/bounded-set-threats/contract.json",
+      "source_sha256": "c902d45457789a6d87504ca434c8b299f3e09be779f3bfdf7bbd8684d575a10e",
+      "canonical_sha256": "64c7078ff1687762d95c17873238759b3572dce499f903a8d6f1aaa8faae5f24"
+    },
+    {
+      "path": "packages/spec/fixtures/conformance/reversible-change-sets/contract.json",
+      "source_sha256": "7e4f8da90a4b235097f76e70a7f550153bbf62d219e7ef6f4f2194f6c36fa205",
+      "canonical_sha256": "181f2e93ad3c53b9a1345a4ed6c8b5e24ab0201c00159f38659f0c2a00c037de"
+    },
+    {
+      "path": "packages/spec/fixtures/conformance/principal-row-scope/contract.json",
+      "source_sha256": "00a05c1f4e82cc9c4e5d2d68c9c9201cd9512ac42d63292314bb7b4845026996",
+      "canonical_sha256": "fc96a5327ab0f4b311c90da9b5585348e81349ed66bd3a22e41e5f29804c32a8"
+    },
+    {
+      "path": "packages/spec/fixtures/conformance/approval-quorum/contract.json",
+      "source_sha256": "dde6b328f648ba60d837fa363494d764d7eb0d2d9a8a81ff70a9c077edde410c",
+      "canonical_sha256": "9407a7d0cc4439c773c3caf721aaed6c6e163c403fa67518632829d8c5de33e7"
+    }
+  ],
+  "dsl_sources": [
+    {
+      "path": "packages/dsl/examples/aggregate-read.synapsor.sql",
+      "source_sha256": "bccac4c2eb0ab7b2fc099c7fb3f6fdc25ee2e6e534282aa19b46f0aec8191b8d",
+      "canonical_sha256": "0cc2d892f00a31a3582d773812a26c6c45c0ce343e1d8d09da226a5bbb7c93eb"
+    },
+    {
+      "path": "packages/dsl/examples/billing-late-fee.synapsor.sql",
+      "source_sha256": "f5c462cff7aa0cd01a08543c6096ee1d225ebba449d65b7470815b1aa7ec42cd",
+      "canonical_sha256": "d495df575d64e798a730dad385e097dfc2c2f371a1505865bc45179ad3c479f2"
+    },
+    {
+      "path": "packages/dsl/examples/bounded-set-multi-term.synapsor.sql",
+      "source_sha256": "0ae199034ebba8b25146435c911576118f948b55b54636a5e68f46002cd1c6dd",
+      "canonical_sha256": "5b3e84cf8f5062a8afcd50763bde907e6a141977456e74a81d01f8b3a484e422"
+    },
+    {
+      "path": "packages/dsl/examples/principal-row-scope.synapsor.sql",
+      "source_sha256": "08ccd769d633417ea45d478383d9628991f43262223f12c78bbd776202b10253",
+      "canonical_sha256": "e29f2819c267210e54f783c40d0f550d11d0d1de844dbe1590ed8c3405af3cf7"
+    }
+  ]
+}

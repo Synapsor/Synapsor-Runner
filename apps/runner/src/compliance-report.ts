@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { ProposalStore, type StoredProposal } from "@synapsor-runner/proposal-store";
+import { parseFreshnessAuthority, parseFreshnessProof } from "@synapsor-runner/protocol";
 
 export type ComplianceReportScope =
   | { kind: "object"; tenant_id: string; object_type: string; object_id: string }
@@ -59,7 +60,16 @@ export async function createComplianceReport(input: {
         capability: proposal.capability ?? proposal.action,
         principal: approval.approver,
         object: `${proposal.business_object}:${proposal.object_id}`,
-        details: sanitize({ status: approval.status, reason: approval.reason, identity_provider: approval.identity?.provider, verified: approval.identity?.verified, subject: approval.identity?.subject, decision_hash: approval.decision_hash, integrity_hash: approval.integrity_hash }),
+        details: sanitize({
+          status: approval.status,
+          reason: approval.reason,
+          identity_provider: approval.identity?.provider,
+          verified: approval.identity?.verified,
+          subject: approval.identity?.subject,
+          decision_hash: approval.decision_hash,
+          integrity_hash: approval.integrity_hash,
+          freshness_proof_digest: approval.freshness_proof_digest,
+        }),
       });
       for (const event of store.events(proposal.proposal_id)) entries.push({
         timestamp: event.created_at,
@@ -69,7 +79,7 @@ export async function createComplianceReport(input: {
         capability: proposal.capability ?? proposal.action,
         principal: event.actor,
         object: `${proposal.business_object}:${proposal.object_id}`,
-        details: sanitize({ kind: event.kind, actor: event.actor, payload_included: false }),
+        details: complianceEventDetails(event),
       });
       for (const intent of store.listWritebackIntents({ proposal_id: proposal.proposal_id, limit: 1_000_000 })) entries.push({
         timestamp: intent.created_at,
@@ -247,6 +257,9 @@ export async function verifyComplianceReport(report: ComplianceReport, publicKey
 
 function proposalEntry(proposal: StoredProposal): ComplianceReportEntry {
   const change = proposal.change_set;
+  const freshness = "freshness" in change && change.freshness
+    ? parseFreshnessAuthority(change.freshness)
+    : undefined;
   return {
     timestamp: proposal.created_at,
     category: "proposal",
@@ -267,8 +280,67 @@ function proposalEntry(proposal: StoredProposal): ComplianceReportEntry {
       allowed_columns: change.guards.allowed_columns,
       source_database_mutated: proposal.source_database_mutated,
       proposal_hash: proposal.proposal_hash,
+      freshness_required: Boolean(freshness),
+      freshness_authority: freshness ? {
+        schema_version: freshness.schema_version,
+        target_mode: freshness.target.mode,
+        target_member_count: freshness.target.member_count,
+        supporting_dependency_count: freshness.dependencies.length,
+        dependency_ids: freshness.dependencies.map((dependency) => dependency.id),
+        dependency_set_digest: freshness.dependency_set_digest,
+      } : undefined,
     }),
   };
+}
+
+function complianceEventDetails(event: {
+  kind: string;
+  actor: string;
+  payload: Record<string, unknown>;
+}): Record<string, unknown> {
+  const base = { kind: event.kind, actor: event.actor, payload_included: false };
+  if (event.kind === "proposal_freshness_checked") {
+    try {
+      const proof = parseFreshnessProof(event.payload.proof);
+      return sanitize({
+        ...base,
+        freshness: {
+          schema_version: proof.schema_version,
+          result: proof.result,
+          safe_code: proof.safe_code,
+          checked_at: proof.checked_at,
+          valid_until: proof.valid_until,
+          proof_digest: proof.proof_digest,
+          dependency_set_digest: proof.dependency_set_digest,
+          target_count: proof.target_count,
+          supporting_count: proof.supporting_count,
+          checks: proof.checks,
+        },
+      });
+    } catch {
+      return sanitize({ ...base, freshness: { status: "invalid_stored_proof" } });
+    }
+  }
+  if (event.kind === "proposal_approval_blocked_freshness") {
+    return sanitize({
+      ...base,
+      freshness: {
+        result: event.payload.result,
+        safe_code: event.payload.safe_code,
+        proof_digest: event.payload.proof_digest,
+      },
+    });
+  }
+  if (event.kind === "writeback_conflict" && /^FRESHNESS_/.test(String(event.payload.safe_error_code ?? ""))) {
+    return sanitize({
+      ...base,
+      freshness: {
+        safe_code: event.payload.safe_error_code,
+        apply_revalidation_blocked: true,
+      },
+    });
+  }
+  return sanitize(base);
 }
 
 function queryAuditEntry(audit: Record<string, unknown>): ComplianceReportEntry {

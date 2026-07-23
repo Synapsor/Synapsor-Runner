@@ -60,8 +60,13 @@ test -f "$PACKED_ROOT/schemas/mcp-audit-report.schema.json"
 test -f "$PACKED_ROOT/schemas/mcp-audit-candidates.schema.json"
 test -f "$PACKED_ROOT/schemas/schema-candidate-review.schema.json"
 test -f "$PACKED_ROOT/schemas/schema-candidates.schema.json"
+test -f "$PACKED_ROOT/schemas/freshness-authority.v1.schema.json"
+test -f "$PACKED_ROOT/schemas/freshness-proof.v1.schema.json"
 test -f "$PACKED_ROOT/docs/schema-api-candidates.md"
+test -f "$PACKED_ROOT/docs/proposal-evidence-freshness.md"
 test -f "$PACKED_ROOT/fixtures/effects/dataset.json"
+test -f "$PACKED_ROOT/fixtures/protocol/change-set.freshness-update.v2.json"
+test -f "$PACKED_ROOT/fixtures/protocol/freshness-proof.fresh.v1.json"
 if [[ -e "$PACKED_ROOT/development" ]]; then
   echo "packed runner unexpectedly contains development progress files" >&2
   exit 1

@@ -17,6 +17,10 @@ Runner is designed to protect the model-facing database boundary:
 - asymmetric sessions verify an explicit RS256/ES256 allowlist, issuer,
   audience, time bounds, and `kid` against bounded public-key/JWKS inputs;
 - proposal tools save a proposed change without mutating the source database;
+- optional freshness-required proposals re-read the target and declared
+  same-source supporting rows before every approval, bind a short-lived proof
+  to the exact proposal, and revalidate again in the final direct SQL
+  transaction;
 - direct writeback enforces primary key, tenant/scope, allowed columns,
   expected-version/conflict guard, affected-row count, idempotency, and
   receipt/replay recording;
@@ -34,6 +38,8 @@ Runner is designed to protect the model-facing database boundary:
 - A model or prompt asks for broad SQL access.
 - A model tries to choose tenant scope or write credentials.
 - A model proposes a stale update after the source row changed.
+- A reviewer approves an obsolete target picture, or supporting evidence
+  changes while the mutation target itself remains unchanged.
 - A retry could duplicate a write without an idempotency key.
 - A developer accidentally exposes approval or commit tools to the MCP client.
 - A reviewer needs evidence/replay for what was read and proposed.
@@ -80,6 +86,9 @@ Runner does not claim to solve:
   predicates, or unbounded/cross-table writes. The only multi-row direct path
   is the fixed, frozen, capped set described in [Bounded Set
   Writeback](bounded-set-writeback.md).
+- atomic freshness across databases, APIs, or app-owned handlers. Strict
+  Runner freshness is same-source direct SQL only; an application executor
+  owns equivalent transactional preconditions for richer effects.
 
 ## App-Owned Handler Responsibility
 
@@ -95,6 +104,11 @@ approval. Your handler is the final business-write boundary and must re-check:
 
 Skipping those checks can reintroduce cross-tenant writes, lost updates, or
 duplicate writes.
+
+If a handler's decision depends on supporting rows, it must lock/re-read their
+exact versions in the same application transaction. A successful earlier
+Runner or Cloud review is not a substitute for that final check. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
 
 ## Disclosure
 

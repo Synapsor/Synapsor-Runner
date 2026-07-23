@@ -92,6 +92,7 @@
         "deduplication": { "$ref": "#/$defs/deduplication" }
       }
     },
+    "freshness": { "$ref": "https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json" },
     "evidence": {
       "type": "object",
       "additionalProperties": true,

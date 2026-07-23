@@ -443,6 +443,15 @@ function validateOperation(job: WritebackJob): void {
 
 async function mutateMysql(job: WritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
   if (job.protocol_version === "4.0") return await mutateMysqlCompensation(job, connection);
+  const freshnessConflict = await lockMysqlFreshnessDependencies(job, connection);
+  if (freshnessConflict) {
+    return {
+      status: "conflict",
+      affectedRows: 0,
+      code: freshnessConflict,
+      targetIdentity: identityForJob(job),
+    };
+  }
   if (job.protocol_version === "3.0") return await mutateMysqlSet(job, connection);
   const operation = operationOf(job);
   if (operation === "single_row_insert") return await insertMysql(job, connection);
@@ -501,6 +510,43 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
     verifyVersionAdvanced(job, resultVersion);
   }
   return { status: "applied", affectedRows: 1, targetIdentity: identityForJob(job), resultVersion, beforeDigest, afterDigest: digest({ identity: identityForJob(job), patch: job.patch, version: resultVersion }) };
+}
+
+function freshnessDependencies(job: WritebackJob) {
+  if (!("freshness" in job) || !job.freshness) return [];
+  return job.freshness.dependencies;
+}
+
+async function lockMysqlFreshnessDependencies(
+  job: WritebackJob,
+  connection: MysqlApplyConnection,
+): Promise<string | undefined> {
+  for (const dependency of freshnessDependencies(job)) {
+    const where = [
+      `${quoteMysqlIdentifier(dependency.target.primary_key.column)} = ?`,
+      `${quoteMysqlIdentifier(dependency.target.tenant_column)} = ?`,
+    ];
+    const values: unknown[] = [
+      dependency.target.primary_key.value,
+      job.target.tenant_guard.value,
+    ];
+    if (dependency.target.principal_column) {
+      const scope = principalScope(job);
+      if (!scope) return "FRESHNESS_DEPENDENCY_SCOPE_INVALID";
+      where.push(`${quoteMysqlIdentifier(dependency.target.principal_column)} = ?`);
+      values.push(scope.value);
+    }
+    const [rows] = await connection.query<Record<string, unknown>[]>(
+      `SELECT ${quoteMysqlIdentifier(dependency.expected_version.column)} AS __synapsor_freshness_version FROM ${quoteMysqlIdentifier(dependency.target.schema)}.${quoteMysqlIdentifier(dependency.target.table)} WHERE ${where.join(" AND ")} FOR UPDATE`,
+      values,
+    );
+    if (rows.length !== 1) return "FRESHNESS_DEPENDENCY_STALE";
+    if (!versionValuesMatch(
+      rows[0]?.__synapsor_freshness_version,
+      dependency.expected_version.value,
+    )) return "FRESHNESS_DEPENDENCY_STALE";
+  }
+  return undefined;
 }
 
 function compensationProjection(job: CompensationWritebackJob): string[] {

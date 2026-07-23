@@ -162,6 +162,38 @@
       "type": "array",
       "items": { "$ref": "#/$defs/policy" }
     },
+    "proposal_freshness": {
+      "description": "Optional fail-closed live freshness policy for reviewed proposal capabilities. The model cannot configure or widen these dependencies.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/qualified_name" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approval"],
+        "properties": {
+          "approval": {
+            "description": "Require a live source freshness proof immediately before every approval decision.",
+            "const": "required"
+          },
+          "dependencies": {
+            "description": "Reviewed same-source single-row reads whose exact versions must still match at approval and apply.",
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "capability", "identity_from_arg", "version_column"],
+              "properties": {
+                "id": { "$ref": "#/$defs/identifier" },
+                "capability": { "$ref": "#/$defs/qualified_name" },
+                "identity_from_arg": { "$ref": "#/$defs/identifier" },
+                "version_column": { "$ref": "#/$defs/identifier" }
+              }
+            }
+          }
+        }
+      }
+    },
     "approvals": {
       "description": "Local approval behavior overrides.",
       "type": "object",

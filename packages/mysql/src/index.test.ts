@@ -11,7 +11,7 @@ import {
   type MysqlApplyConnection
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
-import { canonicalJsonStringify } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -32,6 +32,37 @@ const job = {
   idempotency_key: "idem",
   lease_expires_at: 1
 };
+
+function jobWithFreshness(expectedVersion = "eligibility-v1") {
+  const dependencyUnsigned = {
+    id: "order_eligibility",
+    capability: "orders.inspect_eligibility",
+    source_id: "src_1",
+    engine: "mysql" as const,
+    target: {
+      schema: "appdb",
+      table: "order_eligibility",
+      primary_key: { column: "order_id", value: "O-1" },
+      tenant_column: "tenant_id",
+    },
+    expected_version: { column: "updated_at", value: expectedVersion },
+    evidence: { bundle_id: "ev_eligibility", query_fingerprint: "sha256:eligibility-query" },
+  };
+  const dependency = { ...dependencyUnsigned, descriptor_digest: canonicalJsonDigest(dependencyUnsigned) };
+  const authorityUnsigned = {
+    schema_version: protocolVersions.freshnessAuthority,
+    required: true as const,
+    target: { mode: "exact_guard" as const, member_count: 1 },
+    dependencies: [dependency],
+  };
+  return parseWritebackJob({
+    ...job,
+    freshness: {
+      ...authorityUnsigned,
+      dependency_set_digest: canonicalJsonDigest(authorityUnsigned),
+    },
+  });
+}
 
 describe("mysql adapter", () => {
   it("builds parameterized SQL", () => {
@@ -133,6 +164,36 @@ describe("mysql adapter", () => {
     expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(false);
     expect(connection.recordedReceiptStatus).toBe("conflict");
     expect(connection.sqlLog).toContain("COMMIT");
+  });
+
+  it("locks and revalidates reviewed supporting evidence before the target mutation", async () => {
+    const connection = new FakeMysqlConnection({
+      freshnessVersion: "eligibility-v1",
+      businessRow: { updated_at: "v1" },
+    });
+    const result = await applyMysqlJobWithConnection(jobWithFreshness(), config, connection);
+    expect(result).toMatchObject({ status: "applied", affected_rows: 1 });
+    const dependencyLock = connection.sqlLog.findIndex((sql) => sql.includes("FROM `appdb`.`order_eligibility`"));
+    const targetLock = connection.sqlLog.findIndex((sql) => sql.includes("FROM `appdb`.`orders`"));
+    const mutation = connection.sqlLog.findIndex((sql) => sql.startsWith("UPDATE `appdb`.`orders`"));
+    expect(dependencyLock).toBeGreaterThan(-1);
+    expect(targetLock).toBeGreaterThan(dependencyLock);
+    expect(mutation).toBeGreaterThan(targetLock);
+  });
+
+  it("fails a stale supporting dependency closed with zero target mutation", async () => {
+    const connection = new FakeMysqlConnection({
+      freshnessVersion: "eligibility-v2",
+      businessRow: { updated_at: "v1" },
+    });
+    const result = await applyMysqlJobWithConnection(jobWithFreshness(), config, connection);
+    expect(result).toMatchObject({
+      status: "conflict",
+      affected_rows: 0,
+      error_code: "FRESHNESS_DEPENDENCY_STALE",
+    });
+    expect(connection.sqlLog.some((sql) => sql.startsWith("UPDATE `appdb`.`orders`"))).toBe(false);
+    expect(connection.recordedReceiptStatus).toBe("conflict");
   });
 
   it("blocks missing primary-key or tenant-scoped rows before update", async () => {
@@ -783,6 +844,7 @@ class FakeMysqlConnection implements MysqlApplyConnection {
     businessRow?: Record<string, unknown>;
     businessUpdateAffectedRows?: number;
     receiptUpdateAffectedRows?: number;
+    freshnessVersion?: string;
   } = {}) {}
 
   async beginTransaction(): Promise<void> {
@@ -807,6 +869,10 @@ class FakeMysqlConnection implements MysqlApplyConnection {
     }
     if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
       return [[...(this.options.receiptRow ? [this.options.receiptRow] : [])] as T, undefined];
+    }
+    if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`order_eligibility`") && sql.includes("FOR UPDATE")) {
+      const value = this.options.freshnessVersion;
+      return [[...(value === undefined ? [] : [{ __synapsor_freshness_version: value }])] as T, undefined];
     }
     if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`orders`") && sql.includes("FOR UPDATE")) {
       return [[...(this.options.businessRow ? [this.options.businessRow] : [])] as T, undefined];

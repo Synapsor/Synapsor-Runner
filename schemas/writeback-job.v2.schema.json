@@ -118,6 +118,7 @@
         }
       ]
     },
+    "freshness": { "$ref": "https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json" },
     "idempotency_key": { "type": "string", "minLength": 1 },
     "lease": {
       "type": "object",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +9,8 @@ import {
   canonicalJsonStringify,
   parseChangeSet,
   parseExecutionReceipt,
+  parseFreshnessAuthority,
+  parseFreshnessProof,
   parseRunnerRegistration,
   parseRunnerProposal,
   parseRunnerActivity,
@@ -101,6 +104,99 @@ describe("writeback job schema", () => {
       decimal: 12.5,
       timestamp: "2026-07-14T06:00:00.000Z",
     })).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("binds freshness dependencies and proofs to canonical digests", () => {
+    const dependencyUnsigned = {
+      id: "invoice_eligibility",
+      capability: "billing.inspect_invoice",
+      source_id: "app_postgres",
+      engine: "postgres" as const,
+      target: {
+        schema: "public",
+        table: "invoices",
+        primary_key: { column: "invoice_id", value: "INV-3001" },
+        tenant_column: "tenant_id",
+      },
+      expected_version: { column: "version", value: 7 },
+      evidence: {
+        bundle_id: "ev_supporting_1",
+        query_fingerprint: canonicalJsonDigest({ capability: "billing.inspect_invoice" }),
+      },
+    };
+    const dependency = {
+      ...dependencyUnsigned,
+      descriptor_digest: canonicalJsonDigest(dependencyUnsigned),
+    };
+    const authorityUnsigned = {
+      schema_version: protocolVersions.freshnessAuthority,
+      required: true as const,
+      target: { mode: "exact_guard" as const, member_count: 1 },
+      dependencies: [dependency],
+    };
+    const authority = parseFreshnessAuthority({
+      ...authorityUnsigned,
+      dependency_set_digest: canonicalJsonDigest(authorityUnsigned),
+    });
+    const proofUnsigned = {
+      schema_version: protocolVersions.freshnessProof,
+      proposal_id: "wrp_1",
+      proposal_hash: canonicalJsonDigest({ proposal: "wrp_1" }),
+      proposal_version: 1,
+      dependency_set_digest: authority.dependency_set_digest,
+      checked_at: "2026-07-23T12:00:00.000Z",
+      valid_until: "2026-07-23T12:00:30.000Z",
+      source_adapters: [{ source_id: "app_postgres", engine: "postgres" as const }],
+      result: "fresh" as const,
+      safe_code: "FRESHNESS_FRESH",
+      target_count: 1,
+      supporting_count: 1,
+      checks: [
+        { id: "target", kind: "target" as const, status: "fresh" as const, safe_code: "FRESHNESS_TARGET_FRESH" },
+        { id: "invoice_eligibility", kind: "supporting" as const, status: "fresh" as const, safe_code: "FRESHNESS_DEPENDENCY_FRESH" },
+      ],
+    };
+    expect(parseFreshnessProof({
+      ...proofUnsigned,
+      proof_digest: canonicalJsonDigest(proofUnsigned),
+    })).toMatchObject({ result: "fresh", supporting_count: 1 });
+    expect(() => parseFreshnessAuthority({
+      ...authority,
+      dependencies: [{ ...dependency, expected_version: { column: "version", value: 8 } }],
+    })).toThrow(/digest mismatch/i);
+    expect(() => parseFreshnessProof({
+      ...proofUnsigned,
+      safe_code: "FRESHNESS_STALE",
+      proof_digest: canonicalJsonDigest(proofUnsigned),
+    })).toThrow(/digest mismatch/i);
+
+    const jobDependencyUnsigned = { ...dependencyUnsigned, source_id: "src_1" };
+    const jobDependency = {
+      ...jobDependencyUnsigned,
+      descriptor_digest: canonicalJsonDigest(jobDependencyUnsigned),
+    };
+    const jobAuthorityUnsigned = {
+      ...authorityUnsigned,
+      dependencies: [jobDependency],
+    };
+    const jobAuthority = parseFreshnessAuthority({
+      ...jobAuthorityUnsigned,
+      dependency_set_digest: canonicalJsonDigest(jobAuthorityUnsigned),
+    });
+    expect(parseWritebackJob({ ...validJob, freshness: jobAuthority })).toMatchObject({
+      freshness: { dependency_set_digest: jobAuthority.dependency_set_digest },
+    });
+    expect(() => parseWritebackJob({ ...validJob, freshness: authority })).toThrow(/source and engine/i);
+
+    const wrongTargetUnsigned = {
+      ...jobAuthorityUnsigned,
+      target: { mode: "not_applicable" as const, member_count: 0 },
+    };
+    const wrongTarget = parseFreshnessAuthority({
+      ...wrongTargetUnsigned,
+      dependency_set_digest: canonicalJsonDigest(wrongTargetUnsigned),
+    });
+    expect(() => parseWritebackJob({ ...validJob, freshness: wrongTarget })).toThrow(/target authority/i);
   });
 
   it("rejects values outside the reviewed JSON domain", () => {
@@ -316,7 +412,7 @@ describe("public protocol fixtures", () => {
     };
     expect(manifest.schema_version).toBe("synapsor.protocol-manifest.v1");
     expect(manifest.hash_algorithm).toBe("sha256");
-    expect(manifest.artifacts).toHaveLength(35);
+    expect(manifest.artifacts).toHaveLength(41);
     for (const artifact of manifest.artifacts) {
       const file = artifact.kind === "schema"
         ? path.resolve(here, "../../../schemas", artifact.name)
@@ -324,6 +420,67 @@ describe("public protocol fixtures", () => {
       const digest = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
       expect(digest, artifact.name).toBe(artifact.sha256);
     }
+  });
+
+  it("keeps public freshness schemas aligned with executable protocol validators", () => {
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    ajv.addFormat("date-time", {
+      type: "string",
+      validate: (value: string) => !Number.isNaN(Date.parse(value)),
+    });
+    const schemaNames = [
+      "freshness-authority.v1.schema.json",
+      "freshness-proof.v1.schema.json",
+      "change-set.v1.schema.json",
+      "change-set.v2.schema.json",
+      "change-set.v3.schema.json",
+      "writeback-job.v1.schema.json",
+      "writeback-job.v2.schema.json",
+      "writeback-job.v3.schema.json",
+    ];
+    const schemas = new Map<string, Record<string, unknown>>();
+    for (const name of schemaNames) {
+      const schema = publicSchema(name);
+      schemas.set(name, schema);
+      ajv.addSchema(schema);
+    }
+
+    for (const name of [
+      "change-set.v1.schema.json",
+      "change-set.v2.schema.json",
+      "change-set.v3.schema.json",
+      "writeback-job.v1.schema.json",
+      "writeback-job.v2.schema.json",
+      "writeback-job.v3.schema.json",
+    ]) {
+      expect((schemas.get(name)?.properties as Record<string, unknown>).freshness, name).toEqual({
+        $ref: "https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json",
+      });
+    }
+
+    const fixtures = [
+      ["https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json", "freshness-authority.invoice.v1.json"],
+      ["https://schemas.synapsor.ai/synapsor.freshness-proof.v1.schema.json", "freshness-proof.fresh.v1.json"],
+      ["https://schemas.synapsor.ai/synapsor.change-set.v2.schema.json", "change-set.freshness-update.v2.json"],
+      ["https://schemas.synapsor.ai/synapsor.writeback-job.v2.schema.json", "writeback-job.freshness-update.v2.json"],
+      ["https://schemas.synapsor.ai/synapsor.change-set.v2.schema.json", "change-set.update.v2.json"],
+      ["https://schemas.synapsor.ai/synapsor.writeback-job.v2.schema.json", "writeback-job.update.v2.json"],
+    ] as const;
+    for (const [schemaId, fixtureName] of fixtures) {
+      const valid = ajv.validate(schemaId, fixture(fixtureName));
+      expect(valid, `${fixtureName}: ${JSON.stringify(ajv.errors)}`).toBe(true);
+    }
+
+    const authority = parseFreshnessAuthority(fixture("freshness-authority.invoice.v1.json"));
+    const proof = parseFreshnessProof(fixture("freshness-proof.fresh.v1.json"));
+    expect(authority.dependency_set_digest).toBe(proof.dependency_set_digest);
+    const changeSet = parseChangeSet(fixture("change-set.freshness-update.v2.json"));
+    if (changeSet.schema_version !== protocolVersions.changeSetV2) throw new Error("expected v2 freshness change-set fixture");
+    expect(changeSet.freshness).toEqual(authority);
+    expect(parseWritebackJob(fixture("writeback-job.freshness-update.v2.json"))).toMatchObject({ freshness: authority });
+
+    const leaked = { ...(fixture("freshness-proof.fresh.v1.json") as Record<string, unknown>), source_row: { status: "eligible" } };
+    expect(ajv.validate("https://schemas.synapsor.ai/synapsor.freshness-proof.v1.schema.json", leaked)).toBe(false);
   });
 
   it("parses the public change-set fixture", () => {
@@ -525,6 +682,11 @@ describe("public protocol fixtures", () => {
 function fixture(name: string): unknown {
   const file = path.resolve(here, "../../../fixtures/protocol", name);
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function publicSchema(name: string): Record<string, unknown> {
+  const file = path.resolve(here, "../../../schemas", name);
+  return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
 }
 
 function v3Job() {

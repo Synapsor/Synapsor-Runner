@@ -80,6 +80,7 @@
         "expected_version": { "$ref": "#/$defs/columnValue" }
       }
     },
+    "freshness": { "$ref": "https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json" },
     "evidence": {
       "type": "object",
       "additionalProperties": true,

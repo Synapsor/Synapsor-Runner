@@ -4,14 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const manifestPath = path.join(
-  root,
-  "fixtures",
-  "compatibility",
-  "published-1.5.4",
-  "manifest.json",
-);
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const baselineNames = ["published-1.5.4", "published-1.6.0"];
 
 const spec = await import(pathToFileURL(path.join(root, "packages", "spec", "dist", "index.js")));
 const dsl = await import(pathToFileURL(path.join(root, "packages", "dsl", "dist", "index.js")));
@@ -34,38 +27,49 @@ function assertLegacyShape(contract, label) {
   }
 }
 
-for (const fixture of manifest.contracts) {
-  const sourcePath = path.join(root, fixture.path);
-  const source = fs.readFileSync(sourcePath, "utf8");
-  assertEqual(sha256(source), fixture.source_sha256, `${fixture.path} source`);
+for (const baselineName of baselineNames) {
+  const manifestPath = path.join(
+    root,
+    "fixtures",
+    "compatibility",
+    baselineName,
+    "manifest.json",
+  );
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 
-  const normalized = spec.normalizeContract(JSON.parse(source));
-  assertLegacyShape(normalized, fixture.path);
-  assertEqual(
-    sha256(JSON.stringify(normalized)),
-    fixture.canonical_sha256,
-    `${fixture.path} canonical contract`,
+  for (const fixture of manifest.contracts) {
+    const sourcePath = path.join(root, fixture.path);
+    const source = fs.readFileSync(sourcePath, "utf8");
+    assertEqual(sha256(source), fixture.source_sha256, `${fixture.path} source`);
+
+    const normalized = spec.normalizeContract(JSON.parse(source));
+    assertLegacyShape(normalized, fixture.path);
+    assertEqual(
+      sha256(JSON.stringify(normalized)),
+      fixture.canonical_sha256,
+      `${fixture.path} canonical contract`,
+    );
+  }
+
+  for (const fixture of manifest.dsl_sources) {
+    const sourcePath = path.join(root, fixture.path);
+    const source = fs.readFileSync(sourcePath, "utf8");
+    assertEqual(sha256(source), fixture.source_sha256, `${fixture.path} source`);
+
+    const normalized = spec.normalizeContract(dsl.compileAgentDsl(source));
+    assertLegacyShape(normalized, fixture.path);
+    assertEqual(
+      sha256(JSON.stringify(normalized)),
+      fixture.canonical_sha256,
+      `${fixture.path} compiled canonical contract`,
+    );
+  }
+
+  const packageSummary = Object.entries(manifest.published_packages)
+    .map(([name, value]) => `${name}@${value.version}`)
+    .join(", ");
+  console.log(
+    `Published compatibility verified: ${manifest.contracts.length} contracts, ` +
+      `${manifest.dsl_sources.length} DSL sources (${packageSummary}).`,
   );
 }
-
-for (const fixture of manifest.dsl_sources) {
-  const sourcePath = path.join(root, fixture.path);
-  const source = fs.readFileSync(sourcePath, "utf8");
-  assertEqual(sha256(source), fixture.source_sha256, `${fixture.path} source`);
-
-  const normalized = spec.normalizeContract(dsl.compileAgentDsl(source));
-  assertLegacyShape(normalized, fixture.path);
-  assertEqual(
-    sha256(JSON.stringify(normalized)),
-    fixture.canonical_sha256,
-    `${fixture.path} compiled canonical contract`,
-  );
-}
-
-const packageSummary = Object.entries(manifest.published_packages)
-  .map(([name, value]) => `${name}@${value.version}`)
-  .join(", ");
-console.log(
-  `Published compatibility verified: ${manifest.contracts.length} contracts, ` +
-    `${manifest.dsl_sources.length} DSL sources (${packageSummary}).`,
-);

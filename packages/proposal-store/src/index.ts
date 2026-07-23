@@ -5,6 +5,8 @@ import {
   canonicalJsonDigest,
   parseChangeSet,
   parseExecutionReceipt,
+  parseFreshnessAuthority,
+  parseFreshnessProof,
   parseWritebackJob,
   parseWritebackResult,
   protocolVersions,
@@ -13,6 +15,8 @@ import {
   type ExecutionReceiptV2,
   type ExecutionReceiptV3,
   type ExecutionReceiptV4,
+  type FreshnessAuthorityV1,
+  type FreshnessProofV1,
   type InverseDescriptorV1,
   type WritebackJob,
   type WritebackJobV1,
@@ -104,6 +108,7 @@ export type StoredApproval = {
   decision_hash?: string;
   signature?: string;
   integrity_hash?: string;
+  freshness_proof_digest?: string;
   created_at: string;
 };
 
@@ -609,6 +614,14 @@ export type FleetEventMetricRow = {
   worker_retries: number;
   dead_letters: number;
   auto_approval_limit_trips: number;
+  freshness_checks: number;
+  freshness_fresh: number;
+  freshness_stale_target: number;
+  freshness_stale_supporting: number;
+  freshness_unavailable: number;
+  freshness_unsupported: number;
+  freshness_approval_blocked: number;
+  freshness_apply_blocked: number;
 };
 
 export type WorkerQueueStatus = "queued" | "leased" | "retry_wait" | "completed" | "dead_letter" | "discarded";
@@ -719,6 +732,12 @@ export type ProposalRuntimeStore = {
   }): MaybePromise<void>;
   findActiveProposal(input: ActiveProposalLookup): MaybePromise<StoredProposal | undefined>;
   createProposal(input: unknown): MaybePromise<StoredProposal>;
+  recordFreshnessProof(input: unknown): MaybePromise<FreshnessProofV1>;
+  latestFreshnessProof(proposalId: string): MaybePromise<FreshnessProofV1 | undefined>;
+  recordFreshnessApprovalBlocked(
+    proposalId: string,
+    input: { proof_digest: string; safe_code: string; actor: string },
+  ): MaybePromise<void>;
   approveProposalByPolicy(
     proposalId: string,
     options: {
@@ -728,6 +747,7 @@ export type ProposalRuntimeStore = {
       reason: string;
       limits?: PolicyApprovalLimit[];
       now?: string;
+      freshness_proof_digest?: string;
     },
   ): MaybePromise<PolicyApprovalDecision>;
   getProposal(proposalId: string): MaybePromise<StoredProposal | undefined>;
@@ -987,6 +1007,21 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
 
   async createProposal(input: unknown): Promise<StoredProposal> {
     return await this.withWrite("createProposal", (store) => store.createProposal(input));
+  }
+
+  async recordFreshnessProof(input: unknown): Promise<FreshnessProofV1> {
+    return await this.withWrite("recordFreshnessProof", (store) => store.recordFreshnessProof(input));
+  }
+
+  async latestFreshnessProof(proposalId: string): Promise<FreshnessProofV1 | undefined> {
+    return await this.withRead((store) => store.latestFreshnessProof(proposalId));
+  }
+
+  async recordFreshnessApprovalBlocked(
+    proposalId: string,
+    input: Parameters<ProposalRuntimeStore["recordFreshnessApprovalBlocked"]>[1],
+  ): Promise<void> {
+    await this.withWrite("recordFreshnessApprovalBlocked", (store) => store.recordFreshnessApprovalBlocked(proposalId, input));
   }
 
   async approveProposalByPolicy(
@@ -1502,6 +1537,7 @@ export class ProposalStore {
         decision_hash TEXT,
         signature TEXT,
         integrity_hash TEXT,
+        freshness_proof_digest TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
       );
@@ -1776,6 +1812,7 @@ export class ProposalStore {
     this.ensureColumn("approvals", "decision_hash", "TEXT");
     this.ensureColumn("approvals", "signature", "TEXT");
     this.ensureColumn("approvals", "integrity_hash", "TEXT");
+    this.ensureColumn("approvals", "freshness_proof_digest", "TEXT");
   }
 
   private ensureSearchIndexes(): void {
@@ -2095,6 +2132,82 @@ export class ProposalStore {
     return isRecord(row) && row.proposal_id != null ? String(row.proposal_id) : undefined;
   }
 
+  recordFreshnessProof(input: unknown): FreshnessProofV1 {
+    const proof = parseFreshnessProof(input);
+    const proposal = this.requireProposal(proof.proposal_id);
+    assertProposalIdentity(proposal, proof.proposal_hash, proof.proposal_version);
+    const authority = proposalFreshnessAuthority(proposal);
+    if (!authority) {
+      throw new ProposalStoreError(
+        "FRESHNESS_NOT_REQUIRED",
+        `proposal ${proof.proposal_id} has no reviewed freshness authority`,
+      );
+    }
+    if (proof.dependency_set_digest !== authority.dependency_set_digest) {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_AUTHORITY_MISMATCH",
+        `freshness proof does not match proposal ${proof.proposal_id}`,
+      );
+    }
+    const now = new Date().toISOString();
+    this.transaction(() => {
+      this.appendEvent(proof.proposal_id, "proposal_freshness_checked", "runner", { proof });
+      if (proof.result === "stale") {
+        const current = this.requireProposal(proof.proposal_id);
+        if (current.state === "pending_review" || current.state === "approved" || current.state === "pending_worker") {
+          this.db.prepare("UPDATE proposals SET state = ?, updated_at = ? WHERE proposal_id = ?")
+            .run("conflict", now, proof.proposal_id);
+          this.appendEvent(proof.proposal_id, "proposal_conflict", "runner", {
+            reason: "freshness_stale",
+            safe_code: proof.safe_code,
+            proof_digest: proof.proof_digest,
+          });
+        }
+      }
+    });
+    return proof;
+  }
+
+  latestFreshnessProof(proposalId: string): FreshnessProofV1 | undefined {
+    this.requireProposal(proposalId);
+    const row = this.db.prepare(`
+      SELECT payload_json
+      FROM proposal_events
+      WHERE proposal_id = ? AND kind = 'proposal_freshness_checked'
+      ORDER BY event_id DESC
+      LIMIT 1
+    `).get(proposalId);
+    if (!isRecord(row)) return undefined;
+    try {
+      const payload = JSON.parse(String(row.payload_json)) as Record<string, unknown>;
+      return parseFreshnessProof(payload.proof);
+    } catch {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_TAMPERED",
+        `stored freshness proof for proposal ${proposalId} failed integrity validation`,
+      );
+    }
+  }
+
+  recordFreshnessApprovalBlocked(
+    proposalId: string,
+    input: { proof_digest: string; safe_code: string; actor: string },
+  ): void {
+    this.requireProposal(proposalId);
+    const proof = this.latestFreshnessProof(proposalId);
+    if (!proof || proof.proof_digest !== input.proof_digest || proof.result === "fresh") {
+      throw new ProposalStoreError(
+        "FRESHNESS_BLOCK_RECORD_INVALID",
+        `freshness block for proposal ${proposalId} does not match its latest non-fresh proof`,
+      );
+    }
+    this.appendEvent(proposalId, "proposal_approval_blocked_freshness", input.actor, {
+      proof_digest: proof.proof_digest,
+      safe_code: input.safe_code,
+      result: proof.result,
+    });
+  }
+
   approveProposal(
     proposalId: string,
     options: {
@@ -2104,6 +2217,7 @@ export class ProposalStore {
       reason?: string;
       identity?: OperatorIdentityProof;
       require_verified_identity?: boolean;
+      freshness_proof_digest?: string;
     },
   ): StoredProposal {
     const proposal = this.requireProposal(proposalId);
@@ -2125,11 +2239,12 @@ export class ProposalStore {
       if (isRecord(existing)) {
         throw new ProposalStoreError("APPROVER_ALREADY_COUNTED", `operator ${options.approver} already recorded a decision for proposal ${proposalId}`);
       }
+      this.assertApprovalFreshness(current, options.freshness_proof_digest, now);
       this.db.prepare(`
         INSERT INTO approvals (
           proposal_id, proposal_version, proposal_hash, approver, status, reason,
-          identity_json, decision_hash, signature, integrity_hash, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          identity_json, decision_hash, signature, integrity_hash, freshness_proof_digest, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         proposalId,
         options.proposal_version,
@@ -2141,6 +2256,7 @@ export class ProposalStore {
         options.identity?.decision_hash ?? null,
         options.identity?.signature ?? null,
         options.identity?.integrity_hash ?? null,
+        options.freshness_proof_digest ?? null,
         now,
       );
       const progress = this.approvalProgress(proposalId);
@@ -2153,6 +2269,7 @@ export class ProposalStore {
         proposal_version: options.proposal_version,
         reason: options.reason ?? null,
         identity: publicIdentitySummary(options.identity),
+        freshness_proof_digest: options.freshness_proof_digest ?? null,
         approvals: progress.approved,
         required_approvals: progress.required,
         remaining_approvals: progress.remaining,
@@ -2170,6 +2287,7 @@ export class ProposalStore {
       reason: string;
       limits?: PolicyApprovalLimit[];
       now?: string;
+      freshness_proof_digest?: string;
     },
   ): PolicyApprovalDecision {
     const actor = `policy:${options.policy}`;
@@ -2274,17 +2392,31 @@ export class ProposalStore {
         });
         return;
       }
+      this.assertApprovalFreshness(proposal, options.freshness_proof_digest, now);
       this.db.prepare("UPDATE proposals SET state = ?, updated_at = ? WHERE proposal_id = ?").run("approved", now, proposalId);
       this.db.prepare(`
-        INSERT INTO approvals (proposal_id, proposal_version, proposal_hash, approver, status, reason, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(proposalId, options.proposal_version, options.proposal_hash, actor, "approved", options.reason, now);
+        INSERT INTO approvals (
+          proposal_id, proposal_version, proposal_hash, approver, status, reason,
+          freshness_proof_digest, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        proposalId,
+        options.proposal_version,
+        options.proposal_hash,
+        actor,
+        "approved",
+        options.reason,
+        options.freshness_proof_digest ?? null,
+        now,
+      );
       this.appendEvent(proposalId, "proposal_approved", actor, {
         proposal_hash: options.proposal_hash,
         proposal_version: options.proposal_version,
         reason: options.reason,
         policy: options.policy,
         aggregate_limits: options.limits ?? [],
+        freshness_proof_digest: options.freshness_proof_digest ?? null,
       });
     });
     return {
@@ -2674,6 +2806,7 @@ export class ProposalStore {
       rows_affected: receipt.rows_affected,
       source_database_mutated: receipt.source_database_mutated,
       receipt_hash: receipt.receipt_hash,
+      safe_error_code: "safe_error_code" in receipt ? receipt.safe_error_code ?? null : null,
     });
   }
 
@@ -2759,6 +2892,9 @@ export class ProposalStore {
       tenant_guard: changeSet.guards.tenant,
       ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
       allowed_columns: changeSet.guards.allowed_columns,
+      ...("freshness" in changeSet && changeSet.freshness
+        ? { freshness: parseFreshnessAuthority(changeSet.freshness) }
+        : {}),
       idempotency_key: `${proposal.proposal_id}:${proposal.object_id}`,
       lease,
     } as const;
@@ -3293,7 +3429,21 @@ export class ProposalStore {
       const key = `${tenantId}\u0000${capability}`;
       let row = rows.get(key);
       if (!row) {
-        row = { tenant_id: tenantId, capability, worker_retries: 0, dead_letters: 0, auto_approval_limit_trips: 0 };
+        row = {
+          tenant_id: tenantId,
+          capability,
+          worker_retries: 0,
+          dead_letters: 0,
+          auto_approval_limit_trips: 0,
+          freshness_checks: 0,
+          freshness_fresh: 0,
+          freshness_stale_target: 0,
+          freshness_stale_supporting: 0,
+          freshness_unavailable: 0,
+          freshness_unsupported: 0,
+          freshness_approval_blocked: 0,
+          freshness_apply_blocked: 0,
+        };
         rows.set(key, row);
       }
       return row;
@@ -3301,7 +3451,14 @@ export class ProposalStore {
     const events = this.db.prepare(`
       SELECT p.tenant_id, p.action, e.kind, e.payload_json
       FROM proposal_events e JOIN proposals p ON p.proposal_id = e.proposal_id
-      WHERE e.kind IN ('writeback_retry_scheduled', 'writeback_dead_lettered', 'policy_auto_approval_deferred')
+      WHERE e.kind IN (
+        'writeback_retry_scheduled',
+        'writeback_dead_lettered',
+        'policy_auto_approval_deferred',
+        'proposal_freshness_checked',
+        'proposal_approval_blocked_freshness',
+        'writeback_conflict'
+      )
         AND (? IS NULL OR p.tenant_id = ?)
         AND (? IS NULL OR p.action = ?)
     `).all(filters.tenant ?? null, filters.tenant ?? null, filters.capability ?? null, filters.capability ?? null);
@@ -3310,13 +3467,29 @@ export class ProposalStore {
       const row = ensure(String(raw.tenant_id), String(raw.action));
       if (raw.kind === "writeback_retry_scheduled") row.worker_retries += 1;
       if (raw.kind === "writeback_dead_lettered") row.dead_letters += 1;
-      if (raw.kind === "policy_auto_approval_deferred") {
-        try {
-          const payload = JSON.parse(String(raw.payload_json)) as Record<string, unknown>;
-          if (Array.isArray(payload.tripped_limits) && payload.tripped_limits.length > 0) row.auto_approval_limit_trips += 1;
-        } catch {
-          // Malformed historical payloads are ignored instead of becoming metric labels or scrape failures.
+      let payload: Record<string, unknown> = {};
+      try {
+        const parsed = JSON.parse(String(raw.payload_json)) as unknown;
+        if (isRecord(parsed)) payload = parsed;
+      } catch {
+        // Malformed historical payloads are ignored instead of becoming metric labels or scrape failures.
+      }
+      if (raw.kind === "proposal_freshness_checked") {
+        row.freshness_checks += 1;
+        const proof = isRecord(payload.proof) ? payload.proof : {};
+        if (proof.result === "fresh") row.freshness_fresh += 1;
+        if (proof.result === "unavailable") row.freshness_unavailable += 1;
+        if (proof.result === "unsupported") row.freshness_unsupported += 1;
+        if (proof.result === "stale") {
+          const checks = Array.isArray(proof.checks) ? proof.checks.filter(isRecord) : [];
+          if (checks.some((check) => check.kind === "target" && check.status === "stale")) row.freshness_stale_target += 1;
+          if (checks.some((check) => check.kind === "supporting" && check.status === "stale")) row.freshness_stale_supporting += 1;
         }
+      }
+      if (raw.kind === "proposal_approval_blocked_freshness") row.freshness_approval_blocked += 1;
+      if (raw.kind === "writeback_conflict" && /^FRESHNESS_/.test(String(payload.safe_error_code ?? ""))) row.freshness_apply_blocked += 1;
+      if (raw.kind === "policy_auto_approval_deferred") {
+        if (Array.isArray(payload.tripped_limits) && payload.tripped_limits.length > 0) row.auto_approval_limit_trips += 1;
       }
     }
     return [...rows.values()].sort((left, right) => left.tenant_id.localeCompare(right.tenant_id) || left.capability.localeCompare(right.capability));
@@ -4305,6 +4478,70 @@ export class ProposalStore {
     return proposal;
   }
 
+  private assertApprovalFreshness(
+    proposal: StoredProposal,
+    proofDigest: string | undefined,
+    now: string,
+  ): void {
+    const authority = proposalFreshnessAuthority(proposal);
+    if (!authority) {
+      if (proofDigest !== undefined) {
+        throw new ProposalStoreError(
+          "FRESHNESS_PROOF_UNEXPECTED",
+          `proposal ${proposal.proposal_id} does not require a freshness proof`,
+        );
+      }
+      return;
+    }
+    if (!proofDigest) {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_REQUIRED",
+        `proposal ${proposal.proposal_id} requires a fresh live proof before approval`,
+      );
+    }
+    const proof = this.latestFreshnessProof(proposal.proposal_id);
+    if (!proof || proof.proof_digest !== proofDigest) {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_MISSING",
+        `the latest freshness proof for proposal ${proposal.proposal_id} was not supplied`,
+      );
+    }
+    if (
+      proof.proposal_hash !== proposal.proposal_hash
+      || proof.proposal_version !== proposal.proposal_version
+      || proof.dependency_set_digest !== authority.dependency_set_digest
+    ) {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_AUTHORITY_MISMATCH",
+        `freshness proof does not match proposal ${proposal.proposal_id}`,
+      );
+    }
+    if (proof.result !== "fresh") {
+      throw new ProposalStoreError(
+        proof.result === "stale" ? "FRESHNESS_STALE" : "FRESHNESS_NOT_VERIFIED",
+        `proposal ${proposal.proposal_id} freshness result is ${proof.result}`,
+      );
+    }
+    if (Date.parse(proof.valid_until) < Date.parse(now)) {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_EXPIRED",
+        `freshness proof for proposal ${proposal.proposal_id} has expired`,
+      );
+    }
+    const used = this.db.prepare(`
+      SELECT approval_id
+      FROM approvals
+      WHERE proposal_id = ? AND freshness_proof_digest = ?
+      LIMIT 1
+    `).get(proposal.proposal_id, proofDigest);
+    if (isRecord(used)) {
+      throw new ProposalStoreError(
+        "FRESHNESS_PROOF_ALREADY_USED",
+        `freshness proof for proposal ${proposal.proposal_id} already authorized a reviewer decision`,
+      );
+    }
+  }
+
   private setState(
     proposalId: string,
     state: LocalProposalState,
@@ -4524,6 +4761,18 @@ function stateFromChangeSet(changeSet: ChangeSet): LocalProposalState {
   if (changeSet.approval.status === "rejected") return "rejected";
   if (changeSet.approval.status === "canceled") return "canceled";
   return "pending_review";
+}
+
+function proposalFreshnessAuthority(proposal: StoredProposal): FreshnessAuthorityV1 | undefined {
+  if (!("freshness" in proposal.change_set) || proposal.change_set.freshness === undefined) return undefined;
+  try {
+    return parseFreshnessAuthority(proposal.change_set.freshness);
+  } catch {
+    throw new ProposalStoreError(
+      "FRESHNESS_AUTHORITY_TAMPERED",
+      `stored freshness authority for proposal ${proposal.proposal_id} failed integrity validation`,
+    );
+  }
 }
 
 function requiredApprovalCount(proposal: StoredProposal): number {
@@ -5108,6 +5357,7 @@ function rowToApproval(row: unknown): StoredApproval | undefined {
     decision_hash: row.decision_hash == null ? undefined : String(row.decision_hash),
     signature: row.signature == null ? undefined : String(row.signature),
     integrity_hash: row.integrity_hash == null ? undefined : String(row.integrity_hash),
+    freshness_proof_digest: row.freshness_proof_digest == null ? undefined : String(row.freshness_proof_digest),
     created_at: String(row.created_at),
   };
 }
@@ -5577,7 +5827,7 @@ const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> = {
     "source_table", "source_database_mutated", "change_set_json", "created_at", "updated_at",
   ], ["proposal_id", "proposal_version", "proposal_hash", "action", "state", "tenant_id", "business_object", "object_id", "source_kind", "source_id", "source_schema", "source_table", "source_database_mutated", "change_set_json", "created_at", "updated_at"]),
   proposal_events: restoreSpec("event_id", ["event_id", "proposal_id", "kind", "actor", "payload_json", "created_at"], ["event_id", "proposal_id", "kind", "actor", "payload_json", "created_at"]),
-  approvals: restoreSpec("approval_id", ["approval_id", "proposal_id", "proposal_version", "proposal_hash", "approver", "status", "reason", "identity_json", "decision_hash", "signature", "integrity_hash", "created_at"], ["approval_id", "proposal_id", "proposal_version", "proposal_hash", "approver", "status", "created_at"]),
+  approvals: restoreSpec("approval_id", ["approval_id", "proposal_id", "proposal_version", "proposal_hash", "approver", "status", "reason", "identity_json", "decision_hash", "signature", "integrity_hash", "freshness_proof_digest", "created_at"], ["approval_id", "proposal_id", "proposal_version", "proposal_hash", "approver", "status", "created_at"]),
   writeback_jobs: restoreSpec("writeback_job_id", ["writeback_job_id", "proposal_id", "proposal_hash", "status", "job_json", "created_at", "updated_at"], ["writeback_job_id", "proposal_id", "proposal_hash", "status", "job_json", "created_at", "updated_at"]),
   writeback_intents: restoreSpec("intent_id", ["intent_id", "idempotency_key", "writeback_job_id", "proposal_id", "proposal_hash", "runner_id", "operation", "status", "intent_json", "result_json", "reconciliation_reason", "created_at", "updated_at"], ["intent_id", "idempotency_key", "writeback_job_id", "proposal_id", "proposal_hash", "runner_id", "operation", "status", "intent_json", "created_at", "updated_at"]),
   idempotency_receipts: restoreSpec("idempotency_key", ["idempotency_key", "writeback_job_id", "proposal_id", "receipt_status", "receipt_json", "created_at"], ["idempotency_key", "writeback_job_id", "proposal_id", "receipt_status", "receipt_json", "created_at"]),

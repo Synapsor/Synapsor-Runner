@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json",
+  "title": "Synapsor Freshness Authority v1",
+  "description": "Reviewed, immutable authority for target and supporting-row freshness checks. Digests are validated by the protocol runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "required", "target", "dependencies", "dependency_set_digest"],
+  "properties": {
+    "schema_version": { "const": "synapsor.freshness-authority.v1" },
+    "required": { "const": true },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "member_count"],
+      "properties": {
+        "mode": { "enum": ["exact_guard", "frozen_set", "not_applicable"] },
+        "member_count": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "dependency_set_digest": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "safeIdentifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "capabilityName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^sha256:.+" },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "columnValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "value"],
+      "properties": {
+        "column": { "$ref": "#/$defs/safeIdentifier" },
+        "value": { "$ref": "#/$defs/scalar" }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "capability",
+        "source_id",
+        "engine",
+        "target",
+        "expected_version",
+        "evidence",
+        "descriptor_digest"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeIdentifier" },
+        "capability": { "$ref": "#/$defs/capabilityName" },
+        "source_id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "engine": { "enum": ["postgres", "mysql"] },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "table", "primary_key", "tenant_column"],
+          "properties": {
+            "schema": { "$ref": "#/$defs/safeIdentifier" },
+            "table": { "$ref": "#/$defs/safeIdentifier" },
+            "primary_key": { "$ref": "#/$defs/columnValue" },
+            "tenant_column": { "$ref": "#/$defs/safeIdentifier" },
+            "principal_column": { "$ref": "#/$defs/safeIdentifier" }
+          }
+        },
+        "expected_version": { "$ref": "#/$defs/columnValue" },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bundle_id", "query_fingerprint"],
+          "properties": {
+            "bundle_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "query_fingerprint": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "descriptor_digest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

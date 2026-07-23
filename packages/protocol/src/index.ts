@@ -76,6 +76,8 @@ export const protocolVersions = {
   runnerProposal: "synapsor.runner-proposal.v1",
   runnerActivity: "synapsor.runner-activity.v1",
   principalScope: "synapsor.principal-scope.v1",
+  freshnessAuthority: "synapsor.freshness-authority.v1",
+  freshnessProof: "synapsor.freshness-proof.v1",
   legacyWritebackJob: "1.0",
   normalizedWritebackJobV2: "2.0",
   normalizedWritebackJobV3: "3.0",
@@ -133,6 +135,113 @@ export const principalScopeGuardSchema = z.object({
 }).superRefine((scope, ctx) => {
   if (scope.value !== undefined && principalScopeFingerprint(scope as PrincipalScopeFingerprintInput) !== scope.value_fingerprint) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope fingerprint does not match its trusted value", path: ["value_fingerprint"] });
+  }
+});
+
+const freshnessDependencyUnsignedSchema = z.object({
+  id: safeIdentifier,
+  capability: z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]*\.[A-Za-z_][A-Za-z0-9_.-]*$/, "expected reviewed capability name"),
+  source_id: z.string().min(1).max(160),
+  engine: writebackEngineSchema,
+  target: z.object({
+    schema: safeIdentifier,
+    table: safeIdentifier,
+    primary_key: columnValueSchema,
+    tenant_column: safeIdentifier,
+    principal_column: safeIdentifier.optional(),
+  }),
+  expected_version: columnValueSchema,
+  evidence: z.object({
+    bundle_id: z.string().min(1).max(200),
+    query_fingerprint: sha256,
+  }),
+});
+
+export const freshnessDependencyV1Schema = freshnessDependencyUnsignedSchema.extend({
+  descriptor_digest: sha256,
+}).superRefine((dependency, ctx) => {
+  const { descriptor_digest: _digest, ...unsigned } = dependency;
+  if (canonicalJsonDigest(unsigned) !== dependency.descriptor_digest) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness dependency digest mismatch", path: ["descriptor_digest"] });
+  }
+});
+
+const freshnessAuthorityUnsignedSchema = z.object({
+  schema_version: z.literal(protocolVersions.freshnessAuthority),
+  required: z.literal(true),
+  target: z.object({
+    mode: z.enum(["exact_guard", "frozen_set", "not_applicable"]),
+    member_count: z.number().int().min(0).max(100),
+  }),
+  dependencies: z.array(freshnessDependencyV1Schema).max(16),
+});
+
+export const freshnessAuthorityV1Schema = freshnessAuthorityUnsignedSchema.extend({
+  dependency_set_digest: sha256,
+}).superRefine((authority, ctx) => {
+  const identities = authority.dependencies.map((dependency) => dependency.id);
+  if (new Set(identities).size !== identities.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness dependency ids must be unique", path: ["dependencies"] });
+  }
+  const sorted = [...authority.dependencies].sort((left, right) =>
+    left.source_id.localeCompare(right.source_id)
+      || left.target.schema.localeCompare(right.target.schema)
+      || left.target.table.localeCompare(right.target.table)
+      || JSON.stringify(left.target.primary_key.value).localeCompare(JSON.stringify(right.target.primary_key.value))
+      || left.id.localeCompare(right.id));
+  if (JSON.stringify(sorted) !== JSON.stringify(authority.dependencies)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness dependencies must use deterministic lock order", path: ["dependencies"] });
+  }
+  const { dependency_set_digest: _digest, ...unsigned } = authority;
+  if (canonicalJsonDigest(unsigned) !== authority.dependency_set_digest) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness dependency-set digest mismatch", path: ["dependency_set_digest"] });
+  }
+});
+
+const freshnessCheckStatusSchema = z.enum(["fresh", "stale", "unavailable", "invalid", "unsupported"]);
+const freshnessItemResultSchema = z.object({
+  id: z.string().min(1).max(160),
+  kind: z.enum(["target", "supporting"]),
+  status: z.enum(["fresh", "stale", "not_applicable", "unavailable", "invalid", "unsupported"]),
+  safe_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+  expected_version_digest: sha256.optional(),
+  observed_version_digest: sha256.optional(),
+});
+
+const freshnessProofUnsignedSchema = z.object({
+  schema_version: z.literal(protocolVersions.freshnessProof),
+  proposal_id: z.string().min(1),
+  proposal_hash: sha256,
+  proposal_version: z.number().int().positive(),
+  dependency_set_digest: sha256,
+  checked_at: z.string().datetime(),
+  valid_until: z.string().datetime(),
+  source_adapters: z.array(z.object({
+    source_id: z.string().min(1).max(160),
+    engine: writebackEngineSchema,
+  })).min(1).max(8),
+  result: freshnessCheckStatusSchema,
+  safe_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+  target_count: z.number().int().min(0).max(100),
+  supporting_count: z.number().int().min(0).max(16),
+  checks: z.array(freshnessItemResultSchema).max(116),
+});
+
+export const freshnessProofV1Schema = freshnessProofUnsignedSchema.extend({
+  proof_digest: sha256,
+}).superRefine((proof, ctx) => {
+  if (Date.parse(proof.valid_until) < Date.parse(proof.checked_at)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness proof validity ends before it was checked", path: ["valid_until"] });
+  }
+  if (proof.checks.filter((check) => check.kind === "target").length !== proof.target_count) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness target count mismatch", path: ["target_count"] });
+  }
+  if (proof.checks.filter((check) => check.kind === "supporting").length !== proof.supporting_count) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness supporting count mismatch", path: ["supporting_count"] });
+  }
+  const { proof_digest: _digest, ...unsigned } = proof;
+  if (canonicalJsonDigest(unsigned) !== proof.proof_digest) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "freshness proof digest mismatch", path: ["proof_digest"] });
   }
 });
 
@@ -271,6 +380,7 @@ export const changeSetV1Schema = z.object({
     allowed_columns: z.array(z.string().min(1)).min(1),
     expected_version: columnValueSchema
   }),
+  freshness: freshnessAuthorityV1Schema.optional(),
   evidence: z.object({
     bundle_id: z.string().min(1),
     query_fingerprint: sha256,
@@ -291,6 +401,7 @@ export const changeSetV1Schema = z.object({
   }),
   created_at: z.string().min(1)
 }).superRefine((changeSet, ctx) => {
+  validateFreshnessBinding(changeSet.freshness, changeSet.source.source_id, sourceEngine(changeSet.source.kind), "exact_guard", 1, ctx);
   const allowed = new Set(changeSet.guards.allowed_columns);
   for (const column of Object.keys(changeSet.patch)) {
     if (!allowed.has(column)) {
@@ -359,6 +470,7 @@ export const changeSetV2Schema = z.object({
     version_advance: versionAdvanceSchema.optional(),
     deduplication: z.object({ components: z.array(resolvedDeduplicationComponentSchema).min(1).max(8) }).optional(),
   }),
+  freshness: freshnessAuthorityV1Schema.optional(),
   reversibility: reversibilityRequestSchema.optional(),
   evidence: z.object({
     bundle_id: z.string().min(1),
@@ -378,6 +490,14 @@ export const changeSetV2Schema = z.object({
   integrity: z.object({ proposal_hash: sha256 }),
   created_at: z.string().min(1),
 }).superRefine((changeSet, ctx) => {
+  validateFreshnessBinding(
+    changeSet.freshness,
+    changeSet.source.source_id,
+    sourceEngine(changeSet.source.kind),
+    changeSet.operation === "single_row_insert" ? "not_applicable" : "exact_guard",
+    changeSet.operation === "single_row_insert" ? 0 : 1,
+    ctx,
+  );
   const allowed = new Set(changeSet.guards.allowed_columns);
   for (const column of Object.keys(changeSet.patch)) {
     if (!allowed.has(column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `patch column not allowed: ${column}`, path: ["patch", column] });
@@ -446,6 +566,7 @@ export const changeSetV3Schema = z.object({
     expected_version: columnValueSchema.optional(),
     version_advance: versionAdvanceSchema.optional(),
   }),
+  freshness: freshnessAuthorityV1Schema.optional(),
   frozen_set: frozenSetSchema,
   reversibility: reversibilityRequestSchema.optional(),
   evidence: z.object({ bundle_id: z.string().min(1), query_fingerprint: sha256, items: z.array(z.unknown()).max(100) }).passthrough(),
@@ -460,6 +581,14 @@ export const changeSetV3Schema = z.object({
   integrity: z.object({ proposal_hash: sha256 }),
   created_at: z.string().min(1),
 }).superRefine((changeSet, ctx) => {
+  validateFreshnessBinding(
+    changeSet.freshness,
+    changeSet.source.source_id,
+    sourceEngine(changeSet.source.kind),
+    changeSet.operation === "batch_insert" ? "not_applicable" : "frozen_set",
+    changeSet.operation === "batch_insert" ? 0 : changeSet.frozen_set.row_count,
+    ctx,
+  );
   if (changeSet.source.primary_key.value !== undefined || changeSet.guards.expected_version) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set guards live on frozen members, not the top-level envelope", path: ["frozen_set"] });
   const allowed = new Set(changeSet.guards.allowed_columns);
   for (const column of Object.keys(changeSet.patch)) if (!allowed.has(column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `patch column not allowed: ${column}`, path: ["patch", column] });
@@ -559,6 +688,7 @@ export const writebackJobV1Schema = z.object({
   allowed_columns: z.array(safeIdentifier).min(1),
   patch: scalarMap,
   conflict_guard: publicConflictGuardSchema,
+  freshness: freshnessAuthorityV1Schema.optional(),
   idempotency_key: z.string().min(1),
   lease: z.object({
     lease_id: z.string().min(1),
@@ -566,6 +696,7 @@ export const writebackJobV1Schema = z.object({
     expires_at: z.string().min(1)
   })
 }).superRefine((job, ctx) => {
+  validateFreshnessBinding(job.freshness, job.runner_scope.source_id, job.engine, "exact_guard", 1, ctx);
   validateAllowedPatchColumns(job.allowed_columns, Object.keys(job.patch), job.target.primary_key.column, job.tenant_guard.column, ctx);
   if (job.principal_scope && job.allowed_columns.includes(job.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
 });
@@ -588,6 +719,7 @@ const normalizedWritebackJobV1Schema = writebackJobV1Schema.transform((job) => (
   allowed_columns: job.allowed_columns,
   patch: job.patch,
   conflict_guard: normalizeConflictGuard(job.conflict_guard),
+  ...(job.freshness ? { freshness: job.freshness } : {}),
   idempotency_key: job.idempotency_key,
   lease_expires_at: job.lease.expires_at,
   attempt_count: job.lease.attempt
@@ -622,10 +754,12 @@ export const legacyWritebackJobSchema = z.object({
     z.object({ kind: z.literal("row_hash"), expected_hash: z.string().min(1) }),
     z.object({ kind: z.literal("none") })
   ]),
+  freshness: freshnessAuthorityV1Schema.optional(),
   idempotency_key: z.string().min(1),
   lease_expires_at: z.union([z.string(), z.number()]),
   attempt_count: z.number().int().nonnegative().optional()
 }).superRefine((job, ctx) => {
+  validateFreshnessBinding(job.freshness, job.source_id, job.engine, "exact_guard", 1, ctx);
   validateAllowedPatchColumns(job.allowed_columns, Object.keys(job.patch), job.target.primary_key.column, job.target.tenant_guard.column, ctx);
   if (job.target.principal_scope && job.allowed_columns.includes(job.target.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
 });
@@ -653,6 +787,7 @@ export const normalizedWritebackJobV2InputSchema = z.object({
     z.object({ kind: z.literal("row_hash"), expected_hash: z.string().min(1) }),
     z.object({ kind: z.literal("none") }),
   ]),
+  freshness: freshnessAuthorityV1Schema.optional(),
   version_advance: versionAdvanceSchema.optional(),
   deduplication: z.object({ components: z.array(resolvedDeduplicationComponentSchema).min(1).max(8) }).optional(),
   idempotency_key: z.string().min(1),
@@ -660,6 +795,14 @@ export const normalizedWritebackJobV2InputSchema = z.object({
   attempt_count: z.number().int().positive(),
   inverse_capture: inverseDescriptorV1Schema.optional(),
 }).superRefine((job, ctx) => {
+  validateFreshnessBinding(
+    job.freshness,
+    job.source_id,
+    job.engine,
+    job.operation === "single_row_insert" ? "not_applicable" : "exact_guard",
+    job.operation === "single_row_insert" ? 0 : 1,
+    ctx,
+  );
   if (job.operation !== "single_row_insert" && job.target.primary_key.value === undefined) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "UPDATE and DELETE require a primary-key value", path: ["target", "primary_key", "value"] });
   }
@@ -727,6 +870,7 @@ export const writebackJobV2Schema = z.object({
   principal_scope: principalScopeGuardSchema.optional(),
   allowed_columns: z.array(safeIdentifier),
   mutation: writebackMutationV2Schema,
+  freshness: freshnessAuthorityV1Schema.optional(),
   idempotency_key: z.string().min(1),
   inverse_capture: inverseDescriptorV1Schema.optional(),
   lease: z.object({
@@ -735,6 +879,14 @@ export const writebackJobV2Schema = z.object({
     expires_at: z.string().min(1),
   }),
 }).superRefine((job, ctx) => {
+  validateFreshnessBinding(
+    job.freshness,
+    job.runner_scope.source_id,
+    job.engine,
+    job.mutation.kind === "single_row_insert" ? "not_applicable" : "exact_guard",
+    job.mutation.kind === "single_row_insert" ? 0 : 1,
+    ctx,
+  );
   const mutation = job.mutation;
   if (mutation.kind !== "single_row_insert" && job.target.primary_key.value === undefined) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "UPDATE and DELETE require a primary-key value", path: ["target", "primary_key", "value"] });
@@ -773,6 +925,7 @@ export const writebackJobV2Schema = z.object({
   conflict_guard: job.mutation.kind === "single_row_insert" ? { kind: "none" as const } : normalizeConflictGuard(job.mutation.conflict_guard),
   ...(job.mutation.kind === "single_row_update" && job.mutation.version_advance ? { version_advance: job.mutation.version_advance } : {}),
   ...(job.mutation.kind === "single_row_insert" ? { deduplication: job.mutation.deduplication } : {}),
+  ...(job.freshness ? { freshness: job.freshness } : {}),
   idempotency_key: job.idempotency_key,
   ...(job.inverse_capture ? { inverse_capture: job.inverse_capture } : {}),
   lease_expires_at: job.lease.expires_at,
@@ -792,6 +945,7 @@ export const normalizedWritebackJobV3InputSchema = z.object({
   allowed_columns: z.array(safeIdentifier).max(256),
   patch: boundedScalarRecord,
   conflict_guard: z.object({ kind: z.literal("none") }).default({ kind: "none" }),
+  freshness: freshnessAuthorityV1Schema.optional(),
   version_advance: versionAdvanceSchema.optional(),
   frozen_set: frozenSetSchema,
   idempotency_key: z.string().min(1),
@@ -799,6 +953,14 @@ export const normalizedWritebackJobV3InputSchema = z.object({
   attempt_count: z.number().int().positive(),
   inverse_capture: inverseDescriptorV1Schema.optional(),
 }).superRefine((job, ctx) => {
+  validateFreshnessBinding(
+    job.freshness,
+    job.source_id,
+    job.engine,
+    job.operation === "batch_insert" ? "not_applicable" : "frozen_set",
+    job.operation === "batch_insert" ? 0 : job.frozen_set.row_count,
+    ctx,
+  );
   if (job.target.principal_scope && job.allowed_columns.includes(job.target.principal_scope.column)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "principal scope column must not be patch-allowlisted", path: ["allowed_columns"] });
   if (job.operation === "set_delete" && (job.allowed_columns.length || Object.keys(job.patch).length || job.version_advance)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set DELETE cannot carry patch authority", path: ["patch"] });
   if (job.operation === "set_update" && (!Object.keys(job.patch).length || !job.version_advance)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "set UPDATE requires patch and version advance", path: ["patch"] });
@@ -821,9 +983,19 @@ export const writebackJobV3Schema = z.object({
   patch: boundedScalarRecord,
   version_advance: versionAdvanceSchema.optional(),
   frozen_set: frozenSetSchema,
+  freshness: freshnessAuthorityV1Schema.optional(),
   idempotency_key: z.string().min(1),
   inverse_capture: inverseDescriptorV1Schema.optional(),
   lease: z.object({ lease_id: z.string().min(1), attempt: z.number().int().positive(), expires_at: z.string().min(1) }),
+}).superRefine((job, ctx) => {
+  validateFreshnessBinding(
+    job.freshness,
+    job.runner_scope.source_id,
+    job.engine,
+    job.operation === "batch_insert" ? "not_applicable" : "frozen_set",
+    job.operation === "batch_insert" ? 0 : job.frozen_set.row_count,
+    ctx,
+  );
 }).transform((job) => ({
   protocol_version: protocolVersions.normalizedWritebackJobV3,
   job_id: job.writeback_job_id,
@@ -838,6 +1010,7 @@ export const writebackJobV3Schema = z.object({
   conflict_guard: { kind: "none" as const },
   ...(job.version_advance ? { version_advance: job.version_advance } : {}),
   frozen_set: job.frozen_set,
+  ...(job.freshness ? { freshness: job.freshness } : {}),
   idempotency_key: job.idempotency_key,
   ...(job.inverse_capture ? { inverse_capture: job.inverse_capture } : {}),
   lease_expires_at: job.lease.expires_at,
@@ -1227,12 +1400,56 @@ export type ExecutionReceiptV3 = z.infer<typeof executionReceiptV3Schema>;
 export type ExecutionReceiptV4 = z.infer<typeof executionReceiptV4Schema>;
 export type ExecutionReceipt = ExecutionReceiptV1 | ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4;
 export type InverseDescriptorV1 = z.infer<typeof inverseDescriptorV1Schema>;
+export type FreshnessDependencyV1 = z.infer<typeof freshnessDependencyV1Schema>;
+export type FreshnessAuthorityV1 = z.infer<typeof freshnessAuthorityV1Schema>;
+export type FreshnessProofV1 = z.infer<typeof freshnessProofV1Schema>;
 export type RunnerRegistrationV1 = z.infer<typeof runnerRegistrationV1Schema>;
 export type RunnerProposalV1 = z.infer<typeof runnerProposalV1Schema>;
 export type RunnerActivityV1 = z.infer<typeof runnerActivityV1Schema>;
 export type WritebackJob = z.infer<typeof writebackJobSchema>;
 export type WritebackResult = z.infer<typeof writebackResultSchema>;
 export type WritebackEngine = z.infer<typeof writebackEngineSchema>;
+
+function sourceEngine(kind: string): WritebackEngine | undefined {
+  if (kind === "external_postgres") return "postgres";
+  if (kind === "external_mysql") return "mysql";
+  return undefined;
+}
+
+function validateFreshnessBinding(
+  freshness: FreshnessAuthorityV1 | undefined,
+  sourceId: string,
+  engine: WritebackEngine | undefined,
+  expectedTargetMode: FreshnessAuthorityV1["target"]["mode"],
+  expectedMemberCount: number,
+  ctx: z.RefinementCtx,
+): void {
+  if (!freshness) return;
+  if (!engine) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "freshness authority requires an external PostgreSQL or MySQL source",
+      path: ["freshness"],
+    });
+    return;
+  }
+  if (freshness.target.mode !== expectedTargetMode || freshness.target.member_count !== expectedMemberCount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `freshness target authority must be ${expectedTargetMode} with ${expectedMemberCount} reviewed member(s)`,
+      path: ["freshness", "target"],
+    });
+  }
+  for (const [index, dependency] of freshness.dependencies.entries()) {
+    if (dependency.source_id !== sourceId || dependency.engine !== engine) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "freshness dependencies must use the proposal/writeback source and engine",
+        path: ["freshness", "dependencies", index, "source_id"],
+      });
+    }
+  }
+}
 
 function validateAllowedPatchColumns(
   allowedColumns: string[],
@@ -1308,6 +1525,14 @@ function normalizeConflictGuard(guard: z.infer<typeof publicConflictGuardSchema>
 
 export function parseChangeSet(input: unknown): ChangeSet {
   return z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema, compensationChangeSetV1Schema]).parse(input);
+}
+
+export function parseFreshnessAuthority(input: unknown): FreshnessAuthorityV1 {
+  return freshnessAuthorityV1Schema.parse(input);
+}
+
+export function parseFreshnessProof(input: unknown): FreshnessProofV1 {
+  return freshnessProofV1Schema.parse(input);
 }
 
 export function parseWritebackJob(input: unknown): WritebackJob {

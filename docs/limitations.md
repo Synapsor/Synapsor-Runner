@@ -2,8 +2,10 @@
 
 Synapsor Runner is intentionally narrow. Version 1.6 adds deterministic
 whole-application boundary drafting and a local authoring-only Explore ->
-Protect path on top of guarded writes. It does not turn Runner into a generic
-database query tool, claim Synapsor Cloud scale, or claim an enterprise SLA.
+Protect path on top of guarded writes. Version 1.6.1 also adds opt-in
+proposal/evidence freshness for exact same-source direct-SQL proposals. It does
+not turn Runner into a generic database query tool, claim Synapsor Cloud scale,
+or claim an enterprise SLA.
 
 ## Supported
 
@@ -15,6 +17,9 @@ database query tool, claim Synapsor Cloud scale, or claim an enterprise SLA.
 - Native Postgres/MySQL source pools and operational/fleet-wide rate limits.
 - Verified operator approval through CLI, optional distinct-reviewer quorum,
   and shared local review UI reads.
+- Optional live target and explicitly declared supporting-row freshness checks
+  before every approval, with immutable proof binding and final transactional
+  revalidation for PostgreSQL/MySQL direct SQL writeback.
 - Separately protected scrapeable metrics and dead-letter recovery commands.
 - Shared-ledger backup/digest verification, clean restore, and
   archive-before-retention.
@@ -90,6 +95,8 @@ truth for the model-facing tools.
 - Policy auto-approval for bounded sets.
 - Stored procedures.
 - Cross-database transactions.
+- Strict atomic proposal freshness across databases, app-owned handlers, or
+  external APIs. Those paths must enforce their own final preconditions.
 - Physical branching of Postgres/MySQL.
 - Full Synapsor workflow/DAG execution.
 - `CREATE AGENT WORKFLOW` or hosted Synapsor SQL generation.
@@ -163,3 +170,9 @@ as equivalent to a durable version column.
 Runner-ledger UPDATE and DELETE require an exact guard; UPDATE must advance it
 inside the source transaction. INSERT requires a reviewed source-unique dedup
 identity. See [Guarded Single-Row CRUD Writeback](guarded-crud-writeback.md).
+
+Approval-time freshness also depends on a correct exact version column. It
+does not freeze source state until apply. Direct SQL apply rechecks again;
+app-owned/cross-source effects do not receive that Runner-owned atomic
+guarantee. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).

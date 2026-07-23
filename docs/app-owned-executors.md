@@ -24,6 +24,14 @@ the receipt, and includes the result in replay.
 > error receipts. If you skip those checks, you can reintroduce cross-tenant
 > writes, lost updates, or duplicate writes. Keep handler credentials out of MCP.
 
+Runner 1.6.1 strict `proposal_freshness` is limited to same-database direct SQL
+writeback. Runner rejects it for `http_handler`, `command_handler`, and
+cross-source dependencies because a local preflight cannot be atomic with an
+effect executed elsewhere. If supporting evidence matters, the app handler
+must lock and re-read those rows inside its own business transaction and fail
+closed on drift. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
 A handler is your application endpoint or script. It is not a second Synapsor
 package that users need to install. Install `@synapsor/runner`, then generate
 or copy a handler template only when your approved write needs app-owned

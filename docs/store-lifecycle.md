@@ -48,6 +48,7 @@ then proposal id as the tie-breaker. The default view answers:
 - what capability and business object the model requested;
 - which trusted tenant and principal scoped it;
 - approval state and progress;
+- required/live freshness state and the proof digest bound to each approval;
 - whether a writeback job or intent exists;
 - the latest guarded outcome and whether the source changed;
 - replay and Cloud-link status; and
@@ -123,6 +124,7 @@ The existing commands remain useful when you need one record type:
 | Question | Focused command |
 | --- | --- |
 | What did the model propose? | `synapsor-runner proposals show latest --details` |
+| Is the latest proposal still fresh enough to review? | `synapsor-runner proposals check-freshness latest --config ./synapsor.runner.json` |
 | What data supported it? | `synapsor-runner evidence list --proposal <proposal-id>` then `evidence show <evidence-id> --details` |
 | What query was run? | `synapsor-runner query-audit list --proposal <proposal-id>` |
 | Did guarded writeback apply? | `synapsor-runner receipts list --proposal <proposal-id>` |
@@ -134,6 +136,12 @@ The existing commands remain useful when you need one record type:
 `proposals writeback-job` is intentionally absent from inspection examples:
 it materializes a job and is therefore an operator mutation, not a read-only
 view.
+
+`proposals check-freshness` is source-read-only but is not a ledger-pure
+inspection: it contacts the configured source and records an immutable proof
+event. The `lifecycle` command never does that; it only reports the most recent
+stored proof and approval linkage. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
 
 ## Server leases
 

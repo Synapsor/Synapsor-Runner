@@ -10,7 +10,34 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.0 (prepared, not published)
+## 1.6.1 (prepared, not published)
+
+### Fail-closed proposal and evidence freshness
+
+- An optional `proposal_freshness` Runner overlay can require a live target and
+  explicitly declared same-source supporting-row check immediately before
+  every local approval.
+- Each successful human, quorum, or policy approval references a distinct
+  short-lived proof bound to the exact proposal hash/version and dependency
+  set. Stale and unavailable checks record no approval.
+- Direct PostgreSQL/MySQL apply locks and rechecks dependencies inside the
+  mutation transaction. Source drift after approval returns a conflict and
+  changes zero rows; bounded sets roll back completely.
+- `proposals check-freshness latest`, Workbench gating, lifecycle, replay,
+  compliance reports, metrics, logs, and `doctor --check-writeback` expose the
+  bounded proof and operational state without source rows, kept-out values,
+  trusted scope values, or credentials.
+- Cloud does not read the source. A local Runner revalidates a Cloud-approved
+  job before apply. Strict app-owned and cross-source freshness remains an
+  explicitly unsupported topology.
+- Existing contracts, exact digests, DSL, model-facing tool lists, and
+  non-freshness deployments keep their prior behavior.
+
+Prepared package version: `@synapsor/runner@1.6.1`.
+`@synapsor/spec@1.5.0` and `@synapsor/dsl@1.5.0` are unchanged. Nothing has
+been published by this repository change.
+
+## 1.6.0 (published 2026-07-23)
 
 ### Connect, Explore, Protect
 
@@ -39,9 +66,8 @@ for the Synapsor Cloud CLI.
   new fields. Published legacy contracts preserve exact normalization/digests,
   and established CLI/headless/CI routes keep their behavior.
 
-Prepared package versions: `@synapsor/runner@1.6.0`,
-`@synapsor/dsl@1.5.0`, and `@synapsor/spec@1.5.0`. Nothing has been published
-by this repository change.
+Published package versions: `@synapsor/runner@1.6.0`,
+`@synapsor/dsl@1.5.0`, and `@synapsor/spec@1.5.0`.
 
 ## 1.5.4 (published 2026-07-22)
 

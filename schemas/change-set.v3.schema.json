@@ -42,6 +42,7 @@
         "version_advance": { "$ref": "#/$defs/versionAdvance" }
       }
     },
+    "freshness": { "$ref": "https://schemas.synapsor.ai/synapsor.freshness-authority.v1.schema.json" },
     "frozen_set": { "$ref": "#/$defs/frozenSet" },
     "evidence": {
       "type": "object", "additionalProperties": true, "required": ["bundle_id", "query_fingerprint", "items"],

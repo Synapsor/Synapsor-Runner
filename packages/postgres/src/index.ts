@@ -615,6 +615,14 @@ async function sourceTransaction<T>(
         scope: config.databaseScope,
         operations: ["SELECT", rlsOperationForJob(job)],
       });
+      for (const dependency of freshnessDependencies(job)) {
+        await assertPostgresRlsTarget(client, {
+          schema: dependency.target.schema,
+          table: dependency.target.table,
+          scope: config.databaseScope,
+          operations: ["SELECT"],
+        });
+      }
       await bindPostgresRlsScope(client, config.databaseScope);
     }
     await hooks.afterBegin?.();
@@ -737,6 +745,15 @@ function validateOperation(job: WritebackJob): void {
 
 async function mutatePostgres(job: WritebackJob, client: PostgresApplyClient): Promise<MutationOutcome> {
   if (job.protocol_version === "4.0") return await mutatePostgresCompensation(job, client);
+  const freshnessConflict = await lockPostgresFreshnessDependencies(job, client);
+  if (freshnessConflict) {
+    return {
+      status: "conflict",
+      affectedRows: 0,
+      code: freshnessConflict,
+      targetIdentity: identityForJob(job),
+    };
+  }
   if (job.protocol_version === "3.0") return await mutatePostgresSet(job, client);
   const operation = operationOf(job);
   if (operation === "single_row_insert") return await insertPostgres(job, client);
@@ -773,6 +790,43 @@ async function mutatePostgres(job: WritebackJob, client: PostgresApplyClient): P
   const resultVersion = applied.rows[0]?.__synapsor_result_version == null ? undefined : scalar(applied.rows[0].__synapsor_result_version);
   verifyVersionAdvanced(job, resultVersion);
   return { status: "applied", affectedRows: 1, targetIdentity: identityForJob(job), resultVersion, beforeDigest, afterDigest: digest({ identity: identityForJob(job), patch: job.patch, version: resultVersion }) };
+}
+
+function freshnessDependencies(job: WritebackJob) {
+  if (!("freshness" in job) || !job.freshness) return [];
+  return job.freshness.dependencies;
+}
+
+async function lockPostgresFreshnessDependencies(
+  job: WritebackJob,
+  client: PostgresApplyClient,
+): Promise<string | undefined> {
+  for (const dependency of freshnessDependencies(job)) {
+    const values: unknown[] = [
+      dependency.target.primary_key.value,
+      job.target.tenant_guard.value,
+    ];
+    const where = [
+      `${quotePostgresIdentifier(dependency.target.primary_key.column)} = $1`,
+      `${quotePostgresIdentifier(dependency.target.tenant_column)} = $2`,
+    ];
+    if (dependency.target.principal_column) {
+      const scope = principalScope(job);
+      if (!scope) return "FRESHNESS_DEPENDENCY_SCOPE_INVALID";
+      values.push(scope.value);
+      where.push(`${quotePostgresIdentifier(dependency.target.principal_column)} = $${values.length}`);
+    }
+    const result = await client.query(
+      `SELECT ${quotePostgresIdentifier(dependency.expected_version.column)}::text AS "__synapsor_freshness_version" FROM ${quotePostgresIdentifier(dependency.target.schema)}.${quotePostgresIdentifier(dependency.target.table)} WHERE ${where.join(" AND ")} FOR UPDATE`,
+      values,
+    );
+    if (result.rowCount !== 1) return "FRESHNESS_DEPENDENCY_STALE";
+    if (!versionValuesMatch(
+      result.rows[0]?.__synapsor_freshness_version,
+      dependency.expected_version.value,
+    )) return "FRESHNESS_DEPENDENCY_STALE";
+  }
+  return undefined;
 }
 
 function compensationProjection(job: CompensationWritebackJob): string[] {

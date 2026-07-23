@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.6.1",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -34,6 +34,7 @@
     "test:contract-review": "vitest run apps/runner/src/contract-tools.test.ts",
     "test:contract-conformance": "corepack pnpm build:runner-package && node scripts/verify-contract-conformance.mjs",
     "test:principal-scope": "corepack pnpm build:runner-package && node scripts/verify-principal-row-scope.mjs",
+    "test:proposal-freshness": "corepack pnpm exec tsc -b --force && node scripts/verify-proposal-evidence-freshness.mjs",
     "test:database-scope": "corepack pnpm build:runner-package && node scripts/verify-postgres-database-scope.mjs",
     "test:principal-scope:packed": "./scripts/verify-packed-principal-row-scope.sh",
     "test:compliance-report": "vitest run apps/runner/src/compliance-report.test.ts",
