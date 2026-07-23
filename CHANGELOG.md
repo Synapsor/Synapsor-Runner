@@ -1,6 +1,35 @@
 # Changelog
 
-## 1.6.0 (prepared, not published)
+## 1.6.1 (prepared, not published)
+
+### Fail-closed proposal and evidence freshness
+
+- Adds optional reviewed `proposal_freshness` Runner configuration for live
+  target and explicitly declared same-source supporting-row checks immediately
+  before every local approval.
+- Binds every successful human, quorum, or policy approval to a distinct
+  immutable short-lived proof covering the exact proposal hash/version and
+  deterministic dependency-set digest. Stale or unavailable checks record no
+  approval; stale proposals are replaced rather than silently refreshed.
+- Extends PostgreSQL/MySQL direct SQL apply to lock supporting rows in
+  deterministic order and compare their exact versions inside the existing
+  mutation transaction. Post-approval drift returns a clear conflict with zero
+  mutation, including bounded-set rollback.
+- Adds no-ID `proposals check-freshness latest` text/JSON inspection, Workbench
+  status and approval gating, lifecycle/replay/proof linkage, bounded
+  compliance metadata, counters, structured logs, and rollback-only writer
+  lock diagnostics.
+- Keeps Cloud source-blind: Cloud may govern proposal/approval authority, while
+  the local Runner performs final source revalidation. Strict freshness is
+  rejected for app-owned and cross-source effects whose checks cannot be
+  transactionally atomic.
+- Preserves existing contract normalization/digests, DSL, tools lists,
+  approval paths, receipts, and deployments when the optional overlay is
+  absent. `@synapsor/spec` and `@synapsor/dsl` remain at 1.5.0.
+- Prepares only `@synapsor/runner@1.6.1`. Nothing is published, tagged, pushed,
+  or released by this change.
+
+## 1.6.0 (published 2026-07-23)
 
 ### Connect, Explore, Protect
 
@@ -34,9 +63,8 @@
   established CLI selectors and automation, active tools, TypeScript authoring,
   manual/headless operation, guarded writes, Data PRs, app-owned executors, and
   deployments without generation locks through packed compatibility fixtures.
-- Prepares `@synapsor/runner@1.6.0`, `@synapsor/dsl@1.5.0`, and
-  `@synapsor/spec@1.5.0`. Nothing is published, tagged, pushed, or released by
-  this change.
+- Published `@synapsor/runner@1.6.0`, `@synapsor/dsl@1.5.0`, and
+  `@synapsor/spec@1.5.0`.
 
 ## 1.5.4 (published 2026-07-22)
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "synapsor.protocol-manifest.v1",
   "protocol_set": "database-mcp-writeback",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "hash_algorithm": "sha256",
   "note": "This manifest is copied in Synapsor main protocol/MANIFEST.json and synapsor-runner fixtures/protocol/MANIFEST.json. Hashes are over the checked-in JSON artifact bytes.",
   "artifacts": [
@@ -9,6 +9,11 @@
       "kind": "fixture",
       "name": "change-set.bounded-update.v3.json",
       "sha256": "9d60a96cd5f14b9cf36f635214398437676bd90fbb180b3befe1596f982a2f02"
+    },
+    {
+      "kind": "fixture",
+      "name": "change-set.freshness-update.v2.json",
+      "sha256": "cf541387dcc13ccf5e82c38da80e7f5a8ae9d95b6bcd29b7c63542abbccef401"
     },
     {
       "kind": "fixture",
@@ -77,6 +82,16 @@
     },
     {
       "kind": "fixture",
+      "name": "freshness-authority.invoice.v1.json",
+      "sha256": "f8abfff7ea058b81aa9ef4e3281fabe1105ed8ed91ad5dde3c3b08d694fe1a39"
+    },
+    {
+      "kind": "fixture",
+      "name": "freshness-proof.fresh.v1.json",
+      "sha256": "895083bdcc226f16f86131a90263104b22be60a60e855e9c106dbc15f636b3b3"
+    },
+    {
+      "kind": "fixture",
       "name": "runner-registration.v1.json",
       "sha256": "3eaf844cdc94a4274601cedfed7252d65dd837a345c8c3b0f17ab6bbdf7f75da"
     },
@@ -97,6 +112,11 @@
     },
     {
       "kind": "fixture",
+      "name": "writeback-job.freshness-update.v2.json",
+      "sha256": "e703ee6a4c333c4fdbf2d7e6d264a9b537e114038e258ed7f87349f3add6a718"
+    },
+    {
+      "kind": "fixture",
       "name": "writeback-job.insert.v2.json",
       "sha256": "adb73a1115db92903d15561ded54f0dd4905c6486465691d69e5345813564912"
     },
@@ -113,17 +133,17 @@
     {
       "kind": "schema",
       "name": "change-set.v1.schema.json",
-      "sha256": "18f76efd97424efab986b6fb0af87ad0eeafd4314393ed7f83f14afe09d625eb"
+      "sha256": "686a3696dc92ad7562035cdef972bbc9bc6dcb2e36368ada72d133d92a31436c"
     },
     {
       "kind": "schema",
       "name": "change-set.v2.schema.json",
-      "sha256": "bd9999361258c5554ffa2791d7c6469beffc5b875e775f5f0c80cea36132eaa4"
+      "sha256": "b7ea55cf2aa0b7914ca7383d4590a1a4e0235e6551f2285aac64153b3f196405"
     },
     {
       "kind": "schema",
       "name": "change-set.v3.schema.json",
-      "sha256": "24a45eb4d9f29ab4cfe408bedeb0216dc29544fe39b515918d0c0f9742bba9cb"
+      "sha256": "a02cf865bb45271b3552c8fb4f1180522eb4fed3462429612d218a9468410c0f"
     },
     {
       "kind": "schema",
@@ -152,6 +172,16 @@
     },
     {
       "kind": "schema",
+      "name": "freshness-authority.v1.schema.json",
+      "sha256": "6069026c5f56e3516d2b4043597c3efad20b41655bd4d8dea26bd7ae19d16d84"
+    },
+    {
+      "kind": "schema",
+      "name": "freshness-proof.v1.schema.json",
+      "sha256": "b4a26ab98e348928862520adf49418c8e16ad16e1c07af406cbe90a8ac5800ad"
+    },
+    {
+      "kind": "schema",
       "name": "inverse-descriptor.v1.schema.json",
       "sha256": "6f310b11946196cf8c829bcf5be39864d5e3bd85181ae2a3a277bfa6fd72a553"
     },
@@ -163,17 +193,17 @@
     {
       "kind": "schema",
       "name": "writeback-job.v1.schema.json",
-      "sha256": "64238559297805e13c04cb8bf71be433e6fb1241594ca021415b1efb95214a01"
+      "sha256": "5d5e4c1d86e5419d72a321872c9387e85b3c8cc7e26ab6157998c11fca7dde11"
     },
     {
       "kind": "schema",
       "name": "writeback-job.v2.schema.json",
-      "sha256": "68110a5ed5b7867522cf86db8d177d2df3f96a458a4343bb77537bdcf304279b"
+      "sha256": "a6fd68f273b97c8d9f3911ffcb3ffb5d46c4a82b420e183c918d6688e4018117"
     },
     {
       "kind": "schema",
       "name": "writeback-job.v3.schema.json",
-      "sha256": "3bd46747e737e79bff90dc0496c270bc93d6a913db750ea00486be9a45714831"
+      "sha256": "7b8fa3e3fcd8b918f81cde25eec82f4c7e813a7221cf6fee0e9c69033ed80629"
     },
     {
       "kind": "schema",

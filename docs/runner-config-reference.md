@@ -453,6 +453,52 @@ Distinct verified subjects fill quorum slots; one subject cannot count twice.
 A rejection is terminal. Policy auto-approval is deferred when quorum is
 greater than one.
 
+## Proposal freshness
+
+`proposal_freshness` is an optional Runner-only deployment overlay. It does not
+change the public DSL or canonical contract and does not alter legacy proposal
+or `tools/list` behavior when absent.
+
+```json
+{
+  "proposal_freshness": {
+    "billing.propose_credit": {
+      "approval": "required",
+      "dependencies": [
+        {
+          "id": "invoice_eligibility",
+          "capability": "billing.inspect_invoice",
+          "identity_from_arg": "invoice_id",
+          "version_column": "updated_at"
+        }
+      ]
+    }
+  }
+}
+```
+
+The top-level key is an existing proposal capability. `approval` must be
+`required`. Every dependency must reference an existing reviewed single-row
+read on the same source/context and map one bounded scalar proposal argument to
+that read's fixed lookup. The read capability supplies schema, table, primary
+key, tenant/principal keys, and source; the model cannot supply or widen them.
+At most 16 dependencies are allowed.
+
+The proposal target and dependencies are read again before every approval.
+Direct SQL apply locks and rechecks them again inside the source transaction.
+Strict freshness is rejected for app-owned and cross-source effects because
+Runner cannot make those checks atomic with the external effect.
+
+Use:
+
+```bash
+synapsor-runner proposals check-freshness latest --config ./synapsor.runner.json
+synapsor-runner doctor --check-writeback --config ./synapsor.runner.json
+```
+
+The complete validation, privilege, lifecycle, and error-code contract is in
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
 ## Rate limits
 
 ```json

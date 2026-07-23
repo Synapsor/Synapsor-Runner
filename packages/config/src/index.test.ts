@@ -301,8 +301,21 @@ describe("runner capability config validation", () => {
         absolute_ceiling: 5000,
       }],
     };
+    const freshnessRequired = structuredClone(safeConfig) as any;
+    freshnessRequired.capabilities[1].writeback = { mode: "direct_sql" };
+    freshnessRequired.proposal_freshness = {
+      "billing.propose_late_fee_waiver": {
+        approval: "required",
+        dependencies: [{
+          id: "invoice_eligibility",
+          capability: "billing.inspect_invoice",
+          identity_from_arg: "invoice_id",
+          version_column: "updated_at",
+        }],
+      },
+    };
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust, freshnessRequired]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -785,6 +798,36 @@ describe("runner capability config validation", () => {
     const result = validateRunnerCapabilityConfig(config);
     expect(result.ok).toBe(false);
     expect(result.errors.map((error) => error.code)).toContain("READ_ONLY_SOURCE_DIRECT_WRITEBACK");
+  });
+
+  it("accepts exact same-source proposal freshness and rejects widened authority", () => {
+    const config = mutableConfig();
+    config.capabilities[1].writeback = { mode: "direct_sql" };
+    config.proposal_freshness = {
+      "billing.propose_late_fee_waiver": {
+        approval: "required",
+        dependencies: [{
+          id: "invoice_eligibility",
+          capability: "billing.inspect_invoice",
+          identity_from_arg: "invoice_id",
+          version_column: "updated_at",
+        }],
+      },
+    };
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    config.proposal_freshness["billing.propose_late_fee_waiver"].dependencies[0].identity_from_arg = "tenant_id";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("FRESHNESS_IDENTITY_ARG_UNKNOWN");
+
+    config.proposal_freshness["billing.propose_late_fee_waiver"].dependencies[0].identity_from_arg = "invoice_id";
+    config.capabilities[0].source = "other_source";
+    config.sources.other_source = { ...config.sources.app_postgres };
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("FRESHNESS_CROSS_SOURCE_UNSUPPORTED");
+
+    config.capabilities[0].source = "app_postgres";
+    config.capabilities[1].writeback = { mode: "app_handler", executor: "billing_handler" };
+    config.executors = { billing_handler: { type: "http_handler", url_env: "BILLING_HANDLER_URL" } };
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("FRESHNESS_DIRECT_SQL_REQUIRED");
   });
 
   it("rejects invalid proposal guard templates", () => {

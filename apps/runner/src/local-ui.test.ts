@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { canonicalJsonDigest, protocolVersions } from "@synapsor-runner/protocol";
 import { startLocalUiServer } from "./local-ui.js";
 import { compileSafeActionDraft } from "./safe-action.js";
 
@@ -59,6 +60,88 @@ const changeSet = {
   integrity: { proposal_hash: `sha256:${"a".repeat(64)}` },
   created_at: "2026-06-20T14:31:09Z",
 };
+
+function freshnessChangeSet(proposalId: string) {
+  const dependencyUnsigned = {
+    id: "account_eligibility",
+    capability: "billing.inspect_account_eligibility",
+    source_id: "src_pg_acme",
+    engine: "postgres" as const,
+    target: {
+      schema: "public",
+      table: "account_eligibility",
+      primary_key: { column: "account_id", value: "ACCT-44" },
+      tenant_column: "tenant_id",
+    },
+    expected_version: { column: "updated_at", value: "2026-07-23 09:00:00.000000Z" },
+    evidence: {
+      bundle_id: `ev_${proposalId}_support`,
+      query_fingerprint: canonicalJsonDigest({ proposalId, dependency: "account_eligibility" }),
+    },
+  };
+  const dependency = {
+    ...dependencyUnsigned,
+    descriptor_digest: canonicalJsonDigest(dependencyUnsigned),
+  };
+  const authorityUnsigned = {
+    schema_version: protocolVersions.freshnessAuthority,
+    required: true as const,
+    target: { mode: "exact_guard" as const, member_count: 1 },
+    dependencies: [dependency],
+  };
+  return {
+    ...structuredClone(changeSet),
+    proposal_id: proposalId,
+    scope: { ...changeSet.scope, object_id: `${changeSet.scope.object_id}-${proposalId}` },
+    integrity: { proposal_hash: canonicalJsonDigest({ proposalId }) },
+    freshness: {
+      ...authorityUnsigned,
+      dependency_set_digest: canonicalJsonDigest(authorityUnsigned),
+    },
+  };
+}
+
+function freshnessEvaluation(
+  input: ReturnType<typeof freshnessChangeSet>,
+  result: "fresh" | "stale" | "unavailable",
+) {
+  const checkedAt = "2026-07-23T18:00:00.000Z";
+  const safeCode = result === "fresh"
+    ? "FRESHNESS_FRESH"
+    : result === "stale"
+      ? "FRESHNESS_DEPENDENCY_STALE"
+      : "FRESHNESS_TEMPORARILY_UNAVAILABLE";
+  const checks = [
+    { id: "target", kind: "target" as const, status: result === "unavailable" ? "unavailable" as const : "fresh" as const, safe_code: result === "unavailable" ? safeCode : "FRESHNESS_TARGET_FRESH" },
+    { id: "account_eligibility", kind: "supporting" as const, status: result, safe_code: result === "fresh" ? "FRESHNESS_DEPENDENCY_FRESH" : safeCode },
+  ];
+  const unsigned = {
+    schema_version: protocolVersions.freshnessProof,
+    proposal_id: input.proposal_id,
+    proposal_hash: input.integrity.proposal_hash,
+    proposal_version: input.proposal_version,
+    dependency_set_digest: input.freshness.dependency_set_digest,
+    checked_at: checkedAt,
+    valid_until: "2099-07-23T18:00:30.000Z",
+    source_adapters: [{ source_id: "src_pg_acme", engine: "postgres" as const }],
+    result,
+    safe_code: safeCode,
+    target_count: 1,
+    supporting_count: 1,
+    checks,
+  };
+  return {
+    required: true as const,
+    status: result,
+    safe_code: safeCode,
+    target_count: 1,
+    supporting_count: 1,
+    proof: {
+      ...unsigned,
+      proof_digest: canonicalJsonDigest(unsigned),
+    },
+  };
+}
 
 describe("local UI", () => {
   it("serves a token-protected local approval UI without exposing secrets", async () => {
@@ -618,11 +701,92 @@ export default defineCapability({
       }, { confirm: "approve", actor: "shared_reviewer" });
       expect(approved.proposal.state).toBe("approved");
       expect(sharedStore.getProposal("wrp_ui")?.state).toBe("approved");
-      expect(operations).toEqual(["read:proposals-list", "write:proposal-approve"]);
+      expect(operations).toEqual([
+        "read:proposals-list",
+        "read:proposal-approve-freshness-read",
+        "write:proposal-approve",
+      ]);
       await expect(fs.stat(path.join(tempDir, "must-not-be-opened.db"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await server.close();
       sharedStore.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { status: "stale" as const, httpStatus: 409, expectedState: "conflict" },
+    { status: "unavailable" as const, httpStatus: 503, expectedState: "pending_review" },
+  ])("blocks Workbench approval when mandatory freshness is $status", async ({ status, httpStatus, expectedState }) => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `synapsor-local-ui-freshness-${status}-`));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    const input = freshnessChangeSet(`wrp_ui_${status}`);
+    const store = new ProposalStore(storePath);
+    store.createProposal(input);
+    store.close();
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      freshnessEvaluator: async () => freshnessEvaluation(input, status),
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const shell = await fetch(baseUrl, { headers });
+      const shellText = await shell.text();
+      expect(shellText).toContain("Check live freshness");
+      expect(shellText).toContain('approve.disabled = freshness.required && freshness.status !== "fresh"');
+
+      const check = await fetch(`${baseUrl}/api/proposals/${input.proposal_id}/check-freshness`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "x-synapsor-csrf": "csrf-token",
+        },
+      });
+      expect(check.status).toBe(httpStatus);
+      const checkPayload = await check.json() as Record<string, unknown>;
+      expect(checkPayload).toMatchObject({
+        ok: false,
+        freshness: {
+          required: true,
+          status,
+          safe_code: status === "stale"
+            ? "FRESHNESS_DEPENDENCY_STALE"
+            : "FRESHNESS_TEMPORARILY_UNAVAILABLE",
+        },
+      });
+
+      const approval = await fetch(`${baseUrl}/api/proposals/${input.proposal_id}/approve`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          "x-synapsor-csrf": "csrf-token",
+        },
+        body: JSON.stringify({ confirm: "approve", actor: "reviewer_1" }),
+      });
+      expect(approval.status).toBe(httpStatus);
+      const approvalPayload = await approval.json() as Record<string, unknown>;
+      expect(JSON.stringify(approvalPayload)).not.toContain("ACCT-44");
+      expect(JSON.stringify(approvalPayload)).not.toContain("tenant_id");
+
+      const verified = new ProposalStore(storePath);
+      try {
+        expect(verified.getProposal(input.proposal_id)?.state).toBe(expectedState);
+        expect(verified.approvals(input.proposal_id)).toEqual([]);
+        expect(verified.events(input.proposal_id)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ kind: "proposal_approval_blocked_freshness" }),
+        ]));
+      } finally {
+        verified.close();
+      }
+    } finally {
+      await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });

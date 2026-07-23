@@ -12,8 +12,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runnerPackageDir = path.join(root, "apps", "runner");
 const specPackageDir = path.join(root, "packages", "spec");
+const dslPackageDir = path.join(root, "packages", "dsl");
+const compatibilityBaseline = "published-1.6.0";
 const manifest = JSON.parse(await fsp.readFile(
-  path.join(root, "fixtures", "compatibility", "published-1.5.4", "manifest.json"),
+  path.join(root, "fixtures", "compatibility", compatibilityBaseline, "manifest.json"),
   "utf8",
 ));
 const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "synapsor-packed-compat-"));
@@ -25,19 +27,31 @@ try {
   const currentPackDir = path.join(tempRoot, "current-pack");
   await fsp.mkdir(baselinePackDir);
   await fsp.mkdir(currentPackDir);
-  const baselineTarball = packPublishedBaseline(baselinePackDir);
+  const baselineTarballs = packPublishedBaseline(baselinePackDir);
   const currentSpecTarball = packCurrentPackage(specPackageDir, currentPackDir);
+  const currentDslTarball = packCurrentPackage(dslPackageDir, currentPackDir);
   const currentTarball = packCurrentPackage(runnerPackageDir, currentPackDir);
 
-  const expectedBaseline = manifest.published_packages["@synapsor/runner"];
-  assert.equal(
-    sha1(fs.readFileSync(baselineTarball)),
-    expectedBaseline.npm_shasum,
-    "downloaded Runner baseline tarball does not match the pinned npm shasum",
-  );
+  for (const [packageName, tarball] of Object.entries(baselineTarballs)) {
+    const expected = manifest.published_packages[packageName];
+    assert.equal(
+      sha1(fs.readFileSync(tarball)),
+      expected.npm_shasum,
+      `downloaded ${packageName} baseline tarball does not match the pinned npm shasum`,
+    );
+  }
 
-  const baseline = installTarball("baseline", baselineTarball);
-  const current = installTarball("current", currentTarball, [currentSpecTarball]);
+  const expectedBaseline = manifest.published_packages["@synapsor/runner"];
+  const baseline = installTarball(
+    "baseline",
+    baselineTarballs["@synapsor/runner"],
+    [baselineTarballs["@synapsor/spec"], baselineTarballs["@synapsor/dsl"]],
+  );
+  const current = installTarball(
+    "current",
+    currentTarball,
+    [currentSpecTarball, currentDslTarball],
+  );
   assert.equal(readPackageVersion(baseline.packageRoot), expectedBaseline.version);
 
   verifyPackedCanonicalCompatibility(current);
@@ -56,14 +70,18 @@ try {
 }
 
 function packPublishedBaseline(destination) {
-  const result = run("npm", [
-    "pack",
-    `@synapsor/runner@${manifest.published_packages["@synapsor/runner"].version}`,
-    "--silent",
-    "--pack-destination",
-    destination,
-  ], { cwd: tempRoot });
-  return resolvePackedFilename(destination, result.stdout);
+  return Object.fromEntries(
+    Object.entries(manifest.published_packages).map(([packageName, metadata]) => {
+      const result = run("npm", [
+        "pack",
+        `${packageName}@${metadata.version}`,
+        "--silent",
+        "--pack-destination",
+        destination,
+      ], { cwd: tempRoot });
+      return [packageName, resolvePackedFilename(destination, result.stdout)];
+    }),
+  );
 }
 
 function packCurrentPackage(packageDirectory, destination) {
@@ -101,7 +119,7 @@ function verifyPackedCanonicalCompatibility(current) {
     current.packageRoot,
     "fixtures",
     "compatibility",
-    "published-1.5.4",
+    compatibilityBaseline,
     "manifest.json",
   );
   const packedManifest = JSON.parse(fs.readFileSync(packedManifestPath, "utf8"));
@@ -318,7 +336,7 @@ function packedCompatibilitySource(packageRoot, repositoryPath) {
     packageRoot,
     "fixtures",
     "compatibility",
-    "published-1.5.4",
+    compatibilityBaseline,
     "sources",
     repositoryPath,
   );

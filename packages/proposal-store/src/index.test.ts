@@ -132,6 +132,129 @@ function shadowChangeSet() {
   };
 }
 
+function freshnessChangeSet(requiredApprovals = 1, proposalId = changeSet.proposal_id) {
+  const objectId = proposalId === changeSet.proposal_id
+    ? changeSet.scope.object_id
+    : `INV-${proposalId}`;
+  const dependencyUnsigned = {
+    id: "invoice_eligibility",
+    capability: "billing.inspect_invoice",
+    source_id: "src_pg_acme",
+    engine: "postgres" as const,
+    target: {
+      schema: "public",
+      table: "invoice_eligibility",
+      primary_key: { column: "invoice_id", value: "INV-3001" },
+      tenant_column: "tenant_id",
+    },
+    expected_version: { column: "updated_at", value: "2026-06-20T14:30:00Z" },
+    evidence: {
+      bundle_id: "ev_freshness_invoice",
+      query_fingerprint: "sha256:freshness-query",
+    },
+  };
+  const dependency = {
+    ...dependencyUnsigned,
+    descriptor_digest: canonicalJsonDigest(dependencyUnsigned),
+  };
+  const authorityUnsigned = {
+    schema_version: protocolVersions.freshnessAuthority,
+    required: true as const,
+    target: { mode: "exact_guard" as const, member_count: 1 },
+    dependencies: [dependency],
+  };
+  return {
+    ...structuredClone(changeSet),
+    proposal_id: proposalId,
+    scope: {
+      ...structuredClone(changeSet.scope),
+      object_id: objectId,
+    },
+    source: {
+      ...structuredClone(changeSet.source),
+      primary_key: {
+        ...structuredClone(changeSet.source.primary_key),
+        value: objectId,
+      },
+    },
+    integrity: { proposal_hash: `sha256:freshness-${proposalId}` },
+    approval: {
+      ...structuredClone(changeSet.approval),
+      required_approvals: requiredApprovals,
+    },
+    freshness: {
+      ...authorityUnsigned,
+      dependency_set_digest: canonicalJsonDigest(authorityUnsigned),
+    },
+  };
+}
+
+function freshnessProofFor(
+  input: ReturnType<typeof freshnessChangeSet>,
+  result: "fresh" | "stale" | "unavailable" = "fresh",
+  checkedAt = new Date().toISOString(),
+  staleKind: "target" | "supporting" = "target",
+) {
+  const checks = result === "unavailable"
+    ? [{
+        id: "target",
+        kind: "target" as const,
+        status: "unavailable" as const,
+        safe_code: "FRESHNESS_TEMPORARILY_UNAVAILABLE",
+      }]
+    : [
+        {
+          id: "target",
+          kind: "target" as const,
+          status: result === "stale" && staleKind === "target" ? "stale" as const : "fresh" as const,
+          safe_code: result === "stale" && staleKind === "target"
+            ? "FRESHNESS_TARGET_STALE"
+            : "FRESHNESS_TARGET_FRESH",
+          expected_version_digest: "sha256:target-expected",
+          observed_version_digest: result === "stale" && staleKind === "target"
+            ? "sha256:target-observed"
+            : "sha256:target-expected",
+        },
+        {
+          id: "invoice_eligibility",
+          kind: "supporting" as const,
+          status: result === "stale" && staleKind === "supporting" ? "stale" as const : "fresh" as const,
+          safe_code: result === "stale" && staleKind === "supporting"
+            ? "FRESHNESS_DEPENDENCY_STALE"
+            : "FRESHNESS_DEPENDENCY_FRESH",
+          expected_version_digest: "sha256:dependency-expected",
+          observed_version_digest: result === "stale" && staleKind === "supporting"
+            ? "sha256:dependency-observed"
+            : "sha256:dependency-expected",
+        },
+      ];
+  const unsigned = {
+    schema_version: protocolVersions.freshnessProof,
+    proposal_id: input.proposal_id,
+    proposal_hash: input.integrity.proposal_hash,
+    proposal_version: input.proposal_version,
+    dependency_set_digest: input.freshness.dependency_set_digest,
+    checked_at: checkedAt,
+    valid_until: new Date(Date.parse(checkedAt) + 30_000).toISOString(),
+    source_adapters: [{ source_id: "src_pg_acme", engine: "postgres" as const }],
+    result,
+    safe_code: result === "fresh"
+      ? "FRESHNESS_FRESH"
+      : result === "stale"
+        ? staleKind === "target"
+          ? "FRESHNESS_TARGET_STALE"
+          : "FRESHNESS_DEPENDENCY_STALE"
+        : "FRESHNESS_TEMPORARILY_UNAVAILABLE",
+    target_count: 1,
+    supporting_count: result === "unavailable" ? 0 : 1,
+    checks,
+  };
+  return {
+    ...unsigned,
+    proof_digest: canonicalJsonDigest(unsigned),
+  };
+}
+
 function shadowCaseChangeSet(input: {
   proposalId: string;
   objectId: string;
@@ -896,6 +1019,71 @@ describe("proposal store", () => {
     }
   });
 
+  it("derives bounded freshness counters from durable proof and writeback events", () => {
+    const store = new ProposalStore();
+    try {
+      const applyBlocked = freshnessChangeSet(1, "wrp_freshness_apply_metrics");
+      store.createProposal(applyBlocked);
+      const fresh = store.recordFreshnessProof(freshnessProofFor(applyBlocked));
+      store.approveProposal(applyBlocked.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: applyBlocked.integrity.proposal_hash,
+        proposal_version: applyBlocked.proposal_version,
+        freshness_proof_digest: fresh.proof_digest,
+      });
+      const job = store.createWritebackJobFromProposal(applyBlocked.proposal_id);
+      store.recordExecutionReceipt({
+        ...appliedReceipt,
+        writeback_job_id: job.writeback_job_id,
+        proposal_id: applyBlocked.proposal_id,
+        idempotency_key: job.idempotency_key,
+        status: "conflict",
+        rows_affected: 0,
+        source_database_mutated: false,
+        safe_error_code: "FRESHNESS_DEPENDENCY_STALE",
+        receipt_hash: "sha256:freshness-apply-blocked",
+      });
+
+      const unavailable = freshnessChangeSet(1, "wrp_freshness_unavailable_metrics");
+      store.createProposal(unavailable);
+      const unavailableProof = store.recordFreshnessProof(freshnessProofFor(unavailable, "unavailable"));
+      store.recordFreshnessApprovalBlocked(unavailable.proposal_id, {
+        proof_digest: unavailableProof.proof_digest,
+        safe_code: unavailableProof.safe_code,
+        actor: "support_lead",
+      });
+
+      const staleTarget = freshnessChangeSet(1, "wrp_freshness_target_metrics");
+      store.createProposal(staleTarget);
+      store.recordFreshnessProof(freshnessProofFor(staleTarget, "stale"));
+
+      const staleSupporting = freshnessChangeSet(1, "wrp_freshness_support_metrics");
+      store.createProposal(staleSupporting);
+      store.recordFreshnessProof(freshnessProofFor(
+        staleSupporting,
+        "stale",
+        new Date().toISOString(),
+        "supporting",
+      ));
+
+      expect(store.fleetEventMetrics()).toEqual([expect.objectContaining({
+        tenant_id: "acme",
+        capability: "billing.waive_late_fee",
+        freshness_checks: 4,
+        freshness_fresh: 1,
+        freshness_stale_target: 1,
+        freshness_stale_supporting: 1,
+        freshness_unavailable: 1,
+        freshness_unsupported: 0,
+        freshness_approval_blocked: 1,
+        freshness_apply_blocked: 1,
+      })]);
+      expect(store.fleetEventMetrics({ tenant: "other" })).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
   it("preserves immutable principal row scope in generated writeback jobs", () => {
     const store = new ProposalStore();
     try {
@@ -920,6 +1108,160 @@ describe("proposal store", () => {
       const job: any = store.createWritebackJobFromProposal(scoped.proposal_id);
       expect(job.principal_scope).toEqual(scoped.guards.principal_scope);
       expect(parseWritebackJob(job).target.principal_scope).toEqual(scoped.guards.principal_scope);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("requires an immutable fresh proof for freshness-bound approval", () => {
+    const store = new ProposalStore();
+    try {
+      const change = freshnessChangeSet();
+      store.createProposal(change);
+      expect(() => store.approveProposal(change.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+      })).toThrowError(expect.objectContaining({ code: "FRESHNESS_PROOF_REQUIRED" }));
+
+      const proof = store.recordFreshnessProof(freshnessProofFor(change));
+      const approved = store.approveProposal(change.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+        freshness_proof_digest: proof.proof_digest,
+      });
+      expect(approved.state).toBe("approved");
+      expect(store.latestFreshnessProof(change.proposal_id)).toEqual(proof);
+      expect(store.approvals(change.proposal_id)).toEqual([
+        expect.objectContaining({ freshness_proof_digest: proof.proof_digest }),
+      ]);
+      expect(store.events(change.proposal_id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "proposal_freshness_checked",
+          payload: { proof },
+        }),
+        expect.objectContaining({
+          kind: "proposal_approved",
+          payload: expect.objectContaining({ freshness_proof_digest: proof.proof_digest }),
+        }),
+      ]));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("preserves freshness proofs and approval bindings through shared-ledger restore", () => {
+    const source = new ProposalStore();
+    const restored = new ProposalStore();
+    try {
+      const change = freshnessChangeSet(1, "wrp_freshness_shared_restore");
+      source.createProposal(change);
+      const proof = source.recordFreshnessProof(freshnessProofFor(change));
+      source.approveProposal(change.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: change.proposal_version,
+        freshness_proof_digest: proof.proof_digest,
+      });
+
+      const entries = source.sharedLedgerEntries();
+      expect(restored.importSharedLedgerEntries(entries)).toMatchObject({
+        imported: entries.length,
+        skipped: 0,
+      });
+      expect(restored.latestFreshnessProof(change.proposal_id)).toEqual(proof);
+      expect(restored.approvals(change.proposal_id)).toEqual([
+        expect.objectContaining({
+          approver: "support_lead",
+          freshness_proof_digest: proof.proof_digest,
+        }),
+      ]);
+      const replay = restored.replay(change.proposal_id);
+      expect(replay.approvals).toEqual([
+        expect.objectContaining({ freshness_proof_digest: proof.proof_digest }),
+      ]);
+      expect(replay.events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "proposal_freshness_checked",
+          payload: { proof },
+        }),
+        expect.objectContaining({
+          kind: "proposal_approved",
+          payload: expect.objectContaining({ freshness_proof_digest: proof.proof_digest }),
+        }),
+      ]));
+      expect(restored.createWritebackJobFromProposal(change.proposal_id)).toMatchObject({
+        proposal_id: change.proposal_id,
+        freshness: change.freshness,
+      });
+    } finally {
+      source.close();
+      restored.close();
+    }
+  });
+
+  it("rejects tampered, unavailable, and expired freshness proofs", () => {
+    const store = new ProposalStore();
+    try {
+      const change = freshnessChangeSet();
+      store.createProposal(change);
+      const tampered = freshnessProofFor(change);
+      tampered.safe_code = "FRESHNESS_TAMPERED";
+      expect(() => store.recordFreshnessProof(tampered)).toThrow();
+
+      const unavailable = store.recordFreshnessProof(freshnessProofFor(change, "unavailable"));
+      expect(store.getProposal(change.proposal_id)?.state).toBe("pending_review");
+      expect(() => store.approveProposal(change.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+        freshness_proof_digest: unavailable.proof_digest,
+      })).toThrowError(expect.objectContaining({ code: "FRESHNESS_NOT_VERIFIED" }));
+
+      const expired = store.recordFreshnessProof(freshnessProofFor(
+        change,
+        "fresh",
+        "2026-01-01T00:00:00.000Z",
+      ));
+      expect(() => store.approveProposal(change.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+        freshness_proof_digest: expired.proof_digest,
+      })).toThrowError(expect.objectContaining({ code: "FRESHNESS_PROOF_EXPIRED" }));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("blocks a later quorum approval permanently when freshness drifts", () => {
+    const store = new ProposalStore();
+    try {
+      const change = freshnessChangeSet(2);
+      store.createProposal(change);
+      const firstProof = store.recordFreshnessProof(freshnessProofFor(change));
+      expect(store.approveProposal(change.proposal_id, {
+        approver: "reviewer_a",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+        freshness_proof_digest: firstProof.proof_digest,
+      }).state).toBe("pending_review");
+
+      const staleProof = store.recordFreshnessProof(freshnessProofFor(change, "stale"));
+      expect(staleProof.result).toBe("stale");
+      expect(store.getProposal(change.proposal_id)?.state).toBe("conflict");
+      expect(store.approvals(change.proposal_id)).toHaveLength(1);
+
+      const restoredValueProof = store.recordFreshnessProof(freshnessProofFor(change, "fresh"));
+      expect(restoredValueProof.result).toBe("fresh");
+      expect(() => store.approveProposal(change.proposal_id, {
+        approver: "reviewer_b",
+        proposal_hash: change.integrity.proposal_hash,
+        proposal_version: 1,
+        freshness_proof_digest: restoredValueProof.proof_digest,
+      })).toThrowError(expect.objectContaining({ code: "PROPOSAL_NOT_PENDING_REVIEW" }));
+      expect(store.approvals(change.proposal_id)).toHaveLength(1);
     } finally {
       store.close();
     }

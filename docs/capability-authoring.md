@@ -384,6 +384,38 @@ surface.
 }
 ```
 
+### Optional Live Freshness
+
+The proposal's exact `conflict_guard` already protects its target at apply.
+Runner 1.6.1 can additionally recheck that target before local approval and can
+bind explicitly reviewed supporting rows to both approval and apply.
+
+This is deployment wiring, not DSL or canonical contract syntax:
+
+```json
+{
+  "proposal_freshness": {
+    "billing.propose_late_fee_waiver": {
+      "approval": "required",
+      "dependencies": [
+        {
+          "id": "payment_status",
+          "capability": "billing.inspect_payment",
+          "identity_from_arg": "payment_id",
+          "version_column": "version"
+        }
+      ]
+    }
+  }
+}
+```
+
+`billing.inspect_payment` must be an existing reviewed single-row read on the
+same source and trusted context. `payment_id` is an existing scalar proposal
+argument; the model cannot choose the dependency table, version column, tenant,
+principal, or whether the check runs. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
 ## Trusted Context
 
 Tenant, principal, approval authority, source ids, and row-version authority
@@ -468,6 +500,12 @@ Runner validates:
 - one affected row;
 - idempotency receipt.
 
+When the proposal opts into `proposal_freshness`, the direct SQL adapter also
+locks and compares every declared supporting row inside the same transaction
+before touching the target. A mismatch returns a freshness conflict and zero
+affected rows. Run `doctor --check-writeback` to verify that the writer can
+perform those dependency locking reads.
+
 INSERT additionally requires a source-unique dedup key. DELETE requires an exact
 version guard and fails closed on widening cascades or write triggers.
 
@@ -488,6 +526,13 @@ Use an app-owned executor when an approved proposal needs richer business work:
 inserting an outbox event, updating multiple app tables, calling your own
 service, or creating a row whose source constraints cannot satisfy native
 single-row INSERT guards.
+
+Runner's strict `proposal_freshness` overlay does not support app-owned or
+cross-source effects because Runner cannot make their source checks and effect
+atomic. The handler must independently lock/re-read all relevant state and
+enforce the exact proposal, scope, version, transaction, and idempotency
+preconditions described in
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
 
 In DSL, keep the reviewed business contract portable and name the executor:
 

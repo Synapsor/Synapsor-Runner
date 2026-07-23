@@ -24,7 +24,7 @@ import {
 } from "@synapsor-runner/control-plane-client";
 import { assertPostgresRlsTarget, createPostgresPool, quotePostgresIdentifier } from "@synapsor-runner/postgres";
 import { migrateSharedPostgresRuntimeStore, PostgresProposalRuntimeStore, ProposalStore, ProposalStoreError, type CloudOutboxItem, type ProposalRuntimeStore, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { PrivacyBoundaryError, canonicalJsonDigest, enforcePrivacyBudgets, principalScopeFingerprint, protocolVersions, shapePrivacySuppressedGroups, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3, type RunnerActivityV1, type RunnerProposalV1, type WritebackResult } from "@synapsor-runner/protocol";
+import { PrivacyBoundaryError, canonicalJsonDigest, enforcePrivacyBudgets, parseFreshnessAuthority, parseFreshnessProof, shapePrivacySuppressedGroups, principalScopeFingerprint, protocolVersions, type ChangeSet, type ChangeSetV1, type ChangeSetV2, type ChangeSetV3, type FreshnessAuthorityV1, type FreshnessDependencyV1, type FreshnessProofV1, type RunnerActivityV1, type RunnerProposalV1, type WritebackResult } from "@synapsor-runner/protocol";
 import {
   inspectDatabase,
   rolePostureFingerprint,
@@ -159,6 +159,18 @@ export type RuntimeCapabilityConfig = {
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
 };
 
+export type RuntimeProposalFreshnessDependencyConfig = {
+  id: string;
+  capability: string;
+  identity_from_arg: string;
+  version_column: string;
+};
+
+export type RuntimeProposalFreshnessConfig = {
+  approval: "required";
+  dependencies?: RuntimeProposalFreshnessDependencyConfig[];
+};
+
 export type RuntimeConfig = {
   version: 1;
   mode: RunnerMode;
@@ -166,6 +178,7 @@ export type RuntimeConfig = {
   contracts?: string[];
   policies?: PolicySpec[];
   approvals?: { disable_auto_approval?: boolean };
+  proposal_freshness?: Record<string, RuntimeProposalFreshnessConfig>;
   operator_identity?: {
     provider: "dev_env" | "signed_key" | "jwt_oidc";
     actor_env?: string;
@@ -509,6 +522,7 @@ export type DbRowReader = (input: {
   args: Record<string, unknown>;
   context: TrustedContext;
   env: NodeJS.ProcessEnv;
+  transaction_mode?: "read_only";
 }) => Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }>;
 
 export type McpRuntimeOptions = {
@@ -3594,6 +3608,20 @@ async function callConfiguredTool(input: {
     at: createdAt,
   });
   const queryFingerprint = queryFingerprintFor(capability, context);
+  const freshnessCapture = capability.kind === "proposal"
+    ? await captureProposalFreshnessAuthority({
+      config: input.config,
+      capability,
+      args: input.args,
+      context,
+      source,
+      readRow: input.readRow,
+      env: input.env,
+      proposalId,
+      createdAt,
+      targetMemberCount: operation === "insert" ? 0 : setOperation ? currentRows.length : 1,
+    })
+    : undefined;
   const changeSet = capability.kind === "proposal" ? buildChangeSet({
     config: input.config,
     capability,
@@ -3612,6 +3640,7 @@ async function callConfiguredTool(input: {
     evidenceBundleId,
     queryFingerprint,
     objectId,
+    freshness: freshnessCapture?.authority,
   }) : undefined;
   await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
@@ -3655,6 +3684,48 @@ async function callConfiguredTool(input: {
         ...(principalScopeMetadata ? { principal_scope: principalScopeMetadata } : {}),
         statement_template: selectTemplate(capability),
         parameters_redacted: true,
+      },
+    });
+  }
+  for (const supporting of freshnessCapture?.evidence ?? []) {
+    await input.store.recordEvidenceBundle({
+      evidence_bundle_id: supporting.bundle_id,
+      tenant_id: context.tenant_id,
+      capability: supporting.capability.name,
+      source_id: supporting.capability.source,
+      source_table: `${supporting.capability.target.schema}.${supporting.capability.target.table}`,
+      business_object: supporting.capability.target.table,
+      object_id: String(supporting.primary_key.value),
+      query_fingerprint: supporting.query_fingerprint,
+      payload: {
+        kind: "freshness_dependency",
+        dependency_id: supporting.dependency_id,
+        capability: supporting.capability.name,
+        source_id: supporting.capability.source,
+        target: `${supporting.capability.target.schema}.${supporting.capability.target.table}`,
+        parameters_redacted: true,
+        source_database_changed: false,
+      },
+      items: [],
+    });
+    await input.store.recordQueryAudit({
+      evidence_bundle_id: supporting.bundle_id,
+      capability: supporting.capability.name,
+      source_id: supporting.capability.source,
+      query_fingerprint: supporting.query_fingerprint,
+      table_name: `${supporting.capability.target.schema}.${supporting.capability.target.table}`,
+      business_object: supporting.capability.target.table,
+      object_id: String(supporting.primary_key.value),
+      primary_key_value: String(supporting.primary_key.value),
+      row_count: 1,
+      payload: {
+        kind: "freshness_dependency",
+        dependency_id: supporting.dependency_id,
+        capability: supporting.capability.name,
+        columns: [supporting.version_column],
+        parameters_redacted: true,
+        tenant_bound: Boolean(supporting.capability.target.tenant_key),
+        principal_bound: Boolean(supporting.capability.target.principal_scope_key),
       },
     });
   }
@@ -3712,6 +3783,8 @@ async function callConfiguredTool(input: {
       store: input.store,
       proposal,
       patch: changeSet.patch,
+      env: input.env,
+      readRow: input.readRow,
     });
   await input.store.recordEvidenceBundle({
     evidence_bundle_id: evidenceBundleId,
@@ -3765,6 +3838,8 @@ async function callConfiguredTool(input: {
       ? "pending_cloud_sync"
       : input.config.mode === "shadow"
         ? "shadow_proposal_created"
+        : approvalResult.freshness?.status === "stale"
+          ? "freshness_conflict"
         : approvalResult.proposal.state === "approved"
           ? "approved"
           : "review_required",
@@ -3794,6 +3869,7 @@ async function callConfiguredTool(input: {
         } : {}),
       },
     approval_required: approvalResult.proposal.state === "pending_review",
+    ...(approvalResult.freshness ? { freshness: approvalResult.freshness } : {}),
     governance: input.config.governance?.mode === "cloud_linked"
       ? { authority: "synapsor_cloud", state: "pending_cloud_sync", evidence_residency: "metadata_only" }
       : { authority: "local" },
@@ -4373,11 +4449,17 @@ async function maybeAutoApproveProposal(input: {
   store: ProposalRuntimeStore;
   proposal: StoredProposal;
   patch: Record<string, Scalar>;
+  env: NodeJS.ProcessEnv;
+  readRow: DbRowReader;
 }): Promise<{
   proposal: StoredProposal;
   approved: boolean;
   policy?: string;
   tripped_limits?: Array<Record<string, unknown>>;
+  freshness?: {
+    status: FreshnessProofV1["result"];
+    safe_code: string;
+  };
 }> {
   if (input.config.mode !== "review") return { proposal: input.proposal, approved: false };
   if (input.config.approvals?.disable_auto_approval === true) return { proposal: input.proposal, approved: false };
@@ -4392,6 +4474,34 @@ async function maybeAutoApproveProposal(input: {
   const evaluation = evaluateApprovalPolicy(input.capability, policy, input.patch);
   if (!evaluation.qualifies) return { proposal: input.proposal, approved: false, policy: policyName };
 
+  let freshnessProofDigest: string | undefined;
+  const freshness = await evaluateProposalFreshness({
+    config: input.config,
+    proposal: input.proposal,
+    env: input.env,
+    readRow: input.readRow,
+  });
+  if (freshness.required) {
+    await input.store.recordFreshnessProof(freshness.proof);
+    if (freshness.status !== "fresh") {
+      await input.store.recordFreshnessApprovalBlocked(input.proposal.proposal_id, {
+        proof_digest: freshness.proof.proof_digest,
+        safe_code: freshness.safe_code,
+        actor: `policy:${policyName}`,
+      });
+      return {
+        proposal: await input.store.getProposal(input.proposal.proposal_id) ?? input.proposal,
+        approved: false,
+        policy: policyName,
+        freshness: {
+          status: freshness.status,
+          safe_code: freshness.safe_code,
+        },
+      };
+    }
+    freshnessProofDigest = freshness.proof.proof_digest;
+  }
+
   // Safety boundary: policy approval is contract-owned server behavior only.
   // No MCP tool can choose a policy, approve a proposal, or apply the writeback.
   const decision = await input.store.approveProposalByPolicy(input.proposal.proposal_id, {
@@ -4400,12 +4510,19 @@ async function maybeAutoApproveProposal(input: {
     proposal_version: input.proposal.proposal_version,
     reason: `auto-approved by policy ${policyName}: ${evaluation.reason}`,
     limits: policy.limits,
+    freshness_proof_digest: freshnessProofDigest,
   });
   return {
     proposal: decision.proposal,
     approved: decision.approved,
     policy: policyName,
     tripped_limits: decision.tripped_limits,
+    ...(freshness.required ? {
+      freshness: {
+        status: freshness.status,
+        safe_code: freshness.safe_code,
+      },
+    } : {}),
   };
 }
 
@@ -4722,6 +4839,490 @@ function errorMessage(error: unknown): string {
   return typeof error === "string" ? error : "";
 }
 
+type CapturedFreshnessEvidence = {
+  dependency_id: string;
+  bundle_id: string;
+  query_fingerprint: string;
+  capability: RuntimeCapabilityConfig;
+  primary_key: { column: string; value: Scalar };
+  version_column: string;
+};
+
+type CapturedFreshnessAuthority = {
+  authority: FreshnessAuthorityV1;
+  evidence: CapturedFreshnessEvidence[];
+};
+
+async function captureProposalFreshnessAuthority(input: {
+  config: RuntimeConfig;
+  capability: RuntimeCapabilityConfig;
+  args: Record<string, unknown>;
+  context: TrustedContext;
+  source: RuntimeSourceConfig;
+  readRow: DbRowReader;
+  env: NodeJS.ProcessEnv;
+  proposalId: string;
+  createdAt: string;
+  targetMemberCount: number;
+}): Promise<CapturedFreshnessAuthority | undefined> {
+  const policy = input.config.proposal_freshness?.[input.capability.name];
+  if (!policy) return undefined;
+  const operation = input.capability.operation?.kind ?? "update";
+  const targetMode: FreshnessAuthorityV1["target"]["mode"] = operation === "insert"
+    ? "not_applicable"
+    : isSetCapability(input.capability)
+      ? "frozen_set"
+      : "exact_guard";
+  const captured: Array<{ descriptor: FreshnessDependencyV1; evidence: CapturedFreshnessEvidence }> = [];
+  for (const configured of policy.dependencies ?? []) {
+    const capability = (input.config.capabilities ?? []).find((item) => item.name === configured.capability);
+    if (!capability || capability.kind !== "read") {
+      throw new McpRuntimeError("FRESHNESS_DEPENDENCY_INVALID", `Reviewed freshness dependency ${configured.id} is unavailable.`);
+    }
+    const identity = scalar(input.args[configured.identity_from_arg]);
+    if (identity === null) {
+      throw new McpRuntimeError("FRESHNESS_DEPENDENCY_IDENTITY_MISSING", `Freshness dependency ${configured.id} requires its reviewed scalar identity.`);
+    }
+    const readCapability: RuntimeCapabilityConfig = {
+      ...capability,
+      conflict_guard: { column: configured.version_column },
+    };
+    const current = await input.readRow({
+      sourceName: capability.source,
+      source: input.source,
+      capability: readCapability,
+      args: { [capability.lookup.id_from_arg]: identity },
+      context: input.context,
+      env: input.env,
+      transaction_mode: "read_only",
+    });
+    if (current.rowCount !== 1) {
+      throw new McpRuntimeError("FRESHNESS_DEPENDENCY_UNRESOLVED", `Freshness dependency ${configured.id} did not resolve to one authorized row.`);
+    }
+    const primaryValue = scalar(current.row[capability.target.primary_key]);
+    const versionValue = scalar(current.row[configured.version_column]);
+    if (primaryValue === null || versionValue === null) {
+      throw new McpRuntimeError("FRESHNESS_DEPENDENCY_VERSION_MISSING", `Freshness dependency ${configured.id} lacks an exact primary-key or version value.`);
+    }
+    const bundleId = stableId("evf", {
+      proposal_id: input.proposalId,
+      dependency_id: configured.id,
+      primary_key: primaryValue,
+      created_at: input.createdAt,
+    });
+    const queryFingerprint = queryFingerprintFor(readCapability, input.context);
+    const unsigned = {
+      id: configured.id,
+      capability: configured.capability,
+      source_id: capability.source,
+      engine: input.source.engine,
+      target: {
+        schema: capability.target.schema,
+        table: capability.target.table,
+        primary_key: { column: capability.target.primary_key, value: primaryValue },
+        tenant_column: capability.target.tenant_key ?? "__single_tenant_dev",
+        ...(capability.target.principal_scope_key ? { principal_column: capability.target.principal_scope_key } : {}),
+      },
+      expected_version: { column: configured.version_column, value: conflictGuardScalar(versionValue) },
+      evidence: {
+        bundle_id: bundleId,
+        query_fingerprint: queryFingerprint,
+      },
+    };
+    const descriptor = {
+      ...unsigned,
+      descriptor_digest: canonicalJsonDigest(unsigned),
+    } satisfies FreshnessDependencyV1;
+    captured.push({
+      descriptor,
+      evidence: {
+        dependency_id: configured.id,
+        bundle_id: bundleId,
+        query_fingerprint: queryFingerprint,
+        capability,
+        primary_key: descriptor.target.primary_key,
+        version_column: configured.version_column,
+      },
+    });
+  }
+  captured.sort((left, right) =>
+    left.descriptor.source_id.localeCompare(right.descriptor.source_id)
+      || left.descriptor.target.schema.localeCompare(right.descriptor.target.schema)
+      || left.descriptor.target.table.localeCompare(right.descriptor.target.table)
+      || JSON.stringify(left.descriptor.target.primary_key.value).localeCompare(JSON.stringify(right.descriptor.target.primary_key.value))
+      || left.descriptor.id.localeCompare(right.descriptor.id));
+  const unsigned = {
+    schema_version: protocolVersions.freshnessAuthority,
+    required: true as const,
+    target: { mode: targetMode, member_count: input.targetMemberCount },
+    dependencies: captured.map((item) => item.descriptor),
+  };
+  const authority = parseFreshnessAuthority({
+    ...unsigned,
+    dependency_set_digest: canonicalJsonDigest(unsigned),
+  });
+  return {
+    authority,
+    evidence: captured.map((item) => item.evidence),
+  };
+}
+
+export type ProposalFreshnessEvaluation =
+  | {
+    required: false;
+    status: "not_required";
+    safe_code: "FRESHNESS_NOT_REQUIRED";
+    target_count: 0;
+    supporting_count: 0;
+  }
+  | {
+    required: true;
+    status: FreshnessProofV1["result"];
+    safe_code: string;
+    target_count: number;
+    supporting_count: number;
+    proof: FreshnessProofV1;
+  };
+
+type FreshnessProofCheck = FreshnessProofV1["checks"][number];
+
+export async function evaluateProposalFreshness(input: {
+  config: RuntimeConfig;
+  proposal: StoredProposal;
+  env?: NodeJS.ProcessEnv;
+  readRow?: DbRowReader;
+  credentialResolver?: TenantCredentialResolver;
+  clock?: () => number;
+  proofValidityMs?: number;
+}): Promise<ProposalFreshnessEvaluation> {
+  const config = resolveRuntimeConfig(input.config);
+  assertValidRunnerCapabilityConfig(config);
+  const authority = freshnessAuthorityFromChangeSet(input.proposal.change_set);
+  if (!authority) {
+    return {
+      required: false,
+      status: "not_required",
+      safe_code: "FRESHNESS_NOT_REQUIRED",
+      target_count: 0,
+      supporting_count: 0,
+    };
+  }
+  const env = input.env ?? process.env;
+  const resources = createMcpRuntimeSharedResources(config, env, input.readRow, input.clock, input.credentialResolver);
+  const checkedAtMs = (input.clock ?? Date.now)();
+  const checks: FreshnessProofCheck[] = [];
+  let forcedResult: FreshnessProofV1["result"] | undefined;
+  let forcedCode: string | undefined;
+  try {
+    const capability = (config.capabilities ?? []).find((item) => item.name === input.proposal.action);
+    const source = capability ? config.sources?.[capability.source] : undefined;
+    if (!capability || capability.kind !== "proposal" || !source) {
+      forcedResult = "invalid";
+      forcedCode = "FRESHNESS_PROPOSAL_AUTHORITY_INVALID";
+    } else if (!proposalAuthorityMatchesCapability(input.proposal, capability)) {
+      forcedResult = "invalid";
+      forcedCode = "FRESHNESS_PROPOSAL_AUTHORITY_MISMATCH";
+    } else {
+      const context = proposalTrustedContext(config, capability, input.proposal);
+      const targetChecks = await evaluateTargetFreshness({
+        proposal: input.proposal,
+        authority,
+        capability,
+        source,
+        context,
+        env,
+        readRow: resources.readRow,
+      });
+      checks.push(...targetChecks);
+      for (const dependency of authority.dependencies) {
+        const validationCode = validateResolvedFreshnessDependency(config, capability, dependency);
+        if (validationCode) {
+          checks.push({
+            id: dependency.id,
+            kind: "supporting",
+            status: "invalid",
+            safe_code: validationCode,
+          });
+          continue;
+        }
+        const supporting = (config.capabilities ?? []).find((item) => item.name === dependency.capability)!;
+        checks.push(await evaluateSupportingFreshness({
+          dependency,
+          capability: supporting,
+          source,
+          context,
+          env,
+          readRow: resources.readRow,
+        }));
+      }
+    }
+  } catch (error) {
+    const classified = classifyFreshnessReadError(error);
+    forcedResult = classified.result;
+    forcedCode = classified.safe_code;
+  } finally {
+    await resources.close();
+  }
+  const status = forcedResult ?? freshnessResultForChecks(checks);
+  const safeCode = forcedCode ?? freshnessSafeCode(status, checks);
+  const targetCount = checks.filter((check) => check.kind === "target").length;
+  const supportingCount = checks.filter((check) => check.kind === "supporting").length;
+  const adapters = freshnessSourceAdapters(input.proposal, authority);
+  const unsigned = {
+    schema_version: protocolVersions.freshnessProof,
+    proposal_id: input.proposal.proposal_id,
+    proposal_hash: input.proposal.proposal_hash as `sha256:${string}`,
+    proposal_version: input.proposal.proposal_version,
+    dependency_set_digest: authority.dependency_set_digest,
+    checked_at: new Date(checkedAtMs).toISOString(),
+    valid_until: new Date(checkedAtMs + Math.max(1_000, Math.min(input.proofValidityMs ?? 30_000, 300_000))).toISOString(),
+    source_adapters: adapters,
+    result: status,
+    safe_code: safeCode,
+    target_count: targetCount,
+    supporting_count: supportingCount,
+    checks,
+  };
+  const proof = parseFreshnessProof({
+    ...unsigned,
+    proof_digest: canonicalJsonDigest(unsigned),
+  });
+  return {
+    required: true,
+    status,
+    safe_code: safeCode,
+    target_count: targetCount,
+    supporting_count: supportingCount,
+    proof,
+  };
+}
+
+function freshnessAuthorityFromChangeSet(changeSet: ChangeSet): FreshnessAuthorityV1 | undefined {
+  if (!("freshness" in changeSet) || changeSet.freshness === undefined) return undefined;
+  return parseFreshnessAuthority(changeSet.freshness);
+}
+
+function proposalAuthorityMatchesCapability(proposal: StoredProposal, capability: RuntimeCapabilityConfig): boolean {
+  const changeSet = proposal.change_set;
+  if (proposal.proposal_hash !== changeSet.integrity.proposal_hash || proposal.proposal_version !== changeSet.proposal_version) return false;
+  if (changeSet.source.source_id !== capability.source
+    || changeSet.source.schema !== capability.target.schema
+    || changeSet.source.table !== capability.target.table
+    || changeSet.source.primary_key.column !== capability.target.primary_key) return false;
+  if (changeSet.contract && (
+    !capability.contract_provenance
+    || changeSet.contract.digest !== capability.contract_provenance.digest
+    || changeSet.contract.version !== capability.contract_provenance.version
+  )) return false;
+  return true;
+}
+
+function proposalTrustedContext(
+  config: RuntimeConfig,
+  capability: RuntimeCapabilityConfig,
+  proposal: StoredProposal,
+): TrustedContext {
+  const contextConfig = (capability.context ? config.contexts?.[capability.context] : undefined) ?? config.trusted_context;
+  const provider = contextConfig?.provider ?? (proposal.change_set.principal.source === "cloud_session" ? "cloud_session" : "environment");
+  return {
+    tenant_id: proposal.tenant_id,
+    principal: proposal.principal ?? proposal.change_set.principal.id,
+    provenance: provider,
+  };
+}
+
+async function evaluateTargetFreshness(input: {
+  proposal: StoredProposal;
+  authority: FreshnessAuthorityV1;
+  capability: RuntimeCapabilityConfig;
+  source: RuntimeSourceConfig;
+  context: TrustedContext;
+  env: NodeJS.ProcessEnv;
+  readRow: DbRowReader;
+}): Promise<FreshnessProofCheck[]> {
+  if (input.authority.target.mode === "not_applicable") return [];
+  if (input.authority.target.mode === "frozen_set") {
+    const changeSet = input.proposal.change_set;
+    if (changeSet.schema_version !== protocolVersions.changeSetV3) {
+      return [{ id: "target", kind: "target", status: "invalid", safe_code: "FRESHNESS_TARGET_SET_INVALID" }];
+    }
+    const current = await input.readRow({
+      sourceName: input.capability.source,
+      source: input.source,
+      capability: input.capability,
+      args: {},
+      context: input.context,
+      env: input.env,
+      transaction_mode: "read_only",
+    });
+    const rows = current.rows ?? (current.rowCount === 1 ? [current.row] : []);
+    const byIdentity = new Map(rows.map((row) => [JSON.stringify(scalar(row[input.capability.target.primary_key])), row]));
+    return changeSet.frozen_set.members.map((member) => {
+      const expected = member.expected_version;
+      const row = byIdentity.get(JSON.stringify(member.primary_key.value));
+      const observed = expected && row ? conflictGuardScalar(scalar(row[expected.column])) : undefined;
+      const fresh = Boolean(expected && row && versionsEqual(observed, expected.value));
+      return {
+        id: `target:${canonicalJsonDigest(member.primary_key).slice(7, 23)}`,
+        kind: "target" as const,
+        status: fresh ? "fresh" as const : "stale" as const,
+        safe_code: fresh ? "FRESHNESS_TARGET_FRESH" : "FRESHNESS_TARGET_STALE",
+        ...(expected ? { expected_version_digest: versionMetadataDigest(expected.column, expected.value) } : {}),
+        ...(expected && observed !== undefined ? { observed_version_digest: versionMetadataDigest(expected.column, observed) } : {}),
+      };
+    });
+  }
+  const changeSet = input.proposal.change_set;
+  if (changeSet.schema_version === protocolVersions.changeSetV3 || changeSet.schema_version === protocolVersions.compensationChangeSet) {
+    return [{ id: "target", kind: "target", status: "invalid", safe_code: "FRESHNESS_TARGET_AUTHORITY_INVALID" }];
+  }
+  const expected = changeSet.guards.expected_version;
+  if (!expected || expected.column === "__row_hash" || changeSet.source.primary_key.value === undefined) {
+    return [{ id: "target", kind: "target", status: "invalid", safe_code: "FRESHNESS_EXACT_TARGET_GUARD_REQUIRED" }];
+  }
+  const readCapability: RuntimeCapabilityConfig = {
+    ...input.capability,
+    conflict_guard: { column: expected.column },
+  };
+  const current = await input.readRow({
+    sourceName: input.capability.source,
+    source: input.source,
+    capability: readCapability,
+    args: { [input.capability.lookup.id_from_arg]: changeSet.source.primary_key.value },
+    context: input.context,
+    env: input.env,
+    transaction_mode: "read_only",
+  });
+  const observed = current.rowCount === 1 ? conflictGuardScalar(scalar(current.row[expected.column])) : undefined;
+  const fresh = current.rowCount === 1 && observed !== undefined && versionsEqual(observed, expected.value);
+  return [{
+    id: "target",
+    kind: "target",
+    status: fresh ? "fresh" : "stale",
+    safe_code: fresh ? "FRESHNESS_TARGET_FRESH" : "FRESHNESS_TARGET_STALE",
+    expected_version_digest: versionMetadataDigest(expected.column, expected.value),
+    ...(observed !== undefined ? { observed_version_digest: versionMetadataDigest(expected.column, observed) } : {}),
+  }];
+}
+
+function validateResolvedFreshnessDependency(
+  config: RuntimeConfig,
+  proposalCapability: RuntimeCapabilityConfig,
+  dependency: FreshnessDependencyV1,
+): string | undefined {
+  const policy = config.proposal_freshness?.[proposalCapability.name];
+  const declared = policy?.dependencies?.find((item) => item.id === dependency.id);
+  const capability = (config.capabilities ?? []).find((item) => item.name === dependency.capability);
+  const source = config.sources?.[dependency.source_id];
+  if (!declared || declared.capability !== dependency.capability || declared.version_column !== dependency.expected_version.column) return "FRESHNESS_DEPENDENCY_AUTHORITY_MISMATCH";
+  if (!capability || capability.kind !== "read" || !source) return "FRESHNESS_DEPENDENCY_AUTHORITY_INVALID";
+  if (capability.source !== proposalCapability.source || dependency.source_id !== capability.source || dependency.engine !== source.engine) return "FRESHNESS_CROSS_SOURCE_UNSUPPORTED";
+  if (capability.target.schema !== dependency.target.schema
+    || capability.target.table !== dependency.target.table
+    || capability.target.primary_key !== dependency.target.primary_key.column
+    || (capability.target.tenant_key ?? "__single_tenant_dev") !== dependency.target.tenant_column
+    || capability.target.principal_scope_key !== dependency.target.principal_column) return "FRESHNESS_DEPENDENCY_TARGET_MISMATCH";
+  return undefined;
+}
+
+async function evaluateSupportingFreshness(input: {
+  dependency: FreshnessDependencyV1;
+  capability: RuntimeCapabilityConfig;
+  source: RuntimeSourceConfig;
+  context: TrustedContext;
+  env: NodeJS.ProcessEnv;
+  readRow: DbRowReader;
+}): Promise<FreshnessProofCheck> {
+  const readCapability: RuntimeCapabilityConfig = {
+    ...input.capability,
+    conflict_guard: { column: input.dependency.expected_version.column },
+  };
+  try {
+    const current = await input.readRow({
+      sourceName: input.dependency.source_id,
+      source: input.source,
+      capability: readCapability,
+      args: { [input.capability.lookup.id_from_arg]: input.dependency.target.primary_key.value },
+      context: input.context,
+      env: input.env,
+      transaction_mode: "read_only",
+    });
+    const observed = current.rowCount === 1
+      ? conflictGuardScalar(scalar(current.row[input.dependency.expected_version.column]))
+      : undefined;
+    const fresh = current.rowCount === 1 && observed !== undefined && versionsEqual(observed, input.dependency.expected_version.value);
+    return {
+      id: input.dependency.id,
+      kind: "supporting",
+      status: fresh ? "fresh" : "stale",
+      safe_code: fresh ? "FRESHNESS_DEPENDENCY_FRESH" : "FRESHNESS_DEPENDENCY_STALE",
+      expected_version_digest: versionMetadataDigest(input.dependency.expected_version.column, input.dependency.expected_version.value),
+      ...(observed !== undefined ? { observed_version_digest: versionMetadataDigest(input.dependency.expected_version.column, observed) } : {}),
+    };
+  } catch (error) {
+    const classified = classifyFreshnessReadError(error);
+    return {
+      id: input.dependency.id,
+      kind: "supporting",
+      status: classified.result,
+      safe_code: classified.safe_code,
+    };
+  }
+}
+
+function freshnessResultForChecks(checks: FreshnessProofCheck[]): FreshnessProofV1["result"] {
+  if (checks.some((check) => check.status === "invalid")) return "invalid";
+  if (checks.some((check) => check.status === "unsupported")) return "unsupported";
+  if (checks.some((check) => check.status === "unavailable")) return "unavailable";
+  if (checks.some((check) => check.status === "stale")) return "stale";
+  return "fresh";
+}
+
+function freshnessSafeCode(status: FreshnessProofV1["result"], checks: FreshnessProofCheck[]): string {
+  if (status === "fresh") return "FRESHNESS_FRESH";
+  if (status === "stale" && checks.some((check) => check.kind === "target" && check.status === "stale")) return "FRESHNESS_TARGET_STALE";
+  if (status === "stale") return "FRESHNESS_DEPENDENCY_STALE";
+  if (status === "unavailable") return "FRESHNESS_TEMPORARILY_UNAVAILABLE";
+  if (status === "unsupported") return "FRESHNESS_TOPOLOGY_UNSUPPORTED";
+  return "FRESHNESS_AUTHORITY_INVALID";
+}
+
+function classifyFreshnessReadError(error: unknown): {
+  result: "unavailable" | "invalid" | "unsupported";
+  safe_code: string;
+} {
+  const code = error instanceof McpRuntimeError ? error.code : errorStringProperty(error, "code") ?? "";
+  if (/(TIMEOUT|POOL|CONNECTION|ECONN|ETIMEDOUT|TOO_MANY|UNAVAILABLE|SATURAT)/i.test(`${code} ${errorMessage(error)}`)) {
+    return { result: "unavailable", safe_code: "FRESHNESS_TEMPORARILY_UNAVAILABLE" };
+  }
+  if (/(UNSUPPORTED|CROSS_SOURCE)/i.test(code)) {
+    return { result: "unsupported", safe_code: "FRESHNESS_TOPOLOGY_UNSUPPORTED" };
+  }
+  return { result: "invalid", safe_code: "FRESHNESS_CHECK_FAILED" };
+}
+
+function freshnessSourceAdapters(
+  proposal: StoredProposal,
+  authority: FreshnessAuthorityV1,
+): FreshnessProofV1["source_adapters"] {
+  const entries = new Map<string, FreshnessProofV1["source_adapters"][number]>();
+  const targetEngine = proposal.source_kind === "external_mysql" ? "mysql" : "postgres";
+  entries.set(`${proposal.source_id}:${targetEngine}`, { source_id: proposal.source_id, engine: targetEngine });
+  for (const dependency of authority.dependencies) {
+    entries.set(`${dependency.source_id}:${dependency.engine}`, { source_id: dependency.source_id, engine: dependency.engine });
+  }
+  return [...entries.values()].sort((left, right) => left.source_id.localeCompare(right.source_id) || left.engine.localeCompare(right.engine));
+}
+
+function versionsEqual(left: unknown, right: unknown): boolean {
+  return canonicalJsonDigest({ value: conflictGuardScalar(scalar(left)) })
+    === canonicalJsonDigest({ value: conflictGuardScalar(scalar(right)) });
+}
+
+function versionMetadataDigest(column: string, value: unknown): `sha256:${string}` {
+  return canonicalJsonDigest({ column, value: conflictGuardScalar(scalar(value)) });
+}
+
 function effectivePrincipalScope(
   config: RuntimeConfig,
   capability: RuntimeCapabilityConfig,
@@ -4759,6 +5360,7 @@ function buildChangeSet(input: {
   evidenceBundleId: string;
   queryFingerprint: string;
   objectId: string;
+  freshness?: FreshnessAuthorityV1;
 }): ChangeSet {
   const patch = input.patch;
   const before = scalarRecord(input.currentRow);
@@ -4833,6 +5435,7 @@ function buildChangeSet(input: {
         ...(input.capability.operation.version_advance ? { version_advance: input.capability.operation.version_advance } : {}),
         ...(input.resolvedDeduplication ? { deduplication: input.resolvedDeduplication } : {}),
       },
+      ...(input.freshness ? { freshness: input.freshness } : {}),
       ...(input.capability.reversibility ? {
         reversibility: {
           mode: "reviewed_inverse" as const,
@@ -4899,6 +5502,7 @@ function buildChangeSet(input: {
       allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
       expected_version: guard!,
     },
+    ...(input.freshness ? { freshness: input.freshness } : {}),
     evidence: {
       bundle_id: input.evidenceBundleId,
       query_fingerprint: input.queryFingerprint,
@@ -4943,6 +5547,7 @@ function buildBoundedSetChangeSet(input: {
   evidenceBundleId: string;
   queryFingerprint: string;
   objectId: string;
+  freshness?: FreshnessAuthorityV1;
 }): ChangeSetV3 {
   const principalScope = effectivePrincipalScope(input.config, input.capability, input.context);
   const operation = input.capability.operation;
@@ -5053,6 +5658,7 @@ function buildBoundedSetChangeSet(input: {
       allowed_columns: kind === "set_delete" ? [] : input.capability.allowed_columns ?? Object.keys(input.patch),
       ...(kind === "set_update" && operation.version_advance ? { version_advance: operation.version_advance } : {}),
     },
+    ...(input.freshness ? { freshness: input.freshness } : {}),
     frozen_set: frozenSet,
     ...(input.capability.reversibility ? {
       reversibility: {
@@ -5289,7 +5895,7 @@ class RuntimeDatabasePools {
         counter.active += 1;
         try {
           const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
-          await client.query(input.capability.protected_read ? "BEGIN READ ONLY" : "BEGIN");
+          await client.query(input.capability.protected_read || input.transaction_mode === "read_only" ? "BEGIN READ ONLY" : "BEGIN");
           const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
           if (timeoutMs) await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
           if (input.source.database_scope?.mode === "postgres_rls") {
@@ -5357,14 +5963,15 @@ class RuntimeDatabasePools {
         const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
         if (timeoutMs) await connection.query("SET SESSION max_execution_time = ?", [timeoutMs]).catch(() => undefined);
         const query = runtimeReadQuery(input.capability, "?", input.args, input.context);
-        if (input.capability.protected_read) await connection.query("START TRANSACTION READ ONLY");
+        const readOnlyTransaction = Boolean(input.capability.protected_read || input.transaction_mode === "read_only");
+        if (readOnlyTransaction) await connection.query("START TRANSACTION READ ONLY");
         try {
           const [rows] = await connection.execute(query.sql, query.values.map(scalar));
           const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-          if (input.capability.protected_read) await connection.query("COMMIT");
+          if (readOnlyTransaction) await connection.query("COMMIT");
           return { row: list[0] ?? {}, rows: list, rowCount: list.length };
         } catch (error) {
-          if (input.capability.protected_read) await connection.query("ROLLBACK").catch(() => undefined);
+          if (readOnlyTransaction) await connection.query("ROLLBACK").catch(() => undefined);
           throw error;
         }
       } finally {
@@ -5449,7 +6056,7 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
   const client = await pool.connect();
   try {
     const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
-    await client.query(input.capability.protected_read ? "BEGIN READ ONLY" : "BEGIN");
+    await client.query(input.capability.protected_read || input.transaction_mode === "read_only" ? "BEGIN READ ONLY" : "BEGIN");
     const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
     if (timeoutMs) {
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
@@ -5490,14 +6097,15 @@ async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: R
       await connection.query("SET SESSION max_execution_time = ?", [timeoutMs]).catch(() => undefined);
     }
     const query = runtimeReadQuery(input.capability, "?", input.args, input.context);
-    if (input.capability.protected_read) await connection.query("START TRANSACTION READ ONLY");
+    const readOnlyTransaction = Boolean(input.capability.protected_read || input.transaction_mode === "read_only");
+    if (readOnlyTransaction) await connection.query("START TRANSACTION READ ONLY");
     try {
       const [rows] = await connection.execute(query.sql, query.values.map(scalar));
       const list = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-      if (input.capability.protected_read) await connection.query("COMMIT");
+      if (readOnlyTransaction) await connection.query("COMMIT");
       return { row: list[0] ?? {}, rows: list, rowCount: list.length };
     } catch (error) {
-      if (input.capability.protected_read) await connection.query("ROLLBACK").catch(() => undefined);
+      if (readOnlyTransaction) await connection.query("ROLLBACK").catch(() => undefined);
       throw error;
     }
   } finally {

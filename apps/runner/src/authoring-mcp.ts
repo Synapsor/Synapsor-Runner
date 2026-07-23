@@ -77,7 +77,7 @@ export function createScopedExploreMcpServer(runtime: ScopedExploreRuntime): Mcp
   }).strict();
 
   const server = new McpServer(
-    { name: "synapsor-runner-authoring", version: "1.6.0" },
+    { name: "synapsor-runner-authoring", version: "1.6.1" },
     { capabilities: { tools: {} } },
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {

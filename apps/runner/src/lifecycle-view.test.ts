@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { parseWritebackJob } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
 import {
   LifecycleViewError,
   buildLifecycleView,
@@ -153,6 +153,88 @@ function seedCompleteLifecycle(store: ProposalStore) {
   };
 }
 
+function freshnessLifecycleFixture() {
+  const changeSet = proposalChangeSet({
+    proposalId: "wrp_freshness_lifecycle",
+    objectId: "INV-FRESHNESS-LIFECYCLE",
+  });
+  const dependencyUnsigned = {
+    id: "invoice_eligibility",
+    capability: "billing.inspect_invoice",
+    source_id: "src_pg_acme",
+    engine: "postgres" as const,
+    target: {
+      schema: "public",
+      table: "invoice_eligibility",
+      primary_key: { column: "invoice_id", value: "INV-FRESHNESS-LIFECYCLE" },
+      tenant_column: "tenant_id",
+    },
+    expected_version: { column: "updated_at", value: "2026-07-20T00:00:00.000Z" },
+    evidence: {
+      bundle_id: "ev_freshness_lifecycle",
+      query_fingerprint: "sha256:freshness-lifecycle-query",
+    },
+  };
+  const dependency = {
+    ...dependencyUnsigned,
+    descriptor_digest: canonicalJsonDigest(dependencyUnsigned),
+  };
+  const authorityUnsigned = {
+    schema_version: protocolVersions.freshnessAuthority,
+    required: true as const,
+    target: { mode: "exact_guard" as const, member_count: 1 },
+    dependencies: [dependency],
+  };
+  const freshness = {
+    ...authorityUnsigned,
+    dependency_set_digest: canonicalJsonDigest(authorityUnsigned),
+  };
+  const proposal = {
+    ...changeSet,
+    freshness,
+  };
+  const checkedAt = new Date().toISOString();
+  const proofUnsigned = {
+    schema_version: protocolVersions.freshnessProof,
+    proposal_id: proposal.proposal_id,
+    proposal_hash: proposal.integrity.proposal_hash,
+    proposal_version: proposal.proposal_version,
+    dependency_set_digest: freshness.dependency_set_digest,
+    checked_at: checkedAt,
+    valid_until: new Date(Date.parse(checkedAt) + 60_000).toISOString(),
+    source_adapters: [{ source_id: "src_pg_acme", engine: "postgres" as const }],
+    result: "fresh" as const,
+    safe_code: "FRESHNESS_FRESH",
+    target_count: 1,
+    supporting_count: 1,
+    checks: [
+      {
+        id: "target",
+        kind: "target" as const,
+        status: "fresh" as const,
+        safe_code: "FRESHNESS_TARGET_FRESH",
+        expected_version_digest: "sha256:target-version",
+        observed_version_digest: "sha256:target-version",
+      },
+      {
+        id: "invoice_eligibility",
+        kind: "supporting" as const,
+        status: "fresh" as const,
+        safe_code: "FRESHNESS_DEPENDENCY_FRESH",
+        expected_version_digest: "sha256:support-version",
+        observed_version_digest: "sha256:support-version",
+      },
+    ],
+  };
+  return {
+    proposal,
+    proof: {
+      ...proofUnsigned,
+      proof_digest: canonicalJsonDigest(proofUnsigned),
+    },
+  };
+}
+
 describe("typed lifecycle inspection", () => {
   it("uses deterministic no-id selection, filters, and bounded list output", () => {
     const store = new ProposalStore();
@@ -186,6 +268,45 @@ describe("typed lifecycle inspection", () => {
       expect(list).toMatchObject({ schema_version: lifecycleListSchemaVersion, total_matches: 2, returned: 1 });
       expect(list.lifecycles.map((item) => item.proposal_id)).toEqual(["wrp_b"]);
       expect(formatLifecycleList(list)).toContain("1 shown, 2 matched");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("shows the bounded freshness proof and its exact approval binding", () => {
+    const store = new ProposalStore();
+    try {
+      const fixture = freshnessLifecycleFixture();
+      store.createProposal(fixture.proposal);
+      const proof = store.recordFreshnessProof(fixture.proof);
+      store.approveProposal(fixture.proposal.proposal_id, {
+        approver: "support_lead_1",
+        proposal_hash: fixture.proposal.integrity.proposal_hash,
+        proposal_version: fixture.proposal.proposal_version,
+        freshness_proof_digest: proof.proof_digest,
+      });
+
+      const resolved = resolveLifecycleProposal(store, {
+        handle: fixture.proposal.proposal_id,
+      });
+      const view = buildLifecycleView(store, resolved.proposal, resolved.selection);
+      expect(view.freshness).toEqual({
+        required: true,
+        target_count: 1,
+        supporting_count: 1,
+        latest_status: "fresh",
+        latest_checked_at: proof.checked_at,
+        latest_proof_digest: proof.proof_digest,
+        latest_safe_code: "FRESHNESS_FRESH",
+        approval_proofs: [{
+          approval_id: expect.any(Number),
+          approver: "support_lead_1",
+          proof_digest: proof.proof_digest,
+        }],
+        next_action: "Apply still revalidates target and supporting dependencies.",
+      });
+      expect(formatLifecycleFirstLook(view)).toContain(`Freshness: fresh; target=1 supporting=1; proof=${proof.proof_digest}`);
+      expect(formatLifecycleDetails(view)).toContain("FRESHNESS_FRESH");
     } finally {
       store.close();
     }

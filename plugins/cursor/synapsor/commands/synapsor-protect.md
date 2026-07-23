@@ -20,7 +20,7 @@ activates an action or approves, applies, commits, or reverts source data.
 4. Run the pinned Runner scaffold with a shell-safe action identifier and the
    developer's exact intent:
 
-   `npx -y -p @synapsor/runner@1.6.0 synapsor-runner start --action <action_name> --description "<reviewed intent>"`
+   `npx -y -p @synapsor/runner@1.6.1 synapsor-runner start --action <action_name> --description "<reviewed intent>"`
 
 5. Read `synapsor/SAFE_ACTION_AGENT.md` and follow it as the canonical safety
    instruction source. Edit only the generated file under `synapsor/actions/`.
@@ -28,7 +28,7 @@ activates an action or approves, applies, commits, or reverts source data.
    until the developer supplies a reviewed answer.
 6. Run the project formatter for the action file, then run:
 
-   `npx -y -p @synapsor/runner@1.6.0 synapsor-runner action validate <generated-action.ts> --json`
+   `npx -y -p @synapsor/runner@1.6.1 synapsor-runner action validate <generated-action.ts> --json`
 
 7. Fix deterministic diagnostics without weakening tenant/principal scope,
    visibility, bounds, conflict handling, approval, or executor authority.

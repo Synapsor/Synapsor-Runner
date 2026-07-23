@@ -20,10 +20,12 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
+const PROPOSAL_FRESHNESS_KEYS = new Set(["approval", "dependencies"]);
+const FRESHNESS_DEPENDENCY_KEYS = new Set(["id", "capability", "identity_from_arg", "version_column"]);
 const METRICS_KEYS = new Set(["enabled", "token_env"]);
 const GRADUATED_TRUST_KEYS = new Set(["enabled", "kill_switch", "workspace_id", "project_id", "criteria"]);
 const GRADUATED_TRUST_CRITERION_KEYS = new Set([
@@ -225,6 +227,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateMetrics(input.metrics, strict, errors);
   validateGraduatedTrust(input.graduated_trust, strict, errors);
   validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
+  validateProposalFreshness(input.proposal_freshness, input.capabilities, strict, errors);
   validateEffectiveContextCompatibility(input.trusted_context, input.contexts, input.capabilities, errors);
   validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
   validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
@@ -1446,6 +1449,136 @@ function validateCapabilities(
     }
     capabilityNames.set(capability.name, index);
   });
+}
+
+function validateProposalFreshness(
+  value: unknown,
+  capabilitiesValue: unknown,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({
+      path: "$.proposal_freshness",
+      code: "PROPOSAL_FRESHNESS_NOT_OBJECT",
+      message: "proposal_freshness must map reviewed proposal capability names to freshness policy.",
+    });
+    return;
+  }
+  const capabilities = Array.isArray(capabilitiesValue)
+    ? capabilitiesValue.filter(isRecord)
+    : [];
+  const byName = new Map(capabilities.flatMap((capability) =>
+    isQualifiedName(capability.name) ? [[String(capability.name), capability] as const] : []));
+  for (const [proposalName, rawPolicy] of Object.entries(value)) {
+    const path = `$.proposal_freshness.${proposalName}`;
+    if (!isQualifiedName(proposalName)) {
+      errors.push({ path, code: "INVALID_FRESHNESS_CAPABILITY_NAME", message: "Freshness policy keys must be existing qualified proposal capability names." });
+      continue;
+    }
+    if (!isRecord(rawPolicy)) {
+      errors.push({ path, code: "FRESHNESS_POLICY_NOT_OBJECT", message: "Freshness policy must be an object." });
+      continue;
+    }
+    if (strict) checkUnknownKeys(rawPolicy, PROPOSAL_FRESHNESS_KEYS, path, errors);
+    if (rawPolicy.approval !== "required") {
+      errors.push({ path: `${path}.approval`, code: "FRESHNESS_APPROVAL_REQUIRED", message: "Freshness-enabled proposals must set approval to required." });
+    }
+    const proposal = byName.get(proposalName);
+    if (!proposal) {
+      errors.push({ path, code: "FRESHNESS_PROPOSAL_UNKNOWN", message: `Freshness policy references unknown proposal capability ${proposalName}.` });
+      continue;
+    }
+    if (proposal.kind !== "proposal") {
+      errors.push({ path, code: "FRESHNESS_PROPOSAL_REQUIRED", message: `${proposalName} must be a proposal capability.` });
+    }
+    const writeback = isRecord(proposal.writeback) ? proposal.writeback : undefined;
+    if (writeback?.mode !== "direct_sql") {
+      errors.push({
+        path,
+        code: "FRESHNESS_DIRECT_SQL_REQUIRED",
+        message: "Strict proposal freshness currently requires same-database direct_sql writeback; app-owned and cross-source handlers must enforce their own transaction preconditions.",
+      });
+    }
+    const operation = isRecord(proposal.operation) ? proposal.operation : undefined;
+    if ((operation?.kind ?? "update") !== "insert") {
+      const guard = isRecord(proposal.conflict_guard) ? proposal.conflict_guard : undefined;
+      if (!isSafeIdentifier(guard?.column)) {
+        errors.push({ path, code: "FRESHNESS_EXACT_TARGET_GUARD_REQUIRED", message: "Freshness-required UPDATE/DELETE needs an exact conflict_guard.column; weak row hashes are not sufficient." });
+      }
+    }
+    if (rawPolicy.dependencies !== undefined && !Array.isArray(rawPolicy.dependencies)) {
+      errors.push({ path: `${path}.dependencies`, code: "FRESHNESS_DEPENDENCIES_NOT_ARRAY", message: "dependencies must be an array of reviewed single-row read references." });
+      continue;
+    }
+    const dependencies = Array.isArray(rawPolicy.dependencies) ? rawPolicy.dependencies : [];
+    if (dependencies.length > 16) {
+      errors.push({ path: `${path}.dependencies`, code: "FRESHNESS_DEPENDENCY_LIMIT", message: "A proposal may declare at most 16 supporting freshness dependencies." });
+    }
+    const ids = new Set<string>();
+    for (const [index, rawDependency] of dependencies.entries()) {
+      const dependencyPath = `${path}.dependencies[${index}]`;
+      if (!isRecord(rawDependency)) {
+        errors.push({ path: dependencyPath, code: "FRESHNESS_DEPENDENCY_NOT_OBJECT", message: "Freshness dependency must be an object." });
+        continue;
+      }
+      if (strict) checkUnknownKeys(rawDependency, FRESHNESS_DEPENDENCY_KEYS, dependencyPath, errors);
+      if (!isSafeIdentifier(rawDependency.id)) {
+        errors.push({ path: `${dependencyPath}.id`, code: "INVALID_FRESHNESS_DEPENDENCY_ID", message: "Dependency id must be a fixed safe identifier." });
+      } else if (ids.has(String(rawDependency.id))) {
+        errors.push({ path: `${dependencyPath}.id`, code: "DUPLICATE_FRESHNESS_DEPENDENCY_ID", message: "Dependency ids must be unique within a proposal." });
+      } else {
+        ids.add(String(rawDependency.id));
+      }
+      if (!isQualifiedName(rawDependency.capability)) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "INVALID_FRESHNESS_DEPENDENCY_CAPABILITY", message: "Dependency capability must be a reviewed qualified capability name." });
+        continue;
+      }
+      const dependency = byName.get(String(rawDependency.capability));
+      if (!dependency) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_DEPENDENCY_UNKNOWN", message: `Unknown supporting capability ${String(rawDependency.capability)}.` });
+        continue;
+      }
+      if (dependency.kind !== "read" || dependency.protected_read !== undefined || dependency.aggregate !== undefined) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_SINGLE_ROW_READ_REQUIRED", message: "Supporting freshness dependencies must reference reviewed single-row read capabilities." });
+      }
+      if (dependency.name === proposalName) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_DEPENDENCY_CYCLE", message: "A proposal cannot depend on itself." });
+      }
+      if (dependency.source !== proposal.source) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_CROSS_SOURCE_UNSUPPORTED", message: "Strict atomic freshness requires the proposal and supporting dependency to use the same source." });
+      }
+      if ((dependency.context ?? null) !== (proposal.context ?? null)) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_CONTEXT_MISMATCH", message: "Supporting freshness dependencies must use the same reviewed trusted context as the proposal." });
+      }
+      const target = isRecord(dependency.target) ? dependency.target : undefined;
+      if (!isSafeIdentifier(target?.tenant_key) && target?.single_tenant_dev !== true) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_TENANT_SCOPE_REQUIRED", message: "Supporting dependencies require a trusted tenant key or an existing explicit single-tenant-dev boundary." });
+      }
+      const proposalTarget = isRecord(proposal.target) ? proposal.target : undefined;
+      if (isSafeIdentifier(target?.principal_scope_key) && !isSafeIdentifier(proposalTarget?.principal_scope_key)) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_PRINCIPAL_SCOPE_UNAVAILABLE", message: "A principal-scoped dependency cannot introduce a trusted principal value absent from the proposal authority." });
+      }
+      if (!isSafeIdentifier(rawDependency.identity_from_arg) || !isRecord(proposal.args) || !(String(rawDependency.identity_from_arg) in proposal.args)) {
+        errors.push({ path: `${dependencyPath}.identity_from_arg`, code: "FRESHNESS_IDENTITY_ARG_UNKNOWN", message: "identity_from_arg must name an existing scalar proposal argument." });
+      } else {
+        const proposalArg = isRecord(proposal.args[String(rawDependency.identity_from_arg)])
+          ? proposal.args[String(rawDependency.identity_from_arg)] as JsonRecord
+          : undefined;
+        if (!proposalArg || proposalArg.type === "object_array") {
+          errors.push({ path: `${dependencyPath}.identity_from_arg`, code: "FRESHNESS_IDENTITY_ARG_NOT_SCALAR", message: "identity_from_arg must reference one bounded scalar proposal argument." });
+        }
+      }
+      const lookup = isRecord(dependency.lookup) ? dependency.lookup : undefined;
+      if (!isSafeIdentifier(lookup?.id_from_arg) || !isRecord(dependency.args) || !(String(lookup?.id_from_arg) in dependency.args)) {
+        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_DEPENDENCY_LOOKUP_INVALID", message: "Supporting capability must have one fixed reviewed lookup argument." });
+      }
+      if (!isSafeIdentifier(rawDependency.version_column)) {
+        errors.push({ path: `${dependencyPath}.version_column`, code: "FRESHNESS_VERSION_COLUMN_REQUIRED", message: "version_column must be an exact fixed safe identifier." });
+      }
+    }
+  }
 }
 
 function validateCapability(

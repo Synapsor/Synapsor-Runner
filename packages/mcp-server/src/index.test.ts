@@ -15,7 +15,7 @@ import * as mcpAppsSdk from "@modelcontextprotocol/ext-apps";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps";
 import { SignJWT, exportJWK, exportSPKI, generateKeyPair } from "jose";
 import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, protocolVersions } from "@synapsor-runner/protocol";
 import {
   bindPostgresTrustedScope,
   CloudLinkedSynchronizer,
@@ -24,6 +24,7 @@ import {
   checkRunnerReadiness,
   describeIsolationAssurance,
   enqueueCloudLinkedResult,
+  evaluateProposalFreshness,
   loadRuntimeConfigFromFile,
   McpRuntimeError,
   openaiToolNameAlias,
@@ -35,6 +36,7 @@ import {
   serveStdio,
   startHttpMcpServer,
   startStreamableHttpMcpServer,
+  type DbRowReader,
   type RuntimeConfig,
 } from "./index.js";
 
@@ -358,6 +360,9 @@ function runtimeStoreAdapter(backing: ProposalStore): ProposalRuntimeStore {
     recordQueryAudit: (input) => backing.recordQueryAudit(input),
     findActiveProposal: (input) => backing.findActiveProposal(input),
     createProposal: (input) => backing.createProposal(input),
+    recordFreshnessProof: (input) => backing.recordFreshnessProof(input),
+    latestFreshnessProof: (proposalId) => backing.latestFreshnessProof(proposalId),
+    recordFreshnessApprovalBlocked: (proposalId, input) => backing.recordFreshnessApprovalBlocked(proposalId, input),
     approveProposalByPolicy: (proposalId, options) => backing.approveProposalByPolicy(proposalId, options),
     getProposal: (proposalId) => backing.getProposal(proposalId),
     events: (proposalId) => backing.events(proposalId),
@@ -397,6 +402,47 @@ function autoApprovalConfig(): RuntimeConfig {
       rules: [{ field: "late_fee_cents", max: 2500 }],
     },
   ];
+  return cloned;
+}
+
+function proposalFreshnessConfig(options: { policy?: boolean } = {}): RuntimeConfig {
+  const cloned = options.policy ? autoApprovalConfig() : structuredClone(config);
+  const proposal = cloned.capabilities?.find((capability) => capability.name === "billing.propose_late_fee_waiver");
+  if (!proposal) throw new Error("proposal fixture missing");
+  proposal.args.account_id = { type: "string", required: true, max_length: 128 };
+  proposal.writeback = { mode: "direct_sql" };
+  cloned.capabilities = [
+    ...(cloned.capabilities ?? []),
+    {
+      name: "billing.inspect_account_eligibility",
+      kind: "read",
+      source: "app_postgres",
+      target: {
+        schema: "public",
+        table: "account_eligibility",
+        primary_key: "account_id",
+        tenant_key: "tenant_id",
+      },
+      args: {
+        account_id: { type: "string", required: true, max_length: 128 },
+      },
+      lookup: { id_from_arg: "account_id" },
+      visible_columns: ["account_id", "eligible", "updated_at"],
+      evidence: "required",
+      max_rows: 1,
+    },
+  ];
+  cloned.proposal_freshness = {
+    "billing.propose_late_fee_waiver": {
+      approval: "required",
+      dependencies: [{
+        id: "account_eligibility",
+        capability: "billing.inspect_account_eligibility",
+        identity_from_arg: "account_id",
+        version_column: "updated_at",
+      }],
+    },
+  };
   return cloned;
 }
 
@@ -1999,6 +2045,204 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("captures bounded supporting authority and revalidates target and evidence in read-only transactions", async () => {
+    const store = new ProposalStore();
+    const freshnessConfig = proposalFreshnessConfig();
+    let targetVersion = fixtureRow.updated_at;
+    let supportingVersion = "2026-06-20T14:00:00Z";
+    const readRow = vi.fn(async (input: Parameters<DbRowReader>[0]) => {
+      if (input.capability.name === "billing.inspect_account_eligibility") {
+        return {
+          row: {
+            account_id: String(input.args.account_id),
+            tenant_id: input.context.tenant_id,
+            eligible: true,
+            updated_at: supportingVersion,
+            internal_risk_score: "must-never-be-persisted",
+          },
+          rowCount: 1,
+        };
+      }
+      return {
+        row: { ...fixtureRow, tenant_id: input.context.tenant_id, updated_at: targetVersion },
+        rowCount: 1,
+      };
+    });
+    const runtime = createMcpRuntime(freshnessConfig, { store, readRow });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        account_id: "ACCT-44",
+        reason: "reviewed support waiver",
+      });
+      const proposal = store.getProposal(String(result.proposal_id));
+      expect(proposal?.change_set).toMatchObject({
+        freshness: {
+          required: true,
+          target: { mode: "exact_guard", member_count: 1 },
+          dependencies: [{
+            id: "account_eligibility",
+            capability: "billing.inspect_account_eligibility",
+            target: {
+              table: "account_eligibility",
+              primary_key: { column: "account_id", value: "ACCT-44" },
+              tenant_column: "tenant_id",
+            },
+            expected_version: { column: "updated_at", value: "2026-06-20 14:00:00.000000Z" },
+          }],
+        },
+      });
+      if (!proposal) throw new Error("freshness proposal missing");
+
+      readRow.mockClear();
+      const fresh = await evaluateProposalFreshness({
+        config: freshnessConfig,
+        proposal,
+        readRow,
+        env: {},
+        clock: () => Date.parse("2026-07-23T12:00:00.000Z"),
+      });
+      expect(fresh).toMatchObject({
+        required: true,
+        status: "fresh",
+        safe_code: "FRESHNESS_FRESH",
+        target_count: 1,
+        supporting_count: 1,
+      });
+      expect(readRow).toHaveBeenCalledTimes(2);
+      expect(readRow.mock.calls.every(([input]) => input.transaction_mode === "read_only")).toBe(true);
+
+      supportingVersion = "2026-06-20T15:00:00Z";
+      const supportingStale = await evaluateProposalFreshness({ config: freshnessConfig, proposal, readRow, env: {} });
+      expect(supportingStale).toMatchObject({
+        status: "stale",
+        safe_code: "FRESHNESS_DEPENDENCY_STALE",
+      });
+      if (supportingStale.required) {
+        expect(supportingStale.proof.checks).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            id: "account_eligibility",
+            kind: "supporting",
+            status: "stale",
+          }),
+        ]));
+      }
+
+      supportingVersion = "2026-06-20T14:00:00Z";
+      targetVersion = "2026-06-20T16:00:00Z";
+      await expect(evaluateProposalFreshness({ config: freshnessConfig, proposal, readRow, env: {} })).resolves.toMatchObject({
+        status: "stale",
+        safe_code: "FRESHNESS_TARGET_STALE",
+      });
+
+      const serializedLedger = JSON.stringify(store.sharedLedgerEntries());
+      expect(serializedLedger).not.toContain("must-never-be-persisted");
+      expect(serializedLedger).not.toContain("internal_risk_score");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("classifies transient freshness reads without recording an approval", async () => {
+    const store = new ProposalStore();
+    const freshnessConfig = proposalFreshnessConfig();
+    const runtime = createMcpRuntime(freshnessConfig, {
+      store,
+      readRow: async (input) => input.capability.name === "billing.inspect_account_eligibility"
+        ? {
+          row: { account_id: "ACCT-44", tenant_id: "acme", eligible: true, updated_at: "2026-06-20T14:00:00Z" },
+          rowCount: 1,
+        }
+        : { row: fixtureRow, rowCount: 1 },
+    });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        account_id: "ACCT-44",
+        reason: "reviewed support waiver",
+      });
+      const proposal = store.getProposal(String(result.proposal_id));
+      if (!proposal) throw new Error("freshness proposal missing");
+      const unavailable = await evaluateProposalFreshness({
+        config: freshnessConfig,
+        proposal,
+        env: {},
+        readRow: async () => {
+          const error = new Error("synthetic source timeout; postgresql://user:secret@example.invalid/app");
+          Object.assign(error, { code: "ETIMEDOUT" });
+          throw error;
+        },
+      });
+      expect(unavailable).toMatchObject({
+        required: true,
+        status: "unavailable",
+        safe_code: "FRESHNESS_TEMPORARILY_UNAVAILABLE",
+      });
+      expect(JSON.stringify(unavailable)).not.toContain("secret");
+      expect(store.approvals(proposal.proposal_id)).toEqual([]);
+      expect(store.getProposal(proposal.proposal_id)?.state).toBe("pending_review");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("does not let policy auto-approval or tools/list bypass freshness authority", async () => {
+    const freshnessConfig = proposalFreshnessConfig({ policy: true });
+    const withoutOverlay = structuredClone(freshnessConfig);
+    delete withoutOverlay.proposal_freshness;
+    const baseline = createMcpRuntime(withoutOverlay, {
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const store = new ProposalStore();
+    let supportingRead = 0;
+    const runtime = createMcpRuntime(freshnessConfig, {
+      store,
+      readRow: async (input) => {
+        if (input.capability.name === "billing.inspect_account_eligibility") {
+          supportingRead += 1;
+          return {
+            row: {
+              account_id: "ACCT-44",
+              tenant_id: "acme",
+              eligible: true,
+              updated_at: supportingRead === 1 ? "2026-06-20T14:00:00Z" : "2026-06-20T15:00:00Z",
+            },
+            rowCount: 1,
+          };
+        }
+        return { row: fixtureRow, rowCount: 1 };
+      },
+    });
+    try {
+      expect(runtime.listTools()).toEqual(baseline.listTools());
+      expect(runtime.listTools().some((tool) => /freshness|approve|apply|commit|execute_sql/i.test(tool.name))).toBe(false);
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        account_id: "ACCT-44",
+        credit_cents: 2500,
+        reason: "documented outage credit",
+      });
+      expect(result).toMatchObject({
+        status: "freshness_conflict",
+        approval_required: false,
+        freshness: {
+          status: "stale",
+          safe_code: "FRESHNESS_DEPENDENCY_STALE",
+        },
+        source_database_mutated: false,
+      });
+      const proposal = store.getProposal(String(result.proposal_id));
+      expect(proposal?.state).toBe("conflict");
+      expect(store.approvals(String(result.proposal_id))).toEqual([]);
+      expect(store.events(String(result.proposal_id))).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "proposal_approval_blocked_freshness" }),
+      ]));
+    } finally {
+      await runtime.close();
+      await baseline.close();
+    }
+  });
+
   it("requires the configured Postgres runtime-store URL env before serving", () => {
     const sharedRuntimeStoreConfig = structuredClone(config);
     sharedRuntimeStoreConfig.storage = {
@@ -2103,6 +2347,97 @@ describe("local Synapsor MCP runtime", () => {
       const payload = store.listCloudOutbox({ proposal_id: proposalId }).find((item) => item.kind === "proposal")?.payload;
       expect(JSON.stringify(payload)).not.toContain("runner-test-token");
       expect(JSON.stringify(payload)).not.toContain("postgres://");
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("projects only bounded freshness authority into Cloud-linked proposal metadata", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-cloud-linked-freshness-"));
+    const connectionPath = path.join(dir, "synapsor.cloud.json");
+    fs.writeFileSync(connectionPath, JSON.stringify({
+      cloud: {
+        protocol_version: "1.0",
+        base_url_env: "SYNAPSOR_CLOUD_BASE_URL",
+        runner_token_env: "SYNAPSOR_RUNNER_TOKEN",
+        runner_id: "runner_freshness_test",
+        project_id: "prj_test",
+        source_id: "src_cloud",
+        runner_source_id: "app_postgres",
+        contract_id: "contract_test",
+        contract_version_id: "version_test",
+        contract_digest: `sha256:${"a".repeat(64)}`,
+      },
+    }));
+    const linked = proposalFreshnessConfig();
+    linked.governance = {
+      mode: "cloud_linked",
+      connection_file: connectionPath,
+      evidence_residency: "metadata_only",
+      queue_when_unavailable: true,
+    };
+    const store = new ProposalStore(":memory:");
+    const runtime = createMcpRuntime(linked, {
+      store,
+      env: {
+        SYNAPSOR_CLOUD_BASE_URL: "https://cloud.example",
+        SYNAPSOR_RUNNER_TOKEN: "runner-freshness-secret-token",
+      },
+      readRow: async (input) => input.capability.name === "billing.inspect_account_eligibility"
+        ? {
+          row: {
+            account_id: "ACCT-44",
+            tenant_id: "acme",
+            eligible: true,
+            updated_at: "2026-06-20T14:00:00Z",
+            internal_risk_score: "must-never-leave-local-runner",
+          },
+          rowCount: 1,
+        }
+        : { row: fixtureRow, rowCount: 1 },
+    });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        account_id: "ACCT-44",
+        reason: "reviewed support waiver",
+      });
+      expect(result).toMatchObject({
+        status: "pending_cloud_sync",
+        governance: { authority: "synapsor_cloud", evidence_residency: "metadata_only" },
+        source_database_mutated: false,
+      });
+      const proposalId = String(result.proposal_id);
+      const payload = store.listCloudOutbox({ proposal_id: proposalId })
+        .find((item) => item.kind === "proposal")?.payload as any;
+      expect(payload?.change_set?.freshness).toMatchObject({
+        schema_version: protocolVersions.freshnessAuthority,
+        required: true,
+        target: { mode: "exact_guard", member_count: 1 },
+        dependencies: [{
+          id: "account_eligibility",
+          capability: "billing.inspect_account_eligibility",
+          source_id: "app_postgres",
+          target: {
+            schema: "public",
+            table: "account_eligibility",
+            primary_key: { column: "account_id", value: "ACCT-44" },
+            tenant_column: "tenant_id",
+          },
+          expected_version: {
+            column: "updated_at",
+            value: "2026-06-20 14:00:00.000000Z",
+          },
+        }],
+      });
+      expect(payload.change_set.evidence.items).toEqual([]);
+      const serialized = JSON.stringify(payload);
+      expect(serialized).not.toContain("runner-freshness-secret-token");
+      expect(serialized).not.toContain("must-never-leave-local-runner");
+      expect(serialized).not.toContain("internal_risk_score");
+      expect(serialized).not.toContain("postgres://");
+      expect(serialized).not.toContain("proof_digest");
     } finally {
       await runtime.close();
       store.close();

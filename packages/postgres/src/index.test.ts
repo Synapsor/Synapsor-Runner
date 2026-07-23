@@ -14,7 +14,7 @@ import {
   type PostgresApplyClient
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
-import { canonicalJsonStringify } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -35,6 +35,37 @@ const job = {
   idempotency_key: "idem",
   lease_expires_at: 1
 };
+
+function jobWithFreshness(expectedVersion = "eligibility-v1") {
+  const dependencyUnsigned = {
+    id: "invoice_eligibility",
+    capability: "billing.inspect_invoice_eligibility",
+    source_id: "src_1",
+    engine: "postgres" as const,
+    target: {
+      schema: "public",
+      table: "invoice_eligibility",
+      primary_key: { column: "invoice_id", value: "T-1042" },
+      tenant_column: "tenant_id",
+    },
+    expected_version: { column: "updated_at", value: expectedVersion },
+    evidence: { bundle_id: "ev_eligibility", query_fingerprint: "sha256:eligibility-query" },
+  };
+  const dependency = { ...dependencyUnsigned, descriptor_digest: canonicalJsonDigest(dependencyUnsigned) };
+  const authorityUnsigned = {
+    schema_version: protocolVersions.freshnessAuthority,
+    required: true as const,
+    target: { mode: "exact_guard" as const, member_count: 1 },
+    dependencies: [dependency],
+  };
+  return parseWritebackJob({
+    ...job,
+    freshness: {
+      ...authorityUnsigned,
+      dependency_set_digest: canonicalJsonDigest(authorityUnsigned),
+    },
+  });
+}
 
 describe("postgres adapter", () => {
   it("binds PostgreSQL RLS settings as transaction-local parameter values", async () => {
@@ -230,6 +261,36 @@ describe("postgres adapter", () => {
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(false);
     expect(client.recordedReceiptStatus).toBe("conflict");
     expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("locks and revalidates reviewed supporting evidence before the target mutation", async () => {
+    const client = new FakePostgresClient({
+      freshnessVersion: "eligibility-v1",
+      businessRow: { __synapsor_conflict_value: "v1" },
+    });
+    const result = await applyPostgresJobWithClient(jobWithFreshness(), config, client);
+    expect(result).toMatchObject({ status: "applied", affected_rows: 1 });
+    const dependencyLock = client.sqlLog.findIndex((sql) => sql.includes('FROM "public"."invoice_eligibility"'));
+    const targetLock = client.sqlLog.findIndex((sql) => sql.includes('FROM "public"."tickets"'));
+    const mutation = client.sqlLog.findIndex((sql) => sql.startsWith('UPDATE "public"."tickets"'));
+    expect(dependencyLock).toBeGreaterThan(-1);
+    expect(targetLock).toBeGreaterThan(dependencyLock);
+    expect(mutation).toBeGreaterThan(targetLock);
+  });
+
+  it("fails a stale supporting dependency closed with zero target mutation", async () => {
+    const client = new FakePostgresClient({
+      freshnessVersion: "eligibility-v2",
+      businessRow: { __synapsor_conflict_value: "v1" },
+    });
+    const result = await applyPostgresJobWithClient(jobWithFreshness(), config, client);
+    expect(result).toMatchObject({
+      status: "conflict",
+      affected_rows: 0,
+      error_code: "FRESHNESS_DEPENDENCY_STALE",
+    });
+    expect(client.sqlLog.some((sql) => sql.startsWith('UPDATE "public"."tickets"'))).toBe(false);
+    expect(client.recordedReceiptStatus).toBe("conflict");
   });
 
   it("blocks missing primary-key or tenant-scoped rows before update", async () => {
@@ -995,6 +1056,7 @@ class FakePostgresClient implements PostgresApplyClient {
     businessRow?: Record<string, unknown>;
     businessUpdateRowCount?: number;
     receiptUpdateRowCount?: number;
+    freshnessVersion?: string;
   } = {}) {}
 
   async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
@@ -1007,6 +1069,13 @@ class FakePostgresClient implements PostgresApplyClient {
     }
     if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
       return { rows: this.options.receiptRow ? [this.options.receiptRow] : [], rowCount: this.options.receiptRow ? 1 : 0 };
+    }
+    if (sql.startsWith("SELECT") && sql.includes('FROM "public"."invoice_eligibility"') && sql.includes("FOR UPDATE")) {
+      const value = this.options.freshnessVersion;
+      return {
+        rows: value === undefined ? [] : [{ __synapsor_freshness_version: value }],
+        rowCount: value === undefined ? 0 : 1,
+      };
     }
     if (sql.startsWith("SELECT") && sql.includes('FROM "public"."tickets"') && sql.includes("FOR UPDATE")) {
       return { rows: this.options.businessRow ? [this.options.businessRow] : [], rowCount: this.options.businessRow ? 1 : 0 };

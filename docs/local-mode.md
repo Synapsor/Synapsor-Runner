@@ -140,16 +140,33 @@ Show a proposal:
 npx -y -p @synapsor/runner synapsor-runner proposals show wrp_123 --store ./.synapsor/local.db
 ```
 
+Check a freshness-enabled proposal without copying its id:
+
+```bash
+npx -y -p @synapsor/runner synapsor-runner proposals check-freshness latest \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
 Approve:
 
 ```bash
 npx -y -p @synapsor/runner synapsor-runner proposals approve wrp_123 \
+  --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --actor local_reviewer \
   --yes
 ```
 
 Before approval, the CLI prints the reviewer-critical proposal details: trusted principal, tenant, target row, primary key, required role, proposal hash/version, allowed columns, conflict guard, evidence bundle/query fingerprint, writeback boundary, source mutation state, and exact before/after diff. Interactive approval still requires typing `yes`; noninteractive scripts must pass `--yes`.
+
+When `proposal_freshness` is configured for that capability, approval also
+performs a live read-only check of the target and each declared same-source
+supporting dependency. A fresh result is bound to the approval by proof digest.
+A stale result records no approval and terminally conflicts the proposal; an
+unavailable source records no approval and leaves it pending. Apply always
+revalidates again because source data can change after approval. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
 
 Create a guarded writeback job from an approved proposal:
 
@@ -203,9 +220,11 @@ npx -y -p @synapsor/runner synapsor-runner ui --config synapsor.runner.json --st
 ```
 
 The UI shows setup summary, semantic tools, proposal states, exact diffs,
-evidence, approval state, receipts, and replay. It binds to `127.0.0.1` by
-default, uses a per-run local session token, and requires CSRF protection for
-approve/reject actions.
+evidence, live freshness state, approval state, receipts, and replay. A
+freshness-required approve control stays disabled until the live result is
+fresh; the approve request performs another live check. The UI binds to
+`127.0.0.1` by default, uses a per-run local session token, and requires CSRF
+protection for approve/reject actions.
 
 The UI does not expose raw SQL, database URLs, password values, MCP approval
 tools, MCP commit tools, or controls that widen configured tables/columns.

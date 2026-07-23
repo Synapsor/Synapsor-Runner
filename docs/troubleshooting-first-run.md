@@ -364,6 +364,82 @@ Fix:
 Use a read-only credential for MCP reads and a separate writer credential only
 for trusted apply.
 
+## Freshness Check Is Stale
+
+What happened:
+
+```text
+Freshness: stale
+code: FRESHNESS_TARGET_STALE
+```
+
+or:
+
+```text
+code: FRESHNESS_DEPENDENCY_STALE
+```
+
+Why it matters:
+
+The proposal target or one explicitly declared supporting row no longer has
+the exact version captured by the immutable proposal. Runner records no
+approval and never updates the old proposal to match current data.
+
+Fix:
+
+Perform a new reviewed source read and create a new proposal. Do not retry
+approval on the stale proposal or edit its stored JSON.
+
+## Freshness Check Is Unavailable
+
+What happened:
+
+```text
+Freshness: unavailable
+code: FRESHNESS_TEMPORARILY_UNAVAILABLE
+```
+
+Why it matters:
+
+Runner could not prove current source state. Unavailability is not treated as
+fresh, and no approval was recorded.
+
+Fix:
+
+Restore the read connection or resolve the transient database/pool issue, then
+retry:
+
+```bash
+synapsor-runner proposals check-freshness latest \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+```
+
+## Freshness Writer Lock Probe Failed
+
+What happened:
+
+`doctor --check-writeback` reports that the writer cannot lock a declared
+supporting dependency.
+
+Why it matters:
+
+Approval-time reads alone cannot provide the final atomic guarantee. The direct
+SQL adapter must lock and compare every dependency inside the mutation
+transaction.
+
+Fix:
+
+Grant only the narrow table/column privilege required for the writer's
+`SELECT ... FOR UPDATE` locking read, then rerun:
+
+```bash
+synapsor-runner doctor --check-writeback --config ./synapsor.runner.json
+```
+
+Do not replace this with an overprivileged owner/superuser role. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
 ## MCP Client Config Contains A Secret
 
 What happened:

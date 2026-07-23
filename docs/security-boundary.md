@@ -120,6 +120,16 @@ explicit host-level administrative boundary.
 Proposal tools read the current row through the read credential, store evidence
 and an exact before/after diff, and leave the source database unchanged.
 
+For an explicitly freshness-enabled proposal, Runner also captures exact
+version authority for the target and reviewed same-source supporting rows.
+Before each local approval it performs a read-only live check and binds the
+successful proof to that approval. This improves review integrity but does not
+hold a lock through apply. The trusted direct SQL apply path therefore locks
+and rechecks the dependencies again inside the mutation transaction. A stale
+or unverifiable dependency produces no mutation and is never silently
+refreshed. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
 Code-first Safe Actions do not create authority when a file is edited. Runner
 parses the restricted TypeScript object without importing or executing it,
 compiles it into a digest-addressed disabled canonical draft, and keeps the
@@ -153,10 +163,17 @@ outside the model-facing MCP server and verifies:
 - conflict/version guard;
 - idempotency key;
 - operation-specific version or source-unique deduplication guard;
+- declared same-source supporting-version guards, when freshness is required;
 - job expiry;
 - exactly one reviewed row or every member of one bounded frozen set.
 
 If any authority check cannot be verified, the write fails closed.
+
+Strict freshness is intentionally limited to same-database direct SQL
+writeback. Runner rejects app-owned or cross-source strict freshness because it
+cannot claim one atomic transaction around those effects. Cloud can govern an
+approval, but it does not read the source; the local Runner revalidates source
+state before a Cloud-approved job can mutate data.
 
 For direct SQL writeback, the writer connection is the env var named by the
 source `write_url_env` in `synapsor.runner.json`. With `source_db` receipt

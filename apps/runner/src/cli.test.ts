@@ -396,7 +396,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.6.0");
+      expect(output.join("").trim()).toBe("1.6.1");
     }
   });
 
@@ -1498,7 +1498,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.5.0",
         "@synapsor/dsl": "1.5.0",
-        "@synapsor/runner": "1.6.0",
+        "@synapsor/runner": "1.6.1",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -5677,6 +5677,23 @@ END
     const proposalJson = JSON.parse(output.join(""));
     expect(proposalJson.proposal.proposal_hash).toBe("sha256:proposal");
     expect(proposalJson.proposal.change_set.guards.expected_version.column).toBe("updated_at");
+
+    output.length = 0;
+    await expect(main(["proposals", "check-freshness", "latest", "--json", "--store", storePath])).resolves.toBe(0);
+    expect(JSON.parse(output.join(""))).toEqual({
+      schema_version: "synapsor.proposal-freshness-result.v1",
+      required: false,
+      status: "not_required",
+      safe_code: "FRESHNESS_NOT_REQUIRED",
+      target_count: 0,
+      supporting_count: 0,
+      source_database_changed: false,
+    });
+
+    output.length = 0;
+    await expect(main(["proposals", "check-freshness", "latest", "--details", "--store", storePath])).resolves.toBe(0);
+    expect(output.join("")).toContain("Freshness: not required");
+    expect(output.join("")).toContain("target guard remains enforced at apply");
 
     output.length = 0;
     await expect(main(["proposals", "approve", "latest", "--store", storePath, "--actor", "support_lead_1", "--yes"])).resolves.toBe(0);

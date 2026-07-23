@@ -27,6 +27,8 @@ try {
   const entries = run("tar", ["-tzf", tarball]).stdout.trim().split(/\r?\n/);
   assert(entries.includes("package/docs/store-lifecycle.md"), "packed Runner is missing docs/store-lifecycle.md");
   assert(entries.includes("package/docs/dsl-reference.md"), "packed Runner is missing docs/dsl-reference.md");
+  assert(entries.includes("package/docs/proposal-evidence-freshness.md"),
+    "packed Runner is missing docs/proposal-evidence-freshness.md");
   const forbiddenEntry = entries.find((entry) => /(^|\/)(?:development|\.synapsor)(?:\/|$)|\.(?:db|db-wal|db-shm|log)$|mcp-audit\.sarif$/i.test(entry));
   assert(!forbiddenEntry, "packed Runner contains development or runtime state", forbiddenEntry);
 
@@ -41,6 +43,11 @@ try {
   assert(help.stdout.includes("lifecycle show latest"), "packed lifecycle help omits no-ID latest inspection", help.stdout);
   assert(help.stdout.includes("receipt:<numeric-id>"), "packed lifecycle help omits typed numeric handles", help.stdout);
   assert(help.stdout.includes("does not materialize replay records"), "packed lifecycle help does not state its read-only behavior", help.stdout);
+  const proposalHelp = runPacked(cli, ["proposals", "--help"]);
+  assert(proposalHelp.stdout.includes("proposals check-freshness latest"),
+    "packed proposal help omits no-ID freshness inspection", proposalHelp.stdout);
+  assert(proposalHelp.stdout.includes("apply rechecks again before mutation"),
+    "packed proposal help overstates approval-time freshness", proposalHelp.stdout);
 
   const stateContainer = path.join(tempDir, "try-state");
   const proof = runPacked(cli, ["try", "--prove", "--json", "--yes", "--no-open", "--state-dir", stateContainer], {}, { timeout: 30000 });
@@ -51,6 +58,17 @@ try {
   assert(typeof storePath === "string" && path.isAbsolute(storePath), "try did not return an absolute ledger path", proofResult.paths);
 
   const before = sqliteTableCounts(storePath);
+  const freshness = lifecycleJson(cli, [
+    "proposals", "check-freshness", "latest", "--json", "--store", storePath,
+  ]);
+  assert(freshness.schema_version === "synapsor.proposal-freshness-result.v1",
+    "packed freshness inspection has the wrong schema version", freshness);
+  assert(freshness.required === false && freshness.status === "not_required" &&
+    freshness.safe_code === "FRESHNESS_NOT_REQUIRED",
+  "packed freshness inspection changed legacy proposal behavior", freshness);
+  assert(JSON.stringify(sqliteTableCounts(storePath)) === JSON.stringify(before),
+    "not-required freshness inspection changed durable SQLite row counts",
+    { before, after: sqliteTableCounts(storePath) });
   const bare = lifecycleJson(cli, ["lifecycle", "--json", "--store", storePath]);
   const show = lifecycleJson(cli, ["lifecycle", "show", "--json", "--store", storePath]);
   const latest = lifecycleJson(cli, ["lifecycle", "show", "latest", "--json", "--store", storePath]);
@@ -122,13 +140,18 @@ try {
 
   const lifecycleDoc = await fs.readFile(path.join(packedRoot, "docs", "store-lifecycle.md"), "utf8");
   const dslDoc = await fs.readFile(path.join(packedRoot, "docs", "dsl-reference.md"), "utf8");
+  const freshnessDoc = await fs.readFile(path.join(packedRoot, "docs", "proposal-evidence-freshness.md"), "utf8");
   assert(lifecycleDoc.includes("synapsor.lifecycle-view.v1") && lifecycleDoc.includes("lifecycle show latest"),
     "packed lifecycle documentation is stale");
   assert(dslDoc.includes("CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED") && dslDoc.includes("SESSION_BINDING_UNSUPPORTED"),
     "packed DSL documentation is stale");
+  assert(/approval-time freshness can never replace\s+apply-time concurrency control/i.test(freshnessDoc) &&
+    freshnessDoc.includes("proposals check-freshness latest"),
+  "packed proposal freshness documentation is stale");
 
   process.stdout.write(`Packed Runner ${expectedVersion} lifecycle and DSL behavior verified:\n`);
   process.stdout.write("- no-ID lifecycle inspection and typed proposal/evidence/replay handles resolve\n");
+  process.stdout.write("- no-ID freshness inspection preserves legacy not-required behavior without mutating the ledger\n");
   process.stdout.write("- lifecycle JSON is stable and inspection leaves every SQLite row count unchanged\n");
   process.stdout.write("- exact UPDATE guards are preserved and omitted guards fail closed\n");
   process.stdout.write("- weak row-hash guards require an explicit acknowledgement and warning\n");

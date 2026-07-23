@@ -191,6 +191,16 @@ business action, transaction boundaries, and safe errors. See
 [Writeback Executors](writeback-executors.md) and
 [Handler Helper](handler-helper.md).
 
+For a direct SQL proposal whose approval depends on live source facts, use the
+optional `proposal_freshness` overlay. It rechecks the target and declared
+same-source supporting rows before approval, then locks and rechecks them again
+inside the final PostgreSQL/MySQL transaction. Run
+`doctor --check-writeback` to prove that the writer can perform every
+dependency locking read. App-owned and cross-source effects must enforce their
+own equivalent transactional preconditions; Runner rejects them from strict
+freshness mode. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
 ## Local Ledger
 
 Default local ledger path:
@@ -589,6 +599,10 @@ Doctor reports should be redacted by default before sharing. They must not
 include database passwords, bearer tokens, handler secrets, or raw driver
 connection strings.
 
+For freshness-enabled proposals, `--check-writeback` includes rollback-only
+dependency lock probes. A passing metadata/read check alone does not prove that
+the writer has the locking privilege needed at apply.
+
 ## Logging And Redaction
 
 Expected public outputs must avoid secrets in:
@@ -613,3 +627,8 @@ Before promoting a package or calling a build production-candidate:
 The release gate should cover typecheck, focused tests, packed-package install,
 quick demo, own-db fixture, MCP stdio/HTTP checks, direct writeback,
 app-owned executor paths, package dry-run, and docs/package consistency.
+The 1.6.1 security gate additionally runs:
+
+```bash
+corepack pnpm test:proposal-freshness
+```

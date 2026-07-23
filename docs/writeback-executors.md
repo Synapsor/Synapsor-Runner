@@ -250,3 +250,11 @@ Executor secrets are never exposed over MCP. The model never receives:
 
 `MCP tool call = request/proposal authority. Trusted runner = execution
 authority.`
+
+Optional Runner `proposal_freshness` adds pre-approval and final-transaction
+checks only to same-source direct SQL writeback. It is deliberately rejected
+for HTTP/command handlers and cross-source dependencies: Runner cannot claim an
+atomic source check around an externally owned transaction. Handler authors
+must implement equivalent scope, exact-version, locking, idempotency, and
+receipt semantics themselves. See
+[Proposal And Evidence Freshness](proposal-evidence-freshness.md).

@@ -4,9 +4,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { buildProposalReviewView, createMcpRuntime, loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
+import { buildProposalReviewView, createMcpRuntime, evaluateProposalFreshness, loadRuntimeConfigFromFile, type ProposalFreshnessEvaluation } from "@synapsor-runner/mcp-server";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { protocolVersions } from "@synapsor-runner/protocol";
+import { protocolVersions, type FreshnessProofV1 } from "@synapsor-runner/protocol";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { cursorProjectStatus } from "./cursor-project.js";
 import {
@@ -46,6 +46,7 @@ export type LocalUiOptions = {
   projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
   safeActionPreview?: SafeActionPreview;
+  freshnessEvaluator?: ProposalFreshnessEvaluator;
 };
 
 export type SafeActionPreview = (input: {
@@ -59,6 +60,10 @@ export type SafeActionPreview = (input: {
   proposal_hash: string;
   source_database_changed: boolean;
 }>;
+
+export type ProposalFreshnessEvaluator = (
+  proposal: StoredProposal,
+) => Promise<ProposalFreshnessEvaluation>;
 
 export type LocalUiStoreAccess = <T>(
   mode: "read" | "write",
@@ -89,11 +94,13 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const projectRoot = path.resolve(options.projectRoot ?? path.dirname(configPath));
   const boundaryRoot = options.boundaryRoot ? path.resolve(options.boundaryRoot) : undefined;
   const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
+  const freshnessEvaluator = options.freshnessEvaluator
+    ?? ((proposal: StoredProposal) => evaluateWorkbenchFreshness(configPath, proposal));
   const bootstrapState = { consumed: false };
 
   const server = createServer(async (request, response) => {
     try {
-      await handleRequest({ request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, token, csrfToken, tour: options.tour === true, bootstrapState });
+      await handleRequest({ request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, freshnessEvaluator, token, csrfToken, tour: options.tour === true, bootstrapState });
     } catch (error) {
       sendJson(response, 500, {
         ok: false,
@@ -138,12 +145,13 @@ async function handleRequest(input: {
   boundaryRoot?: string;
   storeAccess: LocalUiStoreAccess;
   safeActionPreview: SafeActionPreview;
+  freshnessEvaluator: ProposalFreshnessEvaluator;
   token: string;
   csrfToken: string;
   tour: boolean;
   bootstrapState: { consumed: boolean };
 }): Promise<void> {
-  const { request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, token, csrfToken, tour, bootstrapState } = input;
+  const { request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, freshnessEvaluator, token, csrfToken, tour, bootstrapState } = input;
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
   if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
     if (url.searchParams.get("token") !== token || bootstrapState.consumed) {
@@ -488,7 +496,29 @@ async function handleRequest(input: {
         events: store.events(proposalId),
         receipts,
         evidence: store.getEvidenceBundle(proposal.change_set.evidence.bundle_id),
+        freshness: storedFreshnessSummary(proposal, store.latestFreshnessProof(proposalId)),
       });
+    });
+    return;
+  }
+
+  const freshnessMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/check-freshness$/);
+  if (request.method === "POST" && freshnessMatch) {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for proposal freshness checks" });
+      return;
+    }
+    const proposalId = decodeURIComponent(freshnessMatch[1] ?? "");
+    const proposal = await storeAccess("read", "proposal-freshness-read", (store) => requireProposal(store, proposalId));
+    const freshness = await freshnessEvaluator(proposal);
+    if (freshness.required) {
+      await storeAccess("write", "proposal-freshness-record", (store) => {
+        store.recordFreshnessProof(freshness.proof);
+      });
+    }
+    sendJson(response, freshnessHttpStatus(freshness), {
+      ok: freshness.status === "fresh" || freshness.status === "not_required",
+      freshness: workbenchFreshnessSummary(freshness),
     });
     return;
   }
@@ -510,6 +540,32 @@ async function handleRequest(input: {
     const proposalId = decodeURIComponent(approveMatch[1] ?? "");
     const body = await readJsonBody(request);
     if (body.confirm !== "approve") throw new Error("approval requires confirm=approve");
+    const proposalForCheck = await storeAccess("read", "proposal-approve-freshness-read", (store) => requireProposal(store, proposalId));
+    const freshness = await freshnessEvaluator(proposalForCheck);
+    if (freshness.required) {
+      await storeAccess("write", "proposal-approve-freshness-record", (store) => {
+        store.recordFreshnessProof(freshness.proof);
+      });
+    }
+    if (freshness.status !== "fresh" && freshness.status !== "not_required") {
+      if (freshness.required) {
+        await storeAccess("write", "proposal-approve-freshness-blocked", (store) => {
+          store.recordFreshnessApprovalBlocked(proposalId, {
+            proof_digest: freshness.proof.proof_digest,
+            safe_code: freshness.safe_code,
+            actor: stringOrDefault(body.actor, "local_reviewer"),
+          });
+        });
+      }
+      sendJson(response, freshnessHttpStatus(freshness), {
+        ok: false,
+        error: freshness.status === "stale"
+          ? "Proposal or supporting evidence is stale. Create a new source read and proposal."
+          : "Freshness could not be verified. No approval was recorded.",
+        freshness: workbenchFreshnessSummary(freshness),
+      });
+      return;
+    }
     await storeAccess("write", "proposal-approve", (store) => {
       const proposal = requireProposal(store, proposalId);
       const updated = store.approveProposal(proposalId, {
@@ -517,8 +573,14 @@ async function handleRequest(input: {
         proposal_hash: proposal.proposal_hash,
         proposal_version: proposal.proposal_version,
         reason: typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : undefined,
+        freshness_proof_digest: freshness.required ? freshness.proof.proof_digest : undefined,
       });
-      sendJson(response, 200, { ok: true, proposal: updated, approval_progress: store.approvalProgress(proposalId) });
+      sendJson(response, 200, {
+        ok: true,
+        proposal: updated,
+        approval_progress: store.approvalProgress(proposalId),
+        freshness: workbenchFreshnessSummary(freshness),
+      });
     });
     return;
   }
@@ -565,6 +627,75 @@ async function handleRequest(input: {
   }
 
   sendJson(response, 404, { ok: false, error: "not found" });
+}
+
+async function evaluateWorkbenchFreshness(
+  configPath: string,
+  proposal: StoredProposal,
+): Promise<ProposalFreshnessEvaluation> {
+  const required = "freshness" in proposal.change_set && proposal.change_set.freshness !== undefined;
+  if (!required) {
+    return {
+      required: false,
+      status: "not_required",
+      safe_code: "FRESHNESS_NOT_REQUIRED",
+      target_count: 0,
+      supporting_count: 0,
+    };
+  }
+  const config = await loadRuntimeConfigFromFile(configPath);
+  return evaluateProposalFreshness({ config, proposal, env: process.env });
+}
+
+function workbenchFreshnessSummary(result: ProposalFreshnessEvaluation): JsonRecord {
+  if (!result.required) {
+    return {
+      required: false,
+      status: "not_required",
+      safe_code: result.safe_code,
+      target_count: 0,
+      supporting_count: 0,
+    };
+  }
+  return {
+    required: true,
+    status: result.status,
+    safe_code: result.safe_code,
+    checked_at: result.proof.checked_at,
+    valid_until: result.proof.valid_until,
+    proof_digest: result.proof.proof_digest,
+    target_count: result.target_count,
+    supporting_count: result.supporting_count,
+    checks: result.proof.checks,
+  };
+}
+
+function storedFreshnessSummary(
+  proposal: StoredProposal,
+  proof: FreshnessProofV1 | undefined,
+): JsonRecord {
+  const required = "freshness" in proposal.change_set && proposal.change_set.freshness !== undefined;
+  if (!required) return { required: false, status: "not_required", safe_code: "FRESHNESS_NOT_REQUIRED" };
+  if (!proof) return { required: true, status: "not_checked", safe_code: "FRESHNESS_PROOF_MISSING" };
+  const expired = proof.result === "fresh" && Date.parse(proof.valid_until) < Date.now();
+  return {
+    required: true,
+    status: expired ? "unavailable" : proof.result,
+    safe_code: expired ? "FRESHNESS_PROOF_EXPIRED" : proof.safe_code,
+    checked_at: proof.checked_at,
+    valid_until: proof.valid_until,
+    proof_digest: proof.proof_digest,
+    target_count: proof.target_count,
+    supporting_count: proof.supporting_count,
+    checks: proof.checks,
+  };
+}
+
+function freshnessHttpStatus(result: ProposalFreshnessEvaluation): number {
+  if (result.status === "fresh" || result.status === "not_required") return 200;
+  if (result.status === "stale") return 409;
+  if (result.status === "unavailable") return 503;
+  return 422;
 }
 
 async function executeSafeActionPreview(input: {
@@ -1617,6 +1748,7 @@ function buildStory(payload) {
   const principalId = (cs.principal && cs.principal.id) || "the agent";
   const requiredRole = (cs.approval && cs.approval.required_role) || "a reviewer";
   const approvalProgress = payload.approval_progress || { approved: 0, required: 1, remaining: 1, complete: false };
+  const freshness = payload.freshness || { required: false, status: "not_required" };
   const story = el("div", { class: "story" });
 
   // 1. Agent requested a change
@@ -1662,8 +1794,17 @@ function buildStory(payload) {
     el("div", { class: "kv" }, [
       el("dt", { text: "Approval progress" }), el("dd", { text: approvalProgress.approved + "/" + approvalProgress.required }),
       el("dt", { text: "Policy result" }), el("dd", { text: (rv.policy_and_risk && rv.policy_and_risk.decision) || stateVal }),
+      el("dt", { text: "Live freshness" }), el("dd", { text: String(freshness.status || "not checked").replaceAll("_", " ") }),
+      el("dt", { text: "Freshness checks" }), el("dd", { text: String(freshness.target_count || 0) + " target / " + String(freshness.supporting_count || 0) + " supporting" }),
     ]),
   ];
+  if (freshness.required) {
+    approveBody.push(el("p", { text: freshness.status === "fresh"
+      ? "The live preflight passed. Approval still does not guarantee freshness through apply; the trusted apply path checks again."
+      : freshness.status === "stale"
+        ? "The target or supporting evidence drifted. This proposal cannot be refreshed; create a new source read and proposal."
+        : "A live source preflight is required before this proposal can be approved." }));
+  }
   const approvedEv = find("proposal_approved");
   const rejectedEv = find("proposal_rejected");
   if (stateVal === "pending_review") {
@@ -1782,10 +1923,42 @@ async function loadDetail(proposalId) {
     actor.setAttribute("aria-label", "Reviewer identity");
     reason.setAttribute("aria-label", "Reason for approval or rejection");
     const actions = el("div", { class: "actions" });
+    const freshness = payload.freshness || { required: false, status: "not_required" };
+    const freshnessStatus = el("div", { class: "status-line", text: freshness.required
+      ? "Freshness: " + String(freshness.status || "not checked").replaceAll("_", " ") + "."
+      : "Freshness: not required for this legacy proposal." });
+    const check = freshness.required
+      ? el("button", { class: "secondary", text: "Check live freshness", onclick: async () => {
+        check.disabled = true;
+        try {
+          await api("/api/proposals/" + encodeURIComponent(proposalId) + "/check-freshness", {
+            method: "POST",
+            headers: { "x-synapsor-csrf": csrfToken },
+            body: JSON.stringify({}),
+          });
+        } catch (error) {
+          freshnessStatus.textContent = error.message;
+        } finally {
+          await loadProposals();
+          await loadDetail(proposalId);
+        }
+      } })
+      : null;
     const approve = el("button", { text: "Approve outside MCP", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/approve", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value, confirm: "approve" }) }); await loadProposals(); await loadDetail(proposalId); } });
+    approve.disabled = freshness.required && freshness.status !== "fresh";
+    approve.title = freshness.required
+      ? "A fresh live check is required. Approval performs another check immediately before recording the decision."
+      : "Record this human decision outside MCP.";
     const reject = el("button", { class: "danger", text: "Reject", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/reject", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value || "rejected from local UI", confirm: "reject" }) }); await loadProposals(); await loadDetail(proposalId); } });
+    if (check) actions.append(check);
     actions.append(approve, reject);
-    reviewPane.append(el("div", { class: "callout", text: "You are the approval authority here — the model cannot reach these controls." }), actor, reason, actions);
+    reviewPane.append(
+      el("div", { class: "callout", text: "You are the approval authority here — the model cannot reach these controls." }),
+      freshnessStatus,
+      actor,
+      reason,
+      actions,
+    );
   } else if (proposal.state === "approved" || proposal.state === "pending_worker") {
     const command = trustedApplyCommand(proposalId);
     const commandBox = el("div", { class: "mono", text: command, style: "display:block;margin-top:8px" });
@@ -1811,6 +1984,7 @@ async function loadDetail(proposalId) {
     el("h3", { text: "events", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.events),
     el("h3", { text: "receipts", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.receipts),
     el("h3", { text: "evidence", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.evidence),
+    el("h3", { text: "freshness", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.freshness),
   );
   root.append(reviewPane, jsonPane);
 }
