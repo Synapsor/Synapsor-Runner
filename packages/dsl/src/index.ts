@@ -1,4 +1,20 @@
-import { assertValidContract, normalizeContract, type AgentContextSpec, type ArgumentSpec, type CapabilitySpec, type PolicySpec, type ScalarArgumentSpec, type SynapsorContract, type WorkflowSpec } from "@synapsor/spec";
+import {
+  assertValidContract,
+  normalizeContract,
+  type AgentContextSpec,
+  type ArgumentSpec,
+  type CapabilitySpec,
+  type PolicySpec,
+  type ProtectedReadAggregateSpec,
+  type ProtectedReadLimitsSpec,
+  type ProtectedReadPredicateSpec,
+  type ProtectedReadRelationshipSpec,
+  type ProtectedReadSpec,
+  type ProtectedReadValueSpec,
+  type ScalarArgumentSpec,
+  type SynapsorContract,
+  type WorkflowSpec,
+} from "@synapsor/spec";
 
 export type AgentDslAst = {
   contexts: AgentDslContextAst[];
@@ -44,6 +60,20 @@ export type AgentDslCapabilityAst = {
     column?: string;
     selection?: { all: Array<{ column: string; operator: "eq"; value: string | number | boolean | null }> };
     minimum_group_size?: number;
+  };
+  protectedRead?: {
+    mode: "rows" | "aggregate";
+    boundaryDigest?: `sha256:${string}`;
+    generationLockFingerprint?: `sha256:${string}`;
+    predicates: ProtectedReadPredicateSpec[];
+    relationship?: ProtectedReadRelationshipSpec;
+    rowOrderBy: Array<{ field: string; direction: "asc" | "desc" }>;
+    aggregate?: Partial<ProtectedReadAggregateSpec> & {
+      measures?: ProtectedReadAggregateSpec["measures"];
+      dimensions?: NonNullable<ProtectedReadAggregateSpec["dimensions"]>;
+      comparison?: ProtectedReadAggregateSpec["comparison"];
+    };
+    limits?: ProtectedReadLimitsSpec;
   };
   proposal?: {
     action: string;
@@ -187,6 +217,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
         ...(capability.aggregate.selection ? { selection: capability.aggregate.selection } : {}),
         minimum_group_size: capability.aggregate.minimum_group_size ?? 2,
       } } : {}),
+      ...(capability.protectedRead ? { protected_read: protectedReadSpecFromDsl(capability) } : {}),
     };
     if (capability.kind === "proposal" && capability.proposal) {
       const autoApprovalPolicyName = capability.proposal.autoApprovalRules?.length ? autoApprovalPolicyNameForCapability(capability.name) : undefined;
@@ -253,6 +284,27 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
   };
   assertValidContract(contract);
   return { contract: normalizeContract(contract), warnings: collectDslWarnings(ast) };
+}
+
+function protectedReadSpecFromDsl(capability: AgentDslCapabilityAst): ProtectedReadSpec {
+  const protectedRead = capability.protectedRead;
+  if (!protectedRead?.boundaryDigest || !protectedRead.generationLockFingerprint || !protectedRead.limits) {
+    throw dslError(capability.line ?? 1, 1, "PROTECTED_READ_INCOMPLETE", `${capability.name} requires BOUNDARY DIGEST, GENERATION LOCK, and PROTECTED LIMITS`);
+  }
+  if (protectedRead.mode === "aggregate" && !protectedRead.aggregate) {
+    throw dslError(capability.line ?? 1, 1, "PROTECTED_AGGREGATE_REQUIRED", `${capability.name} requires reviewed aggregate clauses`);
+  }
+  return {
+    version: "1",
+    mode: protectedRead.mode,
+    boundary_digest: protectedRead.boundaryDigest,
+    generation_lock_fingerprint: protectedRead.generationLockFingerprint,
+    ...(protectedRead.predicates.length ? { predicates: protectedRead.predicates } : {}),
+    ...(protectedRead.relationship ? { relationship: protectedRead.relationship } : {}),
+    ...(protectedRead.rowOrderBy.length ? { row_order_by: protectedRead.rowOrderBy } : {}),
+    ...(protectedRead.aggregate ? { aggregate: protectedRead.aggregate as ProtectedReadAggregateSpec } : {}),
+    limits: protectedRead.limits,
+  };
 }
 
 function validatePrincipalScopeContexts(ast: AgentDslAst): void {
@@ -493,9 +545,161 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       else capability.maxRows = Number(maxRows[1]);
       continue;
     }
+    const protectedRead = item.text.match(/^PROTECTED\s+READ\s+(ROWS|AGGREGATE)$/i);
+    if (protectedRead?.[1]) {
+      if (capability.proposal || capability.aggregate || capability.protectedRead) throw dslError(item.line, 1, "PROTECTED_READ_CONFLICT", "PROTECTED READ cannot be combined with proposal, legacy aggregate, or another protected-read declaration");
+      const mode = protectedRead[1].toLowerCase() as "rows" | "aggregate";
+      capability.kind = mode === "aggregate" ? "aggregate_read" : "read";
+      capability.protectedRead = {
+        mode,
+        predicates: [],
+        rowOrderBy: [],
+        ...(mode === "aggregate" ? {
+          aggregate: {
+            counted_entity: "subject",
+            measures: [],
+            dimensions: [],
+          },
+        } : {}),
+      };
+      continue;
+    }
+    const boundaryDigest = item.text.match(/^BOUNDARY\s+DIGEST\s+(sha256:[a-f0-9]{64})$/i);
+    if (boundaryDigest?.[1]) {
+      const reviewed = requireProtectedRead(capability, item);
+      reviewed.boundaryDigest = boundaryDigest[1].toLowerCase() as `sha256:${string}`;
+      continue;
+    }
+    const generationLock = item.text.match(/^GENERATION\s+LOCK\s+(sha256:[a-f0-9]{64})$/i);
+    if (generationLock?.[1]) {
+      const reviewed = requireProtectedRead(capability, item);
+      reviewed.generationLockFingerprint = generationLock[1].toLowerCase() as `sha256:${string}`;
+      continue;
+    }
+    const protectedRelationship = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
+    if (protectedRelationship?.[1] && protectedRelationship[2] && protectedRelationship[3] && protectedRelationship[4] && protectedRelationship[5] && protectedRelationship[6] && protectedRelationship[7]) {
+      const reviewed = requireProtectedRead(capability, item);
+      if (reviewed.relationship) throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_LIMIT", "PROTECTED READ permits at most one reviewed many-to-one relationship");
+      reviewed.relationship = {
+        name: protectedRelationship[1],
+        local_key: protectedRelationship[2],
+        schema: protectedRelationship[3],
+        table: protectedRelationship[4],
+        target_key: protectedRelationship[5],
+        primary_key: protectedRelationship[6],
+        tenant_key: protectedRelationship[7],
+        ...(protectedRelationship[8] ? { principal_scope_key: protectedRelationship[8] } : {}),
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+      };
+      continue;
+    }
+    const protectedFilter = item.text.match(/^PROTECTED\s+FILTER\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s+(EQ|NEQ|LT|LTE|GT|GTE|IN)\s+(.+)$/i);
+    if (protectedFilter?.[1] && protectedFilter[2] && protectedFilter[3]) {
+      const reviewed = requireProtectedRead(capability, item);
+      const reference = parseProtectedFieldReference(protectedFilter[1]);
+      const operator = protectedFilter[2].toLowerCase() as ProtectedReadPredicateSpec["operator"];
+      if (operator === "in") {
+        const list = protectedFilter[3].match(/^\((.*)\)$/)?.[1];
+        if (list === undefined) throw dslError(item.line, 1, "PROTECTED_FILTER_IN_LIST_REQUIRED", "PROTECTED FILTER ... IN requires a parenthesized fixed literal list");
+        const values = splitEnumValues(list, item.line, "PROTECTED FILTER").map((value) => parseProtectedLiteral(value, item.line, 1));
+        reviewed.predicates.push({ ...reference, operator: "in", values });
+      } else {
+        reviewed.predicates.push({
+          ...reference,
+          operator,
+          value: parseProtectedValueBinding(protectedFilter[3], item.line),
+        });
+      }
+      continue;
+    }
+    const rowOrder = item.text.match(/^ROW\s+ORDER\s+BY\s+([A-Za-z_][A-Za-z0-9_]*)\s+(ASC|DESC)$/i);
+    if (rowOrder?.[1] && rowOrder[2]) {
+      const reviewed = requireProtectedRead(capability, item);
+      reviewed.rowOrderBy.push({ field: rowOrder[1], direction: rowOrder[2].toLowerCase() as "asc" | "desc" });
+      continue;
+    }
+    const protectedMeasure = item.text.match(/^MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|SUM\s+[A-Za-z_][A-Za-z0-9_.]*|AVG\s+[A-Za-z_][A-Za-z0-9_.]*)$/i);
+    if (protectedMeasure?.[1] && protectedMeasure[2]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      const words = protectedMeasure[2].trim().split(/\s+/);
+      const fn = words[0]!.toLowerCase();
+      const measure = fn === "count" && words[1]?.toUpperCase() === "ROWS"
+        ? { name: protectedMeasure[1], function: "count" as const }
+        : {
+          name: protectedMeasure[1],
+          function: fn === "count" ? "count_distinct" as const : fn as "sum" | "avg",
+          ...parseProtectedFieldReference(words[fn === "count" ? 2 : 1]!),
+        };
+      aggregate.measures ??= [];
+      aggregate.measures.push(measure);
+      continue;
+    }
+    const protectedDimension = item.text.match(/^GROUP\s+DIMENSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
+    if (protectedDimension?.[1] && protectedDimension[2]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.dimensions ??= [];
+      aggregate.dimensions.push({ name: protectedDimension[1], ...parseProtectedFieldReference(protectedDimension[2]) });
+      continue;
+    }
+    const protectedTime = item.text.match(/^TIME\s+DIMENSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+(DAY|WEEK|MONTH)\s+OF\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
+    if (protectedTime?.[1] && protectedTime[2] && protectedTime[3]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.time_bucket = {
+        name: protectedTime[1],
+        bucket: protectedTime[2].toLowerCase() as "day" | "week" | "month",
+        ...parseProtectedFieldReference(protectedTime[3]),
+      };
+      continue;
+    }
+    const comparisonRange = item.text.match(/^COMPARE\s+RANGE\s+([A-Za-z_][A-Za-z0-9_.]*)\s+FROM\s+(.+?)\s+TO\s+(.+)$/i);
+    if (comparisonRange?.[1] && comparisonRange[2] && comparisonRange[3]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      const field = parseProtectedFieldReference(comparisonRange[1]);
+      if (aggregate.comparison && (aggregate.comparison.field !== field.field || aggregate.comparison.relationship !== field.relationship)) {
+        throw dslError(item.line, 1, "PROTECTED_COMPARISON_FIELD_MISMATCH", "all COMPARE RANGE clauses must use the same reviewed timestamp field");
+      }
+      aggregate.comparison ??= { ...field, ranges: [] };
+      aggregate.comparison.ranges.push({
+        start: parseProtectedValueBinding(comparisonRange[2], item.line),
+        end: parseProtectedValueBinding(comparisonRange[3], item.line),
+      });
+      continue;
+    }
+    const aggregateOrder = item.text.match(/^AGGREGATE\s+ORDER\s+BY\s+(?:MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)|TIME\s+BUCKET)\s+(ASC|DESC)$/i);
+    if (aggregateOrder && aggregateOrder[2]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.order_by = aggregateOrder[1]
+        ? { kind: "measure", measure: aggregateOrder[1], direction: aggregateOrder[2].toLowerCase() as "asc" | "desc" }
+        : { kind: "time_bucket", direction: aggregateOrder[2].toLowerCase() as "asc" | "desc" };
+      continue;
+    }
+    const topGroups = item.text.match(/^TOP\s+(\d+)\s+GROUPS$/i);
+    if (topGroups?.[1]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.top_n = Number(topGroups[1]);
+      continue;
+    }
+    const protectedLimits = item.text.match(/^PROTECTED\s+LIMITS\s+ROWS\s+(\d+)\s+GROUPS\s+(\d+)\s+CELLS\s+(\d+)\s+BYTES\s+(\d+)\s+TIMEOUT\s+MS\s+(\d+)\s+QUERIES\s+(\d+)\s+EXTRACTED\s+CELLS\s+(\d+)\s+DIFFERENCING\s+(\d+)\s+RATE\s+PER\s+MINUTE\s+(\d+)$/i);
+    if (protectedLimits) {
+      const reviewed = requireProtectedRead(capability, item);
+      reviewed.limits = {
+        max_rows: Number(protectedLimits[1]),
+        max_groups: Number(protectedLimits[2]),
+        max_response_cells: Number(protectedLimits[3]),
+        max_response_bytes: Number(protectedLimits[4]),
+        statement_timeout_ms: Number(protectedLimits[5]),
+        max_queries_per_session: Number(protectedLimits[6]),
+        max_extracted_cells_per_session: Number(protectedLimits[7]),
+        max_differencing_queries: Number(protectedLimits[8]),
+        rate_limit_per_minute: Number(protectedLimits[9]),
+      };
+      if (reviewed.mode === "rows") capability.maxRows = reviewed.limits.max_rows;
+      continue;
+    }
     const aggregateRead = item.text.match(/^AGGREGATE\s+READ\s+(COUNT\s+ROWS|COUNT\s+NON\s+NULL\s+[A-Za-z_][A-Za-z0-9_]*|SUM\s+[A-Za-z_][A-Za-z0-9_]*|AVG\s+[A-Za-z_][A-Za-z0-9_]*)$/i);
     if (aggregateRead?.[1]) {
-      if (capability.proposal) throw dslError(item.line, 1, "AGGREGATE_PROPOSAL_CONFLICT", "AGGREGATE READ cannot be combined with PROPOSE ACTION");
+      if (capability.proposal || capability.protectedRead) throw dslError(item.line, 1, "AGGREGATE_PROPOSAL_CONFLICT", "AGGREGATE READ cannot be combined with PROPOSE ACTION or PROTECTED READ");
       const parts = aggregateRead[1].trim().split(/\s+/);
       const fn = parts[0]!.toLowerCase() as "count" | "sum" | "avg";
       capability.kind = "aggregate_read";
@@ -508,8 +712,12 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     }
     const minimumGroup = item.text.match(/^MIN\s+GROUP\s+SIZE\s+(\d+)$/i);
     if (minimumGroup?.[1]) {
-      if (!capability.aggregate) throw dslError(item.line, 1, "AGGREGATE_READ_REQUIRED", "MIN GROUP SIZE requires AGGREGATE READ first");
-      capability.aggregate.minimum_group_size = Number(minimumGroup[1]);
+      if (capability.protectedRead?.mode === "aggregate") {
+        requireProtectedAggregate(capability, item).minimum_group_size = Number(minimumGroup[1]);
+      } else {
+        if (!capability.aggregate) throw dslError(item.line, 1, "AGGREGATE_READ_REQUIRED", "MIN GROUP SIZE requires AGGREGATE READ or PROTECTED READ AGGREGATE first");
+        capability.aggregate.minimum_group_size = Number(minimumGroup[1]);
+      }
       continue;
     }
     const propose = item.text.match(/^PROPOSE\s+ACTION\s+([A-Za-z_][A-Za-z0-9_.]*)(?:\s+(UPDATE|INSERT|DELETE)(\s+SET)?)?$/i);
@@ -672,14 +880,29 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   }
   if (capability.kind !== "aggregate_read" && capability.visibleFields.length === 0) throw dslError(block.line, 1, "CAPABILITY_VISIBLE_FIELDS_REQUIRED", `${block.name} requires ALLOW READ`);
   if (Object.keys(capability.args).length === 0 && capability.lookup) capability.args[capability.lookup.arg] = { type: "string", required: true, max_length: 128 };
-  if (capability.kind !== "aggregate_read" && Object.keys(capability.args).length === 0) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
+  if (capability.kind !== "aggregate_read" && Object.keys(capability.args).length === 0 && !capability.protectedRead) throw dslError(block.line, 1, "CAPABILITY_ARGS_REQUIRED", `${block.name} requires ARG or LOOKUP`);
   if (capability.kind === "aggregate_read") {
-    if (!capability.aggregate) throw dslError(block.line, 1, "AGGREGATE_READ_REQUIRED", `${block.name} requires AGGREGATE READ`);
-    if (!capability.aggregate.minimum_group_size || capability.aggregate.minimum_group_size < 2) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 2 or greater`);
     if (capability.lookup) throw dslError(block.line, 1, "AGGREGATE_LOOKUP_FORBIDDEN", `${block.name} aggregate reads cannot use LOOKUP`);
-    if (Object.keys(capability.args).length > 0) throw dslError(block.line, 1, "AGGREGATE_MODEL_ARGS_FORBIDDEN", `${block.name} aggregate reads cannot use model-controlled ARG predicates`);
     if (capability.visibleFields.length > 0) throw dslError(block.line, 1, "AGGREGATE_VISIBLE_ROWS_FORBIDDEN", `${block.name} aggregate reads cannot expose ALLOW READ row fields`);
     if (capability.evidenceRequired !== true) throw dslError(block.line, 1, "AGGREGATE_EVIDENCE_REQUIRED", `${block.name} aggregate reads require REQUIRE EVIDENCE`);
+    if (capability.protectedRead) {
+      const protectedAggregate = capability.protectedRead.aggregate;
+      if (capability.protectedRead.mode !== "aggregate" || !protectedAggregate) throw dslError(block.line, 1, "PROTECTED_AGGREGATE_REQUIRED", `${block.name} requires PROTECTED READ AGGREGATE`);
+      if (!protectedAggregate.measures?.length) throw dslError(block.line, 1, "PROTECTED_MEASURE_REQUIRED", `${block.name} requires at least one MEASURE`);
+      if (!protectedAggregate.top_n) throw dslError(block.line, 1, "PROTECTED_TOP_GROUPS_REQUIRED", `${block.name} requires TOP n GROUPS`);
+      if (!protectedAggregate.minimum_group_size || protectedAggregate.minimum_group_size < 2) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 2 or greater`);
+    } else {
+      if (!capability.aggregate) throw dslError(block.line, 1, "AGGREGATE_READ_REQUIRED", `${block.name} requires AGGREGATE READ`);
+      if (!capability.aggregate.minimum_group_size || capability.aggregate.minimum_group_size < 2) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 2 or greater`);
+      if (Object.keys(capability.args).length > 0) throw dslError(block.line, 1, "AGGREGATE_MODEL_ARGS_FORBIDDEN", `${block.name} legacy aggregate reads cannot use model-controlled ARG predicates`);
+    }
+  }
+  if (capability.protectedRead) {
+    if (!capability.protectedRead.boundaryDigest) throw dslError(block.line, 1, "PROTECTED_BOUNDARY_DIGEST_REQUIRED", `${block.name} requires BOUNDARY DIGEST`);
+    if (!capability.protectedRead.generationLockFingerprint) throw dslError(block.line, 1, "PROTECTED_GENERATION_LOCK_REQUIRED", `${block.name} requires GENERATION LOCK`);
+    if (!capability.protectedRead.limits) throw dslError(block.line, 1, "PROTECTED_LIMITS_REQUIRED", `${block.name} requires PROTECTED LIMITS`);
+    if (capability.evidenceRequired !== true) throw dslError(block.line, 1, "PROTECTED_EVIDENCE_REQUIRED", `${block.name} requires REQUIRE EVIDENCE`);
+    if (capability.protectedRead.mode === "rows" && capability.lookup) throw dslError(block.line, 1, "PROTECTED_LOOKUP_FORBIDDEN", `${block.name} protected row reads use reviewed filters, not LOOKUP`);
   }
   if (capability.kind === "proposal") {
     if (!capability.proposal) throw dslError(block.line, 1, "PROPOSAL_ACTION_REQUIRED", `${block.name} requires PROPOSE ACTION`);
@@ -929,6 +1152,45 @@ function ensureProposal(capability: AgentDslCapabilityAst, item: { line: number 
 function ensureSetProposal(capability: AgentDslCapabilityAst, item: { line: number }): asserts capability is AgentDslCapabilityAst & { proposal: NonNullable<AgentDslCapabilityAst["proposal"]> & { operation: NonNullable<NonNullable<AgentDslCapabilityAst["proposal"]>["operation"]> & { cardinality: "set" } } } {
   ensureProposal(capability, item);
   if (!capability.proposal.operation || capability.proposal.operation.cardinality !== "set") throw dslError(item.line, 1, "SET_OPERATION_REQUIRED", "bounded-set clauses require PROPOSE ACTION ... UPDATE SET, INSERT SET, or DELETE SET");
+}
+
+function requireProtectedRead(
+  capability: AgentDslCapabilityAst,
+  item: { line: number },
+): NonNullable<AgentDslCapabilityAst["protectedRead"]> {
+  if (!capability.protectedRead) throw dslError(item.line, 1, "PROTECTED_READ_REQUIRED", "protected-read clauses require PROTECTED READ ROWS or PROTECTED READ AGGREGATE first");
+  return capability.protectedRead;
+}
+
+function requireProtectedAggregate(
+  capability: AgentDslCapabilityAst,
+  item: { line: number },
+): NonNullable<NonNullable<AgentDslCapabilityAst["protectedRead"]>["aggregate"]> {
+  const protectedRead = requireProtectedRead(capability, item);
+  if (protectedRead.mode !== "aggregate" || !protectedRead.aggregate) {
+    throw dslError(item.line, 1, "PROTECTED_AGGREGATE_REQUIRED", "aggregate protection clauses require PROTECTED READ AGGREGATE first");
+  }
+  return protectedRead.aggregate;
+}
+
+function parseProtectedFieldReference(raw: string): { field: string; relationship?: string } {
+  const parts = raw.split(".");
+  if (parts.length === 1 && parts[0]) return { field: parts[0] };
+  if (parts.length === 2 && parts[0] && parts[1]) return { relationship: parts[0], field: parts[1] };
+  throw dslError(1, 1, "PROTECTED_FIELD_REFERENCE_INVALID", "protected field references must be field or relationship.field");
+}
+
+function parseProtectedValueBinding(raw: string, line: number): ProtectedReadValueSpec {
+  const argument = raw.trim().match(/^ARG\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+  if (argument?.[1]) return { from_arg: argument[1] };
+  const fixed = raw.trim().match(/^FIXED\s+(.+)$/i);
+  if (fixed?.[1]) return { fixed: parseProtectedLiteral(fixed[1], line, 1) };
+  throw dslError(line, 1, "PROTECTED_VALUE_BINDING_REQUIRED", "protected values must use FIXED <literal> or ARG <name>");
+}
+
+function parseProtectedLiteral(raw: string, line = 1, column = 1): string | number | boolean | null {
+  const value = parseLiteral(raw, line, column);
+  return typeof value === "string" ? value.replace(/''/g, "'") : value;
 }
 
 function parsePatchBinding(raw: string): { fixed?: string | number | boolean | null; from_arg?: string; from_item?: string } {

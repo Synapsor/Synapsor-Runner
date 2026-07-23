@@ -35,7 +35,7 @@ const MODEL_AUTHORITY_PATTERN =
 
 type ScalarType = "string" | "number" | "boolean";
 
-type CandidateField = {
+export type CandidateField = {
   name: string;
   type: ScalarType | "object" | "array" | "unknown";
   source_type?: string;
@@ -46,7 +46,7 @@ type CandidateField = {
   sensitive: boolean;
 };
 
-type CandidateAction = {
+export type CandidateAction = {
   name: string;
   kind: "read" | "proposal";
   args: CandidateField[];
@@ -56,7 +56,7 @@ type CandidateAction = {
   source_hint: string;
 };
 
-type CandidateObject = {
+export type CandidateObject = {
   name: string;
   schema: string;
   table: string;
@@ -118,7 +118,7 @@ export type SchemaCandidateGenerationResult = {
   files: string[];
 };
 
-type ParsedSchema = {
+export type ParsedSchema = {
   format: SchemaCandidateFormat;
   objects: CandidateObject[];
   warnings: string[];

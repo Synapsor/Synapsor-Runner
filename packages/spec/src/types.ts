@@ -176,6 +176,116 @@ export type AggregateReadSpec = ExtensionFields & {
   minimum_group_size: number;
 };
 
+export type ProtectedReadValueSpec = ExtensionFields & (
+  | { fixed: JsonScalar }
+  | { from_arg: string }
+);
+
+export type ProtectedReadPredicateSpec = ExtensionFields & (
+  | {
+    field: string;
+    relationship?: string;
+    operator: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+    value: ProtectedReadValueSpec;
+  }
+  | {
+    field: string;
+    relationship?: string;
+    operator: "in";
+    values: JsonScalar[];
+  }
+);
+
+export type ProtectedReadRelationshipSpec = ExtensionFields & {
+  name: string;
+  schema: string;
+  table: string;
+  primary_key: string;
+  tenant_key: string;
+  principal_scope_key?: string;
+  local_key: string;
+  target_key: string;
+  cardinality: "many_to_one";
+  max_fan_out: 1;
+};
+
+export type ProtectedReadMeasureSpec = ExtensionFields & {
+  name: string;
+  function: "count" | "count_distinct" | "sum" | "avg";
+  field?: string;
+  relationship?: string;
+};
+
+export type ProtectedReadDimensionSpec = ExtensionFields & {
+  name: string;
+  field: string;
+  relationship?: string;
+};
+
+export type ProtectedReadTimeBucketSpec = ExtensionFields & {
+  name: string;
+  field: string;
+  bucket: "day" | "week" | "month";
+  relationship?: string;
+};
+
+export type ProtectedReadAggregateSpec = ExtensionFields & {
+  counted_entity: "subject";
+  measures: ProtectedReadMeasureSpec[];
+  dimensions?: ProtectedReadDimensionSpec[];
+  time_bucket?: ProtectedReadTimeBucketSpec;
+  comparison?: {
+    field: string;
+    relationship?: string;
+    ranges: Array<{
+      start: ProtectedReadValueSpec;
+      end: ProtectedReadValueSpec;
+    }>;
+  };
+  order_by?: (
+    | { kind: "measure"; measure: string; direction: "asc" | "desc" }
+    | { kind: "time_bucket"; direction: "asc" | "desc" }
+  );
+  top_n: number;
+  minimum_group_size: number;
+};
+
+export type ProtectedReadLimitsSpec = ExtensionFields & {
+  max_rows: number;
+  max_groups: number;
+  max_response_cells: number;
+  max_response_bytes: number;
+  statement_timeout_ms: number;
+  max_queries_per_session: number;
+  max_extracted_cells_per_session: number;
+  max_differencing_queries: number;
+  rate_limit_per_minute: number;
+};
+
+/**
+ * A digest-bound named read produced by Protect This Query.
+ *
+ * This is a frozen authority shape, not an ad hoc query AST: identifiers,
+ * relationships, operators, ordering, privacy limits, and result bounds are
+ * fixed by the reviewed contract. Only explicit `from_arg` value positions can
+ * vary at runtime, and those arguments retain the capability's normal type and
+ * bound validation.
+ */
+export type ProtectedReadSpec = ExtensionFields & {
+  version: "1";
+  mode: "rows" | "aggregate";
+  boundary_digest: `sha256:${string}`;
+  generation_lock_fingerprint: `sha256:${string}`;
+  predicates?: ProtectedReadPredicateSpec[];
+  relationship?: ProtectedReadRelationshipSpec;
+  row_order_by?: Array<{
+    field: string;
+    direction: "asc" | "desc";
+  }>;
+  aggregate?: ProtectedReadAggregateSpec;
+  limits: ProtectedReadLimitsSpec;
+};
+
 export type CapabilitySpec = ExtensionFields & {
   name: string;
   description?: string;
@@ -192,6 +302,7 @@ export type CapabilitySpec = ExtensionFields & {
   max_rows?: number;
   proposal?: ProposalActionSpec;
   aggregate?: AggregateReadSpec;
+  protected_read?: ProtectedReadSpec;
 };
 
 export type WorkflowSpec = ExtensionFields & {

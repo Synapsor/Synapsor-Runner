@@ -43,11 +43,12 @@ export async function previewCursorProjectInstall(input: {
   configPath?: string;
   storePath?: string;
   packageSpec?: string;
+  authoring?: boolean;
 } = {}): Promise<CursorProjectPreview> {
   const paths = await resolveInstallPaths(input);
   const existing = await readOptionalJson(paths.destination);
   const marker = await readMarker(paths.marker);
-  const entry = cursorEntry(paths.configArgument, paths.storeArgument, input.packageSpec);
+  const entry = cursorEntry(paths.configArgument, paths.storeArgument, input.packageSpec, input.authoring === true);
   assertSecretFree(entry);
   if (existing?.mcpServers !== undefined && !isRecord(existing.mcpServers)) {
     throw new Error(`${displayPath(paths.projectRoot, paths.destination)} must contain an object at mcpServers.`);
@@ -88,6 +89,7 @@ export async function installCursorProject(input: {
   configPath?: string;
   storePath?: string;
   packageSpec?: string;
+  authoring?: boolean;
   now?: string;
 } = {}): Promise<CursorProjectPreview & { backup?: string }> {
   const preview = await previewCursorProjectInstall(input);
@@ -164,13 +166,14 @@ async function resolveInstallPaths(input: {
   projectRoot?: string;
   configPath?: string;
   storePath?: string;
+  authoring?: boolean;
 }): Promise<CursorProjectPaths> {
   const base = await resolveBasePaths(input.projectRoot);
   const config = resolveContained(base.projectRoot, input.configPath ?? "./synapsor.runner.json", "Runner config");
   const store = resolveContained(base.projectRoot, input.storePath ?? "./.synapsor/local.db", "Runner store");
   await rejectSymlinkChain(base.projectRoot, config, "Runner config");
   await rejectSymlinkChain(base.projectRoot, store, "Runner store");
-  await requireRegularFile(config, "Runner config");
+  if (!input.authoring) await requireRegularFile(config, "Runner config");
   return {
     ...base,
     configArgument: projectArgument(base.projectRoot, config),
@@ -208,7 +211,12 @@ async function pathsFromMarker(base: CursorBasePaths, marker: CursorInstallMarke
   };
 }
 
-function cursorEntry(configPath: string, storePath: string, packageSpec: string | undefined): JsonRecord {
+function cursorEntry(
+  configPath: string,
+  storePath: string,
+  packageSpec: string | undefined,
+  authoring: boolean,
+): JsonRecord {
   const resolvedPackage = packageSpec ?? `@synapsor/runner@${runnerPackage.version}`;
   if (!resolvedPackage.trim() || resolvedPackage.length > 2_048 || /[\u0000-\u001f\u007f]/.test(resolvedPackage)) {
     throw new Error("Cursor Runner package spec must be a non-empty package reference without control characters");
@@ -216,7 +224,9 @@ function cursorEntry(configPath: string, storePath: string, packageSpec: string 
   return {
     type: "stdio",
     command: "npx",
-    args: ["-y", "-p", resolvedPackage, "synapsor-runner", "mcp", "serve", "--config", configPath, "--store", storePath],
+    args: authoring
+      ? ["-y", "-p", resolvedPackage, "synapsor-runner", "mcp", "serve", "--authoring", "--project-root", "."]
+      : ["-y", "-p", resolvedPackage, "synapsor-runner", "mcp", "serve", "--config", configPath, "--store", storePath],
   };
 }
 

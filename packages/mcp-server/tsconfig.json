@@ -11,6 +11,7 @@
     { "path": "../proposal-store" },
     { "path": "../postgres" },
     { "path": "../protocol" },
+    { "path": "../schema-inspector" },
     { "path": "../spec" }
   ],
   "include": ["src/**/*.ts"]

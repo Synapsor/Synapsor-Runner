@@ -741,6 +741,57 @@ END
     expect(() => compileAgentDsl(aggregateReadSource("AGGREGATE READ AVG balance_cents", "ARG minimum NUMBER REQUIRED MIN 0"))).toThrow(/AGGREGATE_MODEL_ARGS_FORBIDDEN/);
   });
 
+  it("compiles a protected PM aggregate into the canonical digest-bound read shape", () => {
+    const contract = compileAgentDsl(protectedAggregateSource());
+    const capability = contract.capabilities[0]!;
+
+    expect(capability).toMatchObject({
+      name: "analytics.churn_contributors_by_week",
+      kind: "aggregate_read",
+      args: {
+        period_start: { type: "string", required: true, max_length: 32 },
+        period_end: { type: "string", required: true, max_length: 32 },
+      },
+      visible_fields: [],
+      protected_read: {
+        version: "1",
+        mode: "aggregate",
+        boundary_digest: `sha256:${"a".repeat(64)}`,
+        generation_lock_fingerprint: `sha256:${"b".repeat(64)}`,
+        predicates: [
+          { field: "status", operator: "eq", value: { fixed: "churned" } },
+          { field: "churned_at", operator: "gte", value: { from_arg: "period_start" } },
+          { field: "churned_at", operator: "lt", value: { from_arg: "period_end" } },
+        ],
+        aggregate: {
+          counted_entity: "subject",
+          measures: [
+            { name: "churned_accounts", function: "count" },
+            { name: "affected_customers", function: "count_distinct", field: "customer_id" },
+          ],
+          dimensions: [
+            { name: "region", field: "region" },
+            { name: "reason", field: "churn_reason" },
+          ],
+          time_bucket: { name: "churn_week", field: "churned_at", bucket: "week" },
+          order_by: { kind: "measure", measure: "churned_accounts", direction: "desc" },
+          top_n: 20,
+          minimum_group_size: 5,
+        },
+      },
+    });
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(compileAgentDsl(formatAgentDsl(protectedAggregateSource()))).toEqual(contract);
+  });
+
+  it("keeps protected-read identifiers and trust scope outside model arguments", () => {
+    const invalid = protectedAggregateSource()
+      .replace("PROTECTED FILTER status EQ FIXED 'churned'", "PROTECTED FILTER tenant_id EQ ARG tenant_id")
+      .replace("ARG period_start", "ARG tenant_id");
+
+    expect(() => compileAgentDsl(invalid)).toThrow(/MODEL_CONTROLLED_TRUST_ARG|PROTECTED_FIELD_FORBIDDEN/);
+  });
+
   it("throws AgentDslError for unsupported syntax", () => {
     expect(() => compileAgentDsl("CREATE AGENT WORKFLOW billing.flow\nAUTO MERGE\nEND\n")).toThrow(AgentDslError);
   });
@@ -835,6 +886,46 @@ CREATE CAPABILITY billing.aggregate_overdue
   ${includeMinimum ? "MIN GROUP SIZE 5" : ""}
   KEEP OUT customer_email, private_notes
   REQUIRE EVIDENCE
+END
+`;
+}
+
+function protectedAggregateSource(): string {
+  return `
+CREATE AGENT CONTEXT analytics_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED
+  TENANT BINDING tenant_id
+  PRINCIPAL BINDING principal
+END
+
+CREATE CAPABILITY analytics.churn_contributors_by_week
+  DESCRIPTION 'Describe reviewed weekly churn contributors without exposing customer rows.'
+  RETURNS HINT 'Returns privacy-suppressed weekly groups and reviewed aggregate measures.'
+  USING CONTEXT analytics_operator
+  SOURCE local_postgres
+  ON public.account_churn
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ARG period_start STRING REQUIRED MAX LENGTH 32 DESCRIPTION 'Inclusive reviewed period start.'
+  ARG period_end STRING REQUIRED MAX LENGTH 32 DESCRIPTION 'Exclusive reviewed period end.'
+  PROTECTED READ AGGREGATE
+  BOUNDARY DIGEST sha256:${"a".repeat(64)}
+  GENERATION LOCK sha256:${"b".repeat(64)}
+  PROTECTED FILTER status EQ FIXED 'churned'
+  PROTECTED FILTER churned_at GTE ARG period_start
+  PROTECTED FILTER churned_at LT ARG period_end
+  MEASURE churned_accounts COUNT ROWS
+  MEASURE affected_customers COUNT DISTINCT customer_id
+  GROUP DIMENSION region BY region
+  GROUP DIMENSION reason BY churn_reason
+  TIME DIMENSION churn_week BY WEEK OF churned_at
+  AGGREGATE ORDER BY MEASURE churned_accounts DESC
+  TOP 20 GROUPS
+  MIN GROUP SIZE 5
+  KEEP OUT email, notes
+  REQUIRE EVIDENCE
+  PROTECTED LIMITS ROWS 50 GROUPS 50 CELLS 500 BYTES 65536 TIMEOUT MS 3000 QUERIES 40 EXTRACTED CELLS 4000 DIFFERENCING 6 RATE PER MINUTE 20
 END
 `;
 }

@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT/apps/runner"
+SPEC_PACKAGE_DIR="$ROOT/packages/spec"
 TEMP_DIR="$(mktemp -d)"
 TARBALL="${SYNAPSOR_RUNNER_TARBALL:-}"
+SPEC_TARBALL=""
 REMOVE_TARBALL=0
 COMPOSE_FILE="$ROOT/examples/mcp-postgres-billing/docker-compose.yml"
 
@@ -45,16 +47,26 @@ else
   corepack pnpm build:runner-package >/dev/null
 
   cd "$PACKAGE_DIR"
-  PACK_OUTPUT="$(npm pack --silent)"
+  PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
   PACK_FILE="$(printf "%s\n" "$PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
   if [[ -z "$PACK_FILE" ]]; then
     echo "npm pack did not print a tarball filename" >&2
     printf "%s\n" "$PACK_OUTPUT" >&2
     exit 1
   fi
-  TARBALL="$PACKAGE_DIR/$PACK_FILE"
+  TARBALL="$TEMP_DIR/$(basename "$PACK_FILE")"
   REMOVE_TARBALL=1
 fi
+
+cd "$SPEC_PACKAGE_DIR"
+SPEC_PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
+SPEC_PACK_FILE="$(printf "%s\n" "$SPEC_PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
+if [[ -z "$SPEC_PACK_FILE" ]]; then
+  echo "Spec pack did not print a tarball filename" >&2
+  printf "%s\n" "$SPEC_PACK_OUTPUT" >&2
+  exit 1
+fi
+SPEC_TARBALL="$TEMP_DIR/$(basename "$SPEC_PACK_FILE")"
 
 docker compose -f "$COMPOSE_FILE" down -v >/dev/null 2>&1 || true
 docker compose -f "$COMPOSE_FILE" up -d >/dev/null
@@ -79,7 +91,7 @@ fi
 
 cd "$TEMP_DIR"
 npm init -y >/dev/null
-npm install "$TARBALL" >/dev/null
+npm install "$SPEC_TARBALL" "$TARBALL" >/dev/null
 
 export DATABASE_URL="postgresql://synapsor_reader:synapsor_reader_password@localhost:55433/synapsor_runner_mcp_billing"
 export SYNAPSOR_DATABASE_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_password@localhost:55433/synapsor_runner_mcp_billing"

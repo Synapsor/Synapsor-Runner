@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@synapsor-runner/protocol": "workspace:*",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0"
   },

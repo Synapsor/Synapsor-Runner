@@ -10,6 +10,39 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
+## 1.6.0 (prepared, not published)
+
+### Connect, Explore, Protect
+
+- A fresh interactive `start --from-env DATABASE_URL` can inspect the whole
+  staging schema and structured Prisma/Drizzle/OpenAPI/Synapsor artifacts,
+  then emit a disabled candidate boundary without executing adopter code,
+  reading source rows, or using an LLM.
+- The local Workbench requires explicit review of scope, fields, aggregate
+  measures/dimensions/time buckets, one-hop relationships, privacy budgets,
+  role/grant/RLS posture, profile, generation lock, and exact digest.
+- The temporary Cursor authoring entry exposes only `app.describe_data` and
+  `app.explore_data`. Typed row and PM-style aggregate plans are bounded by the
+  activated authority, run read-only, and cannot introduce SQL, identifiers,
+  tenant/principal identity, or wider limits.
+- Aggregate Explore supports reviewed count/distinct/sum/avg, categorical and
+  time grouping, bounded comparisons/top-N, cohort suppression, and durable
+  anti-differencing/extraction/rate limits. It is descriptive analysis, not a
+  causation claim.
+- Protect This Query writes public DSL, canonical JSON, tests, and a disabled
+  named capability. Exact-digest activation disables broad Explore; production
+  serves only the named protected tool.
+- Scoped Explore is absent from production, unknown-profile, shared HTTP,
+  remote, and non-loopback `tools/list`. Write-capable, owner, superuser,
+  `BYPASSRLS`, or unverifiable credentials cannot enable source-row Explore.
+- Existing 1.x projects do not need Workbench, generation locks, rescans, or
+  new fields. Published legacy contracts preserve exact normalization/digests,
+  and established CLI/headless/CI routes keep their behavior.
+
+Prepared package versions: `@synapsor/runner@1.6.0`,
+`@synapsor/dsl@1.5.0`, and `@synapsor/spec@1.5.0`. Nothing has been published
+by this repository change.
+
 ## 1.5.4 (published 2026-07-22)
 
 ### Networked MCP authentication hardening

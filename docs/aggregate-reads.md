@@ -1,5 +1,18 @@
 # Bounded Aggregate Reads
 
+There are two distinct aggregate surfaces:
+
+1. A fixed named `aggregate_read` capability, described on this page, is
+   production-capable and returns one contract-authored scalar.
+2. Runner 1.6.0 Scoped Aggregate Explore is a temporary local development/
+   staging authoring tool. It accepts only a typed plan inside a human-activated
+   analytical boundary, supports reviewed dimensions and time buckets, and
+   must be converted through Protect into a named production capability.
+
+Neither surface accepts SQL strings or arbitrary identifiers. Read
+[Auto Boundary, Scoped Explore, And
+Protect](auto-boundary-and-scoped-explore.md) for the second path.
+
 An `aggregate_read` capability returns one reviewed scalar rather than source
 rows. It is intended for questions such as a tenant-scoped overdue balance
 total where exposing individual records would be unnecessary.
@@ -47,3 +60,12 @@ retryable unavailable result without exposing a driver error. Minimum-group
 suppression reduces single-record inference; it does not solve every statistical
 inference risk. Review the underlying view, database role, and aggregation
 policy as well.
+
+Scoped Aggregate Explore reuses and extends this suppression machinery. Its
+reviewed boundary additionally fixes aggregate-safe measures,
+`count_distinct` identifiers, dimensions, day/week/month buckets, typed
+filters, optional one-hop proven many-to-one relationships, maximum groups,
+response/query/rate limits, and durable extraction/differencing budgets. A
+field may be approved for `count_distinct` while its raw values remain hidden.
+Production receives only the protected named capability; broad Explore is
+absent from production `tools/list`.

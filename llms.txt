@@ -1,0 +1,37 @@
+# Synapsor Runner
+
+Synapsor Runner is the Apache-2.0 MCP runtime that gives AI agents reviewed
+Postgres/MySQL business capabilities instead of raw SQL. Credentials, trusted
+tenant/principal identity, activation, approval, and commit stay outside the
+model-facing tool surface.
+
+Start here:
+- README: https://github.com/Synapsor/Synapsor-Runner
+- Auto Boundary, Scoped Explore, and Protect: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/auto-boundary-and-scoped-explore.md
+- Connect a staging database: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/getting-started-own-database.md
+- Security boundary: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/security-boundary.md
+- Current scope: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/current-scope.md
+- Current limitations: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/limitations.md
+- DSL reference: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/dsl-reference.md
+- MCP audit: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/mcp-audit.md
+
+Current adoption loop:
+Connect staging -> deterministic whole-schema draft -> human boundary review ->
+bounded row or PM-style aggregate Explore in local Cursor -> Protect This Query
+-> digest-bound human activation -> named production capability -> proposal ->
+external approval -> guarded commit -> receipt and replay.
+
+Important boundaries:
+- No raw SQL or SQL-string tool argument.
+- Scoped Explore is disabled by default and is local development/staging
+  authoring only. Production and shared/remote HTTP never advertise it.
+- Aggregate Explore is a reviewed analytical cube: approved measures,
+  dimensions, time buckets, filters, at most one proven many-to-one path,
+  suppression, and extraction/differencing budgets.
+- Auto Boundary and Protect are deterministic and use no LLM.
+- Generated authority starts disabled. The model cannot activate, approve,
+  apply, commit, or widen it.
+- Existing hand-authored 1.x contracts and established CLI routes do not
+  require Auto Boundary, Workbench, rescanning, or generation locks.
+- Rich multi-table transactions and external side effects remain app-owned
+  executor work after approval.

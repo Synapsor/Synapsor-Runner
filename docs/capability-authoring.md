@@ -180,6 +180,35 @@ near-duplicate tools. These checks make breadth drift visible; they do not
 change canonical validity or replace human review. See [Contract
 Review](contract-review.md) for exact codes and behavior.
 
+## Auto-Generated And Protected Reads
+
+For a new application, you do not need to hand-author the initial DSL.
+`start --from-env DATABASE_URL` can deterministically inspect the whole staging
+schema, combine static Prisma/Drizzle/OpenAPI/Synapsor evidence, and emit
+disabled `.synapsor.sql`, canonical JSON, tests, review evidence, and a
+generation lock. It does not sample source rows before activation or use an
+LLM.
+
+After a human activates the exact local exploration boundary, Cursor receives
+only `app.describe_data` and `app.explore_data`. A useful typed row or
+aggregate plan can be converted through Protect This Query into a named
+capability. Protect emits public DSL such as `PROTECTED READ ROWS` or
+`PROTECTED READ AGGREGATE`, compiles it to canonical `protected_read`
+authority, and starts it disabled. Exact-digest activation is still outside
+MCP.
+
+The named protected capability freezes resources, optional reviewed
+many-to-one relationship, predicates, projection or aggregate measures,
+dimensions, bucket, ordering, result bounds, suppression, and privacy/query
+budgets. Only explicitly selected typed literal positions become arguments.
+Tenant and principal remain trusted bindings.
+
+This is additive. Existing DSL, canonical JSON, TypeScript authoring, direct
+Runner config, active contracts, and CI/headless routes do not require Auto
+Boundary, Workbench, generation locks, or schema rescans. See [Auto Boundary,
+Scoped Explore, And Protect](auto-boundary-and-scoped-explore.md) and the
+[protected-read DSL](dsl-reference.md#protected-named-reads).
+
 ## DSL / JSON Capability Parity
 
 The DSL compiles to canonical `@synapsor/spec` JSON. It must not silently weaken
@@ -203,6 +232,7 @@ reviewed runner JSON capabilities. Current parity:
 | proposal `writeback` | `WRITEBACK DIRECT SQL`, `WRITEBACK APP HANDLER EXECUTOR name`, `WRITEBACK CLOUD WORKER`, `WRITEBACK NONE` | 0.1.7 | Handler URLs/tokens stay in `synapsor.runner.json`; contracts carry only the handler name. |
 | proposal `reversibility` | `REVERSIBLE` | 1.4 | Direct SQL only. Captures a bounded inverse after unambiguous apply; operator `revert` creates a new independently approved proposal. |
 | evidence options | `REQUIRE EVIDENCE` | 0.1 | Detailed evidence sources/handle prefixes are not expressible in DSL yet; use embedded JSON or generated contract JSON for those. |
+| capability `protected_read` | `PROTECTED READ ROWS\|AGGREGATE` plus `BOUNDARY DIGEST`, `GENERATION LOCK`, reviewed filters/read or aggregate clauses, and `PROTECTED LIMITS` | 1.5 | Optional default-deny named authority produced by Protect. Existing contracts without this field retain their previous normalization and digest. |
 
 ## Direct Runner Config Path
 

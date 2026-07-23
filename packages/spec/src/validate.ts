@@ -23,7 +23,7 @@ const METADATA_KEYS = new Set(["name", "description", "version", "tags"]);
 const RESOURCE_KEYS = new Set(["name", "engine", "schema", "table", "type", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
 const CONTEXT_KEYS = new Set(["name", "description", "bindings", "tenant_binding", "principal_binding"]);
 const BINDING_KEYS = new Set(["name", "source", "key", "required"]);
-const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal", "aggregate"]);
+const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal", "aggregate", "protected_read"]);
 const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "principal_scope_key", "conflict_key", "single_tenant_dev"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
@@ -46,6 +46,59 @@ const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "p
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
 const REVERSIBILITY_KEYS = new Set(["mode"]);
 const AGGREGATE_READ_KEYS = new Set(["function", "count_mode", "column", "selection", "minimum_group_size"]);
+const PROTECTED_READ_KEYS = new Set([
+  "version",
+  "mode",
+  "boundary_digest",
+  "generation_lock_fingerprint",
+  "predicates",
+  "relationship",
+  "row_order_by",
+  "aggregate",
+  "limits",
+]);
+const PROTECTED_VALUE_KEYS = new Set(["fixed", "from_arg"]);
+const PROTECTED_PREDICATE_KEYS = new Set(["field", "relationship", "operator", "value", "values"]);
+const PROTECTED_RELATIONSHIP_KEYS = new Set([
+  "name",
+  "schema",
+  "table",
+  "primary_key",
+  "tenant_key",
+  "principal_scope_key",
+  "local_key",
+  "target_key",
+  "cardinality",
+  "max_fan_out",
+]);
+const PROTECTED_ROW_ORDER_KEYS = new Set(["field", "direction"]);
+const PROTECTED_AGGREGATE_KEYS = new Set([
+  "counted_entity",
+  "measures",
+  "dimensions",
+  "time_bucket",
+  "comparison",
+  "order_by",
+  "top_n",
+  "minimum_group_size",
+]);
+const PROTECTED_MEASURE_KEYS = new Set(["name", "function", "field", "relationship"]);
+const PROTECTED_DIMENSION_KEYS = new Set(["name", "field", "relationship"]);
+const PROTECTED_TIME_BUCKET_KEYS = new Set(["name", "field", "bucket", "relationship"]);
+const PROTECTED_COMPARISON_KEYS = new Set(["field", "relationship", "ranges"]);
+const PROTECTED_RANGE_KEYS = new Set(["start", "end"]);
+const PROTECTED_AGGREGATE_ORDER_KEYS = new Set(["kind", "measure", "direction"]);
+const PROTECTED_LIMIT_KEYS = new Set([
+  "max_rows",
+  "max_groups",
+  "max_response_cells",
+  "max_response_bytes",
+  "statement_timeout_ms",
+  "max_queries_per_session",
+  "max_extracted_cells_per_session",
+  "max_differencing_queries",
+  "rate_limit_per_minute",
+]);
 const WORKFLOW_KEYS = new Set(["name", "description", "context", "allowed_capabilities", "required_evidence", "approval", "settlement", "replay"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
@@ -220,7 +273,8 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     if (!["read", "aggregate_read", "proposal", "external_action", "answer_with_evidence"].includes(String(capability.kind))) errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read, aggregate_read, proposal, external_action, or answer_with_evidence." });
     if (!isNonEmptyString(capability.context) || !contextNames.has(capability.context)) errors.push({ path: `${path}.context`, code: "UNKNOWN_CONTEXT", message: "capability.context must reference a declared context." });
     validateSubject(capability.subject, `${path}.subject`, resourceNames, errors, warnings);
-    validateArgs(capability.args, `${path}.args`, errors, capability.kind === "aggregate_read");
+    const hasProtectedRead = capability.protected_read !== undefined;
+    validateArgs(capability.args, `${path}.args`, errors, capability.kind === "aggregate_read" || hasProtectedRead);
     if (capability.lookup !== undefined) validateLookup(capability.lookup, `${path}.lookup`, capability.args, errors);
     validateFieldList(capability.visible_fields, `${path}.visible_fields`, "VISIBLE_FIELDS_REQUIRED", errors, capability.kind === "aggregate_read");
     if (capability.kept_out_fields !== undefined) validateFieldList(capability.kept_out_fields, `${path}.kept_out_fields`, "INVALID_KEPT_OUT_FIELDS", errors, true);
@@ -232,8 +286,13 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
       validateSetCapabilityArgs(capability, path, errors);
     }
     if (capability.kind !== "proposal" && capability.proposal !== undefined) errors.push({ path: `${path}.proposal`, code: "PROPOSAL_ONLY_FOR_PROPOSAL_KIND", message: "proposal is only valid for proposal capabilities." });
-    if (capability.kind === "aggregate_read") validateAggregateRead(capability, path, errors);
-    else if (capability.aggregate !== undefined) errors.push({ path: `${path}.aggregate`, code: "AGGREGATE_ONLY_FOR_AGGREGATE_READ", message: "aggregate is valid only for aggregate_read capabilities." });
+    if (hasProtectedRead) validateProtectedRead(capability, path, errors);
+    if (capability.kind === "aggregate_read") {
+      if (!hasProtectedRead) validateAggregateRead(capability, path, errors);
+      else if (capability.aggregate !== undefined) errors.push({ path: `${path}.aggregate`, code: "LEGACY_AGGREGATE_WITH_PROTECTED_READ", message: "protected aggregate reads use protected_read.aggregate and must not also declare the legacy scalar aggregate field." });
+    } else if (capability.aggregate !== undefined) {
+      errors.push({ path: `${path}.aggregate`, code: "AGGREGATE_ONLY_FOR_AGGREGATE_READ", message: "aggregate is valid only for aggregate_read capabilities." });
+    }
   });
   return names;
 }
@@ -405,6 +464,359 @@ function validateArgs(value: unknown, path: string, errors: ValidationIssue[], a
       }
     }
   }
+}
+
+function validateProtectedRead(capability: JsonRecord, path: string, errors: ValidationIssue[]): void {
+  const protectedRead = capability.protected_read;
+  if (!isRecord(protectedRead)) {
+    errors.push({ path: `${path}.protected_read`, code: "PROTECTED_READ_NOT_OBJECT", message: "protected_read must be a reviewed authority object." });
+    return;
+  }
+  checkUnknownKeys(protectedRead, PROTECTED_READ_KEYS, `${path}.protected_read`, errors);
+  if (capability.kind !== "read" && capability.kind !== "aggregate_read") {
+    errors.push({ path: `${path}.protected_read`, code: "PROTECTED_READ_KIND_FORBIDDEN", message: "protected_read is valid only on read and aggregate_read capabilities." });
+  }
+  if (protectedRead.version !== "1") errors.push({ path: `${path}.protected_read.version`, code: "INVALID_PROTECTED_READ_VERSION", message: "protected_read.version must be 1." });
+  if (protectedRead.mode !== "rows" && protectedRead.mode !== "aggregate") errors.push({ path: `${path}.protected_read.mode`, code: "INVALID_PROTECTED_READ_MODE", message: "protected_read.mode must be rows or aggregate." });
+  if (protectedRead.mode === "rows" && capability.kind !== "read") errors.push({ path: `${path}.kind`, code: "PROTECTED_READ_KIND_MISMATCH", message: "protected rows require capability kind read." });
+  if (protectedRead.mode === "aggregate" && capability.kind !== "aggregate_read") errors.push({ path: `${path}.kind`, code: "PROTECTED_READ_KIND_MISMATCH", message: "protected aggregates require capability kind aggregate_read." });
+  for (const key of ["boundary_digest", "generation_lock_fingerprint"] as const) {
+    if (!isSha256Digest(protectedRead[key])) errors.push({ path: `${path}.protected_read.${key}`, code: "INVALID_PROTECTED_READ_DIGEST", message: `${key} must be a canonical sha256 digest.` });
+  }
+
+  const args = isRecord(capability.args) ? capability.args : {};
+  const referencedArgs = new Set<string>();
+  const keptOut = new Set(Array.isArray(capability.kept_out_fields) ? capability.kept_out_fields.filter((field): field is string => typeof field === "string") : []);
+  const subject = isRecord(capability.subject) ? capability.subject : {};
+  const trustedScopeFields = new Set([subject.tenant_key, subject.principal_scope_key].filter((field): field is string => isSafeIdentifier(field)));
+  const relationshipName = validateProtectedRelationship(
+    protectedRead.relationship,
+    keptOut,
+    trustedScopeFields,
+    `${path}.protected_read.relationship`,
+    errors,
+  );
+
+  if (!isRecord(capability.evidence) || capability.evidence.required !== true || capability.evidence.query_audit !== true) {
+    errors.push({
+      path: `${path}.evidence`,
+      code: "PROTECTED_READ_EVIDENCE_REQUIRED",
+      message: "protected reads require evidence.required=true and query_audit=true.",
+    });
+  }
+
+  if (protectedRead.predicates !== undefined) {
+    if (!Array.isArray(protectedRead.predicates) || protectedRead.predicates.length > 8) {
+      errors.push({ path: `${path}.protected_read.predicates`, code: "INVALID_PROTECTED_PREDICATES", message: "protected_read.predicates must contain at most 8 reviewed predicates." });
+    } else {
+      protectedRead.predicates.forEach((predicate, index) => {
+        const predicatePath = `${path}.protected_read.predicates[${index}]`;
+        if (!isRecord(predicate)) {
+          errors.push({ path: predicatePath, code: "PROTECTED_PREDICATE_NOT_OBJECT", message: "protected predicate must be an object." });
+          return;
+        }
+        checkUnknownKeys(predicate, PROTECTED_PREDICATE_KEYS, predicatePath, errors);
+        validateProtectedFieldReference(predicate.field, predicate.relationship, relationshipName, keptOut, trustedScopeFields, predicatePath, errors);
+        if (!["eq", "neq", "lt", "lte", "gt", "gte", "in"].includes(String(predicate.operator))) {
+          errors.push({ path: `${predicatePath}.operator`, code: "INVALID_PROTECTED_PREDICATE_OPERATOR", message: "protected predicate operator must be eq, neq, lt, lte, gt, gte, or in." });
+        }
+        if (predicate.operator === "in") {
+          if (predicate.value !== undefined) errors.push({ path: `${predicatePath}.value`, code: "PROTECTED_IN_VALUE_FORBIDDEN", message: "in predicates use a fixed values list, not value." });
+          if (!Array.isArray(predicate.values) || predicate.values.length < 1 || predicate.values.length > 20 || predicate.values.some((value) => !isJsonScalar(value))) {
+            errors.push({ path: `${predicatePath}.values`, code: "INVALID_PROTECTED_IN_VALUES", message: "in predicates require 1 through 20 fixed scalar values." });
+          }
+        } else {
+          if (predicate.values !== undefined) errors.push({ path: `${predicatePath}.values`, code: "PROTECTED_VALUES_IN_ONLY", message: "values is valid only for an in predicate." });
+          validateProtectedValue(predicate.value, args, referencedArgs, `${predicatePath}.value`, errors);
+        }
+      });
+    }
+  }
+
+  if (protectedRead.row_order_by !== undefined) {
+    if (!Array.isArray(protectedRead.row_order_by) || protectedRead.row_order_by.length < 1 || protectedRead.row_order_by.length > 3) {
+      errors.push({ path: `${path}.protected_read.row_order_by`, code: "INVALID_PROTECTED_ROW_ORDER", message: "row_order_by must contain 1 through 3 fixed sort fields." });
+    } else {
+      const visible = new Set(Array.isArray(capability.visible_fields) ? capability.visible_fields.filter((field): field is string => typeof field === "string") : []);
+      protectedRead.row_order_by.forEach((order, index) => {
+        const orderPath = `${path}.protected_read.row_order_by[${index}]`;
+        if (!isRecord(order)) {
+          errors.push({ path: orderPath, code: "PROTECTED_ROW_ORDER_NOT_OBJECT", message: "row order must be an object." });
+          return;
+        }
+        checkUnknownKeys(order, PROTECTED_ROW_ORDER_KEYS, orderPath, errors);
+        if (!isSafeIdentifier(order.field) || !visible.has(String(order.field)) || keptOut.has(String(order.field))) {
+          errors.push({ path: `${orderPath}.field`, code: "PROTECTED_ROW_ORDER_FIELD_FORBIDDEN", message: "row order field must be a visible, non-kept-out subject field." });
+        }
+        if (order.direction !== "asc" && order.direction !== "desc") errors.push({ path: `${orderPath}.direction`, code: "INVALID_PROTECTED_ORDER_DIRECTION", message: "order direction must be asc or desc." });
+      });
+    }
+  }
+
+  validateProtectedReadLimits(protectedRead.limits, `${path}.protected_read.limits`, errors);
+
+  if (protectedRead.mode === "rows") {
+    if (protectedRead.aggregate !== undefined) errors.push({ path: `${path}.protected_read.aggregate`, code: "PROTECTED_AGGREGATE_ROWS_FORBIDDEN", message: "protected row reads must not declare aggregate." });
+    if (capability.lookup !== undefined) errors.push({ path: `${path}.lookup`, code: "PROTECTED_LOOKUP_FORBIDDEN", message: "protected row reads use only their reviewed predicates and must not also declare legacy lookup." });
+    if (!Array.isArray(capability.visible_fields) || capability.visible_fields.length === 0) errors.push({ path: `${path}.visible_fields`, code: "PROTECTED_ROW_VISIBLE_FIELDS_REQUIRED", message: "protected row reads require one or more visible fields." });
+    const maxRows = isRecord(protectedRead.limits) ? protectedRead.limits.max_rows : undefined;
+    if (!Number.isSafeInteger(capability.max_rows) || capability.max_rows !== maxRows) {
+      errors.push({ path: `${path}.max_rows`, code: "PROTECTED_ROW_LIMIT_MISMATCH", message: "capability.max_rows must exactly match protected_read.limits.max_rows." });
+    }
+  } else if (protectedRead.mode === "aggregate") {
+    if (capability.lookup !== undefined) errors.push({ path: `${path}.lookup`, code: "PROTECTED_AGGREGATE_LOOKUP_FORBIDDEN", message: "protected aggregate reads do not use legacy lookup." });
+    if (Array.isArray(capability.visible_fields) && capability.visible_fields.length > 0) errors.push({ path: `${path}.visible_fields`, code: "PROTECTED_AGGREGATE_VISIBLE_ROWS_FORBIDDEN", message: "protected aggregate reads return no source row fields." });
+    if (protectedRead.row_order_by !== undefined) errors.push({ path: `${path}.protected_read.row_order_by`, code: "PROTECTED_AGGREGATE_ROW_ORDER_FORBIDDEN", message: "protected aggregates use aggregate.order_by." });
+    validateProtectedAggregate(protectedRead.aggregate, {
+      args,
+      referencedArgs,
+      relationshipName,
+      keptOut,
+      trustedScopeFields,
+      maxGroups: isRecord(protectedRead.limits) ? protectedRead.limits.max_groups : undefined,
+      path: `${path}.protected_read.aggregate`,
+      errors,
+    });
+  }
+
+  for (const [name, arg] of Object.entries(args)) {
+    if (isRecord(arg) && arg.type === "object_array") {
+      errors.push({ path: `${path}.args.${name}`, code: "PROTECTED_READ_SCALAR_ARGS_ONLY", message: "protected reads accept only bounded scalar arguments." });
+    }
+    if (!referencedArgs.has(name)) {
+      errors.push({ path: `${path}.args.${name}`, code: "PROTECTED_READ_UNUSED_ARG", message: "every protected-read argument must be selected by a human for one reviewed value position." });
+    }
+  }
+}
+
+function validateProtectedRelationship(
+  value: unknown,
+  keptOut: Set<string>,
+  trustedScopeFields: Set<string>,
+  path: string,
+  errors: ValidationIssue[],
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_RELATIONSHIP_NOT_OBJECT", message: "protected relationship must be an object." });
+    return undefined;
+  }
+  checkUnknownKeys(value, PROTECTED_RELATIONSHIP_KEYS, path, errors);
+  for (const key of ["name", "schema", "table", "primary_key", "tenant_key", "local_key", "target_key"] as const) {
+    if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
+  }
+  if (value.principal_scope_key !== undefined && !isSafeIdentifier(value.principal_scope_key)) errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "principal_scope_key must be a fixed safe identifier." });
+  if (value.cardinality !== "many_to_one" || value.max_fan_out !== 1) {
+    errors.push({ path, code: "PROTECTED_RELATIONSHIP_CARDINALITY_FORBIDDEN", message: "the protected-read release permits only an explicitly reviewed many-to-one relationship with max_fan_out 1." });
+  }
+  if (isSafeIdentifier(value.local_key) && (keptOut.has(value.local_key) || trustedScopeFields.has(value.local_key))) {
+    errors.push({
+      path: `${path}.local_key`,
+      code: "PROTECTED_RELATIONSHIP_LOCAL_KEY_FORBIDDEN",
+      message: "the reviewed relationship cannot join through a kept-out or trusted-scope subject field.",
+    });
+  }
+  return isSafeIdentifier(value.name) ? value.name : undefined;
+}
+
+function validateProtectedAggregate(
+  value: unknown,
+  input: {
+    args: JsonRecord;
+    referencedArgs: Set<string>;
+    relationshipName?: string;
+    keptOut: Set<string>;
+    trustedScopeFields: Set<string>;
+    maxGroups: unknown;
+    path: string;
+    errors: ValidationIssue[];
+  },
+): void {
+  const { path, errors } = input;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_AGGREGATE_REQUIRED", message: "protected aggregate mode requires a frozen aggregate definition." });
+    return;
+  }
+  checkUnknownKeys(value, PROTECTED_AGGREGATE_KEYS, path, errors);
+  if (value.counted_entity !== "subject") errors.push({ path: `${path}.counted_entity`, code: "INVALID_PROTECTED_COUNTED_ENTITY", message: "the initial protected aggregate release counts the scoped subject entity." });
+  const measureNames = new Set<string>();
+  if (!Array.isArray(value.measures) || value.measures.length < 1 || value.measures.length > 4) {
+    errors.push({ path: `${path}.measures`, code: "INVALID_PROTECTED_MEASURES", message: "protected aggregate requires 1 through 4 reviewed measures." });
+  } else {
+    value.measures.forEach((measure, index) => {
+      const measurePath = `${path}.measures[${index}]`;
+      if (!isRecord(measure)) {
+        errors.push({ path: measurePath, code: "PROTECTED_MEASURE_NOT_OBJECT", message: "protected measure must be an object." });
+        return;
+      }
+      checkUnknownKeys(measure, PROTECTED_MEASURE_KEYS, measurePath, errors);
+      validateUniqueIdentifier(measure.name, measureNames, `${measurePath}.name`, "DUPLICATE_PROTECTED_MEASURE_NAME", errors);
+      if (!["count", "count_distinct", "sum", "avg"].includes(String(measure.function))) errors.push({ path: `${measurePath}.function`, code: "INVALID_PROTECTED_MEASURE_FUNCTION", message: "measure function must be count, count_distinct, sum, or avg." });
+      validateProtectedRelationshipReference(measure.relationship, input.relationshipName, `${measurePath}.relationship`, errors);
+      if (measure.function === "count") {
+        if (measure.field !== undefined) errors.push({ path: `${measurePath}.field`, code: "PROTECTED_COUNT_FIELD_FORBIDDEN", message: "count measures count scoped subject rows and must not declare a field." });
+        if (measure.relationship !== undefined) errors.push({ path: `${measurePath}.relationship`, code: "PROTECTED_COUNT_RELATIONSHIP_FORBIDDEN", message: "count measures count the scoped subject entity, not a joined relation." });
+      } else {
+        validateProtectedFieldReference(measure.field, measure.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, measurePath, errors);
+      }
+    });
+  }
+
+  const dimensionNames = new Set<string>();
+  if (value.dimensions !== undefined) {
+    if (!Array.isArray(value.dimensions) || value.dimensions.length > 3) {
+      errors.push({ path: `${path}.dimensions`, code: "INVALID_PROTECTED_DIMENSIONS", message: "protected aggregate permits at most 3 reviewed dimensions." });
+    } else {
+      value.dimensions.forEach((dimension, index) => {
+        const dimensionPath = `${path}.dimensions[${index}]`;
+        if (!isRecord(dimension)) {
+          errors.push({ path: dimensionPath, code: "PROTECTED_DIMENSION_NOT_OBJECT", message: "protected dimension must be an object." });
+          return;
+        }
+        checkUnknownKeys(dimension, PROTECTED_DIMENSION_KEYS, dimensionPath, errors);
+        validateUniqueIdentifier(dimension.name, dimensionNames, `${dimensionPath}.name`, "DUPLICATE_PROTECTED_DIMENSION_NAME", errors);
+        validateProtectedFieldReference(dimension.field, dimension.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, dimensionPath, errors);
+      });
+    }
+  }
+
+  if (value.time_bucket !== undefined) {
+    const bucketPath = `${path}.time_bucket`;
+    if (!isRecord(value.time_bucket)) {
+      errors.push({ path: bucketPath, code: "PROTECTED_TIME_BUCKET_NOT_OBJECT", message: "time_bucket must be an object." });
+    } else {
+      checkUnknownKeys(value.time_bucket, PROTECTED_TIME_BUCKET_KEYS, bucketPath, errors);
+      if (!isSafeIdentifier(value.time_bucket.name)) errors.push({ path: `${bucketPath}.name`, code: "INVALID_PROTECTED_TIME_BUCKET_NAME", message: "time bucket name must be a safe identifier." });
+      if (value.time_bucket.bucket !== "day" && value.time_bucket.bucket !== "week" && value.time_bucket.bucket !== "month") errors.push({ path: `${bucketPath}.bucket`, code: "INVALID_PROTECTED_TIME_BUCKET", message: "time bucket must be day, week, or month." });
+      validateProtectedFieldReference(value.time_bucket.field, value.time_bucket.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, bucketPath, errors);
+    }
+  }
+
+  if (value.comparison !== undefined) {
+    const comparisonPath = `${path}.comparison`;
+    if (!isRecord(value.comparison)) {
+      errors.push({ path: comparisonPath, code: "PROTECTED_COMPARISON_NOT_OBJECT", message: "comparison must be an object." });
+    } else {
+      checkUnknownKeys(value.comparison, PROTECTED_COMPARISON_KEYS, comparisonPath, errors);
+      validateProtectedFieldReference(value.comparison.field, value.comparison.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, comparisonPath, errors);
+      if (!Array.isArray(value.comparison.ranges) || value.comparison.ranges.length < 1 || value.comparison.ranges.length > 2) {
+        errors.push({ path: `${comparisonPath}.ranges`, code: "INVALID_PROTECTED_COMPARISON_RANGES", message: "comparison requires one or two bounded time ranges." });
+      } else {
+        value.comparison.ranges.forEach((range, index) => {
+          const rangePath = `${comparisonPath}.ranges[${index}]`;
+          if (!isRecord(range)) {
+            errors.push({ path: rangePath, code: "PROTECTED_COMPARISON_RANGE_NOT_OBJECT", message: "comparison range must be an object." });
+            return;
+          }
+          checkUnknownKeys(range, PROTECTED_RANGE_KEYS, rangePath, errors);
+          validateProtectedValue(range.start, input.args, input.referencedArgs, `${rangePath}.start`, errors);
+          validateProtectedValue(range.end, input.args, input.referencedArgs, `${rangePath}.end`, errors);
+        });
+      }
+    }
+  }
+
+  if (value.order_by !== undefined) {
+    const orderPath = `${path}.order_by`;
+    if (!isRecord(value.order_by)) {
+      errors.push({ path: orderPath, code: "PROTECTED_AGGREGATE_ORDER_NOT_OBJECT", message: "aggregate order_by must be an object." });
+    } else {
+      checkUnknownKeys(value.order_by, PROTECTED_AGGREGATE_ORDER_KEYS, orderPath, errors);
+      if (value.order_by.direction !== "asc" && value.order_by.direction !== "desc") errors.push({ path: `${orderPath}.direction`, code: "INVALID_PROTECTED_ORDER_DIRECTION", message: "order direction must be asc or desc." });
+      if (value.order_by.kind === "measure") {
+        if (!isSafeIdentifier(value.order_by.measure) || !measureNames.has(String(value.order_by.measure))) errors.push({ path: `${orderPath}.measure`, code: "UNKNOWN_PROTECTED_ORDER_MEASURE", message: "measure ordering must reference a reviewed measure name." });
+      } else if (value.order_by.kind === "time_bucket") {
+        if (value.order_by.measure !== undefined) errors.push({ path: `${orderPath}.measure`, code: "PROTECTED_TIME_ORDER_MEASURE_FORBIDDEN", message: "time-bucket ordering must not declare a measure." });
+        if (!isRecord(value.time_bucket)) errors.push({ path: orderPath, code: "PROTECTED_TIME_ORDER_REQUIRES_BUCKET", message: "time-bucket ordering requires a reviewed time bucket." });
+      } else {
+        errors.push({ path: `${orderPath}.kind`, code: "INVALID_PROTECTED_AGGREGATE_ORDER", message: "aggregate order kind must be measure or time_bucket." });
+      }
+    }
+  }
+  if (!Number.isSafeInteger(value.top_n) || Number(value.top_n) < 1 || Number(value.top_n) > 100 || (Number.isSafeInteger(input.maxGroups) && Number(value.top_n) > Number(input.maxGroups))) {
+    errors.push({ path: `${path}.top_n`, code: "INVALID_PROTECTED_TOP_N", message: "top_n must be positive, at most 100, and no greater than limits.max_groups." });
+  }
+  if (!Number.isSafeInteger(value.minimum_group_size) || Number(value.minimum_group_size) < 2 || Number(value.minimum_group_size) > 1_000_000) {
+    errors.push({ path: `${path}.minimum_group_size`, code: "INVALID_PROTECTED_MINIMUM_GROUP_SIZE", message: "minimum_group_size must be from 2 through 1000000." });
+  }
+}
+
+function validateProtectedReadLimits(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_READ_LIMITS_REQUIRED", message: "protected_read requires immutable execution, response, extraction, and differencing limits." });
+    return;
+  }
+  checkUnknownKeys(value, PROTECTED_LIMIT_KEYS, path, errors);
+  const ceilings: Record<string, number> = {
+    max_rows: 100,
+    max_groups: 100,
+    max_response_cells: 10_000,
+    max_response_bytes: 1_048_576,
+    statement_timeout_ms: 30_000,
+    max_queries_per_session: 1_000,
+    max_extracted_cells_per_session: 100_000,
+    max_differencing_queries: 100,
+    rate_limit_per_minute: 120,
+  };
+  for (const [key, maximum] of Object.entries(ceilings)) {
+    if (!Number.isSafeInteger(value[key]) || Number(value[key]) < 1 || Number(value[key]) > maximum) {
+      errors.push({ path: `${path}.${key}`, code: "INVALID_PROTECTED_READ_LIMIT", message: `${key} must be a positive integer no greater than ${maximum}.` });
+    }
+  }
+}
+
+function validateProtectedValue(value: unknown, args: JsonRecord, referencedArgs: Set<string>, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_VALUE_REQUIRED", message: "protected value must be exactly one fixed literal or one reviewed argument reference." });
+    return;
+  }
+  checkUnknownKeys(value, PROTECTED_VALUE_KEYS, path, errors);
+  const hasFixed = Object.prototype.hasOwnProperty.call(value, "fixed");
+  const hasArg = Object.prototype.hasOwnProperty.call(value, "from_arg");
+  if (hasFixed === hasArg) {
+    errors.push({ path, code: "PROTECTED_VALUE_EXACTLY_ONE_SOURCE", message: "protected value must declare exactly one of fixed or from_arg." });
+    return;
+  }
+  if (hasFixed && !isJsonScalar(value.fixed)) errors.push({ path: `${path}.fixed`, code: "INVALID_PROTECTED_FIXED_VALUE", message: "fixed must be a JSON scalar." });
+  if (hasArg) {
+    const argument = isSafeIdentifier(value.from_arg) ? args[value.from_arg] : undefined;
+    if (!isSafeIdentifier(value.from_arg) || !isRecord(argument) || argument.type === "object_array") {
+      errors.push({ path: `${path}.from_arg`, code: "UNKNOWN_PROTECTED_VALUE_ARG", message: "from_arg must reference a declared scalar capability argument." });
+    } else {
+      referencedArgs.add(value.from_arg);
+    }
+  }
+}
+
+function validateProtectedFieldReference(
+  field: unknown,
+  relationship: unknown,
+  relationshipName: string | undefined,
+  keptOut: Set<string>,
+  trustedScopeFields: Set<string>,
+  path: string,
+  errors: ValidationIssue[],
+): void {
+  if (!isSafeIdentifier(field)) {
+    errors.push({ path: `${path}.field`, code: "INVALID_PROTECTED_FIELD", message: "protected field must be a fixed safe identifier." });
+  } else if (relationship === undefined && (keptOut.has(field) || trustedScopeFields.has(field))) {
+    errors.push({ path: `${path}.field`, code: "PROTECTED_FIELD_FORBIDDEN", message: "kept-out and trusted-scope fields cannot be selected, filtered, grouped, sorted, joined, aggregated, or counted distinctly." });
+  }
+  validateProtectedRelationshipReference(relationship, relationshipName, `${path}.relationship`, errors);
+}
+
+function validateProtectedRelationshipReference(value: unknown, relationshipName: string | undefined, path: string, errors: ValidationIssue[]): void {
+  if (value === undefined) return;
+  if (!isSafeIdentifier(value) || value !== relationshipName) errors.push({ path, code: "UNKNOWN_PROTECTED_RELATIONSHIP", message: "relationship must reference the capability's one reviewed many-to-one relationship." });
+}
+
+function validateUniqueIdentifier(value: unknown, seen: Set<string>, path: string, code: string, errors: ValidationIssue[]): void {
+  if (!isSafeIdentifier(value)) {
+    errors.push({ path, code: "INVALID_PROTECTED_ALIAS", message: "reviewed aliases must be safe identifiers." });
+    return;
+  }
+  if (seen.has(value)) errors.push({ path, code, message: `Duplicate reviewed alias: ${value}.` });
+  seen.add(value);
 }
 
 function validateAggregateRead(capability: JsonRecord, path: string, errors: ValidationIssue[]): void {
@@ -1121,6 +1533,10 @@ function isQualifiedName(value: unknown): value is string {
 
 function isQualifiedOrSafeName(value: unknown): value is string {
   return isSafeIdentifier(value) || isQualifiedName(value);
+}
+
+function isSha256Digest(value: unknown): value is `sha256:${string}` {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
 }
 
 function isPositiveInteger(value: unknown): boolean {

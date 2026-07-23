@@ -43,7 +43,7 @@ After the reviewed action is explicitly activated in Workbench, reload Cursor
 and run:
 
 ```bash
-npx -y -p @synapsor/runner@1.5.3 synapsor-runner mcp status cursor --project --check-launch
+npx -y -p @synapsor/runner@1.6.0 synapsor-runner mcp status cursor --project --check-launch
 ```
 
 The output lists the exact semantic read/proposal tools. It must not list raw
@@ -53,6 +53,6 @@ that still gives the model direct database-write authority.
 
 ## Marketplace status
 
-This 1.5.3 plugin is prepared for local validation and Cursor Marketplace
+This 1.6.0 plugin is prepared for local validation and Cursor Marketplace
 review. It is not listed or published until Synapsor explicitly completes the
 owner submission step.

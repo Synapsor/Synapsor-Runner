@@ -9,6 +9,7 @@ import { createMcpRuntime, loadRuntimeConfigFromFile, type DbRowReader } from "@
 import { ProposalStore, type StoredWritebackIntent } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, parseExecutionReceipt, parseWritebackJob, principalScopeFingerprint, protocolVersions } from "@synapsor-runner/protocol";
 import { main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runInitWizard, verifyLocalWritebackAuthority } from "./cli.js";
+import { installCursorProject } from "./cursor-project.js";
 import type { ReconciliationObservation } from "@synapsor-runner/worker-core";
 import runnerPackage from "../package.json" with { type: "json" };
 
@@ -257,6 +258,42 @@ async function createApprovedContractProposal(input: {
 }
 
 describe("runner cli", () => {
+  it("keeps fresh selector-free start interactive and established answers routing noninteractive", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-start-routing-"));
+    const answersPath = path.join(tempDir, "answers.json");
+    await fs.writeFile(answersPath, JSON.stringify({
+      engine: "postgres",
+      read_url_env: "DATABASE_URL",
+      schema: "public",
+      table: "invoices",
+      primary_key: "id",
+      tenant_column: "tenant_id",
+      visible_columns: ["id", "status"],
+      mode: "read_only",
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["start", "--from-env", "DATABASE_URL"])).rejects.toThrow(
+      /Fresh Auto Boundary onboarding requires an interactive terminal/,
+    );
+    await expect(main([
+      "start",
+      "--from-env",
+      "DATABASE_URL",
+      "--answers",
+      answersPath,
+      "--yes",
+      "--dry-run",
+      "--no-open",
+    ])).resolves.toBe(0);
+    expect(output.join("")).toContain('"mode": "read_only"');
+    expect(output.join("")).not.toContain("Opening the local first-safe-action workbench");
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -359,7 +396,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.5.4");
+      expect(output.join("").trim()).toBe("1.6.0");
     }
   });
 
@@ -1459,9 +1496,9 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect(seenRequest.body?.local_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.4.2",
-        "@synapsor/dsl": "1.4.4",
-        "@synapsor/runner": "1.5.4",
+        "@synapsor/spec": "1.5.0",
+        "@synapsor/dsl": "1.5.0",
+        "@synapsor/runner": "1.6.0",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -4518,7 +4555,7 @@ END
         synapsor: {
           type: "stdio",
           command: "npx",
-          args: ["-y", "-p", "@synapsor/runner@1.5.3", "synapsor-runner", "mcp", "serve"],
+          args: ["-y", "-p", "@synapsor/runner@1.6.0", "synapsor-runner", "mcp", "serve"],
         },
         direct_database: {
           type: "stdio",
@@ -5517,6 +5554,37 @@ END
     expect(removed.projectSetting).toBe("preserve-me");
     expect(removed.mcpServers.existing.command).toBe("node");
     expect(removed.mcpServers.synapsor).toBeUndefined();
+  });
+
+  it("reports a managed Cursor authoring entry as the two temporary Explore tools", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cursor-authoring-doctor-"));
+    const { configPath } = await writeContractApplyFixture(tempDir);
+    await installCursorProject({
+      projectRoot: tempDir,
+      authoring: true,
+      packageSpec: `@synapsor/runner@${runnerPackage.version}`,
+    });
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main(["doctor", "--config", configPath, "--project-root", tempDir, "--json"]))
+      .resolves.toBe(1);
+    const report = JSON.parse(output.join(""));
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "cursor-project:installation",
+        level: "pass",
+        message: expect.stringContaining("local authoring Cursor entry"),
+      }),
+      expect.objectContaining({
+        name: "cursor-project:model-tools",
+        level: "pass",
+        message: expect.stringContaining("app.describe_data, app.explore_data"),
+      }),
+    ]));
   });
 
   it("lists, shows, approves, and exports local proposals", async () => {

@@ -33,6 +33,9 @@ Current fixture groups:
 - `bounded-set-threats`
 - `reversible-change-sets`
 - `principal-row-scope`
+- protected named row/aggregate parity is covered by the Spec/DSL tests, the
+  packaged Auto Boundary golden path, and the Cloud/C++ fixture described
+  below.
 
 The fixture set is intentionally small in 0.1. It covers the runner-supported
 semantic surface first: trusted context, scoped reads, evidence handles,
@@ -59,6 +62,12 @@ The principal-row-scope fixture proves that a reviewed owner/assignee column is
 bound to a required trusted principal and AND-composed with tenant scope. Run
 `corepack pnpm test:principal-scope` for the live Postgres/MySQL proof covering
 same-tenant denial and shared-ledger evidence-handle isolation.
+The protected-read parity fixture proves digest- and generation-lock-bound
+named reads, fixed predicates, reviewed measures/dimensions/time buckets,
+one-hop many-to-one limits, suppression, response/query/extraction/
+differencing budgets, and rejection of raw SQL or model-controlled trusted
+scope. `corepack pnpm test:auto-boundary-explore:packed` proves the complete
+authoring-to-production behavior through packed public artifacts.
 
 Additional 0.1 parity coverage currently lives in tests and verification
 scripts rather than separate `cloud-push/` or `dsl-json-parity/` conformance
@@ -73,6 +82,12 @@ fixture directories:
 - The main Synapsor repo script `scripts/verify_contract_cloud_push.sh`
   verifies real Cloud push, retrieval, idempotent versioning, unauthorized
   rejection, and runner-bundle download against a live local control-plane.
+- The main Synapsor repo fixture
+  `tests/fixtures/synapsor_spec/protected-read-aggregate.contract.json`,
+  `SynapsorContractSpec.*`, control-plane tests, and
+  `scripts/verify_contract_roundtrip.sh` prove that Cloud/C++ validates,
+  normalizes, stores, and exports the same optional `protected_read` authority
+  without accepting SQL escape fields.
 
 ## Runner Usage
 
@@ -87,6 +102,7 @@ corepack pnpm --filter @synapsor-runner/mcp-server test
 corepack pnpm test:contract-conformance
 corepack pnpm test:aggregate-read
 corepack pnpm test:principal-scope
+corepack pnpm test:auto-boundary-explore:packed
 ```
 
 The spec package also validates every conformance contract:

@@ -1,6 +1,6 @@
 {
   "name": "synapsor",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "description": "Turn one application data change into a disabled, reviewable Synapsor Safe Action without giving the Cursor agent SQL or commit authority.",
   "author": {
     "name": "Synapsor"

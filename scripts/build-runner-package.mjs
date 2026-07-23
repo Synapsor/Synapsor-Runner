@@ -154,6 +154,7 @@ await cp(resolve(root, "README.md"), resolve(packageRoot, "README.md"));
 const publicDocs = [
   "alternatives.md",
   "README.md",
+  "auto-boundary-and-scoped-explore.md",
   "app-owned-executors.md",
   "benchmarks/bounded-set-local.md",
   "bounded-set-writeback.md",
@@ -212,6 +213,17 @@ const publicDocs = [
   "use-your-own-database.md",
   "why-synapsor-vs-app-guardrails.md",
 ];
+const publishedCompatibilityManifest = JSON.parse(await readFile(
+  resolve(root, "fixtures/compatibility/published-1.5.4/manifest.json"),
+  "utf8",
+));
+const publishedCompatibilitySources = [
+  ...publishedCompatibilityManifest.contracts,
+  ...publishedCompatibilityManifest.dsl_sources,
+].map(({ path: source }) => [
+  source,
+  `fixtures/compatibility/published-1.5.4/sources/${source}`,
+]);
 const releaseAssets = [
   ["CHANGELOG.md", "CHANGELOG.md"],
   ["AGENTS.md", "AGENTS.md"],
@@ -219,11 +231,13 @@ const releaseAssets = [
   ["SECURITY.md", "SECURITY.md"],
   ["THREAT_MODEL.md", "THREAT_MODEL.md"],
   ["TRADEMARKS.md", "TRADEMARKS.md"],
+  ["llms.txt", "llms.txt"],
   ...publicDocs.map((name) => [`docs/${name}`, `docs/${name}`]),
   ["docs/rfcs", "docs/rfcs"],
   ["recipes", "recipes"],
   ["examples/dangerous-mcp-tools.json", "examples/dangerous-mcp-tools.json"],
   ["examples/app-owned-writeback", "examples/app-owned-writeback"],
+  ["examples/auto-boundary-churn", "examples/auto-boundary-churn"],
   ["examples/claude-desktop-postgres", "examples/claude-desktop-postgres"],
   ["examples/cursor-postgres", "examples/cursor-postgres"],
   ["examples/mcp-postgres-billing-app-handler", "examples/mcp-postgres-billing-app-handler"],
@@ -237,6 +251,7 @@ const releaseAssets = [
   ["examples/support-billing-agent", "examples/support-billing-agent"],
   ["packages/dsl/examples/bounded-set-multi-term.synapsor.sql", "fixtures/dsl/bounded-set-multi-term.synapsor.sql"],
   ["packages/dsl/examples/aggregate-read.synapsor.sql", "fixtures/dsl/aggregate-read.synapsor.sql"],
+  ...publishedCompatibilitySources,
   ["fixtures", "fixtures"],
   ["schemas", "schemas"],
 ];

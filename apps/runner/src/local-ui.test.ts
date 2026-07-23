@@ -525,6 +525,71 @@ export default defineCapability({
     })).rejects.toThrow(/binds to localhost/);
   });
 
+  it("requires granular Auto Boundary decision evidence before database revalidation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-review-"));
+    const boundaryRoot = path.join(tempDir, "synapsor/generated");
+    await fs.mkdir(boundaryRoot, { recursive: true });
+    await fs.writeFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), `${JSON.stringify({
+      schema_version: "synapsor.exploration-boundary.v1",
+      activation: "disabled_unreviewed",
+      unresolved_decisions: ["public.accounts: confirm tenant key tenant_id"],
+    })}\n`, "utf8");
+    await fs.writeFile(path.join(boundaryRoot, "generation-review.json"), `${JSON.stringify({
+      summary: {
+        objects: 1,
+        draft_reads: 1,
+        blocked_objects: 0,
+        sensitive_fields_kept_out: 1,
+      },
+      unresolved_decisions: ["public.accounts: confirm tenant key tenant_id"],
+    })}\n`, "utf8");
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot,
+      configPath: path.join(tempDir, "synapsor.runner.json"),
+      storePath: path.join(tempDir, ".synapsor/local.db"),
+      token: "boundary-review-token",
+      csrfToken: "boundary-review-csrf",
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const bootstrap = await fetch(`${baseUrl}/?token=boundary-review-token`, { redirect: "manual" });
+      const cookie = bootstrap.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+      const headers = { cookie };
+      const landing = await fetch(`${baseUrl}/`, { headers });
+      const html = await landing.text();
+      expect(html).toContain("data-review-decision");
+      expect(html).not.toContain("I reviewed every listed scope");
+      expect(html).toContain('id="deployment-profile"');
+      expect(html).toContain("Exact database role posture");
+      expect(html).toContain("Blocked Objects And Disabled Actions");
+      expect(html).toContain("Protect This Query");
+
+      const activation = await fetch(`${baseUrl}/api/boundary/activate`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          "x-synapsor-csrf": "boundary-review-csrf",
+        },
+        body: JSON.stringify({
+          candidate: { activation: "disabled_unreviewed" },
+          expected_digest: `sha256:${"a".repeat(64)}`,
+          actor: "reviewer@example.test",
+          confirmation: `ACTIVATE sha256:${"a".repeat(64)}`,
+        }),
+      });
+      expect(activation.status).toBe(500);
+      await expect(activation.json()).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/every reviewed decision/i),
+      });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the injected shared-store bridge for review reads and writes", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-shared-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageDir = path.join(root, "apps", "runner");
+const specPackageDir = path.join(root, "packages", "spec");
 const packageJson = JSON.parse(await fs.readFile(path.join(packageDir, "package.json"), "utf8"));
 const expectedVersion = packageJson.version;
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-packed-lifecycle-"));
@@ -14,10 +15,14 @@ let tarball;
 
 try {
   run("corepack", ["pnpm", "build:runner-package"], { cwd: root });
-  const pack = run("npm", ["pack", "--silent"], { cwd: packageDir });
+  const specPack = run("corepack", ["pnpm", "pack", "--pack-destination", tempDir], { cwd: specPackageDir });
+  const specPackedName = specPack.stdout.trim().split(/\r?\n/).findLast((line) => line.endsWith(".tgz"));
+  assert(specPackedName, "pnpm pack did not return a Spec tarball filename", specPack.stdout);
+  const specTarball = path.join(tempDir, path.basename(specPackedName));
+  const pack = run("corepack", ["pnpm", "pack", "--pack-destination", tempDir], { cwd: packageDir });
   const packedName = pack.stdout.trim().split(/\r?\n/).findLast((line) => line.endsWith(".tgz"));
-  assert(packedName, "npm pack did not return a tarball filename", pack.stdout);
-  tarball = path.join(packageDir, packedName);
+  assert(packedName, "pnpm pack did not return a tarball filename", pack.stdout);
+  tarball = path.join(tempDir, path.basename(packedName));
 
   const entries = run("tar", ["-tzf", tarball]).stdout.trim().split(/\r?\n/);
   assert(entries.includes("package/docs/store-lifecycle.md"), "packed Runner is missing docs/store-lifecycle.md");
@@ -26,7 +31,7 @@ try {
   assert(!forbiddenEntry, "packed Runner contains development or runtime state", forbiddenEntry);
 
   run("npm", ["init", "-y"], { cwd: tempDir });
-  run("npm", ["install", tarball], { cwd: tempDir });
+  run("npm", ["install", specTarball, tarball], { cwd: tempDir });
   const packedRoot = path.join(tempDir, "node_modules", "@synapsor", "runner");
   const cli = path.join(packedRoot, "dist", "cli.js");
   const installed = JSON.parse(await fs.readFile(path.join(packedRoot, "package.json"), "utf8"));

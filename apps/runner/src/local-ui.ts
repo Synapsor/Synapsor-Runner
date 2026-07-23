@@ -7,7 +7,22 @@ import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { buildProposalReviewView, createMcpRuntime, loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { protocolVersions } from "@synapsor-runner/protocol";
+import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { cursorProjectStatus } from "./cursor-project.js";
+import {
+  activateExplorationBoundary,
+  explorationBoundaryCandidateDigest,
+  reviewExplorationBoundaryCandidate,
+  type ExplorationBoundaryDraft,
+  type GenerationLock,
+} from "./auto-boundary.js";
+import {
+  activateProtectedQuery,
+  createProtectedQueryDraft,
+  disableScopedExplore,
+  listProtectableQueries,
+  type ProtectArgumentSelection,
+} from "./protect-query.js";
 import {
   activateSafeActionDraft,
   prepareSafeActionPreview,
@@ -27,6 +42,8 @@ export type LocalUiOptions = {
   csrfToken?: string;
   allowRemoteBind?: boolean;
   tour?: boolean;
+  boundaryRoot?: string;
+  projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
   safeActionPreview?: SafeActionPreview;
 };
@@ -69,13 +86,14 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const token = options.token ?? crypto.randomBytes(24).toString("base64url");
   const csrfToken = options.csrfToken ?? crypto.randomBytes(24).toString("base64url");
   const storeAccess = options.storeAccess ?? localStoreAccess(storePath);
-  const projectRoot = path.resolve(path.dirname(configPath));
+  const projectRoot = path.resolve(options.projectRoot ?? path.dirname(configPath));
+  const boundaryRoot = options.boundaryRoot ? path.resolve(options.boundaryRoot) : undefined;
   const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
   const bootstrapState = { consumed: false };
 
   const server = createServer(async (request, response) => {
     try {
-      await handleRequest({ request, response, configPath, storePath, projectRoot, storeAccess, safeActionPreview, token, csrfToken, tour: options.tour === true, bootstrapState });
+      await handleRequest({ request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, token, csrfToken, tour: options.tour === true, bootstrapState });
     } catch (error) {
       sendJson(response, 500, {
         ok: false,
@@ -117,6 +135,7 @@ async function handleRequest(input: {
   configPath: string;
   storePath: string;
   projectRoot: string;
+  boundaryRoot?: string;
   storeAccess: LocalUiStoreAccess;
   safeActionPreview: SafeActionPreview;
   token: string;
@@ -124,7 +143,7 @@ async function handleRequest(input: {
   tour: boolean;
   bootstrapState: { consumed: boolean };
 }): Promise<void> {
-  const { request, response, configPath, storePath, projectRoot, storeAccess, safeActionPreview, token, csrfToken, tour, bootstrapState } = input;
+  const { request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, token, csrfToken, tour, bootstrapState } = input;
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
   if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
     if (url.searchParams.get("token") !== token || bootstrapState.consumed) {
@@ -142,7 +161,207 @@ async function handleRequest(input: {
   }
 
   if (request.method === "GET" && url.pathname === "/") {
-    sendHtml(response, renderShell(csrfToken, tour || url.searchParams.get("tour") === "1", configPath, storePath));
+    sendHtml(response, boundaryRoot
+      ? renderBoundaryShell(csrfToken)
+      : renderShell(csrfToken, tour || url.searchParams.get("tour") === "1", configPath, storePath));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/boundary") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+    const review = JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as Record<string, unknown>;
+    sendJson(response, 200, {
+      ok: true,
+      draft,
+      review,
+      candidate_digest: explorationBoundaryCandidateDigest(draft),
+      active: await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/activate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for exploration-boundary activation." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (!isRecord(body.candidate)) throw new Error("Boundary activation requires the exact reviewed candidate object.");
+    if (typeof body.expected_digest !== "string"
+      || typeof body.actor !== "string"
+      || typeof body.confirmation !== "string"
+      || !Array.isArray(body.confirmed_decisions)
+      || body.confirmed_decisions.some((decision) => typeof decision !== "string")) {
+      throw new Error("Boundary activation requires expected_digest, actor, exact confirmation, and every reviewed decision.");
+    }
+    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+    const inspection = await inspectDatabase({
+      engine: lock.engine,
+      databaseUrlEnv: lock.source_env,
+      env: process.env,
+    });
+    const active = await activateExplorationBoundary({
+      projectRoot,
+      candidate: body.candidate as unknown as ExplorationBoundaryDraft,
+      expectedDigest: body.expected_digest,
+      actor: body.actor,
+      confirmation: body.confirmation,
+      confirmedDecisions: body.confirmed_decisions,
+      currentInspection: inspection,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      active,
+      tools_list_changed: false,
+      reconnect_required: true,
+      message: "The reviewed authoring boundary is active. Scoped Explore remains local-only and must be explicitly served from this project.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/preview") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for exploration-boundary preview." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (!isRecord(body.candidate)) throw new Error("Boundary preview requires a candidate object.");
+    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+    const preview = reviewExplorationBoundaryCandidate(draft, body.candidate as unknown as ExplorationBoundaryDraft);
+    sendJson(response, 200, { ok: true, ...preview });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/protect") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Protect This Query is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    try {
+      const queries = await listProtectableQueries({ projectRoot });
+      sendJson(response, 200, {
+        ok: true,
+        available: true,
+        queries: queries.map(({ token, ...query }) => ({ ...query, query_ref: token })),
+      });
+    } catch (error) {
+      if (isInactiveExplorationBoundary(error)) {
+        sendJson(response, 200, {
+          ok: true,
+          available: false,
+          queries: [],
+          message: "Activate the reviewed exploration boundary before protecting a query.",
+        });
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/protect/draft") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Protect This Query is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Protect This Query." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.query_ref !== "string"
+      || typeof body.capability_name !== "string"
+      || typeof body.description !== "string"
+      || typeof body.returns_hint !== "string") {
+      throw new Error("Protect This Query requires query_ref, capability_name, description, and returns_hint.");
+    }
+    if (body.arguments !== undefined && !Array.isArray(body.arguments)) {
+      throw new Error("Protect This Query arguments must be a reviewed array.");
+    }
+    const created = await createProtectedQueryDraft({
+      projectRoot,
+      token: body.query_ref,
+      capabilityName: body.capability_name,
+      description: body.description,
+      returnsHint: body.returns_hint,
+      arguments: (body.arguments ?? []) as ProtectArgumentSelection[],
+    });
+    sendJson(response, 200, {
+      ok: true,
+      draft: created.draft,
+      dsl: created.dsl,
+      contract: created.contract,
+      tests: created.tests,
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/protect/activate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Protect This Query is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for protected-capability activation." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.capability_name !== "string"
+      || typeof body.expected_digest !== "string"
+      || typeof body.confirmation !== "string"
+      || typeof body.actor !== "string") {
+      throw new Error("Protected-capability activation requires capability_name, expected_digest, confirmation, and actor.");
+    }
+    const active = await activateProtectedQuery({
+      projectRoot,
+      capabilityName: body.capability_name,
+      expectedDigest: body.expected_digest,
+      confirmation: body.confirmation,
+      actor: body.actor,
+      configPath,
+      disableExplore: body.disable_explore !== false,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      active,
+      tools_list_changed: true,
+      reconnect_required: true,
+      message: active.exploration_disabled
+        ? "The protected named capability is active and Scoped Explore is disabled. Reconnect the production MCP client to load only reviewed named tools."
+        : "The protected named capability is active. Scoped Explore remains an explicitly enabled local authoring surface.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/explore/disable") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Scoped Explore is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to disable Scoped Explore." });
+      return;
+    }
+    const disabled = await disableScopedExplore(projectRoot);
+    sendJson(response, 200, {
+      ok: true,
+      ...disabled,
+      protected_capabilities_changed: false,
+      message: "Scoped Explore is disabled. Existing protected named capabilities were not changed.",
+    });
     return;
   }
 
@@ -688,6 +907,15 @@ async function readJsonBody(request: IncomingMessage): Promise<JsonRecord> {
   return parsed;
 }
 
+async function readOptionalJson(filePath: string): Promise<unknown | null> {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 function hasValidCsrf(request: IncomingMessage, csrfToken: string): boolean {
   return request.headers["x-synapsor-csrf"] === csrfToken;
 }
@@ -733,6 +961,124 @@ function sendRedirect(response: ServerResponse, location: string): void {
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("x-content-type-options", "nosniff");
   response.end();
+}
+
+function renderBoundaryShell(csrfToken: string): string {
+  const escapedCsrf = escapeScriptString(csrfToken);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Auto Boundary Review | Synapsor Runner</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f4f7f7;--surface:#fff;--text:#172126;--muted:#5d6b70;--line:#d5dfe1;--accent:#087f73;--warn:#9a6700;--bad:#b42318;--good:#137333}
+    @media(prefers-color-scheme:dark){:root{--bg:#111718;--surface:#192124;--text:#edf3f2;--muted:#aab7b8;--line:#344247;--accent:#55c9b9;--warn:#f4c86a;--bad:#ff8d84;--good:#70d58c}}
+    *{box-sizing:border-box;letter-spacing:0}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,sans-serif}header{background:var(--surface);border-bottom:1px solid var(--line)}header div,main{width:min(1180px,calc(100% - 32px));margin:auto}header div{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:20px;margin:0}h2{font-size:16px;margin:28px 0 10px}h3{font-size:15px;margin:0}main{padding:24px 0 48px}.state{color:var(--warn);font-weight:700}.notice{background:var(--surface);border-left:3px solid var(--warn);padding:12px 14px}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--surface);border:1px solid var(--line)}.metric{padding:14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.metric strong{display:block;font-size:22px}.metric span,.scope{color:var(--muted)}.resource{padding:16px 0;border-top:1px solid var(--line)}.resource-head{display:flex;justify-content:space-between;gap:12px}.resource-toggle,.relationship{display:flex;align-items:center;gap:8px}.relationships{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;padding:10px;background:var(--bg)}.panel{background:var(--surface);border:1px solid var(--line);padding:16px}.posture{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);gap:16px;align-items:start}.posture>*{min-width:0}.posture label{display:flex;flex-direction:column;gap:6px;color:var(--muted)}.posture code{overflow-wrap:anywhere;word-break:break-all}.query{display:block;width:100%;text-align:left;margin:8px 0;background:transparent;color:var(--text);border-color:var(--line)}.query.selected{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{color:var(--muted);font-size:12px}th:first-child{width:30%}code,pre{font:12px ui-monospace,monospace}pre{white-space:pre-wrap;overflow:auto;max-height:360px;background:var(--bg);border:1px solid var(--line);padding:12px}input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}input[type=text],input[type=number],textarea,select{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--text)}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.budgets,.protect-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.budgets label,.protect-fields label{display:flex;flex-direction:column;gap:5px;color:var(--muted)}.literal{margin:10px 0;padding:10px;border:1px solid var(--line)}.literal label:first-child{display:flex;flex-direction:row;align-items:center;gap:8px}.actions{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:24px;padding:14px;background:var(--surface);border:1px solid var(--line)}button{min-height:38px;padding:8px 14px;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:transparent;color:var(--accent)}button:disabled{opacity:.5;cursor:not-allowed}#message,#protect-message{flex:1 1 260px;min-height:20px;color:var(--muted)}.error{color:var(--bad)!important}.success{color:var(--good)!important}
+    @media(max-width:760px){.summary,.budgets{grid-template-columns:1fr 1fr}.posture{grid-template-columns:1fr}.actions{position:static}table{font-size:12px}th:first-child{width:38%}}@media(max-width:480px){header div,main{width:calc(100% - 20px)}.summary,.budgets,.protect-fields{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.resource-head{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <header><div><h1>Synapsor Auto Boundary</h1><span id="state" class="state">Loading review</span></div></header>
+  <main>
+    <p>Review a temporary local authoring boundary. Existing active Runner tools remain unchanged.</p>
+    <div class="notice">Source rows remain unavailable until this exact digest is activated. Approval, apply, and commit are never added to MCP.</div>
+    <h2>Application Summary</h2><div id="summary" class="summary"></div>
+    <h2>Authoring Posture</h2>
+    <section class="panel posture">
+      <label>Deployment profile
+        <select id="deployment-profile"><option value="staging">Staging</option><option value="development">Development</option></select>
+      </label>
+      <div id="role-posture"></div>
+    </section>
+    <h2>Blocked Objects And Disabled Actions</h2><div id="blocked" class="panel"></div>
+    <h2>Resources And Fields</h2><p>Keep only the resources, relationships, and field uses this authoring pack needs. You may add kept-out fields; generated kept-out fields cannot be restored.</p><div id="resources"></div>
+    <h2>Privacy And Query Limits</h2><div id="budgets" class="budgets"></div>
+    <h2>Required Confirmations</h2><div id="decisions"></div>
+    <h2>Protect This Query</h2>
+    <section class="panel">
+      <p>After Cursor runs a reviewed local exploration, choose it here. Runner generates public DSL, canonical JSON, tests, and a disabled named capability. No opaque token needs to be copied.</p>
+      <button id="refresh-protect" class="secondary" type="button">Refresh recent queries</button>
+      <div id="protect-queries"></div>
+      <div id="protect-editor"></div>
+      <span id="protect-message" role="status" aria-live="polite"></span>
+    </section>
+    <div class="actions">
+      <button id="preview" class="secondary" type="button">Preview exact digest</button>
+      <input id="actor" type="text" maxlength="128" placeholder="Local operator identity" aria-label="Local operator identity">
+      <button id="activate" type="button" disabled>Activate reviewed digest</button>
+      <span id="message" role="status" aria-live="polite"></span>
+    </div>
+  </main>
+  <script>
+    const csrf="${escapedCsrf}";let original,candidate,digest,reviewReport,reviewDecisions=[],protectQueries=[],selectedProtect=null,protectedDraft=null;
+    const msg=document.getElementById("message");
+    const permissions=[["raw","selectable_fields"],["filter","filterable_fields"],["sort","sortable_fields"],["group","groupable_fields"],["sum/avg","aggregate_measures"],["count distinct","count_distinct_fields"],["time","time_bucket_fields"]];
+    const esc=v=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const post=async(url,body)=>{const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(body)});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Request failed");return p};
+    const has=(r,f,k)=>k==="filterable_fields"||k==="time_bucket_fields"?Object.hasOwn(r[k],f):r[k].includes(f);
+    const currentResource=id=>candidate.pack.resources.find(r=>r.id===id);
+    function allDecisionsConfirmed(){return reviewDecisions.length>0&&document.querySelectorAll("[data-review-decision]:checked").length===reviewDecisions.length}
+    function updateActivationState(){document.getElementById("activate").disabled=!digest||!allDecisionsConfirmed()}
+    function changed(){digest=undefined;updateActivationState()}
+    function removeFieldAuthority(resource,field){resource.selectable_fields=resource.selectable_fields.filter(v=>v!==field);delete resource.filterable_fields[field];resource.sortable_fields=resource.sortable_fields.filter(v=>v!==field);resource.groupable_fields=resource.groupable_fields.filter(v=>v!==field);resource.aggregate_measures=resource.aggregate_measures.filter(v=>v!==field);resource.count_distinct_fields=resource.count_distinct_fields.filter(v=>v!==field);delete resource.time_bucket_fields[field];resource.relationships=resource.relationships.filter(r=>!r.local_columns.includes(field))}
+    function setPermission(resource,field,key,checked){const source=original.pack.resources.find(r=>r.id===resource.id);if(resource.kept_out_fields.includes(field)&&checked)return;if(key==="filterable_fields"||key==="time_bucket_fields"){if(checked)resource[key][field]=structuredClone(source[key][field]);else delete resource[key][field]}else if(checked&&!resource[key].includes(field))resource[key].push(field);else if(!checked)resource[key]=resource[key].filter(v=>v!==field);changed()}
+    function setResource(source,checked){if(checked&&!currentResource(source.id)){candidate.pack.resources.push(structuredClone(source));candidate.pack.resources.sort((a,b)=>a.id.localeCompare(b.id))}else if(!checked){candidate.pack.resources=candidate.pack.resources.filter(r=>r.id!==source.id);candidate.pack.resources.forEach(r=>{r.relationships=r.relationships.filter(rel=>rel.target_resource!==source.id)})}changed();renderResources()}
+    function setKeptOut(source,field,checked){const resource=currentResource(source.id);if(!resource)return;if(source.kept_out_fields.includes(field)&&!checked)return;if(checked){if(!resource.kept_out_fields.includes(field))resource.kept_out_fields.push(field);removeFieldAuthority(resource,field);candidate.pack.resources.forEach(r=>{r.relationships=r.relationships.filter(rel=>!(rel.target_resource===resource.id&&rel.target_columns.includes(field)))})}else resource.kept_out_fields=resource.kept_out_fields.filter(v=>v!==field);changed();renderResources()}
+    function setRelationship(source,relationship,checked){const resource=currentResource(source.id);if(!resource)return;if(checked){const target=currentResource(relationship.target_resource);if(!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field)))return;if(!resource.relationships.some(item=>item.id===relationship.id))resource.relationships.push(structuredClone(relationship))}else resource.relationships=resource.relationships.filter(item=>item.id!==relationship.id);changed();renderResources()}
+    function renderResources(){document.getElementById("resources").innerHTML=original.pack.resources.map((source,i)=>{const resource=currentResource(source.id);const included=Boolean(resource);const fields=Object.keys(source.field_types).sort();const relations=included&&source.relationships.length?'<div class="relationships">'+source.relationships.map((relationship,j)=>{const target=currentResource(relationship.target_resource);const blocked=!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field));const checked=resource.relationships.some(item=>item.id===relationship.id);return '<label class="relationship"><input type="checkbox" data-relationship-resource="'+i+'" data-relationship="'+j+'" '+(checked?"checked":"")+(blocked?" disabled":"")+'> '+esc(relationship.id)+' → '+esc(relationship.target_resource)+' · many-to-one · max fan-out 1</label>'}).join("")+'</div>':"";return '<section class="resource"><div class="resource-head"><label class="resource-toggle"><input type="checkbox" data-resource-enabled="'+i+'" '+(included?"checked":"")+'> <h3>'+esc(source.id)+'</h3></label><span class="scope">tenant: '+esc(source.tenant_key)+(source.principal_key?' · principal: '+esc(source.principal_key):'')+'</span></div>'+(!included?'<p class="scope">Excluded from this model-visible authoring pack.</p>':'<table><thead><tr><th>Field</th>'+permissions.map(([l])=>'<th>'+esc(l)+'</th>').join("")+'<th>kept out</th></tr></thead><tbody>'+fields.map(field=>'<tr><td><code>'+esc(field)+'</code></td>'+permissions.map(([label,key])=>'<td>'+(has(source,field,key)?'<input type="checkbox" aria-label="'+esc(label)+' '+esc(field)+' for '+esc(source.id)+'" data-permission-resource="'+i+'" data-field="'+esc(field)+'" data-key="'+key+'" '+(has(resource,field,key)?"checked":"")+(resource.kept_out_fields.includes(field)?" disabled":"")+'>':'—')+'</td>').join("")+'<td><input type="checkbox" aria-label="Keep '+esc(field)+' out" data-kept-out-resource="'+i+'" data-kept-out-field="'+esc(field)+'" '+(resource.kept_out_fields.includes(field)?"checked":"")+(source.kept_out_fields.includes(field)?" disabled":"")+'></td></tr>').join("")+'</tbody></table>'+relations)+'</section>'}).join("");document.querySelectorAll("[data-resource-enabled]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setResource(original.pack.resources[Number(t.dataset.resourceEnabled)],t.checked)}));document.querySelectorAll("[data-permission-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setPermission(currentResource(original.pack.resources[Number(t.dataset.permissionResource)].id),t.dataset.field,t.dataset.key,t.checked)}));document.querySelectorAll("[data-kept-out-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setKeptOut(original.pack.resources[Number(t.dataset.keptOutResource)],t.dataset.keptOutField,t.checked)}));document.querySelectorAll("[data-relationship-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;const source=original.pack.resources[Number(t.dataset.relationshipResource)];setRelationship(source,source.relationships[Number(t.dataset.relationship)],t.checked)}))}
+    function renderBudgets(){document.getElementById("budgets").innerHTML=Object.entries(candidate.budgets).map(([key,value])=>'<label>'+esc(key.replaceAll("_"," "))+'<input type="number" min="1" max="'+original.budgets[key]+'" value="'+value+'" data-budget="'+key+'"></label>').join("");document.querySelectorAll("[data-budget]").forEach(input=>input.addEventListener("change",e=>{candidate.budgets[e.currentTarget.dataset.budget]=Number(e.currentTarget.value);changed()}))}
+    function renderPosture(){const role=reviewReport.database_role||{};document.getElementById("deployment-profile").value=candidate.deployment_profile;document.getElementById("role-posture").innerHTML='<strong>Exact database role posture</strong><p class="scope">role: '+esc(role.name||"unknown")+' · verified: '+esc(role.verified===true?"yes":"no")+' · read only: '+esc(role.read_only===true?"yes":"no")+' · superuser: '+esc(String(role.superuser))+' · BYPASSRLS: '+esc(String(role.bypass_rls))+'</p><p class="scope">role/grant/RLS fingerprint: <code>'+esc(role.fingerprint||candidate.role_posture_fingerprint)+'</code></p>'}
+    function renderBlocked(){const resources=(reviewReport.resources||[]).filter(resource=>resource.status!=="draft_read");const actions=reviewReport.structured_actions||[];const resourceRows=resources.map(resource=>'<li><strong>'+esc(resource.id)+'</strong>: '+esc(resource.blockers.join("; ")||"scope unresolved")+'</li>').join("");const actionRows=actions.map(action=>'<li><strong>'+esc(action.name)+'</strong>: disabled, business review required · source '+esc(action.source)+'</li>').join("");document.getElementById("blocked").innerHTML=(resourceRows?'<h3>Blocked objects</h3><ul>'+resourceRows+'</ul>':'<p>No blocked objects.</p>')+(actionRows?'<h3>Disabled action candidates</h3><ul>'+actionRows+'</ul>':'<p>No structured action candidates were detected.</p>')}
+    function renderProtect(){
+      const list=document.getElementById("protect-queries");
+      const editor=document.getElementById("protect-editor");
+      if(!protectQueries.length){list.innerHTML="<p>No unexpired query is ready. Activate this boundary, reconnect the local authoring MCP session, ask a scoped question, then refresh.</p>";editor.innerHTML="";return}
+      list.innerHTML=protectQueries.map((query,index)=>'<button class="query '+(selectedProtect===index?"selected":"")+'" data-protect-index="'+index+'" type="button"><strong>'+esc(query.kind==="aggregate"?"Aggregate analysis":"Bounded rows")+'</strong><br><span class="scope">'+esc(query.resource)+" · expires "+esc(query.expires_at)+'</span></button>').join("");
+      document.querySelectorAll("[data-protect-index]").forEach(button=>button.onclick=()=>{selectedProtect=Number(button.dataset.protectIndex);protectedDraft=null;renderProtect()});
+      if(selectedProtect===null||!protectQueries[selectedProtect]){editor.innerHTML="<p>Select a recent query to review and protect.</p>";return}
+      const query=protectQueries[selectedProtect];
+      const literals=query.literal_positions.map((position,index)=>'<div class="literal"><label><input type="checkbox" data-arg-enable="'+index+'"> Turn this reviewed literal into a bounded argument</label><code>'+esc(position.location)+" · "+esc(position.relationship?position.relationship+"."+position.field:position.field)+" = "+esc(JSON.stringify(position.current_value))+'</code><div class="protect-fields"><label>Argument name<input type="text" data-arg-name="'+index+'" value="'+esc(position.suggested_argument)+'"></label><label>Description<input type="text" data-arg-description="'+index+'" value="'+esc("Reviewed "+position.field+" filter.")+'"></label>'+(position.inferred_type==="number"?'<label>Minimum<input type="number" data-arg-min="'+index+'" value="'+esc(position.current_value)+'"></label><label>Maximum<input type="number" data-arg-max="'+index+'" value="'+esc(position.current_value)+'"></label>':position.inferred_type==="string"?'<label>Maximum length<input type="number" min="'+String(position.current_value).length+'" max="512" data-arg-length="'+index+'" value="'+Math.max(32,String(position.current_value).length)+'"></label>':"")+'</div></div>').join("");
+      editor.innerHTML='<div class="protect-fields"><label>Capability name<input id="protect-name" type="text" value="analytics.protected_query"></label><label>Description<input id="protect-description" type="text" value="Answer one reviewed, bounded data question."></label><label>Returns hint<input id="protect-returns" type="text" value="Returns only the reviewed bounded result shape."></label></div><h3 style="margin-top:16px">Literal review</h3>'+literals+'<button id="create-protected" type="button">Generate disabled capability</button><div id="protect-preview"></div>';
+      document.getElementById("create-protected").onclick=createProtected;
+    }
+    function selectedArguments(query){
+      return query.literal_positions.flatMap((position,index)=>{
+        const enabled=document.querySelector('[data-arg-enable="'+index+'"]');
+        if(!enabled||!enabled.checked)return[];
+        const base={location:position.location,name:document.querySelector('[data-arg-name="'+index+'"]').value.trim(),description:document.querySelector('[data-arg-description="'+index+'"]').value.trim()};
+        if(position.inferred_type==="number")return[{...base,minimum:Number(document.querySelector('[data-arg-min="'+index+'"]').value),maximum:Number(document.querySelector('[data-arg-max="'+index+'"]').value)}];
+        if(position.inferred_type==="string")return[{...base,max_length:Number(document.querySelector('[data-arg-length="'+index+'"]').value)}];
+        return[base];
+      });
+    }
+    async function createProtected(){
+      const status=document.getElementById("protect-message");const query=protectQueries[selectedProtect];
+      try{
+        status.className="";status.textContent="Compiling public DSL and canonical contract…";
+        const payload=await post("/api/protect/draft",{query_ref:query.query_ref,capability_name:document.getElementById("protect-name").value.trim(),description:document.getElementById("protect-description").value.trim(),returns_hint:document.getElementById("protect-returns").value.trim(),arguments:selectedArguments(query)});
+        protectedDraft=payload.draft;
+        document.getElementById("protect-preview").innerHTML='<h3 style="margin-top:16px">Disabled draft</h3><p><code>'+esc(payload.draft.contract_digest)+'</code></p><pre>'+esc(payload.dsl)+'</pre><div class="protect-fields"><label>Operator identity<input id="protect-actor" type="text" maxlength="128"></label><label>Exact activation confirmation<input id="protect-confirmation" type="text" placeholder="ACTIVATE '+esc(payload.draft.contract_digest)+'"></label></div><label><input id="protect-disable-explore" type="checkbox" checked> Disable temporary Scoped Explore after activation</label><br><button id="activate-protected" type="button">Activate exact digest</button>';
+        document.getElementById("activate-protected").onclick=activateProtected;
+        status.textContent="Draft generated and still disabled. Review the DSL and exact digest.";
+      }catch(e){status.className="error";status.textContent=e.message}
+    }
+    async function activateProtected(){
+      const status=document.getElementById("protect-message");
+      try{
+        const result=await post("/api/protect/activate",{capability_name:protectedDraft.capability,expected_digest:protectedDraft.contract_digest,confirmation:document.getElementById("protect-confirmation").value,actor:document.getElementById("protect-actor").value.trim(),disable_explore:document.getElementById("protect-disable-explore").checked});
+        status.className="success";status.textContent=result.message;document.getElementById("activate-protected").disabled=true;document.getElementById("state").textContent=result.active.exploration_disabled?"Protected capability active · Explore disabled":"Protected capability active · Explore local-only";
+      }catch(e){status.className="error";status.textContent=e.message}
+    }
+    async function loadProtect(){const status=document.getElementById("protect-message");try{const p=await fetch("/api/protect").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load recent queries");protectQueries=p.queries;selectedProtect=protectQueries.length?0:null;renderProtect();status.className="";status.textContent=protectQueries.length?protectQueries.length+" recent query or analysis result(s) ready for review.":p.message||"No recent query is ready yet."}catch(e){protectQueries=[];selectedProtect=null;renderProtect();status.className="error";status.textContent=e.message}}
+    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(item)+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderPosture();renderBlocked();renderResources();renderBudgets()}
+    document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate});digest=p.digest;msg.textContent="Exact digest: "+digest;updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
+    document.getElementById("activate").onclick=async()=>{try{const actor=document.getElementById("actor").value.trim();if(!actor)throw new Error("Enter the local operator identity.");const confirmedDecisions=[...document.querySelectorAll("[data-review-decision]:checked")].map(input=>reviewDecisions[Number(input.dataset.reviewDecision)]);msg.className="";msg.textContent="Rechecking schema lock and database-role posture…";await post("/api/boundary/activate",{candidate,expected_digest:digest,actor,confirmation:"ACTIVATE "+digest,confirmed_decisions:confirmedDecisions});msg.className="success";msg.textContent="Activated. Reconnect the local authoring MCP session to use Scoped Explore.";document.getElementById("state").textContent="Active reviewed boundary";document.getElementById("activate").disabled=true}catch(e){msg.className="error";msg.textContent=e.message}};
+    document.getElementById("refresh-protect").onclick=loadProtect;
+    load().then(loadProtect).catch(e=>{msg.className="error";msg.textContent=e.message});
+  </script>
+</body>
+</html>`;
 }
 
 function renderShell(csrfToken: string, tour = false, configPath = "synapsor.runner.json", storePath = "./.synapsor/local.db"): string {
@@ -1516,6 +1862,15 @@ function escapeScriptString(value: string): string {
 
 function isLocalHost(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+function isInactiveExplorationBoundary(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const fsError = error as NodeJS.ErrnoException;
+  return error.message === "Exploration boundary is not active."
+    || (fsError.code === "ENOENT"
+      && typeof fsError.path === "string"
+      && path.basename(fsError.path) === "exploration-boundary.active.json");
 }
 
 function isRecord(value: unknown): value is JsonRecord {

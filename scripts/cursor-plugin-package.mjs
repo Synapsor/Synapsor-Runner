@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 export const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const cursorPluginSource = path.join(repositoryRoot, "plugins/cursor/synapsor");
 export const cursorPluginOutput = path.join(repositoryRoot, "dist/cursor-plugin/synapsor");
-export const cursorPluginVersion = "1.5.3";
+export const cursorPluginVersion = "1.6.0";
 
 const allowedManifestKeys = new Set([
   "name", "version", "description", "author", "homepage", "repository",

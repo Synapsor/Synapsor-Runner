@@ -1,9 +1,9 @@
 # Limitations
 
-Synapsor Runner is intentionally narrow. Version 1.4 adds opt-in reviewed
-compensation on top of guarded bounded-set writeback, single-row CRUD, and
-explicit receipt authority; it does not claim Synapsor Cloud scale or an
-enterprise SLA.
+Synapsor Runner is intentionally narrow. Version 1.6 adds deterministic
+whole-application boundary drafting and a local authoring-only Explore ->
+Protect path on top of guarded writes. It does not turn Runner into a generic
+database query tool, claim Synapsor Cloud scale, or claim an enterprise SLA.
 
 ## Supported
 
@@ -49,6 +49,19 @@ enterprise SLA.
 - Capability recipes that generate reviewed starter configs.
 - Shadow-mode proposal-vs-human-action comparison.
 - Static MCP database risk review.
+- Deterministic whole-schema Auto Boundary drafting from database metadata,
+  statically parsed Prisma/Drizzle schema artifacts, OpenAPI documents, and
+  existing Synapsor definitions. Generated authority starts disabled.
+- Local development/staging Scoped Explore through exactly
+  `app.describe_data` and `app.explore_data`, with no SQL-string argument.
+- Reviewed PM-style aggregate Explore with `count`, `count_distinct`, `sum`,
+  `avg`, categorical dimensions, fixed time buckets, typed filters, bounded
+  top-N, optional one-hop proven many-to-one relationships, cohort suppression,
+  and durable extraction/differencing budgets.
+- Protect This Query to public DSL, canonical JSON, tests, and a disabled named
+  capability that survives Explore shutdown after exact-digest activation.
+- Generation-lock drift detection for generated authority. Manually authored
+  projects without a lock retain their previous behavior.
 - Local indexed search for proposals, evidence bundles, query audit, writeback
   receipts, and proposal replay.
 - DSL enum arguments and fixed, tenant-scoped aggregate count/sum/avg tools
@@ -89,8 +102,12 @@ truth for the model-facing tools.
 - Prompt-injection prevention.
 - Unbounded/high-throughput or multi-region ledger scale.
 - Managed fleet, SLA, compliance certification, or production support guarantee.
-- Arbitrary aggregate expressions, joins, grouping, dynamic columns,
-  model-controlled aggregate predicates, or a statistical privacy guarantee.
+- Production, shared HTTP, remote, or non-loopback Scoped Explore.
+- Arbitrary aggregate expressions, dynamic identifiers, unrestricted joins,
+  many-to-many joins, formulas, window functions, subqueries, `HAVING`,
+  user-defined functions, or a statistical privacy guarantee. Version 1.6
+  supports only the explicitly reviewed authoring cube described above and
+  fixed protected named capabilities produced from it.
 - Automatic policy widening or activation from graduated-trust metrics.
 - Immutable/WORM compliance storage from the local report exporter.
 
@@ -120,7 +137,7 @@ not a hosted central evidence service, organization RBAC/SSO, compliance
 retention system, or unbounded search engine. Each bridge operation serializes
 through an advisory lock and fails above configured `max_entries`.
 
-Only homogeneous 1.4 fleet operation is claimed for protocol-v4 compensation
+Only homogeneous 1.x fleet operation is claimed for protocol-v4 compensation
 jobs. Mixed-minor v3/v4 rolling compensation is not claimed.
 See [Running A Small Runner
 Fleet](running-a-runner-fleet.md).

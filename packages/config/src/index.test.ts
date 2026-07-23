@@ -73,6 +73,27 @@ const safeConfig = {
 };
 
 describe("runner capability config validation", () => {
+  it("accepts only explicit local required generation-lock enforcement", () => {
+    const generated = {
+      ...structuredClone(safeConfig),
+      generated_authority: {
+        generation_lock_path: "./.synapsor/generation-lock.json",
+        enforcement: "required",
+      },
+    };
+    expect(validateRunnerCapabilityConfig(generated).ok).toBe(true);
+    expect(validateRunnerCapabilityConfig({
+      ...generated,
+      generated_authority: {
+        generation_lock_path: "https://example.com/lock.json",
+        enforcement: "optional",
+      },
+    }).errors.map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      "INVALID_GENERATION_LOCK_PATH",
+      "INVALID_GENERATION_LOCK_ENFORCEMENT",
+    ]));
+  });
+
   it("keeps the public JSON Schema aligned with representative runtime shapes", () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
     const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas/synapsor.runner.schema.json"), "utf8"));
@@ -380,6 +401,17 @@ describe("runner capability config validation", () => {
 
     config.sources.app_postgres.database_scope.principal_setting = "app.tenant_id";
     expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("RLS_SETTINGS_MUST_DIFFER");
+
+    const tenantOnly = mutableConfig();
+    tenantOnly.capabilities[0]!.target.principal_scope_key = undefined;
+    tenantOnly.sources.app_postgres.database_scope = {
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+    };
+    expect(validateRunnerCapabilityConfig(tenantOnly)).toMatchObject({ ok: true, errors: [] });
+
+    tenantOnly.capabilities[0]!.target.principal_scope_key = "assigned_to";
+    expect(validateRunnerCapabilityConfig(tenantOnly).errors.map((error) => error.code)).toContain("RLS_PRINCIPAL_SETTING_REQUIRED");
 
     const mysqlConfig = mutableConfig();
     mysqlConfig.sources.app_postgres.engine = "mysql";

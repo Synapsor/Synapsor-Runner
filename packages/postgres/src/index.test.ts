@@ -69,6 +69,20 @@ describe("postgres adapter", () => {
     expect(report.required_operations).toEqual(["SELECT", "UPDATE"]);
   });
 
+  it("supports tenant-only RLS inspection when no capability principal scope exists", async () => {
+    const report = await inspectPostgresRlsTarget(new TenantOnlyPostgresClient(), {
+      schema: "public",
+      table: "tickets",
+      scope: { tenantSetting: "app.tenant_id" },
+      operations: ["SELECT"],
+    });
+    expect(report).toMatchObject({
+      ok: true,
+      tenant_setting: "app.tenant_id",
+    });
+    expect(report).not.toHaveProperty("principal_setting");
+  });
+
   it("fails hardened apply before mutation when the role can bypass RLS", async () => {
     const client = new HardenedPostgresClient({ bypass: true });
     await expect(applyPostgresJobWithClient(job, {
@@ -950,6 +964,24 @@ class HardenedPostgresClient implements PostgresApplyClient {
     if (normalized.startsWith('UPDATE "public"."tickets"')) return { rows: [], rowCount: 1 };
     if (normalized.startsWith("UPDATE synapsor_writeback_receipts")) return { rows: [], rowCount: 1 };
     throw new Error(`unexpected hardened query: ${sql}`);
+  }
+}
+
+class TenantOnlyPostgresClient extends HardenedPostgresClient {
+  override async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    if (sql.trim().includes("FROM pg_catalog.pg_policy p")) {
+      return {
+        rows: [{
+          name: "tickets_select",
+          command: "SELECT",
+          permissive: true,
+          using_expression: "(tenant_id = current_setting('app.tenant_id'::text, true))",
+          with_check_expression: null,
+        }],
+        rowCount: 1,
+      };
+    }
+    return super.query(sql, values);
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "1.5.4",
+  "version": "1.6.0",
   "description": "Stop giving AI agents execute_sql; expose reviewed Postgres/MySQL MCP actions with proposals, approval, writeback, and replay.",
   "license": "Apache-2.0",
   "type": "module",
@@ -40,6 +40,7 @@
     "docs/**/*.md",
     "examples/dangerous-mcp-tools.json",
     "examples/app-owned-writeback/**",
+    "examples/auto-boundary-churn/**",
     "examples/claude-desktop-postgres/**",
     "examples/cursor-postgres/**",
     "examples/mcp-postgres-billing-app-handler/**",
@@ -62,7 +63,8 @@
     "LICENSE",
     "NOTICE",
     "THREAT_MODEL.md",
-    "TRADEMARKS.md"
+    "TRADEMARKS.md",
+    "llms.txt"
   ],
   "keywords": [
     "mcp",
@@ -88,7 +90,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@synapsor/spec": "^1.4.2",
+    "@synapsor/spec": "workspace:^",
     "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pdf-lib": "1.17.1",
@@ -100,6 +102,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.0",
     "ajv": "^8.17.1",
     "vitest": "^3.2.0"
   },

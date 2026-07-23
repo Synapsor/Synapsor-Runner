@@ -39,7 +39,7 @@ export type PostgresRlsInspection = {
   role_has_bypassrls: boolean;
   role_is_table_owner: boolean;
   tenant_setting: string;
-  principal_setting: string;
+  principal_setting?: string;
   required_operations: PostgresRlsOperation[];
   policies: PostgresRlsPolicyInspection[];
   errors: string[];
@@ -103,7 +103,10 @@ export async function inspectPostgresRlsTarget(
   input: {
     schema: string;
     table: string;
-    scope: Pick<PostgresRlsScope, "tenantSetting" | "principalSetting">;
+    scope: {
+      tenantSetting: string;
+      principalSetting?: string;
+    };
     operations: PostgresRlsOperation[];
   },
 ): Promise<PostgresRlsInspection> {
@@ -137,7 +140,7 @@ export async function inspectPostgresRlsTarget(
     role_has_bypassrls: row?.role_has_bypassrls === true,
     role_is_table_owner: row?.role_is_table_owner === true,
     tenant_setting: input.scope.tenantSetting,
-    principal_setting: input.scope.principalSetting,
+    ...(input.scope.principalSetting ? { principal_setting: input.scope.principalSetting } : {}),
     required_operations: requiredOperations,
     policies: [],
     errors: [],
@@ -201,7 +204,9 @@ export async function inspectPostgresRlsTarget(
       report.errors.push(`POSTGRES_RLS_${operation}_${operation === "INSERT" ? "WITH_CHECK" : operation === "UPDATE" ? "USING_OR_WITH_CHECK" : "USING"}_MISSING`);
       continue;
     }
-    for (const setting of [input.scope.tenantSetting, input.scope.principalSetting]) {
+    for (const setting of [input.scope.tenantSetting, input.scope.principalSetting].filter(
+      (value): value is string => Boolean(value),
+    )) {
       if (expressions.some((expression) => !expression!.includes(setting))) {
         report.errors.push(`POSTGRES_RLS_${operation}_SETTING_MISSING:${setting}`);
       }

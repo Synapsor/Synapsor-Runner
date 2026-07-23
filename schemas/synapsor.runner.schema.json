@@ -132,6 +132,23 @@
         "minLength": 1
       }
     },
+    "generated_authority": {
+      "description": "Opt-in fail-closed drift enforcement for Auto Boundary and Protect This Query output. Legacy/manual projects omit this object and are not scanned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation_lock_path", "enforcement"],
+      "properties": {
+        "generation_lock_path": {
+          "description": "Local generation-lock file. Relative paths resolve from this config file's directory.",
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "://" }
+        },
+        "enforcement": {
+          "const": "required"
+        }
+      }
+    },
     "capabilities": {
       "description": "Embedded compatibility capabilities. May be empty when contracts supplies the capability catalog.",
       "type": "array",
@@ -488,7 +505,7 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["mode", "tenant_setting", "principal_setting"],
+              "required": ["mode", "tenant_setting"],
               "properties": {
                 "mode": { "const": "postgres_rls" },
                 "tenant_setting": {

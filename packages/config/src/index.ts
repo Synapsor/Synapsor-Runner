@@ -1,3 +1,5 @@
+import { validateContract } from "@synapsor/spec";
+
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
 export type TrustedContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
@@ -18,7 +20,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -54,6 +56,7 @@ const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
 const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const GOVERNANCE_KEYS = new Set(["mode", "connection_file", "evidence_residency", "queue_when_unavailable", "sync_interval_ms", "max_attempts", "outbox_retention_days"]);
+const GENERATED_AUTHORITY_KEYS = new Set(["generation_lock_path", "enforcement"]);
 const SOURCE_KEYS = new Set([
   "engine",
   "read_url_env",
@@ -99,6 +102,8 @@ const CAPABILITY_KEYS = new Set([
   "operation",
   "single_tenant_dev_ack",
   "aggregate",
+  "protected_read",
+  "kept_out_fields",
   "contract_provenance",
 ]);
 const CONTRACT_PROVENANCE_KEYS = new Set(["digest", "version"]);
@@ -206,6 +211,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   const hasContracts = validateContracts(input.contracts, errors);
   validateCloud(input.cloud, input.mode, strict, errors);
   validateGovernance(input.governance, strict, errors);
+  validateGeneratedAuthority(input.generated_authority, strict, errors);
   validateSources(input.sources, input.mode, strict, errors, warnings);
   validateReceiptTopology(input.sources, input.storage, errors);
   validateContexts(input.contexts, strict, errors, warnings);
@@ -225,6 +231,23 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateGeneratedAuthority(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.generated_authority", code: "GENERATED_AUTHORITY_NOT_OBJECT", message: "generated_authority must identify the reviewed generation lock for generated protected capabilities." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, GENERATED_AUTHORITY_KEYS, "$.generated_authority", errors);
+  if (!isNonEmptyString(value.generation_lock_path)
+    || value.generation_lock_path.includes("://")
+    || /[\u0000-\u001f\u007f]/.test(value.generation_lock_path)) {
+    errors.push({ path: "$.generated_authority.generation_lock_path", code: "INVALID_GENERATION_LOCK_PATH", message: "generation_lock_path must be a non-empty local file path, not a URL or credential." });
+  }
+  if (value.enforcement !== "required") {
+    errors.push({ path: "$.generated_authority.enforcement", code: "INVALID_GENERATION_LOCK_ENFORCEMENT", message: "generated authority must use required lock enforcement." });
+  }
 }
 
 function validateHttpSecurity(
@@ -753,7 +776,7 @@ function validateSourceDatabaseScope(
   if (!isPostgresSettingName(value.tenant_setting)) {
     errors.push({ path: `${path}.tenant_setting`, code: "INVALID_RLS_TENANT_SETTING", message: "tenant_setting must be a fixed qualified PostgreSQL custom setting name such as app.tenant_id." });
   }
-  if (!isPostgresSettingName(value.principal_setting)) {
+  if (value.principal_setting !== undefined && !isPostgresSettingName(value.principal_setting)) {
     errors.push({ path: `${path}.principal_setting`, code: "INVALID_RLS_PRINCIPAL_SETTING", message: "principal_setting must be a fixed qualified PostgreSQL custom setting name such as app.principal_id." });
   }
   if (value.tenant_setting === value.principal_setting && value.tenant_setting !== undefined) {
@@ -1397,6 +1420,20 @@ function validateCapabilities(
   const capabilityNames = new Map<string, number>();
   value.forEach((capability, index) => validateCapability(capability, index, sourceNames, contextNames, executorNames, strict, errors, warnings));
   value.forEach((capability, index) => {
+    if (!isRecord(capability) || !isRecord(capability.target) || !isNonEmptyString(capability.target.principal_scope_key)) return;
+    const source = isRecord(sources) && isNonEmptyString(capability.source) ? sources[capability.source] : undefined;
+    if (isRecord(source)
+      && isRecord(source.database_scope)
+      && source.database_scope.mode === "postgres_rls"
+      && !isPostgresSettingName(source.database_scope.principal_setting)) {
+      errors.push({
+        path: `$.sources.${capability.source}.database_scope.principal_setting`,
+        code: "RLS_PRINCIPAL_SETTING_REQUIRED",
+        message: `Capability ${capability.name} declares principal scope, so its hardened PostgreSQL source requires principal_setting.`,
+      });
+    }
+  });
+  value.forEach((capability, index) => {
     if (!isRecord(capability) || !isQualifiedName(capability.name)) return;
     const previous = capabilityNames.get(capability.name);
     if (previous !== undefined) {
@@ -1464,7 +1501,17 @@ function validateCapability(
   validateCapabilityWriteback(value, path, executorNames, strict, errors);
   validateCapabilityReversibility(value, path, strict, errors);
   validateTarget(value.target, `${path}.target`, strict, errors, warnings);
-  if (value.kind === "aggregate_read") validateAggregateReadCapability(value, path, strict, errors);
+  const protectedRead = value.protected_read !== undefined;
+  if (protectedRead) {
+    validateArgs(value.args, `${path}.args`, strict, errors, true);
+    if (value.kind === "read") validateVisibleColumns(value.visible_columns, `${path}.visible_columns`, errors);
+    else if (value.kind === "aggregate_read") {
+      if (!Array.isArray(value.visible_columns) || value.visible_columns.length !== 0) {
+        errors.push({ path: `${path}.visible_columns`, code: "PROTECTED_AGGREGATE_VISIBLE_ROWS_FORBIDDEN", message: "protected aggregate reads cannot expose source row columns." });
+      }
+    }
+    validateProtectedRuntimeCapability(value, path, errors);
+  } else if (value.kind === "aggregate_read") validateAggregateReadCapability(value, path, strict, errors);
   else {
     validateArgs(value.args, `${path}.args`, strict, errors);
     validateLookup(value.lookup, `${path}.lookup`, strict, errors);
@@ -1491,6 +1538,44 @@ function validateAggregateReadCapability(value: JsonRecord, path: string, strict
     if (value.aggregate.count_mode !== "rows" && value.aggregate.count_mode !== "non_null") errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_REQUIRED", message: "COUNT requires rows or non_null mode." });
   } else if (!isSafeIdentifier(value.aggregate.column)) errors.push({ path: `${path}.aggregate.column`, code: "AGGREGATE_NUMERIC_COLUMN_REQUIRED", message: "SUM/AVG require a fixed aggregate column." });
   if (value.aggregate.selection !== undefined) validateSelection(value.aggregate.selection, `${path}.aggregate.selection`, strict, errors);
+}
+
+function validateProtectedRuntimeCapability(value: JsonRecord, path: string, errors: ConfigIssue[]): void {
+  const result = validateContract({
+    spec_version: "0.1",
+    kind: "SynapsorContract",
+    contexts: [{
+      name: "runtime_context",
+      bindings: [
+        { name: "tenant_id", source: "static_dev", key: "runtime_tenant", required: true },
+        { name: "principal", source: "static_dev", key: "runtime_principal", required: true },
+      ],
+      tenant_binding: "tenant_id",
+      principal_binding: "principal",
+    }],
+    capabilities: [{
+      name: value.name,
+      ...(value.description === undefined ? {} : { description: value.description }),
+      ...(value.returns_hint === undefined ? {} : { returns_hint: value.returns_hint }),
+      kind: value.kind,
+      context: "runtime_context",
+      source: value.source,
+      subject: value.target,
+      args: value.args,
+      visible_fields: value.visible_columns,
+      ...(value.kept_out_fields === undefined ? {} : { kept_out_fields: value.kept_out_fields }),
+      evidence: { required: true, query_audit: true },
+      ...(value.max_rows === undefined ? {} : { max_rows: value.max_rows }),
+      protected_read: value.protected_read,
+    }],
+  });
+  for (const issue of result.errors) {
+    errors.push({
+      path: issue.path.replace("$.capabilities[0]", path),
+      code: issue.code,
+      message: issue.message,
+    });
+  }
 }
 
 function validateSelection(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
@@ -1615,9 +1700,9 @@ function validateTarget(
   }
 }
 
-function validateArgs(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
-  if (!isRecord(value) || Object.keys(value).length === 0) {
-    errors.push({ path, code: "ARGS_REQUIRED", message: "args must define at least one model-facing business argument." });
+function validateArgs(value: unknown, path: string, strict: boolean, errors: ConfigIssue[], allowEmpty = false): void {
+  if (!isRecord(value) || (!allowEmpty && Object.keys(value).length === 0)) {
+    errors.push({ path, code: "ARGS_REQUIRED", message: allowEmpty ? "args must be an object." : "args must define at least one model-facing business argument." });
     return;
   }
   for (const [name, arg] of Object.entries(value)) {
