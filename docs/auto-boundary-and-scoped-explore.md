@@ -1,6 +1,7 @@
 # Auto Boundary, Scoped Explore, And Protect
 
-Runner 1.6.0 adds a deterministic authoring path for a real application:
+Runner 1.6.3 provides a deterministic, resumable authoring path for a real
+application:
 
 ```text
 Connect staging
@@ -145,6 +146,22 @@ ACTIVATE sha256:...
 The immutable digest covers the reviewed resources, field permissions,
 relationships, scope, role posture, generation lock, compiler/spec version,
 profile, and every query/privacy budget. Model arguments cannot widen it.
+
+## Try Without An External MCP Host
+
+Workbench can run the first safe read, bounded aggregate, and Protect flow
+directly. The same authority is available through CLI Try:
+
+```bash
+synapsor-runner try call --list --format json
+synapsor-runner try explore --suggested --json
+synapsor-runner try protect --name analytics.protected_analysis --json
+```
+
+Cursor, Claude, Codex, and generic stdio are optional clients, not onboarding
+dependencies. The packed FitFlow gate proves Workbench, CLI Try, and an
+official-SDK generic stdio client produce the same bounded result and denial
+behavior.
 
 ## Add The Authoring Tools To Cursor
 
@@ -323,16 +340,25 @@ their previous startup, `doctor`, contract, and tool behavior.
 
 ## Verify The Reference Journey
 
-The packaged synthetic fixture is under `examples/auto-boundary-churn`.
+The polished packed-artifact journey is under
+`examples/fitflow-guided-onboarding`. The smaller
+`examples/auto-boundary-churn` fixture remains a compatibility and focused
+aggregate-security gate.
 
 From a source checkout:
 
 ```bash
 corepack pnpm test:auto-boundary-explore
 corepack pnpm test:auto-boundary-explore:packed
+corepack pnpm test:guided-onboarding:packed
 ```
 
-The packed gate proves the PostgreSQL + Next.js + Prisma + Cursor-compatible
-MCP + Workbench flow, all aggregate denial/suppression/budget checks, Protect,
-production Explore absence, protected-capability survival, durable redacted
-audit, and an unchanged source database.
+The packed gates prove the PostgreSQL + Next.js + Prisma + Workbench flow,
+host-neutral CLI/generic-stdio parity, all aggregate
+denial/suppression/budget checks, Protect, production Explore absence,
+protected-capability survival, guided proposal/apply/compensation, verified
+OIDC roles, durable redacted audit, and unchanged source data before every
+authorized mutation.
+
+For the timed first-read, Explore, Protect, proposal, and writeback walkthrough,
+use [Database To First Safe Tool](guided-onboarding.md).

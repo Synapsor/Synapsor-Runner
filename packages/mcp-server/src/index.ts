@@ -156,7 +156,45 @@ export type RuntimeCapabilityConfig = {
   operation?: NonNullable<ProposalActionSpec["operation"]>;
   conflict_guard?: { column?: string; weak_guard_ack?: boolean };
   approval?: { mode?: "human" | "operator" | "policy" | string; required_role?: string; required_approvals?: number; policy?: string };
+  execution?: { supervised_worker: "allowed" };
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
+};
+
+export type RuntimeSupervisedWorkerCapabilityPolicy = {
+  capability: string;
+  contract_digest: `sha256:${string}`;
+  mode: "supervised_worker";
+  concurrency: number;
+  queue_limit: number;
+  lease_seconds: number;
+  max_attempts: number;
+  proposal_ttl_seconds: number;
+  rate_limit: {
+    executions: number;
+    window_seconds: number;
+  };
+  write_url_env: string;
+  require_least_privilege_writer?: boolean;
+  writer_posture_fingerprint?: `sha256:${string}`;
+  worker_identity?: string;
+  control_role?: string;
+  required_attention_sinks?: string[];
+};
+
+export type RuntimeSupervisedWorkerConfig = {
+  enabled: boolean;
+  profile: "development" | "staging" | "production";
+  capabilities: RuntimeSupervisedWorkerCapabilityPolicy[];
+};
+
+export type SupervisedWorkerEligibility = {
+  eligible: boolean;
+  code: string;
+  reasons: string[];
+  capability: string;
+  contract_digest?: `sha256:${string}`;
+  profile?: RuntimeSupervisedWorkerConfig["profile"];
+  policy?: RuntimeSupervisedWorkerCapabilityPolicy;
 };
 
 export type RuntimeProposalFreshnessDependencyConfig = {
@@ -169,6 +207,53 @@ export type RuntimeProposalFreshnessDependencyConfig = {
 export type RuntimeProposalFreshnessConfig = {
   approval: "required";
   dependencies?: RuntimeProposalFreshnessDependencyConfig[];
+};
+
+export type RuntimeNotificationBudgetConfig = {
+  per_minute?: number;
+  per_hour?: number;
+  immediate_informational_per_hour?: number;
+  aggregation_window_seconds?: number;
+  cooldown_seconds?: number;
+  max_unresolved_reminders?: number;
+  digest_cadence_minutes?: number;
+  escalation_delay_seconds?: number;
+  retry_attempt_threshold?: number;
+  degraded_duration_seconds?: number;
+  queue_depth_threshold?: number;
+  queue_age_seconds?: number;
+};
+
+export type RuntimeNotificationSinkConfig = {
+  id: string;
+  type: "webhook" | "jsonl";
+  enabled?: boolean;
+  url_env?: string;
+  signing_secret_env?: string;
+  destination?: "stdout";
+  minimum_severity?: "informational" | "warning" | "critical";
+  events?: string[];
+  capabilities?: string[];
+  environments?: Array<"development" | "staging" | "production" | "unknown">;
+  delivery?: "immediate" | "digest" | "all";
+  max_attempts?: number;
+  timeout_ms?: number;
+  max_response_bytes?: number;
+  replay_window_seconds?: number;
+  allow_private_destinations?: boolean;
+  private_host_allowlist?: string[];
+  recovery_notifications?: boolean;
+  budgets?: RuntimeNotificationBudgetConfig;
+  quiet_hours?: {
+    start_utc_hour: number;
+    end_utc_hour: number;
+  };
+};
+
+export type RuntimeNotificationsConfig = {
+  enabled: boolean;
+  workbench_url_env?: string;
+  sinks: RuntimeNotificationSinkConfig[];
 };
 
 export type RuntimeConfig = {
@@ -327,7 +412,71 @@ export type RuntimeConfig = {
     generation_lock_path: string;
     enforcement: "required";
   };
+  supervised_worker?: RuntimeSupervisedWorkerConfig;
+  notifications?: RuntimeNotificationsConfig;
 };
+
+export function resolveSupervisedWorkerEligibility(
+  config: RuntimeConfig,
+  capability: RuntimeCapabilityConfig,
+  options: { workerIdentity?: string; phase?: "queue" | "execute" } = {},
+): SupervisedWorkerEligibility {
+  const reasons: string[] = [];
+  const deployment = config.supervised_worker;
+  const digest = capability.contract_provenance?.digest;
+  if (!deployment?.enabled) reasons.push("deployment_disabled");
+  if (config.mode !== "review") reasons.push("review_mode_required");
+  if (config.governance?.mode === "cloud_linked") reasons.push("cloud_linked_local_execution_forbidden");
+  if (capability.kind !== "proposal") reasons.push("proposal_capability_required");
+  if (capability.execution?.supervised_worker !== "allowed") reasons.push("contract_permission_missing");
+  if (!digest) reasons.push("active_contract_digest_missing");
+  const policy = digest
+    ? deployment?.capabilities.find((entry) =>
+      entry.capability === capability.name
+      && entry.contract_digest === digest
+      && entry.mode === "supervised_worker")
+    : undefined;
+  if (!policy) reasons.push("deployment_allowlist_mismatch");
+  if (
+    options.phase !== "queue"
+    && policy?.worker_identity
+    && policy.worker_identity !== options.workerIdentity
+  ) {
+    reasons.push("worker_identity_mismatch");
+  }
+
+  const source = config.sources?.[capability.source];
+  if (!source || source.read_only === true || !source.write_url_env) {
+    reasons.push("writable_source_unavailable");
+  } else {
+    if (policy && policy.write_url_env !== source.write_url_env) reasons.push("writer_reference_mismatch");
+    if (!source.receipts) reasons.push("receipt_authority_missing");
+  }
+  if (!capability.target.tenant_key) reasons.push("trusted_tenant_scope_missing");
+  if (capability.writeback?.mode !== "direct_sql") reasons.push("direct_sql_required");
+  if ((capability.operation?.cardinality ?? "single") !== "single") reasons.push("single_row_required");
+  const operation = capability.operation?.kind ?? "update";
+  if (operation === "delete") reasons.push("delete_ineligible");
+  if (capability.reversibility) reasons.push("reversibility_ineligible");
+  if (operation === "update"
+    && (!capability.conflict_guard?.column || capability.conflict_guard.weak_guard_ack === true)) {
+    reasons.push("exact_conflict_guard_required");
+  }
+  if (operation === "insert" && !capability.operation?.deduplication?.components.length) {
+    reasons.push("insert_deduplication_required");
+  }
+
+  const uniqueReasons = [...new Set(reasons)];
+  return {
+    eligible: uniqueReasons.length === 0,
+    code: uniqueReasons.length === 0 ? "SUPERVISED_WORKER_ELIGIBLE" : uniqueReasons[0]!.toUpperCase(),
+    reasons: uniqueReasons,
+    capability: capability.name,
+    ...(digest ? { contract_digest: digest } : {}),
+    ...(deployment ? { profile: deployment.profile } : {}),
+    ...(policy ? { policy } : {}),
+  };
+}
 
 export type IsolationAssuranceMode = "application_scope" | "postgres_rls" | "tenant_bound";
 export type TrustedContextBindingMode =
@@ -1510,6 +1659,7 @@ function runtimeCapabilityFromSpec(
     runtime.operation = capability.proposal.operation;
     runtime.conflict_guard = capability.proposal.conflict_guard;
     runtime.approval = capability.proposal.approval;
+    runtime.execution = capability.proposal.execution;
     runtime.writeback = {
       mode: capability.proposal.writeback?.mode ?? "direct_sql",
       ...(capability.proposal.writeback?.executor ? { executor: capability.proposal.writeback.executor } : {}),
@@ -1560,7 +1710,9 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   return {
     config,
     store,
-    listTools: () => config.mode === "cloud" ? cloudTools : listedLocalCapabilities(config).map((capability) => toolMetadata(capability)),
+    listTools: () => config.mode === "cloud"
+      ? cloudTools
+      : listedLocalCapabilities(config).map((capability) => toolMetadata(capability, config)),
     callTool: async (name, args) => {
       const capability = config.mode === "cloud" ? undefined : localCapabilities(config).find((item) => item.name === name);
       try {
@@ -1706,6 +1858,9 @@ type GeneratedAuthorityLock = {
   protected_authority: string[];
 };
 
+const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set(["1.6.0", "1.6.3"]);
+const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0"]);
+
 /**
  * Generated protected reads remain executable only while the exact reviewed
  * generation lock, source schema, database role, grants, ownership, and RLS
@@ -1789,8 +1944,8 @@ export async function preflightGeneratedAuthority(
 function assertGeneratedAuthorityLockShape(value: GeneratedAuthorityLock): void {
   const digest = /^sha256:[a-f0-9]{64}$/;
   if (!value || value.schema_version !== "synapsor.generation-lock.v1"
-    || value.compiler_version !== "1.6.0"
-    || value.spec_version !== "1.5.0"
+    || !SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS.has(value.compiler_version)
+    || !SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS.has(value.spec_version)
     || (value.engine !== "postgres" && value.engine !== "mysql")
     || !/^[A-Z_][A-Z0-9_]*$/.test(value.source_env)
     || !digest.test(value.schema_fingerprint)
@@ -1898,7 +2053,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
       for (const exposedName of exposedNames.get(capability.name) ?? [capability.name]) {
         const toolConfig = {
           title: capability.name,
-          description: capabilityDescription(capability, exposedName),
+          description: capabilityDescription(capability, runtime.config, exposedName),
           inputSchema: zodInputShape(capability),
           annotations: {
             readOnlyHint: capability.kind === "read" || capability.kind === "aggregate_read",
@@ -3824,6 +3979,42 @@ async function callConfiguredTool(input: {
     });
   }
 
+  let supervisedWorker:
+    | {
+      status: "queued";
+      mode: "supervised_worker";
+      capability: string;
+      contract_digest: `sha256:${string}`;
+    }
+    | undefined;
+  if (
+    input.config.governance?.mode !== "cloud_linked"
+    && approvalResult.proposal.state === "approved"
+  ) {
+    const eligibility = resolveSupervisedWorkerEligibility(input.config, capability, { phase: "queue" });
+    if (eligibility.eligible && eligibility.policy && eligibility.contract_digest) {
+      if (!input.store.enqueueWorkerProposal) {
+        throw new McpRuntimeError(
+          "SUPERVISED_WORKER_LEDGER_REQUIRED",
+          "Supervised execution requires a durable worker queue in the authoritative proposal store.",
+        );
+      }
+      await input.store.enqueueWorkerProposal({
+        proposal_id: approvalResult.proposal.proposal_id,
+        execution_mode: "supervised_worker",
+        contract_digest: eligibility.contract_digest,
+        max_attempts: eligibility.policy.max_attempts,
+        queue_limit: eligibility.policy.queue_limit,
+      });
+      supervisedWorker = {
+        status: "queued",
+        mode: "supervised_worker",
+        capability: capability.name,
+        contract_digest: eligibility.contract_digest,
+      };
+    }
+  }
+
   await enqueueCloudLinkedProposal({
     config: input.config,
     store: input.store,
@@ -3840,6 +4031,8 @@ async function callConfiguredTool(input: {
         ? "shadow_proposal_created"
         : approvalResult.freshness?.status === "stale"
           ? "freshness_conflict"
+        : supervisedWorker
+          ? "queued_for_trusted_execution"
         : approvalResult.proposal.state === "approved"
           ? "approved"
           : "review_required",
@@ -3874,6 +4067,13 @@ async function callConfiguredTool(input: {
       ? { authority: "synapsor_cloud", state: "pending_cloud_sync", evidence_residency: "metadata_only" }
       : { authority: "local" },
     writeback: changeSet.writeback,
+    ...(supervisedWorker ? {
+      execution: {
+        ...supervisedWorker,
+        approval_source: "policy_auto",
+        model_can_approve_or_apply: false,
+      },
+    } : {}),
     source_database_changed: false,
     source_database_mutated: false,
   };
@@ -4530,7 +4730,7 @@ function approvalPolicyByName(config: RuntimeConfig, policyName: string): Policy
   return (config.policies ?? []).find((policy) => policy.kind === "approval" && policy.name === policyName);
 }
 
-function evaluateApprovalPolicy(capability: RuntimeCapabilityConfig, policy: PolicySpec, patch: Record<string, Scalar>): { qualifies: boolean; reason: string } {
+export function evaluateApprovalPolicy(capability: RuntimeCapabilityConfig, policy: PolicySpec, patch: Record<string, Scalar>): { qualifies: boolean; reason: string } {
   const ruleByField = new Map<string, number>();
   for (const rule of policy.rules ?? []) {
     const field = typeof rule.field === "string" ? rule.field : undefined;
@@ -6506,11 +6706,11 @@ function zodScalarArg(spec: RuntimeScalarArgConfig): z.ZodTypeAny {
   return schema;
 }
 
-function toolMetadata(capability: RuntimeCapabilityConfig): LocalToolMetadata {
+function toolMetadata(capability: RuntimeCapabilityConfig, config?: RuntimeConfig): LocalToolMetadata {
   return {
     name: capability.name,
     title: capability.name,
-    description: capabilityDescription(capability),
+    description: capabilityDescription(capability, config),
     kind: capability.kind,
     input_schema: Object.fromEntries(Object.entries(capability.args).map(([name, spec]) => [name, {
       type: spec.type === "object_array" ? "array" : spec.type,
@@ -6534,7 +6734,11 @@ function toolMetadata(capability: RuntimeCapabilityConfig): LocalToolMetadata {
   };
 }
 
-function capabilityDescription(capability: RuntimeCapabilityConfig, exposedName?: string): string {
+function capabilityDescription(
+  capability: RuntimeCapabilityConfig,
+  config?: RuntimeConfig,
+  exposedName?: string,
+): string {
   const lines: string[] = [];
   if (exposedName && exposedName !== capability.name) {
     lines.push(`Canonical Synapsor capability: ${capability.name}.`);
@@ -6544,7 +6748,26 @@ function capabilityDescription(capability: RuntimeCapabilityConfig, exposedName?
   } else if (capability.kind === "read") {
     lines.push(`Read ${capability.target.schema}.${capability.target.table} through a reviewed Synapsor capability with trusted tenant context and evidence.`);
   } else {
-    lines.push(`Create an evidence-backed Synapsor proposal for ${capability.target.schema}.${capability.target.table}; the source database is not mutated by this tool.`);
+    const supervised = config
+      ? resolveSupervisedWorkerEligibility(config, capability, { phase: "queue" })
+      : undefined;
+    if (supervised?.eligible) {
+      if (capability.approval?.mode === "policy") {
+        lines.push(
+          `Create an evidence-backed Synapsor proposal for ${capability.target.schema}.${capability.target.table}. `
+          + "If it satisfies the reviewed automatic-approval policy, a separately trusted Runner worker may later apply it without a per-request human click. "
+          + "The model cannot approve, apply, start the worker, or change that policy.",
+        );
+      } else {
+        lines.push(
+          `Create an evidence-backed Synapsor proposal for ${capability.target.schema}.${capability.target.table}. `
+          + "After the required human approval, a separately trusted Runner worker may later apply it. "
+          + "The model cannot approve, apply, start the worker, or change that execution policy.",
+        );
+      }
+    } else {
+      lines.push(`Create an evidence-backed Synapsor proposal for ${capability.target.schema}.${capability.target.table}; the source database is not mutated by this tool.`);
+    }
   }
   if (capability.returns_hint) {
     lines.push(capability.returns_hint);

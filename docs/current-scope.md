@@ -2,9 +2,12 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.6` scope:
+Current `1.6.3` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
+- one-command, resumable, review-by-exception onboarding from
+  `DATABASE_URL` to a real safe read, bounded exploration, protected named
+  tools, guided write proposals, and host-neutral MCP client setup;
 - deterministic whole-schema Auto Boundary drafting from database metadata,
   statically parsed Prisma/Drizzle schemas, OpenAPI documents, and existing
   Synapsor definitions;
@@ -23,6 +26,10 @@ Current `1.6` scope:
   generated authority explicitly bound to a generation lock;
 - trusted context from environment, verified HTTP claims, Cloud sessions, or
   explicit development-only static values;
+- verified operator decisions through signed local keys or external OIDC/JWKS
+  identity, with exact contract-role matching, token-time/issuer/audience
+  checks, immutable decision evidence, key rotation, and independent approval
+  and apply authority;
 - evidence handles, normalized query audit, proposals, receipts, local replay,
   and read-only lifecycle inspection without copying proposal ids;
 - optional proposal/evidence freshness: live target and declared same-source
@@ -34,6 +41,15 @@ Current `1.6` scope:
   and protocol-v3 exact receipts;
 - opt-in reviewed compensation for supported direct SQL changes, using a
   separate operator proposal and protocol-v4 receipt;
+- default-off operator-supervised automatic apply for exact-digest,
+  contract-permitted single-row INSERT/UPDATE capabilities, with an independent
+  deployment allowlist, fenced worker leases, policy/limit/freshness/source
+  revalidation, hardened writer-posture checks, and explicit UNKNOWN
+  reconciliation;
+- durable redacted proposal/worker/boundary/policy attention events, a
+  coalesced no-ID Workbench inbox, quiet per-sink routing and digests, JSONL
+  development output, signed generic HTTPS webhooks, and an optional
+  exact-capability supervision-sink health gate;
 - safety-wrapped app-owned `http_handler` and `command_handler` executors for
   richer approved business transactions;
 - stdio MCP, authenticated Streamable HTTP MCP, and a legacy JSON-RPC bridge;
@@ -63,6 +79,9 @@ Out of scope:
 - general join planning, many-to-many exploration, arbitrary formulas,
   functions, windows, `HAVING`, subqueries, or statistical privacy guarantees;
 - model-selected tenant/principal, activation, approval, or commit authority;
+- automatic worker execution for DELETE, reversible changes, set writes,
+  app-owned/external effects, or capabilities without deterministic
+  single-row conflict/deduplication and receipt guarantees;
 - UPSERT, DDL, free-form predicates, unbounded writes, or cross-table direct
   transactions;
 - strict atomic freshness for app-owned handlers, APIs, or cross-source

@@ -72,6 +72,31 @@ describe("capability surface fitness lint", () => {
     ]);
   });
 
+  it("accepts specific business verbs while retaining broad escape-hatch warnings", () => {
+    const accepted = [
+      "freeze_membership",
+      "cancel_subscription",
+      "refund_payment",
+      "suspend_account",
+      "activate_member",
+      "assign_trainer",
+      "grant_credit",
+      "waive_fee",
+    ].map((name) => capability(`membership.${name}`));
+    const broad = [
+      "execute_sql",
+      "query_database",
+      "update_any_record",
+      "manage_data",
+      "run_command",
+      "modify_everything",
+    ].map((name) => capability(`membership.${name}`));
+    const findings = analyzeCapabilitySurface(contract([...accepted, ...broad])).findings
+      .filter((finding) => finding.code === "SURFACE_OPERATION_NAMING");
+    expect(findings.map((finding) => finding.details.capability)).toEqual(broad.map((item) => item.name).sort());
+    expect(findings[0]?.message).toMatch(/overly broad|verb-plus-object/i);
+  });
+
   it("flags exact and directionally loosened structural duplicates without flagging different operations", () => {
     const strict = proposalCapability("billing.propose_credit_review", {
       customer_id: { type: "string", required: true, max_length: 64 },

@@ -6,14 +6,18 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
   AUTO_BOUNDARY_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   compareGenerationLock,
   explorationBoundaryCandidateDigest,
+  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
+  pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
+  type AutoBoundaryReviewOverrides,
 } from "./auto-boundary.js";
 
 describe("Auto Boundary compiler", () => {
@@ -93,23 +97,208 @@ describe("Auto Boundary compiler", () => {
     expect(subscriptions?.filterable_fields).not.toHaveProperty("billing_token");
   });
 
-  it("fails clearly for empty or entirely unscoped schemas instead of emitting invalid authority", () => {
+  it("keeps payment, medical, and unresolved free-text fields out of every generated read operation", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.push(
+      column("payment_method", "text"),
+      column("medical_waiver_notes", "text"),
+      column("trainer_comments", "text"),
+    );
+    inspection.tables[0]!.suggestions.default_visible_columns.push(
+      "payment_method",
+      "medical_waiver_notes",
+      "trainer_comments",
+    );
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = result.exploration_boundary.pack.resources[0]!;
+    const hidden = ["payment_method", "medical_waiver_notes", "trainer_comments"];
+
+    expect(resource.kept_out_fields).toEqual(expect.arrayContaining(hidden));
+    for (const field of hidden) {
+      expect(resource.selectable_fields).not.toContain(field);
+      expect(resource.filterable_fields).not.toHaveProperty(field);
+      expect(resource.sortable_fields).not.toContain(field);
+      expect(resource.groupable_fields).not.toContain(field);
+      expect(resource.aggregate_measures).not.toContain(field);
+      expect(resource.count_distinct_fields).not.toContain(field);
+      expect(resource.time_bucket_fields).not.toHaveProperty(field);
+    }
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "payment_method")?.sensitivity.state)
+      .toBe("high_confidence_sensitive");
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "medical_waiver_notes")?.sensitivity.state)
+      .toBe("high_confidence_sensitive");
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "trainer_comments")?.sensitivity.state)
+      .toBe("unresolved_free_text");
+  });
+
+  it("regenerates disabled DSL, contract, and lock from an explicit field review decision", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-auto-boundary-override-"));
+    try {
+      const inspection = churnInspection();
+      inspection.tables[0]!.columns.push(column("trainer_comments", "text"));
+      inspection.tables[0]!.suggestions.default_visible_columns.push("trainer_comments");
+      const baseline = buildAutoBoundary({
+        inspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+      });
+      const reviewed = buildAutoBoundary({
+        inspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+        overrides: {
+          schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+          resources: {
+            "public.subscriptions": {
+              fields: {
+                trainer_comments: {
+                  exposure: "allow_reviewed_use",
+                  actor: "reviewer@example.test",
+                  reason: "This fixture contains a reviewed non-sensitive status summary.",
+                  decided_at: "2026-07-24T17:00:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(reviewed.contract_digest).not.toBe(baseline.contract_digest);
+      expect(reviewed.lock.reviewed_overrides_digest).not.toBe(baseline.lock.reviewed_overrides_digest);
+      expect(reviewed.dsl).toMatch(/ALLOW READ[^\n]*trainer_comments/);
+      expect(reviewed.dsl).not.toMatch(/KEEP OUT[^\n]*trainer_comments/);
+      expect(reviewed.review.activation).toBe("blocked_unreviewed");
+      expect(reviewed.exploration_boundary.activation).toBe("disabled_unreviewed");
+      await writeAutoBoundaryArtifacts({ projectRoot, build: reviewed });
+      await expect(loadAutoBoundaryReviewOverrides(projectRoot)).resolves.toEqual(reviewed.overrides);
+      await expect(fs.readFile(path.join(projectRoot, "synapsor/generated/review-overrides.json"), "utf8"))
+        .resolves.toContain("reviewer@example.test");
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unproven row identity and secret-bearing review metadata", () => {
+    const base = {
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL",
+    };
+    expect(() => buildAutoBoundary({
+      ...base,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            row_identity: {
+              value: "region",
+              actor: "reviewer@example.test",
+              reason: "Use a friendly business field.",
+              decided_at: "2026-07-24T17:00:00.000Z",
+            },
+          },
+        },
+      },
+    })).toThrow(/not a database-proven single-column primary or unique key/i);
+
+    expect(() => buildAutoBoundary({
+      ...base,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            fields: {
+              billing_token: {
+                exposure: "allow_reviewed_use",
+                actor: "reviewer@example.test",
+                reason: "Bearer abcdefghijklmnopqrstuvwxyz",
+                decided_at: "2026-07-24T17:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    })).toThrow(/must not contain credentials or secret material/i);
+  });
+
+  it("prunes only review inputs invalidated by schema drift", () => {
+    const inspection = churnInspection();
+    const decision = {
+      value: "id",
+      actor: "reviewer@example.test",
+      reason: "Reviewed against the source schema.",
+      decided_at: "2026-07-24T17:00:00.000Z",
+    };
+    const current: AutoBoundaryReviewOverrides = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.subscriptions": {
+          row_identity: decision,
+          tenant_key: { ...decision, value: "tenant_id" },
+          fields: {
+            region: {
+              exposure: "keep_out" as const,
+              actor: decision.actor,
+              reason: decision.reason,
+              decided_at: decision.decided_at,
+            },
+            removed_field: {
+              exposure: "allow_reviewed_use" as const,
+              actor: decision.actor,
+              reason: decision.reason,
+              decided_at: decision.decided_at,
+            },
+          },
+        },
+        "public.removed_table": {
+          row_identity: decision,
+        },
+      },
+    };
+
+    const result = pruneAutoBoundaryReviewOverrides(inspection, current);
+    expect(result.overrides.resources["public.subscriptions"]).toMatchObject({
+      row_identity: { value: "id" },
+      tenant_key: { value: "tenant_id" },
+      fields: { region: { exposure: "keep_out" } },
+    });
+    expect(result.overrides.resources).not.toHaveProperty("public.removed_table");
+    expect(result.removed).toEqual([
+      "public.removed_table: resource no longer exists",
+      "public.subscriptions.removed_field: reviewed field no longer exists",
+    ]);
+  });
+
+  it("keeps empty or entirely unscoped schemas at zero authority so Workbench can resolve exceptions", () => {
     const empty = churnInspection();
     empty.tables = [];
-    expect(() => buildAutoBoundary({
+    const emptyBuild = buildAutoBoundary({
       inspection: empty,
       project: projectSummary("/workspace/empty"),
       sourceEnv: "DATABASE_URL",
-    })).toThrow(/no eligible tenant-scoped resource.*no inspectable tables/i);
+    });
+    expect(emptyBuild.contract.capabilities).toEqual([]);
+    expect(emptyBuild.exploration_boundary.pack.resources).toEqual([]);
+    expect(emptyBuild.review.summary.draft_reads).toBe(0);
 
     const unscoped = churnInspection();
     unscoped.tables[0]!.columns = unscoped.tables[0]!.columns.filter((field) => field.name !== "tenant_id");
     unscoped.tables[0]!.suggestions.tenant_columns = [];
-    expect(() => buildAutoBoundary({
+    const unscopedBuild = buildAutoBoundary({
       inspection: unscoped,
       project: projectSummary("/workspace/unscoped"),
       sourceEnv: "DATABASE_URL",
-    })).toThrow(/no eligible tenant-scoped resource.*tenant scope is unresolved/i);
+    });
+    expect(unscopedBuild.contract.capabilities).toEqual([]);
+    expect(unscopedBuild.review.resources[0]).toMatchObject({
+      status: "blocked_scope",
+      blockers: ["trusted tenant scope is unresolved"],
+    });
   });
 
   it("treats database comments as naming evidence that cannot grant fields or write authority", () => {

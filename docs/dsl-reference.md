@@ -389,6 +389,7 @@ patched column. Values may be identifiers or quoted strings.
   AUTO APPROVE WHEN amount_cents <= 2500
   LIMIT 20 PER DAY
   LIMIT TOTAL 100000 PER DAY
+  ALLOW SUPERVISED WORKER APPLY
   WRITEBACK DIRECT SQL
 ```
 
@@ -421,6 +422,15 @@ are one atomic ledger transaction. When any ceiling would be exceeded, Runner
 leaves the proposal in `pending_review` and records
 `policy_auto_approval_deferred` with observed, proposed, and projected values.
 It does not reject or auto-apply the proposal.
+
+`ALLOW SUPERVISED WORKER APPLY` is an optional contract-side execution
+permission. It compiles to
+`execution: { "supervised_worker": "allowed" }` and changes the contract
+digest. It does not start a worker or turn `AUTO APPROVE` into auto-apply.
+Runner also requires a deployment allowlist for the exact capability/digest
+and accepts only the narrower eligible single-row direct INSERT/UPDATE shapes.
+See [Operator-Supervised Automatic
+Apply](supervised-automatic-apply.md).
 
 Writeback forms:
 

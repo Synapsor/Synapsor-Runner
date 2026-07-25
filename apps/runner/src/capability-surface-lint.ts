@@ -35,13 +35,13 @@ type IndexedCapability = {
 
 const GENERIC_ARGUMENT_NAMES = new Set(["filter", "predicate", "query", "sql", "where"]);
 const ACTION_PREFIXES = new Set([
-  "add", "answer", "archive", "assign", "cancel", "change", "close", "count", "create", "delete", "export", "find",
+  "activate", "add", "answer", "archive", "assign", "cancel", "change", "close", "count", "create", "delete", "export", "find", "freeze",
   "get", "grant", "inspect", "list", "lookup", "open", "propose", "read", "refund", "remove", "request", "resolve",
-  "restore", "revert", "search", "set", "sum", "update", "verify", "waive", "write",
+  "restore", "revert", "search", "set", "sum", "suspend", "update", "verify", "waive", "write",
 ]);
 const ACTION_SUFFIXES = new Set(["average", "count", "lookup", "review", "search", "summary", "total"]);
 const GENERIC_OPERATION_WORDS = new Set([
-  "create", "data", "database", "db", "delete", "execute", "get", "item", "manage", "mutate", "object", "process",
+  "any", "create", "data", "database", "db", "delete", "everything", "execute", "get", "item", "manage", "mutate", "object", "process",
   "query", "read", "record", "resource", "row", "run", "set", "sql", "table", "thing", "update", "write",
 ]);
 
@@ -142,7 +142,7 @@ function collectOperationNamingFinding(findings: CapabilitySurfaceFinding[], ent
     code: "SURFACE_OPERATION_NAMING",
     severity: "warning",
     path: `${capabilityPath(entry.capability.name)}.name`,
-    message: `${entry.capability.name} does not read as a high-confidence named business operation. Use a reviewer-recognizable operation such as inspect_invoice or propose_plan_credit; this is a naming heuristic, not a runtime enforcement failure.`,
+    message: `${entry.capability.name} appears overly broad or does not have a reviewer-recognizable verb-plus-object shape. Name the bounded business effect and object instead of exposing a generic database, command, data-management, or catch-all operation; this is an advisory naming heuristic, not runtime enforcement.`,
     details: { capability: entry.capability.name, operation, tokens },
   });
 }

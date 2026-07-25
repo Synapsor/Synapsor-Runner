@@ -18,11 +18,22 @@
       "else": {
         "if": { "properties": { "mode": { "not": { "const": "cloud" } } }, "required": ["mode"] },
         "then": {
-          "required": ["capabilities"],
-          "properties": { "capabilities": { "minItems": 1 } },
           "anyOf": [
-            { "required": ["trusted_context"] },
-            { "required": ["contexts"] }
+            {
+              "required": ["capabilities"],
+              "properties": { "capabilities": { "minItems": 1 } },
+              "anyOf": [
+                { "required": ["trusted_context"] },
+                { "required": ["contexts"] }
+              ]
+            },
+            {
+              "required": ["capabilities"],
+              "properties": {
+                "mode": { "const": "read_only" },
+                "capabilities": { "maxItems": 0 }
+              }
+            }
           ]
         }
       }
@@ -148,6 +159,25 @@
           "const": "required"
         }
       }
+    },
+    "supervised_worker": {
+      "description": "Optional deployment-side half of digest-bound trusted-worker execution. Disabled by default and independent from policy approval.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "profile", "capabilities"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "profile": { "enum": ["development", "staging", "production"] },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/supervised_worker_capability" }
+        }
+      }
+    },
+    "notifications": {
+      "description": "Optional operator-owned human-attention delivery. Disabled unless explicitly enabled; notification responses never carry approval or mutation authority.",
+      "$ref": "#/$defs/notifications"
     },
     "capabilities": {
       "description": "Embedded compatibility capabilities. May be empty when contracts supplies the capability catalog.",
@@ -435,6 +465,191 @@
     }
   },
   "$defs": {
+    "supervised_worker_capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "contract_digest",
+        "mode",
+        "concurrency",
+        "queue_limit",
+        "lease_seconds",
+        "max_attempts",
+        "proposal_ttl_seconds",
+        "rate_limit",
+        "write_url_env"
+      ],
+      "properties": {
+        "capability": { "$ref": "#/$defs/qualified_name" },
+        "contract_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "mode": { "const": "supervised_worker" },
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "queue_limit": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "lease_seconds": { "type": "integer", "minimum": 15, "maximum": 3600 },
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "proposal_ttl_seconds": { "type": "integer", "minimum": 60, "maximum": 2592000 },
+        "rate_limit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executions", "window_seconds"],
+          "properties": {
+            "executions": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "window_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+          }
+        },
+        "write_url_env": { "$ref": "#/$defs/env_name" },
+        "require_least_privilege_writer": { "type": "boolean" },
+        "writer_posture_fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "worker_identity": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+        "control_role": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+        "required_attention_sinks": {
+          "description": "Optional default-off supervision-health gate. Every named sink must be configured and healthy before this exact capability/digest is leased.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "sinks"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "workbench_url_env": { "$ref": "#/$defs/env_name" },
+        "sinks": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/notification_sink" }
+        }
+      }
+    },
+    "notification_sink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+        "type": { "enum": ["webhook", "jsonl"] },
+        "enabled": { "type": "boolean" },
+        "url_env": { "$ref": "#/$defs/env_name" },
+        "signing_secret_env": { "$ref": "#/$defs/env_name" },
+        "destination": { "const": "stdout" },
+        "minimum_severity": { "enum": ["informational", "warning", "critical"] },
+        "events": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "proposal.created",
+              "proposal.review_required",
+              "proposal.auto_approved",
+              "proposal.approved",
+              "proposal.queued",
+              "proposal.expiring",
+              "proposal.expired",
+              "proposal.cancelled",
+              "proposal.applied",
+              "proposal.conflict",
+              "proposal.refused",
+              "worker.started",
+              "worker.paused",
+              "worker.unhealthy",
+              "worker.recovered",
+              "worker.queue_backlog",
+              "worker.retry_scheduled",
+              "worker.dead_lettered",
+              "worker.unknown_outcome",
+              "worker.reconciliation_required",
+              "capability.review_required",
+              "capability.activated",
+              "capability.revoked",
+              "contract.digest_stale",
+              "schema.drift_detected",
+              "credential.posture_changed",
+              "policy.limit_near",
+              "policy.limit_exceeded",
+              "sensitive_override_activated"
+            ]
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/qualified_name" }
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "enum": ["development", "staging", "production", "unknown"] }
+        },
+        "delivery": { "enum": ["immediate", "digest", "all"] },
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "max_response_bytes": { "type": "integer", "minimum": 0, "maximum": 65536 },
+        "replay_window_seconds": { "type": "integer", "minimum": 30, "maximum": 3600 },
+        "allow_private_destinations": { "type": "boolean" },
+        "private_host_allowlist": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 253 }
+        },
+        "recovery_notifications": { "type": "boolean" },
+        "budgets": { "$ref": "#/$defs/notification_budgets" },
+        "quiet_hours": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_utc_hour", "end_utc_hour"],
+          "properties": {
+            "start_utc_hour": { "type": "integer", "minimum": 0, "maximum": 23 },
+            "end_utc_hour": { "type": "integer", "minimum": 0, "maximum": 23 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "webhook" } }, "required": ["type"] },
+          "then": { "required": ["url_env", "signing_secret_env"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "jsonl" } }, "required": ["type"] },
+          "then": {
+            "required": ["destination"],
+            "not": {
+              "anyOf": [
+                { "required": ["url_env"] },
+                { "required": ["signing_secret_env"] }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "notification_budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "per_minute": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "per_hour": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "immediate_informational_per_hour": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "aggregation_window_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "cooldown_seconds": { "type": "integer", "minimum": 0, "maximum": 604800 },
+        "max_unresolved_reminders": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "digest_cadence_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+        "escalation_delay_seconds": { "type": "integer", "minimum": 0, "maximum": 604800 },
+        "retry_attempt_threshold": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "degraded_duration_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "queue_depth_threshold": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "queue_age_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 }
+      }
+    },
     "rate_limit_rule": {
       "type": "object",
       "additionalProperties": false,
@@ -813,6 +1028,14 @@
               "type": "string",
               "minLength": 1
             }
+          }
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supervised_worker"],
+          "properties": {
+            "supervised_worker": { "const": "allowed" }
           }
         },
         "writeback": {

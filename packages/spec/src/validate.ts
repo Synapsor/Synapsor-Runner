@@ -28,7 +28,7 @@ const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "ten
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
 const EVIDENCE_KEYS = new Set(["required", "sources", "query_audit", "handle_prefix"]);
-const PROPOSAL_KEYS = new Set(["action", "operation", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "reversibility", "conflict_guard", "approval", "writeback"]);
+const PROPOSAL_KEYS = new Set(["action", "operation", "allowed_fields", "patch", "numeric_bounds", "transition_guards", "reversibility", "conflict_guard", "approval", "execution", "writeback"]);
 const OPERATION_KEYS = new Set(["kind", "cardinality", "selection", "max_rows", "aggregate_bounds", "batch", "deduplication", "version_advance"]);
 const SELECTION_KEYS = new Set(["all"]);
 const PREDICATE_TERM_KEYS = new Set(["column", "operator", "value"]);
@@ -43,6 +43,7 @@ const NUMERIC_BOUND_KEYS = new Set(["minimum", "maximum"]);
 const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
+const EXECUTION_KEYS = new Set(["supervised_worker"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor", "idempotency_key"]);
 const REVERSIBILITY_KEYS = new Set(["mode"]);
 const AGGREGATE_READ_KEYS = new Set(["function", "count_mode", "column", "selection", "minimum_group_size"]);
@@ -256,8 +257,8 @@ function validateContexts(value: unknown, errors: ValidationIssue[], warnings: V
 
 function validateCapabilities(value: unknown, contextNames: Set<string>, resourceNames: Set<string>, errors: ValidationIssue[], warnings: ValidationIssue[]): Set<string> {
   const names = new Set<string>();
-  if (!Array.isArray(value) || value.length === 0) {
-    errors.push({ path: "$.capabilities", code: "CAPABILITIES_REQUIRED", message: "At least one capability is required." });
+  if (!Array.isArray(value)) {
+    errors.push({ path: "$.capabilities", code: "CAPABILITIES_REQUIRED", message: "capabilities must be an array; an empty array represents zero authority." });
     return names;
   }
   value.forEach((capability, index) => {
@@ -941,6 +942,58 @@ function validateProposalAction(value: unknown, subject: unknown, path: string, 
         code: "INVALID_REQUIRED_APPROVALS",
         message: "approval.required_approvals must be a safe integer from 1 through 10.",
       });
+    }
+  }
+  if (value.execution !== undefined) {
+    validateNestedObject(value.execution, EXECUTION_KEYS, `${path}.execution`, errors);
+    if (isRecord(value.execution) && value.execution.supervised_worker !== "allowed") {
+      errors.push({
+        path: `${path}.execution.supervised_worker`,
+        code: "INVALID_SUPERVISED_WORKER_PERMISSION",
+        message: "execution.supervised_worker must be allowed when the optional permission is present.",
+      });
+    }
+    if (isRecord(value.execution) && value.execution.supervised_worker === "allowed") {
+      const cardinality = isRecord(value.operation) ? value.operation.cardinality ?? "single" : "single";
+      const writebackMode = isRecord(value.writeback) ? value.writeback.mode : "direct_sql";
+      if (writebackMode !== "direct_sql") {
+        errors.push({
+          path: `${path}.writeback.mode`,
+          code: "SUPERVISED_WORKER_DIRECT_SQL_REQUIRED",
+          message: "supervised-worker execution is initially limited to Runner-owned direct_sql writeback.",
+        });
+      }
+      if (cardinality !== "single") {
+        errors.push({
+          path: `${path}.operation.cardinality`,
+          code: "SUPERVISED_WORKER_SINGLE_ROW_REQUIRED",
+          message: "supervised-worker execution is initially limited to deterministic single-row writes.",
+        });
+      }
+      if (deleteOperation) {
+        errors.push({
+          path: `${path}.operation.kind`,
+          code: "SUPERVISED_WORKER_DELETE_FORBIDDEN",
+          message: "hard DELETE is not eligible for supervised-worker execution in this release.",
+        });
+      }
+      if (value.reversibility !== undefined) {
+        errors.push({
+          path: `${path}.reversibility`,
+          code: "SUPERVISED_WORKER_REVERSIBILITY_FORBIDDEN",
+          message: "reviewed compensation actions require manual execution in this release.",
+        });
+      }
+      if (operation === "update"
+        && (!isRecord(value.conflict_guard)
+          || !isSafeIdentifier(value.conflict_guard.column)
+          || value.conflict_guard.weak_guard_ack === true)) {
+        errors.push({
+          path: `${path}.conflict_guard.column`,
+          code: "SUPERVISED_WORKER_EXACT_CONFLICT_GUARD_REQUIRED",
+          message: "supervised-worker UPDATE requires an exact source version/conflict column; a weak row hash is not eligible.",
+        });
+      }
     }
   }
   if (value.writeback !== undefined) {

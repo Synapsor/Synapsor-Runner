@@ -45,6 +45,18 @@ describe("@synapsor/dsl", () => {
     });
   });
 
+  it("compiles a context-only review draft to an explicit zero-authority contract", () => {
+    const contract = compileAgentDsl(`
+CREATE AGENT CONTEXT local_operator
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  TENANT BINDING tenant_id
+END
+`);
+
+    expect(contract.capabilities).toEqual([]);
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("compiles a reviewer-fixed principal scope from a required trusted binding", () => {
     const source = fs.readFileSync(path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"), "utf8")
       .replaceAll("TENANT KEY tenant_id", "TENANT KEY tenant_id\n  PRINCIPAL SCOPE KEY assigned_to");
@@ -164,6 +176,38 @@ END
       },
     ]);
     expect(validateContract(contract).errors).toEqual([]);
+  });
+
+  it("compiles explicit supervised-worker apply permission into canonical authority", () => {
+    const contract = compileAgentDsl(planCreditSource(`
+  APPROVAL ROLE support_lead
+  AUTO APPROVE WHEN plan_credit_cents <= 2500
+  LIMIT 20 PER DAY
+  ALLOW SUPERVISED WORKER APPLY
+  WRITEBACK DIRECT SQL
+`));
+
+    expect(contract.capabilities[0]?.proposal?.execution).toEqual({
+      supervised_worker: "allowed",
+    });
+    expect(validateAgentDsl(`
+CREATE AGENT CONTEXT support_context
+  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
+  TENANT BINDING tenant_id
+END
+
+CREATE CAPABILITY support.inspect_customer
+  USING CONTEXT support_context
+  SOURCE local_postgres
+  ON public.customers
+  PRIMARY KEY id
+  TENANT KEY tenant_id
+  ARG customer_id TEXT REQUIRED MAX LENGTH 128
+  LOOKUP customer_id BY id
+  ALLOW READ id
+  ALLOW SUPERVISED WORKER APPLY
+END
+`).errors.map((error) => error.code)).toContain("PROPOSAL_ACTION_REQUIRED");
   });
 
   it("compiles small-team approval quorum into the canonical contract", () => {

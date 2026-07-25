@@ -78,6 +78,7 @@
           "potential_principal_fields",
           "potential_conflict_fields",
           "potentially_sensitive_fields",
+          "field_classifications",
           "suggested_kept_out_fields",
           "suggested_visible_fields",
           "possible_actions",
@@ -105,6 +106,47 @@
           },
           "potentially_sensitive_fields": {
             "$ref": "#/$defs/stringArray"
+          },
+          "field_classifications": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "field",
+                "state",
+                "reason_codes",
+                "reasons",
+                "evidence_source"
+              ],
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "state": {
+                  "enum": [
+                    "high_confidence_sensitive",
+                    "unresolved_free_text",
+                    "structurally_low_risk"
+                  ]
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/stringArray"
+                },
+                "reasons": {
+                  "$ref": "#/$defs/stringArray"
+                },
+                "evidence_source": {
+                  "enum": [
+                    "database",
+                    "prisma",
+                    "drizzle",
+                    "openapi",
+                    "synapsor"
+                  ]
+                }
+              }
+            }
           },
           "suggested_kept_out_fields": {
             "$ref": "#/$defs/stringArray"

@@ -114,9 +114,25 @@ try {
   const activationUi = await startWorkbench({ cli, boundaryRoot, projectRoot, env: runtimeEnv });
   let boundaryDigest;
   try {
-    const boundaryPayload = await activationUi.json("GET", "/api/boundary");
+    let boundaryPayload = await activationUi.json("GET", "/api/boundary");
     assert.equal(boundaryPayload.ok, true);
-    const candidate = narrowGoldenBoundary(structuredClone(boundaryPayload.draft));
+    for (const resourceId of ["public.accounts", "public.churn_events"]) {
+      const regenerated = await activationUi.json("POST", "/api/boundary/regenerate", {
+        kind: "principal_key",
+        resource_id: resourceId,
+        value: "owner_id",
+        actor: "packed-golden-reviewer",
+        reason: "The reviewed RLS policy scopes product analytics to the signed-in product manager.",
+      });
+      assert.equal(regenerated.ok, true);
+      assert.equal(regenerated.source_database_changed, false);
+    }
+    boundaryPayload = await activationUi.json("GET", "/api/boundary");
+    const candidate = narrowGoldenBoundary(structuredClone(boundaryPayload.candidate));
+    assert.ok(candidate.pack.resources.every((resource) =>
+      resource.principal_key === "owner_id"
+      && resource.rls_session?.principal_setting === "app.principal"),
+    "managed principal review did not preserve the reviewed RLS binding");
     const preview = await activationUi.json("POST", "/api/boundary/preview", { candidate });
     assert.equal(preview.ok, true);
     boundaryDigest = preview.digest;
@@ -210,7 +226,11 @@ try {
     explored = resultPayload(called);
     assert.equal(explored.ok, true);
     assert.equal(explored.source_database_changed, false);
-    assert.equal(explored.privacy.suppressed_groups, 2);
+    assert.equal(
+      explored.privacy.suppressed_groups,
+      2,
+      `packed aggregate suppression changed: ${JSON.stringify(explored)}`,
+    );
     assert.equal(explored.privacy.totals_returned, false);
     assert.equal(explored.data.length, 5);
     assert.match(JSON.stringify(explored), /"measure_0":10/);

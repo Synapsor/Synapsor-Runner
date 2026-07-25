@@ -25,6 +25,11 @@ Runner is designed to protect the model-facing database boundary:
   expected-version/conflict guard, affected-row count, idempotency, and
   receipt/replay recording;
 - app-owned executors are called only after approval outside MCP;
+- manual apply remains the default; optional supervised execution requires
+  contract permission plus a separate exact-digest deployment allowlist and
+  repeats every guarded check through the same apply implementation;
+- attention events are durable and redacted; external delivery is default-off,
+  quiet, signed, and cannot approve or mutate;
 - local evidence, query audit, proposal, receipt, and replay records are
   inspectable without rerunning side effects;
 - model-facing proposal, evidence, and replay resource reads re-resolve the
@@ -50,6 +55,10 @@ Runner is designed to protect the model-facing database boundary:
 - A compromised/redirecting JWKS endpoint could supply unexpected key material.
 - Metrics, readiness errors, archives, or dead-letter operations could leak
   credentials or high-cardinality business identifiers.
+- A stale policy-approved job could otherwise execute after target/evidence,
+  policy, limit, digest, scope, or writer-posture drift.
+- A notification destination, replay, or response could otherwise become a
+  confused deputy or leak protected data.
 
 ## Fleet Trust Boundaries
 
@@ -69,6 +78,12 @@ Runner is designed to protect the model-facing database boundary:
   `max_entries`; capacity exhaustion fails closed.
 - Verified reviewer identity proves possession of a registered key or a valid
   asymmetric operator token. `dev_env` is unverified and not production-safe.
+- A supervised worker is trusted execution infrastructure, not an MCP tool. It
+  receives a separate least-privilege writer reference and may execute only
+  exact capability digests selected independently by contract and deployment.
+- Notification sinks are operator-owned interruption channels. The ledger and
+  authenticated Workbench remain authoritative; webhook delivery,
+  acknowledgement, and replay grant no authority.
 
 ## Non-Goals
 

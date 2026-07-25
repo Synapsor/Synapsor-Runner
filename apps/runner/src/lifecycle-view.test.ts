@@ -41,7 +41,7 @@ function proposalChangeSet(input: {
     proposal_id: proposalId,
     proposal_version: 1,
     action: capability,
-    contract: { digest: `sha256:${proposalId}`, version: "1.0.0" },
+    contract: { digest: canonicalJsonDigest({ fixture: "lifecycle", proposal_id: proposalId }), version: "1.0.0" },
     mode: "review_required",
     principal: { id: principal, source: "trusted_session" },
     scope: { tenant_id: tenant, business_object: "invoice", object_id: objectId },

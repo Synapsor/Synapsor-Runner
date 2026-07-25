@@ -264,12 +264,15 @@ describe("Scoped Explore", () => {
     )).toBe(true);
     refusalStore.close();
 
+    const budgetFixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 2;
+    });
     const budgetRuntime = await createScopedExploreRuntime({
-      projectRoot: fixture.root,
+      projectRoot: budgetFixture.root,
       transport: "stdio",
-      env: fixture.env,
+      env: budgetFixture.env,
       executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
-      inspectDatabaseFn: async () => fixture.inspection,
+      inspectDatabaseFn: async () => budgetFixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
     await budgetRuntime.explore(aggregatePlan("one"));
@@ -278,7 +281,7 @@ describe("Scoped Explore", () => {
       code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
     });
     await budgetRuntime.close();
-  });
+  }, 15_000);
 
   it("rejects SQL-shaped input, unreviewed identifiers, kept-out uses, scope overrides, and aggregate widening", async () => {
     const { boundary } = await activatedFixture((candidate) => {

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { createJwtVerifier, type JwtAlgorithm } from "@synapsor-runner/mcp-server";
-import type { OperatorDecision, OperatorIdentityProof, StoredProposal } from "@synapsor-runner/proposal-store";
+import type { OperatorDecision, OperatorIdentityProof } from "@synapsor-runner/proposal-store";
 
 export type OperatorIdentityConfig = {
   provider: "dev_env" | "signed_key" | "jwt_oidc";
@@ -36,7 +36,11 @@ export type OperatorIdentityConfig = {
 export type ResolveOperatorIdentityInput = {
   config?: OperatorIdentityConfig;
   configPath?: string;
-  proposal: StoredProposal;
+  proposal: {
+    proposal_id: string;
+    proposal_version: number;
+    proposal_hash: string;
+  };
   action: OperatorDecision["action"];
   reason?: string;
   actor?: string;
@@ -45,6 +49,7 @@ export type ResolveOperatorIdentityInput = {
   requiredRole?: string;
   env?: NodeJS.ProcessEnv;
   now?: string;
+  token?: string;
   tokenInput?: Readable;
 };
 
@@ -76,7 +81,7 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
   }
 
   if (config.provider === "jwt_oidc") {
-    const token = await operatorToken(config, env, input.tokenInput ?? process.stdin);
+    const token = await operatorToken(config, env, input.tokenInput ?? process.stdin, input.token);
     const configDir = path.dirname(path.resolve(input.configPath ?? "synapsor.runner.json"));
     const verifier = createJwtVerifier({
       provider: "jwt_asymmetric",
@@ -200,7 +205,14 @@ function splitRoles(value: string | undefined): string[] {
   return [...new Set((value ?? "").split(/[\s,]+/).map((role) => role.trim()).filter(Boolean))].sort();
 }
 
-async function operatorToken(config: OperatorIdentityConfig, env: NodeJS.ProcessEnv, input: Readable): Promise<string> {
+async function operatorToken(
+  config: OperatorIdentityConfig,
+  env: NodeJS.ProcessEnv,
+  input: Readable,
+  directToken?: string,
+): Promise<string> {
+  const requestToken = directToken?.trim();
+  if (requestToken) return requestToken;
   const tokenEnv = config.token_env ?? (!config.token_file_env && config.token_stdin !== true ? "SYNAPSOR_OPERATOR_TOKEN" : undefined);
   const tokenFileEnv = config.token_file_env;
   const inline = tokenEnv ? env[tokenEnv]?.trim() : undefined;

@@ -287,8 +287,16 @@ Use the shared queue explicitly:
 synapsor-runner proposals list --config ./synapsor.runner.json
 synapsor-runner proposals show latest --config ./synapsor.runner.json
 synapsor-runner ui --config ./synapsor.runner.json
-synapsor-runner worker run --yes --config ./synapsor.runner.json
+synapsor-runner worker run --supervised --yes \
+  --worker-id billing_worker --config ./synapsor.runner.json
 ```
+
+The supervised path is disabled by default and requires contract permission
+plus a deployment allowlist for the exact digest. Existing `AUTO APPROVE`
+contracts remain manual-apply after upgrade. Worker leases, policy reservations,
+writer posture, source/evidence freshness, idempotency receipts, and UNKNOWN
+outcome recovery are covered in [Operator-Supervised Automatic
+Apply](supervised-automatic-apply.md).
 
 Dead-letter operations require verified operator identity:
 
@@ -304,6 +312,13 @@ synapsor-runner worker dead-letter discard wrp_... --reason "closed" --yes \
 Requeue preserves history and refuses if a durable applied/already-applied
 receipt already proves the effect. Discard closes the queue item without
 deleting proposals, receipts, or events.
+
+Use `attention show` and the Workbench Human Attention Inbox to inspect
+review-required, stale, limit, dead-letter, UNKNOWN, and reconciliation states
+without copying proposal IDs. Optional external notifications are disabled and
+quiet by default. A signed generic webhook can route selected coalesced
+incidents; it cannot approve or mutate state. See [Human Attention And
+Notifications](human-attention-notifications.md).
 
 ## Backup, Restore, And Retention
 

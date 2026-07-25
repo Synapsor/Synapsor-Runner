@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String     @id
+  name      String
+  locations Location[]
+  trainers  Trainer[]
+  members   Member[]
+  classes   Class[]
+  checkIns  CheckIn[]
+
+  @@map("organizations")
+}
+
+model Location {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  name           String
+  region         String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  members        Member[]
+  classes        Class[]
+  checkIns       CheckIn[]
+
+  @@unique([organizationId, name])
+  @@map("locations")
+}
+
+model Trainer {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  displayName    String       @map("display_name")
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  members        Member[]
+  classes        Class[]
+
+  @@map("trainers")
+}
+
+model Member {
+  id                  String       @id
+  organizationId      String       @map("organization_id")
+  locationId          String       @map("location_id")
+  assignedTrainerId   String       @map("assigned_trainer_id")
+  membershipStatus    String       @map("membership_status")
+  membershipTier      String       @map("membership_tier")
+  loyaltyBalance      Int          @map("loyalty_balance")
+  version             Int
+  paymentMethod       String       @map("payment_method")
+  homeAddress         String       @map("home_address")
+  medicalWaiverNotes  String       @map("medical_waiver_notes")
+  organization        Organization @relation(fields: [organizationId], references: [id])
+  location            Location     @relation(fields: [locationId], references: [id])
+  assignedTrainer     Trainer      @relation(fields: [assignedTrainerId], references: [id])
+  checkIns            CheckIn[]
+
+  @@index([organizationId, assignedTrainerId])
+  @@map("members")
+}
+
+model Class {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  locationId     String       @map("location_id")
+  trainerId      String       @map("trainer_id")
+  classType      String       @map("class_type")
+  startsAt       DateTime     @map("starts_at") @db.Timestamptz(6)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  location       Location     @relation(fields: [locationId], references: [id])
+  trainer        Trainer      @relation(fields: [trainerId], references: [id])
+  checkIns       CheckIn[]
+
+  @@map("classes")
+}
+
+model CheckIn {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  locationId     String       @map("location_id")
+  memberId       String       @map("member_id")
+  classId        String       @map("class_id")
+  outcome        String
+  checkedInAt    DateTime     @map("checked_in_at") @db.Timestamptz(6)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  location       Location     @relation(fields: [locationId], references: [id])
+  member         Member       @relation(fields: [memberId], references: [id])
+  fitnessClass   Class        @relation(fields: [classId], references: [id])
+
+  @@index([organizationId, checkedInAt])
+  @@map("check_ins")
+}

@@ -610,7 +610,13 @@ async function addProtectedContractToRuntimeConfig(input: {
     if (!isRecord(config.generated_authority)
       || config.generated_authority.generation_lock_path !== generationLockPath
       || config.generated_authority.enforcement !== "required") {
-      throw new Error("Existing generated_authority does not match this project's reviewed generation lock.");
+      const existingPath = isRecord(config.generated_authority)
+        && typeof config.generated_authority.generation_lock_path === "string"
+        ? config.generated_authority.generation_lock_path
+        : "(missing)";
+      throw new Error(
+        `Existing generated_authority lock path ${existingPath} does not match the reviewed project lock ${generationLockPath}.`,
+      );
     }
   } else {
     config.generated_authority = {
@@ -633,7 +639,8 @@ async function addProtectedContractToRuntimeConfig(input: {
       || existingSource.read_url_env !== expectedSource.read_url_env
       || existingSource.read_only === false
       || (input.databaseScope
-        && JSON.stringify(existingSource.database_scope ?? null) !== JSON.stringify(input.databaseScope))) {
+        && existingSource.database_scope !== undefined
+        && JSON.stringify(existingSource.database_scope) !== JSON.stringify(input.databaseScope))) {
       throw new Error(`Existing source ${input.sourceName} does not match the protected capability's inspected source.`);
     }
     existingSource.read_only = true;
@@ -799,7 +806,9 @@ function relativeProjectPath(projectRoot: string, value: string): string {
 
 function relativeConfigPath(configRoot: string, value: string): string {
   const relative = path.relative(configRoot, value).split(path.sep).join("/");
-  return relative.startsWith(".") ? relative : `./${relative}`;
+  return relative === "." || relative.startsWith("./") || relative.startsWith("../")
+    ? relative
+    : `./${relative}`;
 }
 
 async function writeAtomic(filePath: string, content: string, mode: number): Promise<void> {

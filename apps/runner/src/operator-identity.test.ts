@@ -147,6 +147,24 @@ describe("operator identity", () => {
     expect(stdinProof).toMatchObject({ provider: "jwt_oidc", verified: true, subject: "alice@example.com" });
     expect(JSON.stringify(stdinProof)).not.toContain(token);
 
+    const requestProof = await resolveOperatorIdentity({
+      config,
+      proposal,
+      action: "apply",
+      env: {
+        TEST_OPERATOR_PUBLIC_KEY: env.TEST_OPERATOR_PUBLIC_KEY,
+        TEST_ATTESTATION_SECRET: attestationSecret,
+      },
+      token,
+    });
+    expect(requestProof).toMatchObject({
+      provider: "jwt_oidc",
+      verified: true,
+      subject: "alice@example.com",
+      decision: { action: "apply" },
+    });
+    expect(JSON.stringify(requestProof)).not.toContain(token);
+
     await expect(resolveOperatorIdentity({
       config,
       proposal,

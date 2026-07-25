@@ -84,6 +84,7 @@ export type AgentDslCapabilityAst = {
     reversible?: boolean;
     approvalRole?: string;
     requiredApprovals?: number;
+    supervisedWorkerApply?: boolean;
     autoApprovalRules?: Array<{ field: string; max: number; line: number }>;
     autoApprovalLimits?: Array<{
       kind: "count" | "total";
@@ -258,6 +259,9 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
             required_role: capability.proposal.approvalRole ?? "local_reviewer",
             ...(capability.proposal.requiredApprovals ? { required_approvals: capability.proposal.requiredApprovals } : {}),
           },
+        ...(capability.proposal.supervisedWorkerApply
+          ? { execution: { supervised_worker: "allowed" as const } }
+          : {}),
         writeback: {
           mode: capability.proposal.writebackMode ?? "direct_sql",
           ...(capability.proposal.executor ? { executor: capability.proposal.executor } : {}),
@@ -856,6 +860,11 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     if (approvalLimit?.[1]) {
       ensureProposal(capability, item);
       parseAutoApprovalLimitClause(capability, approvalLimit[1], item.line);
+      continue;
+    }
+    if (/^ALLOW\s+SUPERVISED\s+WORKER\s+APPLY$/i.test(item.text)) {
+      ensureProposal(capability, item);
+      capability.proposal.supervisedWorkerApply = true;
       continue;
     }
     const writeback = item.text.match(/^WRITEBACK\s+(DIRECT\s+SQL|APP\s+HANDLER|CLOUD\s+WORKER|NONE)(?:\s+EXECUTOR\s+([A-Za-z_][A-Za-z0-9_.-]*))?$/i);

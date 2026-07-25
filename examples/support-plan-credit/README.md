@@ -298,8 +298,12 @@ To disable local policy approval without changing the contract:
 }
 ```
 
-Auto-approval never applies the write. It only records an approval row and audit
-event with actor `policy:<policy_name>`.
+In this example, auto-approval records an approval row and audit event with
+actor `policy:<policy_name>`; apply remains manual. Runner does not start
+automatic execution merely because a contract uses `AUTO APPROVE`. A separately
+trusted supervised worker can apply an eligible proposal only when the contract
+and deployment independently opt into the exact active digest. See
+[`docs/supervised-automatic-apply.md`](../../docs/supervised-automatic-apply.md).
 
 After reviewing the ceilings and running `doctor`, an operator can drain the
 approved queue without letting one stale-row conflict abort the remaining jobs:

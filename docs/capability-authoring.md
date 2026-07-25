@@ -118,6 +118,24 @@ CREATE CAPABILITY billing.propose_late_fee_waiver
 END
 ```
 
+`billing_lead` is a Synapsor contract role, not a database role or secret. For
+shared or production operation, Runner must resolve that exact role from a
+freshly verified operator identity and separately authorize apply. See
+[Approval Roles And Verified Operator
+Identity](approval-roles-and-operator-identity.md).
+
+Manual apply remains the default. For an eligible direct single-row
+INSERT/UPDATE, a reviewer may additionally place this clause before `END`:
+
+```sql
+ALLOW SUPERVISED WORKER APPLY
+```
+
+It grants only contract-side permission and becomes part of the exact contract
+digest. Automatic execution still requires an independent deployment allowlist
+for that capability and digest; see [Operator-Supervised Automatic
+Apply](supervised-automatic-apply.md).
+
 Compile and validate:
 
 ```bash
@@ -229,6 +247,7 @@ reviewed runner JSON capabilities. Current parity:
 | proposal weak `conflict_guard` | `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` | 1.4.4 | Explicit legacy escape hatch for an ordinary single-row source-DB UPDATE only. It hashes the captured projection and may miss concurrent changes outside that projection. It is rejected for DELETE, reversible writes, bounded sets, and Runner-ledger authority. |
 | proposal `approval` | `APPROVAL ROLE billing_lead` | 0.1 | Local mode records the required role; enforcement is still outside the model-facing MCP tool. |
 | proposal `approval.required_approvals` | `REQUIRE 2 APPROVALS` | 1.1 | Optional 1..10 distinct-reviewer quorum; defaults to 1. |
+| proposal `execution.supervised_worker` | `ALLOW SUPERVISED WORKER APPLY` | 1.6 | Optional contract-side permission for eligible trusted-worker apply. It does nothing without a separate exact-digest deployment allowlist; old auto-approved proposals remain manual-apply. |
 | proposal `writeback` | `WRITEBACK DIRECT SQL`, `WRITEBACK APP HANDLER EXECUTOR name`, `WRITEBACK CLOUD WORKER`, `WRITEBACK NONE` | 0.1.7 | Handler URLs/tokens stay in `synapsor.runner.json`; contracts carry only the handler name. |
 | proposal `reversibility` | `REVERSIBLE` | 1.4 | Direct SQL only. Captures a bounded inverse after unambiguous apply; operator `revert` creates a new independently approved proposal. |
 | evidence options | `REQUIRE EVIDENCE` | 0.1 | Detailed evidence sources/handle prefixes are not expressible in DSL yet; use embedded JSON or generated contract JSON for those. |

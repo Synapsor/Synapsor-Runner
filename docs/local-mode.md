@@ -158,6 +158,12 @@ npx -y -p @synapsor/runner synapsor-runner proposals approve wrp_123 \
   --yes
 ```
 
+The `--actor` example is the unverified local-development path. Shared and
+production operation should require `signed_key` or `jwt_oidc`, resolve the
+contract's exact role from verified identity, and authorize apply separately.
+See [Approval Roles And Verified Operator
+Identity](approval-roles-and-operator-identity.md).
+
 Before approval, the CLI prints the reviewer-critical proposal details: trusted principal, tenant, target row, primary key, required role, proposal hash/version, allowed columns, conflict guard, evidence bundle/query fingerprint, writeback boundary, source mutation state, and exact before/after diff. Interactive approval still requires typing `yes`; noninteractive scripts must pass `--yes`.
 
 When `proposal_freshness` is configured for that capability, approval also
@@ -301,6 +307,8 @@ or prune it without touching your source Postgres/MySQL database:
 ```bash
 synapsor-runner store stats --store ./.synapsor/local.db
 synapsor-runner events tail --store ./.synapsor/local.db
+synapsor-runner attention show --store ./.synapsor/local.db
+synapsor-runner notifications status --store ./.synapsor/local.db
 synapsor-runner events webhook --url http://127.0.0.1:8788/synapsor/events --kind proposal_created --store ./.synapsor/local.db
 synapsor-runner store vacuum --store ./.synapsor/local.db
 synapsor-runner store prune --store ./.synapsor/local.db --older-than 30d --dry-run
@@ -316,8 +324,14 @@ running local store.
 
 `events webhook` pushes the same local lifecycle events to a local/dev/staging
 HTTP endpoint, one event envelope per POST. Use it for a review UI, Slack bridge,
-or app-local notification path when polling is awkward. It is not a hosted
-central ledger and does not expose database credentials.
+or app-local compatibility path when polling is awkward. It is not the
+production human-attention dispatcher.
+
+For durable coalesced incidents, quiet defaults, budgets/digests, signed HTTPS
+delivery, replay protection, sink health, and the no-ID Workbench inbox, use
+`attention` and `notifications`. See [Human Attention And
+Notifications](human-attention-notifications.md). Neither notification path
+becomes approval or apply authority.
 
 `store prune` defaults to dry-run. `store reset` requires `--yes` and removes
 only the local SQLite ledger files. MCP server modes write a small active-store

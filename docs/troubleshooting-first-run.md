@@ -12,6 +12,41 @@ Use JSON for automation:
 npx -y -p @synapsor/runner synapsor-runner doctor --first-run --json
 ```
 
+## Guided Recovery Contract
+
+Runner 1.6.3 failures should tell you what failed, why the boundary stopped,
+what state remains, and one next action. Do not delete the project or add
+`--force` merely to recover.
+
+| Failure | State preserved | One next action |
+| --- | --- | --- |
+| Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the exported URL/network without printing the credential, then rerun `npx -y @synapsor/runner@latest start --from-env DATABASE_URL`. |
+| Read role is writable, owner, superuser, `BYPASSRLS`, or unverifiable | Disabled metadata draft; no source-row Explore | Supply a verifiably SELECT-only non-owner staging role, then rerun the same `start` command. |
+| Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner@latest start --from-env DATABASE_URL --schema public`. |
+| Tenant or principal scope is unresolved | Conservative blocked resource decisions | Open the same Workbench URL and resolve the highlighted scope exception. |
+| Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
+| Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
+| Trusted context environment is missing | Boundary and ledger remain intact; query did not run | Export the named tenant/principal variable locally, then rerun the displayed Try action. |
+| Generated output already exists | Existing files are not overwritten | Rerun the original `start` command and choose **Resume existing review**. |
+| Generation lock is stale | Existing active named capability and review history | Run `synapsor-runner boundary diff --json`, then choose **Rescan and review changes**. |
+| Config JSON is malformed | Config and source database are unchanged | Correct the reported file/line/column, then run `synapsor-runner config validate --config ./synapsor.runner.json --json`. |
+| Config mode is missing/invalid | Config and source database are unchanged | Set `mode` to `read_only`, `shadow`, `review`, or `cloud`, then rerun `synapsor-runner config validate --json`. |
+| Config contains an unknown field | Config and source database are unchanged | Remove or correct the reported JSON path, then rerun `synapsor-runner config validate --json`. |
+| Workbench port is occupied | Review files, ledger, and source database | Rerun `synapsor-runner ui --open`; the default selects a free loopback port. |
+| Writeback setup fails | Config and reviewed plan; transactional setup rolls back | Rerun `synapsor-runner writeback setup --profile staging --json` and review the reported prerequisite. |
+| Writer role/setup URL is missing | No DDL or grant was applied | Rerun the preview with `--writer-role <role> --setup-url-env <ADMIN_URL_ENV>`. |
+| No supported write candidate exists | Read boundary remains active; no write authority | Use **Add a safe action** on a writable base table with a proven identity/version field, or retain read-only mode. |
+| MCP client installation is unavailable | Project and reviewed authority; client config unchanged | Run `synapsor-runner mcp config --absolute-paths` and use the generic stdio snippet manually. |
+| Supervised work remains queued | Approved proposal and queue state; source unchanged | Run `synapsor-runner worker status --json`, then follow its exact digest, posture, policy, freshness, limit, pause, or required-sink finding. |
+| Required attention sink is unhealthy | Approved proposal remains queued; no source mutation | Repair the operator-owned sink, run `synapsor-runner notifications test --sink <id>`, then dispatch and let the worker revalidate from the beginning. |
+| Notification delivery is dead-lettered | Authoritative event and proposal state are preserved | Repair/test the sink, then run `synapsor-runner notifications replay latest --yes --reason "sink repaired"` with the configured verified operator identity; this resends only the redacted event. |
+| Apply outcome is UNKNOWN | Intent, receipt evidence, and queue state are preserved | Open the latest critical attention item and use the verified reconciliation flow; never rerun the mutation blindly. |
+
+For machine output, a process-level failure emits one redacted JSON object to
+stdout and diagnostics to stderr. `recovery.source_database_changed` is `null`
+when a generic exception cannot establish an operation-specific mutation
+outcome; inspect the durable receipt/reconciliation state rather than guessing.
+
 ## Fresh Start Did Not Enter Auto Boundary
 
 Auto Boundary is the default only for a fresh interactive `start --from-env`

@@ -405,6 +405,40 @@ function autoApprovalConfig(): RuntimeConfig {
   return cloned;
 }
 
+function supervisedAutoApprovalConfig(): RuntimeConfig {
+  const cloned = autoApprovalConfig();
+  const digest = `sha256:${"d".repeat(64)}` as const;
+  const source = cloned.sources?.app_postgres;
+  const proposal = cloned.capabilities?.find((capability) => capability.name === "billing.propose_late_fee_waiver");
+  if (!source || !proposal) throw new Error("supervised worker fixture is incomplete");
+  source.receipts = { authority: "source_db", provisioning: "precreated" };
+  proposal.contract_provenance = { digest, version: "1.0.0" };
+  proposal.operation = {
+    kind: "update",
+    cardinality: "single",
+    version_advance: { column: "updated_at", strategy: "database_generated" },
+  };
+  proposal.writeback = { mode: "direct_sql" };
+  proposal.execution = { supervised_worker: "allowed" };
+  cloned.supervised_worker = {
+    enabled: true,
+    profile: "staging",
+    capabilities: [{
+      capability: proposal.name,
+      contract_digest: digest,
+      mode: "supervised_worker",
+      concurrency: 1,
+      queue_limit: 10,
+      lease_seconds: 60,
+      max_attempts: 3,
+      proposal_ttl_seconds: 86_400,
+      rate_limit: { executions: 10, window_seconds: 60 },
+      write_url_env: "APP_POSTGRES_WRITE_URL",
+    }],
+  };
+  return cloned;
+}
+
 function proposalFreshnessConfig(options: { policy?: boolean } = {}): RuntimeConfig {
   const cloned = options.policy ? autoApprovalConfig() : structuredClone(config);
   const proposal = cloned.capabilities?.find((capability) => capability.name === "billing.propose_late_fee_waiver");
@@ -2295,6 +2329,57 @@ describe("local Synapsor MCP runtime", () => {
       })).toThrow(/PROPOSAL_NOT_PENDING_REVIEW|is approved/);
     } finally {
       runtime.close();
+    }
+  });
+
+  it("queues an auto-approved proposal only under matching contract and deployment worker authority", async () => {
+    const store = new ProposalStore();
+    const supervised = supervisedAutoApprovalConfig();
+    const runtime = createMcpRuntime(supervised, {
+      store,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    try {
+      expect(runtime.listTools().find((tool) => tool.name === "billing.propose_late_fee_waiver")?.description)
+        .toContain("separately trusted Runner worker may later apply it");
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-3001",
+        credit_cents: 2500,
+        reason: "documented outage credit",
+      });
+      expect(result).toMatchObject({
+        status: "queued_for_trusted_execution",
+        approval: {
+          mode: "policy",
+          policy: "billing_propose_late_fee_waiver_auto_approval",
+        },
+        execution: {
+          status: "queued",
+          mode: "supervised_worker",
+          capability: "billing.propose_late_fee_waiver",
+          contract_digest: `sha256:${"d".repeat(64)}`,
+          approval_source: "policy_auto",
+          model_can_approve_or_apply: false,
+        },
+        source_database_mutated: false,
+      });
+      expect(store.getWorkerQueueItem(String(result.proposal_id))).toMatchObject({
+        status: "queued",
+        execution_mode: "supervised_worker",
+        contract_digest: `sha256:${"d".repeat(64)}`,
+        max_attempts: 3,
+      });
+
+      const mismatched = supervisedAutoApprovalConfig();
+      mismatched.supervised_worker!.capabilities[0]!.contract_digest = `sha256:${"e".repeat(64)}`;
+      const mismatchStore = new ProposalStore();
+      expect(() => createMcpRuntime(mismatched, {
+        store: mismatchStore,
+        readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+      })).toThrowError(/SUPERVISED_WORKER_DIGEST_MISMATCH/);
+      mismatchStore.close();
+    } finally {
+      await runtime.close();
     }
   });
 
