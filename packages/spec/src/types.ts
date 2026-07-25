@@ -160,6 +160,9 @@ export type ProposalActionSpec = ExtensionFields & {
     required_approvals?: number;
     policy?: string;
   };
+  execution?: {
+    supervised_worker: "allowed";
+  };
   writeback?: {
     mode: "direct_sql" | "app_handler" | "cloud_worker" | "none";
     executor?: string;

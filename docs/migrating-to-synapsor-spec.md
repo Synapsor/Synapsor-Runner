@@ -148,6 +148,44 @@ The equivalent DSL is `REQUIRE 2 APPROVALS` after `APPROVAL ROLE
 billing_lead`. Runner 1.0 does not understand this new optional semantic field;
 use Runner/spec/DSL 1.1 together. Omitted fields preserve 1.0 behavior.
 
+## 1.6 Generated Authority And Supervised Execution
+
+Runner 1.6.3, Spec 1.6.0, and DSL 1.6.0 are additive. Existing hand-authored
+DSL/JSON/config projects do not need Auto Boundary, Workbench, a generation
+lock, schema rescanning, or supervised execution. Contracts that omit the new
+fields retain their previous canonical normalization and digest.
+
+Auto Boundary writes a generation lock only for authority it generated.
+Drift enforcement applies only when `synapsor.runner.json` explicitly
+references that lock under `generated_authority`; manually authored projects
+continue to start without metadata inspection.
+
+The optional proposal permission:
+
+```json
+{
+  "execution": {
+    "supervised_worker": "allowed"
+  }
+}
+```
+
+compiles from:
+
+```sql
+ALLOW SUPERVISED WORKER APPLY
+```
+
+It applies nothing by itself. Automatic execution also requires a separate
+deployment policy for the exact capability and active digest. Existing
+`AUTO APPROVE` contracts continue to wait for manual apply, and no worker
+starts because Runner was upgraded. See
+[Operator-Supervised Automatic Apply](supervised-automatic-apply.md).
+
+Human-attention events and external notification sinks require no contract
+migration. Notifications are absent/disabled by default and emit no outbound
+traffic until an operator configures and explicitly runs the dispatcher.
+
 ## Validate
 
 ```bash

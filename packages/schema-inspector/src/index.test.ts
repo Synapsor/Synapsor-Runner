@@ -2,12 +2,57 @@ import { describe, expect, it } from "vitest";
 import {
   assessDirectWritePrerequisites,
   generateRunnerConfigFromSpec,
+  mysqlGrantPosture,
   summarizeInspection,
   type SchemaInspection,
   type TableInfo,
 } from "./index.js";
 
 describe("schema inspector helpers", () => {
+  it("maps MySQL grants to exact relations and fails closed on roles or elevated authority", () => {
+    const relations = [
+      { schema: "fitflow", table: "memberships" },
+      { schema: "fitflow", table: "private_notes" },
+      { schema: "synapsor", table: "synapsor_writeback_receipts" },
+    ];
+    const leastPrivilege = mysqlGrantPosture([
+      "GRANT USAGE ON *.* TO `fitflow_worker`@`%`",
+      "GRANT SELECT, UPDATE (`status`) ON `fitflow`.`memberships` TO `fitflow_worker`@`%`",
+      "GRANT SELECT, INSERT, UPDATE ON `synapsor`.`synapsor_writeback_receipts` TO `fitflow_worker`@`%`",
+    ], relations);
+    expect(leastPrivilege).toMatchObject({
+      verified: true,
+      elevated: false,
+      relations: {
+        "fitflow.memberships": {
+          select: true,
+          insert: false,
+          update: true,
+          delete: false,
+        },
+        "fitflow.private_notes": {
+          select: false,
+          insert: false,
+          update: false,
+          delete: false,
+        },
+        "synapsor.synapsor_writeback_receipts": {
+          select: true,
+          insert: true,
+          update: true,
+          delete: false,
+        },
+      },
+    });
+
+    expect(mysqlGrantPosture([
+      "GRANT `fitflow_writer_role`@`%` TO `fitflow_worker`@`%`",
+    ], relations).verified).toBe(false);
+    expect(mysqlGrantPosture([
+      "GRANT ALL PRIVILEGES ON *.* TO `fitflow_worker`@`%` WITH GRANT OPTION",
+    ], relations)).toMatchObject({ verified: true, elevated: true });
+  });
+
   it("never generates a weak UPDATE guard silently during onboarding", () => {
     const base = {
       version: 1 as const,

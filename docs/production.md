@@ -400,6 +400,45 @@ every skipped item includes a safe reason. Re-running is idempotent through
 durable receipts. Do not schedule batch apply for a policy that has no reviewed
 aggregate limits.
 
+For continuous execution, use the stricter default-off supervised mode rather
+than scheduling broad batch apply. `AUTO APPROVE` by itself remains
+manual-apply. A worker may consume approved work only when the active contract
+contains `execution.supervised_worker = "allowed"` and
+`supervised_worker.capabilities` independently names the exact same capability
+and digest. Production additionally requires verified operator controls and a
+live least-privilege writer-posture fingerprint.
+
+```bash
+synapsor-runner worker run --supervised --yes \
+  --worker-id billing_worker \
+  --config ./synapsor.runner.json
+```
+
+The worker accepts only eligible single-row direct INSERT/UPDATE shapes and
+reuses the manual guarded-apply implementation. Before execution it repeats
+approval, policy, limit, expiry, digest/lock, tenant/principal, target and
+supporting-evidence freshness, conflict/deduplication, receipt, writer-posture,
+and lease checks. Source or evidence drift produces zero mutation. DELETE,
+reversible changes, set writes, and app-owned/external effects are not eligible
+for this first automatic path. See [Operator-Supervised Automatic
+Apply](supervised-automatic-apply.md).
+
+Production operators can inspect the same queue and Human Attention Inbox in
+the secured Workbench or CLI:
+
+```bash
+synapsor-runner worker status --config ./synapsor.runner.json
+synapsor-runner attention show --config ./synapsor.runner.json
+```
+
+External delivery is disabled and quiet by default. When explicitly enabled,
+one signed generic webhook can route timely review, UNKNOWN, reconciliation,
+dead-letter, sustained-health, drift, posture, and critical-limit incidents.
+Successful applies remain in the ledger/Workbench unless a sink opts into an
+all-events route or digest. A webhook informs and cannot approve or mutate
+Runner state. See [Human Attention And
+Notifications](human-attention-notifications.md).
+
 Runner writes newline-delimited JSON events to stderr for model-facing tool
 rejections, operator decisions, and terminal writeback outcomes. These events
 contain safe codes and identifiers, never tool arguments, row values, database

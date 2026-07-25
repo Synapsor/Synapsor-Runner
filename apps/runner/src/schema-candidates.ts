@@ -5,6 +5,11 @@ import { assertSafeManagedOutputPath, readManagedOutputMarker } from "./managed-
 import ts from "typescript";
 import { parseDocument } from "yaml";
 import { validateContract, type ArgumentSpec, type CapabilitySpec, type SynapsorContract } from "@synapsor/spec";
+import {
+  classifySensitivity,
+  type SensitivityClassification,
+  type SensitivityEvidenceSource,
+} from "@synapsor-runner/schema-inspector";
 
 export type SchemaCandidateFormat = "prisma" | "drizzle" | "openapi";
 
@@ -24,8 +29,6 @@ const TEST_FILE = "synapsor.candidate.contract-tests.json";
 const REVIEW_JSON_FILE = "generation-review.json";
 const REVIEW_FILE = "REVIEW.md";
 
-const SENSITIVE_PATTERN =
-  /(password|secret|token|api_?key|credential|ssn|social_?security|card|pan|cvv|private|internal|medical|diagnosis|email|phone)/i;
 const TENANT_PATTERN = /^(tenant|tenant_id|tenantid|workspace_id|organization_id|org_id|account_id|project_id)$/i;
 const PRINCIPAL_PATTERN = /^(user_id|userid|owner_id|assignee_id|agent_id|principal_id|customer_id|patient_id)$/i;
 const CONFLICT_PATTERN = /^(version|row_version|lock_version|updated_at|updatedat|etag|modified_at)$/i;
@@ -44,6 +47,7 @@ export type CandidateField = {
   unique: boolean;
   generated: boolean;
   sensitive: boolean;
+  sensitivity: SensitivityClassification;
 };
 
 export type CandidateAction = {
@@ -93,6 +97,13 @@ export type SchemaCandidateReview = {
     potential_principal_fields: string[];
     potential_conflict_fields: string[];
     potentially_sensitive_fields: string[];
+    field_classifications: Array<{
+      field: string;
+      state: SensitivityClassification["state"];
+      reason_codes: string[];
+      reasons: string[];
+      evidence_source: SensitivityClassification["evidence_source"];
+    }>;
     suggested_kept_out_fields: string[];
     suggested_visible_fields: string[];
     possible_actions: Array<{
@@ -421,6 +432,13 @@ function schemaCandidateReview(
       potential_principal_fields: object.principal_candidates,
       potential_conflict_fields: object.conflict_candidates,
       potentially_sensitive_fields: object.sensitive_candidates,
+      field_classifications: object.fields.map((field) => ({
+        field: field.name,
+        state: field.sensitivity.state,
+        reason_codes: field.sensitivity.reason_codes,
+        reasons: field.sensitivity.reasons,
+        evidence_source: field.sensitivity.evidence_source,
+      })),
       suggested_kept_out_fields: object.sensitive_candidates,
       suggested_visible_fields: object.visible_candidates,
       possible_actions: object.action_candidates.map((action) => ({
@@ -732,6 +750,7 @@ function parsePrismaModel(
     const columnName = mapped && isSafeIdentifier(mapped) ? mapped : safeIdentifier(fieldName.value);
     const type = array ? "array" : prismaScalarType(fieldType.value);
     const primaryKey = attributes.id === true;
+    const sensitivity = candidateSensitivity(columnName, fieldType.value, "prisma");
     if (primaryKey) primary.push(columnName);
     fields.push({
       name: columnName,
@@ -741,7 +760,8 @@ function parsePrismaModel(
       primary_key: primaryKey,
       unique: primaryKey || attributes.unique === true,
       generated: attributes.generated === true,
-      sensitive: SENSITIVE_PATTERN.test(columnName),
+      sensitive: sensitivity.state !== "structurally_low_risk",
+      sensitivity,
     });
     if (fields.length > MAX_FIELDS_PER_OBJECT) throw new Error(`Prisma model ${name} exceeds ${MAX_FIELDS_PER_OBJECT} fields`);
   }
@@ -916,6 +936,7 @@ function parseDrizzleColumn(expression: ts.Expression, propertyName: string): Ca
         ? "boolean"
         : "string";
   const primary = methods.includes("primaryKey");
+  const sensitivity = candidateSensitivity(columnName, builder, "drizzle");
   return {
     name: columnName,
     type,
@@ -924,7 +945,8 @@ function parseDrizzleColumn(expression: ts.Expression, propertyName: string): Ca
     unique: primary || methods.includes("unique"),
     generated: methods.some((method) => ["default", "defaultNow", "$default", "$defaultFn"].includes(method))
       || ["serial", "bigserial"].includes(builder),
-    sensitive: SENSITIVE_PATTERN.test(columnName),
+    sensitive: sensitivity.state !== "structurally_low_risk",
+    sensitivity,
   };
 }
 
@@ -959,6 +981,7 @@ function parseOpenApiDocument(source: string, sourceName: string): ParsedSchema 
     : {};
   const paths = isRecord(document.paths) ? document.paths : {};
   const actionsByObject = new Map<string, CandidateAction[]>();
+  const fieldsByObject = new Map<string, CandidateField[]>();
   const warnings: string[] = [
     "OpenAPI was parsed locally; server URLs, examples, defaults, enum values, callbacks, webhooks, and security credentials were not copied.",
     "OpenAPI writes require an app-owned handler because API transaction and authorization behavior cannot be inferred from shape.",
@@ -997,13 +1020,22 @@ function parseOpenApiDocument(source: string, sourceName: string): ParsedSchema 
       const list = actionsByObject.get(objectName) ?? [];
       list.push(action);
       actionsByObject.set(objectName, list);
+      fieldsByObject.set(objectName, uniqueFields([
+        ...(fieldsByObject.get(objectName) ?? []),
+        ...parameterFields,
+        ...requestFields,
+        ...responseFields,
+      ]));
       if ([...actionsByObject.values()].flat().length > MAX_CAPABILITIES) {
         throw new Error(`OpenAPI input exceeds ${MAX_CAPABILITIES} supported operations`);
       }
     }
   }
   const objects = [...actionsByObject.entries()].map(([name, actions], index) => {
-    const fields = uniqueFields(actions.flatMap((action) => [...action.args, ...action.visible_candidates.map(fieldFromName)]));
+    const fields = uniqueFields(fieldsByObject.get(name) ?? actions.flatMap((action) => [
+      ...action.args,
+      ...action.visible_candidates.map(fieldFromName),
+    ]));
     return objectFromFields({
       name,
       schema: "review_required_schema",
@@ -1093,6 +1125,13 @@ function candidateFieldFromOpenApi(name: string, schema: unknown, required: bool
             : schema.type === "string" || schema.type === undefined
               ? "string"
               : "unknown";
+  const sensitivity = classifySensitivity({
+    name,
+    dataType: typeof schema.type === "string" ? schema.type : undefined,
+    description: typeof schema.description === "string" ? schema.description : undefined,
+    source: "openapi",
+    writeOnly: schema.writeOnly === true,
+  });
   return {
     name,
     type,
@@ -1100,7 +1139,8 @@ function candidateFieldFromOpenApi(name: string, schema: unknown, required: bool
     primary_key: PRIMARY_PATTERN.test(name) && (schema.readOnly === true || /id$/i.test(name)),
     unique: false,
     generated: schema.readOnly === true,
-    sensitive: SENSITIVE_PATTERN.test(name) || schema.writeOnly === true,
+    sensitive: sensitivity.state !== "structurally_low_risk",
+    sensitivity,
   };
 }
 
@@ -1225,14 +1265,17 @@ function objectFromFields(input: {
 }
 
 function fieldFromName(name: string): CandidateField {
+  const safe = safeIdentifier(name);
+  const sensitivity = candidateSensitivity(safe, "string", "synapsor");
   return {
-    name: safeIdentifier(name),
+    name: safe,
     type: "string",
     required: true,
     primary_key: PRIMARY_PATTERN.test(name),
     unique: false,
     generated: false,
-    sensitive: SENSITIVE_PATTERN.test(name),
+    sensitive: sensitivity.state !== "structurally_low_risk",
+    sensitivity,
   };
 }
 
@@ -1249,10 +1292,38 @@ function uniqueFields(fields: CandidateField[]): CandidateField[] {
           unique: current.unique || field.unique,
           generated: current.generated || field.generated,
           sensitive: current.sensitive || field.sensitive,
+          sensitivity: moreRestrictiveSensitivity(current.sensitivity, field.sensitivity),
         }
       : { ...field, name });
   }
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function candidateSensitivity(
+  name: string,
+  dataType: string,
+  source: SensitivityEvidenceSource,
+): SensitivityClassification {
+  return classifySensitivity({ name, dataType, source });
+}
+
+function moreRestrictiveSensitivity(
+  left: SensitivityClassification,
+  right: SensitivityClassification,
+): SensitivityClassification {
+  const rank = {
+    structurally_low_risk: 0,
+    unresolved_free_text: 1,
+    high_confidence_sensitive: 2,
+  } as const;
+  if (rank[left.state] > rank[right.state]) return left;
+  if (rank[right.state] > rank[left.state]) return right;
+  return {
+    state: left.state,
+    reason_codes: unique([...left.reason_codes, ...right.reason_codes]),
+    reasons: unique([...left.reasons, ...right.reasons]),
+    evidence_source: left.evidence_source,
+  };
 }
 
 async function readBoundedInput(inputPath: string): Promise<string> {

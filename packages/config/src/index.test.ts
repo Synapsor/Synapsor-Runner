@@ -94,6 +94,158 @@ describe("runner capability config validation", () => {
     ]));
   });
 
+  it("accepts a zero-authority read-only shell and distinguishes lock-bound authoring", () => {
+    const authoringShell = {
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          read_only: true,
+          statement_timeout_ms: 3000,
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id: "SYNAPSOR_TENANT_ID",
+          principal: "SYNAPSOR_PRINCIPAL",
+        },
+        tenant_binding: "tenant_id",
+        principal_binding: "principal",
+      },
+      capabilities: [],
+      generated_authority: {
+        generation_lock_path: "./.synapsor/generation-lock.json",
+        enforcement: "required",
+      },
+      strict: true,
+    };
+    const result = validateRunnerCapabilityConfig(authoringShell);
+    expect(result.ok).toBe(true);
+    expect(result.warnings.map((issue) => issue.code)).toContain("AUTHORING_PROJECT_HAS_NO_ACTIVE_CAPABILITIES");
+
+    expect(validateRunnerCapabilityConfig({
+      ...authoringShell,
+      mode: "review",
+    }).errors.map((issue) => issue.code)).toContain("CAPABILITIES_REQUIRED");
+    expect(validateRunnerCapabilityConfig({
+      ...authoringShell,
+      generated_authority: undefined,
+    }).warnings.map((issue) => issue.code)).toContain("READ_ONLY_CONFIG_HAS_NO_ACTIVE_CAPABILITIES");
+  });
+
+  it("requires both exact contract permission and an exact deployment allowlist for supervised execution", () => {
+    const config = supervisedWorkerConfig();
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    const missingContractPermission = supervisedWorkerConfig();
+    delete missingContractPermission.capabilities[1].execution;
+    expect(validateRunnerCapabilityConfig(missingContractPermission).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_CONTRACT_PERMISSION_REQUIRED");
+
+    const staleDigest = supervisedWorkerConfig();
+    staleDigest.supervised_worker.capabilities[0].contract_digest = `sha256:${"b".repeat(64)}`;
+    expect(validateRunnerCapabilityConfig(staleDigest).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_DIGEST_MISMATCH");
+
+    const wrongWriter = supervisedWorkerConfig();
+    wrongWriter.supervised_worker.capabilities[0].write_url_env = "OTHER_WRITE_URL";
+    expect(validateRunnerCapabilityConfig(wrongWriter).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_WRITER_MISMATCH");
+
+    const missingTtl = supervisedWorkerConfig();
+    delete missingTtl.supervised_worker.capabilities[0].proposal_ttl_seconds;
+    expect(validateRunnerCapabilityConfig(missingTtl).errors.map((issue) => issue.code))
+      .toContain("INVALID_SUPERVISED_WORKER_BOUND");
+
+    const productionDevIdentity = supervisedWorkerConfig();
+    productionDevIdentity.supervised_worker.profile = "production";
+    const productionErrors = validateRunnerCapabilityConfig(productionDevIdentity).errors.map((issue) => issue.code);
+    expect(productionErrors).toContain("SUPERVISED_WORKER_VERIFIED_OPERATOR_REQUIRED");
+    expect(productionErrors).toContain("SUPERVISED_WORKER_PRODUCTION_POSTURE_REQUIRED");
+
+    const hardenedWithoutFingerprint = supervisedWorkerConfig();
+    hardenedWithoutFingerprint.supervised_worker.capabilities[0].require_least_privilege_writer = true;
+    expect(validateRunnerCapabilityConfig(hardenedWithoutFingerprint).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_POSTURE_FINGERPRINT_REQUIRED");
+
+    const hardenedRuntimeDdl = supervisedWorkerConfig();
+    hardenedRuntimeDdl.supervised_worker.capabilities[0].require_least_privilege_writer = true;
+    hardenedRuntimeDdl.supervised_worker.capabilities[0].writer_posture_fingerprint = `sha256:${"c".repeat(64)}`;
+    hardenedRuntimeDdl.sources.app_postgres.receipts.provisioning = "auto_migrate";
+    expect(validateRunnerCapabilityConfig(hardenedRuntimeDdl).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_PRECREATED_RECEIPT_REQUIRED");
+  });
+
+  it("keeps supervised execution additive and disabled when deployment policy is absent", () => {
+    const config = mutableConfig();
+    config.capabilities[1].approval = {
+      mode: "policy",
+      required_role: "support_lead",
+      policy: "billing_small_waiver",
+    };
+    config.policies = [{
+      name: "billing_small_waiver",
+      kind: "approval",
+      mode: "green",
+      rules: [{ field: "late_fee_cents", max: 0 }],
+    }];
+
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+    expect(config.supervised_worker).toBeUndefined();
+    expect(config.capabilities[1].execution).toBeUndefined();
+  });
+
+  it("accepts quiet operator-owned notification routes without inline destinations or secrets", () => {
+    const config = notificationConfig();
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    const inlineAuthority = notificationConfig();
+    inlineAuthority.notifications.sinks[0].url_env = "https://hooks.example.test/synapsor";
+    inlineAuthority.notifications.sinks[0].signing_secret_env = "inline-secret";
+    expect(validateRunnerCapabilityConfig(inlineAuthority).errors.map((issue) => issue.code))
+      .toEqual(expect.arrayContaining([
+        "NOTIFICATION_WEBHOOK_URL_ENV_REQUIRED",
+        "NOTIFICATION_SIGNING_SECRET_ENV_REQUIRED",
+      ]));
+
+    const invalidRoute = notificationConfig();
+    invalidRoute.notifications.sinks[0].events = ["proposal.created", "operator.make_it_so"];
+    invalidRoute.notifications.sinks[0].budgets.per_minute = 0;
+    expect(validateRunnerCapabilityConfig(invalidRoute).errors.map((issue) => issue.code))
+      .toEqual(expect.arrayContaining([
+        "INVALID_NOTIFICATION_EVENT_FILTER",
+        "INVALID_NOTIFICATION_BUDGET",
+      ]));
+  });
+
+  it("requires explicit private-destination and supervised-worker health-gate opt-ins", () => {
+    const privateDestination = notificationConfig();
+    privateDestination.notifications.sinks[0].private_host_allowlist = ["hooks.internal.example"];
+    expect(validateRunnerCapabilityConfig(privateDestination).errors.map((issue) => issue.code))
+      .toContain("PRIVATE_DESTINATION_OPT_IN_REQUIRED");
+
+    privateDestination.notifications.sinks[0].allow_private_destinations = true;
+    expect(validateRunnerCapabilityConfig(privateDestination)).toMatchObject({ ok: true, errors: [] });
+
+    const healthGated = supervisedWorkerConfig();
+    healthGated.notifications = notificationConfig().notifications;
+    healthGated.supervised_worker.capabilities[0].required_attention_sinks = ["operations"];
+    expect(validateRunnerCapabilityConfig(healthGated)).toMatchObject({ ok: true, errors: [] });
+
+    healthGated.notifications.enabled = false;
+    expect(validateRunnerCapabilityConfig(healthGated).errors.map((issue) => issue.code))
+      .toContain("HEALTH_GATE_NOTIFICATIONS_REQUIRED");
+
+    healthGated.notifications.enabled = true;
+    healthGated.notifications.sinks[0].enabled = false;
+    expect(validateRunnerCapabilityConfig(healthGated).errors.map((issue) => issue.code))
+      .toContain("REQUIRED_ATTENTION_SINK_UNAVAILABLE");
+  });
+
   it("keeps the public JSON Schema aligned with representative runtime shapes", () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
     const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas/synapsor.runner.schema.json"), "utf8"));
@@ -314,8 +466,9 @@ describe("runner capability config validation", () => {
         }],
       },
     };
+    const notifications = notificationConfig();
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust, freshnessRequired]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust, freshnessRequired, notifications]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -930,4 +1083,97 @@ describe("runner capability config validation", () => {
 
 function mutableConfig(): any {
   return structuredClone(safeConfig);
+}
+
+function supervisedWorkerConfig(): any {
+  const config = mutableConfig();
+  const digest = `sha256:${"a".repeat(64)}`;
+  config.sources.app_postgres.receipts = {
+    authority: "source_db",
+    provisioning: "precreated",
+    schema: "public",
+    table: "synapsor_writeback_receipts",
+  };
+  config.capabilities[1].contract_provenance = { digest, version: "1" };
+  config.capabilities[1].execution = { supervised_worker: "allowed" };
+  config.capabilities[1].writeback = { mode: "direct_sql" };
+  config.supervised_worker = {
+    enabled: true,
+    profile: "staging",
+    capabilities: [{
+      capability: config.capabilities[1].name,
+      contract_digest: digest,
+      mode: "supervised_worker",
+      concurrency: 1,
+      queue_limit: 100,
+      lease_seconds: 60,
+      max_attempts: 5,
+      proposal_ttl_seconds: 86_400,
+      rate_limit: { executions: 20, window_seconds: 60 },
+      write_url_env: "APP_POSTGRES_WRITE_URL",
+      worker_identity: "runner_worker",
+      control_role: "runner_operator",
+    }],
+  };
+  return config;
+}
+
+function notificationConfig(): any {
+  const config = mutableConfig();
+  config.notifications = {
+    enabled: true,
+    workbench_url_env: "SYNAPSOR_WORKBENCH_URL",
+    sinks: [
+      {
+        id: "operations",
+        type: "webhook",
+        enabled: true,
+        url_env: "SYNAPSOR_NOTIFY_WEBHOOK_URL",
+        signing_secret_env: "SYNAPSOR_NOTIFY_SIGNING_SECRET",
+        minimum_severity: "warning",
+        events: [
+          "proposal.review_required",
+          "worker.dead_lettered",
+          "worker.unknown_outcome",
+          "worker.reconciliation_required",
+          "schema.drift_detected",
+        ],
+        environments: ["staging", "production"],
+        delivery: "immediate",
+        max_attempts: 5,
+        timeout_ms: 3000,
+        max_response_bytes: 1024,
+        replay_window_seconds: 300,
+        allow_private_destinations: false,
+        recovery_notifications: false,
+        budgets: {
+          per_minute: 10,
+          per_hour: 100,
+          immediate_informational_per_hour: 0,
+          aggregation_window_seconds: 300,
+          cooldown_seconds: 600,
+          max_unresolved_reminders: 3,
+          digest_cadence_minutes: 1440,
+          escalation_delay_seconds: 60,
+          retry_attempt_threshold: 3,
+          degraded_duration_seconds: 120,
+          queue_depth_threshold: 100,
+          queue_age_seconds: 300,
+        },
+        quiet_hours: {
+          start_utc_hour: 22,
+          end_utc_hour: 7,
+        },
+      },
+      {
+        id: "development",
+        type: "jsonl",
+        enabled: true,
+        destination: "stdout",
+        minimum_severity: "informational",
+        delivery: "all",
+      },
+    ],
+  };
+  return config;
 }

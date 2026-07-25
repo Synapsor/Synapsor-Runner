@@ -1,7 +1,7 @@
 {
   "name": "@synapsor/runner",
-  "version": "1.6.2",
-  "description": "Stop giving AI agents execute_sql; expose reviewed Postgres/MySQL MCP actions with proposals, approval, writeback, and replay.",
+  "version": "1.6.3",
+  "description": "Open-source MCP runtime for governed Postgres/MySQL access with reviewed capabilities, proposals, guarded writes, receipts, and replay.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -41,10 +41,12 @@
     "examples/dangerous-mcp-tools.json",
     "examples/app-owned-writeback/**",
     "examples/auto-boundary-churn/**",
+    "examples/fitflow-guided-onboarding/**",
     "examples/claude-desktop-postgres/**",
     "examples/cursor-postgres/**",
     "examples/mcp-postgres-billing-app-handler/**",
     "examples/mysql-refund-agent/**",
+    "examples/operator-oidc/**",
     "examples/openai-agents-http/**",
     "examples/openai-agents-stdio/**",
     "examples/raw-sql-vs-synapsor/**",
@@ -92,7 +94,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@synapsor/spec": "workspace:^1.5.0",
+    "@synapsor/spec": "workspace:^1.6.0",
     "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pdf-lib": "1.17.1",

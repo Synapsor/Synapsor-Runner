@@ -169,6 +169,20 @@ outside the model-facing MCP server and verifies:
 
 If any authority check cannot be verified, the write fails closed.
 
+Manual apply remains the default, including after policy auto-approval. An
+eligible single-row direct INSERT or UPDATE may instead use operator-supervised
+automatic apply, but only when the activated contract explicitly permits the
+trusted worker and the deployment independently allowlists the exact
+capability/digest. The model controls neither opt-in. The separately operated
+worker leases approved work and invokes the same guarded-apply implementation
+as manual apply; it repeats current approval, policy, limit, scope, freshness,
+generation-lock, writer-posture, idempotency, and receipt checks immediately
+before execution. Source or supporting-evidence drift causes zero mutation.
+Ambiguous transaction outcomes require reconciliation and are never blindly
+retried. Hard DELETE, reversible changes, set writes, and app-owned/external
+effects are excluded from this first automatic path. See
+[Operator-Supervised Automatic Apply](supervised-automatic-apply.md).
+
 Strict freshness is intentionally limited to same-database direct SQL
 writeback. Runner rejects app-owned or cross-source strict freshness because it
 cannot claim one atomic transaction around those effects. Cloud can govern an
@@ -217,6 +231,16 @@ a matching source-unchanged preview plus the complete digest. These operator
 controls are not MCP tools. The UI does not expose raw SQL, database URLs, or
 write credentials, and it does not let a model widen reviewed tables, columns,
 scope, policy, or executor authority.
+
+The authoritative store also records redacted human-attention events and
+projects related events into a secured Workbench inbox. External delivery is
+disabled and quiet by default. When an operator enables it, a separate
+dispatcher can route selected coalesced incidents to a JSONL development sink
+or signed HTTPS webhook. Delivery is at least once, redacted, budgeted, and
+observable. A notification, webhook response, inbox acknowledgement, delivery
+replay, or MCP update hint never activates, approves, applies, cancels,
+recovers, or mutates anything. The ledger and Workbench remain the source of
+truth. See [Human Attention And Notifications](human-attention-notifications.md).
 
 Contract lint and tests are review aids rather than a proof of complete
 security. Capability breadth can still drift as narrow tools accumulate;

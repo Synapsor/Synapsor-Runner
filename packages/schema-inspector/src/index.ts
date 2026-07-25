@@ -1,6 +1,18 @@
 import mysql from "mysql2/promise";
 import { Pool } from "pg";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import {
+  classifySensitivity,
+  type SensitivityClassification,
+} from "./sensitivity.js";
+
+export {
+  classifySensitivity,
+  type SensitivityClassification,
+  type SensitivityClassificationInput,
+  type SensitivityEvidenceSource,
+  type SensitivityState,
+} from "./sensitivity.js";
 
 export type SourceEngine = "postgres" | "mysql";
 export type InspectEngine = SourceEngine | "auto";
@@ -19,6 +31,7 @@ export type ColumnInfo = {
     tenant: boolean;
     conflict: boolean;
     sensitive: boolean;
+    sensitivity?: SensitivityClassification;
     immutable: boolean;
     large_or_binary: boolean;
   };
@@ -367,30 +380,6 @@ const TENANT_COLUMNS = new Set(["tenant_id", "account_id", "organization_id", "o
 const CONFLICT_COLUMNS = new Set(["updated_at", "modified_at", "row_version", "version", "lock_version", "etag"]);
 const IMMUTABLE_COLUMNS = new Set(["id", "uuid", "created_at", "created_by"]);
 const DEFAULT_RESULT_FORMAT = 2;
-const SENSITIVE_PATTERNS = [
-  /password/i,
-  /password_hash/i,
-  /secret/i,
-  /token/i,
-  /api[_-]?key/i,
-  /access[_-]?key/i,
-  /private[_-]?key/i,
-  /session/i,
-  /cookie/i,
-  /\bssn\b/i,
-  /social[_-]?security/i,
-  /credit[_-]?card/i,
-  /card[_-]?number/i,
-  /\bcvv\b/i,
-  /refresh[_-]?token/i,
-  /oauth/i,
-  /(?:^|[_-])email(?:$|[_-])/i,
-  /(?:^|[_-])phone(?:$|[_-])/i,
-  /(?:^|[_-])(?:street_)?address(?:$|[_-])/i,
-  /(?:^|[_-])(?:date_of_birth|birth_date|dob)(?:$|[_-])/i,
-  /(?:^|[_-])risk[_-]?score(?:$|[_-])/i,
-  /(?:^|[_-])private[_-]?(?:note|notes|data)(?:$|[_-])/i,
-];
 const LARGE_OR_BINARY_TYPES = new Set([
   "bytea",
   "blob",
@@ -547,6 +536,7 @@ export function summarizeInspection(inspection: SchemaInspection): string {
     `Server: ${inspection.server_version}`,
     `Current user: ${inspection.current_user}`,
     `Role posture: ${rolePosture?.verified ? "verified" : "unverified"}; ${rolePosture?.read_only ? "read-only" : "not read-only"}`,
+    `Role posture fingerprint: ${rolePostureFingerprint(inspection)}`,
     `Schemas: ${inspection.schemas.join(", ") || "(none)"}`,
     `Objects: ${inspection.tables.length}`,
   ];
@@ -862,20 +852,26 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       [schemaParam, schemaParam],
     );
     const [grantRows] = await connection.query<mysql.RowDataPacket[]>("SHOW GRANTS FOR CURRENT_USER");
-    const mysqlRole = mysqlRolePosture(grantRows.map((row) => String(Object.values(row)[0] ?? "")));
+    const mysqlGrants = mysqlGrantPosture(
+      grantRows.map((row) => String(Object.values(row)[0] ?? "")),
+      (tableRows as Array<Record<string, unknown>>).map((row) => ({
+        schema: String(row.schema),
+        table: String(row.name),
+      })),
+    );
     const relationRolePosture = (tableRows as Array<Record<string, unknown>>).map((row): RawRelationRolePosture => ({
       schema: String(row.schema),
       table_name: String(row.name),
       owner: "",
       current_role_is_owner: false,
       current_role_can_assume_owner: false,
-      can_select: mysqlRole.canSelect,
-      can_insert: mysqlRole.canWrite,
-      can_update: mysqlRole.canWrite,
-      can_delete: mysqlRole.canWrite,
-      can_truncate: mysqlRole.canWrite,
-      can_references: mysqlRole.canWrite,
-      can_trigger: mysqlRole.canWrite,
+      can_select: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.select ?? false,
+      can_insert: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.insert ?? false,
+      can_update: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.update ?? false,
+      can_delete: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.delete ?? false,
+      can_truncate: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.truncate ?? false,
+      can_references: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.references ?? false,
+      can_trigger: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.trigger ?? false,
       row_security_forced: false,
     }));
     await connection.query("COMMIT").catch(() => undefined);
@@ -884,8 +880,8 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       server_version: String(versionRows[0]?.version ?? "unknown"),
       current_user: String(versionRows[0]?.current_user ?? "unknown"),
       role: {
-        verified: true,
-        superuser: "unsupported",
+        verified: mysqlGrants.verified,
+        superuser: mysqlGrants.elevated ? true : "unsupported",
         bypass_rls: "unsupported",
       },
       schemas: schemaRows.map((row) => String(row.schema_name)),
@@ -1099,6 +1095,12 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   const name = String(column.name);
   const lower = name.toLowerCase();
   const type = String(column.udt_name || column.data_type || "unknown").toLowerCase();
+  const sensitivity = classifySensitivity({
+    name,
+    dataType: String(column.data_type || column.udt_name || "unknown"),
+    description: column.comment ?? undefined,
+    source: "database",
+  });
   return {
     name,
     data_type: String(column.data_type || column.udt_name || "unknown"),
@@ -1112,7 +1114,8 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
     suggestions: {
       tenant: TENANT_COLUMNS.has(lower),
       conflict: CONFLICT_COLUMNS.has(lower),
-      sensitive: SENSITIVE_PATTERNS.some((pattern) => pattern.test(lower)),
+      sensitive: sensitivity.state !== "structurally_low_risk",
+      sensitivity,
       immutable: primaryKey.includes(name) || TENANT_COLUMNS.has(lower) || IMMUTABLE_COLUMNS.has(lower),
       large_or_binary: LARGE_OR_BINARY_TYPES.has(type) || /blob|binary|bytea|vector/i.test(type),
     },
@@ -1161,13 +1164,171 @@ function relationIsWriteCapable(table: TableInfo): boolean {
   return privileges.insert || privileges.update || privileges.delete || privileges.truncate || privileges.trigger;
 }
 
-function mysqlRolePosture(grants: string[]): { canSelect: boolean; canWrite: boolean } {
-  const normalized = grants.map((grant) => grant.toUpperCase());
-  const canSelect = normalized.some((grant) => /\bGRANT\b[\s\S]*\b(?:SELECT|ALL PRIVILEGES)\b/.test(grant));
-  const canWrite = normalized.some((grant) =>
-    /\bGRANT\b[\s\S]*\b(?:ALL PRIVILEGES|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRIGGER|EXECUTE|CREATE VIEW)\b/.test(grant),
-  );
-  return { canSelect, canWrite };
+export function mysqlGrantPosture(
+  grants: string[],
+  relations: Array<{ schema: string; table: string }>,
+): {
+  verified: boolean;
+  elevated: boolean;
+  relations: Record<string, RelationPrivilegeInfo>;
+} {
+  const parsed: Array<{
+    schema: string | "*";
+    table: string | "*";
+    privileges: RelationPrivilegeInfo;
+  }> = [];
+  let verified = true;
+  let elevated = false;
+  for (const raw of grants) {
+    const grant = raw.trim();
+    const match = grant.match(/^GRANT\s+(.+?)\s+ON\s+(.+?)\s+TO\s+/i);
+    if (!match) {
+      // A role assignment is not enough to prove its effective grants from
+      // SHOW GRANTS FOR CURRENT_USER alone, so hardened posture fails closed.
+      if (/^GRANT\s+/i.test(grant)) verified = false;
+      continue;
+    }
+    const target = parseMysqlGrantTarget(match[2]!);
+    const privileges = parseMysqlGrantPrivileges(match[1]!);
+    if (!target || !privileges.verified) {
+      verified = false;
+      continue;
+    }
+    elevated ||= privileges.elevated || /\bWITH\s+GRANT\s+OPTION\b/i.test(grant);
+    parsed.push({
+      ...target,
+      privileges: privileges.relation,
+    });
+  }
+
+  const relationMap: Record<string, RelationPrivilegeInfo> = {};
+  for (const relation of relations) {
+    const posture: RelationPrivilegeInfo = {
+      select: false,
+      insert: false,
+      update: false,
+      delete: false,
+      truncate: false,
+      references: false,
+      trigger: false,
+    };
+    for (const grant of parsed) {
+      if (
+        (grant.schema === "*" || grant.schema === relation.schema)
+        && (grant.table === "*" || grant.table === relation.table)
+      ) {
+        for (const privilege of Object.keys(posture) as Array<keyof RelationPrivilegeInfo>) {
+          posture[privilege] ||= grant.privileges[privilege];
+        }
+      }
+    }
+    relationMap[`${relation.schema}.${relation.table}`] = posture;
+  }
+  return { verified, elevated, relations: relationMap };
+}
+
+function parseMysqlGrantTarget(
+  value: string,
+): { schema: string | "*"; table: string | "*" } | undefined {
+  const identifier = String.raw`(?:\*|` + "`(?:``|[^`])+`" + String.raw`|[A-Za-z0-9_$-]+)`;
+  const match = value.trim().match(new RegExp(`^(${identifier})\\s*\\.\\s*(${identifier})$`));
+  if (!match) return undefined;
+  return {
+    schema: unquoteMysqlGrantIdentifier(match[1]!),
+    table: unquoteMysqlGrantIdentifier(match[2]!),
+  };
+}
+
+function unquoteMysqlGrantIdentifier(value: string): string {
+  if (value === "*") return value;
+  return value.startsWith("`") && value.endsWith("`")
+    ? value.slice(1, -1).replaceAll("``", "`")
+    : value;
+}
+
+function parseMysqlGrantPrivileges(value: string): {
+  verified: boolean;
+  elevated: boolean;
+  relation: RelationPrivilegeInfo;
+} {
+  const relation: RelationPrivilegeInfo = {
+    select: false,
+    insert: false,
+    update: false,
+    delete: false,
+    truncate: false,
+    references: false,
+    trigger: false,
+  };
+  const normalized = value
+    .replace(/\([^)]*\)/g, "")
+    .split(",")
+    .map((entry) => entry.trim().replace(/\s+/g, " ").toUpperCase())
+    .filter(Boolean);
+  const allowed = new Set([
+    "USAGE",
+    "SELECT",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "REFERENCES",
+    "TRIGGER",
+    "ALL",
+    "ALL PRIVILEGES",
+  ]);
+  const elevatedPrivileges = new Set([
+    "ALTER",
+    "ALTER ROUTINE",
+    "CREATE",
+    "CREATE ROLE",
+    "CREATE ROUTINE",
+    "CREATE TABLESPACE",
+    "CREATE TEMPORARY TABLES",
+    "CREATE USER",
+    "CREATE VIEW",
+    "DROP",
+    "EVENT",
+    "EXECUTE",
+    "FILE",
+    "GRANT OPTION",
+    "INDEX",
+    "LOCK TABLES",
+    "PROCESS",
+    "RELOAD",
+    "REPLICATION CLIENT",
+    "REPLICATION SLAVE",
+    "SHOW DATABASES",
+    "SHOW VIEW",
+    "SHUTDOWN",
+    "SUPER",
+    "SYSTEM_USER",
+  ]);
+  let verified = true;
+  let elevated = false;
+  for (const privilege of normalized) {
+    const all = privilege === "ALL" || privilege === "ALL PRIVILEGES";
+    if (all) {
+      relation.select = true;
+      relation.insert = true;
+      relation.update = true;
+      relation.delete = true;
+      relation.truncate = true;
+      relation.references = true;
+      relation.trigger = true;
+      elevated = true;
+      continue;
+    }
+    if (privilege === "SELECT") relation.select = true;
+    else if (privilege === "INSERT") relation.insert = true;
+    else if (privilege === "UPDATE") relation.update = true;
+    else if (privilege === "DELETE") relation.delete = true;
+    else if (privilege === "REFERENCES") relation.references = true;
+    else if (privilege === "TRIGGER") relation.trigger = true;
+    else if (privilege === "DROP") relation.truncate = true;
+    if (elevatedPrivileges.has(privilege)) elevated = true;
+    else if (!allowed.has(privilege)) verified = false;
+  }
+  return { verified, elevated, relation };
 }
 
 function constraintColumns(rows: RawKeyColumn[], kind: string): UniqueConstraintInfo[] {

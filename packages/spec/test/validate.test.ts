@@ -32,6 +32,83 @@ describe("@synapsor/spec validation", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts an explicit empty capability array as a zero-authority review contract", () => {
+    const contract = {
+      spec_version: "0.1",
+      kind: "SynapsorContract",
+      contexts: [{
+        name: "local_operator",
+        bindings: [{
+          name: "tenant_id",
+          source: "environment",
+          key: "SYNAPSOR_TENANT_ID",
+          required: true,
+        }],
+        tenant_binding: "tenant_id",
+      }],
+      capabilities: [],
+    };
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities).toEqual([]);
+  });
+
+  it("accepts explicit supervised-worker permission only for an exact guarded direct write", () => {
+    const contract = writeContract();
+    const capability = contract.capabilities[1]!;
+    const proposal = capability.proposal as Record<string, unknown>;
+    proposal.execution = { supervised_worker: "allowed" };
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[1]?.proposal?.execution).toEqual({
+      supervised_worker: "allowed",
+    });
+  });
+
+  it("keeps legacy proposal normalization byte-equivalent when execution permission is absent", () => {
+    const contract = writeContract();
+    const before = JSON.stringify(normalizeContract(contract));
+    expect(before).not.toContain("supervised_worker");
+    expect(JSON.stringify(normalizeContract(structuredClone(contract)))).toBe(before);
+  });
+
+  it("rejects supervised-worker permission on delete, set, reversible, handler, or weak-guard writes", () => {
+    const base = writeContract();
+    const codesFor = (mutate: (proposal: Record<string, unknown>) => void) => {
+      const contract = structuredClone(base);
+      const proposal = contract.capabilities[1]!.proposal as Record<string, unknown>;
+      proposal.execution = { supervised_worker: "allowed" };
+      mutate(proposal);
+      return validateContract(contract).errors.map((error) => error.code);
+    };
+
+    expect(codesFor((proposal) => {
+      proposal.operation = { kind: "delete" };
+      proposal.patch = {};
+      proposal.allowed_fields = [];
+      proposal.conflict_guard = { column: "updated_at" };
+    })).toContain("SUPERVISED_WORKER_DELETE_FORBIDDEN");
+    expect(codesFor((proposal) => {
+      proposal.operation = {
+        kind: "update",
+        cardinality: "set",
+        selection: { all: [{ column: "status", operator: "eq", value: "open" }] },
+        max_rows: 10,
+        aggregate_bounds: [{ column: "amount_cents", measure: "absolute_delta", maximum: 1000 }],
+        version_advance: { column: "updated_at", strategy: "integer_increment" },
+      };
+    })).toContain("SUPERVISED_WORKER_SINGLE_ROW_REQUIRED");
+    expect(codesFor((proposal) => {
+      proposal.reversibility = { mode: "reviewed_inverse" };
+    })).toContain("SUPERVISED_WORKER_REVERSIBILITY_FORBIDDEN");
+    expect(codesFor((proposal) => {
+      proposal.writeback = { mode: "app_handler", executor: "billing_handler" };
+    })).toContain("SUPERVISED_WORKER_DIRECT_SQL_REQUIRED");
+    expect(codesFor((proposal) => {
+      proposal.conflict_guard = { weak_guard_ack: true };
+    })).toContain("SUPERVISED_WORKER_EXACT_CONFLICT_GUARD_REQUIRED");
+  });
+
   it("accepts reviewed aggregate reads with suppression and no model predicate surface", () => {
     const contract = aggregateReadContract();
     expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });

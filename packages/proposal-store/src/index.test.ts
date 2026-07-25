@@ -9,11 +9,16 @@ import {
   PostgresWritebackIntentStore,
   ProposalStore,
   ProposalStoreError,
+  attentionDecisionSubject,
+  notificationReplayDecisionSubject,
   sharedPostgresRuntimeStoreMigration,
+  workerControlDecisionSubject,
+  type NotificationDelivery,
   type PostgresRuntimeClient,
   type PostgresRuntimePool,
   type PostgresRuntimeQueryResult,
   type OperatorIdentityProof,
+  type WorkerControlTarget,
 } from "./index.js";
 
 const changeSet = {
@@ -378,6 +383,71 @@ function verifiedWorkerIdentity(action: "worker_requeue" | "worker_discard", sub
   };
 }
 
+function verifiedNotificationReplayIdentity(
+  delivery: NotificationDelivery,
+  reason: string,
+  subject = "fleet_operator",
+): OperatorIdentityProof {
+  const decision = {
+    schema_version: "synapsor.operator-decision.v1" as const,
+    action: "notification_replay" as const,
+    ...notificationReplayDecisionSubject(delivery),
+    subject,
+    issued_at: "2026-07-24T00:00:03.000Z",
+    reason,
+  };
+  const unsigned = {
+    provider: "signed_key" as const,
+    verified: true,
+    subject,
+    roles: ["runner_operator"],
+    key_id: "fleet-key-1",
+    algorithm: "SHA256",
+    decision,
+    decision_hash: canonicalJsonDigest(decision),
+    signature: "signed-test-proof",
+  };
+  return { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+}
+
+function verifiedWorkerControlIdentity(
+  store: ProposalStore,
+  target: WorkerControlTarget,
+  subject = "fleet_operator",
+): OperatorIdentityProof {
+  const decisionSubject = workerControlDecisionSubject(store.workerControlState(), target);
+  const action: OperatorIdentityProof["decision"]["action"] = target.action === "pause"
+    ? "worker_pause"
+    : target.action === "resume"
+      ? "worker_resume"
+      : target.action === "drain"
+        ? "worker_drain"
+        : target.action === "capability_enable"
+          ? "worker_capability_enable"
+          : target.action === "capability_disable"
+            ? "worker_capability_disable"
+            : "worker_digest_revoke";
+  const decision = {
+    schema_version: "synapsor.operator-decision.v1" as const,
+    action,
+    ...decisionSubject,
+    subject,
+    issued_at: "2026-07-12T00:00:03.000Z",
+  };
+  const unsigned = {
+    provider: "signed_key" as const,
+    verified: true,
+    subject,
+    roles: ["runner_operator"],
+    key_id: "fleet-key-1",
+    algorithm: "SHA256",
+    decision,
+    decision_hash: canonicalJsonDigest(decision),
+    signature: "signed-test-proof",
+  };
+  return { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+}
+
 describe("proposal store", () => {
   it("creates the parent directory for file-backed stores", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-parent-"));
@@ -644,6 +714,72 @@ describe("proposal store", () => {
     expect(pool.ended).toBe(true);
   });
 
+  it("round-trips coalesced attention and notification delivery through the shared Postgres runtime store", async () => {
+    const pool = new FakePostgresRuntimePool();
+    const first = new PostgresProposalRuntimeStore({
+      pool,
+      autoMigrate: true,
+      lockTimeoutMs: 0,
+    });
+    const firstCandidate = operationChangeSet("single_row_update", "shared_attention_first");
+    const secondCandidate = operationChangeSet("single_row_update", "shared_attention_second");
+    await first.createProposal(firstCandidate);
+    await first.createProposal(secondCandidate);
+
+    const reviewEvents = await first.listAttentionEvents({
+      event_type: "proposal.review_required",
+      tenant: "acme",
+    });
+    const [attention] = await first.listAttentionItems({
+      status: "open",
+      tenant: "acme",
+    });
+    expect(reviewEvents).toHaveLength(2);
+    expect(attention).toMatchObject({
+      status: "open",
+      occurrence_count: 2,
+      capability: firstCandidate.action,
+    });
+    const delivery = await first.enqueueNotificationDelivery({
+      sink_id: "shared_operations",
+      event_id: reviewEvents[0]!.event_id,
+      attention_id: attention!.attention_id,
+      now: "2026-07-24T00:00:00.000Z",
+    });
+
+    const second = new PostgresProposalRuntimeStore({ pool, lockTimeoutMs: 0 });
+    expect(await second.listAttentionItems({ tenant: "acme" })).toEqual([
+      expect.objectContaining({
+        attention_id: attention!.attention_id,
+        occurrence_count: 2,
+      }),
+    ]);
+    expect(await second.listAttentionItems({ tenant: "other" })).toEqual([]);
+    expect(await second.listNotificationDeliveries({ sink_id: "shared_operations" })).toEqual([
+      expect.objectContaining({
+        delivery_id: delivery.delivery_id,
+        event_id: reviewEvents[0]!.event_id,
+        status: "pending",
+      }),
+    ]);
+
+    await second.acknowledgeAttention({
+      attention_id: attention!.attention_id,
+      actor: "shared_operator",
+      now: "2026-07-24T00:00:01.000Z",
+    });
+    const third = new PostgresProposalRuntimeStore({ pool, lockTimeoutMs: 0 });
+    expect(await third.getAttentionItem(attention!.attention_id)).toMatchObject({
+      status: "acknowledged",
+      acknowledged_by: "shared_operator",
+    });
+    expect(await third.getProposal(firstCandidate.proposal_id)).toMatchObject({
+      state: "pending_review",
+    });
+    expect(await third.approvals(firstCandidate.proposal_id)).toEqual([]);
+    expect(await third.receipts(firstCandidate.proposal_id)).toEqual([]);
+  });
+
   it("persists graduated-trust recommendations through the shared Postgres runtime store", async () => {
     const pool = new FakePostgresRuntimePool();
     const first = new PostgresProposalRuntimeStore({ pool, autoMigrate: true, lockTimeoutMs: 0 });
@@ -905,11 +1041,30 @@ describe("proposal store", () => {
         proposal_hash: change.integrity.proposal_hash,
         proposal_version: 1,
       });
+      const workerDigest = `sha256:${"f".repeat(64)}` as const;
+      store.enqueueWorkerProposal({
+        proposal_id: change.proposal_id,
+        execution_mode: "supervised_worker",
+        contract_digest: workerDigest,
+      });
+      const workerLease = store.claimWorkerItem({
+        workerId: "runner_a",
+        executionMode: "supervised_worker",
+        capability: change.action,
+        contractDigest: workerDigest,
+      });
+      if (!workerLease?.lease_id) throw new Error("expected worker lease");
       const job = store.createWritebackJobFromProposal(change.proposal_id);
       const claim = store.claimWritebackIntent(job, "runner_a");
       if (claim.decision !== "proceed") throw new Error("expected new intent");
       store.markWritebackIntentApplying(claim.intent_id, "runner_a");
       store.requireWritebackReconciliation(claim.intent_id, "commit acknowledgement missing");
+      store.requireWorkerReconciliation({
+        proposalId: change.proposal_id,
+        workerId: "runner_a",
+        leaseId: workerLease.lease_id,
+        errorCode: "UNKNOWN_TRANSACTION_OUTCOME",
+      });
 
       const identity: OperatorIdentityProof = {
         provider: "signed_key",
@@ -972,8 +1127,13 @@ describe("proposal store", () => {
       expect(store.receipts(change.proposal_id)).toEqual(expect.arrayContaining([
         expect.objectContaining({ status: "applied", receipt: expect.objectContaining({ receipt_hash: "sha256:reconciled" }) }),
       ]));
+      expect(store.getWorkerQueueItem(change.proposal_id)).toMatchObject({
+        status: "completed",
+        terminal_outcome: "applied",
+      });
       expect(store.events(change.proposal_id)).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "writeback_reconciled", actor: "fleet_operator" }),
+        expect.objectContaining({ kind: "writeback_worker_reconciled", actor: "fleet_operator" }),
       ]));
       expect(() => store.reconcileWritebackIntent({
         intent_id: claim.intent_id,
@@ -1413,6 +1573,962 @@ describe("proposal store", () => {
     }
   });
 
+  it("binds supervised worker queue authority to an exact digest and fenced lease", () => {
+    const store = new ProposalStore();
+    const digest = `sha256:${"a".repeat(64)}` as const;
+    try {
+      store.createProposal(changeSet);
+      store.approveProposal("wrp_123", {
+        approver: "support_lead",
+        proposal_hash: "sha256:proposal",
+        proposal_version: 1,
+      });
+      expect(store.enqueueWorkerProposal({
+        proposal_id: "wrp_123",
+        execution_mode: "supervised_worker",
+        contract_digest: digest,
+        max_attempts: 3,
+        queue_limit: 1,
+        now: "2026-07-12T00:00:00.000Z",
+      })).toMatchObject({
+        status: "queued",
+        execution_mode: "supervised_worker",
+        contract_digest: digest,
+        attempts: 0,
+      });
+      expect(() => store.enqueueWorkerProposal({
+        proposal_id: "wrp_123",
+        execution_mode: "supervised_worker",
+        contract_digest: `sha256:${"b".repeat(64)}`,
+      })).toThrowError(expect.objectContaining({ code: "WORKER_QUEUE_AUTHORITY_MISMATCH" }));
+      expect(store.claimWorkerItem({
+        workerId: "worker_a",
+        executionMode: "supervised_worker",
+        capability: changeSet.action,
+        contractDigest: `sha256:${"b".repeat(64)}`,
+        now: "2026-07-12T00:00:01.000Z",
+      })).toBeUndefined();
+
+      const first = store.claimWorkerItem({
+        workerId: "worker_a",
+        executionMode: "supervised_worker",
+        capability: changeSet.action,
+        contractDigest: digest,
+        leaseSeconds: 15,
+        now: "2026-07-12T00:00:01.000Z",
+      });
+      expect(first).toMatchObject({ status: "leased", execution_mode: "supervised_worker", contract_digest: digest });
+      expect(first?.lease_id).toMatch(/^wlease_[a-f0-9]{32}$/);
+      expect(store.assertActiveWorkerLease({
+        proposalId: "wrp_123",
+        workerId: "worker_a",
+        leaseId: first!.lease_id!,
+        now: "2026-07-12T00:00:15.000Z",
+      })).toMatchObject({ lease_id: first?.lease_id });
+      expect(() => store.assertActiveWorkerLease({
+        proposalId: "wrp_123",
+        workerId: "worker_a",
+        leaseId: first!.lease_id!,
+        now: "2026-07-12T00:00:16.000Z",
+      })).toThrowError(expect.objectContaining({ code: "WORKER_LEASE_EXPIRED" }));
+
+      const reclaimed = store.claimWorkerItem({
+        workerId: "worker_a",
+        executionMode: "supervised_worker",
+        capability: changeSet.action,
+        contractDigest: digest,
+        leaseSeconds: 30,
+        now: "2026-07-12T00:00:17.000Z",
+      });
+      expect(reclaimed?.lease_id).not.toBe(first?.lease_id);
+      expect(() => store.completeWorkerItem(
+        "wrp_123",
+        "worker_a",
+        "applied",
+        "2026-07-12T00:00:18.000Z",
+        first!.lease_id,
+      )).toThrowError(expect.objectContaining({ code: "WORKER_LEASE_MISMATCH" }));
+      expect(store.renewWorkerLease({
+        proposalId: "wrp_123",
+        workerId: "worker_a",
+        leaseId: reclaimed!.lease_id!,
+        leaseSeconds: 60,
+        now: "2026-07-12T00:00:18.000Z",
+      }).lease_expires_at).toBe("2026-07-12T00:01:18.000Z");
+      expect(store.completeWorkerItem(
+        "wrp_123",
+        "worker_a",
+        "applied",
+        "2026-07-12T00:00:19.000Z",
+        reclaimed!.lease_id,
+      )).toMatchObject({ status: "completed", terminal_outcome: "applied", lease_id: undefined });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("enforces supervised-worker concurrency and rolling execution limits inside the claim transaction", () => {
+    const store = new ProposalStore();
+    const digest = `sha256:${"c".repeat(64)}` as const;
+    const action = operationChangeSet("single_row_update", "worker_bound_action").action;
+    try {
+      for (const suffix of ["one", "two"]) {
+        const candidate = operationChangeSet("single_row_update", `worker_bound_${suffix}`);
+        const proposal = store.createProposal(candidate);
+        store.approveProposal(proposal.proposal_id, {
+          approver: "support_lead",
+          proposal_hash: proposal.proposal_hash,
+          proposal_version: proposal.proposal_version,
+        });
+        store.enqueueWorkerProposal({
+          proposal_id: proposal.proposal_id,
+          execution_mode: "supervised_worker",
+          contract_digest: digest,
+          now: "2026-07-12T00:00:00.000Z",
+        });
+      }
+
+      const first = store.claimWorkerItem({
+        workerId: "worker_one",
+        executionMode: "supervised_worker",
+        capability: action,
+        contractDigest: digest,
+        maxConcurrent: 1,
+        rateLimit: { executions: 1, windowSeconds: 60 },
+        leaseSeconds: 30,
+        now: "2026-07-12T00:00:01.000Z",
+      });
+      expect(first).toMatchObject({ status: "leased" });
+      expect(store.claimWorkerItem({
+        workerId: "worker_two",
+        executionMode: "supervised_worker",
+        capability: action,
+        contractDigest: digest,
+        maxConcurrent: 1,
+        rateLimit: { executions: 1, windowSeconds: 60 },
+        now: "2026-07-12T00:00:02.000Z",
+      })).toBeUndefined();
+
+      store.completeWorkerItem(
+        first!.proposal_id,
+        "worker_one",
+        "applied",
+        "2026-07-12T00:00:03.000Z",
+        first!.lease_id,
+      );
+      expect(store.claimWorkerItem({
+        workerId: "worker_two",
+        executionMode: "supervised_worker",
+        capability: action,
+        contractDigest: digest,
+        maxConcurrent: 1,
+        rateLimit: { executions: 1, windowSeconds: 60 },
+        now: "2026-07-12T00:00:04.000Z",
+      })).toBeUndefined();
+      expect(store.claimWorkerItem({
+        workerId: "worker_two",
+        executionMode: "supervised_worker",
+        capability: action,
+        contractDigest: digest,
+        maxConcurrent: 1,
+        rateLimit: { executions: 1, windowSeconds: 60 },
+        now: "2026-07-12T00:01:04.000Z",
+      })).toMatchObject({ status: "leased" });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("reserves policy execution limits atomically and blocks expired supervised work before lease", () => {
+    const store = new ProposalStore();
+    const digest = `sha256:${"e".repeat(64)}` as const;
+    const policy = "small_credit";
+    const approvalLimits = [{ kind: "count" as const, max: 2, period: "day" as const }];
+    const executionLimits = [{ kind: "count" as const, max: 1, period: "day" as const }];
+    try {
+      for (const suffix of ["one", "two"]) {
+        const candidate = operationChangeSet("single_row_update", `worker_policy_${suffix}`);
+        const proposal = store.createProposal(candidate);
+        expect(store.approveProposalByPolicy(proposal.proposal_id, {
+          policy,
+          proposal_hash: proposal.proposal_hash,
+          proposal_version: proposal.proposal_version,
+          reason: "within reviewed approval budget",
+          limits: approvalLimits,
+          now: "2026-07-13T00:00:00.000Z",
+        }).approved).toBe(true);
+        store.enqueueWorkerProposal({
+          proposal_id: proposal.proposal_id,
+          execution_mode: "supervised_worker",
+          contract_digest: digest,
+          now: "2026-07-13T00:00:00.000Z",
+        });
+      }
+
+      const first = store.claimWorkerItem({
+        workerId: "worker_one",
+        executionMode: "supervised_worker",
+        capability: "billing.single_row_update",
+        contractDigest: digest,
+        policyExecution: { policy, limits: executionLimits },
+        now: "2026-07-13T00:00:01.000Z",
+      });
+      expect(first).toMatchObject({ status: "leased" });
+      expect(store.claimWorkerItem({
+        workerId: "worker_two",
+        executionMode: "supervised_worker",
+        capability: "billing.single_row_update",
+        contractDigest: digest,
+        policyExecution: { policy, limits: executionLimits },
+        now: "2026-07-13T00:00:02.000Z",
+      })).toBeUndefined();
+      expect(store.getWorkerQueueItem("wrp_worker_policy_two")).toMatchObject({
+        status: "blocked",
+        last_error_code: "SUPERVISED_WORKER_POLICY_LIMIT_EXCEEDED",
+      });
+      expect(store.listAttentionItems({ severity: "critical" })).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event_type: "policy.limit_exceeded", status: "open" }),
+      ]));
+      expect(store.events("wrp_worker_policy_two")).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "writeback_worker_blocked",
+          payload: expect.objectContaining({
+            error_code: "SUPERVISED_WORKER_POLICY_LIMIT_EXCEEDED",
+          }),
+        }),
+      ]));
+      expect(() => store.assertWorkerPolicyExecutionLimits({
+        proposalId: first!.proposal_id,
+        policy,
+        limits: executionLimits,
+        now: "2026-07-13T00:00:03.000Z",
+      })).not.toThrow();
+      store.blockWorkerItem({
+        proposalId: first!.proposal_id,
+        workerId: "worker_one",
+        leaseId: first!.lease_id!,
+        errorCode: "SUPERVISED_WORKER_POLICY_STALE",
+        now: "2026-07-13T00:00:04.000Z",
+      });
+      expect(store.listAttentionItems({ severity: "critical" })).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event_type: "contract.digest_stale", status: "open" }),
+      ]));
+
+      const expired = operationChangeSet("single_row_update", "worker_expired");
+      const expiredProposal = store.createProposal(expired);
+      store.approveProposal(expiredProposal.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: expiredProposal.proposal_hash,
+        proposal_version: expiredProposal.proposal_version,
+      });
+      store.enqueueWorkerProposal({
+        proposal_id: expiredProposal.proposal_id,
+        execution_mode: "supervised_worker",
+        contract_digest: digest,
+        now: "2026-07-13T00:00:00.000Z",
+      });
+      const expiryKey = `production:proposal.expiring:${expiredProposal.proposal_id}`;
+      store.recordAttentionEvent({
+        event_type: "proposal.expiring",
+        severity: "warning",
+        environment: "production",
+        proposal_id: expiredProposal.proposal_id,
+        capability: expiredProposal.action,
+        contract_digest: digest,
+        attention_key: expiryKey,
+        attention_required: true,
+        immediate_default: true,
+        expires_at: "2026-07-13T00:01:00.000Z",
+        source_event_key: `test:${expiryKey}`,
+      });
+      expect(store.claimWorkerItem({
+        workerId: "worker_three",
+        executionMode: "supervised_worker",
+        capability: "billing.single_row_update",
+        contractDigest: digest,
+        proposalTtlSeconds: 60,
+        now: "2026-07-14T00:00:00.000Z",
+      })).toBeUndefined();
+      expect(store.getWorkerQueueItem(expiredProposal.proposal_id)).toMatchObject({
+        status: "blocked",
+        last_error_code: "SUPERVISED_WORKER_PROPOSAL_EXPIRED",
+      });
+      expect(store.listAttentionEvents({ proposal_id: expiredProposal.proposal_id })).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "proposal.expired",
+          severity: "warning",
+          immediate_default: false,
+        }),
+      ]));
+      expect(store.listAttentionItems({ status: "expired" })).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "proposal.expired",
+          capability: expiredProposal.action,
+          status: "expired",
+          title: "Approved proposal expired without execution",
+        }),
+      ]));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("enforces one policy reservation across two supervised worker processes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-supervised-workers-"));
+    const storePath = path.join(tempDir, "local.db");
+    const digest = `sha256:${"f".repeat(64)}` as const;
+    const policy = "small_credit";
+    const action = "billing.single_row_update";
+    const store = new ProposalStore(storePath);
+    try {
+      for (const suffix of ["process_one", "process_two"]) {
+        const candidate = operationChangeSet("single_row_update", suffix);
+        const proposal = store.createProposal(candidate);
+        expect(store.approveProposalByPolicy(proposal.proposal_id, {
+          policy,
+          proposal_hash: proposal.proposal_hash,
+          proposal_version: proposal.proposal_version,
+          reason: "within reviewed approval budget",
+          limits: [{ kind: "count", max: 2, period: "day" }],
+          now: "2026-07-13T00:00:00.000Z",
+        }).approved).toBe(true);
+        store.enqueueWorkerProposal({
+          proposal_id: proposal.proposal_id,
+          execution_mode: "supervised_worker",
+          contract_digest: digest,
+          now: "2026-07-13T00:00:00.000Z",
+        });
+      }
+    } finally {
+      store.close();
+    }
+
+    const moduleUrl = new URL("../dist/index.js", import.meta.url).href;
+    const childSource = `
+      const { ProposalStore } = await import(process.argv[1]);
+      const store = new ProposalStore(process.argv[2]);
+      try {
+        const item = store.claimWorkerItem({
+          workerId: process.argv[3],
+          executionMode: "supervised_worker",
+          capability: process.argv[4],
+          contractDigest: process.argv[5],
+          policyExecution: {
+            policy: process.argv[6],
+            limits: [{ kind: "count", max: 1, period: "day" }],
+          },
+          leaseSeconds: 60,
+          now: "2026-07-13T00:00:01.000Z",
+        });
+        process.stdout.write(JSON.stringify({ proposal_id: item?.proposal_id ?? null }));
+      } finally {
+        store.close();
+      }
+    `;
+    const runWorker = (workerId: string) => new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, [
+        "--input-type=module",
+        "-e",
+        childSource,
+        moduleUrl,
+        storePath,
+        workerId,
+        action,
+        digest,
+        policy,
+      ], {
+        env: { ...process.env, NODE_NO_WARNINGS: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+      child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+      child.once("error", reject);
+      child.once("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+    });
+
+    try {
+      const results = await Promise.all([
+        runWorker("worker_process_one"),
+        runWorker("worker_process_two"),
+      ]);
+      expect(results).toEqual([
+        expect.objectContaining({ code: 0, stderr: "" }),
+        expect.objectContaining({ code: 0, stderr: "" }),
+      ]);
+      const claimed = results
+        .map((result) => JSON.parse(result.stdout) as { proposal_id: string | null })
+        .filter((result) => result.proposal_id !== null);
+      expect(claimed).toHaveLength(1);
+
+      const verified = new ProposalStore(storePath);
+      try {
+        expect(verified.listWorkerQueue().filter((item) => item.status === "leased")).toHaveLength(1);
+        expect(verified.listWorkerQueue().filter((item) =>
+          item.status === "blocked"
+          && item.last_error_code === "SUPERVISED_WORKER_POLICY_LIMIT_EXCEEDED"))
+          .toHaveLength(1);
+        expect(verified.receipts("wrp_process_one")).toEqual([]);
+        expect(verified.receipts("wrp_process_two")).toEqual([]);
+      } finally {
+        verified.close();
+      }
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("binds supervised-worker pause and exact-digest revocation to one integrity-checked operator revision", () => {
+    const store = new ProposalStore();
+    const digest = `sha256:${"d".repeat(64)}` as const;
+    try {
+      expect(store.workerControlState()).toMatchObject({ mode: "active", revision: 0, capability_controls: [] });
+      const pauseTarget = { action: "pause" as const };
+      const pauseIdentity = verifiedWorkerControlIdentity(store, pauseTarget);
+      expect(store.updateWorkerControl({
+        ...pauseTarget,
+        actor: pauseIdentity.subject,
+        identity: pauseIdentity,
+        require_verified_identity: true,
+        now: "2026-07-12T00:00:04.000Z",
+      })).toMatchObject({ mode: "paused", revision: 1 });
+
+      expect(() => store.updateWorkerControl({
+        action: "resume",
+        actor: pauseIdentity.subject,
+        identity: pauseIdentity,
+        require_verified_identity: true,
+        now: "2026-07-12T00:00:05.000Z",
+      })).toThrowError(expect.objectContaining({ code: "OPERATOR_DECISION_MISMATCH" }));
+
+      const resumeTarget = { action: "resume" as const };
+      const resumeIdentity = verifiedWorkerControlIdentity(store, resumeTarget);
+      expect(store.updateWorkerControl({
+        ...resumeTarget,
+        actor: resumeIdentity.subject,
+        identity: resumeIdentity,
+        require_verified_identity: true,
+        now: "2026-07-12T00:00:06.000Z",
+      })).toMatchObject({ mode: "active", revision: 2 });
+
+      const revokeTarget = {
+        action: "digest_revoke" as const,
+        capability: "billing.single_row_update",
+        contract_digest: digest,
+      };
+      const revokeIdentity = verifiedWorkerControlIdentity(store, revokeTarget);
+      expect(store.updateWorkerControl({
+        ...revokeTarget,
+        actor: revokeIdentity.subject,
+        identity: revokeIdentity,
+        require_verified_identity: true,
+        now: "2026-07-12T00:00:07.000Z",
+      })).toMatchObject({
+        revision: 3,
+        capability_controls: [{
+          capability: "billing.single_row_update",
+          contract_digest: digest,
+          status: "revoked",
+        }],
+      });
+
+      const enableTarget = {
+        action: "capability_enable" as const,
+        capability: "billing.single_row_update",
+        contract_digest: digest,
+      };
+      const enableIdentity = verifiedWorkerControlIdentity(store, enableTarget);
+      expect(() => store.updateWorkerControl({
+        ...enableTarget,
+        actor: enableIdentity.subject,
+        identity: enableIdentity,
+        require_verified_identity: true,
+      })).toThrowError(expect.objectContaining({ code: "WORKER_DIGEST_REVOKED" }));
+
+      store.db.prepare("UPDATE runner_state SET value_json = replace(value_json, '\"revision\":3', '\"revision\":99') WHERE key = 'supervised_worker_control'").run();
+      expect(() => store.workerControlState()).toThrowError(
+        expect.objectContaining({ code: "WORKER_CONTROL_STATE_TAMPERED" }),
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+  it("commits proposal state and projected human-attention events atomically", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "attention_atomic");
+    try {
+      store.db.exec(`
+        CREATE TRIGGER reject_attention_event
+        BEFORE INSERT ON attention_events
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated attention outbox failure');
+        END
+      `);
+      expect(() => store.createProposal(candidate)).toThrow(/simulated attention outbox failure/);
+      expect(store.getProposal(candidate.proposal_id)).toBeUndefined();
+      expect(store.events(candidate.proposal_id)).toEqual([]);
+      expect(store.listAttentionEvents()).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("coalesces human-review events without turning acknowledgement into approval", () => {
+    const store = new ProposalStore();
+    const first = operationChangeSet("single_row_update", "attention_first");
+    const second = operationChangeSet("single_row_update", "attention_second");
+    const otherTenant = operationChangeSet("single_row_update", "attention_other_tenant");
+    otherTenant.scope.tenant_id = "beta";
+    otherTenant.guards.tenant.value = "beta";
+    otherTenant.before.tenant_id = "beta";
+    otherTenant.after.tenant_id = "beta";
+    try {
+      store.setRunnerState("attention_context", { environment: "production" });
+      store.createProposal(first);
+      store.createProposal(second);
+      store.createProposal(otherTenant);
+
+      const reviewEvents = store.listAttentionEvents({ event_type: "proposal.review_required" });
+      expect(reviewEvents).toHaveLength(3);
+      expect(reviewEvents.every((event) => event.immediate_default && event.attention_required)).toBe(true);
+      expect(JSON.stringify(reviewEvents)).not.toContain("tenant_id");
+      expect(JSON.stringify(reviewEvents)).not.toContain("support_agent_17");
+
+      const allItems = store.listAttentionItems({ status: "open" });
+      expect(allItems).toHaveLength(2);
+      const [item] = store.listAttentionItems({ status: "open", tenant: "acme" });
+      expect(item).toMatchObject({
+        severity: "warning",
+        environment: "production",
+        event_type: "proposal.review_required",
+        capability: first.action,
+        occurrence_count: 2,
+      });
+      expect(store.listAttentionItems({ tenant: "beta" })).toEqual([
+        expect.objectContaining({ occurrence_count: 1 }),
+      ]);
+      expect(store.listAttentionItems({ tenant: "missing" })).toEqual([]);
+      expect(store.listAttentionEvents({ tenant: "acme", event_type: "proposal.review_required" })).toHaveLength(2);
+      expect(store.listAttentionEvents({ tenant: "beta", event_type: "proposal.review_required" })).toHaveLength(1);
+      expect(item).toBeDefined();
+      const acknowledged = store.acknowledgeAttention({
+        attention_id: item!.attention_id,
+        actor: "operator_alice",
+        now: "2026-07-24T00:00:00.000Z",
+      });
+      expect(acknowledged).toMatchObject({ status: "acknowledged", acknowledged_by: "operator_alice" });
+      expect(store.getProposal(first.proposal_id)?.state).toBe("pending_review");
+      expect(store.approvals(first.proposal_id)).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("resolves a coalesced review item only after its last pending proposal and reopens for new work", () => {
+    const store = new ProposalStore();
+    const first = operationChangeSet("single_row_update", "attention_resolve_first");
+    const second = operationChangeSet("single_row_update", "attention_resolve_second");
+    const third = operationChangeSet("single_row_update", "attention_resolve_third");
+    try {
+      store.setRunnerState("attention_context", { environment: "production" });
+      const firstProposal = store.createProposal(first);
+      const secondProposal = store.createProposal(second);
+      const item = store.listAttentionItems({ status: "open" })
+        .find((candidate) => candidate.event_type === "proposal.review_required");
+      expect(item).toMatchObject({ occurrence_count: 2, status: "open" });
+
+      store.approveProposal(firstProposal.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: firstProposal.proposal_hash,
+        proposal_version: firstProposal.proposal_version,
+      });
+      expect(store.getAttentionItem(item!.attention_id)).toMatchObject({ status: "open" });
+
+      store.approveProposal(secondProposal.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: secondProposal.proposal_hash,
+        proposal_version: secondProposal.proposal_version,
+      });
+      expect(store.getAttentionItem(item!.attention_id)).toMatchObject({ status: "resolved" });
+
+      store.createProposal(third);
+      expect(store.getAttentionItem(item!.attention_id)).toMatchObject({
+        status: "open",
+        occurrence_count: 3,
+      });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("binds production acknowledgement to one exact attention version and reopens on a new occurrence", () => {
+    const store = new ProposalStore();
+    const first = operationChangeSet("single_row_update", "attention_identity_first");
+    const second = operationChangeSet("single_row_update", "attention_identity_second");
+    try {
+      store.setRunnerState("attention_context", { environment: "production" });
+      store.createProposal(first);
+      const [item] = store.listAttentionItems({ status: "open" });
+      expect(item).toBeDefined();
+      const subject = attentionDecisionSubject(item!);
+      const decision = {
+        schema_version: "synapsor.operator-decision.v1" as const,
+        action: "attention_acknowledge" as const,
+        ...subject,
+        subject: "operator_alice",
+        issued_at: "2026-07-24T00:00:00.000Z",
+      };
+      const unsignedIdentity = {
+        provider: "signed_key" as const,
+        verified: true,
+        subject: "operator_alice",
+        roles: ["runner_operator"],
+        key_id: "operator_alice",
+        algorithm: "SHA256",
+        decision,
+        decision_hash: canonicalJsonDigest(decision),
+        signature: "test-signature",
+      };
+      const identity: OperatorIdentityProof = {
+        ...unsignedIdentity,
+        integrity_hash: canonicalJsonDigest(unsignedIdentity),
+      };
+      expect(() => store.acknowledgeAttention({
+        attention_id: item!.attention_id,
+        actor: "operator_alice",
+        identity: {
+          ...identity,
+          decision: { ...identity.decision, proposal_version: identity.decision.proposal_version + 1 },
+        },
+        require_verified_identity: true,
+      })).toThrowError(/exact attention item version/i);
+
+      const acknowledged = store.acknowledgeAttention({
+        attention_id: item!.attention_id,
+        actor: "operator_alice",
+        identity,
+        require_verified_identity: true,
+        now: "2026-07-24T00:00:01.000Z",
+      });
+      expect(acknowledged).toMatchObject({
+        status: "acknowledged",
+        acknowledged_by: "operator_alice",
+        acknowledgement_identity: {
+          verified: true,
+          decision: { action: "attention_acknowledge" },
+        },
+      });
+      expect(store.approvals(first.proposal_id)).toEqual([]);
+
+      store.createProposal(second);
+      const reopened = store.getAttentionItem(item!.attention_id);
+      expect(reopened).toMatchObject({
+        status: "open",
+        occurrence_count: 2,
+      });
+      expect(reopened?.acknowledged_by).toBeUndefined();
+      expect(reopened?.acknowledgement_identity).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  it("keeps successful policy auto-approval quiet by default", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "attention_policy");
+    Object.assign(candidate.approval, {
+      mode: "policy",
+      policy: "small_change",
+    });
+    try {
+      const proposal = store.createProposal(candidate);
+      expect(store.listAttentionItems()).toEqual([]);
+      const decision = store.approveProposalByPolicy(proposal.proposal_id, {
+        policy: "small_change",
+        proposal_hash: proposal.proposal_hash,
+        proposal_version: proposal.proposal_version,
+        reason: "within reviewed bounds",
+        limits: [{ kind: "count", max: 1, period: "day" }],
+      });
+      expect(decision.approved).toBe(true);
+      expect(store.listAttentionItems()).toEqual([]);
+      expect(store.listAttentionEvents().map((event) => ({
+        event_type: event.event_type,
+        immediate_default: event.immediate_default,
+      }))).toEqual(expect.arrayContaining([
+        { event_type: "proposal.created", immediate_default: false },
+        { event_type: "proposal.auto_approved", immediate_default: false },
+        { event_type: "policy.limit_near", immediate_default: false },
+      ]));
+      expect(store.listAttentionEvents({ event_type: "policy.limit_near" })).toEqual([
+        expect.objectContaining({
+          severity: "warning",
+          attention_required: false,
+          immediate_default: false,
+          details: expect.objectContaining({ projected: 1, max: 1 }),
+        }),
+      ]);
+      expect(store.listAttentionEvents().some((event) => event.immediate_default)).toBe(false);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("raises one critical attention incident when a worker job dead-letters", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "attention_dead_letter");
+    try {
+      const proposal = store.createProposal(candidate);
+      store.approveProposal(proposal.proposal_id, {
+        approver: "support_lead",
+        proposal_hash: proposal.proposal_hash,
+        proposal_version: proposal.proposal_version,
+      });
+      store.enqueueWorkerProposal({
+        proposal_id: proposal.proposal_id,
+        max_attempts: 1,
+        now: "2026-07-24T00:00:00.000Z",
+      });
+      const claimed = store.claimWorkerItem({
+        workerId: "worker_attention",
+        now: "2026-07-24T00:00:01.000Z",
+      });
+      expect(claimed?.lease_id).toBeDefined();
+      store.deadLetterWorkerItem({
+        proposalId: proposal.proposal_id,
+        workerId: "worker_attention",
+        leaseId: claimed!.lease_id,
+        errorCode: "HANDLER_TIMEOUT",
+        now: "2026-07-24T00:00:02.000Z",
+      });
+
+      const [event] = store.listAttentionEvents({ event_type: "worker.dead_lettered" });
+      expect(event).toMatchObject({
+        severity: "critical",
+        immediate_default: true,
+        attention_required: true,
+        failure_class: "HANDLER_TIMEOUT",
+      });
+      expect(store.listAttentionItems({ severity: "critical" })).toEqual([
+        expect.objectContaining({
+          event_type: "worker.dead_lettered",
+          occurrence_count: 1,
+          status: "open",
+        }),
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("detects tampering in immutable attention event payloads", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "attention_tamper");
+    try {
+      store.createProposal(candidate);
+      const [event] = store.listAttentionEvents({ event_type: "proposal.review_required" });
+      expect(event).toBeDefined();
+      store.db.prepare("UPDATE attention_events SET summary = ? WHERE event_id = ?")
+        .run("tampered summary", event!.event_id);
+      expect(() => store.listAttentionEvents({ event_type: "proposal.review_required" }))
+        .toThrowError(expect.objectContaining({ code: "ATTENTION_EVENT_CORRUPT" }));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("fences notification delivery retries without replaying proposal authority", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "notification_delivery");
+    try {
+      const proposal = store.createProposal(candidate);
+      const [event] = store.listAttentionEvents({ event_type: "proposal.review_required" });
+      const [attention] = store.listAttentionItems({ status: "open" });
+      const delivery = store.enqueueNotificationDelivery({
+        sink_id: "operations",
+        event_id: event!.event_id,
+        attention_id: attention!.attention_id,
+        max_attempts: 2,
+        now: "2026-07-24T00:00:00.000Z",
+      });
+      expect(store.enqueueNotificationDelivery({
+        sink_id: "operations",
+        event_id: event!.event_id,
+        attention_id: attention!.attention_id,
+        max_attempts: 2,
+        now: "2026-07-24T00:00:00.000Z",
+      })).toEqual(delivery);
+
+      const [first] = store.claimNotificationDeliveries({
+        owner: "dispatcher_a",
+        sink_id: "operations",
+        lease_seconds: 15,
+        now: "2026-07-24T00:00:01.000Z",
+      });
+      expect(first).toMatchObject({ status: "leased", attempts: 1, lease_owner: "dispatcher_a" });
+      expect(first?.lease_id).toMatch(/^nlease_[a-f0-9]{32}$/);
+      expect(store.failNotificationDelivery({
+        delivery_id: first!.delivery_id,
+        owner: "dispatcher_a",
+        lease_id: first!.lease_id!,
+        error_code: "WEBHOOK_TIMEOUT",
+        retryable: true,
+        retry_at: "2026-07-24T00:00:03.000Z",
+        now: "2026-07-24T00:00:02.000Z",
+      })).toMatchObject({ status: "retry_wait", attempts: 1 });
+
+      const [second] = store.claimNotificationDeliveries({
+        owner: "dispatcher_b",
+        sink_id: "operations",
+        now: "2026-07-24T00:00:03.000Z",
+      });
+      expect(second).toMatchObject({ status: "leased", attempts: 2, lease_owner: "dispatcher_b" });
+      expect(() => store.completeNotificationDelivery({
+        delivery_id: second!.delivery_id,
+        owner: "dispatcher_a",
+        lease_id: first!.lease_id!,
+        now: "2026-07-24T00:00:04.000Z",
+      })).toThrowError(expect.objectContaining({ code: "NOTIFICATION_LEASE_MISMATCH" }));
+      expect(store.completeNotificationDelivery({
+        delivery_id: second!.delivery_id,
+        owner: "dispatcher_b",
+        lease_id: second!.lease_id!,
+        external_reference: "incident-17",
+        now: "2026-07-24T00:00:04.000Z",
+      })).toMatchObject({
+        status: "delivered",
+        attempts: 2,
+        external_reference: "incident-17",
+      });
+
+      expect(store.getProposal(proposal.proposal_id)?.state).toBe("pending_review");
+      expect(store.approvals(proposal.proposal_id)).toEqual([]);
+      expect(store.receipts(proposal.proposal_id)).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("binds notification replay to an exact verified operator decision without replaying authority", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "notification_replay");
+    const reason = "Webhook destination repaired and synthetic test passed";
+    try {
+      const proposal = store.createProposal(candidate);
+      const [event] = store.listAttentionEvents({ event_type: "proposal.review_required" });
+      const [attention] = store.listAttentionItems({ status: "open" });
+      store.enqueueNotificationDelivery({
+        sink_id: "operations",
+        event_id: event!.event_id,
+        attention_id: attention!.attention_id,
+        max_attempts: 1,
+        now: "2026-07-24T00:00:00.000Z",
+      });
+      const [claimed] = store.claimNotificationDeliveries({
+        owner: "dispatcher_a",
+        sink_id: "operations",
+        now: "2026-07-24T00:00:01.000Z",
+      });
+      const deadLetter = store.failNotificationDelivery({
+        delivery_id: claimed!.delivery_id,
+        owner: "dispatcher_a",
+        lease_id: claimed!.lease_id!,
+        error_code: "WEBHOOK_DESTINATION_BLOCKED",
+        retryable: false,
+        now: "2026-07-24T00:00:02.000Z",
+      });
+      const identity = verifiedNotificationReplayIdentity(deadLetter, reason);
+
+      expect(() => store.requeueNotificationDelivery({
+        delivery_id: deadLetter.delivery_id,
+        identity: { ...identity, provider: "dev_env", verified: false },
+        reason,
+        now: "2026-07-24T00:00:03.000Z",
+      })).toThrowError(expect.objectContaining({ code: "VERIFIED_OPERATOR_IDENTITY_REQUIRED" }));
+
+      expect(() => store.requeueNotificationDelivery({
+        delivery_id: deadLetter.delivery_id,
+        identity: verifiedNotificationReplayIdentity(deadLetter, "A different recovery reason"),
+        reason,
+        now: "2026-07-24T00:00:03.000Z",
+      })).toThrowError(expect.objectContaining({ code: "OPERATOR_DECISION_MISMATCH" }));
+
+      expect(store.requeueNotificationDelivery({
+        delivery_id: deadLetter.delivery_id,
+        identity,
+        reason,
+        now: "2026-07-24T00:00:03.000Z",
+      })).toMatchObject({
+        delivery_id: deadLetter.delivery_id,
+        event_id: deadLetter.event_id,
+        status: "pending",
+        attempts: 0,
+      });
+
+      expect(store.getProposal(proposal.proposal_id)?.state).toBe("pending_review");
+      expect(store.approvals(proposal.proposal_id)).toEqual([]);
+      expect(store.receipts(proposal.proposal_id)).toEqual([]);
+      expect(store.listAttentionEvents({ event_type: "notification.replayed" })).toEqual([
+        expect.objectContaining({
+          event_type: "notification.replayed",
+          proposal_id: proposal.proposal_id,
+          attention_required: false,
+          immediate_default: false,
+          details: expect.objectContaining({
+            delivery_id: deadLetter.delivery_id,
+            operator_subject: "fleet_operator",
+            identity_provider: "signed_key",
+            operator_decision_hash: identity.decision_hash,
+            reason,
+            approval_replayed: false,
+            mutation_replayed: false,
+            source_database_changed: false,
+          }),
+        }),
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("reclaims an expired notification lease with the same immutable event identity", () => {
+    const store = new ProposalStore();
+    const candidate = operationChangeSet("single_row_update", "notification_crash");
+    try {
+      store.createProposal(candidate);
+      const [event] = store.listAttentionEvents({ event_type: "proposal.review_required" });
+      const queued = store.enqueueNotificationDelivery({
+        sink_id: "incident",
+        event_id: event!.event_id,
+        max_attempts: 3,
+        now: "2026-07-24T00:00:00.000Z",
+      });
+      const [crashed] = store.claimNotificationDeliveries({
+        owner: "dispatcher_crashed",
+        lease_seconds: 15,
+        now: "2026-07-24T00:00:01.000Z",
+      });
+      const [reclaimed] = store.claimNotificationDeliveries({
+        owner: "dispatcher_recovery",
+        lease_seconds: 15,
+        now: "2026-07-24T00:00:17.000Z",
+      });
+      expect(reclaimed).toMatchObject({
+        delivery_id: queued.delivery_id,
+        event_id: event!.event_id,
+        attempts: 2,
+        lease_owner: "dispatcher_recovery",
+      });
+      expect(reclaimed?.lease_id).not.toBe(crashed?.lease_id);
+    } finally {
+      store.close();
+    }
+  });
+
   it("refuses to requeue a dead letter after a receipt proves the effect", () => {
     const store = new ProposalStore();
     try {
@@ -1746,6 +2862,20 @@ describe("proposal store", () => {
         schema_version: protocolVersions.writebackJobV4,
         operation: "restore_update",
         forward_receipt_hash: "sha256:forward-receipt",
+      });
+      const claim = store.claimWritebackIntent(job, "runner_compensation");
+      expect(claim).toEqual({
+        decision: "proceed",
+        intent_id: "wbi:wbj_wrp_compensation_1",
+      });
+      expect(store.getWritebackIntent(claim.intent_id)).toMatchObject({
+        status: "intent_recorded",
+        operation: "restore_update",
+      });
+      store.markWritebackIntentApplying(claim.intent_id, "runner_compensation");
+      expect(store.getWritebackIntent(claim.intent_id)).toMatchObject({
+        status: "applying",
+        operation: "restore_update",
       });
     } finally {
       store.close();

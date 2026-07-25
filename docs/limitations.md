@@ -5,7 +5,10 @@ whole-application boundary drafting and a local authoring-only Explore ->
 Protect path on top of guarded writes. Version 1.6.1 also adds opt-in
 proposal/evidence freshness for exact same-source direct-SQL proposals. It does
 not turn Runner into a generic database query tool, claim Synapsor Cloud scale,
-or claim an enterprise SLA.
+or claim an enterprise SLA. Version 1.6.3 adds guided onboarding, verified
+approval-role evidence, default-off exact-digest supervised execution for a
+narrow write subset, and quiet human-attention delivery without changing
+existing manual behavior.
 
 ## Supported
 
@@ -15,8 +18,9 @@ or claim an enterprise SLA.
 - Optional shared Postgres proposal/evidence/replay runtime store for MCP serving.
 - Asymmetric claim-bound Streamable HTTP sessions and explicit readiness.
 - Native Postgres/MySQL source pools and operational/fleet-wide rate limits.
-- Verified operator approval through CLI, optional distinct-reviewer quorum,
-  and shared local review UI reads.
+- Verified operator approval through CLI or the secured local Workbench,
+  optional distinct-reviewer quorum, separate apply authority, and
+  proposal-centered lifecycle inspection.
 - Optional live target and explicitly declared supporting-row freshness checks
   before every approval, with immutable proof binding and final transactional
   revalidation for PostgreSQL/MySQL direct SQL writeback.
@@ -75,6 +79,13 @@ or claim an enterprise SLA.
   and scoped tamper-evident JSON/Markdown/PDF ledger reports.
 - Off-by-default graduated-trust recommendations that require verified operator
   review and explicit artifact export without activation.
+- Default-off operator-supervised apply for eligible exact-row direct
+  `INSERT`/`UPDATE`, requiring both public contract permission and an
+  independent deployment allowlist for the exact active digest. It reuses
+  guarded apply and preserves legacy `AUTO APPROVE` as manual-apply.
+- Durable redacted human-attention events, a coalesced Workbench inbox,
+  no-ID CLI inspection, optional JSONL output, and signed generic HTTPS
+  webhooks with quiet routing, budgets, digests, and safe delivery replay.
 
 ## Runtime Contract
 
@@ -105,11 +116,16 @@ truth for the model-facing tools.
 - Inferred compensation for app-owned handlers or external effects.
 - General restoration of hard-deleted rows, cascades, or trigger side effects.
 - Model-callable approval or commit tools.
+- Model-callable worker, notification-routing, acknowledgement, recovery, or
+  reconciliation controls.
 - Generic MCP firewall behavior.
 - Prompt-injection prevention.
 - Unbounded/high-throughput or multi-region ledger scale.
 - Managed fleet, SLA, compliance certification, or production support guarantee.
 - Production, shared HTTP, remote, or non-loopback Scoped Explore.
+- Automatic supervised execution for hard DELETE, reversible changes, bounded
+  sets, app-owned/external effects, or writes without deterministic conflict,
+  deduplication, freshness, and receipt authority.
 - Arbitrary aggregate expressions, dynamic identifiers, unrestricted joins,
   many-to-many joins, formulas, window functions, subqueries, `HAVING`,
   user-defined functions, or a statistical privacy guarantee. Version 1.6

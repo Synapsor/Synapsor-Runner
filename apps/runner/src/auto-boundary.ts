@@ -6,7 +6,9 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   rolePostureFingerprint,
   schemaFingerprintForInspection,
+  classifySensitivity,
   type SchemaInspection,
+  type SensitivityClassification,
   type TableInfo,
 } from "@synapsor-runner/schema-inspector";
 import { normalizeContract, type SynapsorContract } from "@synapsor/spec";
@@ -21,8 +23,9 @@ import {
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
 export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v1";
-export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.0";
-export const AUTO_BOUNDARY_SPEC_VERSION = "1.5.0";
+export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
+export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.3";
+export const AUTO_BOUNDARY_SPEC_VERSION = "1.6.0";
 export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
@@ -61,12 +64,19 @@ export type AutoBoundaryField = {
   nullable: boolean;
   primary_key: boolean;
   sensitive_suggestion: boolean;
+  sensitivity: SensitivityClassification;
   raw_visible_suggestion: boolean;
   aggregate_measure_suggestion: boolean;
   count_distinct_suggestion: boolean;
   groupable_suggestion: boolean;
   time_bucket_suggestion: boolean;
   evidence: string[];
+  review_override?: {
+    exposure: "keep_out" | "allow_reviewed_use";
+    actor: string;
+    reason: string;
+    decided_at: string;
+  };
 };
 
 export type AutoBoundaryResource = {
@@ -221,6 +231,7 @@ export type GenerationLock = {
   spec_version: string;
   engine: SchemaInspection["engine"];
   source_env: string;
+  inspected_schema?: string;
   schema_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
   evidence_fingerprint: `sha256:${string}`;
@@ -234,11 +245,13 @@ export type AutoBoundaryBuild = {
   dsl: string;
   contract: SynapsorContract;
   contract_digest: `sha256:${string}`;
+  overrides: AutoBoundaryReviewOverrides;
   lock: GenerationLock;
   exploration_boundary: ExplorationBoundaryDraft;
   review: {
     schema_version: typeof AUTO_BOUNDARY_VERSION;
     activation: "blocked_unreviewed";
+    engine: SchemaInspection["engine"];
     database_role: AutoBoundaryEvidenceGraph["database_role"];
     warnings: string[];
     summary: {
@@ -258,6 +271,28 @@ export type AutoBoundaryBuild = {
     contract_digest: `sha256:${string}`;
     cases: Array<Record<string, unknown>>;
   };
+};
+
+export type AutoBoundaryReviewOverrides = {
+  schema_version: typeof AUTO_BOUNDARY_OVERRIDES_VERSION;
+  resources: Record<string, {
+    row_identity?: ReviewedValueDecision;
+    tenant_key?: ReviewedValueDecision;
+    principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
+    fields?: Record<string, {
+      exposure: "keep_out" | "allow_reviewed_use";
+      actor: string;
+      reason: string;
+      decided_at: string;
+    }>;
+  }>;
+};
+
+export type ReviewedValueDecision = {
+  value: string;
+  actor: string;
+  reason: string;
+  decided_at: string;
 };
 
 export type AutoBoundaryWriteResult = {
@@ -301,6 +336,79 @@ export async function loadStructuredProjectEvidence(
   return { parsed, existingContracts, warnings };
 }
 
+export async function loadAutoBoundaryReviewOverrides(projectRoot: string): Promise<AutoBoundaryReviewOverrides> {
+  const filePath = path.join(path.resolve(projectRoot), ".synapsor/review-overrides.json");
+  if (!await exists(filePath)) return emptyReviewOverrides();
+  const stat = await fs.lstat(filePath);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error("Auto Boundary review overrides must be a regular project-local file.");
+  }
+  if (stat.size > MAX_STATIC_INPUT_BYTES) {
+    throw new Error(`Auto Boundary review overrides exceed ${MAX_STATIC_INPUT_BYTES} bytes.`);
+  }
+  return normalizeReviewOverrides(JSON.parse(await fs.readFile(filePath, "utf8")) as unknown);
+}
+
+export function pruneAutoBoundaryReviewOverrides(
+  inspection: SchemaInspection,
+  input: AutoBoundaryReviewOverrides,
+): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
+  const current = normalizeReviewOverrides(input);
+  const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
+  const resources: AutoBoundaryReviewOverrides["resources"] = {};
+  const removed: string[] = [];
+  for (const [resourceId, decision] of Object.entries(current.resources)) {
+    const table = tables.get(resourceId);
+    if (!table) {
+      removed.push(`${resourceId}: resource no longer exists`);
+      continue;
+    }
+    const columns = new Map(table.columns.map((column) => [column.name, column]));
+    const provenIdentifiers = new Set([
+      ...(table.primary_key.length === 1 ? table.primary_key : []),
+      ...table.unique_constraints.filter((constraint) => constraint.columns.length === 1).map((constraint) => constraint.columns[0]!),
+      ...table.indexes.filter((index) => index.unique === true && index.columns?.length === 1).map((index) => index.columns![0]!),
+    ]);
+    const retained: AutoBoundaryReviewOverrides["resources"][string] = {};
+    if (decision.row_identity) {
+      if (provenIdentifiers.has(decision.row_identity.value)) retained.row_identity = decision.row_identity;
+      else removed.push(`${resourceId}: reviewed row identity ${decision.row_identity.value} is no longer source-proven`);
+    }
+    if (decision.tenant_key) {
+      if (columns.has(decision.tenant_key.value)) retained.tenant_key = decision.tenant_key;
+      else removed.push(`${resourceId}: reviewed tenant key ${decision.tenant_key.value} no longer exists`);
+    }
+    if (decision.principal_key) {
+      if (decision.principal_key.value === null || columns.has(decision.principal_key.value)) {
+        retained.principal_key = decision.principal_key;
+      } else {
+        removed.push(`${resourceId}: reviewed principal key ${decision.principal_key.value} no longer exists`);
+      }
+    }
+    const fields: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["fields"]> = {};
+    for (const [fieldName, fieldDecision] of Object.entries(decision.fields ?? {})) {
+      const column = columns.get(fieldName);
+      if (!column) {
+        removed.push(`${resourceId}.${fieldName}: reviewed field no longer exists`);
+      } else if (fieldDecision.exposure === "allow_reviewed_use"
+        && (column.suggestions.large_or_binary || isUnsafeRawType(column.data_type))) {
+        removed.push(`${resourceId}.${fieldName}: reviewed visibility was removed because the current type is binary or unsupported`);
+      } else {
+        fields[fieldName] = fieldDecision;
+      }
+    }
+    if (Object.keys(fields).length) retained.fields = fields;
+    if (Object.keys(retained).length) resources[resourceId] = retained;
+  }
+  return {
+    overrides: normalizeReviewOverrides({
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources,
+    }),
+    removed: removed.sort(),
+  };
+}
+
 export function buildAutoBoundary(input: {
   inspection: SchemaInspection;
   project: ProjectDetectionSummary;
@@ -308,29 +416,22 @@ export function buildAutoBoundary(input: {
   existingContracts?: SynapsorContract[];
   sourceEnv: string;
   sourceName?: string;
-  overrides?: Record<string, unknown>;
+  inspectedSchema?: string;
+  overrides?: AutoBoundaryReviewOverrides;
 }): AutoBoundaryBuild {
   const parsedEvidence = input.parsedEvidence ?? [];
   const existingContracts = input.existingContracts ?? [];
+  const overrides = normalizeReviewOverrides(input.overrides);
   const sourceName = input.sourceName ?? (input.inspection.engine === "postgres" ? "local_postgres" : "local_mysql");
   const staticObjects = parsedEvidence.flatMap((evidence) => evidence.objects.map((object) => ({ format: evidence.format, object })));
   const graph = buildEvidenceGraph(input.inspection, input.project, staticObjects, existingContracts);
-  const eligibleResources = graph.resources.filter((resource) => resource.status === "draft_read");
-  if (eligibleResources.length === 0) {
-    const blockers = graph.resources
-      .flatMap((resource) => resource.blockers.map((blocker) => `${resource.id}: ${blocker}`))
-      .slice(0, 8);
-    throw new Error(
-      `Auto Boundary found no eligible tenant-scoped resource with a supported identifier and verified read-only posture.` +
-      `${blockers.length ? ` Blockers: ${blockers.join("; ")}.` : " The selected schema contains no inspectable tables or views."}`,
-    );
-  }
+  applyReviewOverrides(graph, overrides);
   const dsl = emitDraftDsl(graph, sourceName);
   const contract = compileAgentDsl(dsl);
   const contractDigest = canonicalJsonDigest(contract);
   const schemaFingerprint = schemaFingerprintForInspection(input.inspection);
   const roleFingerprint = graph.database_role.fingerprint;
-  const overridesDigest = canonicalJsonDigest(input.overrides ?? {});
+  const overridesDigest = canonicalJsonDigest(overrides);
   const evidenceFingerprint = canonicalJsonDigest({
     graph: graph.resources,
     structured_actions: graph.structured_actions,
@@ -342,6 +443,7 @@ export function buildAutoBoundary(input: {
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
     engine: input.inspection.engine,
     source_env: input.sourceEnv,
+    ...(input.inspectedSchema ? { inspected_schema: input.inspectedSchema } : {}),
     schema_fingerprint: schemaFingerprint,
     role_posture_fingerprint: roleFingerprint,
     evidence_fingerprint: evidenceFingerprint,
@@ -354,6 +456,7 @@ export function buildAutoBoundary(input: {
   const review: AutoBoundaryBuild["review"] = {
     schema_version: AUTO_BOUNDARY_VERSION,
     activation: "blocked_unreviewed" as const,
+    engine: graph.engine,
     database_role: graph.database_role,
     warnings: graph.warnings,
     summary: {
@@ -373,6 +476,7 @@ export function buildAutoBoundary(input: {
     dsl,
     contract,
     contract_digest: contractDigest,
+    overrides,
     lock,
     exploration_boundary: explorationBoundary,
     review,
@@ -403,6 +507,7 @@ export async function writeAutoBoundaryArtifacts(input: {
     "synapsor.candidate.contract.json",
     "exploration-boundary.draft.json",
     "generation-review.json",
+    "review-overrides.json",
     "contract-tests.json",
     "REVIEW.md",
     ".synapsor-auto-boundary.json",
@@ -414,6 +519,7 @@ export async function writeAutoBoundaryArtifacts(input: {
     await fs.writeFile(path.join(temporary, "synapsor.candidate.contract.json"), json(input.build.contract), "utf8");
     await fs.writeFile(path.join(temporary, "exploration-boundary.draft.json"), json(input.build.exploration_boundary), "utf8");
     await fs.writeFile(path.join(temporary, "generation-review.json"), json(input.build.review), "utf8");
+    await fs.writeFile(path.join(temporary, "review-overrides.json"), json(input.build.overrides), "utf8");
     await fs.writeFile(path.join(temporary, "contract-tests.json"), json(input.build.tests), "utf8");
     await fs.writeFile(path.join(temporary, "REVIEW.md"), reviewMarkdown(input.build), "utf8");
     await fs.writeFile(path.join(temporary, ".synapsor-auto-boundary.json"), json({
@@ -428,9 +534,19 @@ export async function writeAutoBoundaryArtifacts(input: {
     await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
     await fs.writeFile(path.join(stateDir, "generation-lock.json"), json(input.build.lock), { encoding: "utf8", mode: 0o600 });
     await fs.writeFile(path.join(stateDir, "review-report.json"), json(input.build.review), { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(path.join(stateDir, "review-overrides.json"), json(input.build.overrides), { encoding: "utf8", mode: 0o600 });
+    if (existing) {
+      await fs.rm(path.join(stateDir, "exploration-boundary.active.json"), { force: true });
+      await fs.rm(path.join(stateDir, "boundary-review-progress.json"), { force: true });
+    }
     return {
       root: outputRoot,
-      files: [...files.map((file) => path.join(outputRoot, file)), path.join(stateDir, "generation-lock.json"), path.join(stateDir, "review-report.json")],
+      files: [
+        ...files.map((file) => path.join(outputRoot, file)),
+        path.join(stateDir, "generation-lock.json"),
+        path.join(stateDir, "review-report.json"),
+        path.join(stateDir, "review-overrides.json"),
+      ],
       contract_digest: input.build.contract_digest,
       schema_fingerprint: input.build.lock.schema_fingerprint,
       draft_reads: input.build.review.summary.draft_reads,
@@ -571,6 +687,213 @@ export async function loadActivatedExplorationBoundary(projectRoot: string): Pro
 }
 
 export { rolePostureFingerprint, schemaFingerprintForInspection };
+
+export function emptyReviewOverrides(): AutoBoundaryReviewOverrides {
+  return {
+    schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+    resources: {},
+  };
+}
+
+function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
+  if (input === undefined) return emptyReviewOverrides();
+  if (!isRecord(input)) throw new Error("Auto Boundary review overrides must be a JSON object.");
+  assertOnlyKeys(input, ["schema_version", "resources"], "Auto Boundary review overrides");
+  if (input.schema_version !== AUTO_BOUNDARY_OVERRIDES_VERSION) {
+    throw new Error(`Auto Boundary review overrides must use ${AUTO_BOUNDARY_OVERRIDES_VERSION}.`);
+  }
+  if (!isRecord(input.resources)) throw new Error("Auto Boundary review overrides resources must be an object.");
+
+  const resources: AutoBoundaryReviewOverrides["resources"] = {};
+  for (const resourceId of Object.keys(input.resources).sort()) {
+    assertSafeMapKey(resourceId, "reviewed resource");
+    const rawResource = input.resources[resourceId];
+    if (!isRecord(rawResource)) throw new Error(`Review overrides for ${resourceId} must be an object.`);
+    assertOnlyKeys(rawResource, ["row_identity", "tenant_key", "principal_key", "fields"], `${resourceId} review overrides`);
+    const resource: AutoBoundaryReviewOverrides["resources"][string] = {};
+    if (rawResource.row_identity !== undefined) {
+      resource.row_identity = normalizeReviewedValueDecision(rawResource.row_identity, `${resourceId} row identity`, false) as ReviewedValueDecision;
+    }
+    if (rawResource.tenant_key !== undefined) {
+      resource.tenant_key = normalizeReviewedValueDecision(rawResource.tenant_key, `${resourceId} tenant key`, false) as ReviewedValueDecision;
+    }
+    if (rawResource.principal_key !== undefined) {
+      resource.principal_key = normalizeReviewedValueDecision(rawResource.principal_key, `${resourceId} principal key`, true);
+    }
+    if (rawResource.fields !== undefined) {
+      if (!isRecord(rawResource.fields)) throw new Error(`${resourceId} field review overrides must be an object.`);
+      const fields: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["fields"]> = {};
+      for (const fieldName of Object.keys(rawResource.fields).sort()) {
+        assertSafeMapKey(fieldName, "reviewed field");
+        const rawField = rawResource.fields[fieldName];
+        if (!isRecord(rawField)) throw new Error(`${resourceId}.${fieldName} review override must be an object.`);
+        assertOnlyKeys(rawField, ["exposure", "actor", "reason", "decided_at"], `${resourceId}.${fieldName} review override`);
+        if (rawField.exposure !== "keep_out" && rawField.exposure !== "allow_reviewed_use") {
+          throw new Error(`${resourceId}.${fieldName} exposure must be keep_out or allow_reviewed_use.`);
+        }
+        fields[fieldName] = {
+          exposure: rawField.exposure,
+          actor: reviewedText(rawField.actor, `${resourceId}.${fieldName} actor`, 128),
+          reason: reviewedText(rawField.reason, `${resourceId}.${fieldName} reason`, 500),
+          decided_at: reviewedTimestamp(rawField.decided_at, `${resourceId}.${fieldName} decided_at`),
+        };
+      }
+      resource.fields = fields;
+    }
+    resources[resourceId] = resource;
+  }
+  return {
+    schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+    resources,
+  };
+}
+
+function normalizeReviewedValueDecision(
+  value: unknown,
+  label: string,
+  allowNull: boolean,
+): Omit<ReviewedValueDecision, "value"> & { value: string | null } {
+  if (!isRecord(value)) throw new Error(`${label} review decision must be an object.`);
+  assertOnlyKeys(value, ["value", "actor", "reason", "decided_at"], `${label} review decision`);
+  if (value.value === null && !allowNull) throw new Error(`${label} cannot be null.`);
+  if (value.value !== null && typeof value.value !== "string") throw new Error(`${label} value must be a column name${allowNull ? " or null" : ""}.`);
+  const reviewedValue = value.value === null ? null : reviewedText(value.value, `${label} value`, 256);
+  return {
+    value: reviewedValue,
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function applyReviewOverrides(
+  graph: AutoBoundaryEvidenceGraph,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(graph.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, override] of Object.entries(overrides.resources)) {
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Review override references unknown resource ${resourceId}.`);
+    const columns = new Set(resource.fields.map((field) => field.name));
+
+    if (override.row_identity) {
+      if (!resource.primary_key.candidates.includes(override.row_identity.value)) {
+        throw new Error(
+          `${resourceId} row identity ${override.row_identity.value} is not a database-proven single-column primary or unique key.`,
+        );
+      }
+      resource.primary_key.selected = override.row_identity.value;
+      resource.primary_key.confidence = "high";
+      resource.primary_key.evidence.push(reviewDecisionEvidence("row identity", override.row_identity));
+    }
+    if (override.tenant_key) {
+      if (!columns.has(override.tenant_key.value)) {
+        throw new Error(`${resourceId} tenant key ${override.tenant_key.value} is not an inspected source column.`);
+      }
+      resource.tenant_key.selected = override.tenant_key.value;
+      resource.tenant_key.candidates = unique([...resource.tenant_key.candidates, override.tenant_key.value]).sort();
+      resource.tenant_key.confidence = "high";
+      resource.tenant_key.evidence.push(reviewDecisionEvidence("tenant key", override.tenant_key));
+    }
+    if (override.principal_key) {
+      if (override.principal_key.value !== null && !columns.has(override.principal_key.value)) {
+        throw new Error(`${resourceId} principal key ${override.principal_key.value} is not an inspected source column.`);
+      }
+      if (override.principal_key.value === null) {
+        delete resource.principal_key.selected;
+      } else {
+        resource.principal_key.selected = override.principal_key.value;
+        resource.principal_key.candidates = unique([
+          ...resource.principal_key.candidates,
+          override.principal_key.value,
+        ]).sort();
+      }
+      resource.principal_key.confidence = "high";
+      resource.principal_key.evidence.push(reviewDecisionEvidence("principal key", override.principal_key));
+    }
+
+    for (const [fieldName, fieldOverride] of Object.entries(override.fields ?? {})) {
+      const field = resource.fields.find((candidate) => candidate.name === fieldName);
+      if (!field) throw new Error(`Review override references unknown field ${resourceId}.${fieldName}.`);
+      if (fieldOverride.exposure === "allow_reviewed_use" && isUnsafeRawType(field.data_type)) {
+        throw new Error(`${resourceId}.${fieldName} has a binary or unsupported large-object type and cannot be made model-visible.`);
+      }
+      field.review_override = { ...fieldOverride };
+      field.evidence.push(
+        `human review override: ${fieldOverride.exposure} by ${fieldOverride.actor} at ${fieldOverride.decided_at}; ${fieldOverride.reason}`,
+      );
+      const allow = fieldOverride.exposure === "allow_reviewed_use";
+      field.sensitive_suggestion = !allow;
+      field.raw_visible_suggestion = allow;
+      field.aggregate_measure_suggestion = allow && isNumericType(field.data_type);
+      field.count_distinct_suggestion = allow && resource.primary_key.candidates.includes(field.name);
+      field.groupable_suggestion = allow && isCategoricalType(field.data_type);
+      field.time_bucket_suggestion = allow && isTimestampType(field.data_type);
+    }
+    refreshResourceStatus(resource);
+  }
+}
+
+function refreshResourceStatus(resource: AutoBoundaryResource): void {
+  resource.blockers = [
+    ...(!resource.primary_key.selected ? ["source-proven single-column primary or unique row identifier is unresolved"] : []),
+    ...(!resource.tenant_key.selected ? ["trusted tenant scope is unresolved"] : []),
+  ];
+  resource.status = !resource.primary_key.selected
+    ? "blocked_identifier"
+    : !resource.tenant_key.selected
+      ? "blocked_scope"
+      : "draft_read";
+}
+
+function reviewDecisionEvidence(
+  kind: string,
+  decision: Omit<ReviewedValueDecision, "value"> & { value: string | null },
+): BoundaryInference<string>["evidence"][number] {
+  return {
+    source: "synapsor",
+    detail: `human-reviewed ${kind} override by ${decision.actor} at ${decision.decided_at}: ${decision.reason}`,
+  };
+}
+
+function reviewedText(value: unknown, label: string, maxLength: number): string {
+  if (typeof value !== "string") throw new Error(`${label} must be text.`);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength || /[\r\n\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error(`${label} must be 1-${maxLength} characters without control characters.`);
+  }
+  if (looksLikeSecret(normalized)) throw new Error(`${label} must not contain credentials or secret material.`);
+  return normalized;
+}
+
+function reviewedTimestamp(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`${label} must be an ISO-8601 timestamp.`);
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString() !== value) {
+    throw new Error(`${label} must be a canonical UTC ISO-8601 timestamp.`);
+  }
+  return value;
+}
+
+function assertOnlyKeys(value: Record<string, unknown>, allowed: string[], label: string): void {
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(value).filter((key) => !allowedSet.has(key));
+  if (unknown.length) throw new Error(`${label} contains unsupported field(s): ${unknown.sort().join(", ")}.`);
+}
+
+function assertSafeMapKey(value: string, label: string): void {
+  if (!value || value.length > 512 || /[\u0000-\u001f\u007f]/.test(value) || ["__proto__", "prototype", "constructor"].includes(value)) {
+    throw new Error(`${label} name is invalid.`);
+  }
+}
+
+function looksLikeSecret(value: string): boolean {
+  return /(?:postgres(?:ql)?|mysql):\/\/\S+|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[?&\s])(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)=\S+/i.test(value);
+}
+
+function isUnsafeRawType(type: string): boolean {
+  return /(?:^|\b)(bytea|blob|binary|varbinary|image|large object|oid)(?:\b|$)/i.test(type);
+}
 
 function buildEvidenceGraph(
   inspection: SchemaInspection,
@@ -789,28 +1112,36 @@ function buildResource(
   inspection: SchemaInspection,
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>,
 ): AutoBoundaryResource {
-  const primaryCandidates = unique([
-    ...table.primary_key,
-    ...staticObjects.flatMap((item) => item.object.primary_key_candidates),
+  const sourceColumns = new Set(table.columns.map((column) => column.name));
+  const sourceProvenUniqueIdentifiers = unique([
+    ...(table.primary_key.length === 1 ? table.primary_key : []),
+    ...table.unique_constraints.filter((constraint) => constraint.columns.length === 1).map((constraint) => constraint.columns[0]!),
+    ...table.indexes.filter((index) => index.unique === true && index.columns?.length === 1).map((index) => index.columns![0]!),
   ]);
+  const primaryCandidates = sourceProvenUniqueIdentifiers;
   const tenantCandidates = unique([
     ...table.suggestions.tenant_columns,
     ...staticObjects.flatMap((item) => item.object.tenant_candidates),
-  ]);
-  const principalCandidates = unique(staticObjects.flatMap((item) => item.object.principal_candidates));
-  const primarySelected = table.primary_key.length === 1 ? table.primary_key[0] : undefined;
+  ]).filter((column) => sourceColumns.has(column));
+  const principalCandidates = unique(staticObjects.flatMap((item) => item.object.principal_candidates))
+    .filter((column) => sourceColumns.has(column));
+  const primarySelected = table.primary_key.length === 1
+    ? table.primary_key[0]
+    : sourceProvenUniqueIdentifiers.length === 1
+      ? sourceProvenUniqueIdentifiers[0]
+      : undefined;
   const tenantSelected = table.suggestions.tenant_columns.includes("tenant_id")
     ? "tenant_id"
     : table.suggestions.tenant_columns.length === 1
       ? table.suggestions.tenant_columns[0]
       : undefined;
-  const principalSelected = principalCandidates.length === 1 ? principalCandidates[0] : undefined;
+  const principalSelected = undefined;
   const posture = table.role_posture;
   const writeCapable = posture
     ? posture.privileges.insert || posture.privileges.update || posture.privileges.delete || posture.privileges.truncate || posture.privileges.trigger
     : true;
   const blockers = [
-    ...(!primarySelected ? ["single-column primary key is unresolved"] : []),
+    ...(!primarySelected ? ["source-proven single-column primary or unique row identifier is unresolved"] : []),
     ...(!tenantSelected ? ["trusted tenant scope is unresolved"] : []),
   ];
   const status: AutoBoundaryResource["status"] = !primarySelected
@@ -826,6 +1157,7 @@ function buildResource(
     type: table.type,
     primary_key: inference(primarySelected, primaryCandidates, [
       { source: "database", detail: `inspected primary key: ${table.primary_key.join(", ") || "none"}` },
+      { source: "database", detail: `inspected single-column unique identifiers: ${sourceProvenUniqueIdentifiers.join(", ") || "none"}` },
       ...evidence.map((detail) => ({ source: sourceKind(detail), detail })),
     ], Boolean(primarySelected), "The wrong identifier could select a different row or make one-row guarantees impossible."),
     tenant_key: inference(tenantSelected, tenantCandidates, [
@@ -833,23 +1165,40 @@ function buildResource(
       ...evidence.map((detail) => ({ source: sourceKind(detail), detail })),
     ], false, "The wrong tenant key can cause cross-tenant reads; confirmation is mandatory."),
     principal_key: inference(principalSelected, principalCandidates, evidence.map((detail) => ({ source: sourceKind(detail), detail })), false, "An incorrect owner/assignee key can expose another principal's row."),
-    fields: table.columns.map((column): AutoBoundaryField => ({
-      name: column.name,
-      data_type: column.data_type,
-      nullable: column.nullable,
-      primary_key: table.primary_key.includes(column.name),
-      sensitive_suggestion: column.suggestions.sensitive,
-      raw_visible_suggestion: !column.suggestions.sensitive && !column.suggestions.large_or_binary,
-      aggregate_measure_suggestion: !column.suggestions.sensitive && isNumericType(column.data_type),
-      count_distinct_suggestion: table.primary_key.includes(column.name) && !column.suggestions.sensitive,
-      groupable_suggestion: !column.suggestions.sensitive && isCategoricalType(column.data_type, column.enum_values),
-      time_bucket_suggestion: !column.suggestions.sensitive && isTimestampType(column.data_type),
-      evidence: [
-        `database column ${column.name} ${column.data_type}`,
-        ...(column.enum_values?.length ? [`database enum values: ${column.enum_values.join(", ")}`] : []),
-        ...evidence,
-      ],
-    })),
+    fields: table.columns.map((column): AutoBoundaryField => {
+      const databaseClassification = column.suggestions.sensitivity ?? classifySensitivity({
+        name: column.name,
+        dataType: column.data_type,
+        description: column.comment,
+        source: "database",
+      });
+      const staticClassifications = staticObjects.flatMap((item) =>
+        item.object.fields
+          .filter((field) => field.name === column.name)
+          .map((field) => field.sensitivity));
+      const sensitivity = [databaseClassification, ...staticClassifications]
+        .reduce(moreRestrictiveSensitivity);
+      const keptOutByClassification = sensitivity.state !== "structurally_low_risk";
+      return {
+        name: column.name,
+        data_type: column.data_type,
+        nullable: column.nullable,
+        primary_key: table.primary_key.includes(column.name),
+        sensitive_suggestion: keptOutByClassification,
+        sensitivity,
+        raw_visible_suggestion: !keptOutByClassification && !column.suggestions.large_or_binary,
+        aggregate_measure_suggestion: !keptOutByClassification && isNumericType(column.data_type),
+        count_distinct_suggestion: table.primary_key.includes(column.name) && !keptOutByClassification,
+        groupable_suggestion: !keptOutByClassification && isCategoricalType(column.data_type, column.enum_values),
+        time_bucket_suggestion: !keptOutByClassification && isTimestampType(column.data_type),
+        evidence: [
+          `database column ${column.name} ${column.data_type}`,
+          ...sensitivity.reasons.map((reason) => `${sensitivity.evidence_source} classification: ${reason}`),
+          ...(column.enum_values?.length ? [`database enum values: ${column.enum_values.join(", ")}`] : []),
+          ...evidence,
+        ],
+      };
+    }),
     relationships: table.foreign_keys.map((foreignKey) => ({
       name: foreignKey.name,
       columns: foreignKey.columns,
@@ -1055,6 +1404,7 @@ function unresolvedDecisions(graph: AutoBoundaryEvidenceGraph): string[] {
     ...(resource.status !== "draft_read" ? resource.blockers.map((blocker) => `${resource.id}: ${blocker}`) : []),
     ...(resource.status === "draft_read" ? [
       `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`,
+      `${resource.id}: confirm principal scope ${resource.principal_key.selected ?? "not configured"}`,
       `${resource.id}: confirm visible and kept-out fields`,
       `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
       `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,
@@ -1106,6 +1456,25 @@ function inference<T>(
     confidence: structurallyProven ? "high" : candidates.length === 1 ? "medium" : "low",
     confirmation_required: true,
     safety_consequence: safetyConsequence,
+  };
+}
+
+function moreRestrictiveSensitivity(
+  left: SensitivityClassification,
+  right: SensitivityClassification,
+): SensitivityClassification {
+  const rank = {
+    structurally_low_risk: 0,
+    unresolved_free_text: 1,
+    high_confidence_sensitive: 2,
+  } as const;
+  if (rank[left.state] > rank[right.state]) return left;
+  if (rank[right.state] > rank[left.state]) return right;
+  return {
+    state: left.state,
+    reason_codes: unique([...left.reason_codes, ...right.reason_codes]).sort(),
+    reasons: unique([...left.reasons, ...right.reasons]).sort(),
+    evidence_source: left.evidence_source,
   };
 }
 

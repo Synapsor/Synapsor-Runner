@@ -46,7 +46,7 @@ for (const pkgFile of listPackageJsonFiles()) {
 
 const readme = read("README.md");
 const packagedReadme = read("apps/runner/README.md");
-const readmeFirstScreen = readme.split("## Prove It In 60 Seconds", 1)[0];
+const readmeFirstScreen = readme.split("## Prove The Boundary In Four Seconds", 1)[0];
 if (!/\bopen-source\b/i.test(readmeFirstScreen)) {
   fail("README first screen must describe the runner as open source.");
 }
@@ -82,6 +82,48 @@ if (!readme.includes("[Threat Model](THREAT_MODEL.md)")) {
 }
 if (!readme.includes("docs/why-synapsor-vs-app-guardrails.md")) {
   fail("README must link the prompt/application guardrails decision guide.");
+}
+for (const required of [
+  "Auto-approval does not mean auto-apply",
+  "exact contract digest and deployment both opt into",
+  "External notifications are disabled and quiet by default",
+  "A webhook response cannot approve",
+]) {
+  if (!readme.includes(required)) {
+    fail(`README must preserve the supervised-execution/notification boundary: ${JSON.stringify(required)}.`);
+  }
+}
+
+for (const requiredDoc of [
+  {
+    path: "docs/supervised-automatic-apply.md",
+    claims: [
+      "The default remains human approval plus manual apply.",
+      "Contract permission, included in the canonical contract digest.",
+      "Deployment permission for the exact capability and exact active digest.",
+      "This is safe retry and explicit ambiguity handling, not a claim of distributed",
+    ],
+  },
+  {
+    path: "docs/human-attention-notifications.md",
+    claims: [
+      "Notifications are additive, local-first, and disabled by default.",
+      "The ledger and Workbench remain the source of truth.",
+      "A receiver cannot return a command.",
+      "This replays only the immutable redacted notification. It does not replay an",
+    ],
+  },
+]) {
+  if (!exists(requiredDoc.path)) {
+    fail(`${requiredDoc.path} is required for the operator documentation gate.`);
+    continue;
+  }
+  const content = read(requiredDoc.path);
+  for (const claim of requiredDoc.claims) {
+    if (!content.includes(claim)) {
+      fail(`${requiredDoc.path} must preserve ${JSON.stringify(claim)}.`);
+    }
+  }
 }
 
 const guardrailsGuide = "docs/why-synapsor-vs-app-guardrails.md";

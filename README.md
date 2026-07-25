@@ -64,22 +64,23 @@ existing Synapsor definitions. It does not execute adopter code, sample source
 rows, or use an LLM:
 
 ```bash
-npm install -g @synapsor/runner
 export DATABASE_URL="postgresql://runner_reader:REPLACE_ME@db.example.com:5432/app?sslmode=require"
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="developer-1"
-synapsor-runner start --from-env DATABASE_URL --schema public
+npx -y @synapsor/runner@latest start --from-env DATABASE_URL
 ```
 
-A fresh project opens the secured localhost Workbench and emits disabled DSL,
-canonical JSON, tests, review evidence, and a generation lock. Review scope,
-fields, aggregate members, relationships, privacy budgets, profile, and exact
-role/RLS posture, then activate the exact digest. Existing tools stay unchanged.
+A fresh project checks credentials, inspects metadata, emits a validated
+zero-authority project, and opens secured localhost Workbench. Review its
+disabled DSL, fields, scope, analytical boundary, and role/RLS posture before
+activating the exact digest.
+
+[Database To First Safe Tool](docs/guided-onboarding.md) covers the complete
+path.
 
 ## Ask Your First Real Question In Cursor
 
-After activation, let Runner add only the local authoring entry to this Cursor
-project:
+After activation, install only the local authoring entry in this Cursor project:
 
 ```bash
 synapsor-runner mcp install cursor \
@@ -103,10 +104,9 @@ Which reviewed regions and reason categories contributed most to the increase
 in churned accounts by week?
 ```
 
-Runner accepts a typed plan, not SQL. It validates every member against the
-activated digest, injects trusted scope, and runs a read-only transaction.
-Small cohorts are suppressed and durable budgets limit repeated differencing.
-This is descriptive analysis, not proof of causation.
+Runner validates a typed plan against the activated digest, injects trusted
+scope, and runs a read-only transaction. Cohort suppression and durable budgets
+limit extraction. This is descriptive analysis, not proof of causation.
 
 Scoped Explore is local authoring only. Missing/unknown/production profiles,
 write-capable or owner credentials, stale generation locks, remote/shared HTTP,
@@ -182,9 +182,11 @@ synapsor-runner proposals check-freshness latest \
 ```
 
 See the [own-database guide](docs/getting-started-own-database.md),
-[Cursor plugin guide](docs/cursor-plugin.md), and
-[proposal freshness](docs/proposal-evidence-freshness.md) and
-[store lifecycle](docs/store-lifecycle.md) guides for the complete paths.
+[proposal freshness](docs/proposal-evidence-freshness.md), and
+[store lifecycle](docs/store-lifecycle.md). For production identity, follow
+`APPROVAL ROLE` through verified OIDC/signed-key approval and a separate apply
+role in [Approval Roles And Verified Operator
+Identity](docs/approval-roles-and-operator-identity.md).
 
 ## Safety Model
 
@@ -241,10 +243,22 @@ See [Security Boundary](docs/security-boundary.md) and
 ## Operate The Approval Loop
 
 Policies can combine per-proposal and aggregate ceilings; exceeding one routes
-to human review. Local SQLite is the default, while bounded fleets can use
-verified HTTP claims and a shared Postgres runtime store. See
-[Production](docs/production.md), [Runner Config](docs/runner-config-reference.md),
-and [Small Runner Fleets](docs/running-a-runner-fleet.md).
+to human review. Auto-approval does not mean auto-apply: existing policies wait
+for manual apply unless the exact contract digest and deployment both opt into
+a separately trusted supervised worker. That worker repeats scope, freshness,
+policy, limit, credential-posture, idempotency, and guarded-write checks before
+every execution.
+
+The ledger and secured Workbench also provide a Human Attention Inbox.
+External notifications are disabled and quiet by default; an operator can route
+review-required, UNKNOWN, reconciliation, dead-letter, drift, or sustained
+health incidents through a signed generic webhook without granting the receiver
+approval authority. A webhook response cannot approve, apply, or change Runner
+state. See [Supervised Automatic
+Apply](docs/supervised-automatic-apply.md), [Human Attention And
+Notifications](docs/human-attention-notifications.md),
+[Production](docs/production.md), and [Small Runner
+Fleets](docs/running-a-runner-fleet.md).
 
 ## Packages
 

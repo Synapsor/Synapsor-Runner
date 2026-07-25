@@ -21,7 +21,7 @@ scope and run the public guided path:
 export DATABASE_URL="<postgres-or-mysql-read-url>"
 export SYNAPSOR_TENANT_ID="<staging-tenant>"
 export SYNAPSOR_PRINCIPAL="<developer-id>"
-npx -y -p @synapsor/runner synapsor-runner start --from-env DATABASE_URL
+npx -y @synapsor/runner@latest start --from-env DATABASE_URL
 ```
 
 A fresh interactive project with no existing config, selector, or automation
@@ -44,9 +44,10 @@ It does not print your database URL, put the URL in MCP client config, expose
 credentials. Before boundary activation it does not read source rows.
 
 `start --from-env` is the shortest public command for first-run onboarding.
-Read [Auto Boundary, Scoped Explore, And
-Protect](auto-boundary-and-scoped-explore.md) for the complete command and
-security reference.
+Read [Database To First Safe Tool](guided-onboarding.md) for the timed guided
+journey and [Auto Boundary, Scoped Explore, And
+Protect](auto-boundary-and-scoped-explore.md) for the complete security
+reference.
 
 Established routes remain unchanged. `--table`, `--answers`, `onboard db`,
 explicit `init` flags, existing configs, headless startup, JSON output, and CI

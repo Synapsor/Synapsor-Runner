@@ -12,6 +12,8 @@ It is not a general MCP security gateway, not a prompt-injection cure, not a rep
 - Proposal diffs, evidence bundles, query audit, approvals, writeback jobs, receipts, and replay records.
 - Runner/session/operator tokens, local SQLite state, and optional shared
   Postgres proposal/evidence/replay ledger.
+- Exact-digest supervised-worker policy, worker leases, attention events,
+  notification delivery records, and webhook signing secrets.
 
 ## Trust Boundaries
 
@@ -21,8 +23,8 @@ MCP client/model
   -> reviewed capability config
   -> read-only database credential
   -> local proposal/evidence/replay store
-  -> human approval outside the model
-  -> guarded worker with write credential
+  -> human or reviewed deterministic policy approval outside the model
+  -> manual apply or separately enabled guarded worker with write credential
   -> Postgres/MySQL
 ```
 
@@ -37,7 +39,11 @@ MCP client/model
   -> Postgres/MySQL
 ```
 
-The model-facing MCP tool call has request/proposal authority. The trusted runner has execution authority only for already-approved, scoped writeback jobs.
+The model-facing MCP tool call has bounded request/proposal authority. The
+trusted runner has execution authority only for already-approved, scoped
+writeback jobs. Manual apply is the default. Supervised automatic execution
+requires both contract permission and a deployment allowlist for the exact
+active digest; the model controls neither.
 
 In small-fleet mode, a TLS load balancer sends signed sessions to stateless
 Runner instances. Every effective capability context must bind tenant and
@@ -65,7 +71,17 @@ idempotency boundary for effects.
 - Over-broad write: direct INSERT/UPDATE/DELETE is single-row, tenant-bound,
   operation-guarded, and success requires exactly one affected row.
 - Cloud credential leakage: database URLs and write credentials stay local and are not sent to Cloud.
-- Model-callable approval: approval/commit tools are not exposed to MCP clients by default.
+- Model-callable approval or execution: activation, approval, apply, worker,
+  notification-routing, and recovery controls are not exposed to MCP clients.
+- Stale policy-approved work: supervised execution repeats current policy,
+  limit, tenant/principal, target and supporting-evidence freshness,
+  generation-lock, writer-posture, receipt, and lease checks before apply.
+- Notification confused deputy or replay: webhook destinations and filters are
+  operator-owned; payloads are redacted and HMAC-signed with event ID and
+  timestamp; response content and delivery replay cannot authorize or mutate.
+- Notification flood: the default external route is quiet; related incidents
+  coalesce, transient recovery stays internal, and per-sink budgets/cooldowns
+  bound non-critical interruption while retaining immutable events.
 - Claims/environment confusion: an `http_claims` server fails before serving
   if a capability resolves an environment/static contract context.
 - Leaked local resource handle: proposal, evidence, and replay reads resolve
@@ -94,6 +110,7 @@ idempotency boundary for effects.
   predicates, or cross-database atomicity in the Runner direct-write path.
 - A compromised IdP/JWKS host, ledger database, source database, TLS
   terminator, or administrator-approved contract.
+- A compromised operator-approved notification destination or signing secret.
 - Unbounded/high-throughput or multi-region ledger scale, compliance
   certification, or production SLA.
 
@@ -106,6 +123,12 @@ idempotency boundary for effects.
 - Prefer version/timestamp conflict guards over weak row-hash fallback.
 - Review proposal diffs and evidence before approval.
 - Monitor conflict/failed receipt rates.
+- Keep automatic execution disabled unless both exact-digest opt-ins and a
+  separately scoped least-privilege writer are reviewed. Monitor queue,
+  dead-letter, UNKNOWN, reconciliation, and writer-posture state.
+- Keep notifications disabled unless needed. Store webhook URL/signing secret
+  only in operator environment, allowlist egress, and treat Workbench/ledger as
+  authoritative rather than a chat or incident system.
 - Allowlist JWKS egress, keep `/metrics` separately authorized, budget source
   pools across replicas, back up/verify the shared ledger, and retain the
   configured `max_entries` safety bound.

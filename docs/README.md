@@ -18,6 +18,10 @@ no-database demo, wire your database, then read deeper concepts.
   you adopt Runner.
 - [README](../README.md): audit-first proof, no-database demo, safety diagram,
   and the shortest own-database path.
+- [Database To First Safe Tool](guided-onboarding.md): one public command,
+  five-minute first read, ten-minute Explore to Protect, fifteen-minute
+  proposal, resumable setup, guarded development writeback, and host-neutral
+  client handoff.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 
@@ -47,6 +51,8 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 04 Connect Your DB
 
+- [Database To First Safe Tool](guided-onboarding.md): the complete
+  review-by-exception golden path using the packed npm package.
 - [Auto Boundary, Scoped Explore, And
   Protect](auto-boundary-and-scoped-explore.md): deterministically inspect a
   whole staging application, review one digest-bound boundary, ask bounded row
@@ -95,6 +101,9 @@ no-database demo, wire your database, then read deeper concepts.
 - [Capability Authoring](capability-authoring.md): define read/proposal
   capabilities, model-facing descriptions, result envelopes, trusted context,
   and writeback guards.
+- [Approval Roles And Verified Operator Identity](approval-roles-and-operator-identity.md):
+  trace `APPROVAL ROLE` through IdP claims, immutable approval evidence, and
+  the independent apply-role decision.
 - [DSL Reference](dsl-reference.md): complete supported grammar, clause order,
   compiled meaning, and constraints.
 - [Runner Config Reference](runner-config-reference.md): every public wiring
@@ -141,6 +150,14 @@ no-database demo, wire your database, then read deeper concepts.
 
 - [Local Mode](local-mode.md): local store, proposals, approval, replay, and
   writeback flow.
+- [Operator-Supervised Automatic Apply](supervised-automatic-apply.md):
+  separate approval from execution, require contract and deployment opt-in for
+  one exact digest, run the trusted worker, and understand revalidation,
+  eligibility, retries, controls, and UNKNOWN outcomes.
+- [Human Attention And Notifications](human-attention-notifications.md):
+  durable attention events, the no-ID Workbench inbox, quiet defaults,
+  coalescing and digests, signed generic webhooks, delivery recovery, and the
+  optional supervision-health gate.
 - [Shadow Studies](shadow-studies.md): compare what an agent would propose
   with explicit authorized outcomes before granting write authority.
 - [Writeback Executors](writeback-executors.md): app-owned writeback handlers
@@ -162,8 +179,11 @@ no-database demo, wire your database, then read deeper concepts.
 - [Store Lifecycle](store-lifecycle.md): active-store leases, prune safety,
   deleted-store behavior, and concurrent server guardrails.
 - `synapsor-runner activity search`, `evidence`, `query-audit`, `receipts`,
-  `events tail`, and `events webhook`: local evidence, audit, receipt, replay,
-  and lifecycle inspection.
+  `events tail`, `attention show`, and `notifications status`: local evidence,
+  audit, receipt, replay, complete lifecycle history, and human-attention
+  inspection. The legacy development lifecycle webhook remains documented in
+  [Local Mode](local-mode.md); production attention delivery uses the signed,
+  quiet notification pipeline.
 - `examples/mysql-refund-agent/`: MySQL order/refund review example using the
   same proposal, approval, guarded writeback, and replay loop.
 - [Scoped Ledger Reports](compliance-reports.md): object/principal JSON,

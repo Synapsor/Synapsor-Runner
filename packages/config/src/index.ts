@@ -20,7 +20,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -59,6 +59,95 @@ const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const GOVERNANCE_KEYS = new Set(["mode", "connection_file", "evidence_residency", "queue_when_unavailable", "sync_interval_ms", "max_attempts", "outbox_retention_days"]);
 const GENERATED_AUTHORITY_KEYS = new Set(["generation_lock_path", "enforcement"]);
+const SUPERVISED_WORKER_KEYS = new Set(["enabled", "profile", "capabilities"]);
+const SUPERVISED_WORKER_CAPABILITY_KEYS = new Set([
+  "capability",
+  "contract_digest",
+  "mode",
+  "concurrency",
+  "queue_limit",
+  "lease_seconds",
+  "max_attempts",
+  "proposal_ttl_seconds",
+  "rate_limit",
+  "write_url_env",
+  "require_least_privilege_writer",
+  "writer_posture_fingerprint",
+  "worker_identity",
+  "control_role",
+  "required_attention_sinks",
+]);
+const SUPERVISED_WORKER_RATE_LIMIT_KEYS = new Set(["executions", "window_seconds"]);
+const NOTIFICATION_KEYS = new Set(["enabled", "workbench_url_env", "sinks"]);
+const NOTIFICATION_SINK_KEYS = new Set([
+  "id",
+  "type",
+  "enabled",
+  "url_env",
+  "signing_secret_env",
+  "destination",
+  "minimum_severity",
+  "events",
+  "capabilities",
+  "environments",
+  "delivery",
+  "max_attempts",
+  "timeout_ms",
+  "max_response_bytes",
+  "replay_window_seconds",
+  "allow_private_destinations",
+  "private_host_allowlist",
+  "recovery_notifications",
+  "budgets",
+  "quiet_hours",
+]);
+const NOTIFICATION_BUDGET_KEYS = new Set([
+  "per_minute",
+  "per_hour",
+  "immediate_informational_per_hour",
+  "aggregation_window_seconds",
+  "cooldown_seconds",
+  "max_unresolved_reminders",
+  "digest_cadence_minutes",
+  "escalation_delay_seconds",
+  "retry_attempt_threshold",
+  "degraded_duration_seconds",
+  "queue_depth_threshold",
+  "queue_age_seconds",
+]);
+const NOTIFICATION_QUIET_HOURS_KEYS = new Set(["start_utc_hour", "end_utc_hour"]);
+const NOTIFICATION_EVENT_TYPES = new Set([
+  "proposal.created",
+  "proposal.review_required",
+  "proposal.auto_approved",
+  "proposal.approved",
+  "proposal.queued",
+  "proposal.expiring",
+  "proposal.expired",
+  "proposal.cancelled",
+  "proposal.applied",
+  "proposal.conflict",
+  "proposal.refused",
+  "worker.started",
+  "worker.paused",
+  "worker.unhealthy",
+  "worker.recovered",
+  "worker.queue_backlog",
+  "worker.retry_scheduled",
+  "worker.dead_lettered",
+  "worker.unknown_outcome",
+  "worker.reconciliation_required",
+  "capability.review_required",
+  "capability.activated",
+  "capability.revoked",
+  "contract.digest_stale",
+  "schema.drift_detected",
+  "credential.posture_changed",
+  "policy.limit_near",
+  "policy.limit_exceeded",
+  "sensitive_override_activated",
+  "notification.replayed",
+]);
 const SOURCE_KEYS = new Set([
   "engine",
   "read_url_env",
@@ -100,6 +189,7 @@ const CAPABILITY_KEYS = new Set([
   "reversibility",
   "conflict_guard",
   "approval",
+  "execution",
   "writeback",
   "operation",
   "single_tenant_dev_ack",
@@ -118,6 +208,7 @@ const TRANSITION_GUARD_KEYS = new Set(["from_column", "allowed"]);
 const REVERSIBILITY_KEYS = new Set(["mode"]);
 const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
+const EXECUTION_KEYS = new Set(["supervised_worker"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
 const APPROVAL_POLICY_RULE_KEYS = new Set(["field", "max"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
@@ -226,7 +317,20 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateRateLimits(input.rate_limits, strict, errors);
   validateMetrics(input.metrics, strict, errors);
   validateGraduatedTrust(input.graduated_trust, strict, errors);
-  validateCapabilities(input.capabilities, input.sources, input.contexts, input.executors, input.mode, strict, errors, warnings, hasContracts);
+  validateCapabilities(
+    input.capabilities,
+    input.sources,
+    input.contexts,
+    input.executors,
+    input.mode,
+    strict,
+    errors,
+    warnings,
+    hasContracts,
+    input.generated_authority,
+  );
+  validateNotifications(input.notifications, strict, errors);
+  validateSupervisedWorker(input.supervised_worker, input, strict, errors);
   validateProposalFreshness(input.proposal_freshness, input.capabilities, strict, errors);
   validateEffectiveContextCompatibility(input.trusted_context, input.contexts, input.capabilities, errors);
   validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
@@ -250,6 +354,377 @@ function validateGeneratedAuthority(value: unknown, strict: boolean, errors: Con
   }
   if (value.enforcement !== "required") {
     errors.push({ path: "$.generated_authority.enforcement", code: "INVALID_GENERATION_LOCK_ENFORCEMENT", message: "generated authority must use required lock enforcement." });
+  }
+}
+
+function validateNotifications(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.notifications", code: "NOTIFICATIONS_NOT_OBJECT", message: "notifications must be an operator-owned configuration object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, NOTIFICATION_KEYS, "$.notifications", errors);
+  if (typeof value.enabled !== "boolean") {
+    errors.push({ path: "$.notifications.enabled", code: "NOTIFICATIONS_ENABLED_REQUIRED", message: "notifications.enabled must be an explicit boolean." });
+  }
+  if (value.workbench_url_env !== undefined && !isEnvName(value.workbench_url_env)) {
+    errors.push({ path: "$.notifications.workbench_url_env", code: "INVALID_WORKBENCH_URL_ENV", message: "workbench_url_env must name an environment variable, not contain a URL." });
+  }
+  if (!Array.isArray(value.sinks)) {
+    errors.push({ path: "$.notifications.sinks", code: "NOTIFICATION_SINKS_REQUIRED", message: "notifications.sinks must be an explicit array." });
+    return;
+  }
+  if (value.sinks.length > 32) {
+    errors.push({ path: "$.notifications.sinks", code: "TOO_MANY_NOTIFICATION_SINKS", message: "notifications supports at most 32 operator-owned sinks." });
+  }
+  if (value.enabled === true && value.sinks.filter(isRecord).every((sink) => sink.enabled === false)) {
+    errors.push({ path: "$.notifications.sinks", code: "ENABLED_NOTIFICATION_SINK_REQUIRED", message: "enabled notifications require at least one sink that is not disabled." });
+  }
+  const seen = new Set<string>();
+  for (const [index, rawSink] of value.sinks.entries()) {
+    const path = `$.notifications.sinks[${index}]`;
+    if (!isRecord(rawSink)) {
+      errors.push({ path, code: "NOTIFICATION_SINK_NOT_OBJECT", message: "each notification sink must be an object." });
+      continue;
+    }
+    if (strict) checkUnknownKeys(rawSink, NOTIFICATION_SINK_KEYS, path, errors);
+    if (!isSafeName(rawSink.id)) {
+      errors.push({ path: `${path}.id`, code: "INVALID_NOTIFICATION_SINK_ID", message: "notification sink id must be a fixed safe name." });
+    } else if (seen.has(rawSink.id)) {
+      errors.push({ path: `${path}.id`, code: "DUPLICATE_NOTIFICATION_SINK_ID", message: "notification sink ids must be unique." });
+    } else seen.add(rawSink.id);
+    if (rawSink.type !== "webhook" && rawSink.type !== "jsonl") {
+      errors.push({ path: `${path}.type`, code: "INVALID_NOTIFICATION_SINK_TYPE", message: "notification sink type must be webhook or jsonl." });
+    }
+    if (rawSink.enabled !== undefined && typeof rawSink.enabled !== "boolean") {
+      errors.push({ path: `${path}.enabled`, code: "INVALID_NOTIFICATION_SINK_ENABLED", message: "notification sink enabled must be boolean." });
+    }
+    if (rawSink.type === "webhook") {
+      if (!isEnvName(rawSink.url_env)) {
+        errors.push({ path: `${path}.url_env`, code: "NOTIFICATION_WEBHOOK_URL_ENV_REQUIRED", message: "webhook url_env must name an environment variable." });
+      }
+      if (!isEnvName(rawSink.signing_secret_env)) {
+        errors.push({ path: `${path}.signing_secret_env`, code: "NOTIFICATION_SIGNING_SECRET_ENV_REQUIRED", message: "webhook signing_secret_env must name an environment variable." });
+      }
+      if (rawSink.destination !== undefined) {
+        errors.push({ path: `${path}.destination`, code: "WEBHOOK_DESTINATION_UNSUPPORTED", message: "webhook destinations come only from url_env." });
+      }
+    }
+    if (rawSink.type === "jsonl") {
+      if (rawSink.destination !== "stdout") {
+        errors.push({ path: `${path}.destination`, code: "JSONL_STDOUT_REQUIRED", message: "the built-in JSONL development sink writes only to stdout." });
+      }
+      if (rawSink.url_env !== undefined || rawSink.signing_secret_env !== undefined) {
+        errors.push({ path, code: "JSONL_WEBHOOK_FIELDS_FORBIDDEN", message: "JSONL sinks do not accept webhook URL or signing-secret fields." });
+      }
+    }
+    if (rawSink.minimum_severity !== undefined && !["informational", "warning", "critical"].includes(String(rawSink.minimum_severity))) {
+      errors.push({ path: `${path}.minimum_severity`, code: "INVALID_NOTIFICATION_SEVERITY", message: "minimum_severity must be informational, warning, or critical." });
+    }
+    if (rawSink.delivery !== undefined && !["immediate", "digest", "all"].includes(String(rawSink.delivery))) {
+      errors.push({ path: `${path}.delivery`, code: "INVALID_NOTIFICATION_DELIVERY_MODE", message: "delivery must be immediate, digest, or all." });
+    }
+    if (rawSink.events !== undefined) {
+      if (!Array.isArray(rawSink.events) || rawSink.events.length > 64 || rawSink.events.some((event) => typeof event !== "string" || !NOTIFICATION_EVENT_TYPES.has(event))) {
+        errors.push({ path: `${path}.events`, code: "INVALID_NOTIFICATION_EVENT_FILTER", message: "events must contain only supported fixed attention event names." });
+      }
+    }
+    if (rawSink.capabilities !== undefined && (!Array.isArray(rawSink.capabilities) || rawSink.capabilities.length > 256 || rawSink.capabilities.some((item) => !isQualifiedName(item)))) {
+      errors.push({ path: `${path}.capabilities`, code: "INVALID_NOTIFICATION_CAPABILITY_FILTER", message: "capabilities must contain fixed qualified capability names." });
+    }
+    if (rawSink.environments !== undefined && (!Array.isArray(rawSink.environments) || rawSink.environments.length > 4 || rawSink.environments.some((item) => !["development", "staging", "production", "unknown"].includes(String(item))))) {
+      errors.push({ path: `${path}.environments`, code: "INVALID_NOTIFICATION_ENVIRONMENT_FILTER", message: "environments must contain development, staging, production, or unknown." });
+    }
+    for (const [key, minimum, maximum] of [
+      ["max_attempts", 1, 100],
+      ["timeout_ms", 100, 30_000],
+      ["max_response_bytes", 0, 65_536],
+      ["replay_window_seconds", 30, 3_600],
+    ] as const) {
+      if (rawSink[key] !== undefined && (!Number.isSafeInteger(rawSink[key]) || Number(rawSink[key]) < minimum || Number(rawSink[key]) > maximum)) {
+        errors.push({ path: `${path}.${key}`, code: "INVALID_NOTIFICATION_BOUND", message: `${key} must be an integer from ${minimum} through ${maximum}.` });
+      }
+    }
+    if (rawSink.allow_private_destinations !== undefined && typeof rawSink.allow_private_destinations !== "boolean") {
+      errors.push({ path: `${path}.allow_private_destinations`, code: "INVALID_PRIVATE_DESTINATION_POLICY", message: "allow_private_destinations must be boolean." });
+    }
+    if (rawSink.recovery_notifications !== undefined && typeof rawSink.recovery_notifications !== "boolean") {
+      errors.push({ path: `${path}.recovery_notifications`, code: "INVALID_RECOVERY_NOTIFICATION_POLICY", message: "recovery_notifications must be boolean." });
+    }
+    if (rawSink.private_host_allowlist !== undefined) {
+      if (!Array.isArray(rawSink.private_host_allowlist) || rawSink.private_host_allowlist.length > 32 || rawSink.private_host_allowlist.some((host) => !isSafeNotificationHost(host))) {
+        errors.push({ path: `${path}.private_host_allowlist`, code: "INVALID_PRIVATE_HOST_ALLOWLIST", message: "private_host_allowlist must contain at most 32 fixed DNS hostnames or IP literals." });
+      }
+      if (rawSink.allow_private_destinations !== true && Array.isArray(rawSink.private_host_allowlist) && rawSink.private_host_allowlist.length > 0) {
+        errors.push({ path: `${path}.allow_private_destinations`, code: "PRIVATE_DESTINATION_OPT_IN_REQUIRED", message: "private host exceptions require allow_private_destinations=true." });
+      }
+    }
+    validateNotificationBudgets(rawSink.budgets, `${path}.budgets`, strict, errors);
+    validateNotificationQuietHours(rawSink.quiet_hours, `${path}.quiet_hours`, strict, errors);
+  }
+}
+
+function validateNotificationBudgets(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "NOTIFICATION_BUDGETS_NOT_OBJECT", message: "notification budgets must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, NOTIFICATION_BUDGET_KEYS, path, errors);
+  for (const [key, minimum, maximum] of [
+    ["per_minute", 1, 10_000],
+    ["per_hour", 1, 100_000],
+    ["immediate_informational_per_hour", 0, 10_000],
+    ["aggregation_window_seconds", 1, 86_400],
+    ["cooldown_seconds", 0, 604_800],
+    ["max_unresolved_reminders", 0, 100],
+    ["digest_cadence_minutes", 1, 10_080],
+    ["escalation_delay_seconds", 0, 604_800],
+    ["retry_attempt_threshold", 1, 100],
+    ["degraded_duration_seconds", 1, 86_400],
+    ["queue_depth_threshold", 1, 1_000_000],
+    ["queue_age_seconds", 1, 604_800],
+  ] as const) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || Number(value[key]) < minimum || Number(value[key]) > maximum)) {
+      errors.push({ path: `${path}.${key}`, code: "INVALID_NOTIFICATION_BUDGET", message: `${key} must be an integer from ${minimum} through ${maximum}.` });
+    }
+  }
+}
+
+function validateNotificationQuietHours(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "NOTIFICATION_QUIET_HOURS_NOT_OBJECT", message: "quiet_hours must be an object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, NOTIFICATION_QUIET_HOURS_KEYS, path, errors);
+  for (const key of ["start_utc_hour", "end_utc_hour"] as const) {
+    if (!Number.isSafeInteger(value[key]) || Number(value[key]) < 0 || Number(value[key]) > 23) {
+      errors.push({ path: `${path}.${key}`, code: "INVALID_NOTIFICATION_QUIET_HOUR", message: `${key} must be an integer from 0 through 23.` });
+    }
+  }
+}
+
+function validateSupervisedWorker(
+  value: unknown,
+  config: JsonRecord,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.supervised_worker", code: "SUPERVISED_WORKER_NOT_OBJECT", message: "supervised_worker must be an explicit deployment policy object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, SUPERVISED_WORKER_KEYS, "$.supervised_worker", errors);
+  if (typeof value.enabled !== "boolean") {
+    errors.push({ path: "$.supervised_worker.enabled", code: "SUPERVISED_WORKER_ENABLED_REQUIRED", message: "supervised_worker.enabled must be an explicit boolean." });
+  }
+  if (value.profile !== "development" && value.profile !== "staging" && value.profile !== "production") {
+    errors.push({ path: "$.supervised_worker.profile", code: "SUPERVISED_WORKER_PROFILE_REQUIRED", message: "supervised_worker.profile must be development, staging, or production." });
+  }
+  if (!Array.isArray(value.capabilities)) {
+    errors.push({ path: "$.supervised_worker.capabilities", code: "SUPERVISED_WORKER_CAPABILITIES_REQUIRED", message: "supervised_worker.capabilities must be an explicit exact-digest allowlist." });
+    return;
+  }
+  if (value.enabled === true && value.capabilities.length === 0) {
+    errors.push({ path: "$.supervised_worker.capabilities", code: "SUPERVISED_WORKER_ALLOWLIST_REQUIRED", message: "enabled supervised-worker execution requires at least one exact capability/digest allowlist entry." });
+  }
+  if (config.mode !== "review" && value.enabled === true) {
+    errors.push({ path: "$.mode", code: "SUPERVISED_WORKER_REVIEW_MODE_REQUIRED", message: "supervised-worker execution requires Runner review mode." });
+  }
+  if (isRecord(config.governance) && config.governance.mode === "cloud_linked" && value.enabled === true) {
+    errors.push({ path: "$.governance.mode", code: "SUPERVISED_WORKER_LOCAL_AUTHORITY_REQUIRED", message: "Cloud-linked governance does not permit the local supervised worker to become execution authority." });
+  }
+  if (value.profile === "production" && value.enabled === true) {
+    const operator = isRecord(config.operator_identity) ? config.operator_identity : undefined;
+    if (!operator || (operator.provider !== "signed_key" && operator.provider !== "jwt_oidc")) {
+      errors.push({ path: "$.operator_identity.provider", code: "SUPERVISED_WORKER_VERIFIED_OPERATOR_REQUIRED", message: "production supervised-worker controls require signed_key or jwt_oidc operator identity." });
+    }
+  }
+
+  const runtimeCapabilities = Array.isArray(config.capabilities)
+    ? config.capabilities.filter(isRecord)
+    : [];
+  const byName = new Map(runtimeCapabilities.flatMap((capability) =>
+    isQualifiedName(capability.name) ? [[String(capability.name), capability] as const] : []));
+  const sources = isRecord(config.sources) ? config.sources : {};
+  const notifications = isRecord(config.notifications) ? config.notifications : undefined;
+  const notificationSinks = new Map(
+    Array.isArray(notifications?.sinks)
+      ? notifications.sinks
+        .filter(isRecord)
+        .filter((sink) => isSafeName(sink.id))
+        .map((sink) => [String(sink.id), sink] as const)
+      : [],
+  );
+  const seen = new Set<string>();
+  for (const [index, rawEntry] of value.capabilities.entries()) {
+    const path = `$.supervised_worker.capabilities[${index}]`;
+    if (!isRecord(rawEntry)) {
+      errors.push({ path, code: "SUPERVISED_WORKER_CAPABILITY_NOT_OBJECT", message: "each supervised-worker allowlist entry must be an object." });
+      continue;
+    }
+    if (strict) checkUnknownKeys(rawEntry, SUPERVISED_WORKER_CAPABILITY_KEYS, path, errors);
+    if (!isQualifiedName(rawEntry.capability)) {
+      errors.push({ path: `${path}.capability`, code: "INVALID_SUPERVISED_WORKER_CAPABILITY", message: "capability must be a fixed qualified capability name." });
+    }
+    if (typeof rawEntry.contract_digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(rawEntry.contract_digest)) {
+      errors.push({ path: `${path}.contract_digest`, code: "INVALID_SUPERVISED_WORKER_DIGEST", message: "contract_digest must be the exact canonical sha256 digest." });
+    }
+    if (rawEntry.mode !== "supervised_worker") {
+      errors.push({ path: `${path}.mode`, code: "INVALID_SUPERVISED_WORKER_MODE", message: "mode must be supervised_worker." });
+    }
+    for (const [key, minimum, maximum] of [
+      ["concurrency", 1, 32],
+      ["queue_limit", 1, 10000],
+      ["lease_seconds", 15, 3600],
+      ["max_attempts", 1, 100],
+      ["proposal_ttl_seconds", 60, 2_592_000],
+    ] as const) {
+      if (!Number.isSafeInteger(rawEntry[key]) || Number(rawEntry[key]) < minimum || Number(rawEntry[key]) > maximum) {
+        errors.push({ path: `${path}.${key}`, code: "INVALID_SUPERVISED_WORKER_BOUND", message: `${key} must be an integer from ${minimum} through ${maximum}.` });
+      }
+    }
+    if (!isEnvName(rawEntry.write_url_env)) {
+      errors.push({ path: `${path}.write_url_env`, code: "SUPERVISED_WORKER_WRITE_ENV_REQUIRED", message: "write_url_env must name the separately configured writer credential environment variable." });
+    }
+    if (
+      rawEntry.require_least_privilege_writer !== undefined
+      && typeof rawEntry.require_least_privilege_writer !== "boolean"
+    ) {
+      errors.push({ path: `${path}.require_least_privilege_writer`, code: "INVALID_SUPERVISED_WORKER_POSTURE_MODE", message: "require_least_privilege_writer must be an explicit boolean when present." });
+    }
+    if (
+      rawEntry.writer_posture_fingerprint !== undefined
+      && (
+        typeof rawEntry.writer_posture_fingerprint !== "string"
+        || !/^sha256:[a-f0-9]{64}$/.test(rawEntry.writer_posture_fingerprint)
+      )
+    ) {
+      errors.push({ path: `${path}.writer_posture_fingerprint`, code: "INVALID_SUPERVISED_WORKER_POSTURE_FINGERPRINT", message: "writer_posture_fingerprint must be the reviewed non-secret sha256 posture digest." });
+    }
+    if (
+      rawEntry.require_least_privilege_writer === true
+      && rawEntry.writer_posture_fingerprint === undefined
+    ) {
+      errors.push({ path: `${path}.writer_posture_fingerprint`, code: "SUPERVISED_WORKER_POSTURE_FINGERPRINT_REQUIRED", message: "hardened writer posture requires an exact reviewed posture fingerprint." });
+    }
+    if (
+      value.enabled === true
+      && value.profile === "production"
+      && (
+        rawEntry.require_least_privilege_writer !== true
+        || rawEntry.writer_posture_fingerprint === undefined
+      )
+    ) {
+      errors.push({ path, code: "SUPERVISED_WORKER_PRODUCTION_POSTURE_REQUIRED", message: "production supervised execution requires live least-privilege writer verification bound to an exact reviewed posture fingerprint." });
+    }
+    if (rawEntry.worker_identity !== undefined && !isSafeName(rawEntry.worker_identity)) {
+      errors.push({ path: `${path}.worker_identity`, code: "INVALID_SUPERVISED_WORKER_IDENTITY", message: "worker_identity must be a fixed safe operator identity." });
+    }
+    if (rawEntry.control_role !== undefined && !isSafeName(rawEntry.control_role)) {
+      errors.push({ path: `${path}.control_role`, code: "INVALID_SUPERVISED_WORKER_CONTROL_ROLE", message: "control_role must be a fixed safe operator role." });
+    }
+    if (rawEntry.required_attention_sinks !== undefined) {
+      if (
+        !Array.isArray(rawEntry.required_attention_sinks)
+        || rawEntry.required_attention_sinks.length < 1
+        || rawEntry.required_attention_sinks.length > 8
+        || rawEntry.required_attention_sinks.some((sink) => !isSafeName(sink))
+      ) {
+        errors.push({ path: `${path}.required_attention_sinks`, code: "INVALID_REQUIRED_ATTENTION_SINKS", message: "required_attention_sinks must contain 1 through 8 fixed sink ids." });
+      } else {
+        if (notifications?.enabled !== true) {
+          errors.push({ path: "$.notifications.enabled", code: "HEALTH_GATE_NOTIFICATIONS_REQUIRED", message: "required attention sinks need notifications.enabled=true." });
+        }
+        for (const [sinkIndex, sinkId] of rawEntry.required_attention_sinks.entries()) {
+          const sink = notificationSinks.get(String(sinkId));
+          if (!sink || sink.enabled === false) {
+            errors.push({ path: `${path}.required_attention_sinks[${sinkIndex}]`, code: "REQUIRED_ATTENTION_SINK_UNAVAILABLE", message: `required attention sink ${String(sinkId)} must name an enabled configured sink.` });
+          }
+        }
+      }
+    }
+    if (!isRecord(rawEntry.rate_limit)) {
+      errors.push({ path: `${path}.rate_limit`, code: "SUPERVISED_WORKER_RATE_LIMIT_REQUIRED", message: "rate_limit must define a bounded execution window." });
+    } else {
+      if (strict) checkUnknownKeys(rawEntry.rate_limit, SUPERVISED_WORKER_RATE_LIMIT_KEYS, `${path}.rate_limit`, errors);
+      if (!Number.isSafeInteger(rawEntry.rate_limit.executions) || Number(rawEntry.rate_limit.executions) < 1 || Number(rawEntry.rate_limit.executions) > 100000) {
+        errors.push({ path: `${path}.rate_limit.executions`, code: "INVALID_SUPERVISED_WORKER_RATE", message: "rate_limit.executions must be an integer from 1 through 100000." });
+      }
+      if (!Number.isSafeInteger(rawEntry.rate_limit.window_seconds) || Number(rawEntry.rate_limit.window_seconds) < 1 || Number(rawEntry.rate_limit.window_seconds) > 86400) {
+        errors.push({ path: `${path}.rate_limit.window_seconds`, code: "INVALID_SUPERVISED_WORKER_WINDOW", message: "rate_limit.window_seconds must be an integer from 1 through 86400." });
+      }
+    }
+
+    const key = `${String(rawEntry.capability)}:${String(rawEntry.contract_digest)}`;
+    if (seen.has(key)) {
+      errors.push({ path, code: "DUPLICATE_SUPERVISED_WORKER_ALLOWLIST", message: "each capability/digest may appear only once." });
+    }
+    seen.add(key);
+
+    const capability = byName.get(String(rawEntry.capability));
+    if (!capability) {
+      if (runtimeCapabilities.length > 0 || !Array.isArray(config.contracts)) {
+        errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_CAPABILITY_UNKNOWN", message: "allowlist capability must resolve from the active Runner contract catalog." });
+      }
+      continue;
+    }
+    const provenance = isRecord(capability.contract_provenance) ? capability.contract_provenance : undefined;
+    if (!provenance || provenance.digest !== rawEntry.contract_digest) {
+      errors.push({ path: `${path}.contract_digest`, code: "SUPERVISED_WORKER_DIGEST_MISMATCH", message: "allowlist digest must exactly match the active capability contract digest." });
+    }
+    if (!isRecord(capability.execution) || capability.execution.supervised_worker !== "allowed") {
+      errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_CONTRACT_PERMISSION_REQUIRED", message: "the active capability contract does not permit supervised-worker execution." });
+    }
+    const source = isNonEmptyString(capability.source) && isRecord(sources[capability.source])
+      ? sources[capability.source] as JsonRecord
+      : undefined;
+    if (!source || source.write_url_env !== rawEntry.write_url_env || source.read_only === true) {
+      errors.push({ path: `${path}.write_url_env`, code: "SUPERVISED_WORKER_WRITER_MISMATCH", message: "allowlist write_url_env must match the selected writable source without embedding a credential." });
+    }
+    if (!source || !isRecord(source.receipts)) {
+      errors.push({ path: `$.sources.${String(capability.source)}.receipts`, code: "SUPERVISED_WORKER_RECEIPT_AUTHORITY_REQUIRED", message: "supervised-worker execution requires explicit source_db or runner_ledger receipt authority." });
+    }
+    if (
+      rawEntry.require_least_privilege_writer === true
+      && source
+      && isRecord(source.receipts)
+      && source.receipts.authority === "source_db"
+      && (
+        source.receipts.provisioning !== "precreated"
+        || !isSafeIdentifier(source.receipts.schema)
+        || !isSafeIdentifier(source.receipts.table)
+      )
+    ) {
+      errors.push({
+        path: `$.sources.${String(capability.source)}.receipts`,
+        code: "SUPERVISED_WORKER_PRECREATED_RECEIPT_REQUIRED",
+        message: "hardened supervised execution with source_db receipts requires an explicitly named precreated receipt table; the runtime writer must not retain schema-creation authority.",
+      });
+    }
+    if (!isRecord(capability.target) || !isSafeIdentifier(capability.target.tenant_key)) {
+      errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_TENANT_SCOPE_REQUIRED", message: "supervised-worker execution requires a trusted tenant-scoped target." });
+    }
+    const operation = isRecord(capability.operation) ? capability.operation : { kind: "update" };
+    const operationKind = operation.kind ?? "update";
+    if (operation.cardinality === "set"
+      || operationKind === "delete"
+      || capability.reversibility !== undefined
+      || !isRecord(capability.writeback)
+      || capability.writeback.mode !== "direct_sql") {
+      errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_SHAPE_INELIGIBLE", message: "the first supervised-worker release permits only native single-row direct_sql UPDATE/INSERT without compensation." });
+    }
+    if (operationKind === "update"
+      && (!isRecord(capability.conflict_guard)
+        || !isSafeIdentifier(capability.conflict_guard.column)
+        || capability.conflict_guard.weak_guard_ack === true)) {
+      errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_EXACT_GUARD_REQUIRED", message: "supervised-worker UPDATE requires an exact version/conflict guard." });
+    }
+    if (operationKind === "insert" && !isRecord(operation.deduplication)) {
+      errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_INSERT_DEDUP_REQUIRED", message: "supervised-worker INSERT requires reviewed deterministic source deduplication." });
+    }
   }
 }
 
@@ -1409,10 +1884,25 @@ function validateCapabilities(
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
   hasContracts = false,
+  generatedAuthority?: unknown,
 ): void {
   if (mode === "cloud" && value === undefined) return;
   if (hasContracts && value === undefined) return;
   if (hasContracts && Array.isArray(value) && value.length === 0) return;
+  const emptyReadOnlyShell = mode === "read_only"
+    && Array.isArray(value)
+    && value.length === 0;
+  if (emptyReadOnlyShell) {
+    const lockBound = isRecord(generatedAuthority) && generatedAuthority.enforcement === "required";
+    warnings.push({
+      path: "$.capabilities",
+      code: lockBound ? "AUTHORING_PROJECT_HAS_NO_ACTIVE_CAPABILITIES" : "READ_ONLY_CONFIG_HAS_NO_ACTIVE_CAPABILITIES",
+      message: lockBound
+        ? "This generated authoring project exposes no named runtime capabilities until an exact reviewed digest is activated."
+        : "This read-only configuration exposes no model-facing capabilities.",
+    });
+    return;
+  }
   if (!Array.isArray(value) || value.length === 0) {
     errors.push({ path: "$.capabilities", code: "CAPABILITIES_REQUIRED", message: "At least one capability is required." });
     return;
@@ -1986,6 +2476,16 @@ function validateProposalCapability(
       }
     }
   }
+  if (capability.execution !== undefined) {
+    if (!isRecord(capability.execution)) {
+      errors.push({ path: `${path}.execution`, code: "EXECUTION_NOT_OBJECT", message: "execution must be an explicit reviewed permission object." });
+    } else {
+      if (strict) checkUnknownKeys(capability.execution, EXECUTION_KEYS, `${path}.execution`, errors);
+      if (capability.execution.supervised_worker !== "allowed") {
+        errors.push({ path: `${path}.execution.supervised_worker`, code: "INVALID_SUPERVISED_WORKER_PERMISSION", message: "execution.supervised_worker must be allowed when present." });
+      }
+    }
+  }
   if (operation === "delete" && capabilityWritebackMode(capability) === "direct_sql") {
     const approval = isRecord(capability.approval) ? capability.approval : undefined;
     if (!approval || (approval.mode !== "human" && approval.mode !== "operator")) {
@@ -2289,6 +2789,11 @@ function isSafeIdentifier(value: unknown): value is string {
 
 function isSafeName(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(value);
+}
+
+function isSafeNotificationHost(value: unknown): value is string {
+  if (typeof value !== "string" || value.length < 1 || value.length > 253 || /[\s/@?#]/.test(value)) return false;
+  return /^[A-Za-z0-9.-]+$/.test(value) || /^[0-9A-Fa-f:]+$/.test(value);
 }
 
 function isQualifiedName(value: unknown): value is string {

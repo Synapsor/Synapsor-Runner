@@ -5,17 +5,40 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { buildProposalReviewView, createMcpRuntime, evaluateProposalFreshness, loadRuntimeConfigFromFile, type ProposalFreshnessEvaluation } from "@synapsor-runner/mcp-server";
-import { ProposalStore, type LocalProposalState, type StoredProposal } from "@synapsor-runner/proposal-store";
-import { protocolVersions, type FreshnessProofV1 } from "@synapsor-runner/protocol";
+import {
+  ProposalStore,
+  type AttentionEvent,
+  type AttentionItem,
+  type AttentionItemStatus,
+  type AttentionSeverity,
+  type LocalProposalState,
+  type ProposalSearchFilters,
+  type RecordAttentionEventInput,
+  type StoredProposal,
+  type WorkerControlAction,
+  type WorkerQueueItem,
+} from "@synapsor-runner/proposal-store";
+import { canonicalJsonDigest, protocolVersions, type FreshnessProofV1 } from "@synapsor-runner/protocol";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { cursorProjectStatus } from "./cursor-project.js";
+import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
   activateExplorationBoundary,
+  buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadAutoBoundaryReviewOverrides,
+  loadActivatedExplorationBoundary,
+  loadStructuredProjectEvidence,
+  pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
+  writeAutoBoundaryArtifacts,
+  type AutoBoundaryBuild,
+  type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
   type GenerationLock,
 } from "./auto-boundary.js";
+import { detectProjectContext } from "./project-detection.js";
 import {
   activateProtectedQuery,
   createProtectedQueryDraft,
@@ -24,14 +47,56 @@ import {
   type ProtectArgumentSelection,
 } from "./protect-query.js";
 import {
+  createScopedExploreRuntime,
+  ScopedExploreError,
+} from "./scoped-explore.js";
+import {
+  readGuidedOnboardingState,
+  resetGuidedOnboardingForBoundaryReview,
+  updateGuidedOnboardingState,
+} from "./guided-project.js";
+import {
+  activateGuidedAction,
+  createGuidedActionDraft,
+  guidedActionDraftDetails,
+  guidedActionOptions,
+  guidedActionStatus,
+  prepareGuidedActionPreview,
+  recordGuidedActionPreview,
+  type GuidedActionInput,
+} from "./guided-action.js";
+import {
   activateSafeActionDraft,
   prepareSafeActionPreview,
   recordSafeActionEffectPreview,
   safeActionStatus,
   type SafeActionStatus,
 } from "./safe-action.js";
+import {
+  buildLifecycleView,
+  LifecycleViewError,
+  listLifecycleSummaries,
+  resolveLifecycleProposal,
+  type LifecycleViewV1,
+} from "./lifecycle-view.js";
 
 type JsonRecord = Record<string, unknown>;
+const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v1";
+const workbenchWorkerControlActions = new Set<WorkerControlAction>([
+  "pause",
+  "resume",
+  "drain",
+  "capability_enable",
+  "capability_disable",
+  "digest_revoke",
+]);
+
+type BoundaryReviewProgress = {
+  schema_version: typeof BOUNDARY_REVIEW_PROGRESS_VERSION;
+  candidate: ExplorationBoundaryDraft;
+  confirmed_decisions: string[];
+  updated_at: string;
+};
 
 export type LocalUiOptions = {
   configPath?: string;
@@ -46,14 +111,102 @@ export type LocalUiOptions = {
   projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
   safeActionPreview?: SafeActionPreview;
+  guidedActionPreview?: GuidedActionPreview;
   freshnessEvaluator?: ProposalFreshnessEvaluator;
+  schemaInspector?: typeof inspectDatabase;
+  ledgerScope?: WorkbenchLedgerScope;
+  deploymentProfile?: WorkbenchDeploymentProfile;
+  proposalApprove?: WorkbenchProposalDecision;
+  proposalApply?: WorkbenchProposalDecision;
+  attentionAcknowledge?: WorkbenchAttentionDecision;
+  workerDecision?: WorkbenchWorkerDecision;
+  workerReconciliationInspect?: WorkbenchReconciliationInspect;
+  workerReconciliationResolve?: WorkbenchReconciliationResolve;
 };
+
+export type WorkbenchDeploymentProfile = "development" | "staging" | "production" | "unknown";
+
+export type WorkbenchLedgerScope = {
+  tenant?: string;
+  principal?: string;
+  required?: boolean;
+};
+
+export type WorkbenchProposalDecision = (input: {
+  proposalId: string;
+  actor?: string;
+  reason?: string;
+  identityToken?: string;
+}) => Promise<{ code: number }>;
+
+export type WorkbenchAttentionDecision = (input: {
+  attentionId: string;
+  actor?: string;
+  identityToken?: string;
+}) => Promise<{ code: number }>;
+
+export type WorkbenchWorkerDecision = (input: {
+  action:
+    | WorkerControlAction
+    | "cancel"
+    | "dead_letter_requeue"
+    | "dead_letter_discard";
+  capability?: string;
+  contractDigest?: `sha256:${string}`;
+  proposalId?: string;
+  retryBudget?: number;
+  actor?: string;
+  reason?: string;
+  identityToken?: string;
+}) => Promise<{ code: number }>;
+
+export type WorkbenchReconciliationView = {
+  intent_id: string;
+  proposal_id: string;
+  operation: string;
+  intent_status: string;
+  reconciliation_reason?: string;
+  classification: string;
+  supported_outcome: "applied" | "conflict" | "failed";
+  observed_digest: `sha256:${string}`;
+  expected_fields: string[];
+  observed_fields: string[];
+  member_count: number;
+  member_classifications: Record<string, number>;
+  source_database_changed: false;
+};
+
+export type WorkbenchReconciliationInspect = (input: {
+  intentId: string;
+}) => Promise<WorkbenchReconciliationView>;
+
+export type WorkbenchReconciliationResolve = (input: {
+  intentId: string;
+  outcome: "applied" | "conflict" | "failed";
+  actor?: string;
+  reason: string;
+  identityToken?: string;
+}) => Promise<{ code: number }>;
 
 export type SafeActionPreview = (input: {
   projectRoot: string;
   configPath: string;
   storePath: string;
   args: JsonRecord;
+}) => Promise<{
+  draft_digest: `sha256:${string}`;
+  proposal_id: string;
+  proposal_hash: string;
+  source_database_changed: boolean;
+}>;
+
+export type GuidedActionPreview = (input: {
+  projectRoot: string;
+  configPath: string;
+  storePath: string;
+  capabilityName: string;
+  args: JsonRecord;
+  env: NodeJS.ProcessEnv;
 }) => Promise<{
   draft_digest: `sha256:${string}`;
   proposal_id: string;
@@ -94,13 +247,42 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const projectRoot = path.resolve(options.projectRoot ?? path.dirname(configPath));
   const boundaryRoot = options.boundaryRoot ? path.resolve(options.boundaryRoot) : undefined;
   const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
+  const guidedActionPreview = options.guidedActionPreview ?? executeGuidedActionPreview;
+  const schemaInspector = options.schemaInspector ?? inspectDatabase;
   const freshnessEvaluator = options.freshnessEvaluator
     ?? ((proposal: StoredProposal) => evaluateWorkbenchFreshness(configPath, proposal));
-  const bootstrapState = { consumed: false };
+  const bootstrapState = {
+    consumed: false,
+    trustedContext: {} as Record<string, string>,
+  };
 
   const server = createServer(async (request, response) => {
     try {
-      await handleRequest({ request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, freshnessEvaluator, token, csrfToken, tour: options.tour === true, bootstrapState });
+      await handleRequest({
+        request,
+        response,
+        configPath,
+        storePath,
+        projectRoot,
+        boundaryRoot,
+        storeAccess,
+        safeActionPreview,
+        guidedActionPreview,
+        freshnessEvaluator,
+        schemaInspector,
+        ledgerScope: options.ledgerScope,
+        deploymentProfile: options.deploymentProfile,
+        proposalApprove: options.proposalApprove,
+        proposalApply: options.proposalApply,
+        attentionAcknowledge: options.attentionAcknowledge,
+        workerDecision: options.workerDecision,
+        workerReconciliationInspect: options.workerReconciliationInspect,
+        workerReconciliationResolve: options.workerReconciliationResolve,
+        token,
+        csrfToken,
+        tour: options.tour === true,
+        bootstrapState,
+      });
     } catch (error) {
       sendJson(response, 500, {
         ok: false,
@@ -145,13 +327,50 @@ async function handleRequest(input: {
   boundaryRoot?: string;
   storeAccess: LocalUiStoreAccess;
   safeActionPreview: SafeActionPreview;
+  guidedActionPreview: GuidedActionPreview;
   freshnessEvaluator: ProposalFreshnessEvaluator;
+  schemaInspector: typeof inspectDatabase;
+  ledgerScope?: WorkbenchLedgerScope;
+  deploymentProfile?: WorkbenchDeploymentProfile;
+  proposalApprove?: WorkbenchProposalDecision;
+  proposalApply?: WorkbenchProposalDecision;
+  attentionAcknowledge?: WorkbenchAttentionDecision;
+  workerDecision?: WorkbenchWorkerDecision;
+  workerReconciliationInspect?: WorkbenchReconciliationInspect;
+  workerReconciliationResolve?: WorkbenchReconciliationResolve;
   token: string;
   csrfToken: string;
   tour: boolean;
-  bootstrapState: { consumed: boolean };
+  bootstrapState: {
+    consumed: boolean;
+    trustedContext: Record<string, string>;
+  };
 }): Promise<void> {
-  const { request, response, configPath, storePath, projectRoot, boundaryRoot, storeAccess, safeActionPreview, freshnessEvaluator, token, csrfToken, tour, bootstrapState } = input;
+  const {
+    request,
+    response,
+    configPath,
+    storePath,
+    projectRoot,
+    boundaryRoot,
+    storeAccess,
+    safeActionPreview,
+    guidedActionPreview,
+    freshnessEvaluator,
+    schemaInspector,
+    ledgerScope,
+    deploymentProfile,
+    proposalApprove,
+    proposalApply,
+    attentionAcknowledge,
+    workerDecision,
+    workerReconciliationInspect,
+    workerReconciliationResolve,
+    token,
+    csrfToken,
+    tour,
+    bootstrapState,
+  } = input;
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
   if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("token")) {
     if (url.searchParams.get("token") !== token || bootstrapState.consumed) {
@@ -169,8 +388,8 @@ async function handleRequest(input: {
   }
 
   if (request.method === "GET" && url.pathname === "/") {
-    sendHtml(response, boundaryRoot
-      ? renderBoundaryShell(csrfToken)
+    sendHtml(response, boundaryRoot && url.searchParams.get("surface") !== "activity"
+      ? renderBoundaryWorkbench(csrfToken)
       : renderShell(csrfToken, tour || url.searchParams.get("tour") === "1", configPath, storePath));
     return;
   }
@@ -182,12 +401,352 @@ async function handleRequest(input: {
     }
     const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
     const review = JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as Record<string, unknown>;
+    const progress = await readBoundaryReviewProgress(projectRoot, draft);
+    const candidate = progress?.candidate ?? draft;
     sendJson(response, 200, {
       ok: true,
       draft,
+      candidate,
+      confirmed_decisions: progress?.confirmed_decisions ?? [],
       review,
-      candidate_digest: explorationBoundaryCandidateDigest(draft),
+      candidate_digest: explorationBoundaryCandidateDigest(candidate),
       active: await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+      journey: await readGuidedOnboardingState(projectRoot),
+      operator_identity: process.env.SYNAPSOR_OPERATOR_ID?.trim() || null,
+      operator_identity_mode: "dev_env",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/progress") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to save boundary-review progress." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (!isRecord(body.candidate)
+      || !Array.isArray(body.confirmed_decisions)
+      || body.confirmed_decisions.some((decision) => typeof decision !== "string")) {
+      throw new Error("Boundary-review progress requires a candidate and an array of confirmed decisions.");
+    }
+    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+    const preview = reviewExplorationBoundaryCandidate(draft, body.candidate as unknown as ExplorationBoundaryDraft);
+    const confirmed = normalizePartialReviewDecisions(draft.unresolved_decisions, body.confirmed_decisions as string[]);
+    const progress: BoundaryReviewProgress = {
+      schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+      candidate: preview.candidate,
+      confirmed_decisions: confirmed,
+      updated_at: new Date().toISOString(),
+    };
+    await writePrivateJsonAtomic(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), progress);
+    sendJson(response, 200, {
+      ok: true,
+      digest: preview.digest,
+      confirmed_decisions: confirmed,
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/regenerate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for managed boundary regeneration." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const previousActive = activeBoundaryEventMetadata(
+      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+    );
+    const overrides = applyManagedBoundaryReviewDecision(
+      await loadAutoBoundaryReviewOverrides(projectRoot),
+      body,
+    );
+    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+    const inspection = await schemaInspector({
+      engine: lock.engine,
+      databaseUrlEnv: lock.source_env,
+      schema: lock.inspected_schema,
+      env: process.env,
+    });
+    const project = await detectProjectContext(projectRoot);
+    const evidence = await loadStructuredProjectEvidence(project);
+    const build = buildAutoBoundary({
+      inspection,
+      project,
+      parsedEvidence: evidence.parsed,
+      existingContracts: evidence.existingContracts,
+      sourceEnv: lock.source_env,
+      inspectedSchema: lock.inspected_schema,
+      overrides,
+    });
+    await writeAutoBoundaryArtifacts({
+      projectRoot,
+      outputRoot: path.relative(projectRoot, boundaryRoot),
+      build,
+      force: true,
+    });
+    const journey = await resetGuidedOnboardingForBoundaryReview({
+      projectRoot,
+      schemaFingerprint: build.lock.schema_fingerprint,
+      rolePostureFingerprint: build.lock.role_posture_fingerprint,
+    }).catch(() => undefined);
+    const candidateDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.review_required",
+      severity: "warning",
+      environment: deploymentProfile ?? build.exploration_boundary.deployment_profile,
+      capability: "app.explore_data",
+      contract_digest: candidateDigest,
+      attention_key: `boundary-review:${candidateDigest}`,
+      attention_required: true,
+      immediate_default: false,
+      summary: "The changed authoring boundary requires review",
+      workbench_path: "/",
+      details: {
+        authority_type: "scoped_explore",
+        reason_code: "review_input_changed",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-boundary-review:${candidateDigest}`,
+    });
+    if (previousActive) {
+      await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
+        environment: deploymentProfile ?? build.exploration_boundary.deployment_profile,
+        capability: "app.explore_data",
+        digest: previousActive.digest,
+        reasonCode: "review_input_changed",
+        sourceEventKey: `workbench-boundary-revoked:review-input:${previousActive.digest}:${candidateDigest}`,
+      }));
+    }
+    const sensitiveOverride = sensitiveFieldOverrideEvent(body, overrides);
+    if (sensitiveOverride) {
+      await recordWorkbenchAttention(storeAccess, {
+        event_type: "sensitive_override_activated",
+        severity: "warning",
+        environment: deploymentProfile ?? build.exploration_boundary.deployment_profile,
+        capability: "auto_boundary_review",
+        contract_digest: candidateDigest,
+        attention_key: `sensitive-override:${sensitiveOverride.resourceFingerprint}:${sensitiveOverride.fieldFingerprint}`,
+        attention_required: true,
+        immediate_default: false,
+        summary: "A reviewer allowed use of a field classified as sensitive or uncertain",
+        workbench_path: "/",
+        details: {
+          authority_type: "reviewed_field_exposure",
+          resource_fingerprint: sensitiveOverride.resourceFingerprint,
+          field_fingerprint: sensitiveOverride.fieldFingerprint,
+          source_database_changed: false,
+        },
+        source_event_key: `workbench-sensitive-override:${sensitiveOverride.decisionDigest}`,
+        now: sensitiveOverride.decidedAt,
+      });
+    }
+    sendJson(response, 200, {
+      ok: true,
+      draft: build.exploration_boundary,
+      review: build.review,
+      candidate_digest: candidateDigest,
+      overrides: build.overrides,
+      active: null,
+      journey,
+      source_database_changed: false,
+      message: "Reviewed inputs were persisted and every managed artifact was regenerated. The previous Explore activation is invalidated; review and activate the new exact digest.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/project/rescan") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Managed project rescan is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to preview schema drift." });
+      return;
+    }
+    const prepared = await prepareAutoBoundaryRescan({
+      projectRoot,
+      boundaryRoot,
+      schemaInspector,
+      resetOverrides: false,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      preview_digest: prepared.previewDigest,
+      diff: prepared.diff,
+      source_database_changed: false,
+      message: "Rescan preview completed. No generated file, active boundary, protected capability, ledger record, or source row was changed.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/project/rescan/apply") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Managed project rescan is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to apply schema drift." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.expected_digest !== "string" || typeof body.confirmation !== "string") {
+      throw new Error("Applying a rescan requires the exact preview digest and confirmation.");
+    }
+    const prepared = await prepareAutoBoundaryRescan({
+      projectRoot,
+      boundaryRoot,
+      schemaInspector,
+      resetOverrides: false,
+    });
+    if (body.expected_digest !== prepared.previewDigest || body.confirmation !== `RESCAN ${prepared.previewDigest}`) {
+      throw new Error("Schema or review inputs changed after preview; preview the rescan again.");
+    }
+    const previousActive = activeBoundaryEventMetadata(
+      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+    );
+    await writeAutoBoundaryArtifacts({
+      projectRoot,
+      outputRoot: path.relative(projectRoot, boundaryRoot),
+      build: prepared.build,
+      force: true,
+    });
+    const journey = await resetGuidedOnboardingForBoundaryReview({
+      projectRoot,
+      schemaFingerprint: prepared.build.lock.schema_fingerprint,
+      rolePostureFingerprint: prepared.build.lock.role_posture_fingerprint,
+    }).catch(() => undefined);
+    const candidateDigest = explorationBoundaryCandidateDigest(prepared.build.exploration_boundary);
+    if (prepared.diff.schema_changed === true) {
+      await recordWorkbenchAttention(storeAccess, {
+        event_type: "schema.drift_detected",
+        severity: "critical",
+        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+        capability: "app.explore_data",
+        ...(previousActive ? { contract_digest: previousActive.digest } : {}),
+        attention_key: `schema-drift:${prepared.previewDigest}`,
+        attention_required: true,
+        immediate_default: true,
+        summary: "Schema drift invalidated generated authoring authority",
+        workbench_path: "/",
+        details: schemaDriftAttentionDetails(prepared.diff),
+        source_event_key: `workbench-schema-drift:${prepared.previewDigest}`,
+      });
+    }
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.review_required",
+      severity: "warning",
+      environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+      capability: "app.explore_data",
+      contract_digest: candidateDigest,
+      attention_key: `boundary-review:${candidateDigest}`,
+      attention_required: true,
+      immediate_default: false,
+      summary: "The rescanned authoring boundary requires review",
+      workbench_path: "/",
+      details: {
+        authority_type: "scoped_explore",
+        reason_code: prepared.diff.schema_changed === true ? "schema_drift" : "operator_rescan",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-boundary-review:rescan:${candidateDigest}`,
+    });
+    if (previousActive) {
+      await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
+        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+        capability: "app.explore_data",
+        digest: previousActive.digest,
+        reasonCode: prepared.diff.schema_changed === true ? "schema_drift" : "operator_rescan",
+        sourceEventKey: `workbench-boundary-revoked:rescan:${previousActive.digest}:${prepared.previewDigest}`,
+      }));
+    }
+    sendJson(response, 200, {
+      ok: true,
+      diff: prepared.diff,
+      journey,
+      active: null,
+      source_database_changed: false,
+      message: "The rescanned boundary is disabled and ready for review. Protected named capabilities and ledger history were preserved.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/project/start-over") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Managed review reset is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to reset managed review decisions." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (body.confirmation !== "START OVER REVIEW") {
+      throw new Error("Start over requires the exact confirmation START OVER REVIEW.");
+    }
+    const previousActive = activeBoundaryEventMetadata(
+      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+    );
+    const prepared = await prepareAutoBoundaryRescan({
+      projectRoot,
+      boundaryRoot,
+      schemaInspector,
+      resetOverrides: true,
+    });
+    await writeAutoBoundaryArtifacts({
+      projectRoot,
+      outputRoot: path.relative(projectRoot, boundaryRoot),
+      build: prepared.build,
+      force: true,
+    });
+    const journey = await resetGuidedOnboardingForBoundaryReview({
+      projectRoot,
+      schemaFingerprint: prepared.build.lock.schema_fingerprint,
+      rolePostureFingerprint: prepared.build.lock.role_posture_fingerprint,
+    }).catch(() => undefined);
+    const candidateDigest = explorationBoundaryCandidateDigest(prepared.build.exploration_boundary);
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.review_required",
+      severity: "warning",
+      environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+      capability: "app.explore_data",
+      contract_digest: candidateDigest,
+      attention_key: `boundary-review:${candidateDigest}`,
+      attention_required: true,
+      immediate_default: false,
+      summary: "The reset authoring boundary requires review",
+      workbench_path: "/",
+      details: {
+        authority_type: "scoped_explore",
+        reason_code: "operator_review_reset",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-boundary-review:reset:${candidateDigest}`,
+    });
+    if (previousActive) {
+      await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
+        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+        capability: "app.explore_data",
+        digest: previousActive.digest,
+        reasonCode: "operator_review_reset",
+        sourceEventKey: `workbench-boundary-revoked:reset:${previousActive.digest}:${candidateDigest}`,
+      }));
+    }
+    sendJson(response, 200, {
+      ok: true,
+      journey,
+      active: null,
+      source_database_changed: false,
+      preserved: ["local ledger", "protected named capabilities", "Runner config", "source database"],
+      message: "Managed boundary-review decisions were reset. The new zero-activation draft is ready for review.",
     });
     return;
   }
@@ -211,9 +770,10 @@ async function handleRequest(input: {
       throw new Error("Boundary activation requires expected_digest, actor, exact confirmation, and every reviewed decision.");
     }
     const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
-    const inspection = await inspectDatabase({
+    const inspection = await schemaInspector({
       engine: lock.engine,
       databaseUrlEnv: lock.source_env,
+      schema: lock.inspected_schema,
       env: process.env,
     });
     const active = await activateExplorationBoundary({
@@ -225,6 +785,30 @@ async function handleRequest(input: {
       confirmedDecisions: body.confirmed_decisions,
       currentInspection: inspection,
     });
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.activated",
+      severity: "informational",
+      environment: deploymentProfile ?? active.deployment_profile,
+      capability: "app.explore_data",
+      contract_digest: active.activation.digest,
+      attention_required: false,
+      immediate_default: false,
+      summary: "Reviewed local authoring authority activated",
+      workbench_path: "/",
+      details: {
+        authority_type: "scoped_explore",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-boundary-activated:${active.activation.digest}`,
+      now: active.activation.activated_at,
+    });
+    await updateGuidedOnboardingState({
+      projectRoot,
+      status: "boundary_active",
+      completedStep: "boundary_active",
+      authorityActive: true,
+      recommendedNextAction: "Try your first safe read.",
+    }).catch(() => undefined);
     sendJson(response, 200, {
       ok: true,
       active,
@@ -306,6 +890,23 @@ async function handleRequest(input: {
       returnsHint: body.returns_hint,
       arguments: (body.arguments ?? []) as ProtectArgumentSelection[],
     });
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.review_required",
+      severity: "warning",
+      environment: deploymentProfile ?? "unknown",
+      capability: created.draft.capability,
+      contract_digest: created.draft.contract_digest,
+      attention_key: `capability-review:${created.draft.capability}:${created.draft.contract_digest}`,
+      attention_required: true,
+      immediate_default: false,
+      summary: "Protected query capability requires human review",
+      workbench_path: "/",
+      details: {
+        authority_type: "protected_named_read",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-protected-review:${created.draft.capability}:${created.draft.contract_digest}`,
+    });
     sendJson(response, 200, {
       ok: true,
       draft: created.draft,
@@ -333,6 +934,9 @@ async function handleRequest(input: {
       || typeof body.actor !== "string") {
       throw new Error("Protected-capability activation requires capability_name, expected_digest, confirmation, and actor.");
     }
+    const previousExploreAuthority = activeBoundaryEventMetadata(
+      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+    );
     const active = await activateProtectedQuery({
       projectRoot,
       capabilityName: body.capability_name,
@@ -342,6 +946,42 @@ async function handleRequest(input: {
       configPath,
       disableExplore: body.disable_explore !== false,
     });
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.activated",
+      severity: "informational",
+      environment: deploymentProfile ?? "unknown",
+      capability: active.capability,
+      contract_digest: active.contract_digest,
+      attention_required: false,
+      immediate_default: false,
+      summary: "Protected named capability activated",
+      workbench_path: "/",
+      details: {
+        authority_type: "protected_named_read",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-protected-activated:${active.capability}:${active.contract_digest}`,
+      now: active.activated_at,
+    });
+    if (active.exploration_disabled) {
+      if (previousExploreAuthority) {
+        await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
+          environment: deploymentProfile ?? "unknown",
+          capability: "app.explore_data",
+          digest: previousExploreAuthority.digest,
+          occurredAt: active.activated_at,
+          reasonCode: "protected_capability_activated",
+          sourceEventKey: `workbench-boundary-revoked:protect:${previousExploreAuthority.digest}:${active.contract_digest}`,
+        }));
+      }
+    }
+    await updateGuidedOnboardingState({
+      projectRoot,
+      status: "add_action",
+      completedStep: "protected",
+      authorityActive: true,
+      recommendedNextAction: "Add a safe action.",
+    }).catch(() => undefined);
     sendJson(response, 200, {
       ok: true,
       active,
@@ -363,13 +1003,182 @@ async function handleRequest(input: {
       sendJson(response, 403, { ok: false, error: "CSRF token required to disable Scoped Explore." });
       return;
     }
+    const previousActive = activeBoundaryEventMetadata(
+      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+    );
     const disabled = await disableScopedExplore(projectRoot);
+    if (disabled.disabled && previousActive) {
+      await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
+        environment: deploymentProfile ?? "unknown",
+        capability: "app.explore_data",
+        digest: previousActive.digest,
+        reasonCode: "operator_disabled",
+        sourceEventKey: `workbench-boundary-revoked:disable:${previousActive.digest}`,
+      }));
+    }
     sendJson(response, 200, {
       ok: true,
       ...disabled,
       protected_capabilities_changed: false,
       message: "Scoped Explore is disabled. Existing protected named capabilities were not changed.",
     });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/explore/trusted-context") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Trusted authoring scope is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to bind trusted authoring scope." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const tenant = trustedScopeValue(body.tenant, "tenant");
+    const principal = trustedScopeValue(body.principal, "principal");
+    const active = await loadActivatedExplorationBoundary(projectRoot);
+    bootstrapState.trustedContext = {
+      [active.trusted_context.tenant_env]: tenant,
+      [active.trusted_context.principal_env]: principal,
+    };
+    sendJson(response, 200, {
+      ok: true,
+      configured: true,
+      tenant_binding: active.trusted_context.tenant_env,
+      principal_binding: active.trusted_context.principal_env,
+      persisted: false,
+      source_database_changed: false,
+      message: "Trusted scope is held only in this secured local Workbench process and remains outside model arguments.",
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/explore/preflight") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Scoped Explore is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    let runtime: Awaited<ReturnType<typeof createScopedExploreRuntime>> | undefined;
+    try {
+      runtime = await createScopedExploreRuntime({
+        projectRoot,
+        transport: "loopback_workbench",
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const description = runtime.describe({ limit: 10 });
+      sendJson(response, 200, {
+        ok: true,
+        ready: true,
+        checks: [
+          { name: "Local authoring transport", ok: true, detail: "Secured loopback Workbench" },
+          { name: "Reviewed boundary", ok: true, detail: runtime.boundary.activation.digest },
+          { name: "Deployment profile", ok: true, detail: runtime.boundary.deployment_profile },
+          { name: "Generation lock", ok: true, detail: runtime.boundary.generation_lock_fingerprint },
+          { name: "Database role posture", ok: true, detail: "Verified read-only and rechecked" },
+          { name: "Trusted scope", ok: true, detail: "Tenant and principal are bound outside model arguments" },
+        ],
+        description,
+        budgets: runtime.boundary.budgets,
+        boundary_digest: runtime.boundary.activation.digest,
+        source_database_changed: false,
+      });
+    } catch (error) {
+      const remediation = scopedExploreRemediation(error);
+      sendJson(response, 409, {
+        ok: false,
+        ready: false,
+        error_code: error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL",
+        error: error instanceof ScopedExploreError ? error.message : "Scoped Explore preflight failed safely.",
+        remediation,
+        source_database_changed: false,
+      });
+    } finally {
+      await runtime?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/explore/describe") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Scoped Explore is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    let runtime: Awaited<ReturnType<typeof createScopedExploreRuntime>> | undefined;
+    try {
+      runtime = await createScopedExploreRuntime({
+        projectRoot,
+        transport: "loopback_workbench",
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const resource = url.searchParams.get("resource")?.trim() || undefined;
+      const cursorValue = url.searchParams.get("cursor");
+      const limitValue = url.searchParams.get("limit");
+      const description = runtime.describe({
+        ...(resource ? { resource } : {}),
+        ...(cursorValue ? { cursor: Number(cursorValue) } : {}),
+        ...(limitValue ? { limit: Number(limitValue) } : {}),
+      });
+      sendJson(response, 200, { ok: true, ...description });
+    } catch (error) {
+      const remediation = scopedExploreRemediation(error);
+      sendJson(response, 409, {
+        ok: false,
+        error_code: error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL",
+        error: error instanceof ScopedExploreError ? error.message : "Scoped Explore description failed safely.",
+        remediation,
+      });
+    } finally {
+      await runtime?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/explore/run") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Scoped Explore is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Scoped Explore." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (!isRecord(body.plan)) throw new Error("Scoped Explore requires one structured plan.");
+    let runtime: Awaited<ReturnType<typeof createScopedExploreRuntime>> | undefined;
+    try {
+      runtime = await createScopedExploreRuntime({
+        projectRoot,
+        transport: "loopback_workbench",
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const result = await runtime.explore(body.plan);
+      const aggregate = body.plan.kind === "aggregate";
+      await updateGuidedOnboardingState({
+        projectRoot,
+        status: aggregate ? "protect" : "first_value",
+        completedSteps: aggregate ? ["first_safe_read", "aggregate_complete"] : ["first_safe_read"],
+        authorityActive: true,
+        recommendedNextAction: aggregate ? "Protect this analysis." : "Ask a bounded aggregate question.",
+      }).catch(() => undefined);
+      sendJson(response, 200, {
+        ok: true,
+        result,
+        plan: body.plan,
+        source_database_changed: false,
+      });
+    } catch (error) {
+      const remediation = scopedExploreRemediation(error);
+      sendJson(response, 409, {
+        ok: false,
+        error_code: error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL",
+        error: error instanceof ScopedExploreError ? error.message : "Scoped Explore refused the request.",
+        remediation,
+        source_database_changed: false,
+      });
+    } finally {
+      await runtime?.close().catch(() => undefined);
+    }
     return;
   }
 
@@ -395,6 +1204,196 @@ async function handleRequest(input: {
     }));
     const actionStatus = await safeActionStatus(projectRoot);
     sendJson(response, 200, buildWorkbench(config, manifest, cursorState, activity.proposals, activity.queryAuditCount, actionStatus));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/actions/guided") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action authoring is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    sendJson(response, 200, {
+      ok: true,
+      options: await guidedActionOptions({ projectRoot, inspection }),
+      status: await guidedActionStatus(projectRoot),
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/actions/guided/draft") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action authoring is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    const capabilityName = url.searchParams.get("capability")?.trim();
+    if (!capabilityName) throw new Error("Guided action draft lookup requires a capability.");
+    sendJson(response, 200, {
+      ok: true,
+      ...(await guidedActionDraftDetails(projectRoot, capabilityName)),
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/draft") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action authoring is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to create a guided action draft." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (!isRecord(body.action)) throw new Error("Guided action authoring requires one reviewed action object.");
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const created = await createGuidedActionDraft({
+      projectRoot,
+      action: body.action as GuidedActionInput,
+      inspection,
+    });
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.review_required",
+      severity: "warning",
+      environment: deploymentProfile ?? "unknown",
+      capability: created.draft.capability,
+      contract_digest: created.draft.contract_digest,
+      attention_key: `capability-review:${created.draft.capability}:${created.draft.contract_digest}`,
+      attention_required: true,
+      immediate_default: false,
+      summary: "Guided action capability requires human review",
+      workbench_path: "/",
+      details: {
+        authority_type: "guided_action",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-guided-action-review:${created.draft.capability}:${created.draft.contract_digest}`,
+      now: created.draft.created_at,
+    });
+    await updateGuidedOnboardingState({
+      projectRoot,
+      status: "add_action",
+      completedStep: "action_drafted",
+      authorityActive: true,
+      recommendedNextAction: "Preview the exact staging proposal. The source database will remain unchanged.",
+    }).catch(() => undefined);
+    sendJson(response, 200, {
+      ok: true,
+      draft: created.draft,
+      dsl: created.dsl,
+      contract: created.contract,
+      tests: created.tests,
+      preview_args: created.preview_args,
+      source_database_changed: false,
+      message: "Disabled action draft created. No model-facing authority was activated.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/preview") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action preview is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to preview a guided action." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.capability_name !== "string" || !isRecord(body.args)) {
+      throw new Error("Guided action preview requires capability_name and exact proposal arguments.");
+    }
+    const preview = await guidedActionPreview({
+      projectRoot,
+      configPath,
+      storePath,
+      capabilityName: body.capability_name,
+      args: body.args,
+      env: { ...process.env, ...bootstrapState.trustedContext },
+    });
+    const draft = await recordGuidedActionPreview({
+      projectRoot,
+      capabilityName: body.capability_name,
+      contractDigest: preview.draft_digest,
+      proposalId: preview.proposal_id,
+      proposalHash: preview.proposal_hash,
+      sourceDatabaseChanged: preview.source_database_changed,
+    });
+    await updateGuidedOnboardingState({
+      projectRoot,
+      status: "proposal_ready",
+      completedStep: "proposal_created",
+      authorityActive: true,
+      recommendedNextAction: "Review and activate this exact action digest.",
+    }).catch(() => undefined);
+    sendJson(response, 200, {
+      ok: true,
+      preview: draft.effect_preview,
+      source_database_changed: false,
+      model_can_approve: false,
+      model_can_apply: false,
+      message: "Proposal created. Source database changed: no. The model cannot approve or apply this proposal.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/activate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action activation is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to activate a guided action." });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked contract activation must use the governed Cloud contract-version workflow." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.capability_name !== "string"
+      || typeof body.expected_digest !== "string"
+      || typeof body.confirmation !== "string"
+      || typeof body.actor !== "string") {
+      throw new Error("Guided action activation requires capability_name, expected_digest, confirmation, and actor.");
+    }
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const active = await activateGuidedAction({
+      projectRoot,
+      capabilityName: body.capability_name,
+      expectedDigest: body.expected_digest,
+      confirmation: body.confirmation,
+      actor: body.actor,
+      inspection,
+      configPath,
+    });
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.activated",
+      severity: "informational",
+      environment: deploymentProfile ?? "unknown",
+      capability: active.capability,
+      contract_digest: active.contract_digest,
+      attention_required: false,
+      immediate_default: false,
+      summary: "Reviewed guided action capability activated",
+      workbench_path: "/",
+      details: {
+        authority_type: "guided_action",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-guided-action-activated:${active.capability}:${active.contract_digest}`,
+      now: active.activated_at,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      active,
+      tools_list_changed: true,
+      reconnect_required: true,
+      source_database_changed: false,
+      message: "The reviewed action is active. Its model-facing call creates a proposal only; approval and apply remain outside MCP.",
+    });
     return;
   }
 
@@ -444,10 +1443,588 @@ async function handleRequest(input: {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/attention") {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, {
+        ok: false,
+        error: scopeFailure,
+        source_database_changed: false,
+        next_action: "Bind this Workbench to a verified tenant scope before inspecting shared attention.",
+      });
+      return;
+    }
+    try {
+      const filters = workbenchAttentionFilters(url, ledgerScope);
+      await storeAccess("read", "attention-list", (store) => {
+        const items = store.listAttentionItems(filters);
+        sendJson(response, 200, {
+          ok: true,
+          attention: items.map((item) => workbenchAttentionProjection(
+            item,
+            store.getAttentionEvent(item.latest_event_id),
+          )),
+          source_database_changed: false,
+        });
+      });
+    } catch (error) {
+      sendJson(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        source_database_changed: false,
+      });
+    }
+    return;
+  }
+
+  const attentionDetailMatch = url.pathname.match(/^\/api\/attention\/([^/]+)$/);
+  if (request.method === "GET" && attentionDetailMatch) {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, {
+        ok: false,
+        error: scopeFailure,
+        source_database_changed: false,
+        next_action: "Bind this Workbench to a verified tenant scope before inspecting shared attention.",
+      });
+      return;
+    }
+    const attentionId = decodeURIComponent(attentionDetailMatch[1] ?? "");
+    await storeAccess("read", "attention-show", (store) => {
+      const item = scopedWorkbenchAttentionItem(store, attentionId, ledgerScope);
+      if (!item) {
+        sendJson(response, 404, { ok: false, error: "attention item not found", source_database_changed: false });
+        return;
+      }
+      const latestEvent = store.getAttentionEvent(item.latest_event_id);
+      const proposal = latestEvent?.proposal_id ? store.getProposal(latestEvent.proposal_id) : undefined;
+      sendJson(response, 200, {
+        ok: true,
+        attention: workbenchAttentionProjection(item, latestEvent),
+        proposal: proposal && proposalMatchesWorkbenchScope(proposal, ledgerScope)
+          ? summarizeProposal(proposal)
+          : null,
+        acknowledgement_is_approval: false,
+        source_database_changed: latestEvent?.details.source_database_changed === true,
+      });
+    });
+    return;
+  }
+
+  const attentionAcknowledgeMatch = url.pathname.match(/^\/api\/attention\/([^/]+)\/acknowledge$/);
+  if (request.method === "POST" && attentionAcknowledgeMatch) {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for attention acknowledgement" });
+      return;
+    }
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, {
+        ok: false,
+        error: scopeFailure,
+        source_database_changed: false,
+      });
+      return;
+    }
+    const attentionId = decodeURIComponent(attentionAcknowledgeMatch[1] ?? "");
+    const body = await readJsonBody(request);
+    const item = await storeAccess("read", "attention-acknowledge-scope", (store) =>
+      scopedWorkbenchAttentionItem(store, attentionId, ledgerScope));
+    if (!item) {
+      sendJson(response, 404, { ok: false, error: "attention item not found", source_database_changed: false });
+      return;
+    }
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    if (profile === "production" || profile === "unknown") {
+      if (!attentionAcknowledge) {
+        sendJson(response, 403, {
+          ok: false,
+          error: `Attention acknowledgement in ${profile} requires the configured verified operator identity path.`,
+          source_database_changed: false,
+          next_action: "Authenticate with the configured operator identity, then acknowledge this item again.",
+        });
+        return;
+      }
+      try {
+        const result = await attentionAcknowledge({
+          attentionId,
+          actor: stringValueOrUndefined(body.actor),
+          identityToken: workbenchIdentityToken(body.identity_token),
+        });
+        if (result.code !== 0) {
+          sendJson(response, 409, {
+            ok: false,
+            error: "Attention acknowledgement did not complete.",
+            source_database_changed: false,
+          });
+          return;
+        }
+      } catch (error) {
+        sendJson(response, 403, workbenchDecisionFailure(error, "attention acknowledgement"));
+        return;
+      }
+    } else {
+      await storeAccess("write", "attention-acknowledge", (store) => {
+        store.acknowledgeAttention({
+          attention_id: attentionId,
+          actor: stringOrDefault(body.actor, "local_operator"),
+        });
+      });
+    }
+    await storeAccess("read", "attention-acknowledge-result", (store) => {
+      const acknowledged = scopedWorkbenchAttentionItem(store, attentionId, ledgerScope);
+      sendJson(response, 200, {
+        ok: true,
+        attention: acknowledged
+          ? workbenchAttentionProjection(acknowledged, store.getAttentionEvent(acknowledged.latest_event_id))
+          : null,
+        approval_created: false,
+        source_database_changed: false,
+      });
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/notifications/status") {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, { ok: false, error: scopeFailure, source_database_changed: false });
+      return;
+    }
+    const config = await readResolvedRunnerConfig(configPath);
+    const notifications = asRecord(config.notifications);
+    const configuredSinks = Array.isArray(notifications.sinks) ? notifications.sinks.map(asRecord) : [];
+    await storeAccess("read", "notifications-status", (store) => {
+      const scopedEventIds = new Set(store.listAttentionEvents({
+        ...(ledgerScope?.tenant ? { tenant: ledgerScope.tenant } : {}),
+        ...(ledgerScope?.principal ? { principal: ledgerScope.principal } : {}),
+        limit: 1_000,
+      }).map((event) => event.event_id));
+      const deliveries = store.listNotificationDeliveries({ limit: 1_000 })
+        .filter((delivery) => !ledgerScope?.required || scopedEventIds.has(delivery.event_id));
+      sendJson(response, 200, {
+        ok: true,
+        enabled: notifications.enabled === true,
+        sinks: configuredSinks.map((sink) => ({
+          id: sink.id,
+          type: sink.type,
+          enabled: notifications.enabled === true && sink.enabled !== false,
+          minimum_severity: sink.minimum_severity ?? "warning",
+          delivery: sink.delivery ?? "immediate",
+          counts: workbenchNotificationCounts(deliveries.filter((delivery) => delivery.sink_id === sink.id)),
+        })),
+        source_database_changed: false,
+      });
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/worker") {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, { ok: false, error: scopeFailure, source_database_changed: false });
+      return;
+    }
+    const config = await readResolvedRunnerConfig(configPath);
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const operator = await workbenchOperatorPosture(configPath);
+    await storeAccess("read", "worker-status", (store) => {
+      sendJson(response, 200, {
+        ok: true,
+        worker: workbenchWorkerProjection(store, config, profile, configPath, ledgerScope),
+        operator,
+        source_database_changed: false,
+      });
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/worker/control") {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for supervised-worker controls." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const action = String(body.action ?? "") as WorkerControlAction;
+    if (!workbenchWorkerControlActions.has(action)) {
+      sendJson(response, 400, { ok: false, error: "Unsupported supervised-worker control action." });
+      return;
+    }
+    const capability = stringValueOrUndefined(body.capability);
+    const digest = stringValueOrUndefined(body.contract_digest);
+    const exactDigest = digest && /^sha256:[a-f0-9]{64}$/.test(digest)
+      ? digest as `sha256:${string}`
+      : undefined;
+    const capabilityAction = action === "capability_enable"
+      || action === "capability_disable"
+      || action === "digest_revoke";
+    if (capabilityAction && (!capability || !exactDigest)) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "Per-capability worker control requires one configured capability and exact sha256 digest.",
+      });
+      return;
+    }
+    const expectedConfirmation = workbenchWorkerConfirmation({
+      action,
+      capability,
+      contractDigest: exactDigest,
+    });
+    if (body.confirm !== expectedConfirmation) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Worker control confirmation does not match the exact target.",
+        required_confirmation: expectedConfirmation,
+        source_database_changed: false,
+      });
+      return;
+    }
+    const config = await readResolvedRunnerConfig(configPath);
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const workerConfig = asRecord(config.supervised_worker);
+    const workerPolicies = Array.isArray(workerConfig.capabilities)
+      ? workerConfig.capabilities.map(asRecord)
+      : [];
+    if (capabilityAction && !workerPolicies.some((policy) =>
+      policy.capability === capability && policy.contract_digest === exactDigest)) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "The exact capability/digest is not present in the deployment worker allowlist.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    try {
+      if (workerDecision) {
+        const result = await workerDecision({
+          action,
+          capability,
+          contractDigest: exactDigest,
+          actor: stringValueOrUndefined(body.actor),
+          reason: stringValueOrUndefined(body.reason),
+          identityToken: workbenchIdentityToken(body.identity_token),
+        });
+        if (result.code !== 0) throw new Error("The trusted worker control did not complete.");
+      } else {
+        if (profile !== "development" && profile !== "staging") {
+          throw new Error(`Worker control in ${profile} requires the configured verified operator path.`);
+        }
+        const operatorConfig = asRecord(config.operator_identity);
+        if (operatorConfig.provider === "signed_key" || operatorConfig.provider === "jwt_oidc") {
+          throw new Error("This Workbench process has no verified operator decision callback.");
+        }
+        await storeAccess("write", "worker-control", (store) => {
+          store.updateWorkerControl({
+            action,
+            ...(capability ? { capability } : {}),
+            ...(exactDigest ? { contract_digest: exactDigest } : {}),
+            actor: stringOrDefault(body.actor, "local_operator"),
+            environment: profile,
+          });
+        });
+      }
+    } catch (error) {
+      sendJson(response, 403, workbenchDecisionFailure(error, "worker control"));
+      return;
+    }
+    await storeAccess("read", "worker-control-result", (store) => {
+      sendJson(response, 200, {
+        ok: true,
+        worker: workbenchWorkerProjection(store, config, profile, configPath, ledgerScope),
+        source_database_changed: false,
+        queued_proposals_discarded: 0,
+      });
+    });
+    return;
+  }
+
+  const workerQueueActionMatch = url.pathname.match(/^\/api\/worker\/queue\/([^/]+)\/(cancel|requeue|discard)$/);
+  if (request.method === "POST" && workerQueueActionMatch) {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for worker queue recovery." });
+      return;
+    }
+    const proposalId = decodeURIComponent(workerQueueActionMatch[1] ?? "");
+    const routeAction = workerQueueActionMatch[2] as "cancel" | "requeue" | "discard";
+    const body = await readJsonBody(request);
+    const expectedConfirmation = `${routeAction.toUpperCase()} ${proposalId}`;
+    if (body.confirm !== expectedConfirmation) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Queue control confirmation does not match the exact proposal.",
+        required_confirmation: expectedConfirmation,
+        source_database_changed: false,
+      });
+      return;
+    }
+    const proposal = await storeAccess("read", "worker-queue-scope", (store) => store.getProposal(proposalId));
+    if (!proposal || !proposalMatchesWorkbenchScope(proposal, ledgerScope)) {
+      sendJson(response, 404, { ok: false, error: "worker queue item not found", source_database_changed: false });
+      return;
+    }
+    if (!workerDecision) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "This queue action requires the configured trusted operator path.",
+        next_action: "Use the exact trusted CLI command shown in the worker console.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    try {
+      const result = await workerDecision({
+        action: routeAction === "cancel"
+          ? "cancel"
+          : routeAction === "requeue"
+            ? "dead_letter_requeue"
+            : "dead_letter_discard",
+        proposalId,
+        retryBudget: routeAction === "requeue"
+          ? boundedWorkbenchInteger(body.retry_budget, 3, 1, 100)
+          : undefined,
+        actor: stringValueOrUndefined(body.actor),
+        reason: stringValueOrUndefined(body.reason),
+        identityToken: workbenchIdentityToken(body.identity_token),
+      });
+      if (result.code !== 0) throw new Error("The trusted queue action did not complete.");
+    } catch (error) {
+      sendJson(response, 403, workbenchDecisionFailure(error, "worker queue action"));
+      return;
+    }
+    const config = await readResolvedRunnerConfig(configPath);
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    await storeAccess("read", "worker-queue-result", (store) => {
+      sendJson(response, 200, {
+        ok: true,
+        worker: workbenchWorkerProjection(store, config, profile, configPath, ledgerScope),
+        source_database_changed: false,
+      });
+    });
+    return;
+  }
+
+  const workerReconciliationMatch = url.pathname.match(/^\/api\/worker\/reconciliation\/([^/]+)(?:\/resolve)?$/);
+  if (request.method === "GET" && workerReconciliationMatch && !url.pathname.endsWith("/resolve")) {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, { ok: false, error: scopeFailure, source_database_changed: false });
+      return;
+    }
+    const intentId = decodeURIComponent(workerReconciliationMatch[1] ?? "");
+    const authority = await storeAccess("read", "worker-reconciliation-scope", (store) => {
+      const intent = store.getWritebackIntent(intentId);
+      if (!intent) return undefined;
+      const proposal = store.getProposal(intent.proposal_id);
+      if (!proposal || !proposalMatchesWorkbenchScope(proposal, ledgerScope)) return undefined;
+      return { intent, proposal };
+    });
+    if (!authority) {
+      sendJson(response, 404, { ok: false, error: "writeback reconciliation item not found", source_database_changed: false });
+      return;
+    }
+    if (!workerReconciliationInspect) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "Live reconciliation inspection requires the configured trusted Runner path.",
+        next_action: `Run synapsor-runner writeback reconcile inspect ${intentId} with the active project configuration.`,
+        source_database_changed: false,
+      });
+      return;
+    }
+    try {
+      const inspection = await workerReconciliationInspect({ intentId });
+      if (inspection.intent_id !== authority.intent.intent_id
+        || inspection.proposal_id !== authority.proposal.proposal_id) {
+        throw new Error("trusted reconciliation inspection returned a different authority target");
+      }
+      sendJson(response, 200, {
+        ok: true,
+        reconciliation: inspection,
+        required_confirmation: `RECONCILE ${intentId} AS ${inspection.supported_outcome.toUpperCase()}`,
+        source_database_changed: false,
+      });
+    } catch {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Live reconciliation inspection failed safely. No outcome was selected and no source row changed.",
+        next_action: `Inspect ${intentId} from the trusted CLI and resolve the database or credential condition before retrying.`,
+        source_database_changed: false,
+      });
+    }
+    return;
+  }
+
+  if (request.method === "POST" && workerReconciliationMatch && url.pathname.endsWith("/resolve")) {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for writeback reconciliation." });
+      return;
+    }
+    const intentId = decodeURIComponent(workerReconciliationMatch[1] ?? "");
+    const body = await readJsonBody(request);
+    const outcome = stringValueOrUndefined(body.outcome) as "applied" | "conflict" | "failed" | undefined;
+    if (!outcome || !["applied", "conflict", "failed"].includes(outcome)) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "Reconciliation outcome must be applied, conflict, or failed.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    const reason = stringValueOrUndefined(body.reason);
+    if (!reason) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "Reconciliation requires an operator reason.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    const expectedConfirmation = `RECONCILE ${intentId} AS ${outcome.toUpperCase()}`;
+    if (body.confirm !== expectedConfirmation) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Reconciliation confirmation does not match the exact intent and supported outcome.",
+        required_confirmation: expectedConfirmation,
+        source_database_changed: false,
+      });
+      return;
+    }
+    const authority = await storeAccess("read", "worker-reconciliation-resolve-scope", (store) => {
+      const intent = store.getWritebackIntent(intentId);
+      if (!intent) return undefined;
+      const proposal = store.getProposal(intent.proposal_id);
+      if (!proposal || !proposalMatchesWorkbenchScope(proposal, ledgerScope)) return undefined;
+      return { intent, proposal };
+    });
+    if (!authority) {
+      sendJson(response, 404, { ok: false, error: "writeback reconciliation item not found", source_database_changed: false });
+      return;
+    }
+    if (!workerReconciliationResolve) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "Reconciliation requires the configured trusted operator path.",
+        next_action: `Use synapsor-runner writeback reconcile resolve ${intentId} after trusted source inspection.`,
+        source_database_changed: false,
+      });
+      return;
+    }
+    try {
+      const result = await workerReconciliationResolve({
+        intentId,
+        outcome,
+        actor: stringValueOrUndefined(body.actor),
+        reason,
+        identityToken: workbenchIdentityToken(body.identity_token),
+      });
+      if (result.code !== 0) throw new Error("trusted reconciliation did not complete");
+    } catch {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Reconciliation was refused because the live observation, operator authority, or intent state did not match.",
+        next_action: "Refresh the live inspection. Runner will not override the outcome supported by the source observation.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    const config = await readResolvedRunnerConfig(configPath);
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    await storeAccess("read", "worker-reconciliation-result", (store) => {
+      const resolved = store.getWritebackIntent(intentId);
+      sendJson(response, 200, {
+        ok: true,
+        intent: resolved
+          ? {
+            intent_id: resolved.intent_id,
+            proposal_id: resolved.proposal_id,
+            operation: resolved.operation,
+            status: resolved.status,
+            updated_at: resolved.updated_at,
+          }
+          : null,
+        worker: workbenchWorkerProjection(store, config, profile, configPath, ledgerScope),
+        source_database_changed: false,
+      });
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/lifecycle") {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, {
+        ok: false,
+        error: scopeFailure,
+        source_database_changed: false,
+        next_action: "Bind this Workbench to a verified tenant scope before inspecting shared activity.",
+      });
+      return;
+    }
+    try {
+      const filters = workbenchLifecycleFilters(url, ledgerScope);
+      await storeAccess("read", "lifecycle-list", (store) => {
+        sendJson(response, 200, {
+          ok: true,
+          ...listLifecycleSummaries(store, filters),
+          source_database_changed: false,
+        });
+      });
+    } catch (error) {
+      sendLifecycleError(response, error);
+    }
+    return;
+  }
+
+  const lifecycleDetailMatch = url.pathname.match(/^\/api\/lifecycle\/(.+)$/);
+  if (request.method === "GET" && lifecycleDetailMatch) {
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, {
+        ok: false,
+        error: scopeFailure,
+        source_database_changed: false,
+        next_action: "Bind this Workbench to a verified tenant scope before inspecting shared activity.",
+      });
+      return;
+    }
+    const handle = decodeURIComponent(lifecycleDetailMatch[1] ?? "");
+    const operator = await workbenchOperatorPosture(configPath);
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    try {
+      await storeAccess("read", "lifecycle-show", (store) => {
+        const resolved = resolveLifecycleProposal(store, { handle });
+        if (!proposalMatchesWorkbenchScope(resolved.proposal, ledgerScope)) {
+          sendJson(response, 404, { ok: false, error: "No lifecycle record matches that handle." });
+          return;
+        }
+        const lifecycle = buildLifecycleView(store, resolved.proposal, resolved.selection);
+        sendJson(response, 200, {
+          ok: true,
+          lifecycle: workbenchLifecycleProjection(lifecycle),
+          operator,
+          deployment_profile: profile,
+          source_database_changed: false,
+        });
+      });
+    } catch (error) {
+      sendLifecycleError(response, error);
+    }
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/proposals") {
     const state = url.searchParams.get("state") as LocalProposalState | null;
+    const scopeFailure = workbenchLedgerScopeFailure(ledgerScope);
+    if (scopeFailure) {
+      sendJson(response, 403, { ok: false, error: scopeFailure });
+      return;
+    }
     await storeAccess("read", "proposals-list", (store) => {
-      const proposals = store.listProposals(state ?? undefined).map((proposal) => summarizeProposal(proposal));
+      const proposals = store.listProposals({
+        ...(state ? { state } : {}),
+        ...(ledgerScope?.tenant ? { tenant: ledgerScope.tenant } : {}),
+        ...(ledgerScope?.principal ? { principal: ledgerScope.principal } : {}),
+      }).map((proposal) => summarizeProposal(proposal));
       sendJson(response, 200, { ok: true, proposals });
     });
     return;
@@ -483,20 +2060,36 @@ async function handleRequest(input: {
   const proposalDetailMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)$/);
   if (request.method === "GET" && proposalDetailMatch) {
     const proposalId = decodeURIComponent(proposalDetailMatch[1] ?? "");
+    const operator = await workbenchOperatorPosture(configPath);
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
     await storeAccess("read", "proposal-show", (store) => {
       const proposal = requireProposal(store, proposalId);
+      if (!proposalMatchesWorkbenchScope(proposal, ledgerScope)) {
+        sendJson(response, 404, { ok: false, error: "proposal not found" });
+        return;
+      }
       const receipts = store.receipts(proposalId);
       const reviewView = buildProposalReviewView(proposal, receipts);
+      const selection = resolveLifecycleProposal(store, { handle: `proposal:${proposalId}` }).selection;
+      const lifecycle = workbenchLifecycleProjection(buildLifecycleView(store, proposal, selection));
       sendJson(response, 200, {
         ok: true,
         proposal,
         approval_progress: store.approvalProgress(proposalId),
         review_view: reviewView,
         data_pr: buildDataPr(proposal, reviewView, receipts.at(-1)),
-        events: store.events(proposalId),
-        receipts,
-        evidence: store.getEvidenceBundle(proposal.change_set.evidence.bundle_id),
+        events: (lifecycle.timeline as Array<Record<string, unknown>>).map((event) => ({
+          kind: event.kind,
+          actor: event.actor,
+          created_at: event.occurred_at,
+          payload: event.summary,
+        })),
+        receipts: (lifecycle.writeback as JsonRecord).receipts,
+        evidence: lifecycle.evidence,
         freshness: storedFreshnessSummary(proposal, store.latestFreshnessProof(proposalId)),
+        lifecycle,
+        operator,
+        deployment_profile: profile,
       });
     });
     return;
@@ -510,6 +2103,10 @@ async function handleRequest(input: {
     }
     const proposalId = decodeURIComponent(freshnessMatch[1] ?? "");
     const proposal = await storeAccess("read", "proposal-freshness-read", (store) => requireProposal(store, proposalId));
+    if (!proposalMatchesWorkbenchScope(proposal, ledgerScope)) {
+      sendJson(response, 404, { ok: false, error: "proposal not found" });
+      return;
+    }
     const freshness = await freshnessEvaluator(proposal);
     if (freshness.required) {
       await storeAccess("write", "proposal-freshness-record", (store) => {
@@ -530,15 +2127,89 @@ async function handleRequest(input: {
       return;
     }
     if (await cloudLinkedGovernance(configPath)) {
-      sendJson(response, 403, { ok: false, error: "Cloud-linked proposals must be reviewed in Synapsor Cloud; local approval is disabled." });
+      sendJson(response, 403, {
+        ok: false,
+        error: "Cloud-linked proposals must be reviewed in Synapsor Cloud; local approval is disabled.",
+        source_database_changed: false,
+        next_action: "Open this proposal in the configured Synapsor Cloud workspace.",
+      });
+      return;
+    }
+    const proposalId = decodeURIComponent(approveMatch[1] ?? "");
+    const body = await readJsonBody(request);
+    const proposalForScope = await storeAccess("read", "proposal-approve-scope", (store) => requireProposal(store, proposalId));
+    if (!proposalMatchesWorkbenchScope(proposalForScope, ledgerScope)) {
+      sendJson(response, 404, { ok: false, error: "proposal not found" });
+      return;
+    }
+    if (proposalApprove) {
+      const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+      if (profile !== "development" && profile !== "staging") {
+        sendJson(response, 403, {
+          ok: false,
+          error: `Local Workbench approval requires an explicit development or staging profile; current profile is ${profile}.`,
+          source_database_changed: false,
+          next_action: "Use the configured Cloud or trusted production approval path.",
+        });
+        return;
+      }
+      const operator = await workbenchOperatorPosture(configPath);
+      if (operator.provider === "jwt_oidc"
+        && (typeof body.identity_token !== "string" || !body.identity_token.trim())) {
+        sendJson(response, 403, {
+          ok: false,
+          error: "This approval requires a fresh OIDC bearer token for this decision.",
+          source_database_changed: false,
+          next_action: "Authenticate with the configured identity provider, then submit this approval again.",
+        });
+        return;
+      }
+      if (body.confirm !== `APPROVE ${proposalForScope.proposal_hash}`) {
+        sendJson(response, 409, {
+          ok: false,
+          error: "Approval requires the exact current proposal hash.",
+          source_database_changed: false,
+          next_action: `Review the effect again and type APPROVE ${proposalForScope.proposal_hash}.`,
+        });
+        return;
+      }
+      try {
+        const identityToken = workbenchIdentityToken(body.identity_token);
+        const result = await proposalApprove({
+          proposalId,
+          actor: stringValueOrUndefined(body.actor),
+          reason: stringValueOrUndefined(body.reason),
+          identityToken,
+        });
+        if (result.code !== 0) {
+          sendJson(response, 409, {
+            ok: false,
+            error: "Approval did not complete. The proposal and source database were left unchanged.",
+            source_database_changed: false,
+            next_action: "Open the refreshed lifecycle and resolve its reported freshness or identity requirement.",
+          });
+          return;
+        }
+        await storeAccess("read", "proposal-approve-result", (store) => {
+          const proposal = requireProposal(store, proposalId);
+          const selection = resolveLifecycleProposal(store, { handle: `proposal:${proposalId}` }).selection;
+          sendJson(response, 200, {
+            ok: true,
+            proposal,
+            approval_progress: store.approvalProgress(proposalId),
+            lifecycle: workbenchLifecycleProjection(buildLifecycleView(store, proposal, selection)),
+            source_database_changed: false,
+          });
+        });
+      } catch (error) {
+        sendJson(response, 403, workbenchDecisionFailure(error, "approval"));
+      }
       return;
     }
     if (await signedIdentityRequired(configPath)) {
       sendJson(response, 403, { ok: false, error: "This Runner requires a signed operator identity. Approve with the CLI using --identity and --identity-key." });
       return;
     }
-    const proposalId = decodeURIComponent(approveMatch[1] ?? "");
-    const body = await readJsonBody(request);
     if (body.confirm !== "approve") throw new Error("approval requires confirm=approve");
     const proposalForCheck = await storeAccess("read", "proposal-approve-freshness-read", (store) => requireProposal(store, proposalId));
     const freshness = await freshnessEvaluator(proposalForCheck);
@@ -585,6 +2256,94 @@ async function handleRequest(input: {
     return;
   }
 
+  const applyMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/apply$/);
+  if (request.method === "POST" && applyMatch) {
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for guarded apply." });
+      return;
+    }
+    const proposalId = decodeURIComponent(applyMatch[1] ?? "");
+    const proposal = await storeAccess("read", "proposal-apply-scope", (store) => requireProposal(store, proposalId));
+    if (!proposalMatchesWorkbenchScope(proposal, ledgerScope)) {
+      sendJson(response, 404, { ok: false, error: "proposal not found" });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "Cloud-linked proposals must be applied through the governed Cloud worker path.",
+        source_database_changed: false,
+        next_action: "Open this proposal in the configured Synapsor Cloud workspace.",
+      });
+      return;
+    }
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    if (profile !== "development" && profile !== "staging") {
+      sendJson(response, 403, {
+        ok: false,
+        error: `Local Workbench apply requires an explicit development or staging profile; current profile is ${profile}.`,
+        source_database_changed: false,
+        next_action: "Use the configured trusted production apply path.",
+      });
+      return;
+    }
+    if (!proposalApply) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Guarded apply is not enabled for this Workbench process.",
+        source_database_changed: false,
+        next_action: `Run the trusted apply command for proposal ${proposalId}.`,
+      });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const operator = await workbenchOperatorPosture(configPath);
+    if (operator.provider === "jwt_oidc"
+      && (typeof body.identity_token !== "string" || !body.identity_token.trim())) {
+      sendJson(response, 403, {
+        ok: false,
+        error: "This apply decision requires a fresh OIDC bearer token.",
+        source_database_changed: false,
+        next_action: "Authenticate with the configured identity provider, then submit apply again.",
+      });
+      return;
+    }
+    if (body.confirm !== `APPLY ${proposal.proposal_hash}`) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Apply requires a second confirmation bound to the exact approved proposal hash.",
+        source_database_changed: false,
+        next_action: `Review the current effect and type APPLY ${proposal.proposal_hash}.`,
+      });
+      return;
+    }
+    try {
+      const identityToken = workbenchIdentityToken(body.identity_token);
+      const result = await proposalApply({
+        proposalId,
+        actor: stringValueOrUndefined(body.actor),
+        reason: stringValueOrUndefined(body.reason),
+        identityToken,
+      });
+      await storeAccess("read", "proposal-apply-result", (store) => {
+        const updated = requireProposal(store, proposalId);
+        const selection = resolveLifecycleProposal(store, { handle: `proposal:${proposalId}` }).selection;
+        const lifecycle = workbenchLifecycleProjection(buildLifecycleView(store, updated, selection));
+        const ok = result.code === 0 && updated.state === "applied";
+        sendJson(response, ok ? 200 : 409, {
+          ok,
+          proposal: updated,
+          lifecycle,
+          source_database_changed: updated.source_database_mutated,
+          next_action: lifecycle.next.operator ?? lifecycle.next.read_only,
+        });
+      });
+    } catch (error) {
+      sendJson(response, 403, workbenchDecisionFailure(error, "apply"));
+    }
+    return;
+  }
+
   const rejectMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/reject$/);
   if (request.method === "POST" && rejectMatch) {
     if (!hasValidCsrf(request, csrfToken)) {
@@ -592,7 +2351,12 @@ async function handleRequest(input: {
       return;
     }
     if (await cloudLinkedGovernance(configPath)) {
-      sendJson(response, 403, { ok: false, error: "Cloud-linked proposals must be reviewed in Synapsor Cloud; local rejection is disabled." });
+      sendJson(response, 403, {
+        ok: false,
+        error: "Cloud-linked proposals must be reviewed in Synapsor Cloud; local rejection is disabled.",
+        source_database_changed: false,
+        next_action: "Open this proposal in the configured Synapsor Cloud workspace.",
+      });
       return;
     }
     if (await signedIdentityRequired(configPath)) {
@@ -601,6 +2365,11 @@ async function handleRequest(input: {
     }
     const proposalId = decodeURIComponent(rejectMatch[1] ?? "");
     const body = await readJsonBody(request);
+    const proposalForScope = await storeAccess("read", "proposal-reject-scope", (store) => requireProposal(store, proposalId));
+    if (!proposalMatchesWorkbenchScope(proposalForScope, ledgerScope)) {
+      sendJson(response, 404, { ok: false, error: "proposal not found" });
+      return;
+    }
     if (body.confirm !== "reject") throw new Error("rejection requires confirm=reject");
     const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : "";
     if (!reason) throw new Error("rejection requires a reason");
@@ -621,6 +2390,11 @@ async function handleRequest(input: {
   if (request.method === "GET" && replayMatch) {
     const proposalId = decodeURIComponent(replayMatch[1] ?? "");
     await storeAccess("read", "replay-show", (store) => {
+      const proposal = requireProposal(store, proposalId);
+      if (!proposalMatchesWorkbenchScope(proposal, ledgerScope)) {
+        sendJson(response, 404, { ok: false, error: "proposal not found" });
+        return;
+      }
       sendJson(response, 200, { ok: true, replay: store.replay(proposalId) });
     });
     return;
@@ -709,11 +2483,12 @@ async function executeSafeActionPreview(input: {
   const runtime = createMcpRuntime(loadRuntimeConfigFromFile(previewConfigPath), { storePath: input.storePath });
   try {
     const result = await runtime.callTool(prepared.capability, input.args);
-    const proposalId = typeof result.proposal_id === "string" ? result.proposal_id : "";
-    const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : "";
-    if (!proposalId || !proposalHash) throw new Error("Safe Action preview did not create an immutable proposal");
+    assertSuccessfulPreviewResult(result, "Safe Action preview");
+    const proposalId = proposalIdFromToolResult(result);
+    if (!proposalId) throw new Error("Safe Action preview did not create an immutable proposal");
     if (result.source_database_changed === true || result.source_database_mutated === true) throw new Error("Safe Action preview unexpectedly changed source data");
     const proposal = await runtime.store.getProposal(proposalId);
+    const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : proposal?.proposal_hash ?? "";
     if (!proposal || proposal.proposal_hash !== proposalHash) throw new Error("Safe Action preview proposal is missing from the reviewed ledger");
     if (proposal.change_set.contract?.digest !== prepared.draft_digest) throw new Error("Safe Action preview proposal is not pinned to the current draft digest");
     return {
@@ -725,6 +2500,80 @@ async function executeSafeActionPreview(input: {
   } finally {
     await runtime.close();
   }
+}
+
+async function executeGuidedActionPreview(input: {
+  projectRoot: string;
+  configPath: string;
+  storePath: string;
+  capabilityName: string;
+  args: JsonRecord;
+  env: NodeJS.ProcessEnv;
+}): ReturnType<GuidedActionPreview> {
+  const prepared = await prepareGuidedActionPreview({
+    projectRoot: input.projectRoot,
+    capabilityName: input.capabilityName,
+    configPath: input.configPath,
+  });
+  const previewConfigPath = path.resolve(input.projectRoot, prepared.config_path);
+  const runtime = createMcpRuntime(loadRuntimeConfigFromFile(previewConfigPath), {
+    storePath: input.storePath,
+    env: input.env,
+  });
+  try {
+    const result = await runtime.callTool(prepared.capability, input.args);
+    assertSuccessfulPreviewResult(result, "Guided action preview");
+    const proposalId = proposalIdFromToolResult(result);
+    if (!proposalId) throw new Error("Guided action preview did not create an immutable proposal.");
+    if (result.source_database_changed === true || result.source_database_mutated === true) {
+      throw new Error("Guided action preview unexpectedly changed source data.");
+    }
+    const proposal = await runtime.store.getProposal(proposalId);
+    const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : proposal?.proposal_hash ?? "";
+    if (!proposal || proposal.proposal_hash !== proposalHash) {
+      throw new Error("Guided action preview proposal is missing from the reviewed ledger.");
+    }
+    if (proposal.change_set.contract?.digest !== prepared.draft_digest) {
+      throw new Error("Guided action preview proposal is not pinned to the current draft digest.");
+    }
+    return {
+      draft_digest: prepared.draft_digest,
+      proposal_id: proposalId,
+      proposal_hash: proposalHash,
+      source_database_changed: false,
+    };
+  } finally {
+    await runtime.close();
+  }
+}
+
+function assertSuccessfulPreviewResult(result: JsonRecord, label: string): void {
+  if (result.ok !== false) return;
+  const safeError = asRecord(result.error);
+  const code = typeof safeError.code === "string" ? safeError.code : "TOOL_REJECTED";
+  const message = typeof safeError.message === "string" ? safeError.message : "The runtime rejected the preview.";
+  throw new Error(`${label} failed (${code}): ${message}`);
+}
+
+function proposalIdFromToolResult(result: JsonRecord): string {
+  if (typeof result.proposal_id === "string") return result.proposal_id;
+  const proposal = asRecord(result.proposal);
+  return typeof proposal.id === "string" ? proposal.id : "";
+}
+
+async function inspectGuidedProject(
+  projectRoot: string,
+  schemaInspector: typeof inspectDatabase,
+) {
+  const lock = JSON.parse(
+    await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8"),
+  ) as GenerationLock;
+  return schemaInspector({
+    engine: lock.engine,
+    databaseUrlEnv: lock.source_env,
+    schema: lock.inspected_schema,
+    env: process.env,
+  });
 }
 
 async function readRunnerConfig(configPath: string): Promise<JsonRecord> {
@@ -1017,6 +2866,711 @@ function localStoreAccess(storePath: string): LocalUiStoreAccess {
   };
 }
 
+async function recordWorkbenchAttention(
+  storeAccess: LocalUiStoreAccess,
+  input: RecordAttentionEventInput,
+): Promise<void> {
+  await storeAccess("write", `workbench-attention:${input.event_type}`, (store) => {
+    store.recordAttentionEvent(input);
+  });
+}
+
+function activeBoundaryEventMetadata(value: unknown): {
+  digest: `sha256:${string}`;
+  activatedAt: string;
+} | undefined {
+  if (!isRecord(value) || !isRecord(value.activation)) return undefined;
+  const digest = value.activation.digest;
+  const activatedAt = value.activation.activated_at;
+  if (typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(digest)) return undefined;
+  if (typeof activatedAt !== "string" || !Number.isFinite(Date.parse(activatedAt))) return undefined;
+  return { digest: digest as `sha256:${string}`, activatedAt };
+}
+
+function capabilityRevokedAttention(input: {
+  environment: WorkbenchDeploymentProfile;
+  capability: string;
+  digest: `sha256:${string}`;
+  reasonCode: string;
+  sourceEventKey: string;
+  occurredAt?: string;
+}): RecordAttentionEventInput {
+  return {
+    event_type: "capability.revoked",
+    severity: "informational",
+    environment: input.environment,
+    capability: input.capability,
+    contract_digest: input.digest,
+    attention_required: false,
+    immediate_default: false,
+    summary: "Previously active authority was disabled",
+    workbench_path: "/",
+    details: {
+      reason_code: input.reasonCode,
+      source_database_changed: false,
+    },
+    source_event_key: input.sourceEventKey,
+    ...(input.occurredAt ? { now: input.occurredAt } : {}),
+  };
+}
+
+function sensitiveFieldOverrideEvent(
+  body: JsonRecord,
+  overrides: AutoBoundaryReviewOverrides,
+): {
+  resourceFingerprint: `sha256:${string}`;
+  fieldFingerprint: `sha256:${string}`;
+  decisionDigest: `sha256:${string}`;
+  decidedAt: string;
+} | undefined {
+  if (body.kind !== "field_exposure" || body.exposure !== "allow_reviewed_use") return undefined;
+  if (typeof body.resource_id !== "string" || typeof body.field !== "string") return undefined;
+  const decision = overrides.resources[body.resource_id]?.fields?.[body.field];
+  if (!decision || decision.exposure !== "allow_reviewed_use") return undefined;
+  return {
+    resourceFingerprint: canonicalJsonDigest({ resource: body.resource_id }),
+    fieldFingerprint: canonicalJsonDigest({ resource: body.resource_id, field: body.field }),
+    decisionDigest: canonicalJsonDigest({
+      resource: body.resource_id,
+      field: body.field,
+      decision,
+    }),
+    decidedAt: decision.decided_at,
+  };
+}
+
+function schemaDriftAttentionDetails(diff: JsonRecord): Record<string, string | number | boolean | null> {
+  const count = (value: unknown): number => Array.isArray(value) ? value.length : 0;
+  return {
+    reason_code: "generation_lock_schema_changed",
+    resources_before: typeof diff.resources_before === "number" ? diff.resources_before : 0,
+    resources_after: typeof diff.resources_after === "number" ? diff.resources_after : 0,
+    resources_added: count(diff.added_resources),
+    resources_removed: count(diff.removed_resources),
+    resources_changed: count(diff.changed_resources),
+    review_inputs_pruned: count(diff.pruned_review_inputs),
+    source_database_changed: false,
+  };
+}
+
+const workbenchProposalStates = new Set<LocalProposalState>([
+  "pending_review",
+  "approved",
+  "pending_worker",
+  "applied",
+  "rejected",
+  "conflict",
+  "failed",
+  "canceled",
+  "reconciliation_required",
+]);
+
+function workbenchLedgerScopeFailure(scope: WorkbenchLedgerScope | undefined): string | undefined {
+  if (scope?.required === true && !scope.tenant) {
+    return "Shared-ledger Workbench inspection requires a verified tenant scope and will not fall back to an organization-wide list.";
+  }
+  return undefined;
+}
+
+function workbenchAttentionFilters(
+  url: URL,
+  scope: WorkbenchLedgerScope | undefined,
+): {
+  status?: AttentionItemStatus;
+  severity?: AttentionSeverity;
+  capability?: string;
+  tenant?: string;
+  principal?: string;
+  limit?: number;
+} {
+  const status = nonEmptySearchParam(url, "status");
+  if (status && !["open", "acknowledged", "resolved", "expired"].includes(status)) {
+    throw new Error(`Unsupported attention status filter: ${status}`);
+  }
+  const severity = nonEmptySearchParam(url, "severity");
+  if (severity && !["informational", "warning", "critical"].includes(severity)) {
+    throw new Error(`Unsupported attention severity filter: ${severity}`);
+  }
+  const rawLimit = nonEmptySearchParam(url, "limit");
+  const limit = rawLimit === undefined ? 100 : Number(rawLimit);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("Attention limit must be an integer from 1 through 100.");
+  }
+  return {
+    ...(status ? { status: status as AttentionItemStatus } : {}),
+    ...(severity ? { severity: severity as AttentionSeverity } : {}),
+    ...(nonEmptySearchParam(url, "capability") ? { capability: nonEmptySearchParam(url, "capability") } : {}),
+    ...(scope?.tenant ? { tenant: scope.tenant } : {}),
+    ...(scope?.principal ? { principal: scope.principal } : {}),
+    limit,
+  };
+}
+
+function scopedWorkbenchAttentionItem(
+  store: ProposalStore,
+  attentionId: string,
+  scope: WorkbenchLedgerScope | undefined,
+): AttentionItem | undefined {
+  if (!scope?.required) return store.getAttentionItem(attentionId);
+  return store.listAttentionItems({
+    ...(scope.tenant ? { tenant: scope.tenant } : {}),
+    ...(scope.principal ? { principal: scope.principal } : {}),
+    limit: 1_000,
+  }).find((item) => item.attention_id === attentionId);
+}
+
+function workbenchAttentionProjection(
+  item: AttentionItem,
+  event: AttentionEvent | undefined,
+): Record<string, unknown> {
+  const sourceChanged = event?.details.source_database_changed === true;
+  return {
+    attention_id: item.attention_id,
+    status: item.status,
+    severity: item.severity,
+    title: item.title,
+    occurrence_count: item.occurrence_count,
+    capability: item.capability ?? null,
+    contract_digest: item.contract_digest ?? null,
+    first_seen_at: item.first_seen_at,
+    last_seen_at: item.last_seen_at,
+    acknowledged_by: item.acknowledged_by ?? null,
+    acknowledged_at: item.acknowledged_at ?? null,
+    resolved_at: item.resolved_at ?? null,
+    expires_at: item.expires_at ?? null,
+    latest_event: event ? {
+      event_id: event.event_id,
+      event_type: event.event_type,
+      occurred_at: event.occurred_at,
+      summary: event.summary,
+      proposal_id: event.proposal_id ?? null,
+      job_id: event.job_id ?? null,
+      operation_id: event.operation_id ?? null,
+      approval_source: event.approval_source ?? null,
+      worker_state: event.worker_state ?? null,
+      failure_class: event.failure_class ?? null,
+      details: event.details,
+    } : null,
+    source_database_changed: sourceChanged,
+    acknowledgement_is_approval: false,
+    what_if_ignored: workbenchAttentionInaction(event),
+    available_action: workbenchAttentionAction(event),
+  };
+}
+
+function workbenchAttentionInaction(event: AttentionEvent | undefined): string {
+  switch (event?.event_type) {
+    case "proposal.review_required":
+    case "proposal.expiring":
+      return "The proposal remains unapplied and may expire. The source database is unchanged.";
+    case "worker.unknown_outcome":
+    case "worker.reconciliation_required":
+      return "Automatic retries remain stopped. The outcome stays unresolved until a trusted operator reconciles it.";
+    case "worker.dead_lettered":
+      return "The job remains in the dead-letter queue and will not be retried automatically.";
+    case "schema.drift_detected":
+    case "contract.digest_stale":
+    case "credential.posture_changed":
+      return "Affected authority remains blocked until the underlying posture is reviewed.";
+    default:
+      return "Runner preserves the event and current fail-closed state in the ledger.";
+  }
+}
+
+function workbenchAttentionAction(event: AttentionEvent | undefined): string {
+  switch (event?.event_type) {
+    case "proposal.review_required":
+      return "review_proposal";
+    case "worker.unknown_outcome":
+    case "worker.reconciliation_required":
+      return "reconcile";
+    case "worker.dead_lettered":
+      return "inspect_dead_letter";
+    case "schema.drift_detected":
+      return "review_boundary";
+    default:
+      return "acknowledge";
+  }
+}
+
+function workbenchNotificationCounts(
+  deliveries: ReturnType<ProposalStore["listNotificationDeliveries"]>,
+): Record<string, number> {
+  const counts: Record<string, number> = {
+    pending: 0,
+    leased: 0,
+    delivered: 0,
+    retry_wait: 0,
+    dead_letter: 0,
+    suppressed: 0,
+    batched: 0,
+  };
+  for (const delivery of deliveries) counts[delivery.status] = (counts[delivery.status] ?? 0) + 1;
+  return counts;
+}
+
+function workbenchWorkerProjection(
+  store: ProposalStore,
+  config: JsonRecord,
+  profile: WorkbenchDeploymentProfile,
+  configPath: string,
+  ledgerScope?: WorkbenchLedgerScope,
+): JsonRecord {
+  const workerConfig = asRecord(config.supervised_worker);
+  const policies = Array.isArray(workerConfig.capabilities)
+    ? workerConfig.capabilities.map(asRecord)
+    : [];
+  const capabilities = Array.isArray(config.capabilities)
+    ? config.capabilities.map(asRecord)
+    : [];
+  const sources = asRecord(config.sources);
+  const control = store.workerControlState();
+  const controlByTarget = new Map(control.capability_controls.map((entry) => [
+    `${entry.capability}:${entry.contract_digest}`,
+    entry,
+  ]));
+  const items = store.listWorkerQueue().filter((item) => {
+    const proposal = store.getProposal(item.proposal_id);
+    return proposal !== undefined && proposalMatchesWorkbenchScope(proposal, ledgerScope);
+  });
+  const now = Date.now();
+  const queue = items.map((item) => {
+    const proposal = store.getProposal(item.proposal_id);
+    const capability = proposal?.action ?? proposal?.capability ?? "unknown";
+    const reconciliationIntent = item.status === "reconciliation_required"
+      ? store.listWritebackIntents({ proposal_id: item.proposal_id, limit: 10 })
+        .find((intent) => intent.status === "reconciliation_required" || intent.status === "applying")
+      : undefined;
+    return {
+      proposal_id: item.proposal_id,
+      capability,
+      status: item.status,
+      execution_mode: item.execution_mode,
+      contract_digest: item.contract_digest ?? null,
+      approval_source: workbenchWorkerApprovalSource(store, item.proposal_id),
+      attempts: item.attempts,
+      max_attempts: item.max_attempts,
+      next_attempt_at: item.next_attempt_at,
+      queue_age_seconds: Math.max(0, Math.floor((now - Date.parse(item.created_at)) / 1_000)),
+      lease_owner: item.lease_owner ?? null,
+      lease_id: item.lease_id ?? null,
+      lease_expires_at: item.lease_expires_at ?? null,
+      last_error_code: item.last_error_code ?? null,
+      terminal_outcome: item.terminal_outcome ?? null,
+      source_database_changed: proposal?.source_database_mutated === true,
+      next_action: workbenchWorkerNextAction(item),
+      cancel_confirmation: item.status === "queued" || item.status === "retry_wait"
+        ? `CANCEL ${item.proposal_id}`
+        : null,
+      recovery_confirmation: item.status === "dead_letter"
+        ? `REQUEUE ${item.proposal_id}`
+        : null,
+      discard_confirmation: item.status === "dead_letter"
+        ? `DISCARD ${item.proposal_id}`
+        : null,
+      reconciliation: reconciliationIntent
+        ? {
+          intent_id: reconciliationIntent.intent_id,
+          operation: reconciliationIntent.operation,
+          status: reconciliationIntent.status,
+          reason: reconciliationIntent.reconciliation_reason ?? "source outcome requires operator reconciliation",
+        }
+        : null,
+    };
+  });
+  const waiting = items.filter((item) => item.status === "queued" || item.status === "retry_wait");
+  const activeLeases = items.filter((item) =>
+    item.status === "leased" && Date.parse(item.lease_expires_at ?? "") > now);
+  return {
+    configured: Object.keys(workerConfig).length > 0,
+    enabled: workerConfig.enabled === true,
+    deployment_profile: profile,
+    control: {
+      mode: control.mode,
+      revision: control.revision,
+      updated_at: control.updated_at,
+      integrity_hash: control.integrity_hash,
+    },
+    summary: {
+      queue_depth: waiting.length,
+      oldest_queue_age_seconds: waiting.length > 0
+        ? Math.max(...waiting.map((item) => Math.max(0, Math.floor((now - Date.parse(item.created_at)) / 1_000))))
+        : 0,
+      active_leases: activeLeases.length,
+      retry_wait: items.filter((item) => item.status === "retry_wait").length,
+      blocked: items.filter((item) => item.status === "blocked").length,
+      dead_letters: items.filter((item) => item.status === "dead_letter").length,
+      unknown_or_reconciliation: items.filter((item) => item.status === "reconciliation_required").length,
+    },
+    capabilities: policies.map((policy) => {
+      const capabilityName = String(policy.capability ?? "");
+      const contractDigest = String(policy.contract_digest ?? "");
+      const runtimeCapability = capabilities.find((candidate) => candidate.name === capabilityName);
+      const source = runtimeCapability ? asRecord(sources[String(runtimeCapability.source ?? "")]) : {};
+      const controlEntry = controlByTarget.get(`${capabilityName}:${contractDigest}`);
+      const postureState = store.getRunnerState(`supervised_writer_posture:${canonicalJsonDigest({
+        environment: String(workerConfig.profile ?? profile),
+        capability: capabilityName,
+        contract_digest: contractDigest,
+      })}`);
+      return {
+        capability: capabilityName,
+        contract_digest: contractDigest,
+        control_status: controlEntry?.status ?? "enabled",
+        allowlist_match: true,
+        worker_identity: policy.worker_identity ?? null,
+        concurrency: policy.concurrency ?? null,
+        queue_limit: policy.queue_limit ?? null,
+        proposal_ttl_seconds: policy.proposal_ttl_seconds ?? null,
+        rate_limit: policy.rate_limit ?? null,
+        required_attention_sinks: Array.isArray(policy.required_attention_sinks)
+          ? policy.required_attention_sinks
+          : [],
+        writer_posture: {
+          source: runtimeCapability?.source ?? null,
+          reference: source.write_url_env ?? null,
+          separation: source.write_url_env && source.write_url_env !== source.read_url_env
+            ? "separate_reference"
+            : "shared_or_missing_reference",
+          hardened: policy.require_least_privilege_writer === true,
+          expected_fingerprint: policy.writer_posture_fingerprint ?? null,
+          observed_fingerprint: postureState?.observed_fingerprint ?? null,
+          status: postureState?.status ?? "not_checked",
+          checked_at: postureState?.checked_at ?? null,
+          reason_codes: Array.isArray(postureState?.reason_codes)
+            ? postureState.reason_codes
+            : [],
+          allowed_relation_count: postureState?.allowed_relation_count ?? null,
+          writable_relation_count: postureState?.writable_relation_count ?? null,
+        },
+        enable_confirmation: `ENABLE ${capabilityName} ${contractDigest}`,
+        disable_confirmation: `DISABLE ${capabilityName} ${contractDigest}`,
+        revoke_confirmation: `REVOKE ${capabilityName} ${contractDigest}`,
+      };
+    }),
+    queue,
+    start_command: `synapsor-runner worker run --supervised --config ${shellQuoteForWorkbench(configPath)}`,
+    controls_are_model_facing: false,
+    source_database_changed: items.some((item) => store.getProposal(item.proposal_id)?.source_database_mutated === true),
+  };
+}
+
+function workbenchWorkerApprovalSource(
+  store: ProposalStore,
+  proposalId: string,
+): "human" | "policy_auto" | "none" {
+  const events = store.events(proposalId);
+  if (events.some((event) => /policy_auto_approv/.test(event.kind))) return "policy_auto";
+  if (store.approvals(proposalId).some((approval) => approval.status === "approved")) return "human";
+  return "none";
+}
+
+function workbenchWorkerNextAction(item: WorkerQueueItem): string {
+  if (item.status === "queued") return "Run or resume the trusted worker, or cancel before it is leased.";
+  if (item.status === "leased") return "Let the fenced lease finish; do not start a duplicate manual apply.";
+  if (item.status === "retry_wait") return "Runner will retry only after a proven non-commit transient failure.";
+  if (item.status === "dead_letter") return "Inspect the retained proposal and receipts, then explicitly requeue or discard.";
+  if (item.status === "reconciliation_required") return "Inspect the live source observation and use the established reconciliation path.";
+  if (item.status === "blocked") return "Fix the reported policy, digest, scope, limit, or credential condition before re-enabling.";
+  if (item.status === "completed") return "Inspect the linked receipt and replay.";
+  if (item.status === "cancelled" || item.status === "discarded") return "No worker action remains.";
+  return "Inspect the proposal-centered lifecycle before taking operator action.";
+}
+
+function workbenchWorkerConfirmation(input: {
+  action: WorkerControlAction;
+  capability?: string;
+  contractDigest?: string;
+}): string {
+  if (input.action === "pause") return "PAUSE WORKER";
+  if (input.action === "resume") return "RESUME WORKER";
+  if (input.action === "drain") return "DRAIN WORKER";
+  const verb = input.action === "capability_enable"
+    ? "ENABLE"
+    : input.action === "capability_disable"
+      ? "DISABLE"
+      : "REVOKE";
+  return `${verb} ${input.capability ?? ""} ${input.contractDigest ?? ""}`.trim();
+}
+
+function boundedWorkbenchInteger(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`value must be an integer from ${minimum} through ${maximum}`);
+  }
+  return parsed;
+}
+
+function shellQuoteForWorkbench(value: string): string {
+  return /^[A-Za-z0-9_./:@=-]+$/.test(value)
+    ? value
+    : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function workbenchLifecycleFilters(
+  url: URL,
+  scope: WorkbenchLedgerScope | undefined,
+): ProposalSearchFilters {
+  const requestedTenant = nonEmptySearchParam(url, "tenant");
+  const requestedPrincipal = nonEmptySearchParam(url, "principal");
+  const state = nonEmptySearchParam(url, "state") ?? nonEmptySearchParam(url, "status");
+  if (state && !workbenchProposalStates.has(state as LocalProposalState)) {
+    throw new Error(`Unsupported lifecycle state filter: ${state}`);
+  }
+  const rawLimit = nonEmptySearchParam(url, "limit");
+  const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("Lifecycle limit must be an integer from 1 through 100.");
+  }
+  return {
+    tenant: scope?.tenant
+      ? requestedTenant && requestedTenant !== scope.tenant ? "__outside_workbench_scope__" : scope.tenant
+      : requestedTenant,
+    principal: scope?.principal
+      ? requestedPrincipal && requestedPrincipal !== scope.principal ? "__outside_workbench_scope__" : scope.principal
+      : requestedPrincipal,
+    capability: nonEmptySearchParam(url, "capability"),
+    objectType: nonEmptySearchParam(url, "object_type"),
+    objectId: nonEmptySearchParam(url, "object_id"),
+    state: state as LocalProposalState | undefined,
+    from: validatedWorkbenchDate(url, "from"),
+    to: validatedWorkbenchDate(url, "to"),
+    limit,
+  };
+}
+
+function nonEmptySearchParam(url: URL, name: string): string | undefined {
+  const value = url.searchParams.get(name)?.trim();
+  return value ? value : undefined;
+}
+
+function validatedWorkbenchDate(url: URL, name: "from" | "to"): string | undefined {
+  const value = nonEmptySearchParam(url, name);
+  if (!value) return undefined;
+  if (!Number.isFinite(Date.parse(value))) throw new Error(`${name} must be an ISO-8601 date or timestamp.`);
+  return value;
+}
+
+function proposalMatchesWorkbenchScope(
+  proposal: StoredProposal,
+  scope: WorkbenchLedgerScope | undefined,
+): boolean {
+  if (scope?.tenant && proposal.tenant_id !== scope.tenant) return false;
+  if (scope?.principal && (proposal.principal ?? proposal.change_set.principal.id) !== scope.principal) return false;
+  return scope?.required !== true || Boolean(scope.tenant);
+}
+
+function workbenchLifecycleProjection(
+  view: LifecycleViewV1,
+): JsonRecord & { next: LifecycleViewV1["next"] } {
+  const fieldNames = (value: unknown): string[] =>
+    Object.keys(isRecord(value) ? value : {}).sort();
+  const timeline = view.timeline.map((item) => {
+    const payload = asRecord(item.payload);
+    return {
+      sequence: item.sequence ?? null,
+      occurred_at: item.occurred_at ?? null,
+      kind: item.kind ?? "unknown",
+      actor: item.actor ?? null,
+      summary: Object.fromEntries([
+        "status",
+        "state",
+        "safe_code",
+        "safe_error_code",
+        "reason",
+        "approval_progress",
+        "tripped_limits",
+        "rows_affected",
+        "source_database_changed",
+        "source_database_mutated",
+        "event_id",
+        "replay_id",
+        "proposal_state",
+      ].filter((key) => payload[key] !== undefined).map((key) => [key, payload[key]])),
+    };
+  });
+  return {
+    ...view,
+    proposal: {
+      ...view.proposal,
+      change: {
+        before_fields: fieldNames(view.proposal.change.before),
+        changed_fields: fieldNames(view.proposal.change.patch),
+        after_fields: fieldNames(view.proposal.change.after),
+        frozen_member_count: Array.isArray(view.proposal.change.frozen_set)
+          ? view.proposal.change.frozen_set.length
+          : 0,
+      },
+      guards: {
+        reviewed: true,
+        fields: fieldNames(view.proposal.guards),
+      },
+    },
+    evidence: {
+      count: view.evidence.count,
+      bundles: view.evidence.bundles.map((bundle) => ({
+        evidence_bundle_id: bundle.evidence_bundle_id ?? null,
+        proposal_id: bundle.proposal_id ?? null,
+        capability: bundle.capability ?? null,
+        source_id: bundle.source_id ?? null,
+        source_table: bundle.source_table ?? null,
+        business_object: bundle.business_object ?? null,
+        object_id: bundle.object_id ?? null,
+        query_fingerprint: bundle.query_fingerprint ?? null,
+        item_count: Array.isArray(bundle.items) ? bundle.items.length : 0,
+        created_at: bundle.created_at ?? null,
+      })),
+    },
+    query_audit: {
+      count: view.query_audit.count,
+      records: view.query_audit.records.map((record) => ({
+        audit_id: record.audit_id ?? null,
+        proposal_id: record.proposal_id ?? null,
+        evidence_bundle_id: record.evidence_bundle_id ?? null,
+        capability: record.capability ?? null,
+        query_fingerprint: record.query_fingerprint ?? null,
+        row_count: record.row_count ?? null,
+        created_at: record.created_at ?? null,
+      })),
+    },
+    writeback: {
+      jobs: view.writeback.jobs.map(workbenchWritebackRecord),
+      intents: view.writeback.intents.map(workbenchWritebackRecord),
+      worker_queue: view.writeback.worker_queue
+        ? workbenchWritebackRecord(view.writeback.worker_queue)
+        : null,
+      receipts: view.writeback.receipts.map(workbenchReceiptRecord),
+      latest_outcome: view.writeback.latest_outcome
+        ? workbenchReceiptRecord(view.writeback.latest_outcome)
+        : null,
+    },
+    compensation: {
+      requested: view.compensation.requested,
+      lineage: view.compensation.lineage,
+      inverse_receipt_count: view.compensation.inverse_receipts.length,
+    },
+    timeline,
+  };
+}
+
+function workbenchWritebackRecord(record: Record<string, unknown>): JsonRecord {
+  return Object.fromEntries([
+    "writeback_job_id",
+    "intent_id",
+    "proposal_id",
+    "proposal_hash",
+    "runner_id",
+    "kind",
+    "executor",
+    "operation",
+    "status",
+    "attempt_count",
+    "attempts",
+    "max_attempts",
+    "last_error_code",
+    "reconciliation_reason",
+    "created_at",
+    "updated_at",
+  ].filter((key) => record[key] !== undefined).map((key) => [key, record[key]]));
+}
+
+function workbenchReceiptRecord(record: Record<string, unknown>): JsonRecord {
+  return Object.fromEntries([
+    "receipt_id",
+    "writeback_job_id",
+    "proposal_id",
+    "runner_id",
+    "status",
+    "receipt_authority",
+    "operation",
+    "rows_affected",
+    "source_database_mutated",
+    "safe_outcome_code",
+    "safe_error_code",
+    "receipt_hash",
+    "executed_at",
+    "created_at",
+  ].filter((key) => record[key] !== undefined).map((key) => [key, record[key]]));
+}
+
+async function resolveWorkbenchDeploymentProfile(
+  projectRoot: string,
+  configured: WorkbenchDeploymentProfile | undefined,
+): Promise<WorkbenchDeploymentProfile> {
+  if (configured) return configured;
+  const active = await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+  const draft = await readOptionalJson(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"));
+  const profile = isRecord(active)
+    ? active.deployment_profile
+    : isRecord(draft)
+      ? draft.deployment_profile
+      : undefined;
+  return profile === "development" || profile === "staging" || profile === "production"
+    ? profile
+    : "unknown";
+}
+
+async function workbenchOperatorPosture(configPath: string): Promise<JsonRecord> {
+  const rawConfig = await readOptionalJson(path.resolve(configPath));
+  const operator = isRecord(rawConfig) ? asRecord(rawConfig.operator_identity) : {};
+  const provider = operator.provider === "signed_key" || operator.provider === "jwt_oidc"
+    ? operator.provider
+    : "dev_env";
+  const applyRoles = Array.isArray(operator.apply_roles)
+    ? operator.apply_roles.filter((role): role is string => typeof role === "string")
+    : [];
+  return {
+    provider,
+    verified_required: provider !== "dev_env",
+    apply_roles: [...new Set(applyRoles)].sort(),
+    workbench_identity_input: provider === "jwt_oidc"
+      ? "bearer_token_per_decision"
+      : provider === "signed_key"
+        ? "trusted_cli_required"
+        : "development_actor",
+  };
+}
+
+function workbenchIdentityToken(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") throw new Error("Operator identity token must be a string.");
+  const token = value.trim();
+  if (token.length < 16 || token.length > 16_384) {
+    throw new Error("Operator identity token length is outside the accepted bound.");
+  }
+  return token;
+}
+
+function stringValueOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function workbenchDecisionFailure(
+  error: unknown,
+  action: "approval" | "apply" | "attention acknowledgement" | "worker control" | "worker queue action",
+): JsonRecord {
+  const raw = error instanceof Error ? error.message : String(error);
+  const message = raw
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+    .replace(/\beyJ[A-Za-z0-9._~-]{16,}\b/g, "<redacted>");
+  return {
+    ok: false,
+    error: message,
+    source_database_changed: false,
+    next_action: action === "approval"
+      ? "Refresh the lifecycle, verify the exact proposal and reviewer role, then submit a fresh decision."
+      : action === "attention acknowledgement"
+        ? "Refresh the inbox, authenticate through the configured operator identity, then acknowledge the same item."
+      : "Refresh the lifecycle and resolve the reported apply-role, freshness, conflict, or reconciliation requirement.",
+  };
+}
+
 function requireProposal(store: ProposalStore, proposalId: string): StoredProposal {
   const proposal = store.getProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
@@ -1043,6 +3597,53 @@ async function readOptionalJson(filePath: string): Promise<unknown | null> {
     return JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function readBoundaryReviewProgress(
+  projectRoot: string,
+  draft: ExplorationBoundaryDraft,
+): Promise<BoundaryReviewProgress | undefined> {
+  const filePath = path.join(projectRoot, ".synapsor/boundary-review-progress.json");
+  const raw = await readOptionalJson(filePath);
+  if (raw === null) return undefined;
+  if (!isRecord(raw)
+    || raw.schema_version !== BOUNDARY_REVIEW_PROGRESS_VERSION
+    || !isRecord(raw.candidate)
+    || !Array.isArray(raw.confirmed_decisions)
+    || raw.confirmed_decisions.some((decision) => typeof decision !== "string")
+    || typeof raw.updated_at !== "string") {
+    throw new Error("Saved boundary-review progress is invalid; use explicit Rescan or Start over rather than trusting it.");
+  }
+  const preview = reviewExplorationBoundaryCandidate(draft, raw.candidate as unknown as ExplorationBoundaryDraft);
+  return {
+    schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    candidate: preview.candidate,
+    confirmed_decisions: normalizePartialReviewDecisions(draft.unresolved_decisions, raw.confirmed_decisions as string[]),
+    updated_at: raw.updated_at,
+  };
+}
+
+function normalizePartialReviewDecisions(required: string[], confirmed: string[]): string[] {
+  if (new Set(confirmed).size !== confirmed.length) {
+    throw new Error("Boundary-review progress cannot contain duplicate confirmations.");
+  }
+  const requiredSet = new Set(required);
+  const unknown = confirmed.filter((decision) => !requiredSet.has(decision));
+  if (unknown.length) throw new Error("Boundary-review progress references a decision outside the current generated review.");
+  const confirmedSet = new Set(confirmed);
+  return required.filter((decision) => confirmedSet.has(decision));
+}
+
+async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const temporary = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(temporary, filePath);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
     throw error;
   }
 }
@@ -1074,6 +3675,31 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.setHeader("x-content-type-options", "nosniff");
   response.end(`${JSON.stringify(redactSecrets(payload), null, 2)}\n`);
+}
+
+function sendLifecycleError(response: ServerResponse, error: unknown): void {
+  if (error instanceof LifecycleViewError) {
+    const status = error.code.includes("NOT_FOUND")
+      ? 404
+      : error.code.includes("CORRUPT")
+        ? 409
+        : 400;
+    sendJson(response, status, {
+      ok: false,
+      error: error.message,
+      source_database_changed: false,
+      next_action: status === 404
+        ? "Open recent activity and choose a lifecycle, or verify the handle."
+        : "Correct the filter or explicit handle namespace and retry.",
+    });
+    return;
+  }
+  sendJson(response, 400, {
+    ok: false,
+    error: error instanceof Error ? error.message : "Lifecycle request failed.",
+    source_database_changed: false,
+    next_action: "Correct the lifecycle filter and retry.",
+  });
 }
 
 function sendHtml(response: ServerResponse, html: string): void {
@@ -1264,7 +3890,7 @@ button:disabled { opacity:.55; cursor:not-allowed; }
 pre { white-space:pre-wrap; overflow:auto; max-height:380px; background:#08111f; color:#d9f7ff; border-radius:12px; padding:14px; }
 table { width:100%; border-collapse:collapse; }
 td, th { border-bottom:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; }
-input, textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; color:var(--ink); }
+input, textarea, select { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; color:var(--ink); background:white; }
 .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
 header h1 { margin-bottom:6px; }
 .console { display:grid; grid-template-columns:300px minmax(0,1fr); gap:16px; align-items:start; }
@@ -1330,8 +3956,27 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
 .activation-step.ready { box-shadow:inset 0 3px 0 #d97706; }
 .activation-step.blocked { box-shadow:inset 0 3px 0 var(--bad); }
 .data-pr-head { border:1px solid var(--line); border-left:3px solid var(--blue); border-radius:8px; padding:12px; margin:10px 0 18px; background:var(--soft); }
+.filter-grid { display:grid; grid-template-columns:1fr; gap:8px; margin:12px 0; }
+.filter-grid label { display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:12px; }
+.filter-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.filter-actions button { flex:1 1 100px; }
+.handle-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; }
+.handle-row button { min-width:46px; padding-inline:12px; }
+.decision-panel { margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
+.decision-panel h3 { margin:0 0 6px; font-size:15px; }
+.decision-panel .exact-confirmation { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.operator-posture { margin:8px 0; color:var(--muted); font-size:12px; }
+.ledger-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0 16px; }
+.ledger-summary > div { border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--soft); }
+.ledger-summary strong { display:block; font-size:18px; }
+.attention-console { display:grid; grid-template-columns:minmax(240px, .8fr) minmax(0, 1.6fr); gap:14px; align-items:start; }
+.attention-list { display:flex; flex-direction:column; gap:8px; }
+.attention-item { width:100%; text-align:left; color:var(--ink); background:white; border:1px solid var(--line); border-radius:8px; padding:10px; box-shadow:none; font-weight:400; }
+.attention-item.sel { border-color:var(--blue); box-shadow:0 0 0 2px rgba(7,89,133,.12); }
+.attention-item strong, .attention-item span { display:block; }
+.attention-item span { margin-top:4px; color:var(--muted); font-size:12px; }
 @media (max-width: 900px) { .console { grid-template-columns:1fr; } }
-@media (max-width: 850px) { .grid, .tour-grid, .activation { grid-template-columns: 1fr; } main { padding:18px; } }
+@media (max-width: 850px) { .grid, .tour-grid, .activation, .attention-console { grid-template-columns: 1fr; } main { padding:18px; } }
 @media (max-width: 600px) {
   .data-pr-head .kv, .step .kv { grid-template-columns:1fr; gap:2px; }
   .data-pr-head .kv dd { margin-bottom:8px; }
@@ -1350,9 +3995,17 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
     <h2>First safe action</h2>
     <p>Loading reviewed project activation state...</p>
   </section>
+  <section class="card full" id="attention" style="margin-bottom:16px">
+    <h2>Human Attention Inbox</h2>
+    <p>Loading items that need an operator decision or investigation...</p>
+  </section>
+  <section class="card full" id="worker" style="margin-bottom:16px">
+    <h2>Trusted Worker</h2>
+    <p>Loading exact-digest execution eligibility, queue state, and operator controls...</p>
+  </section>
   <section class="console">
-    <div class="card" id="proposals"><h2>Proposals</h2><p>Loading...</p></div>
-    <div class="card" id="detail"><h2>Local review console</h2><p>Select a proposal to walk through what happened.</p></div>
+    <div class="card" id="proposals"><h2>Activity</h2><p>Loading recent proposal lifecycles...</p></div>
+    <div class="card" id="detail"><h2>Lifecycle review</h2><p>Select recent activity, or look up any known proposal, evidence, replay, job, intent, receipt, or audit handle.</p></div>
   </section>
   <section class="card full" id="shadow-report" style="margin-top:14px">
     <h2>Shadow studies</h2>
@@ -1370,7 +4023,7 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
 const csrfToken = "${escapedCsrf}";
 const configPath = "${escapedConfigPath}";
 const storePath = "${escapedStorePath}";
-const state = { selected: null, firstId: null, shadowStudy: null };
+const state = { selected: null, firstId: null, shadowStudy: null, activityFilters: {}, attentionSelected: null, attentionStatus: "open" };
 const byId = (id) => document.getElementById(id);
 const text = (tag, value, className = "") => { const node = document.createElement(tag); node.textContent = value == null ? "" : String(value); if (className) node.className = className; return node; };
 function el(tag, opts, kids) {
@@ -1412,6 +4065,7 @@ function humanizeState(s) {
     case "applied": return { label: "Committed", tone: "ok" };
     case "conflict": return { label: "Conflict blocked", tone: "warn" };
     case "failed": return { label: "Failed", tone: "bad" };
+    case "reconciliation_required": return { label: "Reconciliation required", tone: "warn" };
     case "rejected": return { label: "Rejected", tone: "bad" };
     case "canceled": return { label: "Canceled", tone: "muted" };
     default: return { label: s, tone: "muted" };
@@ -1425,10 +4079,18 @@ function eventMeta(kind) {
     proposal_rejected: { label: "Rejected", tone: "bad" },
     proposal_canceled: { label: "Canceled", tone: "muted" },
     proposal_pending_worker: { label: "Queued for trusted runner", tone: "wait" },
+    proposal_freshness_checked: { label: "Freshness checked against live source", tone: "info" },
+    proposal_freshness_approval_blocked: { label: "Approval blocked by freshness", tone: "warn" },
+    operator_authorized: { label: "Operator apply authority verified", tone: "ok" },
     writeback_job_recorded: { label: "Writeback job recorded", tone: "info" },
+    writeback_intent_recorded: { label: "Writeback intent recorded", tone: "info" },
     writeback_applied: { label: "Committed by trusted runner", tone: "ok" },
+    writeback_already_applied: { label: "Idempotent retry matched prior receipt", tone: "ok" },
     writeback_conflict: { label: "Conflict guard blocked stale write", tone: "warn" },
     writeback_failed: { label: "Writeback failed", tone: "bad" },
+    writeback_reconciliation_required: { label: "Reconciliation required", tone: "warn" },
+    compensation_proposal_created: { label: "Compensation proposal created", tone: "info" },
+    replay_recorded: { label: "Replay record linked", tone: "info" },
   };
   return map[kind] || { label: String(kind).replace(/_/g, " "), tone: "info" };
 }
@@ -1469,6 +4131,9 @@ function shellQuote(value) {
 }
 function trustedApplyCommand(proposalId) {
   return "synapsor-runner apply " + shellQuote(proposalId) + " --config " + shellQuote(configPath) + " --store " + shellQuote(storePath);
+}
+function trustedApproveCommand(proposalId) {
+  return "synapsor-runner proposals approve " + shellQuote(proposalId) + " --config " + shellQuote(configPath) + " --store " + shellQuote(storePath);
 }
 function trustedRevertCommand(proposalId) {
   return "synapsor-runner revert " + shellQuote(proposalId) + " --config " + shellQuote(configPath) + " --store " + shellQuote(storePath);
@@ -1616,6 +4281,434 @@ async function loadWorkbench() {
     root.append(panel);
   }
 }
+async function loadAttention() {
+  const statusFilter = state.attentionStatus === "all" ? "" : "&status=" + encodeURIComponent(state.attentionStatus);
+  const [payload, notificationStatus] = await Promise.all([
+    api("/api/attention?limit=100" + statusFilter),
+    api("/api/notifications/status"),
+  ]);
+  const root = byId("attention");
+  const statusSelect = document.createElement("select");
+  statusSelect.setAttribute("aria-label", "Human attention status");
+  for (const value of ["open", "acknowledged", "resolved", "expired", "all"]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value === "all" ? "All states" : value[0].toUpperCase() + value.slice(1);
+    option.selected = value === state.attentionStatus;
+    statusSelect.append(option);
+  }
+  statusSelect.onchange = async () => {
+    state.attentionStatus = statusSelect.value;
+    state.attentionSelected = null;
+    await loadAttention();
+  };
+  root.replaceChildren(el("div", { class: "detail-head" }, [
+    el("div", {}, [
+      el("h2", { text: "Human Attention Inbox", style: "margin:0" }),
+      el("div", { class: "sub", text: "One item per related issue; immutable event history remains in the ledger" }),
+    ]),
+    el("div", { class: "filter-actions" }, [
+      statusSelect,
+      chip((payload.attention || []).length + " " + state.attentionStatus, (payload.attention || []).length && state.attentionStatus === "open" ? "warn" : "ok"),
+    ]),
+  ]));
+  const sinkLine = (notificationStatus.sinks || []).map((sink) =>
+    sink.id + ": " + (sink.enabled ? "enabled" : "disabled") + ", delivered " + (sink.counts.delivered || 0) + ", dead letter " + (sink.counts.dead_letter || 0)
+  ).join(" · ");
+  root.append(el("p", { class: "status-line", text: notificationStatus.enabled
+    ? "External delivery is enabled. " + (sinkLine || "No enabled sink.")
+    : "External notifications are off. Workbench and the ledger remain the source of truth." }));
+  const items = payload.attention || [];
+  if (!items.length) {
+    state.attentionSelected = null;
+    root.append(el("div", { class: "callout", text: state.attentionStatus === "open"
+      ? "Nothing needs human attention. Successful automatic activity remains available in the lifecycle timeline without interrupting you."
+      : "No attention items match this state. Change the status filter to inspect another part of the durable history." }));
+    return;
+  }
+  if (!items.some((item) => item.attention_id === state.attentionSelected)) state.attentionSelected = items[0].attention_id;
+  const list = el("div", { class: "attention-list" });
+  const detail = el("div", { id: "attention-detail" });
+  for (const item of items) {
+    const button = el("button", {
+      class: "attention-item" + (item.attention_id === state.attentionSelected ? " sel" : ""),
+      onclick: async () => {
+        state.attentionSelected = item.attention_id;
+        await loadAttention();
+      },
+    }, [
+      el("strong", { text: item.title }),
+      el("span", { text: item.severity.toUpperCase() + " · " + item.occurrence_count + " related event" + (item.occurrence_count === 1 ? "" : "s") }),
+      el("span", { text: item.capability || "Runner operations" }),
+    ]);
+    list.append(button);
+  }
+  root.append(el("div", { class: "attention-console" }, [list, detail]));
+  await loadAttentionDetail(state.attentionSelected);
+}
+async function loadAttentionDetail(attentionId) {
+  const root = byId("attention-detail");
+  if (!root || !attentionId) return;
+  const payload = await api("/api/attention/" + encodeURIComponent(attentionId));
+  const item = payload.attention;
+  const event = item.latest_event || {};
+  root.replaceChildren(el("div", { class: "detail-head" }, [
+    el("div", {}, [
+      el("h3", { text: item.title, style: "margin:0" }),
+      el("div", { class: "sub", text: item.capability || "Runner operations" }),
+    ]),
+    chip(item.severity, item.severity === "critical" ? "bad" : "warn"),
+  ]));
+  root.append(el("p", { text: event.summary || item.title }));
+  root.append(el("div", { class: "badge-row" }, [
+    el("span", { class: "badge " + (item.source_database_changed ? "yes" : "no"), text: "Source database changed: " + (item.source_database_changed ? "yes" : "no") }),
+  ]));
+  root.append(el("p", { text: "If you do nothing: " + item.what_if_ignored }));
+  const actions = el("div", { class: "actions" });
+  if (event.proposal_id) {
+    actions.append(el("button", { text: "Review exact proposal", onclick: async () => {
+      await loadProposals();
+      await loadDetail(event.proposal_id);
+      byId("proposals").scrollIntoView({ behavior: "smooth", block: "start" });
+    } }));
+  }
+  if (item.available_action === "reconcile") {
+    actions.append(el("button", { class: "secondary", text: "Inspect reconciliation queue", onclick: () => {
+      byId("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+    } }));
+  }
+  if (item.status === "open") {
+    const actor = document.createElement("input");
+    actor.placeholder = "Operator identity";
+    actor.setAttribute("aria-label", "Attention acknowledgement operator");
+    const identityToken = document.createElement("input");
+    identityToken.type = "password";
+    identityToken.placeholder = "Fresh operator token when required";
+    identityToken.autocomplete = "off";
+    identityToken.setAttribute("aria-label", "Attention acknowledgement identity token");
+    const status = el("div", { class: "status-line", text: "Acknowledgement only records that you saw this. It cannot approve or apply." });
+    const acknowledge = el("button", { class: "secondary", text: "Acknowledge", onclick: async () => {
+      acknowledge.disabled = true;
+      try {
+        await api("/api/attention/" + encodeURIComponent(attentionId) + "/acknowledge", {
+          method: "POST",
+          headers: { "x-synapsor-csrf": csrfToken },
+          body: JSON.stringify({ actor: actor.value, identity_token: identityToken.value }),
+        });
+        identityToken.value = "";
+        status.textContent = "Acknowledged. No proposal was approved and no source row was changed.";
+        await loadAttention();
+      } catch (error) {
+        identityToken.value = "";
+        status.textContent = error.message;
+        acknowledge.disabled = false;
+      }
+    } });
+    root.append(actor, identityToken);
+    actions.append(acknowledge);
+    root.append(actions, status);
+  } else {
+    root.append(actions);
+  }
+  root.append(rawJson("Safe event metadata", event));
+}
+async function loadWorker() {
+  const payload = await api("/api/worker");
+  const worker = payload.worker || {};
+  const operator = payload.operator || {};
+  const summary = worker.summary || {};
+  const root = byId("worker");
+  const mode = worker.control ? worker.control.mode : "active";
+  root.replaceChildren(el("div", { class: "detail-head" }, [
+    el("div", {}, [
+      el("h2", { text: "Trusted Worker", style: "margin:0" }),
+      el("div", { class: "sub", text: "Approval and execution stay separate; controls are never MCP tools" }),
+    ]),
+    chip(worker.enabled ? mode : "disabled", worker.enabled && mode === "active" ? "ok" : "wait"),
+  ]));
+  const totals = el("div", { class: "ledger-summary" });
+  for (const [label, value] of [
+    ["Waiting", summary.queue_depth || 0],
+    ["Active leases", summary.active_leases || 0],
+    ["Needs recovery", (summary.dead_letters || 0) + (summary.unknown_or_reconciliation || 0)],
+  ]) {
+    totals.append(el("div", {}, [el("strong", { text: value }), el("span", { class: "sub", text: label })]));
+  }
+  root.append(totals);
+  root.append(el("p", { class: "status-line", text: "Profile: " + worker.deployment_profile
+    + " · control revision: " + ((worker.control && worker.control.revision) || 0)
+    + " · oldest waiting: " + (summary.oldest_queue_age_seconds || 0) + "s" }));
+  root.append(el("div", { class: "callout", text: worker.enabled
+    ? "The model can submit only bounded requests. A reviewed policy may approve them, but only this separately trusted worker can invoke guarded apply."
+    : "Supervised automatic apply is disabled. Approved proposals remain available for manual guarded apply." }));
+
+  const identityActor = document.createElement("input");
+  identityActor.placeholder = "Operator identity";
+  identityActor.value = "local_operator";
+  identityActor.setAttribute("aria-label", "Worker control operator identity");
+  if (operator.provider !== "dev_env") identityActor.classList.add("hidden");
+  const identityToken = document.createElement("input");
+  identityToken.type = "password";
+  identityToken.autocomplete = "off";
+  identityToken.placeholder = "Fresh OIDC bearer token for this decision";
+  identityToken.setAttribute("aria-label", "Worker control OIDC token");
+  if (operator.provider !== "jwt_oidc") identityToken.classList.add("hidden");
+  const reason = document.createElement("textarea");
+  reason.rows = 2;
+  reason.placeholder = "Operator reason";
+  reason.setAttribute("aria-label", "Worker control reason");
+  root.append(el("div", { class: "operator-posture", text: "Operator identity: " + operator.provider
+    + (operator.verified_required ? " (verified decision required)" : " (development, unverified)") }));
+  if (operator.provider !== "signed_key") root.append(identityActor, identityToken, reason);
+
+  const runControl = async (action, capability, digest, confirmation, statusNode) => {
+    const token = identityToken.value;
+    identityToken.value = "";
+    try {
+      await api("/api/worker/control", {
+        method: "POST",
+        headers: { "x-synapsor-csrf": csrfToken },
+        body: JSON.stringify({
+          action,
+          capability,
+          contract_digest: digest,
+          confirm: confirmation,
+          actor: identityActor.value,
+          reason: reason.value,
+          identity_token: token || undefined,
+        }),
+      });
+      statusNode.textContent = "Control recorded. Queued proposals were preserved and no source row changed.";
+      await Promise.all([loadWorker(), loadAttention()]);
+    } catch (error) {
+      statusNode.textContent = error.message;
+    }
+  };
+
+  const globalControl = el("section", { class: "decision-panel" });
+  globalControl.append(el("h3", { text: "Worker lease control" }));
+  if (operator.provider === "signed_key") {
+    globalControl.append(
+      el("p", { text: "The browser never accepts a private key. Run the exact signed CLI control instead." }),
+      el("div", { class: "mono", text: "synapsor-runner worker "
+        + (mode === "active" ? "pause" : "resume") + " --yes --config " + configPath, style: "display:block" }),
+    );
+  } else {
+    const selector = document.createElement("select");
+    selector.setAttribute("aria-label", "Worker lease control action");
+    for (const [value, label] of [["pause", "Pause new leases"], ["resume", "Resume leasing"], ["drain", "Drain without new leases"]]) {
+      const option = document.createElement("option"); option.value = value; option.textContent = label; selector.append(option);
+    }
+    selector.value = mode === "active" ? "pause" : "resume";
+    const confirmation = document.createElement("input");
+    confirmation.className = "exact-confirmation";
+    confirmation.setAttribute("aria-label", "Exact worker lease control confirmation");
+    const expected = () => selector.value === "pause" ? "PAUSE WORKER" : selector.value === "resume" ? "RESUME WORKER" : "DRAIN WORKER";
+    const updateExpected = () => { confirmation.placeholder = expected(); };
+    selector.onchange = updateExpected; updateExpected();
+    const status = el("div", { class: "status-line", text: "This changes leasing only. It does not discard queued work or interrupt a committed transaction." });
+    const submit = el("button", { text: "Apply exact worker control", onclick: async () => {
+      submit.disabled = true;
+      await runControl(selector.value, undefined, undefined, confirmation.value, status);
+      submit.disabled = false;
+    } });
+    globalControl.append(selector, confirmation, el("div", { class: "actions" }, submit), status);
+  }
+  root.append(globalControl);
+
+  const capabilitySection = el("section", { class: "decision-panel" });
+  capabilitySection.append(el("h3", { text: "Exact capability digests" }));
+  const capabilities = worker.capabilities || [];
+  if (!capabilities.length) {
+    capabilitySection.append(el("p", { text: "No exact capability/digest worker allowlist is configured." }));
+  }
+  for (const capability of capabilities) {
+    const row = el("details", { class: "raw" });
+    row.append(el("summary", { text: capability.capability + " · " + capability.control_status }));
+    const kv = el("dl", { class: "kv" });
+    kv.append(
+      el("dt", { text: "Exact digest" }), el("dd", { text: capability.contract_digest }),
+      el("dt", { text: "Worker identity" }), el("dd", { text: capability.worker_identity || "(deployment default)" }),
+      el("dt", { text: "Writer posture" }), el("dd", { text: capability.writer_posture.separation + " · " + capability.writer_posture.live_role_verification }),
+      el("dt", { text: "Required sinks" }), el("dd", { text: (capability.required_attention_sinks || []).join(", ") || "none" }),
+    );
+    row.append(kv);
+    if (operator.provider === "signed_key") {
+      row.append(el("div", { class: "mono", text: "synapsor-runner worker disable "
+        + capability.capability + " --digest " + capability.contract_digest + " --yes --config " + configPath, style: "display:block" }));
+    } else {
+      const selector = document.createElement("select");
+      selector.setAttribute("aria-label", "Exact capability digest control action for " + capability.capability);
+      for (const [value, label] of [["capability_enable", "Enable exact digest"], ["capability_disable", "Disable exact digest"], ["digest_revoke", "Revoke digest permanently"]]) {
+        const option = document.createElement("option"); option.value = value; option.textContent = label; selector.append(option);
+      }
+      selector.value = capability.control_status === "enabled" ? "capability_disable" : "capability_enable";
+      if (capability.control_status === "revoked") selector.value = "digest_revoke";
+      const confirmation = document.createElement("input");
+      confirmation.className = "exact-confirmation";
+      confirmation.setAttribute("aria-label", "Exact capability digest confirmation for " + capability.capability);
+      const expected = () => selector.value === "capability_enable"
+        ? capability.enable_confirmation
+        : selector.value === "capability_disable"
+          ? capability.disable_confirmation
+          : capability.revoke_confirmation;
+      const updateExpected = () => { confirmation.placeholder = expected(); };
+      selector.onchange = updateExpected; updateExpected();
+      const status = el("div", { class: "status-line", text: "Only the named capability and exact digest are affected." });
+      const submit = el("button", { class: selector.value === "digest_revoke" ? "danger" : "secondary", text: "Apply exact digest control", onclick: async () => {
+        submit.disabled = true;
+        await runControl(selector.value, capability.capability, capability.contract_digest, confirmation.value, status);
+        submit.disabled = false;
+      } });
+      row.append(selector, confirmation, el("div", { class: "actions" }, submit), status);
+    }
+    capabilitySection.append(row);
+  }
+  root.append(capabilitySection);
+
+  const queueSection = el("section", { class: "decision-panel" });
+  queueSection.append(el("div", { class: "detail-head" }, [
+    el("h3", { text: "Execution queue", style: "margin:0" }),
+    chip((worker.queue || []).length + " tracked", (worker.queue || []).length ? "wait" : "ok"),
+  ]));
+  if (!(worker.queue || []).length) queueSection.append(el("p", { text: "No worker jobs are recorded." }));
+  for (const item of worker.queue || []) {
+    const row = el("details", { class: "raw" });
+    row.append(el("summary", { text: item.status.toUpperCase() + " · " + item.capability + " · " + item.proposal_id }));
+    const kv = el("dl", { class: "kv" });
+    kv.append(
+      el("dt", { text: "Approval / execution" }), el("dd", { text: item.approval_source + " / " + item.execution_mode }),
+      el("dt", { text: "Digest" }), el("dd", { text: item.contract_digest || "(legacy)" }),
+      el("dt", { text: "Attempt" }), el("dd", { text: item.attempts + "/" + item.max_attempts }),
+      el("dt", { text: "Lease" }), el("dd", { text: item.lease_owner ? item.lease_owner + " until " + item.lease_expires_at : "not leased" }),
+      el("dt", { text: "Safe error" }), el("dd", { text: item.last_error_code || "none" }),
+      el("dt", { text: "Next" }), el("dd", { text: item.next_action }),
+    );
+    row.append(kv);
+    const actions = el("div", { class: "actions" });
+    actions.append(el("button", { class: "secondary", text: "Open proposal timeline", onclick: async () => {
+      await loadProposals(); await loadDetail(item.proposal_id); byId("proposals").scrollIntoView({ behavior: "smooth", block: "start" });
+    } }));
+    if (item.cancel_confirmation || item.recovery_confirmation) {
+      if (operator.provider === "signed_key") {
+        const subcommand = item.cancel_confirmation ? "cancel" : "dead-letter requeue";
+        row.append(
+          el("p", { text: "The browser never accepts a private signing key. Use the exact trusted CLI recovery path." }),
+          el("div", { class: "mono", text: "synapsor-runner worker " + subcommand + " "
+            + item.proposal_id + " --yes --config " + configPath, style: "display:block" }),
+        );
+      } else {
+        const selector = document.createElement("select");
+        selector.setAttribute("aria-label", "Worker queue control action for " + item.proposal_id);
+        const choices = item.cancel_confirmation
+          ? [["cancel", "Cancel before lease"]]
+          : [["requeue", "Requeue dead letter"], ["discard", "Discard terminal dead letter"]];
+        for (const [value, label] of choices) {
+          const option = document.createElement("option"); option.value = value; option.textContent = label; selector.append(option);
+        }
+        const confirmation = document.createElement("input");
+        confirmation.className = "exact-confirmation";
+        confirmation.setAttribute("aria-label", "Exact worker queue confirmation for " + item.proposal_id);
+        const expected = () => selector.value === "cancel"
+          ? item.cancel_confirmation
+          : selector.value === "discard"
+            ? item.discard_confirmation
+            : item.recovery_confirmation;
+        const updateExpected = () => { confirmation.placeholder = expected(); };
+        selector.onchange = updateExpected; updateExpected();
+        const status = el("div", { class: "status-line", text: item.cancel_confirmation
+          ? "Cancellation is allowed only before lease."
+          : "Dead-letter recovery requires a verified operator and never replays a database mutation by itself." });
+        const submit = el("button", { class: item.cancel_confirmation ? "danger" : "secondary", text: "Apply exact queue control", onclick: async () => {
+          submit.disabled = true;
+          const token = identityToken.value; identityToken.value = "";
+          try {
+            await api("/api/worker/queue/" + encodeURIComponent(item.proposal_id) + "/" + selector.value, {
+              method: "POST",
+              headers: { "x-synapsor-csrf": csrfToken },
+              body: JSON.stringify({
+                confirm: confirmation.value,
+                actor: identityActor.value,
+                reason: reason.value,
+                identity_token: token || undefined,
+                retry_budget: 3,
+              }),
+            });
+            await Promise.all([loadWorker(), loadAttention(), loadProposals()]);
+          } catch (error) {
+            status.textContent = error.message;
+            submit.disabled = false;
+          }
+        } });
+        row.append(selector, confirmation);
+        actions.append(submit);
+        row.append(status);
+      }
+    }
+    if (item.reconciliation) {
+      const intentId = item.reconciliation.intent_id;
+      if (operator.provider === "signed_key") {
+        row.append(
+          el("p", { text: "Inspect the live source from the trusted terminal before signing a reconciliation decision." }),
+          el("div", { class: "mono", text: "synapsor-runner writeback reconcile inspect "
+            + intentId + " --config " + configPath, style: "display:block" }),
+        );
+      } else {
+        const inspectionRoot = el("div", { class: "callout", text: "Live source state has not been inspected in this browser session." });
+        const inspect = el("button", { class: "secondary", text: "Inspect live reconciliation", onclick: async () => {
+          inspect.disabled = true;
+          try {
+            const payload = await api("/api/worker/reconciliation/" + encodeURIComponent(intentId));
+            const view = payload.reconciliation;
+            inspectionRoot.replaceChildren(
+              el("strong", { text: "Supported outcome: " + view.supported_outcome }),
+              el("p", { text: "Live classification: " + view.classification
+                + " · observed digest: " + view.observed_digest
+                + " · members: " + view.member_count }),
+              el("p", { text: "Runner returns only field names, classification, and digests here; source-row values remain outside Workbench." }),
+            );
+            const confirmation = document.createElement("input");
+            confirmation.className = "exact-confirmation";
+            confirmation.placeholder = payload.required_confirmation;
+            const resolveStatus = el("div", { class: "status-line", text: "Resolution re-inspects the source and refuses any outcome other than the one still supported." });
+            const resolve = el("button", { class: "danger", text: "Resolve exact observed outcome", onclick: async () => {
+              resolve.disabled = true;
+              const token = identityToken.value; identityToken.value = "";
+              try {
+                await api("/api/worker/reconciliation/" + encodeURIComponent(intentId) + "/resolve", {
+                  method: "POST",
+                  headers: { "x-synapsor-csrf": csrfToken },
+                  body: JSON.stringify({
+                    outcome: view.supported_outcome,
+                    confirm: confirmation.value,
+                    actor: identityActor.value,
+                    reason: reason.value,
+                    identity_token: token || undefined,
+                  }),
+                });
+                await Promise.all([loadWorker(), loadAttention(), loadProposals()]);
+              } catch (error) {
+                resolveStatus.textContent = error.message;
+                resolve.disabled = false;
+              }
+            } });
+            inspectionRoot.append(confirmation, el("div", { class: "actions" }, resolve), resolveStatus);
+          } catch (error) {
+            inspectionRoot.textContent = error.message;
+            inspect.disabled = false;
+          }
+        } });
+        row.append(inspectionRoot);
+        actions.append(inspect);
+      }
+    }
+    row.append(actions);
+    queueSection.append(row);
+  }
+  queueSection.append(el("p", { class: "status-line", text: "Starting a long-running worker remains an explicit operator process action:" }));
+  queueSection.append(el("div", { class: "mono", text: worker.start_command, style: "display:block" }));
+  root.append(queueSection, rawJson("Safe worker status JSON", worker));
+}
 async function loadTools() {
   const payload = await api("/api/tools");
   const root = byId("tools"); root.replaceChildren(text("h2", "Tools"));
@@ -1629,25 +4722,115 @@ async function loadTools() {
   }
 }
 async function loadProposals() {
-  const payload = await api("/api/proposals");
-  const root = byId("proposals"); root.replaceChildren(text("h2", "Proposals"));
-  if (payload.proposals.length === 0) {
-    root.append(text("p", "No proposals in the local store yet. Run synapsor-runner mcp serve and have an agent propose a change."));
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(state.activityFilters)) if (value) params.set(key, value);
+  const payload = await api("/api/lifecycle" + (params.size ? "?" + params.toString() : ""));
+  const root = byId("proposals"); root.replaceChildren(text("h2", "Activity"));
+  root.append(text("p", "Recent lifecycles appear automatically. No proposal ID is needed."));
+
+  const handleInput = document.createElement("input");
+  handleInput.placeholder = "Known proposal, evidence, replay, job, intent, receipt, or audit handle";
+  handleInput.setAttribute("aria-label", "Known ledger handle");
+  const handleStatus = el("div", { class: "status-line", text: "" });
+  const openHandle = el("button", { class: "secondary", text: "Open", onclick: async () => {
+    const handle = handleInput.value.trim();
+    if (!handle) { handleStatus.textContent = "Enter a known ledger handle."; return; }
+    openHandle.disabled = true;
+    try {
+      const resolved = await api("/api/lifecycle/" + encodeURIComponent(handle));
+      await loadDetail(resolved.lifecycle.proposal.proposal_id);
+      handleInput.value = "";
+      handleStatus.textContent = "Opened the linked proposal lifecycle.";
+    } catch (error) {
+      handleStatus.textContent = error.message;
+    } finally {
+      openHandle.disabled = false;
+    }
+  } });
+  handleInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); openHandle.click(); }
+  });
+  root.append(el("div", { class: "handle-row" }, [
+    el("label", {}, [text("span", "Open a known handle"), handleInput]),
+    openHandle,
+  ]), handleStatus);
+
+  const filterGrid = el("div", { class: "filter-grid" });
+  const controls = {};
+  const addInput = (key, label, type = "text", placeholder = "") => {
+    const input = document.createElement("input");
+    input.type = type;
+    input.value = state.activityFilters[key] || "";
+    input.placeholder = placeholder;
+    input.setAttribute("aria-label", label);
+    controls[key] = input;
+    filterGrid.append(el("label", {}, [text("span", label), input]));
+  };
+  const status = document.createElement("select");
+  status.setAttribute("aria-label", "Lifecycle status");
+  const statusOptions = [
+    ["", "All statuses"],
+    ["pending_review", "Awaiting approval"],
+    ["approved", "Approved"],
+    ["pending_worker", "Queued"],
+    ["applied", "Committed"],
+    ["conflict", "Conflict"],
+    ["failed", "Failed"],
+    ["reconciliation_required", "Reconciliation required"],
+    ["rejected", "Rejected"],
+    ["canceled", "Canceled"],
+  ];
+  for (const [value, label] of statusOptions) {
+    const option = document.createElement("option");
+    option.value = value; option.textContent = label;
+    status.append(option);
+  }
+  status.value = state.activityFilters.status || "";
+  controls.status = status;
+  filterGrid.append(el("label", {}, [text("span", "Status"), status]));
+  addInput("capability", "Capability", "text", "billing.propose_credit");
+  addInput("object_type", "Business object", "text", "invoice");
+  addInput("object_id", "Object ID", "text", "INV-3001");
+  addInput("tenant", "Tenant", "text", "acme");
+  addInput("principal", "Principal", "text", "support-agent");
+  addInput("from", "From", "datetime-local");
+  addInput("to", "To", "datetime-local");
+  const filterDetails = el("details", { class: "raw" });
+  filterDetails.append(el("summary", { text: "Filter activity" }), filterGrid);
+  const applyFilters = el("button", { class: "secondary", text: "Apply filters", onclick: async () => {
+    state.activityFilters = Object.fromEntries(Object.entries(controls)
+      .map(([key, control]) => [key, control.value.trim()])
+      .filter(([, value]) => value));
+    await loadProposals();
+    if (state.firstId) await loadDetail(state.firstId);
+  } });
+  const clearFilters = el("button", { class: "secondary", text: "Clear", onclick: async () => {
+    state.activityFilters = {};
+    await loadProposals();
+    if (state.firstId) await loadDetail(state.firstId);
+  } });
+  filterDetails.append(el("div", { class: "filter-actions" }, [applyFilters, clearFilters]));
+  root.append(filterDetails);
+
+  root.append(el("div", { class: "status-line", text: payload.total_matches + " matched · " + payload.returned + " shown" }));
+  if (payload.lifecycles.length === 0) {
+    root.append(text("p", "No proposal lifecycles match. Clear filters, or have an agent call an active proposal capability."));
     state.firstId = null;
     return;
   }
   const list = el("div", { class: "plist" });
-  for (const proposal of payload.proposals) {
-    const st = humanizeState(proposal.state);
-    const item = el("button", { class: "pitem" + (proposal.proposal_id === state.selected ? " sel" : ""), onclick: () => loadDetail(proposal.proposal_id) }, [
-      el("div", { class: "pitem-action", text: proposal.action }),
-      el("div", { class: "pitem-target", text: proposal.target.object_id + " · " + proposal.target.schema + "." + proposal.target.table }),
+  for (const lifecycle of payload.lifecycles) {
+    const st = humanizeState(lifecycle.state);
+    const item = el("button", { class: "pitem" + (lifecycle.proposal_id === state.selected ? " sel" : ""), onclick: () => loadDetail(lifecycle.proposal_id) }, [
+      el("div", { class: "pitem-action", text: lifecycle.capability }),
+      el("div", { class: "pitem-target", text: lifecycle.business_object + ":" + lifecycle.object_id + " · " + lifecycle.operation }),
       chip(st.label, st.tone),
+      chip(lifecycle.source_database_mutated ? "Source changed" : "Source unchanged", lifecycle.source_database_mutated ? "info" : "muted"),
     ]);
     list.append(item);
   }
   root.append(list);
-  state.firstId = payload.proposals[0].proposal_id;
+  state.firstId = payload.lifecycles[0].proposal_id;
 }
 function shadowMetric(label, value) {
   return el("div", { class: "pill", text: label + ": " + String(value) });
@@ -1864,18 +5047,9 @@ function buildStory(payload) {
       ]));
     }
   }
-  const replayDrawer = el("details", { class: "raw" });
-  replayDrawer.append(el("summary", { text: "View full replay JSON" }));
-  let replayLoaded = false;
-  replayDrawer.addEventListener("toggle", async () => {
-    if (!replayDrawer.open || replayLoaded) return;
-    replayLoaded = true;
-    try {
-      const replayPayload = await api("/api/replay/" + encodeURIComponent(proposal.proposal_id));
-      replayDrawer.append(pre(replayPayload.replay));
-    } catch (error) {
-      replayDrawer.append(el("p", { text: error.message }));
-    }
+  const replayDrawer = rawJson("View redacted replay linkage", {
+    replay: payload.lifecycle ? payload.lifecycle.replay : null,
+    timeline: payload.lifecycle ? payload.lifecycle.timeline : [],
   });
   story.append(stepCard(replayStep, "Replay saved what happened", "info", [tl, replayDrawer]));
 
@@ -1885,6 +5059,9 @@ async function loadDetail(proposalId) {
   state.selected = proposalId;
   const payload = await api("/api/proposals/" + encodeURIComponent(proposalId));
   const proposal = payload.proposal;
+  const lifecycle = payload.lifecycle || {};
+  const operator = payload.operator || { provider: "dev_env", verified_required: false, apply_roles: [], workbench_identity_input: "development_actor" };
+  const profile = payload.deployment_profile || "unknown";
   const st = humanizeState(proposal.state);
   const root = byId("detail"); root.replaceChildren();
 
@@ -1898,12 +5075,20 @@ async function loadDetail(proposalId) {
   root.append(head);
 
   const reviewTab = el("button", { class: "tab active", text: "Review" });
-  const jsonTab = el("button", { class: "tab", text: "View raw JSON" });
+  const lifecycleTab = el("button", { class: "tab", text: "Ledger timeline" });
+  const jsonTab = el("button", { class: "tab", text: "Safe JSON" });
   const reviewPane = el("div", { class: "pane" });
+  const lifecyclePane = el("div", { class: "pane hidden" });
   const jsonPane = el("div", { class: "pane hidden" });
-  reviewTab.onclick = () => { reviewTab.classList.add("active"); jsonTab.classList.remove("active"); reviewPane.classList.remove("hidden"); jsonPane.classList.add("hidden"); };
-  jsonTab.onclick = () => { jsonTab.classList.add("active"); reviewTab.classList.remove("active"); jsonPane.classList.remove("hidden"); reviewPane.classList.add("hidden"); };
-  root.append(el("div", { class: "tabs" }, [reviewTab, jsonTab]));
+  const showPane = (tab, pane) => {
+    for (const item of [reviewTab, lifecycleTab, jsonTab]) item.classList.remove("active");
+    for (const item of [reviewPane, lifecyclePane, jsonPane]) item.classList.add("hidden");
+    tab.classList.add("active"); pane.classList.remove("hidden");
+  };
+  reviewTab.onclick = () => showPane(reviewTab, reviewPane);
+  lifecycleTab.onclick = () => showPane(lifecycleTab, lifecyclePane);
+  jsonTab.onclick = () => showPane(jsonTab, jsonPane);
+  root.append(el("div", { class: "tabs" }, [reviewTab, lifecycleTab, jsonTab]));
 
   const dataPr = payload.data_pr || {};
   const dataPrHead = el("div", { class: "data-pr-head" }, [
@@ -1916,17 +5101,20 @@ async function loadDetail(proposalId) {
     ]),
   ]);
   reviewPane.append(dataPrHead, buildStory(payload));
+  lifecyclePane.append(buildLedgerTimeline(lifecycle));
 
   if (proposal.state === "pending_review") {
-    const actor = document.createElement("input"); actor.placeholder = "Reviewer identity"; actor.value = "local_reviewer";
-    const reason = document.createElement("textarea"); reason.placeholder = "Reason for approval or rejection"; reason.rows = 3;
-    actor.setAttribute("aria-label", "Reviewer identity");
-    reason.setAttribute("aria-label", "Reason for approval or rejection");
-    const actions = el("div", { class: "actions" });
+    const decision = el("section", { class: "decision-panel" });
+    decision.append(
+      el("h3", { text: "1. Approve this exact proposal" }),
+      el("div", { class: "callout", text: "Approval records a human decision outside MCP. It does not apply or mutate the source database." }),
+      el("div", { class: "operator-posture", text: "Identity: " + operator.provider + (operator.verified_required ? " (verified)" : " (development, unverified)") + " · required role: " + ((payload.review_view && payload.review_view.required_role) || "reviewer") }),
+    );
     const freshness = payload.freshness || { required: false, status: "not_required" };
     const freshnessStatus = el("div", { class: "status-line", text: freshness.required
       ? "Freshness: " + String(freshness.status || "not checked").replaceAll("_", " ") + "."
       : "Freshness: not required for this legacy proposal." });
+    decision.append(freshnessStatus);
     const check = freshness.required
       ? el("button", { class: "secondary", text: "Check live freshness", onclick: async () => {
         check.disabled = true;
@@ -1944,53 +5132,217 @@ async function loadDetail(proposalId) {
         }
       } })
       : null;
-    const approve = el("button", { text: "Approve outside MCP", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/approve", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value, confirm: "approve" }) }); await loadProposals(); await loadDetail(proposalId); } });
-    approve.disabled = freshness.required && freshness.status !== "fresh";
-    approve.title = freshness.required
-      ? "A fresh live check is required. Approval performs another check immediately before recording the decision."
-      : "Record this human decision outside MCP.";
-    const reject = el("button", { class: "danger", text: "Reject", onclick: async () => { await api("/api/proposals/" + encodeURIComponent(proposalId) + "/reject", { method: "POST", headers: { "x-synapsor-csrf": csrfToken }, body: JSON.stringify({ actor: actor.value, reason: reason.value || "rejected from local UI", confirm: "reject" }) }); await loadProposals(); await loadDetail(proposalId); } });
-    if (check) actions.append(check);
-    actions.append(approve, reject);
-    reviewPane.append(
-      el("div", { class: "callout", text: "You are the approval authority here — the model cannot reach these controls." }),
-      freshnessStatus,
-      actor,
-      reason,
-      actions,
-    );
-  } else if (proposal.state === "approved" || proposal.state === "pending_worker") {
-    const command = trustedApplyCommand(proposalId);
-    const commandBox = el("div", { class: "mono", text: command, style: "display:block;margin-top:8px" });
-    const copied = el("span", { class: "status-line", text: "" });
-    const copy = el("button", { text: "Copy guarded apply command", onclick: async () => {
-      try {
-        await navigator.clipboard.writeText(command);
-        copied.textContent = "Copied. Run this from a trusted terminal with write credentials.";
-      } catch {
-        copied.textContent = "Copy this guarded apply command and run it from a trusted terminal with write credentials.";
+    if (operator.provider === "signed_key") {
+      decision.append(
+        el("p", { text: "This project requires a local private-key signature. The browser does not accept or retain that key." }),
+        el("div", { class: "mono", text: trustedApproveCommand(proposalId), style: "display:block;margin-top:8px" }),
+      );
+      if (check) decision.append(el("div", { class: "actions" }, [check]));
+    } else {
+      const actor = document.createElement("input");
+      actor.placeholder = "Reviewer identity";
+      actor.value = "local_reviewer";
+      actor.setAttribute("aria-label", "Reviewer identity");
+      if (operator.provider !== "dev_env") actor.classList.add("hidden");
+      const reason = document.createElement("textarea");
+      reason.placeholder = "Why this exact effect is approved";
+      reason.rows = 2;
+      reason.setAttribute("aria-label", "Approval reason");
+      const confirmation = document.createElement("input");
+      confirmation.className = "exact-confirmation";
+      confirmation.placeholder = "APPROVE " + proposal.proposal_hash;
+      confirmation.setAttribute("aria-label", "Exact approval confirmation");
+      const token = document.createElement("input");
+      token.type = "password";
+      token.autocomplete = "off";
+      token.placeholder = "Fresh OIDC bearer token for this approval only";
+      token.setAttribute("aria-label", "OIDC bearer token for approval");
+      if (operator.provider !== "jwt_oidc") token.classList.add("hidden");
+      const decisionStatus = el("div", { class: "status-line", text: "Type the exact hash-bound confirmation. Approval rechecks live freshness before recording the decision." });
+      const approve = el("button", { text: "Approve outside MCP", onclick: async () => {
+        approve.disabled = true;
+        const identityToken = token.value;
+        token.value = "";
+        try {
+          await api("/api/proposals/" + encodeURIComponent(proposalId) + "/approve", {
+            method: "POST",
+            headers: { "x-synapsor-csrf": csrfToken },
+            body: JSON.stringify({
+              actor: actor.value,
+              reason: reason.value,
+              confirm: confirmation.value,
+              identity_token: identityToken || undefined,
+            }),
+          });
+          await loadProposals();
+          await loadDetail(proposalId);
+        } catch (error) {
+          decisionStatus.textContent = error.message;
+          approve.disabled = false;
+        }
+      } });
+      const actions = el("div", { class: "actions" });
+      if (check) actions.append(check);
+      actions.append(approve);
+      if (operator.provider === "dev_env") {
+        const reject = el("button", { class: "danger", text: "Reject", onclick: async () => {
+          try {
+            await api("/api/proposals/" + encodeURIComponent(proposalId) + "/reject", {
+              method: "POST",
+              headers: { "x-synapsor-csrf": csrfToken },
+              body: JSON.stringify({ actor: actor.value, reason: reason.value || "rejected from local Workbench", confirm: "reject" }),
+            });
+            await loadProposals();
+            await loadDetail(proposalId);
+          } catch (error) {
+            decisionStatus.textContent = error.message;
+          }
+        } });
+        actions.append(reject);
       }
-    } });
-    reviewPane.append(
-      el("div", { class: "callout", text: "Apply guarded writeback from a trusted terminal. This remains outside MCP, so the model still cannot commit." }),
-      commandBox,
-      el("div", { class: "actions" }, [copy]),
-      copied,
+      decision.append(actor, token, reason, confirmation, actions, decisionStatus);
+    }
+    reviewPane.append(decision);
+  } else if (proposal.state === "approved" || proposal.state === "pending_worker") {
+    const decision = el("section", { class: "decision-panel" });
+    decision.append(
+      el("h3", { text: "2. Apply guarded writeback" }),
+      el("div", { class: "callout", text: "This is a separate trusted-operator decision. Apply re-verifies approval integrity, identity and apply role, live freshness, tenant/principal scope, conflict guards, idempotency, and affected-row bounds." }),
+      el("div", { class: "badge-row" }, [
+        el("span", { text: "Source database changed so far:" }),
+        el("span", { class: "badge no", text: "No" }),
+      ]),
+      el("div", { class: "operator-posture", text: "Profile: " + profile + " · identity: " + operator.provider + " · apply roles: " + ((operator.apply_roles || []).join(", ") || "no extra apply-role gate") }),
     );
+    const localApplyAllowed = profile === "development" || profile === "staging";
+    if (!localApplyAllowed || operator.provider === "signed_key") {
+      const command = trustedApplyCommand(proposalId);
+      decision.append(
+        el("p", { text: !localApplyAllowed
+          ? "Browser apply is disabled for production or unknown profiles. Use the configured trusted production path."
+          : "The browser never accepts a private signing key. Use the trusted CLI path." }),
+        el("div", { class: "mono", text: command, style: "display:block;margin-top:8px" }),
+      );
+    } else {
+      const actor = document.createElement("input");
+      actor.placeholder = "Apply operator identity";
+      actor.value = "local_operator";
+      actor.setAttribute("aria-label", "Apply operator identity");
+      if (operator.provider !== "dev_env") actor.classList.add("hidden");
+      const reason = document.createElement("textarea");
+      reason.placeholder = "Why this approved effect should be committed now";
+      reason.rows = 2;
+      reason.setAttribute("aria-label", "Apply reason");
+      const confirmation = document.createElement("input");
+      confirmation.className = "exact-confirmation";
+      confirmation.placeholder = "APPLY " + proposal.proposal_hash;
+      confirmation.setAttribute("aria-label", "Exact apply confirmation");
+      const token = document.createElement("input");
+      token.type = "password";
+      token.autocomplete = "off";
+      token.placeholder = "Fresh OIDC bearer token for this apply decision only";
+      token.setAttribute("aria-label", "OIDC bearer token for apply");
+      if (operator.provider !== "jwt_oidc") token.classList.add("hidden");
+      const applyStatus = el("div", { class: "status-line", text: "Type the second exact hash-bound confirmation. This action may change the source database." });
+      const apply = el("button", { text: "Apply guarded writeback", onclick: async () => {
+        apply.disabled = true;
+        const identityToken = token.value;
+        token.value = "";
+        try {
+          const result = await api("/api/proposals/" + encodeURIComponent(proposalId) + "/apply", {
+            method: "POST",
+            headers: { "x-synapsor-csrf": csrfToken },
+            body: JSON.stringify({
+              actor: actor.value,
+              reason: reason.value,
+              confirm: confirmation.value,
+              identity_token: identityToken || undefined,
+            }),
+          });
+          applyStatus.textContent = result.source_database_changed
+            ? "Guarded writeback applied. Receipt and replay are now linked."
+            : "No source mutation was needed; inspect the receipt outcome.";
+          await loadProposals();
+          await loadDetail(proposalId);
+        } catch (error) {
+          applyStatus.textContent = error.message;
+          apply.disabled = false;
+        }
+      } });
+      decision.append(actor, token, reason, confirmation, el("div", { class: "actions" }, [apply]), applyStatus);
+    }
+    reviewPane.append(decision);
   }
 
   jsonPane.append(
-    el("h3", { text: "proposal", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.proposal),
-    el("h3", { text: "events", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.events),
-    el("h3", { text: "receipts", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.receipts),
-    el("h3", { text: "evidence", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.evidence),
-    el("h3", { text: "freshness", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(payload.freshness),
+    el("p", { text: "The lifecycle JSON is metadata-only: evidence rows, trusted tenant/principal values, credentials, write requests, and receipt bodies are not returned here." }),
+    el("h3", { text: "Redacted lifecycle", style: "margin:6px 0 2px;font-size:13px;color:var(--muted)" }), pre(lifecycle),
+    el("h3", { text: "Exact reviewed proposal effect", style: "margin:16px 0 2px;font-size:13px;color:var(--muted)" }), pre({
+      proposal_id: proposal.proposal_id,
+      proposal_version: proposal.proposal_version,
+      proposal_hash: proposal.proposal_hash,
+      capability: proposal.capability || proposal.action,
+      state: proposal.state,
+      tenant_id: proposal.tenant_id,
+      principal: proposal.principal,
+      change_set: proposal.change_set,
+      source_database_mutated: proposal.source_database_mutated,
+    }),
   );
-  root.append(reviewPane, jsonPane);
+  root.append(reviewPane, lifecyclePane, jsonPane);
+}
+function buildLedgerTimeline(lifecycle) {
+  const root = el("div");
+  const approval = lifecycle.approval || {};
+  const evidence = lifecycle.evidence || { count: 0, bundles: [] };
+  const audit = lifecycle.query_audit || { count: 0, records: [] };
+  const writeback = lifecycle.writeback || { jobs: [], intents: [], receipts: [] };
+  root.append(el("div", { class: "ledger-summary" }, [
+    el("div", {}, [el("strong", { text: String((approval.decisions || []).length) }), text("span", "approval decisions")]),
+    el("div", {}, [el("strong", { text: String(evidence.count || 0) }), text("span", "evidence bundles")]),
+    el("div", {}, [el("strong", { text: String((writeback.receipts || []).length) }), text("span", "writeback receipts")]),
+  ]));
+  const timeline = el("div", { class: "timeline" });
+  for (const event of lifecycle.timeline || []) {
+    const meta = eventMeta(event.kind);
+    const row = el("div", { class: "tl-row" }, [
+      el("span", { class: "tl-dot tl-" + meta.tone }),
+      el("div", {}, [
+        el("div", { class: "tl-label", text: meta.label }),
+        el("div", { class: "tl-meta", text: (event.actor || "system") + (event.occurred_at ? " · " + event.occurred_at : "") }),
+      ]),
+    ]);
+    if (event.summary && Object.keys(event.summary).length) row.lastChild.append(rawJson("Event metadata", event.summary));
+    timeline.append(row);
+  }
+  if (!(lifecycle.timeline || []).length) timeline.append(el("p", { text: "No lifecycle events recorded." }));
+  root.append(timeline);
+  const sections = [
+    ["Approval and verified identity", approval],
+    ["Approval-time freshness", lifecycle.freshness],
+    ["Evidence metadata", evidence],
+    ["Query-audit metadata", audit],
+    ["Writeback jobs, intents, queue and receipts", writeback],
+    ["Replay linkage", lifecycle.replay],
+    ["Compensation lineage", lifecycle.compensation],
+    ["Cloud references", lifecycle.cloud],
+  ];
+  for (const [label, value] of sections) root.append(rawJson(label, value || null));
+  if (lifecycle.next) {
+    root.append(el("div", { class: "callout", text: "Next: " + (lifecycle.next.operator || lifecycle.next.read_only) }));
+  }
+  return root;
 }
 async function init() {
-  await Promise.all([loadWorkbench(), loadSummary(), loadTools(), loadProposals(), loadShadowReport()]);
+  await Promise.all([loadWorkbench(), loadAttention(), loadWorker(), loadSummary(), loadTools(), loadProposals(), loadShadowReport()]);
   if (state.firstId && !state.selected) await loadDetail(state.firstId);
+  window.setInterval(async () => {
+    try {
+      await Promise.all([loadAttention(), loadWorker()]);
+    } catch (_) {
+      // Keep the current inbox visible while the local ledger is temporarily busy.
+    }
+  }, 5000);
   window.setInterval(async () => {
     if (state.firstId) return;
     try {
@@ -2045,6 +5397,205 @@ function isInactiveExplorationBoundary(error: unknown): boolean {
     || (fsError.code === "ENOENT"
       && typeof fsError.path === "string"
       && path.basename(fsError.path) === "exploration-boundary.active.json");
+}
+
+async function prepareAutoBoundaryRescan(input: {
+  projectRoot: string;
+  boundaryRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  resetOverrides: boolean;
+}): Promise<{
+  build: AutoBoundaryBuild;
+  previewDigest: `sha256:${string}`;
+  diff: JsonRecord;
+}> {
+  const lock = JSON.parse(await fs.readFile(path.join(input.projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+  const oldDraft = JSON.parse(await fs.readFile(path.join(input.boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+  const inspection = await input.schemaInspector({
+    engine: lock.engine,
+    databaseUrlEnv: lock.source_env,
+    schema: lock.inspected_schema,
+    env: process.env,
+  });
+  const currentOverrides = input.resetOverrides
+    ? { overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} } as AutoBoundaryReviewOverrides, removed: [] }
+    : pruneAutoBoundaryReviewOverrides(inspection, await loadAutoBoundaryReviewOverrides(input.projectRoot));
+  const project = await detectProjectContext(input.projectRoot);
+  const evidence = await loadStructuredProjectEvidence(project);
+  const build = buildAutoBoundary({
+    inspection,
+    project,
+    parsedEvidence: evidence.parsed,
+    existingContracts: evidence.existingContracts,
+    sourceEnv: lock.source_env,
+    inspectedSchema: lock.inspected_schema,
+    overrides: currentOverrides.overrides,
+  });
+  const diff = boundarySemanticDiff(oldDraft, build, currentOverrides.removed);
+  const previewDigest = canonicalJsonDigest({
+    schema_version: "synapsor.boundary-rescan-preview.v1",
+    old_generation_lock: oldDraft.generation_lock_fingerprint,
+    new_generation_lock: build.exploration_boundary.generation_lock_fingerprint,
+    new_contract_digest: build.contract_digest,
+    reviewed_overrides: build.overrides,
+    diff,
+  });
+  return { build, previewDigest, diff };
+}
+
+function boundarySemanticDiff(
+  previous: ExplorationBoundaryDraft,
+  next: AutoBoundaryBuild,
+  removedOverrides: string[],
+): JsonRecord {
+  const before = new Map(previous.pack.resources.map((resource) => [resource.id, resource]));
+  const after = new Map(next.exploration_boundary.pack.resources.map((resource) => [resource.id, resource]));
+  const added = [...after.keys()].filter((id) => !before.has(id)).sort();
+  const removed = [...before.keys()].filter((id) => !after.has(id)).sort();
+  const changed = [...after.keys()].filter((id) => {
+    const existing = before.get(id);
+    return existing !== undefined && canonicalJsonDigest(existing) !== canonicalJsonDigest(after.get(id));
+  }).sort();
+  return {
+    schema_changed: previous.generation_lock_fingerprint !== next.exploration_boundary.generation_lock_fingerprint,
+    resources_before: before.size,
+    resources_after: after.size,
+    added_resources: added,
+    removed_resources: removed,
+    changed_resources: changed,
+    pruned_review_inputs: removedOverrides,
+    source_database_changed: false,
+  };
+}
+
+function applyManagedBoundaryReviewDecision(
+  current: AutoBoundaryReviewOverrides,
+  body: JsonRecord,
+): AutoBoundaryReviewOverrides {
+  const kind = typeof body.kind === "string" ? body.kind : "";
+  const resourceId = requiredReviewText(body.resource_id, "resource_id");
+  const actor = requiredReviewText(body.actor, "actor");
+  const reason = requiredReviewText(body.reason, "reason");
+  const decidedAt = new Date().toISOString();
+  const next = structuredClone(current);
+  if (next.schema_version !== AUTO_BOUNDARY_OVERRIDES_VERSION) {
+    throw new Error(`Managed review decisions require ${AUTO_BOUNDARY_OVERRIDES_VERSION}.`);
+  }
+  const resource = next.resources[resourceId] ?? {};
+
+  if (kind === "field_exposure") {
+    const field = requiredReviewText(body.field, "field");
+    if (body.exposure !== "keep_out" && body.exposure !== "allow_reviewed_use") {
+      throw new Error("field_exposure review requires exposure keep_out or allow_reviewed_use.");
+    }
+    resource.fields = {
+      ...(resource.fields ?? {}),
+      [field]: {
+        exposure: body.exposure,
+        actor,
+        reason,
+        decided_at: decidedAt,
+      },
+    };
+  } else if (kind === "row_identity" || kind === "tenant_key") {
+    const decision = {
+      value: requiredReviewText(body.value, "value"),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+    if (kind === "row_identity") resource.row_identity = decision;
+    else resource.tenant_key = decision;
+  } else if (kind === "principal_key") {
+    const value = body.value === null ? null : requiredReviewText(body.value, "value");
+    resource.principal_key = { value, actor, reason, decided_at: decidedAt };
+  } else {
+    throw new Error("Managed boundary review kind must be field_exposure, row_identity, tenant_key, or principal_key.");
+  }
+
+  next.resources[resourceId] = resource;
+  return next;
+}
+
+function requiredReviewText(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`Managed boundary review requires ${label}.`);
+  return value.trim();
+}
+
+function trustedScopeValue(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`Trusted ${label} scope must be text.`);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 256 || /[\r\n\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error(`Trusted ${label} scope must be 1-256 characters without control characters.`);
+  }
+  return normalized;
+}
+
+function scopedExploreRemediation(error: unknown): {
+  action: string;
+  command?: string;
+  preserved: string;
+} {
+  const code = error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL";
+  const preserved = "The reviewed boundary, generated files, and source database were not changed.";
+  switch (code) {
+    case "EXPLORE_DISABLED":
+      return {
+        action: "Return to Boundary Review, complete the required decisions, and activate the exact reviewed digest.",
+        preserved,
+      };
+    case "EXPLORE_PROFILE_FORBIDDEN":
+      return {
+        action: "Select an explicit Development or Staging authoring profile, preview the new digest, and activate it.",
+        preserved,
+      };
+    case "EXPLORE_LOCK_STALE":
+    case "EXPLORE_BOUNDARY_MISMATCH":
+      return {
+        action: "Choose Rescan and show changes. Review the semantic drift before activating a new digest.",
+        preserved,
+      };
+    case "EXPLORE_ROLE_UNSAFE":
+      return {
+        action: "Reconnect with a verified non-owner, non-superuser, non-BYPASSRLS, SELECT-only database role, then rescan.",
+        preserved,
+      };
+    case "EXPLORE_SCOPE_FORBIDDEN":
+      return {
+        action: "Set the trusted tenant and principal environment values named by the reviewed boundary, then retry preflight.",
+        preserved,
+      };
+    case "EXPLORE_SOURCE_UNAVAILABLE":
+      return {
+        action: "Restore the reviewed read-only database connection and retry. Runner will recheck role and schema posture.",
+        preserved,
+      };
+    case "EXPLORE_PRIVACY_BUDGET_EXHAUSTED":
+    case "EXPLORE_RATE_LIMITED":
+    case "EXPLORE_RESPONSE_TOO_LARGE":
+      return {
+        action: "Narrow the reviewed request or wait for the documented session/rate window; do not widen the boundary to bypass the limit.",
+        preserved,
+      };
+    case "EXPLORE_FIELD_FORBIDDEN":
+    case "EXPLORE_RESOURCE_FORBIDDEN":
+    case "EXPLORE_RELATIONSHIP_FORBIDDEN":
+    case "EXPLORE_PLAN_INVALID":
+      return {
+        action: "Use only the resources, fields, relationships, and bounds shown in Explore reviewed data.",
+        preserved,
+      };
+    case "EXPLORE_TRANSPORT_FORBIDDEN":
+      return {
+        action: "Use this secured loopback Workbench or the local stdio authoring configuration.",
+        preserved,
+      };
+    default:
+      return {
+        action: "Review the local Runner diagnostics, preserve the current draft, and retry from Workbench.",
+        preserved,
+      };
+  }
 }
 
 function isRecord(value: unknown): value is JsonRecord {

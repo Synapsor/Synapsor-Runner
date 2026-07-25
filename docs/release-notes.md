@@ -10,7 +10,71 @@ npx -y -p @synapsor/runner synapsor-runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.2 (prepared, not published)
+## 1.6.3 (prepared, not published)
+
+### Guided adoption without weaker authority
+
+- A fresh interactive
+  `npx -y @synapsor/runner@latest start --from-env DATABASE_URL` now drives one
+  resumable metadata-inspection, review-by-exception, exact-digest activation,
+  first safe read, and MCP setup journey. It requires no account, model key,
+  Cloud control plane, global install, or manual project files.
+- Workbench explains the boundary before exposing advanced details, highlights
+  only unresolved security decisions, and keeps one primary next action visible.
+  Generated read, aggregate, protected, and write authorities remain disabled
+  until the human activates the exact reviewed digest.
+- Project-aware `try call`, `try explore`, `try protect`, and guided action
+  paths remove repeated config/store flags and copied handles while preserving
+  the canonical DSL/Spec/runtime boundary and existing manual/headless paths.
+- The packaged FitFlow journey proves a real named read, privacy-suppressed
+  PM-style aggregate, Protect This Query, proposal-only model call, bounded
+  approval policy, guarded source write, receipt/replay, compensation, and
+  equivalent authority across Workbench, CLI, Cursor, Claude, Codex, and
+  generic stdio setup.
+- The packaged approval-role guide and simulated external OIDC/JWKS flow show
+  how `APPROVAL ROLE` maps to verified IdP claims and immutable decisions.
+  Reviewer and applier authority remain separate; invalid signatures, token
+  time/issuer/audience failures, missing or similar roles, key rotation errors,
+  proof tampering, and proof replay fail closed.
+- Operator-supervised automatic apply is a new default-off execution axis.
+  Contract permission and an independent deployment allowlist must match one
+  exact active digest. Existing `AUTO APPROVE` behavior remains manual-apply;
+  eligible single-row INSERT/UPDATE work uses the same guarded apply after
+  current policy, limit, scope, target/supporting-evidence freshness,
+  writer-posture, receipt, and fenced-lease revalidation.
+- The ledger and Workbench now project durable redacted human-attention events
+  for proposal, worker, boundary, schema, credential, policy, and sensitive
+  override states. External delivery is disabled and quiet by default. A
+  separate dispatcher supports coalescing, budgets, digests, JSONL development
+  output, and signed generic HTTPS webhooks that inform but never authorize.
+- Replaying a failed notification requires a fresh verified signed-key or OIDC
+  operator decision bound to the exact delivery revision and a recorded
+  reason. It requeues only the redacted event. Packed tests prove competing
+  dispatcher deduplication, zero immediate success noise under the default
+  preset, metadata-endpoint SSRF refusal, and an unchanged source database
+  across notification replay.
+- Workbench and CLI expose queue status, pause/drain, exact-digest
+  enable/disable/revoke, cancellation, dead-letter, UNKNOWN/reconciliation,
+  notification status/replay, and no-ID attention inspection outside MCP.
+- Supported JSON failure paths emit one parseable result with a stable error
+  code, preserved-state and source-change status, one recovery action, and
+  redacted diagnostics on stderr.
+- An explicit empty `capabilities` array is now valid zero-authority review
+  state. The optional canonical `execution.supervised_worker` permission and
+  public `ALLOW SUPERVISED WORKER APPLY` clause are additive. Spec and DSL
+  advance to `1.6.0` while preserving old contract normalization, digests, and
+  generated-lock support.
+
+Prepared package versions: `@synapsor/runner@1.6.3`,
+`@synapsor/spec@1.6.0`, and `@synapsor/dsl@1.6.0`.
+No package is published by this change.
+
+The pre-release clean-install gate uses the locally packed public Spec until
+Spec 1.6.0 is on npm. After publishing Spec first, force the registry-only
+Runner dependency check with
+`VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC=0 ./scripts/verify-packed-runner.sh`.
+
+## 1.6.2 (published 2026-07-23)
 
 ### Registry-installable packaging hotfix
 
@@ -25,7 +89,7 @@ for the Synapsor Cloud CLI.
   therefore exercises the dependency-resolution path used by public `npx`.
 - Runtime behavior is unchanged from the proposal/evidence freshness release.
 
-Prepared package version: `@synapsor/runner@1.6.2`.
+Published package version: `@synapsor/runner@1.6.2`.
 `@synapsor/spec@1.5.0` and `@synapsor/dsl@1.5.0` remain unchanged.
 
 ## 1.6.1 (published 2026-07-23; install-broken)

@@ -7,6 +7,7 @@ TEMP_DIR="$(mktemp -d)"
 TARBALL=""
 EXPECTED_VERSION="$(node -e "console.log(require('$PACKAGE_DIR/package.json').version)")"
 EXPECTED_SPEC_VERSION="$(node -e "console.log(require('$ROOT/packages/spec/package.json').version)")"
+USE_LOCAL_SPEC="${VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC:-auto}"
 
 cleanup() {
   rm -rf "$TEMP_DIR"
@@ -45,6 +46,39 @@ node "$ROOT/scripts/check-runner-publish-manifest.mjs" --packed \
   "$TEMP_DIR/unpacked/package/package.json" \
   "$EXPECTED_SPEC_VERSION"
 
+# A release that advances Spec cannot install Runner from the registry until
+# Spec is published first. In that pre-release state, install the locally
+# packed public Spec artifact beside Runner. Once the exact Spec is in npm,
+# this gate keeps its stronger Runner-only registry-resolution check.
+if [[ "$USE_LOCAL_SPEC" == "auto" ]]; then
+  PUBLISHED_SPEC_VERSION="$(npm view "@synapsor/spec@$EXPECTED_SPEC_VERSION" version 2>/dev/null || true)"
+  if [[ "$PUBLISHED_SPEC_VERSION" == "$EXPECTED_SPEC_VERSION" ]]; then
+    USE_LOCAL_SPEC="0"
+  else
+    USE_LOCAL_SPEC="1"
+  fi
+fi
+if [[ "$USE_LOCAL_SPEC" != "0" && "$USE_LOCAL_SPEC" != "1" ]]; then
+  echo "VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC must be auto, 0, or 1" >&2
+  exit 1
+fi
+
+SPEC_TARBALL=""
+if [[ "$USE_LOCAL_SPEC" == "1" ]]; then
+  cd "$ROOT/packages/spec"
+  SPEC_PACK_OUTPUT="$(corepack pnpm pack --pack-destination "$TEMP_DIR")"
+  SPEC_PACK_FILE="$(printf "%s\n" "$SPEC_PACK_OUTPUT" | grep -E '\.tgz$' | tail -n 1)"
+  if [[ -z "$SPEC_PACK_FILE" ]]; then
+    echo "Spec pack did not print a tarball filename" >&2
+    printf "%s\n" "$SPEC_PACK_OUTPUT" >&2
+    exit 1
+  fi
+  SPEC_TARBALL="$TEMP_DIR/$(basename "$SPEC_PACK_FILE")"
+  echo "Using locally packed @synapsor/spec@$EXPECTED_SPEC_VERSION for pre-release verification."
+else
+  echo "Resolving @synapsor/spec@$EXPECTED_SPEC_VERSION from npm for registry-only verification."
+fi
+
 # pnpm passes private npm-config environment keys to child scripts. Current npm
 # warns about those keys on every npx invocation, so keep this clean-install
 # verification focused on the package under test.
@@ -52,7 +86,16 @@ unset npm_config_verify_deps_before_run npm_config__jsr_registry
 
 cd "$TEMP_DIR"
 npm init -y >/dev/null
-npm install "$TARBALL" --ignore-scripts --no-audit --no-fund >/dev/null
+if [[ "$USE_LOCAL_SPEC" == "1" ]]; then
+  npm install "$SPEC_TARBALL" "$TARBALL" --ignore-scripts --no-audit --no-fund >/dev/null
+else
+  npm install "$TARBALL" --ignore-scripts --no-audit --no-fund >/dev/null
+fi
+ACTUAL_SPEC_VERSION="$(node -e "console.log(require('./node_modules/@synapsor/spec/package.json').version)")"
+if [[ "$ACTUAL_SPEC_VERSION" != "$EXPECTED_SPEC_VERSION" ]]; then
+  echo "packed Runner resolved Spec $ACTUAL_SPEC_VERSION, expected $EXPECTED_SPEC_VERSION" >&2
+  exit 1
+fi
 STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
@@ -62,7 +105,13 @@ test -f "$PACKED_ROOT/docs/alternatives.md"
 test -f "$PACKED_ROOT/docs/client-recipes.md"
 test -f "$PACKED_ROOT/docs/cursor-plugin.md"
 test -f "$PACKED_ROOT/docs/fresh-developer-usability.md"
+test -f "$PACKED_ROOT/docs/guided-onboarding.md"
+test -f "$PACKED_ROOT/docs/approval-roles-and-operator-identity.md"
+test -f "$PACKED_ROOT/docs/supervised-automatic-apply.md"
+test -f "$PACKED_ROOT/docs/human-attention-notifications.md"
 test -f "$PACKED_ROOT/docs/effect-regression.md"
+test -f "$PACKED_ROOT/examples/fitflow-guided-onboarding/prisma/schema.prisma"
+test -f "$PACKED_ROOT/examples/operator-oidc/issuer.mjs"
 test -f "$PACKED_ROOT/schemas/effect-fixture.schema.json"
 test -f "$PACKED_ROOT/schemas/effect-result.schema.json"
 test -f "$PACKED_ROOT/schemas/effect-dataset.schema.json"

@@ -1,6 +1,81 @@
 # Changelog
 
-## 1.6.2 (prepared, not published)
+## 1.6.3 (prepared, not published)
+
+### Guided adoption without weaker authority
+
+- Turns a fresh interactive
+  `npx -y @synapsor/runner@latest start --from-env DATABASE_URL` into one
+  resumable journey: metadata-only inspection, conservative classification,
+  disabled project generation, review-by-exception in the loopback Workbench,
+  exact-digest activation, a real bounded read, and host-neutral MCP setup.
+- Generates the complete local project without requiring hand-edited DSL, JSON,
+  config, store paths, DDL, or grants for the reference development journey.
+  Existing selectors, automation, headless startup, hand-authored projects,
+  active contracts, and tool lists retain their prior behavior.
+- Adds no-ID, project-aware CLI paths for trying active named tools, bounded
+  row/aggregate exploration, protecting a successful analysis, guided action
+  authoring, proposal review, apply, receipt, replay, and compensation.
+- Reworks Workbench onboarding around one plain-language boundary summary,
+  conservative defaults, unresolved exceptions, one primary next action, and
+  progressive disclosure of DSL, canonical JSON, digests, role posture, and
+  generated tests.
+- Adds a guided write-action flow that drafts public DSL, canonical JSON,
+  tests, policy limits, conflict guards, receipt mode, and optional reviewed
+  compensation. It never derives business write authority from schema and
+  never activates, approves, or applies for the human.
+- Adds the FitFlow 30-50-table packed-artifact acceptance journey, including
+  first read, PM-style aggregate Explore, Protect, proposal, bounded policy
+  approval, guarded writeback, receipts/replay, compensation, host parity,
+  privacy gates, and source-unchanged assertions before commit.
+- Documents the full `APPROVAL ROLE` lifecycle from contract requirement
+  through external IdP claims and a verified immutable decision. A separate
+  local OIDC/JWKS issuer proves accepted reviewer/applier roles, role
+  separation, key rotation, and rejection of missing/similar roles, bad or
+  unknown signatures, expired/not-yet-valid tokens, wrong issuer/audience,
+  malformed claims, proof tampering, and cross-proposal replay.
+- Adds default-off operator-supervised automatic apply as a separate execution
+  axis. Contract permission plus an independent deployment allowlist must match
+  one exact digest; old `AUTO APPROVE` remains manual-apply. Eligible
+  single-row INSERT/UPDATE work reuses guarded apply and repeats policy, limit,
+  scope, target/supporting-evidence freshness, writer-posture, receipt, and
+  lease checks before every execution.
+- Adds durable redacted human-attention events and a coalesced Workbench inbox
+  for proposal, worker, boundary, schema, credential, policy, and sensitive
+  override lifecycle. A separately operated dispatcher supports quiet
+  per-sink routing, budgets, cooldowns, digests, JSONL development output, and
+  signed HTTPS webhooks. Notifications are disabled by default and never
+  authorize approval or mutation.
+- Binds dead-letter notification replay to a fresh verified signed-key or OIDC
+  operator decision over the exact delivery revision and reason. Replay
+  requeues only the immutable redacted event, records `notification.replayed`,
+  and cannot replay approval or source mutation. The packed gate exercises two
+  competing dispatchers, zero default success noise, duplicate suppression,
+  metadata-endpoint SSRF refusal, and event-only replay with an unchanged
+  source snapshot.
+- Adds pause/drain, exact-digest enable/disable/revoke, queue cancellation,
+  dead-letter, UNKNOWN/reconciliation, writer-posture, and optional required
+  attention-sink controls outside MCP. Fenced leases, limit reservations,
+  duplicate-consumption, process-death, known-commit, and ambiguous-outcome
+  paths retain the established fail-closed behavior.
+- Makes CLI failure output recovery-oriented and keeps supported `--json`
+  failure paths to one parseable document with redacted diagnostics on stderr,
+  preserved-state information, source-change status, and one next action.
+- Allows an explicit empty canonical `capabilities` array to represent a
+  validated zero-authority review draft and adds the optional canonical
+  `execution.supervised_worker` permission plus its public DSL clause. This
+  additive behavior is staged as `@synapsor/spec@1.6.0` and
+  `@synapsor/dsl@1.6.0`; legacy contracts retain their exact normalization and
+  digests.
+- Prepares `@synapsor/runner@1.6.3`, `@synapsor/spec@1.6.0`, and
+  `@synapsor/dsl@1.6.0`. No package is published by this change.
+- Makes the clean Runner tarball gate use the locally packed public Spec while
+  the new Spec version is still unpublished, then automatically return to the
+  stronger registry-only dependency-resolution proof once npm has that exact
+  Spec. This preserves the required Spec-first release order without masking a
+  broken packed Runner manifest.
+
+## 1.6.2 (published 2026-07-23)
 
 ### Registry-installable packaging hotfix
 
@@ -16,7 +91,7 @@
   masking it with a simultaneously packed local Spec.
 - Contains the same proposal/evidence freshness runtime behavior prepared in
   `1.6.1`; this patch changes packaging and version surfaces only.
-- Prepares only `@synapsor/runner@1.6.2`. `@synapsor/spec@1.5.0` and
+- Published only `@synapsor/runner@1.6.2`. `@synapsor/spec@1.5.0` and
   `@synapsor/dsl@1.5.0` remain unchanged.
 
 ## 1.6.1 (published 2026-07-23; install-broken)

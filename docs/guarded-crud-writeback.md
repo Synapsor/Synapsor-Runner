@@ -119,6 +119,12 @@ APPROVAL ROLE billing_reviewer
 WRITEBACK DIRECT SQL
 ```
 
+The role requirement is enforced against verified operator identity outside
+MCP; it is not a PostgreSQL role or model argument. Apply has its own role
+gate. See [Approval Roles And Verified Operator
+Identity](approval-roles-and-operator-identity.md) for the complete tested
+OIDC/JWKS and signed-key paths.
+
 Guarded `INSERT` needs a source-unique, Runner-supplied dedup identity:
 
 ```sql
@@ -211,6 +217,19 @@ synapsor-runner writeback reconcile resolve wbi:... \
 Resolution appends immutable events and a reconciliation receipt. It does not
 rewrite history or retry the source mutation. Configured production operator
 identity is required when enabled.
+
+## Optional supervised execution
+
+Manual apply remains the default, including for `AUTO APPROVE`. Runner can
+optionally let a separately trusted worker consume approved single-row
+`INSERT`/`UPDATE` proposals, but only after contract permission and an
+independent deployment allowlist bind the exact active digest. The worker
+reuses this same guarded path and repeats current source/evidence, policy,
+limit, writer-posture, receipt, and lease checks immediately before apply.
+
+Hard `DELETE`, reversible actions, app-owned executors, and multi-row writes
+are not eligible for the first automatic path. See
+[Operator-Supervised Automatic Apply](supervised-automatic-apply.md).
 
 ## Verification
 

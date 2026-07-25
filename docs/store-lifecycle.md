@@ -1,7 +1,8 @@
 # Store Lifecycle
 
 Synapsor Runner keeps local evidence, query audit, proposals, receipts, replay,
-and lifecycle events in a SQLite store.
+worker state, human-attention events, notification delivery state, and
+lifecycle events in a SQLite store.
 
 Default path:
 
@@ -142,6 +143,24 @@ inspection: it contacts the configured source and records an immutable proof
 event. The `lifecycle` command never does that; it only reports the most recent
 stored proof and approval linkage. See
 [Proposal And Evidence Freshness](proposal-evidence-freshness.md).
+
+## Human Attention And Delivery State
+
+The store records immutable attention events, coalesced incident projections,
+and sink-specific delivery attempts. Inspect them without copying an ID:
+
+```bash
+synapsor-runner attention show --store ./.synapsor/local.db
+synapsor-runner notifications status --store ./.synapsor/local.db --json
+```
+
+Acknowledgement changes only the attention projection. Notification replay
+requires a fresh verified signed-key or OIDC operator decision plus an explicit
+reason. That decision is bound to the exact delivery revision, requeues only
+the original redacted event, and appends an immutable
+`notification.replayed` audit event. Neither command approves, applies,
+reconciles, or repeats a source mutation. See
+[Human Attention And Notifications](human-attention-notifications.md).
 
 ## Server leases
 

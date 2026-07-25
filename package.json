@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "1.6.2",
+  "version": "1.6.3",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -21,7 +21,7 @@
     "build:cloud-cli-package": "tsc -b && node scripts/build-cloud-cli-package.mjs",
     "clean": "tsc -b --clean && find . -path '*/node_modules' -prune -o -path '*/dist' -type d -prune -exec rm -rf {} +",
     "lint": "tsc -b --pretty false",
-    "test": "tsc -b --pretty false && vitest run && node scripts/check-license-content.mjs && ./scripts/verify-dsl-source-paths.sh && node scripts/verify-cursor-plugin.mjs",
+    "test": "tsc -b --pretty false && vitest run --maxWorkers=4 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000 && node scripts/check-license-content.mjs && ./scripts/verify-dsl-source-paths.sh && node scripts/verify-cursor-plugin.mjs",
     "test:license-content": "node scripts/check-license-content.mjs",
     "test:smoke": "./scripts/verify-release-gate.sh",
     "test:docker": "node scripts/smoke-local-examples.mjs",
@@ -41,6 +41,7 @@
     "test:aggregate-read": "corepack pnpm build && node scripts/verify-aggregate-read.mjs",
     "test:auto-boundary-explore": "corepack pnpm build && node scripts/verify-auto-boundary-explore.mjs",
     "test:auto-boundary-explore:packed": "node scripts/verify-packed-backward-compatibility.mjs && node scripts/verify-packed-auto-boundary-explore.mjs",
+    "test:guided-onboarding:packed": "node scripts/verify-packed-guided-onboarding.mjs",
     "test:auto-boundary-scale": "corepack pnpm build && node scripts/verify-auto-boundary-scale.mjs",
     "test:auto-boundary-visual": "corepack pnpm build && node scripts/verify-auto-boundary-workbench-visual.mjs",
     "test:published-compatibility": "corepack pnpm build && node scripts/verify-published-compatibility.mjs",

@@ -29,14 +29,19 @@ describe("generated protected-authority preflight", () => {
       .rejects.toMatchObject({ code: "GENERATED_AUTHORITY_LOCK_REQUIRED" });
   });
 
-  it("accepts an exact current lock and fails closed on schema drift", async () => {
+  it.each([
+    ["1.6.0", "1.5.0"],
+    ["1.6.3", "1.5.0"],
+    ["1.6.3", "1.5.1"],
+    ["1.6.3", "1.6.0"],
+  ])("accepts supported compiler/spec lock %s/%s and fails closed on schema drift", async (compilerVersion, specVersion) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-lock-"));
     try {
       const current = inspection();
       const lock = {
         schema_version: "synapsor.generation-lock.v1",
-        compiler_version: "1.6.0",
-        spec_version: "1.5.0",
+        compiler_version: compilerVersion,
+        spec_version: specVersion,
         engine: "postgres",
         source_env: "DATABASE_URL",
         schema_fingerprint: schemaFingerprintForInspection(current),
@@ -74,6 +79,42 @@ describe("generated protected-authority preflight", () => {
       });
       await expect(preflightGeneratedAuthority(config, { DATABASE_URL: "postgres://redacted" }, async () => drifted))
         .rejects.toMatchObject({ code: "GENERATED_AUTHORITY_DRIFT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an unsupported compiler lock before inspecting the database", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-lock-"));
+    try {
+      const current = inspection();
+      const lock = {
+        schema_version: "synapsor.generation-lock.v1",
+        compiler_version: "9.9.9",
+        spec_version: "1.5.0",
+        engine: "postgres",
+        source_env: "DATABASE_URL",
+        schema_fingerprint: schemaFingerprintForInspection(current),
+        role_posture_fingerprint: rolePostureFingerprint(current),
+        evidence_fingerprint: `sha256:${"b".repeat(64)}`,
+        generated_contract_digest: `sha256:${"c".repeat(64)}`,
+        reviewed_overrides_digest: `sha256:${"d".repeat(64)}`,
+        protected_authority: ["public.subscriptions"],
+      } as const;
+      const lockPath = path.join(root, "generation-lock.json");
+      await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
+      const config = protectedConfig(canonicalJsonDigest(lock));
+      config.generated_authority = {
+        generation_lock_path: lockPath,
+        enforcement: "required",
+      };
+      let inspected = false;
+
+      await expect(preflightGeneratedAuthority(config, { DATABASE_URL: "postgres://redacted" }, async () => {
+        inspected = true;
+        return current;
+      })).rejects.toMatchObject({ code: "GENERATION_LOCK_INVALID" });
+      expect(inspected).toBe(false);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

@@ -2,8 +2,21 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
+import {
+  ProposalStore,
+  attentionDecisionSubject,
+  type OperatorIdentityProof,
+} from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, protocolVersions } from "@synapsor-runner/protocol";
+import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
+import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
+  activateExplorationBoundary,
+  buildAutoBoundary,
+  explorationBoundaryCandidateDigest,
+  writeAutoBoundaryArtifacts,
+} from "./auto-boundary.js";
+import { initializeGuidedProject } from "./guided-project.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { compileSafeActionDraft } from "./safe-action.js";
 
@@ -314,16 +327,17 @@ describe("local UI", () => {
       expect(html).toContain("Approval boundary");
       expect(html).toContain("Replay saved what happened");
       expect(html).toContain("Reviewed compensation");
-      expect(html).toContain("Apply guarded writeback from a trusted terminal");
-      expect(html).toContain("Copy guarded apply command");
+      expect(html).toContain("Apply guarded writeback");
+      expect(html).toContain("This is a separate trusted-operator decision");
+      expect(html).toContain("Ledger timeline");
       expect(html).toContain("synapsor-runner apply ");
-      expect(html).toContain("View raw JSON");
+      expect(html).toContain("Safe JSON");
       expect(html).toContain("Shadow studies");
       expect(html).toContain("@media (max-width: 600px)");
       expect(html).toContain(".data-pr-head .kv, .step .kv { grid-template-columns:1fr");
       expect(html).toContain(".grid > * { min-width:0; }");
       expect(html).toContain('actor.setAttribute("aria-label", "Reviewer identity")');
-      expect(html).toContain('reason.setAttribute("aria-label", "Reason for approval or rejection")');
+      expect(html).toContain('reason.setAttribute("aria-label", "Approval reason")');
       expect(html).toContain("csrf-token");
       expect(html).not.toContain("ui-token");
       expect(html).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret|should_not_leak/i);
@@ -420,7 +434,8 @@ describe("local UI", () => {
         },
       });
       expect(detail.data_pr.exact_diff.late_fee_cents).toEqual({ before: 5500, proposed: 0 });
-      expect(JSON.stringify(detail)).toContain("<redacted>");
+      expect(detail.evidence.bundles[0]).not.toHaveProperty("payload");
+      expect(detail.evidence.bundles[0]).not.toHaveProperty("items");
       expect(JSON.stringify(detail)).not.toMatch(/postgres(?:ql)?:\/\/|reader_secret|should_not_leak/i);
 
       const missingCsrf = await fetch(`${baseUrl}/api/proposals/wrp_ui/approve`, {
@@ -600,6 +615,170 @@ export default defineCapability({
     }
   });
 
+  it("guides a disabled action through exact proposal preview and digest activation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-guided-action-"));
+    const inspection = guidedActionInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["nextjs", "prisma"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.members": {
+            principal_key: {
+              value: "assigned_trainer_id",
+              actor: "reviewer@example.test",
+              reason: "Assigned trainers are the reviewed principal boundary.",
+              decided_at: "2026-07-24T17:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.6.3" });
+    const boundaryDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: boundaryDigest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${boundaryDigest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    let previewDigest = "";
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "guided-action-token",
+      csrfToken: "guided-action-csrf",
+      schemaInspector: async () => inspection,
+      guidedActionPreview: async ({ capabilityName, args }) => {
+        expect(capabilityName).toBe("membership.set_loyalty_balance");
+        expect(args).toEqual({ member_id: "MEM-1", loyalty_balance: 25 });
+        return {
+          draft_digest: previewDigest as `sha256:${string}`,
+          proposal_id: "wrp_guided_action_preview",
+          proposal_hash: `sha256:${"8".repeat(64)}`,
+          source_database_changed: false,
+        };
+      },
+    });
+    const baseUrl = `http://${server.host}:${server.port}`;
+    const headers = { "x-synapsor-ui-token": "guided-action-token" };
+    const mutationHeaders = { ...headers, "x-synapsor-csrf": "guided-action-csrf" };
+    try {
+      const options = await getJson(`${baseUrl}/api/actions/guided`, headers);
+      expect(options).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        options: {
+          source: "local_postgres",
+          resources: [{
+            id: "public.members",
+            principal_key: "assigned_trainer_id",
+            operation_availability: { update: { available: true } },
+          }],
+        },
+      });
+      const created = await postJson(`${baseUrl}/api/actions/guided/draft`, mutationHeaders, {
+        action: {
+          capability_name: "membership.set_loyalty_balance",
+          description: "Propose a reviewed loyalty balance for one assigned member.",
+          resource: "public.members",
+          operation: "update",
+          conflict_column: "version",
+          version_advance: "integer_increment",
+          approval_role: "membership_reviewer",
+          patches: [{
+            column: "loyalty_balance",
+            value_source: "argument",
+            argument_name: "loyalty_balance",
+            minimum: 0,
+            maximum: 500,
+          }],
+          confirmed_trusted_scope: true,
+        },
+      });
+      expect(created).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        draft: { state: "disabled", capability: "membership.set_loyalty_balance" },
+      });
+      previewDigest = created.draft.contract_digest;
+      const preview = await postJson(`${baseUrl}/api/actions/guided/preview`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        args: { member_id: "MEM-1", loyalty_balance: 25 },
+      });
+      expect(preview).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        preview: { proposal_id: "wrp_guided_action_preview" },
+      });
+      const activated = await postJson(`${baseUrl}/api/actions/guided/activate`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        expected_digest: previewDigest,
+        confirmation: `ACTIVATE ${previewDigest}`,
+        actor: "reviewer@example.test",
+      });
+      expect(activated).toMatchObject({
+        ok: true,
+        reconnect_required: true,
+        source_database_changed: false,
+        active: { capability: "membership.set_loyalty_balance" },
+      });
+      expect(JSON.parse(await fs.readFile(guided.config_path, "utf8"))).toMatchObject({
+        mode: "review",
+        sources: {
+          local_postgres: {
+            read_only: false,
+            write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+            receipts: { authority: "runner_ledger" },
+          },
+        },
+      });
+      const boundaryLanding = await fetch(`${baseUrl}/`, { headers });
+      expect(await boundaryLanding.text()).toContain("Add a safe action");
+      const activityLanding = await fetch(`${baseUrl}/?surface=activity`, { headers });
+      const activityHtml = await activityLanding.text();
+      expect(activityHtml).toContain("<h2>Activity</h2>");
+      expect(activityHtml).toContain("Lifecycle review");
+      const eventStore = new ProposalStore(guided.store_path);
+      try {
+        expect(eventStore.listAttentionEvents({ capability: "membership.set_loyalty_balance" }))
+          .toEqual(expect.arrayContaining([
+            expect.objectContaining({
+              event_type: "capability.review_required",
+              attention_required: true,
+              immediate_default: false,
+            }),
+            expect.objectContaining({
+              event_type: "capability.activated",
+              attention_required: false,
+              immediate_default: false,
+            }),
+          ]));
+      } finally {
+        eventStore.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("refuses non-localhost binding unless explicitly allowed", async () => {
     await expect(startLocalUiServer({
       host: "0.0.0.0",
@@ -673,6 +852,219 @@ export default defineCapability({
     }
   });
 
+  it("persists reviewed field exceptions and regenerates every managed boundary artifact", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-regenerate-"));
+    const inspection = boundaryReviewInspection();
+    let currentInspection = inspection;
+    const project = {
+      root: tempDir,
+      package_manager: "npm" as const,
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.3",
+    });
+    await fs.writeFile(path.join(tempDir, ".synapsor/exploration-boundary.active.json"), "{}\n", "utf8");
+    await fs.mkdir(path.join(tempDir, ".synapsor/active"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, ".synapsor/active/protected.contract.json"), "{\"protected\":true}\n", "utf8");
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "boundary-regenerate-token",
+      csrfToken: "boundary-regenerate-csrf",
+      schemaInspector: async () => currentInspection,
+    });
+    try {
+      const response = await fetch(`http://${server.host}:${server.port}/api/boundary/regenerate`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-synapsor-ui-token": "boundary-regenerate-token",
+          "x-synapsor-csrf": "boundary-regenerate-csrf",
+        },
+        body: JSON.stringify({
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "trainer_comments",
+          exposure: "allow_reviewed_use",
+          actor: "reviewer@example.test",
+          reason: "This fixture stores a reviewed non-sensitive coaching status.",
+        }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: true,
+        active: null,
+        source_database_changed: false,
+        journey: {
+          status: "review_boundary",
+          authority_active: false,
+          recommended_next_action: "Review the changed boundary.",
+        },
+      });
+      await expect(fs.readFile(path.join(written.root, "read-capabilities.synapsor.sql"), "utf8"))
+        .resolves.toMatch(/ALLOW READ[^\n]*trainer_comments/);
+      await expect(fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"))
+        .resolves.toContain("reviewer@example.test");
+      await expect(fs.stat(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+
+      const mutationHeaders = {
+        "x-synapsor-ui-token": "boundary-regenerate-token",
+        "x-synapsor-csrf": "boundary-regenerate-csrf",
+      };
+      currentInspection = structuredClone(inspection);
+      currentInspection.tables[0]!.columns.push({
+        name: "member_since",
+        data_type: "date",
+        nullable: false,
+        generated: false,
+        ordinal_position: currentInspection.tables[0]!.columns.length + 1,
+        suggestions: {
+          tenant: false,
+          conflict: false,
+          sensitive: false,
+          immutable: false,
+          large_or_binary: false,
+        },
+      });
+      const rescan = await postJson(`http://${server.host}:${server.port}/api/project/rescan`, mutationHeaders, {});
+      expect(rescan).toMatchObject({
+        ok: true,
+        diff: { schema_changed: true, source_database_changed: false },
+      });
+      const applied = await postJson(`http://${server.host}:${server.port}/api/project/rescan/apply`, mutationHeaders, {
+        expected_digest: rescan.preview_digest,
+        confirmation: `RESCAN ${rescan.preview_digest}`,
+      });
+      expect(applied).toMatchObject({
+        ok: true,
+        active: null,
+        source_database_changed: false,
+      });
+
+      const reset = await postJson(`http://${server.host}:${server.port}/api/project/start-over`, mutationHeaders, {
+        confirmation: "START OVER REVIEW",
+      });
+      expect(reset).toMatchObject({
+        ok: true,
+        active: null,
+        source_database_changed: false,
+        preserved: expect.arrayContaining(["local ledger", "protected named capabilities", "source database"]),
+      });
+      expect(JSON.parse(await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8")))
+        .toMatchObject({ resources: {} });
+      await expect(fs.readFile(path.join(tempDir, ".synapsor/active/protected.contract.json"), "utf8"))
+        .resolves.toContain("\"protected\":true");
+      const eventStore = new ProposalStore(guided.store_path);
+      try {
+        const events = eventStore.listAttentionEvents({ limit: 100 });
+        expect(events).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            event_type: "sensitive_override_activated",
+            severity: "warning",
+            attention_required: true,
+            immediate_default: false,
+          }),
+          expect.objectContaining({
+            event_type: "schema.drift_detected",
+            severity: "critical",
+            attention_required: true,
+            immediate_default: true,
+          }),
+          expect.objectContaining({
+            event_type: "capability.review_required",
+            immediate_default: false,
+          }),
+        ]));
+        const serializedEvents = JSON.stringify(events);
+        expect(serializedEvents).not.toContain("trainer_comments");
+        expect(serializedEvents).not.toContain("public.members");
+        expect(eventStore.listAttentionItems({ status: "open" }).filter((item) =>
+          item.event_type === "schema.drift_detected")).toHaveLength(1);
+      } finally {
+        eventStore.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Workbench trusted scope in memory and out of responses and project files", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-trusted-scope-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.6.3" });
+    const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: digest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${digest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "trusted-scope-token",
+      csrfToken: "trusted-scope-csrf",
+    });
+    try {
+      const response = await postJson(`http://${server.host}:${server.port}/api/explore/trusted-context`, {
+        "x-synapsor-ui-token": "trusted-scope-token",
+        "x-synapsor-csrf": "trusted-scope-csrf",
+      }, {
+        tenant: "tenant-memory-only",
+        principal: "principal-memory-only",
+      });
+      expect(response).toMatchObject({
+        ok: true,
+        configured: true,
+        persisted: false,
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(response)).not.toMatch(/tenant-memory-only|principal-memory-only/);
+      const projectFiles = await fs.readdir(path.join(tempDir, ".synapsor"));
+      for (const file of projectFiles.filter((name) => name.endsWith(".json"))) {
+        expect(await fs.readFile(path.join(tempDir, ".synapsor", file), "utf8"))
+          .not.toMatch(/tenant-memory-only|principal-memory-only/);
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the injected shared-store bridge for review reads and writes", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-shared-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -695,6 +1087,17 @@ export default defineCapability({
       const headers = { "x-synapsor-ui-token": "ui-token" };
       const proposals = await getJson(`${baseUrl}/api/proposals`, headers);
       expect(proposals.proposals).toHaveLength(1);
+      const lifecycle = await getJson(`${baseUrl}/api/lifecycle`, headers);
+      expect(lifecycle).toMatchObject({
+        ok: true,
+        returned: 1,
+        lifecycles: [
+          expect.objectContaining({
+            proposal_id: "wrp_ui",
+            capability: "billing.waive_late_fee",
+          }),
+        ],
+      });
       const approved = await postJson(`${baseUrl}/api/proposals/wrp_ui/approve`, {
         ...headers,
         "x-synapsor-csrf": "csrf-token",
@@ -703,6 +1106,8 @@ export default defineCapability({
       expect(sharedStore.getProposal("wrp_ui")?.state).toBe("approved");
       expect(operations).toEqual([
         "read:proposals-list",
+        "read:lifecycle-list",
+        "read:proposal-approve-scope",
         "read:proposal-approve-freshness-read",
         "write:proposal-approve",
       ]);
@@ -710,6 +1115,865 @@ export default defineCapability({
     } finally {
       await server.close();
       sharedStore.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the Human Attention Inbox tenant-scoped and acknowledgement separate from approval", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-attention-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      notifications: {
+        enabled: true,
+        sinks: [{
+          id: "operations",
+          type: "jsonl",
+          destination: "stdout",
+          minimum_severity: "warning",
+          delivery: "immediate",
+        }],
+      },
+    }), "utf8");
+    const sharedStore = new ProposalStore();
+    const acme = structuredClone(changeSet);
+    const beta = structuredClone(changeSet);
+    beta.proposal_id = "wrp_beta";
+    beta.scope = { ...beta.scope, tenant_id: "beta", object_id: "INV-BETA" };
+    beta.source.primary_key.value = "INV-BETA";
+    beta.guards.tenant.value = "beta";
+    beta.reversibility.lineage = {
+      root_proposal_id: "wrp_beta",
+      parent_proposal_id: "wrp_beta",
+      reverts_proposal_id: "wrp_beta",
+      depth: 1,
+    };
+    beta.evidence.bundle_id = "ev_beta";
+    beta.integrity.proposal_hash = `sha256:${"b".repeat(64)}`;
+    sharedStore.setRunnerState("attention_context", { environment: "staging" });
+    sharedStore.createProposal(acme);
+    sharedStore.createProposal(beta);
+    const attentionItems = sharedStore.listAttentionItems();
+    for (const event of sharedStore.listAttentionEvents({ event_type: "proposal.review_required" })) {
+      const item = attentionItems.find((candidate) => candidate.attention_key === event.attention_key);
+      sharedStore.enqueueNotificationDelivery({
+        sink_id: "operations",
+        event_id: event.event_id,
+        attention_id: item?.attention_id,
+      });
+    }
+    const acmeItem = sharedStore.listAttentionItems({ tenant: "acme" })[0]!;
+    const betaItem = sharedStore.listAttentionItems({ tenant: "beta" })[0]!;
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath,
+      storePath: path.join(tempDir, "must-not-be-opened.db"),
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "staging",
+      ledgerScope: { required: true, tenant: "acme", principal: "support_agent_17" },
+      storeAccess: async (_mode, _operation, callback) => callback(sharedStore),
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const inbox = await getJson(`${baseUrl}/api/attention?status=open`, headers);
+      expect(inbox.attention).toEqual([
+        expect.objectContaining({
+          attention_id: acmeItem.attention_id,
+          occurrence_count: 1,
+          latest_event: expect.objectContaining({ proposal_id: "wrp_ui" }),
+          acknowledgement_is_approval: false,
+        }),
+      ]);
+      expect(JSON.stringify(inbox)).not.toContain("wrp_beta");
+      expect(JSON.stringify(inbox)).not.toContain(betaItem.attention_id);
+
+      const betaResponse = await fetch(`${baseUrl}/api/attention/${betaItem.attention_id}`, { headers });
+      expect(betaResponse.status).toBe(404);
+
+      const status = await getJson(`${baseUrl}/api/notifications/status`, headers);
+      expect(status).toMatchObject({
+        enabled: true,
+        sinks: [{ id: "operations", counts: { pending: 1 } }],
+        source_database_changed: false,
+      });
+
+      const acknowledged = await postJson(
+        `${baseUrl}/api/attention/${acmeItem.attention_id}/acknowledge`,
+        { ...headers, "x-synapsor-csrf": "csrf-token" },
+        { actor: "support_lead_1" },
+      );
+      expect(acknowledged).toMatchObject({
+        attention: { status: "acknowledged" },
+        approval_created: false,
+        source_database_changed: false,
+      });
+      expect(sharedStore.getProposal("wrp_ui")?.state).toBe("pending_review");
+      expect(sharedStore.approvals("wrp_ui")).toEqual([]);
+      const acknowledgedInbox = await getJson(`${baseUrl}/api/attention?status=acknowledged`, headers);
+      expect(acknowledgedInbox.attention).toEqual([
+        expect.objectContaining({
+          attention_id: acmeItem.attention_id,
+          status: "acknowledged",
+          acknowledgement_is_approval: false,
+        }),
+      ]);
+
+      const html = await fetch(`${baseUrl}/`, { headers }).then((response) => response.text());
+      expect(html).toContain("Human Attention Inbox");
+      expect(html).toContain("Acknowledgement only records that you saw this");
+      expect(html).toContain("Human attention status");
+    } finally {
+      await server.close();
+      sharedStore.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the trusted-worker console tenant-scoped and binds controls to exact confirmations", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-worker-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const digest = `sha256:${"c".repeat(64)}` as const;
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        },
+      },
+      capabilities: [{
+        name: "billing.waive_late_fee",
+        kind: "proposal",
+        source: "app_postgres",
+      }],
+      supervised_worker: {
+        enabled: true,
+        profile: "staging",
+        capabilities: [{
+          capability: "billing.waive_late_fee",
+          contract_digest: digest,
+          mode: "supervised_worker",
+          concurrency: 1,
+          queue_limit: 10,
+          rate_limit: { executions: 10, window_seconds: 60 },
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          worker_identity: "staging_worker",
+        }],
+      },
+    }), "utf8");
+    const sharedStore = new ProposalStore();
+    const beta = structuredClone(changeSet);
+    beta.proposal_id = "wrp_beta_worker";
+    beta.scope = { ...beta.scope, tenant_id: "beta", object_id: "INV-BETA-WORKER" };
+    beta.source.primary_key.value = "INV-BETA-WORKER";
+    beta.guards.tenant.value = "beta";
+    beta.reversibility.lineage = {
+      root_proposal_id: beta.proposal_id,
+      parent_proposal_id: beta.proposal_id,
+      reverts_proposal_id: beta.proposal_id,
+      depth: 1,
+    };
+    beta.evidence.bundle_id = "ev_beta_worker";
+    beta.integrity.proposal_hash = `sha256:${"d".repeat(64)}`;
+    sharedStore.createProposal(changeSet);
+    sharedStore.createProposal(beta);
+    sharedStore.approveProposal(changeSet.proposal_id, {
+      approver: "support_lead",
+      proposal_hash: changeSet.integrity.proposal_hash,
+      proposal_version: changeSet.proposal_version,
+    });
+    sharedStore.approveProposal(beta.proposal_id, {
+      approver: "support_lead",
+      proposal_hash: beta.integrity.proposal_hash,
+      proposal_version: beta.proposal_version,
+    });
+    sharedStore.enqueueWorkerProposal({
+      proposal_id: changeSet.proposal_id,
+      execution_mode: "supervised_worker",
+      contract_digest: digest,
+    });
+    sharedStore.enqueueWorkerProposal({
+      proposal_id: beta.proposal_id,
+      execution_mode: "supervised_worker",
+      contract_digest: digest,
+    });
+    const decisions: Array<{ action: string; proposalId?: string }> = [];
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath,
+      storePath: path.join(tempDir, "must-not-be-opened.db"),
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "staging",
+      ledgerScope: { required: true, tenant: "acme", principal: "support_agent_17" },
+      storeAccess: async (_mode, _operation, callback) => callback(sharedStore),
+      workerDecision: async (input) => {
+        decisions.push({ action: input.action, ...(input.proposalId ? { proposalId: input.proposalId } : {}) });
+        if (input.action === "cancel") {
+          sharedStore.cancelWorkerItem({
+            proposalId: input.proposalId!,
+            actor: input.actor ?? "operator_alice",
+          });
+        } else {
+          if (input.action === "dead_letter_requeue" || input.action === "dead_letter_discard") {
+            throw new Error("unexpected dead-letter action in this test");
+          }
+          sharedStore.updateWorkerControl({
+            action: input.action,
+            ...(input.capability ? { capability: input.capability } : {}),
+            ...(input.contractDigest ? { contract_digest: input.contractDigest } : {}),
+            actor: input.actor ?? "operator_alice",
+            environment: "staging",
+          });
+        }
+        return { code: 0 };
+      },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const worker = await getJson(`${baseUrl}/api/worker`, headers);
+      expect(worker).toMatchObject({
+        ok: true,
+        worker: {
+          configured: true,
+          enabled: true,
+          deployment_profile: "staging",
+          summary: { queue_depth: 1 },
+          queue: [{
+            proposal_id: changeSet.proposal_id,
+            capability: changeSet.action,
+            status: "queued",
+            contract_digest: digest,
+            cancel_confirmation: `CANCEL ${changeSet.proposal_id}`,
+          }],
+          capabilities: [{
+            capability: changeSet.action,
+            contract_digest: digest,
+            writer_posture: {
+              reference: "APP_POSTGRES_WRITE_URL",
+              separation: "separate_reference",
+            },
+          }],
+          controls_are_model_facing: false,
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(worker)).not.toContain(beta.proposal_id);
+      expect(JSON.stringify(worker)).not.toContain("postgresql://");
+
+      const badConfirmation = await fetch(`${baseUrl}/api/worker/control`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "x-synapsor-csrf": "csrf-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action: "pause", confirm: "pause" }),
+      });
+      expect(badConfirmation.status).toBe(409);
+      expect(await badConfirmation.json()).toMatchObject({
+        required_confirmation: "PAUSE WORKER",
+        source_database_changed: false,
+      });
+      expect(decisions).toEqual([]);
+
+      const paused = await postJson(
+        `${baseUrl}/api/worker/control`,
+        { ...headers, "x-synapsor-csrf": "csrf-token" },
+        { action: "pause", confirm: "PAUSE WORKER", actor: "operator_alice" },
+      );
+      expect(paused).toMatchObject({
+        worker: { control: { mode: "paused", revision: 1 }, summary: { queue_depth: 1 } },
+        queued_proposals_discarded: 0,
+        source_database_changed: false,
+      });
+
+      const wrongTenant = await fetch(`${baseUrl}/api/worker/queue/${beta.proposal_id}/cancel`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "x-synapsor-csrf": "csrf-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ confirm: `CANCEL ${beta.proposal_id}` }),
+      });
+      expect(wrongTenant.status).toBe(404);
+
+      const cancelled = await postJson(
+        `${baseUrl}/api/worker/queue/${changeSet.proposal_id}/cancel`,
+        { ...headers, "x-synapsor-csrf": "csrf-token" },
+        {
+          confirm: `CANCEL ${changeSet.proposal_id}`,
+          actor: "operator_alice",
+          reason: "operator cancelled before lease",
+        },
+      );
+      expect(cancelled).toMatchObject({
+        worker: {
+          summary: { queue_depth: 0 },
+          queue: [{ proposal_id: changeSet.proposal_id, status: "cancelled" }],
+        },
+        source_database_changed: false,
+      });
+      expect(sharedStore.getWorkerQueueItem(beta.proposal_id)).toMatchObject({ status: "queued" });
+      expect(decisions).toEqual([
+        { action: "pause" },
+        { action: "cancel", proposalId: changeSet.proposal_id },
+      ]);
+
+      const html = await fetch(`${baseUrl}/`, { headers }).then((response) => response.text());
+      expect(html).toContain("Trusted Worker");
+      expect(html).toContain("controls are never MCP tools");
+    } finally {
+      await server.close();
+      sharedStore.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes Workbench reconciliation through a redacted live inspection and exact trusted decision", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-reconciliation-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const digest = `sha256:${"e".repeat(64)}` as const;
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      supervised_worker: {
+        enabled: true,
+        profile: "staging",
+        capabilities: [{
+          capability: changeSet.action,
+          contract_digest: digest,
+          mode: "supervised_worker",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+        }],
+      },
+    }), "utf8");
+    const sharedStore = new ProposalStore();
+    const reconciliationChangeSet = structuredClone(changeSet);
+    delete (reconciliationChangeSet as Partial<typeof changeSet>).reversibility;
+    sharedStore.createProposal(reconciliationChangeSet);
+    sharedStore.approveProposal(changeSet.proposal_id, {
+      approver: "support_lead",
+      proposal_hash: changeSet.integrity.proposal_hash,
+      proposal_version: changeSet.proposal_version,
+    });
+    sharedStore.enqueueWorkerProposal({
+      proposal_id: changeSet.proposal_id,
+      execution_mode: "supervised_worker",
+      contract_digest: digest,
+    });
+    const lease = sharedStore.claimWorkerItem({
+      workerId: "worker_reconciliation_test",
+      executionMode: "supervised_worker",
+      capability: changeSet.action,
+      contractDigest: digest,
+    });
+    if (!lease?.lease_id) throw new Error("expected worker lease");
+    const job = sharedStore.createWritebackJobFromProposal(changeSet.proposal_id);
+    const claim = sharedStore.claimWritebackIntent(job, "worker_reconciliation_test");
+    if (claim.decision !== "proceed") throw new Error("expected a new writeback intent");
+    sharedStore.markWritebackIntentApplying(claim.intent_id, "worker_reconciliation_test");
+    sharedStore.requireWritebackReconciliation(claim.intent_id, "commit acknowledgement missing");
+    sharedStore.requireWorkerReconciliation({
+      proposalId: changeSet.proposal_id,
+      workerId: "worker_reconciliation_test",
+      leaseId: lease.lease_id,
+      errorCode: "UNKNOWN_TRANSACTION_OUTCOME",
+    });
+    const decisions: Array<Record<string, unknown>> = [];
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath,
+      storePath: path.join(tempDir, "must-not-be-opened.db"),
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "staging",
+      ledgerScope: { required: true, tenant: "acme", principal: "support_agent_17" },
+      storeAccess: async (_mode, _operation, callback) => callback(sharedStore),
+      workerReconciliationInspect: async ({ intentId }) => ({
+        intent_id: intentId,
+        proposal_id: changeSet.proposal_id,
+        operation: "single_row_update",
+        intent_status: "reconciliation_required",
+        reconciliation_reason: "commit acknowledgement missing",
+        classification: "matches_proposed",
+        supported_outcome: "applied",
+        observed_digest: `sha256:${"f".repeat(64)}`,
+        expected_fields: ["late_fee_cents", "waiver_reason"],
+        observed_fields: ["late_fee_cents", "waiver_reason"],
+        member_count: 0,
+        member_classifications: {},
+        source_database_changed: false,
+      }),
+      workerReconciliationResolve: async (input) => {
+        decisions.push(input);
+        return { code: 0 };
+      },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const worker = await getJson(`${baseUrl}/api/worker`, headers);
+      expect(worker.worker.queue).toEqual([
+        expect.objectContaining({
+          proposal_id: changeSet.proposal_id,
+          status: "reconciliation_required",
+          reconciliation: {
+            intent_id: claim.intent_id,
+            operation: "single_row_update",
+            status: "reconciliation_required",
+            reason: "commit acknowledgement missing",
+          },
+        }),
+      ]);
+
+      const inspected = await getJson(
+        `${baseUrl}/api/worker/reconciliation/${encodeURIComponent(claim.intent_id)}`,
+        headers,
+      );
+      expect(inspected).toMatchObject({
+        reconciliation: {
+          intent_id: claim.intent_id,
+          proposal_id: changeSet.proposal_id,
+          classification: "matches_proposed",
+          supported_outcome: "applied",
+          expected_fields: ["late_fee_cents", "waiver_reason"],
+          source_database_changed: false,
+        },
+        required_confirmation: `RECONCILE ${claim.intent_id} AS APPLIED`,
+        source_database_changed: false,
+      });
+      const serialized = JSON.stringify(inspected);
+      expect(serialized).not.toContain("customer requested review");
+      expect(serialized).not.toContain("5500");
+      expect(serialized).not.toContain("acme");
+      expect(serialized).not.toContain("support_agent_17");
+
+      const mismatched = await fetch(
+        `${baseUrl}/api/worker/reconciliation/${encodeURIComponent(claim.intent_id)}/resolve`,
+        {
+          method: "POST",
+          headers: {
+            ...headers,
+            "x-synapsor-csrf": "csrf-token",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            outcome: "conflict",
+            confirm: `RECONCILE ${claim.intent_id} AS APPLIED`,
+            reason: "wrong outcome",
+          }),
+        },
+      );
+      expect(mismatched.status).toBe(409);
+      expect(decisions).toEqual([]);
+
+      const resolved = await postJson(
+        `${baseUrl}/api/worker/reconciliation/${encodeURIComponent(claim.intent_id)}/resolve`,
+        { ...headers, "x-synapsor-csrf": "csrf-token" },
+        {
+          outcome: "applied",
+          confirm: `RECONCILE ${claim.intent_id} AS APPLIED`,
+          reason: "live source digest proves the reviewed update committed",
+          actor: "operator_alice",
+          identity_token: "fresh-operator-token",
+        },
+      );
+      expect(resolved).toMatchObject({
+        ok: true,
+        intent: {
+          intent_id: claim.intent_id,
+          proposal_id: changeSet.proposal_id,
+          operation: "single_row_update",
+          status: "reconciliation_required",
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(resolved)).not.toContain("fresh-operator-token");
+      expect(decisions).toEqual([{
+        intentId: claim.intent_id,
+        outcome: "applied",
+        reason: "live source digest proves the reviewed update committed",
+        actor: "operator_alice",
+        identityToken: "fresh-operator-token",
+      }]);
+    } finally {
+      await server.close();
+      sharedStore.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes production attention acknowledgement through an exact verified operator decision", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-production-attention-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    const store = new ProposalStore(storePath);
+    store.setRunnerState("attention_context", { environment: "production" });
+    store.createProposal(changeSet);
+    const item = store.listAttentionItems({ status: "open" })[0]!;
+    store.close();
+    const decisions: string[] = [];
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "production",
+      attentionAcknowledge: async (input) => {
+        expect(input.identityToken).toBe("verified-oidc-token");
+        const decisionStore = new ProposalStore(storePath);
+        try {
+          const current = decisionStore.getAttentionItem(input.attentionId)!;
+          const decision = {
+            schema_version: "synapsor.operator-decision.v1" as const,
+            action: "attention_acknowledge" as const,
+            ...attentionDecisionSubject(current),
+            subject: "operator_alice",
+            issued_at: "2026-07-24T12:00:00.000Z",
+          };
+          const unsigned = {
+            provider: "jwt_oidc" as const,
+            verified: true,
+            subject: "operator_alice",
+            roles: ["runner_operator"],
+            key_id: "oidc-key-1",
+            algorithm: "RS256",
+            issuer: "https://idp.example.test",
+            decision,
+            decision_hash: canonicalJsonDigest(decision),
+            signature: "verified-attestation",
+          };
+          const identity: OperatorIdentityProof = {
+            ...unsigned,
+            integrity_hash: canonicalJsonDigest(unsigned),
+          };
+          decisionStore.acknowledgeAttention({
+            attention_id: current.attention_id,
+            actor: identity.subject,
+            identity,
+            require_verified_identity: true,
+          });
+          decisions.push(current.attention_id);
+          return { code: 0 };
+        } finally {
+          decisionStore.close();
+        }
+      },
+    });
+    try {
+      const response = await postJson(
+        `http://${server.host}:${server.port}/api/attention/${item.attention_id}/acknowledge`,
+        {
+          "x-synapsor-ui-token": "ui-token",
+          "x-synapsor-csrf": "csrf-token",
+        },
+        {
+          actor: "operator_alice",
+          identity_token: "verified-oidc-token",
+        },
+      );
+      expect(response).toMatchObject({
+        attention: {
+          status: "acknowledged",
+          acknowledged_by: "operator_alice",
+        },
+        approval_created: false,
+        source_database_changed: false,
+      });
+      expect(decisions).toEqual([item.attention_id]);
+      const verified = new ProposalStore(storePath);
+      try {
+        expect(verified.getProposal(changeSet.proposal_id)?.state).toBe("pending_review");
+        expect(verified.approvals(changeSet.proposal_id)).toEqual([]);
+      } finally {
+        verified.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { label: "production", deploymentProfile: "production" as const, cloudLinked: false },
+    { label: "unknown", deploymentProfile: undefined, cloudLinked: false },
+    { label: "Cloud-linked", deploymentProfile: "staging" as const, cloudLinked: true },
+  ])("refuses local Workbench approval and apply for $label authority", async ({
+    deploymentProfile,
+    cloudLinked,
+  }) => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-governance-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      operator_identity: { provider: "dev_env" },
+      ...(cloudLinked ? { governance: { mode: "cloud_linked" } } : {}),
+    }), "utf8");
+    const store = new ProposalStore(storePath);
+    const decisionChangeSet = structuredClone(changeSet);
+    delete (decisionChangeSet as Partial<typeof changeSet>).reversibility;
+    store.createProposal(decisionChangeSet);
+    store.close();
+    const decisions: string[] = [];
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile,
+      proposalApprove: async () => {
+        decisions.push("approve");
+        return { code: 0 };
+      },
+      proposalApply: async () => {
+        decisions.push("apply");
+        return { code: 0 };
+      },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = {
+        "content-type": "application/json",
+        "x-synapsor-ui-token": "ui-token",
+        "x-synapsor-csrf": "csrf-token",
+      };
+      for (const action of ["approve", "apply"] as const) {
+        const response = await fetch(`${baseUrl}/api/proposals/wrp_ui/${action}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            confirm: `${action === "approve" ? "APPROVE" : "APPLY"} ${changeSet.integrity.proposal_hash}`,
+            actor: "local-operator",
+          }),
+        });
+        expect(response.status).toBe(403);
+        const payload = await response.json() as Record<string, unknown>;
+        expect(payload).toMatchObject({
+          ok: false,
+          source_database_changed: false,
+        });
+        expect(JSON.stringify(payload)).toMatch(cloudLinked ? /Cloud/i : /production|unknown/i);
+      }
+      expect(decisions).toEqual([]);
+      const persisted = new ProposalStore(storePath);
+      try {
+        expect(persisted.getProposal("wrp_ui")?.state).toBe("pending_review");
+        expect(persisted.approvals("wrp_ui")).toEqual([]);
+        expect(persisted.receipts("wrp_ui")).toEqual([]);
+      } finally {
+        persisted.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("lists recent lifecycle activity without ids and enforces tenant scope for every handle", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-lifecycle-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    const store = new ProposalStore(storePath);
+    store.createProposal(changeSet);
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_ui",
+      proposal_id: "wrp_ui",
+      tenant_id: "acme",
+      payload: { approved_field: "visible", hidden_field: "must-not-reach-workbench" },
+      items: [{ type: "row", value: "must-not-reach-workbench" }],
+    });
+    const other = structuredClone(changeSet);
+    other.proposal_id = "wrp_other_tenant";
+    other.integrity.proposal_hash = canonicalJsonDigest({ proposal: other.proposal_id });
+    other.scope.tenant_id = "other";
+    other.scope.object_id = "INV-OTHER";
+    other.source.primary_key.value = "INV-OTHER";
+    other.evidence.bundle_id = "ev_other";
+    other.created_at = "2026-06-20T14:32:09Z";
+    store.createProposal(other);
+    store.close();
+
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      ledgerScope: { tenant: "acme", required: true },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const recent = await getJson(`${baseUrl}/api/lifecycle`, headers);
+      expect(recent).toMatchObject({
+        ok: true,
+        total_matches: 1,
+        returned: 1,
+        source_database_changed: false,
+      });
+      expect(recent.lifecycles[0]).toMatchObject({
+        proposal_id: "wrp_ui",
+        tenant_id: "acme",
+        capability: "billing.waive_late_fee",
+      });
+
+      const byEvidence = await getJson(`${baseUrl}/api/lifecycle/${encodeURIComponent("evidence:ev_ui")}`, headers);
+      expect(byEvidence.lifecycle.proposal.proposal_id).toBe("wrp_ui");
+      expect(byEvidence.lifecycle.evidence.bundles[0]).not.toHaveProperty("payload");
+      expect(byEvidence.lifecycle.evidence.bundles[0]).not.toHaveProperty("items");
+      expect(JSON.stringify(byEvidence)).not.toContain("must-not-reach-workbench");
+
+      const otherTenant = await fetch(`${baseUrl}/api/lifecycle/${encodeURIComponent("proposal:wrp_other_tenant")}`, { headers });
+      expect(otherTenant.status).toBe(404);
+      expect(JSON.stringify(await otherTenant.json())).not.toContain("INV-OTHER");
+
+      const filtered = await getJson(`${baseUrl}/api/lifecycle?status=pending_review&object_type=invoice`, headers);
+      expect(filtered.returned).toBe(1);
+      const invalid = await fetch(`${baseUrl}/api/lifecycle?status=not-a-state`, { headers });
+      expect(invalid.status).toBe(400);
+
+      const verified = new ProposalStore(storePath);
+      try {
+        expect(verified.getProposal("wrp_ui")?.state).toBe("pending_review");
+        expect(verified.getProposal("wrp_other_tenant")?.state).toBe("pending_review");
+        expect(verified.receipts("wrp_ui")).toEqual([]);
+      } finally {
+        verified.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Workbench approval and apply as separate hash-bound operator decisions", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-decisions-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      operator_identity: { provider: "dev_env" },
+    }), "utf8");
+    const store = new ProposalStore(storePath);
+    const decisionChangeSet = structuredClone(changeSet);
+    delete (decisionChangeSet as Partial<typeof changeSet>).reversibility;
+    store.createProposal(decisionChangeSet);
+    store.close();
+    const decisions: Array<{ kind: string; actor?: string; reason?: string; identityToken?: string }> = [];
+
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "staging",
+      proposalApprove: async (input) => {
+        decisions.push({ kind: "approve", ...input });
+        const decisionStore = new ProposalStore(storePath);
+        try {
+          const proposal = decisionStore.getProposal(input.proposalId)!;
+          decisionStore.approveProposal(input.proposalId, {
+            approver: input.actor ?? "reviewer",
+            proposal_hash: proposal.proposal_hash,
+            proposal_version: proposal.proposal_version,
+            reason: input.reason,
+          });
+        } finally {
+          decisionStore.close();
+        }
+        return { code: 0 };
+      },
+      proposalApply: async (input) => {
+        decisions.push({ kind: "apply", ...input });
+        const decisionStore = new ProposalStore(storePath);
+        try {
+          const job = decisionStore.createWritebackJobFromProposal(input.proposalId);
+          decisionStore.recordExecutionReceipt({
+            schema_version: protocolVersions.executionReceipt,
+            writeback_job_id: job.writeback_job_id,
+            proposal_id: input.proposalId,
+            runner_id: input.actor ?? "apply-operator",
+            status: "applied",
+            rows_affected: 1,
+            idempotency_key: job.idempotency_key,
+            previous_version: "2026-06-20T14:31:08Z",
+            new_version: "2026-06-20T14:32:08Z",
+            source_database_mutated: true,
+            executed_at: "2026-06-20T14:32:08Z",
+            receipt_hash: "sha256:workbench-receipt",
+          });
+        } finally {
+          decisionStore.close();
+        }
+        return { code: 0 };
+      },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = {
+        "x-synapsor-ui-token": "ui-token",
+        "x-synapsor-csrf": "csrf-token",
+      };
+      const wrongApproval = await fetch(`${baseUrl}/api/proposals/wrp_ui/approve`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ confirm: "approve", actor: "reviewer_1" }),
+      });
+      expect(wrongApproval.status).toBe(409);
+      expect(decisions).toEqual([]);
+
+      const approval = await postJson(`${baseUrl}/api/proposals/wrp_ui/approve`, headers, {
+        confirm: `APPROVE ${changeSet.integrity.proposal_hash}`,
+        actor: "reviewer_1",
+        reason: "exact effect reviewed",
+      });
+      expect(approval).toMatchObject({
+        ok: true,
+        proposal: { state: "approved" },
+        source_database_changed: false,
+      });
+      expect(decisions).toEqual([
+        expect.objectContaining({ kind: "approve", actor: "reviewer_1", reason: "exact effect reviewed" }),
+      ]);
+
+      const wrongApply = await fetch(`${baseUrl}/api/proposals/wrp_ui/apply`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ confirm: `APPROVE ${changeSet.integrity.proposal_hash}`, actor: "operator_2" }),
+      });
+      expect(wrongApply.status).toBe(409);
+      expect(decisions).toHaveLength(1);
+
+      const applied = await postJson(`${baseUrl}/api/proposals/wrp_ui/apply`, headers, {
+        confirm: `APPLY ${changeSet.integrity.proposal_hash}`,
+        actor: "operator_2",
+        reason: "commit after independent review",
+      });
+      expect(applied).toMatchObject({
+        ok: true,
+        proposal: { state: "applied" },
+        source_database_changed: true,
+      });
+      expect(decisions).toEqual([
+        expect.objectContaining({ kind: "approve", actor: "reviewer_1" }),
+        expect.objectContaining({ kind: "apply", actor: "operator_2" }),
+      ]);
+      expect(JSON.stringify(applied.lifecycle)).toContain("sha256:workbench-receipt");
+    } finally {
+      await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -739,7 +2003,7 @@ export default defineCapability({
       const shell = await fetch(baseUrl, { headers });
       const shellText = await shell.text();
       expect(shellText).toContain("Check live freshness");
-      expect(shellText).toContain('approve.disabled = freshness.required && freshness.status !== "fresh"');
+      expect(shellText).toContain("Approval rechecks live freshness before recording the decision");
 
       const check = await fetch(`${baseUrl}/api/proposals/${input.proposal_id}/check-freshness`, {
         method: "POST",
@@ -849,8 +2113,9 @@ export default defineCapability({
 
 async function getJson(url: string, headers: Record<string, string>): Promise<any> {
   const response = await fetch(url, { headers });
-  expect(response.status).toBe(200);
-  return response.json();
+  const body = await response.text();
+  expect(response.status, body).toBe(200);
+  return JSON.parse(body);
 }
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
@@ -859,6 +2124,153 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
     headers: { ...headers, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  expect(response.status).toBe(200);
-  return response.json();
+  const responseBody = await response.text();
+  expect(response.status, responseBody).toBe(200);
+  return JSON.parse(responseBody);
+}
+
+function boundaryReviewInspection(): SchemaInspection {
+  const column = (
+    name: string,
+    dataType: string,
+    suggestions: Partial<{
+      tenant: boolean;
+      conflict: boolean;
+      sensitive: boolean;
+      immutable: boolean;
+      large_or_binary: boolean;
+    }> = {},
+  ) => ({
+    name,
+    data_type: dataType,
+    nullable: false,
+    generated: false,
+    ordinal_position: 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: false,
+      large_or_binary: false,
+      ...suggestions,
+    },
+  });
+  return {
+    engine: "postgres",
+    server_version: "PostgreSQL 16",
+    current_user: "app_reader",
+    inspected_at: "2026-07-24T17:00:00.000Z",
+    schemas: ["public"],
+    warnings: [],
+    role_posture: {
+      verified: true,
+      superuser: false,
+      bypass_rls: false,
+      read_only: true,
+      writable_relations: [],
+      owned_relations: [],
+      reasons: [],
+    },
+    tables: [{
+      schema: "public",
+      name: "members",
+      type: "table",
+      writable: true,
+      columns: [
+        column("id", "uuid", { immutable: true }),
+        column("tenant_id", "uuid", { tenant: true, immutable: true }),
+        column("membership_status", "text"),
+        column("trainer_comments", "text"),
+      ],
+      primary_key: ["id"],
+      unique_constraints: [{ name: "members_pkey", columns: ["id"] }],
+      foreign_keys: [],
+      indexes: [{ name: "members_pkey", columns: ["id"], unique: true }],
+      row_level_security: true,
+      row_level_security_policies: [{
+        name: "tenant_read",
+        command: "SELECT",
+        permissive: true,
+        roles: ["app_reader"],
+        using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+      }],
+      role_posture: {
+        owner: "app_owner",
+        current_role_is_owner: false,
+        current_role_can_assume_owner: false,
+        privileges: {
+          select: true,
+          insert: false,
+          update: false,
+          delete: false,
+          truncate: false,
+          references: false,
+          trigger: false,
+        },
+        row_security_forced: false,
+        row_security_effective_for_current_role: true,
+      },
+      suggestions: {
+        tenant_columns: ["tenant_id"],
+        conflict_columns: [],
+        sensitive_columns: [],
+        default_visible_columns: ["id", "tenant_id", "membership_status"],
+      },
+    }],
+  };
+}
+
+function guidedActionInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const table = inspection.tables[0]!;
+  const makeColumn = (
+    name: string,
+    dataType: string,
+    suggestions: Partial<{
+      tenant: boolean;
+      conflict: boolean;
+      sensitive: boolean;
+      immutable: boolean;
+      large_or_binary: boolean;
+    }> = {},
+    enumValues?: string[],
+  ) => ({
+    name,
+    data_type: dataType,
+    ...(enumValues ? { enum_values: enumValues } : {}),
+    nullable: false,
+    generated: false,
+    ordinal_position: table.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: false,
+      large_or_binary: false,
+      ...suggestions,
+    },
+  });
+  table.columns = [
+    table.columns[0]!,
+    {
+      ...table.columns[1]!,
+      name: "organization_id",
+      suggestions: { ...table.columns[1]!.suggestions, tenant: true },
+    },
+    makeColumn("assigned_trainer_id", "uuid", { immutable: true }),
+    makeColumn("membership_status", "text", {}, ["active", "frozen", "cancelled"]),
+    makeColumn("loyalty_balance", "integer"),
+    makeColumn("version", "integer", { conflict: true }),
+    makeColumn("payment_method", "text", { sensitive: true }),
+    makeColumn("medical_notes", "text", { sensitive: true }),
+  ];
+  table.suggestions = {
+    tenant_columns: ["organization_id"],
+    conflict_columns: ["version"],
+    sensitive_columns: ["payment_method", "medical_notes"],
+    default_visible_columns: ["id", "organization_id", "assigned_trainer_id", "membership_status", "loyalty_balance", "version"],
+  };
+  table.referenced_by = [];
+  table.write_triggers = [];
+  return inspection;
 }

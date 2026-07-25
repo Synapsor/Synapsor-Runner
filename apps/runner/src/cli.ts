@@ -8,20 +8,29 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import mysql from "mysql2/promise";
 import { CloudControlClient, CloudControlError, ControlPlaneClient } from "@synapsor-runner/control-plane-client";
 import { validateRunnerCapabilityConfig, type ConfigValidationResult } from "@synapsor-runner/config";
-import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, bindPostgresTrustedScope, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, evaluateProposalFreshness, preflightGeneratedAuthority, resolveRuntimeConfig, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ProposalFreshnessEvaluation, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, bindPostgresTrustedScope, capabilityWritebackExecutor, capabilityWritebackMode, CloudLinkedSynchronizer, createDefaultRuntimeStore, createMcpRuntime, describeIsolationAssurance, enqueueCloudLinkedResult, evaluateApprovalPolicy, evaluateProposalFreshness, preflightGeneratedAuthority, resolveRuntimeConfig, resolveSupervisedWorkerEligibility, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type ContextProvider, type DbRowReader, type ProposalFreshnessEvaluation, type ResultFormat, type RuntimeCapabilityConfig, type RuntimeConfig, type RuntimeSupervisedWorkerCapabilityPolicy, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlAdapter, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { createPostgresPool, inspectPostgresRlsTarget, inspectPostgresWritebackSource, postgresAdapter, postgresReceiptMigration, type PostgresRlsOperation } from "@synapsor-runner/postgres";
 import {
   PostgresWritebackIntentStore,
   ProposalStore,
+  attentionDecisionSubject,
+  notificationReplayDecisionSubject,
   sharedPostgresRuntimeStoreMigration,
+  workerControlDecisionSubject,
   type EvidenceSearchFilters,
   type EventSearchFilters,
+  type AttentionItem,
+  type AttentionItemStatus,
+  type AttentionSeverity,
+  type NotificationDeliveryStatus,
   type LocalProposalState,
   type OperationalMetricRow,
+  type PolicyApprovalLimit,
   type PolicyRecommendation,
   type ProposalRuntimeStore,
   type ProposalEvent,
@@ -41,13 +50,16 @@ import {
   type StorePruneResult,
   type StoreStats,
   type WorkerQueueItem,
+  type WorkerControlAction,
+  type WorkerControlTarget,
 } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, parseFreshnessAuthority, parseFreshnessProof, parseWritebackJob, protocolVersions, type ChangeSet, type CompensationChangeSetV1, type ExecutionReceiptV1, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type InverseDescriptorV1, type RunnerActivityV1, type RunnerProposalV1, type RunnerRegistrationV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
-import { normalizeContract, validateContract, type SynapsorContract } from "@synapsor/spec";
+import { normalizeContract, validateContract, type PolicySpec, type SynapsorContract } from "@synapsor/spec";
 import {
   assessDirectWritePrerequisites,
   generateRunnerConfigFromSpec,
   inspectDatabase,
+  rolePostureFingerprint,
   summarizeInspection,
   type GeneratedOnboardingFiles,
   type InspectEngine,
@@ -64,6 +76,7 @@ import {
   formatMcpAuditSarif,
   formatMcpAuditVerboseReport,
   loadConfig,
+  redact,
   runOnce,
   startPolling,
   type McpAuditReport,
@@ -73,7 +86,18 @@ import {
   type WritebackIntentStore,
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
-import { startLocalUiServer, type LocalUiStoreAccess } from "./local-ui.js";
+import {
+  startLocalUiServer,
+  type LocalUiStoreAccess,
+  type WorkbenchDeploymentProfile,
+  type WorkbenchAttentionDecision,
+  type WorkbenchLedgerScope,
+  type WorkbenchProposalDecision,
+  type WorkbenchReconciliationInspect,
+  type WorkbenchReconciliationResolve,
+  type WorkbenchReconciliationView,
+  type WorkbenchWorkerDecision,
+} from "./local-ui.js";
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { hydrateManagedSecrets, type ManagedSecretsProvider } from "./secrets-manager.js";
 import { explainContract, formatContractExplanation, formatContractLint, lintContract, lintFails, loadReviewedContract } from "./contract-tools.js";
@@ -85,6 +109,7 @@ import { runTryExperience, type TryExperienceResult, type TryReviewContext } fro
 import { resolveReadableTryStateRoot } from "./try-state.js";
 import { buildCanonicalOnboardingArtifacts, type CanonicalOnboardingArtifacts } from "./onboarding-artifacts.js";
 import { detectProjectContext, formatProjectDetection } from "./project-detection.js";
+import { resolveSynapsorProject, type SynapsorProjectResolution } from "./project-resolution.js";
 import { cursorProjectStatus, installCursorProject, previewCursorProjectInstall, uninstallCursorProject } from "./cursor-project.js";
 import {
   acceptEffectBaseline,
@@ -115,7 +140,20 @@ import {
   type GenerationLock,
 } from "./auto-boundary.js";
 import { serveScopedExploreStdio } from "./authoring-mcp.js";
-import { prepareScopedExplore } from "./scoped-explore.js";
+import { createScopedExploreRuntime, prepareScopedExplore, type ExplorePlan } from "./scoped-explore.js";
+import { buildFriendlyAggregatePlan } from "./explore-cli.js";
+import { createProtectedQueryDraft, listProtectableQueries } from "./protect-query.js";
+import {
+  dispatchNotificationDeliveries,
+  planNotificationDeliveries,
+} from "./notifications.js";
+import {
+  initializeGuidedProject,
+  preflightGuidedProjectInitialization,
+  readGuidedOnboardingState,
+  resetGuidedOnboardingForBoundaryReview,
+  updateGuidedOnboardingState,
+} from "./guided-project.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -125,6 +163,40 @@ const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict"
 type RunnerSourceConfig = NonNullable<RuntimeConfig["sources"]>[string];
 type RunnerCapabilityConfig = NonNullable<RuntimeConfig["capabilities"]>[number];
 const runtimeStoreBridgeFlag = "--runtime-store-bridge";
+const runnerProcessStartedAt = new Date(Date.now() - process.uptime() * 1_000).toISOString();
+let activeProjectResolution: SynapsorProjectResolution | undefined;
+const projectAwareCommands = new Set([
+  "activation",
+  "attention",
+  "activity",
+  "apply",
+  "config",
+  "contract",
+  "doctor",
+  "events",
+  "evidence",
+  "handler",
+  "mcp",
+  "metrics",
+  "notifications",
+  "policy",
+  "proposals",
+  "propose",
+  "query-audit",
+  "receipts",
+  "replay",
+  "report",
+  "revert",
+  "runner",
+  "shadow",
+  "smoke",
+  "store",
+  "tools",
+  "ui",
+  "up",
+  "worker",
+  "writeback",
+]);
 
 const dangerousDatabaseMcpAuditExample = {
   tools: [
@@ -463,6 +535,11 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "language-server") return runLanguageServer();
   if (command === "lifecycle") return lifecycle(rest);
+  const projectAware = projectAwareCommands.has(command)
+    || (command === "try" && (rest[0] === "call" || rest[0] === "explore" || rest[0] === "protect"));
+  activeProjectResolution = projectAware && !optionalArg(rest, "--config")
+    ? await resolveSynapsorProject(process.cwd(), process.env)
+    : undefined;
   await maybeHydrateManagedSecrets(rest);
   if (command === "init") return init(rest);
   if (command === "inspect") return inspect(rest);
@@ -503,6 +580,8 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "events") return events(rest);
   if (command === "metrics") return metrics(rest);
   if (command === "activation") return activation(rest);
+  if (command === "attention") return attentionCommand(rest);
+  if (command === "notifications") return notificationsCommand(rest);
   if (command === "worker") return workerCommand(rest);
   if (command === "store") return storeCommand(rest);
   if (command === "shadow") return shadow(rest);
@@ -2118,7 +2197,10 @@ async function inspect(args: string[]): Promise<number> {
     env: databaseInput.env,
   });
   if (args.includes("--json")) {
-    process.stdout.write(`${JSON.stringify(inspection, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({
+      ...inspection,
+      role_posture_fingerprint: rolePostureFingerprint(inspection),
+    }, null, 2)}\n`);
   } else {
     if (databaseInput.inlineUrl) {
       process.stderr.write("Tip: prefer `--from-env DATABASE_URL` for reusable setup so connection strings do not land in shell history.\n");
@@ -2134,6 +2216,7 @@ function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlE
     `Engine: ${inspection.engine}`,
     `Server: ${inspection.server_version}`,
     `Current user: ${inspection.current_user}`,
+    `Role posture fingerprint: ${rolePostureFingerprint(inspection)}`,
     `Schemas: ${inspection.schemas.join(", ") || "(none)"}`,
     "",
     `Found ${inspection.tables.length} tables/views:`,
@@ -2161,11 +2244,94 @@ function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlE
 
 async function configCommand(args: string[]): Promise<number> {
   const [subcommand] = args;
+  if (subcommand === "init") return configInit(args.slice(1));
   if (subcommand === "validate") return configValidate(args.slice(1));
   if (subcommand === "show") return configShow(args.slice(1));
   if (subcommand === "migrate") return configMigrate(args.slice(1));
   usage();
   return 2;
+}
+
+async function configInit(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--output", "--out", "-o", "--engine", "--read-url-env", "--source", "--json"]),
+    "config init",
+  );
+  const output = outputArg(args) ?? "synapsor.runner.json";
+  const engine = optionalArg(args, "--engine") ?? "postgres";
+  if (engine !== "postgres" && engine !== "mysql") {
+    throw new Error("config init --engine must be postgres or mysql.");
+  }
+  const source = optionalArg(args, "--source") ?? `local_${engine}`;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(source)) {
+    throw new Error("config init --source must be a safe identifier.");
+  }
+  const readUrlEnv = optionalArg(args, "--read-url-env") ?? "DATABASE_URL";
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(readUrlEnv)) {
+    throw new Error("config init --read-url-env must name an environment variable, not contain a URL.");
+  }
+  const config = {
+    version: 1,
+    mode: "read_only",
+    storage: { sqlite_path: "./.synapsor/local.db" },
+    sources: {
+      [source]: {
+        engine,
+        read_url_env: readUrlEnv,
+        read_only: true,
+        statement_timeout_ms: 3000,
+      },
+    },
+    trusted_context: {
+      provider: "environment",
+      values: {
+        tenant_id_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+      tenant_binding: "tenant_id",
+      principal_binding: "principal",
+    },
+    capabilities: [],
+    strict: true,
+    result_format: 2,
+  };
+  const validation = validateRunnerCapabilityConfig(config);
+  if (!validation.ok) {
+    throw new Error(`Internal config-init validation failed: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
+  }
+  await writeFileGuarded(output, `${JSON.stringify(config, null, 2)}\n`, false);
+  const parsed = JSON.parse(await fs.readFile(output, "utf8"));
+  const writtenValidation = validateRunnerCapabilityConfig(parsed);
+  if (!writtenValidation.ok) {
+    await fs.rm(output, { force: true });
+    throw new Error(`Written config did not validate: ${writtenValidation.errors.map((issue) => issue.code).join(", ")}`);
+  }
+  const result = {
+    ok: true,
+    config_path: path.resolve(output),
+    mode: "read_only",
+    active_capabilities: 0,
+    source,
+    engine,
+    read_url_env: readUrlEnv,
+    source_database_changed: false,
+    next_action: `Run ${cliCommandName()} start --from-env ${readUrlEnv} to draft a reviewed boundary, or author capabilities manually.`,
+  };
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else {
+    process.stdout.write([
+      `Created valid zero-authority Runner config: ${result.config_path}`,
+      `Mode: ${result.mode}`,
+      `Database credential reference: ${readUrlEnv} (value was not read or written)`,
+      "Agent authority active: no",
+      "Source database changed: no",
+      `Next: ${result.next_action}`,
+      "",
+    ].join("\n"));
+  }
+  return 0;
 }
 
 async function contractCommand(args: string[]): Promise<number> {
@@ -2703,7 +2869,7 @@ function reportObjectScope(tenant: string, value: string): { kind: "object"; ten
 }
 
 async function policyCommand(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `policy ${args.slice(0, 3).join(" ")}`, (bridgeStorePath) =>
@@ -3065,10 +3231,19 @@ function bundleMcpClientExamples(): Record<string, string> {
 }
 
 async function configValidate(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const result = await validateConfigFile(configPath);
+  const payload = {
+    ...result,
+    config_path: path.resolve(configPath),
+    state_preserved: true,
+    source_database_changed: false,
+    ...(result.ok ? {} : {
+      next_action: `Correct the reported field, then run ${cliCommandName()} config validate --config ${shellQuote(configPath)} --json.`,
+    }),
+  };
   if (args.includes("--json")) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   } else if (result.ok) {
     process.stdout.write(`config valid: ${configPath}\n`);
     for (const warning of result.warnings) {
@@ -3079,12 +3254,14 @@ async function configValidate(args: string[]): Promise<number> {
     for (const error of result.errors) {
       process.stdout.write(`error ${error.path} ${error.code}: ${error.message}\n`);
     }
+    process.stdout.write(`State preserved: ${configPath} and the source database were not changed.\n`);
+    process.stdout.write(`Next: ${payload.next_action}\n`);
   }
   return result.ok ? 0 : 1;
 }
 
 async function validateConfigFile(configPath: string): Promise<ConfigValidationResult> {
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as RuntimeConfig;
+  const parsed = await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config");
   const raw = validateRunnerCapabilityConfig(parsed);
   if (!raw.ok) return raw;
   try {
@@ -3109,18 +3286,18 @@ async function validateConfigFile(configPath: string): Promise<ConfigValidationR
 }
 
 async function configShow(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
+  const configPath = runnerConfigPath(args);
+  const parsed = await readJsonFileWithLocation<unknown>(configPath, "Runner config");
   const output = args.includes("--redacted") ? redactConfig(parsed) : parsed;
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   return 0;
 }
 
 async function configMigrate(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const outputPath = outputArg(args);
   const write = args.includes("--write") || Boolean(outputPath);
-  const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
+  const parsed = await readJsonFileWithLocation<Record<string, unknown>>(configPath, "Runner config");
   const version = Number((parsed as { version?: unknown }).version ?? 1);
   if (version !== 1) {
     throw new Error(`unsupported config version ${String((parsed as { version?: unknown }).version)}; no automatic widening migration is available`);
@@ -3853,8 +4030,8 @@ async function firstRunDoctor(args: string[]): Promise<number> {
       : fail(`port-${port}`, `Port ${port} is already in use.`, "The first-run fixtures need predictable local demo ports.", `Stop the process using port ${port}, or run ./scripts/try-synapsor.sh --reset if it is a stale demo container.`));
   }
 
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
-  const storePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(args);
+  const storePath = resolvedLocalStorePath(args);
   const configExists = await fileExists(configPath);
   checks.push(configExists
     ? pass("config", `Runner config exists at ${configPath}.`, "MCP serve/smoke need a reviewed config.", "No action needed.")
@@ -4057,7 +4234,7 @@ function formatFirstRunDoctor(report: { ok: boolean; checks: FirstRunCheck[] }):
 }
 
 async function localDoctor(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const allowSharedCredential = args.includes("--allow-shared-credential");
   const checkHandlers = args.includes("--check-handlers");
   const checkWriteback = args.includes("--check-writeback") || args.includes("--check-db");
@@ -4652,7 +4829,7 @@ async function cloudLinkedGovernanceDoctorStatus(
     checks.push({ name: "governance:authority", ok: true, level: "pass", message: "Governance authority is local-only; no Synapsor Cloud account is required." });
     return { authority_mode: "local_only", evidence_residency: "metadata_only", queue_when_unavailable: false };
   }
-  const storePath = optionalArg(args, "--store") ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args, config.storage?.sqlite_path);
   let store: ReturnType<typeof createDefaultRuntimeStore> | undefined;
   let synchronizer: CloudLinkedSynchronizer | undefined;
   try {
@@ -5387,8 +5564,8 @@ async function validate(args: string[]): Promise<number> {
 async function revert(args: string[]): Promise<number> {
   const requested = positional(args, 0);
   if (!requested) throw new Error("revert requires an applied proposal id or latest");
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(args);
+  const storePath = resolvedLocalStorePath(args);
   const config = await readRuntimeConfig(configPath);
   if (runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `revert ${requested}`, (bridgeStorePath) => revert(argsWithRuntimeStoreBridge([...args, "--store", bridgeStorePath], bridgeStorePath)));
@@ -5510,7 +5687,9 @@ function createCompensationProposal(input: {
     action: input.forward.action,
     ...(input.forward.change_set.contract ? { contract: input.forward.change_set.contract } : {}),
     mode: "review_required" as const,
-    principal: { id: input.actor, source: input.identity.verified ? "trusted_session" as const : "environment" as const },
+    // Compensation targets the same trusted row scope as the forward effect.
+    // The operator requesting the revert is recorded separately in evidence.
+    principal: structuredClone(input.forward.change_set.principal),
     scope: { tenant_id: input.forward.tenant_id, business_object: input.forward.business_object, object_id: input.forward.object_id },
     source: {
       kind: input.forward.source_kind === "external_mysql" ? "external_mysql" as const : "external_postgres" as const,
@@ -5567,14 +5746,14 @@ async function apply(args: string[]): Promise<number> {
   if (proposalId) return applyProposal(args, proposalId);
 
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
-  const configPath = optionalArg(args, "--config") ?? (await fileExists("synapsor.runner.json") ? "synapsor.runner.json" : undefined);
+  const configPath = await optionalRunnerConfigPath(args);
   const runtimeConfig = configPath ? await optionalRuntimeConfig(configPath) : undefined;
   if (!dryRun) assertLocalGovernanceMutationAllowed(runtimeConfig, "apply --job");
   if (runtimeConfig && runtimeStoreBridgeRequired(args, runtimeConfig)) {
     return withSharedPostgresRuntimeStoreBridge(args, runtimeConfig, "apply --job", (bridgeStorePath) => apply(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
   assertNoRuntimeStoreForLocalMutation(runtimeConfig, "apply --job", args);
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const storePath = optionalResolvedLocalStorePath(args);
   const mirrorStorePath = storePath ?? runtimeConfig?.storage?.sqlite_path;
   if (mirrorStorePath && sharedPostgresLedgerMirrorRequested(args, runtimeConfig)) {
     return withSharedPostgresLedgerMirror(args, mirrorStorePath, "apply --job", () => apply(withoutSharedPostgresLedgerMirror(args)), runtimeConfig);
@@ -5688,8 +5867,8 @@ async function applyAllApproved(args: string[]): Promise<number> {
     throw new Error("apply --all-approved requires --yes because it can commit multiple approved proposals");
   }
   if (positional(args, 0)) throw new Error("apply --all-approved does not accept a proposal id or --job");
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(args);
+  const storePath = resolvedLocalStorePath(args);
   const config = await optionalRuntimeConfig(configPath);
   assertLocalGovernanceMutationAllowed(config, "apply --all-approved");
   if (config && runtimeStoreBridgeRequired(args, config)) {
@@ -5806,20 +5985,50 @@ function formatBatchApplySummary(summary: {
   return lines.join("\n");
 }
 
-async function applyProposal(args: string[], proposalId: string): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+type TrustedOperatorDecisionOverride = {
+  actor?: string;
+  identity?: string;
+  privateKeyPath?: string;
+  reason?: string;
+  identityToken?: string;
+};
+
+type TrustedOperatorInvocation = {
+  decision?: TrustedOperatorDecisionOverride;
+  quiet?: boolean;
+};
+
+async function applyProposal(
+  args: string[],
+  proposalId: string,
+  invocation: TrustedOperatorInvocation = {},
+): Promise<number> {
+  const configPath = runnerConfigPath(args);
+  const storePath = resolvedLocalStorePath(args);
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const runnerId = optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner";
   const workerAttempt = Number(optionalArg(args, "--worker-attempt") ?? "1");
+  const workerExecutionMode = optionalArg(args, "--worker-execution-mode");
+  const workerLeaseId = optionalArg(args, "--worker-lease-id");
   const config = await readRuntimeConfig(configPath);
   assertLocalGovernanceMutationAllowed(config, "apply");
   if (config && runtimeStoreBridgeRequired(args, config)) {
-    return withSharedPostgresRuntimeStoreBridge(args, config, `apply ${proposalId}`, (bridgeStorePath) => applyProposal(argsWithRuntimeStoreBridge(args, bridgeStorePath), proposalId));
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      `apply ${proposalId}`,
+      (bridgeStorePath) => applyProposal(argsWithRuntimeStoreBridge(args, bridgeStorePath), proposalId, invocation),
+    );
   }
   assertNoRuntimeStoreForLocalMutation(config, "apply", args);
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
-    return withSharedPostgresLedgerMirror(args, storePath, `apply ${proposalId}`, () => applyProposal(withoutSharedPostgresLedgerMirror(args), proposalId), config);
+    return withSharedPostgresLedgerMirror(
+      args,
+      storePath,
+      `apply ${proposalId}`,
+      () => applyProposal(withoutSharedPostgresLedgerMirror(args), proposalId, invocation),
+      config,
+    );
   }
   const resolvedProposalId = await resolveProposalId(proposalId, storePath);
   const validation = validateRunnerCapabilityConfig(config);
@@ -5836,8 +6045,82 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
   try {
     const proposal = requireLocalProposal(store, resolvedProposalId);
     const capability = findProposalCapability(config, proposal);
+    let supervisedPolicy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]> | undefined;
+    if (workerExecutionMode !== undefined) {
+      if (workerExecutionMode !== "supervised_worker" || !workerLeaseId) {
+        throw workerPolicyError(
+          "SUPERVISED_WORKER_LEASE_REQUIRED",
+          "supervised worker apply requires its exact execution mode and active lease id",
+        );
+      }
+      const queueItem = store.assertActiveWorkerLease({
+        proposalId: resolvedProposalId,
+        workerId: runnerId,
+        leaseId: workerLeaseId,
+      });
+      if (queueItem.execution_mode !== "supervised_worker") {
+        throw workerPolicyError("SUPERVISED_WORKER_QUEUE_MODE_MISMATCH", "worker queue item is not supervised execution authority");
+      }
+      const eligibility = resolveSupervisedWorkerEligibility(config, capability, {
+        workerIdentity: runnerId,
+        phase: "execute",
+      });
+      if (!eligibility.eligible || !eligibility.policy || !eligibility.contract_digest) {
+        throw workerPolicyError(
+          supervisedWorkerEligibilityCode(eligibility.reasons),
+          `supervised execution authority no longer matches: ${eligibility.reasons.join(", ")}`,
+        );
+      }
+      if (
+        queueItem.contract_digest !== eligibility.contract_digest
+        || queueItem.contract_digest !== capability.contract_provenance?.digest
+      ) {
+        throw workerPolicyError(
+          "SUPERVISED_WORKER_DIGEST_STALE",
+          "queued contract digest no longer matches the exact active capability digest",
+        );
+      }
+      const workerControl = store.workerControlState();
+      if (workerControl.mode !== "active") {
+        throw workerPolicyError(
+          "SUPERVISED_WORKER_PAUSED",
+          `supervised execution is ${workerControl.mode}; no new source mutation may begin`,
+        );
+      }
+      if (!workerControlAllowsPolicy(workerControl, eligibility.policy)) {
+        throw workerPolicyError(
+          "SUPERVISED_WORKER_DIGEST_REVOKED",
+          "supervised execution is disabled or revoked for this exact capability digest",
+        );
+      }
+      if (!requiredAttentionSinksHealthy(store, config, eligibility.policy)) {
+        throw workerPolicyError(
+          "SUPERVISED_WORKER_ATTENTION_SINK_UNHEALTHY",
+          "required supervision sinks are not healthy; approved work remains held",
+        );
+      }
+      await assertSupervisedWriterPosture(
+        store,
+        config,
+        eligibility.policy,
+        envWithDemoDefaults(config, configPath),
+      );
+      supervisedPolicy = eligibility.policy;
+    } else if (workerLeaseId) {
+      throw workerPolicyError(
+        "SUPERVISED_WORKER_MODE_REQUIRED",
+        "a worker lease id cannot be used without supervised-worker execution mode",
+      );
+    }
     await verifyStoredApprovalAuthority(config, configPath, store, proposal, capability);
-    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "apply" });
+    const identity = await operatorIdentityForDecision({
+      args,
+      config,
+      configPath,
+      proposal,
+      action: "apply",
+      decision: invocation.decision,
+    });
     store.recordOperatorAuthorization(resolvedProposalId, identity, Boolean(config.operator_identity && config.operator_identity.provider !== "dev_env"));
     operationalLog("info", "operator_decision", {
       action: "apply",
@@ -5863,33 +6146,59 @@ async function applyProposal(args: string[], proposalId: string): Promise<number
     } else if (proposalScope) {
       throw new Error(`proposal ${proposal.proposal_id} carries unreviewed principal scope`);
     }
+    if (supervisedPolicy) {
+      const expiresAt = Date.parse(proposal.created_at) + supervisedPolicy.proposal_ttl_seconds * 1_000;
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        throw workerPolicyError(
+          "SUPERVISED_WORKER_PROPOSAL_EXPIRED",
+          "the supervised proposal exceeded its reviewed execution TTL",
+        );
+      }
+      assertSupervisedPolicyApprovalCurrent(store, config, capability, proposal);
+      await preflightGeneratedAuthority(config, envWithDemoDefaults(config, configPath));
+    }
     const executorName = proposalExecutorName(proposal, capability);
     if (executorName === "none" || executorName === "cloud_worker") {
       throw new Error(`proposal ${resolvedProposalId} is not locally applyable; capability ${capability.name} declares ${executorName === "none" ? "no local writeback" : "cloud-worker writeback"}.`);
     }
     if (executorName === "sql_update") {
+      if (supervisedPolicy && workerLeaseId) {
+        store.renewWorkerLease({
+          proposalId: resolvedProposalId,
+          workerId: runnerId,
+          leaseId: workerLeaseId,
+          leaseSeconds: supervisedPolicy.lease_seconds,
+        });
+      }
       const job = store.createWritebackJobFromProposal(resolvedProposalId, {
         project_id: optionalArg(args, "--project") ?? "local",
         runner_id: runnerId,
-        lease_seconds: Number(optionalArg(args, "--lease-seconds") ?? "300"),
+        lease_seconds: supervisedPolicy?.lease_seconds ?? Number(optionalArg(args, "--lease-seconds") ?? "300"),
+        ...(workerLeaseId ? { lease_id: workerLeaseId } : {}),
         attempt: workerAttempt,
       });
       const result = await applySqlJob(job, configPath, storePath, dryRun, envWithDemoDefaults(config, configPath));
       logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
-      if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));
+      if (!invocation.quiet && !args.includes("--batch-quiet")) {
+        process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));
+      }
       return result.status === "failed" || result.status === "reconciliation_required" ? 1 : 0;
     }
     const executor = executorConfig(config, executorName);
     if (executor.type === "http_handler") {
       const result = await applyHttpHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, workerAttempt, env: envWithDemoDefaults(config, configPath) });
       logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
-      if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
+      if (!invocation.quiet && !args.includes("--batch-quiet")) {
+        process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
+      }
       return result.status === "failed" ? 1 : 0;
     }
     if (executor.type === "command_handler") {
       const result = await applyCommandHandlerProposal({ store, proposalId: resolvedProposalId, proposal, executorName, executor, runnerId, dryRun, workerAttempt, env: envWithDemoDefaults(config, configPath) });
       logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
-      if (!args.includes("--batch-quiet")) process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
+      if (!invocation.quiet && !args.includes("--batch-quiet")) {
+        process.stdout.write(args.includes("--json") ? `${JSON.stringify(redactConfig(result), null, 2)}\n` : formatHandlerApplyResult(result, resolvedProposalId, storePath));
+      }
       return result.status === "failed" ? 1 : 0;
     }
     throw new Error(`unsupported executor type for ${executorName}`);
@@ -6931,24 +7240,71 @@ async function shouldEnterAutoBoundary(args: string[]): Promise<boolean> {
     "--tenant-key",
   ];
   if (establishedRoutingFlags.some((flag) => args.includes(flag))) return false;
+  if (await fileExists(path.resolve(".synapsor/guided-onboarding.json"))) return true;
   if (await fileExists(path.resolve("synapsor.runner.json"))) return false;
   if (await fileExists(path.resolve("synapsor.contract.json"))) return false;
   return true;
 }
 
 async function startAutoBoundary(args: string[]): Promise<number> {
-  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--force"]), "start --from-env Auto Boundary");
+  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--force", "--rescan"]), "start --from-env Auto Boundary");
   const sourceEnv = optionalArg(args, "--from-env");
   if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
   const project = await detectProjectContext(process.cwd());
   process.stdout.write(formatProjectDetection(project));
+  const existingJourney = await readGuidedOnboardingState(project.root);
+  const shouldRescan = args.includes("--rescan") || args.includes("--force");
+  if (shouldRescan && !existingJourney) {
+    throw new Error("There is no guided Synapsor project to rescan. Start without --rescan or --force.");
+  }
+  if (existingJourney && !shouldRescan) {
+    if (existingJourney.source.environment_variable !== sourceEnv) {
+      throw new Error(
+        `This guided project uses ${existingJourney.source.environment_variable}, not ${sourceEnv}. ` +
+        `Resume with --from-env ${existingJourney.source.environment_variable}, or choose an explicit rescan.`,
+      );
+    }
+    const boundaryRoot = path.join(project.root, existingJourney.artifacts.boundary_root);
+    process.stdout.write([
+      "Existing Synapsor guided project found.",
+      `Completed: ${existingJourney.completed_steps.join(", ")}`,
+      `Agent authority active: ${existingJourney.authority_active ? "yes" : "no"}`,
+      "Source database changed: no",
+      "No schema inspection, digest change, or file rewrite was performed.",
+      `Next: ${existingJourney.recommended_next_action}`,
+      "",
+    ].join("\n"));
+    if (args.includes("--no-open")) return 0;
+    return ui([
+      "--open",
+      "--boundary-root",
+      boundaryRoot,
+      "--config",
+      path.join(project.root, existingJourney.artifacts.runner_config),
+      "--store",
+      path.join(project.root, existingJourney.artifacts.local_store),
+    ]);
+  }
+  await preflightGuidedProjectInitialization(project.root);
   process.stdout.write("Inspecting the whole selected schema in an enforced read-only metadata transaction. No source rows are sampled.\n");
-  const inspection = await inspectDatabase({
-    engine: (optionalArg(args, "--engine") ?? "auto") as InspectEngine,
-    databaseUrlEnv: sourceEnv,
-    schema: optionalArg(args, "--schema"),
-    env: process.env,
-  });
+  let inspection: SchemaInspection;
+  try {
+    inspection = await inspectDatabase({
+      engine: (optionalArg(args, "--engine") ?? "auto") as InspectEngine,
+      databaseUrlEnv: sourceEnv,
+      schema: optionalArg(args, "--schema"),
+      env: process.env,
+    });
+  } catch (error) {
+    const cause = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+    throw new Error([
+      "Database connection or metadata inspection failed.",
+      "Why it matters: Runner cannot draft authority from an unverified schema and database-role posture.",
+      "State preserved: existing project/review files were not replaced and no source row was changed.",
+      `Next: verify the exported ${sourceEnv} network/credential posture without printing it, then rerun ${cliCommandName()} start --from-env ${sourceEnv}.`,
+      `Cause: ${cause}`,
+    ].join("\n"));
+  }
   process.stdout.write(summarizeInspection(inspection));
   const evidence = await loadStructuredProjectEvidence(project);
   const build = buildAutoBoundary({
@@ -6957,26 +7313,47 @@ async function startAutoBoundary(args: string[]): Promise<number> {
     parsedEvidence: evidence.parsed,
     existingContracts: evidence.existingContracts,
     sourceEnv,
+    inspectedSchema: optionalArg(args, "--schema"),
   });
-  const result = await writeAutoBoundaryArtifacts({
-    projectRoot: project.root,
-    build,
-    force: args.includes("--force"),
-  });
+  let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
+  let guided: Awaited<ReturnType<typeof initializeGuidedProject>>;
+  try {
+    result = await writeAutoBoundaryArtifacts({
+      projectRoot: project.root,
+      build,
+      force: shouldRescan,
+    });
+    guided = await initializeGuidedProject({
+      projectRoot: project.root,
+      build,
+      runnerVersion: runnerPackage.version,
+    });
+    if (existingJourney) {
+      await resetGuidedOnboardingForBoundaryReview({
+        projectRoot: project.root,
+        schemaFingerprint: build.lock.schema_fingerprint,
+        rolePostureFingerprint: build.lock.role_posture_fingerprint,
+      });
+    }
+  } catch (error) {
+    if (!existingJourney && result) await rollbackFreshAutoBoundaryWrite(project.root, result);
+    throw error;
+  }
   process.stdout.write([
     "",
-    "Auto Boundary draft",
+    "Database connected.",
     `  objects inspected: ${build.review.summary.objects}`,
     `  exact-row read drafts: ${result.draft_reads}`,
     `  blocked objects: ${result.blocked_objects}`,
     `  sensitive fields kept out by suggestion: ${build.review.summary.sensitive_fields_kept_out}`,
     `  RLS policies found: ${build.review.summary.rls_policies}`,
     `  candidate contract: ${displayPath(path.join(result.root, "synapsor.candidate.contract.json"))}`,
-    `  review report: ${displayPath(path.join(result.root, "REVIEW.md"))}`,
+    `  valid Runner config: ${displayPath(guided.config_path)}`,
+    `  local ledger: ${displayPath(guided.store_path)}`,
     "  state: disabled and unreviewed; active Runner tools are unchanged",
+    "  source database changed: no",
     "",
-    "Review tenant/principal scope, field exposure, aggregate permissions, relationships, privacy budgets, and the exact database role before enabling own-data exploration.",
-    `After activation, install the local authoring tools in Cursor: ${cliCommandName()} mcp install cursor --project --authoring --project-root ${displayPath(project.root)} --yes`,
+    "Next: Review what the agent can see.",
     "Scoped Explore is never registered on production, shared HTTP, or Streamable HTTP.",
     "",
   ].join("\n"));
@@ -6984,7 +7361,30 @@ async function startAutoBoundary(args: string[]): Promise<number> {
     process.stdout.write(`Static evidence warnings:\n${evidence.warnings.map((warning) => `  - ${warning}`).join("\n")}\n`);
   }
   if (args.includes("--no-open")) return 0;
-  return ui(["--open", "--boundary-root", result.root]);
+  return ui([
+    "--open",
+    "--boundary-root",
+    result.root,
+    "--config",
+    guided.config_path,
+    "--store",
+    guided.store_path,
+  ]);
+}
+
+async function rollbackFreshAutoBoundaryWrite(
+  projectRoot: string,
+  result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>>,
+): Promise<void> {
+  const outputRoot = path.resolve(result.root);
+  await fs.rm(outputRoot, { recursive: true, force: true });
+  for (const file of result.files) {
+    const resolved = path.resolve(file);
+    if (resolved === outputRoot || resolved.startsWith(`${outputRoot}${path.sep}`)) continue;
+    await fs.rm(resolved, { force: true });
+  }
+  await fs.rmdir(path.dirname(outputRoot)).catch(() => undefined);
+  await fs.rmdir(path.join(path.resolve(projectRoot), ".synapsor")).catch(() => undefined);
 }
 
 async function boundaryCommand(args: string[]): Promise<number> {
@@ -7008,6 +7408,7 @@ async function boundaryCommand(args: string[]): Promise<number> {
       parsedEvidence: evidence.parsed,
       existingContracts: evidence.existingContracts,
       sourceEnv,
+      inspectedSchema: optionalArg(rest, "--schema"),
     });
     const result = await writeAutoBoundaryArtifacts({ projectRoot, build, force: rest.includes("--force") });
     if (rest.includes("--json")) {
@@ -7025,7 +7426,7 @@ async function boundaryCommand(args: string[]): Promise<number> {
     const inspection = await inspectDatabase({
       engine: (optionalArg(rest, "--engine") ?? lock.engine) as InspectEngine,
       databaseUrlEnv: lock.source_env,
-      schema: optionalArg(rest, "--schema"),
+      schema: optionalArg(rest, "--schema") ?? lock.inspected_schema,
       env: process.env,
     });
     const comparison = compareGenerationLock(lock, inspection);
@@ -7381,9 +7782,9 @@ async function up(args: string[] = []): Promise<number> {
     "--allow-concurrent-store",
   ]);
   assertKnownOptions(args, allowed, "up");
-  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
+  const configPath = runnerConfigPath(args, defaultConfigPath);
   const config = await readRuntimeConfig(configPath);
-  const storePath = optionalArg(args, "--store") ?? config.storage?.sqlite_path ?? defaultStorePath;
+  const storePath = resolvedLocalStorePath(args, config.storage?.sqlite_path, defaultStorePath);
   const serveRequested = args.includes("--serve");
   const transport = optionalArg(args, "--transport") ?? (serveRequested ? "streamable-http" : "stdio");
   if (transport !== "stdio" && transport !== "streamable-http") {
@@ -7636,8 +8037,8 @@ async function cloud(args: string[]): Promise<number> {
 
 async function cloudOutbox(args: string[]): Promise<number> {
   const [action = "status", ...rest] = args;
-  const configPath = optionalArg(rest, "--config") ?? "synapsor.runner.json";
-  const storePath = optionalArg(rest, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(rest);
+  const storePath = resolvedLocalStorePath(rest);
   const runtimeConfig = loadRuntimeConfigFromFile(configPath);
   if (runtimeConfig.governance?.mode !== "cloud_linked") throw new Error("cloud outbox requires governance.mode cloud_linked");
   const store = createDefaultRuntimeStore(runtimeConfig, process.env, storePath);
@@ -7771,7 +8172,7 @@ function stripPrincipalScopeFromCloudRows(changeSet: ChangeSet, column: string):
 
 async function cloudSync(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.cloud.json";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args);
   const requested = firstPositional(args);
   const connection = await loadCloudConnection(configPath);
   const contractId = String(connection.file.contract_id || "").trim();
@@ -7851,7 +8252,7 @@ async function cloudSync(args: string[]): Promise<number> {
 
 async function cloudSyncActivity(args: string[]): Promise<number> {
   const configPath = optionalArg(args, "--config") ?? "synapsor.cloud.json";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args);
   const requested = firstPositional(args) ?? "latest";
   const connection = await loadCloudConnection(configPath);
   const runnerSourceId = String(connection.file.runner_source_id || connection.sourceId).trim();
@@ -8157,8 +8558,8 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   }
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
   const authoring = rest.includes("--authoring");
-  const configPath = optionalArg(rest, "--config") ?? "./synapsor.runner.json";
-  const storePath = optionalArg(rest, "--store") ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(rest, "./synapsor.runner.json");
+  const storePath = resolvedLocalStorePath(rest);
   let toolNames: string[];
   if (authoring) {
     await prepareScopedExplore({ projectRoot, transport: "stdio", env: process.env });
@@ -8370,6 +8771,7 @@ async function smoke(args: string[]): Promise<number> {
 
 async function writeback(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "setup") return writebackSetup(rest);
   if (subcommand === "doctor") return writebackDoctor(rest);
   if (subcommand === "migration") return writebackMigration(rest);
   if (subcommand === "grants") return writebackGrants(rest);
@@ -8383,8 +8785,8 @@ async function writebackReconcile(args: string[]): Promise<number> {
   if (!subcommand || !["list", "inspect", "resolve"].includes(subcommand)) {
     throw new Error("writeback reconcile requires list, inspect, or resolve");
   }
-  const configPath = optionalArg(rest, "--config") ?? defaultConfigPath;
-  const storePath = optionalArg(rest, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(rest, defaultConfigPath);
+  const storePath = resolvedLocalStorePath(rest);
   const config = await readRuntimeConfig(configPath);
   if (runtimeStoreBridgeRequired(rest, config)) {
     return withSharedPostgresRuntimeStoreBridge(rest, config, `writeback reconcile ${subcommand}`, (bridgeStorePath) =>
@@ -8487,17 +8889,26 @@ async function inspectWritebackIntentContext(
   } finally {
     store.close();
   }
+  const observation = await inspectWritebackSourceContext(intent, proposal, configPath, config);
+  return { intent, proposal, observation };
+}
+
+async function inspectWritebackSourceContext(
+  intent: StoredWritebackIntent,
+  proposal: StoredProposal,
+  configPath: string,
+  config: RuntimeConfig,
+): Promise<ReconciliationObservation> {
   const source = config.sources?.[intent.intent.source_id];
   if (runnerReceiptConfig(source)?.authority !== "runner_ledger") throw new Error(`source ${intent.intent.source_id} does not use runner_ledger receipt authority`);
   const databaseUrl = await resolveSqlWriteDatabaseUrl(intent.intent, configPath, process.env);
-  const observation = intent.intent.engine === "postgres"
+  return intent.intent.engine === "postgres"
     ? await inspectPostgresWritebackSource(
       intent.intent,
       databaseUrl,
       writebackDatabaseScope(source, proposal, intent.intent),
     )
     : await inspectMysqlWritebackSource(intent.intent, databaseUrl);
-  return { intent, proposal, observation };
 }
 
 export function reconciliationSupportedOutcome(observation: ReconciliationObservation): "applied" | "conflict" | "failed" {
@@ -8505,6 +8916,31 @@ export function reconciliationSupportedOutcome(observation: ReconciliationObserv
   if ((observation.operation === "single_row_delete" || observation.operation === "set_delete") && observation.classification === "target_absent") return "applied";
   if (observation.classification === "matches_reviewed_before" || observation.classification === "not_observed") return "failed";
   return "conflict";
+}
+
+function workbenchReconciliationView(
+  intent: StoredWritebackIntent,
+  observation: ReconciliationObservation,
+): WorkbenchReconciliationView {
+  const memberClassifications: Record<string, number> = {};
+  for (const member of observation.member_observations ?? []) {
+    memberClassifications[member.classification] = (memberClassifications[member.classification] ?? 0) + 1;
+  }
+  return {
+    intent_id: intent.intent_id,
+    proposal_id: intent.proposal_id,
+    operation: intent.operation,
+    intent_status: intent.status,
+    ...(intent.reconciliation_reason ? { reconciliation_reason: intent.reconciliation_reason } : {}),
+    classification: observation.classification,
+    supported_outcome: reconciliationSupportedOutcome(observation),
+    observed_digest: observation.observed_digest,
+    expected_fields: Object.keys(observation.expected).sort(),
+    observed_fields: Object.keys(observation.observed).sort(),
+    member_count: observation.member_observations?.length ?? 0,
+    member_classifications: memberClassifications,
+    source_database_changed: false,
+  };
 }
 
 export function reconciliationReceipt(
@@ -8735,8 +9171,393 @@ function resolveHandlerTemplateName(value: string): HandlerTemplateName {
   throw new Error(`unknown handler template: ${value}. Use ${cliCommandName()} handler template --list`);
 }
 
+type WritebackSetupProfile = "development" | "staging" | "production" | "unknown";
+
+type WritebackSetupPlan = {
+  schema_version: "synapsor.writeback-setup.v1";
+  digest: `sha256:${string}`;
+  config_path: string;
+  source: string | null;
+  engine: "postgres" | "mysql" | null;
+  profile: WritebackSetupProfile;
+  executor: "direct_sql" | "app_owned_or_none";
+  receipt_mode: "runner_ledger" | "source_auto_migrate" | "source_precreated" | "not_applicable";
+  execution: "no_source_ddl" | "runtime_auto_migrate" | "precreated_source_receipt" | "not_applicable";
+  source_objects: string[];
+  writer_grants: string[];
+  sql_preview: string;
+  receipt_schema: string | null;
+  receipt_table: string | null;
+  writer_role: string | null;
+  setup_connection_env: string | null;
+  apply_allowed: boolean;
+  source_database_changed: false;
+  next_action: string;
+};
+
+async function writebackSetup(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set([
+    "--config",
+    "--source",
+    "--profile",
+    "--writer-role",
+    "--setup-url-env",
+    "--schema",
+    "--table",
+    "--apply",
+    "--confirm",
+    "--json",
+  ]), "writeback setup");
+  const configPath = runnerConfigPath(args, defaultConfigPath);
+  const config = await readRuntimeConfig(configPath);
+  const profile = await writebackSetupProfile(args, configPath);
+  const directSources = Object.entries(config.sources ?? {})
+    .filter(([sourceName]) => sourceNeedsSqlWriteback(config, sourceName));
+  const requestedSource = optionalArg(args, "--source");
+  const selected = requestedSource
+    ? directSources.find(([sourceName]) => sourceName === requestedSource)
+    : directSources.length === 1
+      ? directSources[0]
+      : undefined;
+  if (requestedSource && !selected) {
+    throw new Error(`Writeback setup could not find direct-SQL source ${requestedSource}. State preserved: config and database unchanged. Next: run ${cliCommandName()} writeback doctor --config ${shellQuote(configPath)}.`);
+  }
+  if (!requestedSource && directSources.length > 1) {
+    throw new Error(`Writeback setup found multiple direct-SQL sources: ${directSources.map(([name]) => name).join(", ")}. State preserved: config and database unchanged. Next: rerun with --source <name>.`);
+  }
+
+  const unsigned = selected
+    ? buildWritebackSetupPlan({
+      args,
+      configPath,
+      sourceName: selected[0],
+      source: selected[1],
+      profile,
+    })
+    : {
+      schema_version: "synapsor.writeback-setup.v1" as const,
+      config_path: configPath,
+      source: null,
+      engine: null,
+      profile,
+      executor: "app_owned_or_none" as const,
+      receipt_mode: "not_applicable" as const,
+      execution: "not_applicable" as const,
+      source_objects: [],
+      writer_grants: [],
+      sql_preview: "",
+      receipt_schema: null,
+      receipt_table: null,
+      writer_role: null,
+      setup_connection_env: null,
+      apply_allowed: false,
+      source_database_changed: false as const,
+      next_action: "No direct-SQL source needs receipt setup. Verify the app-owned executor or keep this project read-only.",
+    };
+  const digest = canonicalJsonDigest(unsigned);
+  const plan: WritebackSetupPlan = { ...unsigned, digest };
+
+  if (!args.includes("--apply")) {
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, applied: false, plan }, null, 2)}\n`);
+    else process.stdout.write(formatWritebackSetupPlan(plan));
+    return 0;
+  }
+  if (!selected) {
+    throw new Error(`Writeback setup has no direct-SQL work to apply. State preserved: config and database unchanged. Next: inspect ${shellQuote(configPath)} for an app-owned executor or proposal capability.`);
+  }
+  if (profile !== "development" && profile !== "staging") {
+    throw new Error(`Writeback setup refuses DDL for profile ${profile}. Production and unknown profiles are plan-only. State preserved: config and database unchanged. Next: rerun without --apply to export the reviewed plan.`);
+  }
+  if (optionalArg(args, "--confirm") !== `APPLY WRITEBACK SETUP ${digest}`) {
+    throw new Error(`Writeback setup requires exact human confirmation. State preserved: config and database unchanged. Next: rerun with --confirm ${shellQuote(`APPLY WRITEBACK SETUP ${digest}`)}.`);
+  }
+  const applied = await applyWritebackSetupPlan(plan, selected[1], process.env);
+  const statePath = path.join(path.dirname(configPath), ".synapsor/writeback-setup-state.json");
+  await writeCliJsonAtomic(statePath, {
+    schema_version: "synapsor.writeback-setup-state.v1",
+    plan_digest: digest,
+    config_path: path.basename(configPath),
+    source: plan.source,
+    profile,
+    receipt_mode: plan.receipt_mode,
+    status: "verified",
+    source_database_changed: applied.source_database_changed,
+    verified_at: new Date().toISOString(),
+  });
+  const payload = {
+    ok: true,
+    applied: true,
+    plan,
+    result: applied,
+    state_path: statePath,
+  };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write([
+    formatWritebackSetupPlan(plan).trimEnd(),
+    "",
+    applied.message,
+    `State: ${statePath}`,
+    `Source database changed: ${applied.source_database_changed ? "yes, only the reviewed receipt setup" : "no"}`,
+    "Next: Run writeback doctor with the trusted writer credential.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+function buildWritebackSetupPlan(input: {
+  args: string[];
+  configPath: string;
+  sourceName: string;
+  source: RunnerSourceConfig;
+  profile: WritebackSetupProfile;
+}): Omit<WritebackSetupPlan, "digest"> {
+  const receipts = runnerReceiptConfig(input.source);
+  const receiptMode = receipts?.authority === "runner_ledger"
+    ? "runner_ledger"
+    : receipts?.authority === "source_db" && receipts.provisioning === "precreated"
+      ? "source_precreated"
+      : "source_auto_migrate";
+  const schema = optionalArg(input.args, "--schema")
+    ?? receipts?.schema
+    ?? (input.source.engine === "postgres" ? "public" : undefined);
+  const table = optionalArg(input.args, "--table") ?? receipts?.table ?? "synapsor_writeback_receipts";
+  if (schema) quoteSqlIdentifier(schema, input.source.engine);
+  quoteSqlIdentifier(table, input.source.engine);
+  const setupUrlEnv = optionalArg(input.args, "--setup-url-env") ?? null;
+  if (setupUrlEnv && !/^[A-Z_][A-Z0-9_]*$/.test(setupUrlEnv)) {
+    throw new Error("Writeback setup --setup-url-env must name an environment variable, not contain a URL.");
+  }
+
+  if (receiptMode === "runner_ledger") {
+    return {
+      schema_version: "synapsor.writeback-setup.v1",
+      config_path: input.configPath,
+      source: input.sourceName,
+      engine: input.source.engine,
+      profile: input.profile,
+      executor: "direct_sql",
+      receipt_mode: receiptMode,
+      execution: "no_source_ddl",
+      source_objects: [],
+      writer_grants: [],
+      sql_preview: "",
+      receipt_schema: null,
+      receipt_table: null,
+      writer_role: null,
+      setup_connection_env: null,
+      apply_allowed: input.profile === "development" || input.profile === "staging",
+      source_database_changed: false,
+      next_action: "Confirm the runner ledger and reconciliation workflow; no source receipt table or grant is required.",
+    };
+  }
+
+  if (receiptMode === "source_auto_migrate") {
+    const migration = formatRuntimeReceiptMigration(input.source.engine, schema, table);
+    return {
+      schema_version: "synapsor.writeback-setup.v1",
+      config_path: input.configPath,
+      source: input.sourceName,
+      engine: input.source.engine,
+      profile: input.profile,
+      executor: "direct_sql",
+      receipt_mode: receiptMode,
+      execution: "runtime_auto_migrate",
+      source_objects: [`${schema ? `${schema}.` : ""}${table}`],
+      writer_grants: ["The trusted writer must already have the minimum CREATE authority required by the configured first-use auto-migration."],
+      sql_preview: migration,
+      receipt_schema: schema ?? null,
+      receipt_table: table,
+      writer_role: null,
+      setup_connection_env: input.source.write_url_env ?? null,
+      apply_allowed: input.profile === "development" || input.profile === "staging",
+      source_database_changed: false,
+      next_action: "Verify the exact idempotent first-use migration using the separately configured trusted writer credential.",
+    };
+  }
+
+  const writerRole = optionalArg(input.args, "--writer-role");
+  if (!writerRole) {
+    throw new Error("Precreated source receipts require --writer-role <role>. State preserved: config and database unchanged. Next: rerun the dry-run with the exact steady-state writer role.");
+  }
+  quoteSqlIdentifier(writerRole, input.source.engine);
+  if (!setupUrlEnv) {
+    throw new Error("Precreated source receipts require --setup-url-env <ADMIN_DATABASE_URL_ENV>. State preserved: config and database unchanged. Next: supply a separate setup/admin environment-variable name.");
+  }
+  if (setupUrlEnv === input.source.read_url_env || setupUrlEnv === input.source.write_url_env) {
+    throw new Error("Writeback setup refuses to reuse the read or steady-state writer credential as the elevated setup connection. State preserved: config and database unchanged. Next: supply a separate setup/admin environment variable.");
+  }
+  const grants = input.source.engine === "postgres"
+    ? formatPostgresReceiptGrants(schema ?? "public", writerRole, table)
+    : formatMysqlReceiptGrantsForSetup(schema, writerRole, table);
+  const migration = input.source.engine === "postgres"
+    ? formatPostgresReceiptMigration(schema, table)
+    : formatMysqlReceiptMigration(schema, table);
+  return {
+    schema_version: "synapsor.writeback-setup.v1",
+    config_path: input.configPath,
+    source: input.sourceName,
+    engine: input.source.engine,
+    profile: input.profile,
+    executor: "direct_sql",
+    receipt_mode: receiptMode,
+    execution: "precreated_source_receipt",
+    source_objects: [`${schema ? `${schema}.` : ""}${table}`],
+    writer_grants: grants.split("\n").filter((line) => /^GRANT /.test(line)),
+    sql_preview: `${migration.trimEnd()}\n\n${grants}`,
+    receipt_schema: schema ?? null,
+    receipt_table: table,
+    writer_role: writerRole,
+    setup_connection_env: setupUrlEnv,
+    apply_allowed: input.profile === "development" || input.profile === "staging",
+    source_database_changed: false,
+    next_action: "Review the exact receipt object and least-privilege grants, then apply with the separate setup/admin connection.",
+  };
+}
+
+async function writebackSetupProfile(args: string[], configPath: string): Promise<WritebackSetupProfile> {
+  const explicit = optionalArg(args, "--profile");
+  if (explicit) {
+    if (!["development", "staging", "production"].includes(explicit)) {
+      throw new Error("Writeback setup --profile must be development, staging, or production.");
+    }
+    return explicit as WritebackSetupProfile;
+  }
+  try {
+    const active = JSON.parse(
+      await fs.readFile(path.join(path.dirname(configPath), ".synapsor/exploration-boundary.active.json"), "utf8"),
+    ) as Record<string, unknown>;
+    return active.deployment_profile === "development" || active.deployment_profile === "staging"
+      ? active.deployment_profile
+      : "unknown";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "unknown";
+    throw error;
+  }
+}
+
+function formatWritebackSetupPlan(plan: WritebackSetupPlan): string {
+  const applyArguments = [
+    "--config", shellQuote(plan.config_path),
+    ...(plan.source ? ["--source", shellQuote(plan.source)] : []),
+    "--profile", plan.profile,
+    ...(plan.receipt_schema ? ["--schema", shellQuote(plan.receipt_schema)] : []),
+    ...(plan.receipt_table ? ["--table", shellQuote(plan.receipt_table)] : []),
+    ...(plan.writer_role ? ["--writer-role", shellQuote(plan.writer_role)] : []),
+    ...(plan.setup_connection_env && plan.receipt_mode === "source_precreated"
+      ? ["--setup-url-env", shellQuote(plan.setup_connection_env)]
+      : []),
+  ];
+  return [
+    "Synapsor writeback setup preview",
+    `Digest: ${plan.digest}`,
+    `Config: ${plan.config_path}`,
+    `Profile: ${plan.profile}`,
+    `Source: ${plan.source ?? "none"}`,
+    `Executor: ${plan.executor}`,
+    `Receipt mode: ${plan.receipt_mode}`,
+    `Execution: ${plan.execution}`,
+    `Source objects: ${plan.source_objects.join(", ") || "none"}`,
+    `Setup connection env: ${plan.setup_connection_env ?? "not required"}`,
+    "Source database changed: no",
+    ...(plan.writer_grants.length ? ["", "Reviewed grants:", ...plan.writer_grants.map((grant) => `  ${grant}`)] : []),
+    ...(plan.sql_preview ? ["", "Exact SQL preview:", plan.sql_preview.trimEnd()] : []),
+    "",
+    `Next: ${plan.next_action}`,
+    ...(plan.apply_allowed
+      ? [`Apply only after review: ${cliCommandName()} writeback setup ${applyArguments.join(" ")} --apply --confirm ${shellQuote(`APPLY WRITEBACK SETUP ${plan.digest}`)}`]
+      : ["DDL apply is unavailable for this profile. Export the plan for external production review."]),
+    "",
+  ].join("\n");
+}
+
+function formatRuntimeReceiptMigration(
+  engine: "postgres" | "mysql",
+  schema: string | undefined,
+  table: string,
+): string {
+  const quotedTable = table === "synapsor_writeback_receipts" ? table : quoteSqlIdentifier(table, engine);
+  const qualified = schema ? `${quoteSqlIdentifier(schema, engine)}.${quotedTable}` : quotedTable;
+  const migration = engine === "postgres" ? postgresReceiptMigration : mysqlReceiptMigration;
+  return [
+    "-- Exact idempotent receipt migration used by the configured Runner writer.",
+    `${migration.replace("synapsor_writeback_receipts", qualified)};`,
+    "",
+  ].join("\n");
+}
+
+async function applyWritebackSetupPlan(
+  plan: WritebackSetupPlan,
+  source: RunnerSourceConfig,
+  env: NodeJS.ProcessEnv,
+): Promise<{ source_database_changed: boolean; message: string }> {
+  if (plan.receipt_mode === "runner_ledger") {
+    return {
+      source_database_changed: false,
+      message: "Runner-ledger prerequisites verified. No source receipt DDL or receipt grants were executed.",
+    };
+  }
+  const connectionEnv = plan.setup_connection_env;
+  if (!connectionEnv) throw new Error("Writeback setup has no approved connection environment variable.");
+  const databaseUrl = envValue(env, connectionEnv);
+  if (!databaseUrl) {
+    throw new Error(`Writeback setup connection environment ${connectionEnv} is missing. State preserved: config and database unchanged. Next: export the credential in the launching shell and rerun the exact confirmed command.`);
+  }
+  if (plan.receipt_mode === "source_auto_migrate" && connectionEnv !== source.write_url_env) {
+    throw new Error("Auto-migrate verification must use the configured trusted writer credential so the first-use authority is tested exactly.");
+  }
+  if (plan.engine === "postgres") {
+    const pool = createPostgresPool(databaseUrl, { max: 1 });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(plan.sql_preview);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+      await pool.end();
+    }
+  } else if (plan.engine === "mysql") {
+    const connection = await mysql.createConnection({ uri: databaseUrl, multipleStatements: true });
+    try {
+      await connection.query(plan.sql_preview);
+    } finally {
+      await connection.end();
+    }
+  } else {
+    throw new Error("Writeback setup engine is unavailable.");
+  }
+  return {
+    source_database_changed: true,
+    message: plan.receipt_mode === "source_auto_migrate"
+      ? "The configured idempotent first-use receipt migration completed with the trusted writer credential."
+      : "The reviewed receipt object and least-privilege grants were applied with the separate setup/admin credential.",
+  };
+}
+
+function formatMysqlReceiptGrantsForSetup(database: string | undefined, writerRole: string, table: string): string {
+  if (!database) throw new Error("MySQL precreated receipt setup requires --schema <database_name>.");
+  const quotedDatabase = quoteSqlIdentifier(database, "mysql");
+  const quotedTable = quoteSqlIdentifier(table, "mysql");
+  const account = `'${writerRole.replace(/'/g, "''")}'@'%'`;
+  return [
+    "-- Least-privilege grants for a pre-created Synapsor Runner receipt table.",
+    `GRANT SELECT, INSERT, UPDATE ON ${quotedDatabase}.${quotedTable} TO ${account};`,
+    "",
+  ].join("\n");
+}
+
+async function writeCliJsonAtomic(filePath: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await fs.rename(temporary, filePath);
+}
+
 async function writebackDoctor(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
+  const configPath = runnerConfigPath(args, defaultConfigPath);
   const config = await readRuntimeConfig(configPath);
   const checkDb = args.includes("--check-db");
   const sqlSources = Object.entries(config.sources ?? {})
@@ -8890,6 +9711,10 @@ async function quickDemo(args: string[]): Promise<number> {
 }
 
 async function tryCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "call") return tryOwnDataCall(rest);
+  if (subcommand === "explore") return tryScopedExplore(rest);
+  if (subcommand === "protect") return tryProtectLatest(rest);
   if (optionalArg(args, "--from-env")) return tryOwnData(args);
   const allowed = new Set(["--prove", "--yes", "--no-open", "--json", "--no-color", "--state-dir"]);
   assertKnownOptions(args, allowed, "try");
@@ -8915,6 +9740,276 @@ async function tryCommand(args: string[]): Promise<number> {
     process.stdout.write(formatTryResult(result));
   }
   return result.ok ? 0 : 1;
+}
+
+async function tryOwnDataCall(args: string[]): Promise<number> {
+  if (args.includes("--list") || !firstPositional(args)) {
+    const boundary = await inspectMcpToolBoundary(args.filter((arg) => arg !== "--list"));
+    const payload = {
+      ok: boundary.ok,
+      active_tools: boundary.names,
+      model_can_activate: false,
+      model_can_approve: false,
+      model_can_apply: false,
+      next_action: boundary.names.length
+        ? `${cliCommandName()} try call ${boundary.names[0]} --sample`
+        : "Activate a reviewed named capability or the local Scoped Explore boundary.",
+    };
+    if (args.includes("--format") && optionalArg(args, "--format") === "json") {
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    } else {
+      process.stdout.write([
+        "Active Synapsor tools",
+        "",
+        ...(boundary.names.length ? boundary.names.map((name) => `- ${name}`) : ["(none)"]),
+        "",
+        "Approval/apply exposed to the model: no",
+        `Next: ${payload.next_action}`,
+        "",
+      ].join("\n"));
+    }
+    return boundary.ok ? 0 : 1;
+  }
+
+  const call = await executeRuntimeToolCall(args);
+  const sourceChanged = call.result.source_database_changed === true
+    || call.result.source_database_mutated === true;
+  const payload = {
+    ok: call.ok,
+    message: call.ok ? "Your first safe tool is working." : "The reviewed tool refused the call.",
+    tool: call.tool,
+    kind: call.capability?.kind ?? "cloud",
+    reviewed_visible_fields: call.capability?.visible_columns ?? [],
+    trusted_tenant_scope: call.capability?.target?.tenant_key ?? "configured outside model arguments",
+    trusted_principal_scope: call.capability?.target?.principal_scope_key ?? "configured outside model arguments when required",
+    source_database_changed: sourceChanged,
+    input: call.input,
+    result: call.result,
+    next_action: call.capability?.kind === "proposal"
+      ? "Review this proposal outside the model."
+      : "Ask a bounded aggregate question or connect your MCP client.",
+  };
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    process.stdout.write([
+      payload.message,
+      "",
+      `Tool: ${payload.tool}`,
+      `Call type: ${payload.kind}`,
+      `Agent can see: ${payload.reviewed_visible_fields.join(", ") || "only the reviewed result shape"}`,
+      "Agent cannot see: source fields absent from the reviewed contract",
+      `Tenant scope: ${payload.trusted_tenant_scope}`,
+      `Principal scope: ${payload.trusted_principal_scope}`,
+      `Source database changed: ${sourceChanged ? "yes" : "no"}`,
+      "",
+      JSON.stringify(call.result, null, 2),
+      "",
+      `Next: ${payload.next_action}`,
+      "",
+    ].join("\n"));
+  }
+  return call.ok ? 0 : 1;
+}
+
+async function tryScopedExplore(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set([
+      "--project-root",
+      "--describe",
+      "--resource",
+      "--cursor",
+      "--limit",
+      "--plan",
+      "--input",
+      "--suggested",
+      "--count",
+      "--count-distinct",
+      "--sum",
+      "--avg",
+      "--group-by",
+      "--time-bucket",
+      "--where",
+      "--top",
+      "--json",
+    ]),
+    "try explore",
+  );
+  const projectRoot = resolvedSynapsorProjectRoot(args);
+  const runtime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env: process.env,
+  });
+  try {
+    const inline = optionalArg(args, "--plan");
+    const inputPath = optionalArg(args, "--input");
+    if (inline && inputPath) throw new Error("try explore accepts only one of --plan or --input.");
+    const friendly = args.includes("--suggested")
+      || args.includes("--count")
+      || repeatedArgs(args, "--count-distinct").length > 0
+      || repeatedArgs(args, "--sum").length > 0
+      || repeatedArgs(args, "--avg").length > 0
+      || repeatedArgs(args, "--group-by").length > 0
+      || repeatedArgs(args, "--where").length > 0
+      || Boolean(optionalArg(args, "--time-bucket"))
+      || Boolean(optionalArg(args, "--top"));
+    if (!inline && !inputPath && !friendly) {
+      const cursor = optionalArg(args, "--cursor");
+      const limit = optionalArg(args, "--limit");
+      const description = runtime.describe({
+        ...(optionalArg(args, "--resource") ? { resource: optionalArg(args, "--resource") } : {}),
+        ...(cursor ? { cursor: Number(cursor) } : {}),
+        ...(limit ? { limit: Number(limit) } : {}),
+      });
+      const payload = {
+        ok: true,
+        authoring_only: true,
+        source_database_changed: false,
+        description,
+        next_action: `${cliCommandName()} try explore --suggested`,
+      };
+      process.stdout.write(args.includes("--json")
+        ? `${JSON.stringify(payload, null, 2)}\n`
+        : formatTryExploreDescription(payload));
+      return 0;
+    }
+    if ((inline || inputPath) && friendly) {
+      throw new Error("Use either --plan/--input or the friendly Explore flags, not both.");
+    }
+    const parsed: unknown = inline || inputPath
+      ? JSON.parse(inline ?? await fs.readFile(path.resolve(inputPath!), "utf8"))
+      : buildFriendlyAggregatePlan(runtime.boundary, {
+        resource: optionalArg(args, "--resource"),
+        suggested: args.includes("--suggested"),
+        count: args.includes("--count"),
+        countDistinct: repeatedArgs(args, "--count-distinct"),
+        sums: repeatedArgs(args, "--sum"),
+        averages: repeatedArgs(args, "--avg"),
+        groupBy: repeatedArgs(args, "--group-by"),
+        timeBucket: optionalArg(args, "--time-bucket"),
+        filters: repeatedArgs(args, "--where"),
+        ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
+      });
+    const result = await runtime.explore(parsed as ExplorePlan);
+    await updateGuidedOnboardingState({
+      projectRoot,
+      status: (parsed as { kind?: unknown }).kind === "aggregate" ? "protect" : "first_value",
+      completedSteps: (parsed as { kind?: unknown }).kind === "aggregate"
+        ? ["first_safe_read", "aggregate_complete"]
+        : ["first_safe_read"],
+      authorityActive: true,
+      recommendedNextAction: (parsed as { kind?: unknown }).kind === "aggregate"
+        ? "Protect this analysis."
+        : "Ask a bounded aggregate question.",
+    }).catch(() => undefined);
+    const payload = {
+      ok: true,
+      authoring_only: true,
+      source_database_changed: false,
+      result,
+      next_action: `${cliCommandName()} try protect --name analytics.protected_analysis`,
+    };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : formatTryExploreResult(payload));
+    return 0;
+  } finally {
+    await runtime.close();
+  }
+}
+
+async function tryProtectLatest(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--project-root", "--name", "--description", "--returns", "--json"]),
+    "try protect",
+  );
+  const projectRoot = resolvedSynapsorProjectRoot(args);
+  const available = await listProtectableQueries({ projectRoot });
+  const latest = available.at(-1);
+  if (!latest) {
+    throw new Error("No unexpired successful exploration is available. Run one bounded try explore plan, then protect it.");
+  }
+  const capabilityName = optionalArg(args, "--name") ?? "analytics.protected_analysis";
+  const created = await createProtectedQueryDraft({
+    projectRoot,
+    token: latest.token,
+    capabilityName,
+    description: optionalArg(args, "--description") ?? "Answer one reviewed bounded analysis.",
+    returnsHint: optionalArg(args, "--returns") ?? "Returns only the reviewed bounded result shape.",
+  });
+  const payload = {
+    ok: true,
+    state: "disabled",
+    capability: capabilityName,
+    contract_digest: created.draft.contract_digest,
+    dsl_path: created.draft.dsl_path,
+    contract_path: created.draft.contract_path,
+    tests_path: created.draft.tests_path,
+    source_database_changed: false,
+    model_can_activate: false,
+    next_action: "Open the local Workbench, review this exact generated capability, and activate its digest as a human.",
+  };
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    process.stdout.write([
+      "Protected capability draft created.",
+      "",
+      `Capability: ${payload.capability}`,
+      `DSL: ${payload.dsl_path}`,
+      `Canonical contract: ${payload.contract_path}`,
+      `Tests: ${payload.tests_path}`,
+      `Digest: ${payload.contract_digest}`,
+      "State: disabled",
+      "Source database changed: no",
+      "The model cannot activate this capability.",
+      "",
+      `Next: ${payload.next_action}`,
+      "",
+    ].join("\n"));
+  }
+  return 0;
+}
+
+function resolvedSynapsorProjectRoot(args: string[]): string {
+  return path.resolve(
+    optionalArg(args, "--project-root")
+      ?? activeProjectResolution?.project_root
+      ?? process.cwd(),
+  );
+}
+
+function formatTryExploreDescription(payload: {
+  description: Record<string, unknown>;
+  next_action: string;
+}): string {
+  return [
+    "Reviewed local data boundary",
+    "",
+    JSON.stringify(payload.description, null, 2),
+    "",
+    "Source database changed: no",
+    `Next: ${payload.next_action}`,
+    "",
+  ].join("\n");
+}
+
+function formatTryExploreResult(payload: {
+  result: Record<string, unknown>;
+  next_action: string;
+}): string {
+  return [
+    "Your first safe exploration is working.",
+    "",
+    JSON.stringify(payload.result, null, 2),
+    "",
+    "Source database changed: no",
+    `Next: ${payload.next_action}`,
+    "",
+  ].join("\n");
 }
 
 async function tryOwnData(args: string[]): Promise<number> {
@@ -9175,13 +10270,13 @@ async function mcpServe(args: string[]): Promise<number> {
   if (transport === "streamable-http") return mcpServeStreamableHttp(args);
   if (transport === "http" || transport === "json-rpc-http" || transport === "jsonrpc-http") return mcpServeHttp(args);
   if (transport !== "stdio") throw new Error("--transport must be stdio, streamable-http, or http");
-  const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
+  const configPath = runnerConfigPath(args, defaultConfigPath);
   const readOnly = args.includes("--read-only");
-  const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
+  const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const storePath = optionalResolvedLocalStorePath(args);
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "stdio", args.includes("--allow-concurrent-store"));
   try {
     await serveStdio({
@@ -9203,9 +10298,9 @@ async function mcpServeHttp(args: string[]): Promise<number> {
     `For OpenAI Agents SDK or standard HTTP MCP clients, use: ${cliCommandName()} mcp serve --transport streamable-http`,
     "",
   ].join("\n"));
-  const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
+  const configPath = runnerConfigPath(args, defaultConfigPath);
   const readOnly = args.includes("--read-only");
-  const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
+  const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   assertReceiptTopologyForTransport(config, "http");
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
@@ -9215,7 +10310,7 @@ async function mcpServeHttp(args: string[]): Promise<number> {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error("--port must be an integer from 1 to 65535");
   }
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const storePath = optionalResolvedLocalStorePath(args);
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "legacy-jsonrpc", args.includes("--allow-concurrent-store"));
   let server: Awaited<ReturnType<typeof startHttpMcpServer>>;
   try {
@@ -9254,9 +10349,9 @@ async function mcpServeHttp(args: string[]): Promise<number> {
 }
 
 async function mcpServeStreamableHttp(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? process.env.SYNAPSOR_MCP_CONFIG;
+  const configPath = runnerConfigPath(args, defaultConfigPath);
   const readOnly = args.includes("--read-only");
-  const baseConfig = await readRuntimeConfig(configPath ?? defaultConfigPath);
+  const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   assertReceiptTopologyForTransport(config, "streamable-http");
   const toolNameStyle = toolNameStyleOption(args);
@@ -9267,7 +10362,7 @@ async function mcpServeStreamableHttp(args: string[]): Promise<number> {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error("--port must be an integer from 1 to 65535");
   }
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE;
+  const storePath = optionalResolvedLocalStorePath(args);
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "streamable-http", args.includes("--allow-concurrent-store"));
   let server: Awaited<ReturnType<typeof startStreamableHttpMcpServer>>;
   try {
@@ -9484,8 +10579,8 @@ async function mcpAudit(args: string[]): Promise<number> {
 async function propose(args: string[]): Promise<number> {
   const capabilityName = firstPositional(args);
   if (!capabilityName) throw new Error("propose requires <capability-name>");
-  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? defaultStorePath;
+  const configPath = runnerConfigPath(args, defaultConfigPath);
+  const storePath = resolvedLocalStorePath(args, undefined, defaultStorePath);
   const config = await readRuntimeConfig(configPath);
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
     return withSharedPostgresLedgerMirror(args, storePath, `propose ${capabilityName}`, () => propose(withoutSharedPostgresLedgerMirror(args)), config);
@@ -9694,7 +10789,7 @@ async function mcpConfigure(args: string[]): Promise<number> {
   const client = normalizeMcpClientName(optionalArg(args, "--client"));
   if (!client) throw new Error("mcp configure requires --client generic-stdio|claude|claude-desktop|cursor|vscode|openai-agents");
   const useAbsolutePaths = args.includes("--absolute-paths");
-  const rawConfigPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
+  const rawConfigPath = runnerConfigPath(args, "./synapsor.runner.json");
   const rawStorePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
   const configPath = useAbsolutePaths ? path.resolve(rawConfigPath) : rawConfigPath;
   const storePath = useAbsolutePaths ? path.resolve(rawStorePath) : rawStorePath;
@@ -9917,8 +11012,43 @@ async function mcpSmoke(args: string[]): Promise<number> {
 }
 
 async function smokeCall(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? defaultConfigPath;
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? defaultStorePath;
+  const call = await executeRuntimeToolCall(args);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({
+      ok: call.ok,
+      tool: call.tool,
+      input: call.input,
+      result: call.result,
+      store_path: call.store_path,
+      store_authority: call.store_authority,
+      ...(call.shared_postgres_schema ? { shared_postgres_schema: call.shared_postgres_schema } : {}),
+    }, null, 2)}\n`);
+  } else {
+    process.stdout.write(formatSmokeCallResult(call.tool, call.input, call.result, {
+      configPath: call.config_path,
+      storePath: call.store_path,
+      storeAuthority: call.store_authority,
+      sharedPostgresSchema: call.shared_postgres_schema ?? "synapsor_runner",
+    }));
+  }
+  return call.ok ? 0 : 1;
+}
+
+type RuntimeToolCall = {
+  ok: boolean;
+  tool: string;
+  input: Record<string, unknown>;
+  result: Record<string, unknown>;
+  config_path: string;
+  store_path: string;
+  store_authority: "local_sqlite" | "shared_postgres";
+  shared_postgres_schema?: string;
+  capability?: RuntimeCapabilityConfig;
+};
+
+async function executeRuntimeToolCall(args: string[]): Promise<RuntimeToolCall> {
+  const configPath = runnerConfigPath(args, defaultConfigPath);
+  const storePath = resolvedLocalStorePath(args, undefined, defaultStorePath);
   const config = await readRuntimeConfig(configPath);
   const env = envWithDemoDefaults(config, configPath);
   await preflightGeneratedAuthority(config, env);
@@ -9936,27 +11066,19 @@ async function smokeCall(args: string[]): Promise<number> {
     const result = await runtime.callTool(toolName, input);
     const ok = result.ok !== false;
     const storeAuthority = config.storage?.shared_postgres?.mode === "runtime_store" ? "shared_postgres" : "local_sqlite";
-    if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({
-        ok,
-        tool: toolName,
-        input,
-        result,
-        store_path: storePath,
-        store_authority: storeAuthority,
-        ...(storeAuthority === "shared_postgres"
-          ? { shared_postgres_schema: config.storage?.shared_postgres?.schema ?? "synapsor_runner" }
-          : {}),
-      }, null, 2)}\n`);
-    } else {
-      process.stdout.write(formatSmokeCallResult(toolName, input, result, {
-        configPath,
-        storePath,
-        storeAuthority,
-        sharedPostgresSchema: config.storage?.shared_postgres?.schema ?? "synapsor_runner",
-      }));
-    }
-    return ok ? 0 : 1;
+    return {
+      ok,
+      tool: toolName,
+      input,
+      result,
+      config_path: configPath,
+      store_path: storePath,
+      store_authority: storeAuthority,
+      ...(storeAuthority === "shared_postgres"
+        ? { shared_postgres_schema: config.storage?.shared_postgres?.schema ?? "synapsor_runner" }
+        : {}),
+      ...(capability ? { capability } : {}),
+    };
   } finally {
     await runtime.close();
   }
@@ -10001,8 +11123,8 @@ async function inspectMcpToolBoundary(args: string[]): Promise<{
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
-  const configPath = optionalArg(args, "--config") ?? "./synapsor.runner.json";
-  const storePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
+  const configPath = runnerConfigPath(args, "./synapsor.runner.json");
+  const storePath = resolvedLocalStorePath(args);
   const aliasMode = args.includes("--aliases") && !optionalArg(args, "--alias-mode") && !optionalArg(args, "--tool-name-style")
     ? "both"
     : toolNameStyleOption(args);
@@ -11104,14 +12226,15 @@ async function activation(args: string[]): Promise<number> {
     return 2;
   }
   assertKnownOptions(rest, new Set(["--project-root", "--config", "--store", "--try-state", "--format", "--json", "--out", "--output"]), `activation ${subcommand}`);
-  const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
-  const configPath = path.resolve(projectRoot, optionalArg(rest, "--config") ?? defaultConfigPath);
+  const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? activeProjectResolution?.project_root ?? process.cwd());
+  const selectedConfig = runnerConfigPath(rest, defaultConfigPath);
+  const configPath = path.isAbsolute(selectedConfig) ? selectedConfig : path.resolve(projectRoot, selectedConfig);
   const config = await optionalRuntimeConfig(configPath);
   if (config?.storage?.shared_postgres?.mode === "runtime_store") {
     throw new Error("activation report is a local onboarding measurement and does not inspect a shared Cloud/Postgres runtime ledger");
   }
   const configuredStore = config?.storage?.sqlite_path;
-  const storePath = optionalArg(rest, "--store") ?? configuredStore ?? defaultStorePath;
+  const storePath = resolvedLocalStorePath(rest, configuredStore, defaultStorePath);
   const report = await buildLocalActivationReport({
     projectRoot,
     storePath,
@@ -11133,17 +12256,957 @@ async function activation(args: string[]): Promise<number> {
   return 0;
 }
 
+async function attentionCommand(args: string[]): Promise<number> {
+  const [requested, ...rest] = args;
+  const subcommand = requested && !requested.startsWith("-") ? requested : "list";
+  const commandArgs = requested === subcommand ? rest : args;
+  if (subcommand === "list") return attentionList(commandArgs);
+  if (subcommand === "show") return attentionShow(commandArgs);
+  if (subcommand === "acknowledge" || subcommand === "ack") return attentionAcknowledge(commandArgs);
+  usage(["attention"]);
+  return 2;
+}
+
+async function attentionList(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "attention list",
+    (bridgeStorePath) => attentionList(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+  assertKnownOptions(
+    args,
+    new Set(["--config", "--store", "--status", "--severity", "--capability", "--limit", "--json", runtimeStoreBridgeFlag]),
+    "attention list",
+  );
+  const store = await openLocalStore(args);
+  try {
+    const filters = attentionFilters(args);
+    const items = store.listAttentionItems(filters);
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ attention: items }, null, 2)}\n`);
+      return 0;
+    }
+    if (items.length === 0) {
+      process.stdout.write("No human-attention items match these filters.\n");
+      return 0;
+    }
+    process.stdout.write(`${items.length} human-attention item${items.length === 1 ? "" : "s"}:\n\n`);
+    for (const [index, item] of items.entries()) {
+      process.stdout.write([
+        `${index + 1}. ${item.title}`,
+        `   ${item.severity.toUpperCase()} · ${item.status} · occurrences ${item.occurrence_count}`,
+        `   ${item.capability ?? "Runner operations"} · last seen ${item.last_seen_at}`,
+      ].join("\n"));
+      process.stdout.write("\n");
+    }
+    process.stdout.write(`\nNext: ${cliCommandName()} attention show\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function attentionShow(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "attention show",
+    (bridgeStorePath) => attentionShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+  assertKnownOptions(
+    args,
+    new Set(["--config", "--store", "--status", "--severity", "--capability", "--json", runtimeStoreBridgeFlag]),
+    "attention show",
+  );
+  const store = await openLocalStore(args);
+  try {
+    const item = resolveAttentionItem(store, positional(args, 0), attentionFilters(args));
+    const latestEvent = store.getAttentionEvent(item.latest_event_id);
+    const payload = {
+      attention: item,
+      latest_event: latestEvent ?? null,
+      source_database_changed: attentionSourceChanged(latestEvent),
+      acknowledgement_is_approval: false,
+    };
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return 0;
+    }
+    process.stdout.write([
+      item.title,
+      "",
+      `Severity: ${item.severity}`,
+      `Status: ${item.status}`,
+      `Capability: ${item.capability ?? "Runner operations"}`,
+      `Occurrences: ${item.occurrence_count}`,
+      `First seen: ${item.first_seen_at}`,
+      `Last seen: ${item.last_seen_at}`,
+      `Source database changed: ${payload.source_database_changed ? "yes" : "no or not reported"}`,
+      `Why attention is required: ${latestEvent?.summary ?? item.title}`,
+      "Acknowledging this item does not approve a proposal or apply a write.",
+      "",
+      attentionNextAction(item, latestEvent),
+      "",
+    ].join("\n"));
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function attentionAcknowledge(args: string[]): Promise<number> {
+  const configPath = runnerConfigPath(args);
+  const config = await optionalRuntimeConfig(configPath);
+  if (config && runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      "attention acknowledge",
+      (bridgeStorePath) => attentionAcknowledge(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "attention acknowledge", args);
+  assertKnownOptions(
+    args,
+    new Set(["--config", "--store", "--actor", "--identity", "--identity-key", "--json", runtimeStoreBridgeFlag]),
+    "attention acknowledge",
+  );
+  const store = await openLocalStore(args);
+  try {
+    const item = resolveAttentionItem(store, positional(args, 0), { status: "open" });
+    const requiresVerifiedIdentity = item.environment === "production" || item.environment === "unknown";
+    let actor = optionalArg(args, "--actor") ?? process.env.USER ?? "local_operator";
+    let identity;
+    if (requiresVerifiedIdentity) {
+      const operatorIdentityConfig = config?.operator_identity;
+      const provider = operatorIdentityConfig?.provider;
+      if (provider !== "signed_key" && provider !== "jwt_oidc") {
+        throw new Error(`${item.environment} attention acknowledgement requires a configured signed_key or jwt_oidc operator identity`);
+      }
+      identity = await resolveOperatorIdentity({
+        config: operatorIdentityConfig as OperatorIdentityConfig,
+        configPath,
+        proposal: attentionDecisionSubject(item),
+        action: "attention_acknowledge",
+        actor: optionalArg(args, "--actor"),
+        identity: optionalArg(args, "--identity"),
+        privateKeyPath: optionalArg(args, "--identity-key"),
+      });
+      actor = identity.subject;
+    }
+    const acknowledged = store.acknowledgeAttention({
+      attention_id: item.attention_id,
+      actor,
+      identity,
+      require_verified_identity: requiresVerifiedIdentity,
+    });
+    const payload = {
+      attention: acknowledged,
+      approval_created: false,
+      source_database_changed: false,
+    };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : `Acknowledged: ${acknowledged.title}\nNo proposal was approved and the source database was not changed.\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+function attentionFilters(args: string[]): {
+  status?: AttentionItemStatus;
+  severity?: AttentionSeverity;
+  capability?: string;
+  limit?: number;
+} {
+  const status = optionalArg(args, "--status");
+  if (status && !["open", "acknowledged", "resolved", "expired"].includes(status)) {
+    throw new Error("--status must be open, acknowledged, resolved, or expired");
+  }
+  const severity = optionalArg(args, "--severity");
+  if (severity && !["informational", "warning", "critical"].includes(severity)) {
+    throw new Error("--severity must be informational, warning, or critical");
+  }
+  return {
+    ...(status ? { status: status as AttentionItemStatus } : {}),
+    ...(severity ? { severity: severity as AttentionSeverity } : {}),
+    ...(optionalArg(args, "--capability") ? { capability: optionalArg(args, "--capability") } : {}),
+    ...(optionalArg(args, "--limit") ? {
+      limit: positiveIntOption(args, "--limit", 50, 1, 1_000),
+    } : {}),
+  };
+}
+
+function resolveAttentionItem(
+  store: ProposalStore,
+  requested: string | undefined,
+  filters: Parameters<ProposalStore["listAttentionItems"]>[0] = {},
+): AttentionItem {
+  if (requested && requested !== "latest") {
+    const exact = store.getAttentionItem(requested);
+    if (!exact) throw new Error(`attention item not found: ${requested}`);
+    return exact;
+  }
+  const items = store.listAttentionItems({ ...filters, limit: 1 });
+  if (items[0]) return items[0];
+  if (filters.status === "open") {
+    const acknowledged = store.listAttentionItems({ ...filters, status: "acknowledged", limit: 1 });
+    if (acknowledged[0]) return acknowledged[0];
+  }
+  throw new Error("no human-attention item matches these filters");
+}
+
+function attentionSourceChanged(event: Awaited<ReturnType<ProposalStore["getAttentionEvent"]>>): boolean {
+  return event?.details.source_database_changed === true;
+}
+
+function attentionNextAction(
+  item: AttentionItem,
+  event: Awaited<ReturnType<ProposalStore["getAttentionEvent"]>>,
+): string {
+  if (event?.event_type === "proposal.review_required" && event.proposal_id) {
+    return `Next: review the exact proposal in Workbench or run ${cliCommandName()} proposals show ${event.proposal_id}`;
+  }
+  if (event?.event_type === "worker.reconciliation_required" || event?.event_type === "worker.unknown_outcome") {
+    return `Next: inspect reconciliation state with ${cliCommandName()} writeback reconcile list`;
+  }
+  if (event?.event_type === "worker.dead_lettered") {
+    return `Next: inspect the dead letter with ${cliCommandName()} worker dead-letter list`;
+  }
+  return item.status === "open"
+    ? `Next: open Workbench or run ${cliCommandName()} attention acknowledge after inspecting the underlying state`
+    : "Next: no action is required unless the underlying condition remains unresolved";
+}
+
+async function notificationsCommand(args: string[]): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === "status") return notificationsStatus(rest);
+  if (subcommand === "test") return notificationsTest(rest);
+  if (subcommand === "dispatch") return notificationsDispatch(rest);
+  if (subcommand === "replay") return notificationsReplay(rest);
+  usage(["notifications"]);
+  return 2;
+}
+
+async function notificationsStatus(args: string[]): Promise<number> {
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "notifications status",
+    (bridgeStorePath) => notificationsStatus(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+  assertKnownOptions(args, new Set(["--config", "--store", "--json", runtimeStoreBridgeFlag]), "notifications status");
+  const config = await readRuntimeConfig(runnerConfigPath(args));
+  const notificationConfig = config.notifications;
+  const store = await openLocalStore(args);
+  try {
+    const deliveries = store.listNotificationDeliveries({ limit: 1_000 });
+    const sinks = (notificationConfig?.sinks ?? []).map((sink) => {
+      const sinkDeliveries = deliveries.filter((delivery) => delivery.sink_id === sink.id);
+      const counts = notificationDeliveryCounts(sinkDeliveries);
+      const lastDelivered = sinkDeliveries
+        .filter((delivery) => delivery.status === "delivered" && delivery.delivered_at)
+        .sort((left, right) => String(right.delivered_at).localeCompare(String(left.delivered_at)))[0];
+      return {
+        id: sink.id,
+        type: sink.type,
+        enabled: notificationConfig?.enabled === true && sink.enabled !== false,
+        minimum_severity: sink.minimum_severity ?? "warning",
+        delivery: sink.delivery ?? "immediate",
+        counts,
+        last_delivered_at: lastDelivered?.delivered_at ?? null,
+        health: notificationSinkHealth(sinkDeliveries),
+      };
+    });
+    const payload = {
+      enabled: notificationConfig?.enabled === true,
+      configured: notificationConfig !== undefined,
+      sinks,
+      open_attention: store.listAttentionItems({ status: "open", limit: 1_000 }).length,
+      source_database_changed: false,
+    };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else {
+      process.stdout.write(`Notifications: ${payload.enabled ? "enabled" : "disabled"}\n`);
+      if (sinks.length === 0) process.stdout.write("No external sinks configured. Workbench and the ledger remain authoritative.\n");
+      for (const sink of sinks) {
+        process.stdout.write(
+          `${sink.id}: ${sink.enabled ? "enabled" : "disabled"} · ${sink.health} · delivered ${sink.counts.delivered} · retry ${sink.counts.retry_wait} · dead letter ${sink.counts.dead_letter}\n`,
+        );
+      }
+      process.stdout.write(`Open attention items: ${payload.open_attention}\n`);
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function notificationsTest(args: string[]): Promise<number> {
+  const configPath = runnerConfigPath(args);
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      "notifications test",
+      (bridgeStorePath) => notificationsTest(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "notifications test", args);
+  assertKnownOptions(
+    args,
+    new Set(["--config", "--store", "--sink", "--environment", "--json", runtimeStoreBridgeFlag]),
+    "notifications test",
+  );
+  if (!config.notifications?.enabled) throw new Error("notifications are disabled; configure and enable a sink before testing");
+  const sink = selectNotificationSink(config.notifications.sinks, optionalArg(args, "--sink"));
+  const environment = optionalArg(args, "--environment")
+    ?? config.supervised_worker?.profile
+    ?? "development";
+  const createdAt = new Date().toISOString();
+  const store = await openLocalStoreAt(resolvedLocalStorePath(args, config.storage?.sqlite_path));
+  try {
+    const event = store.recordAttentionEvent({
+      event_type: "proposal.created",
+      severity: "informational",
+      environment,
+      attention_required: false,
+      immediate_default: true,
+      summary: "Synapsor notification test. No database information is included.",
+      details: {
+        synthetic_test: true,
+        source_database_changed: false,
+      },
+      source_event_key: `notification-test:${sink.id}:${createdAt}`,
+      now: createdAt,
+    });
+    store.enqueueNotificationDelivery({
+      sink_id: sink.id,
+      event_id: event.event_id,
+      max_attempts: sink.max_attempts,
+      status: "pending",
+      now: createdAt,
+    });
+    const dispatch = await dispatchNotificationDeliveries({
+      store,
+      config: { ...config.notifications, sinks: [sink] },
+      owner: `notification_test_${process.pid}`,
+      limit: 1,
+      env: process.env,
+      output: (line) => process.stdout.write(line),
+    });
+    const delivery = store.listNotificationDeliveries({
+      sink_id: sink.id,
+      event_id: event.event_id,
+      limit: 1,
+    })[0];
+    if (dispatch.delivered !== 1 || delivery?.status !== "delivered") {
+      throw new Error(`synthetic notification delivery failed safely with status ${delivery?.status ?? "unknown"}`);
+    }
+    const payload = {
+      ok: true,
+      sink: sink.id,
+      event_id: event.event_id,
+      external_reference: delivery.external_reference ?? null,
+      synthetic: true,
+      source_database_changed: false,
+    };
+    const output = args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : `Synthetic notification delivered to ${sink.id}. No database information was sent.\n`;
+    if (sink.type === "jsonl") process.stderr.write(output);
+    else process.stdout.write(output);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function notificationsDispatch(args: string[]): Promise<number> {
+  const configPath = runnerConfigPath(args);
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      "notifications dispatch",
+      (bridgeStorePath) => notificationsDispatch(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "notifications dispatch", args);
+  assertKnownOptions(
+    args,
+    new Set(["--config", "--store", "--sink", "--owner", "--limit", "--json", runtimeStoreBridgeFlag]),
+    "notifications dispatch",
+  );
+  if (!config.notifications?.enabled) throw new Error("notifications are disabled; no external delivery was attempted");
+  const selectedSink = optionalArg(args, "--sink");
+  const notificationConfig = {
+    ...config.notifications,
+    sinks: selectedSink
+      ? [selectNotificationSink(config.notifications.sinks, selectedSink)]
+      : config.notifications.sinks,
+  };
+  const store = await openLocalStore(args);
+  try {
+    updateSupervisedWorkerBacklogAttention(store, config);
+    updateSupervisedProposalExpiryAttention(store, config);
+    for (const policy of config.supervised_worker?.capabilities ?? []) {
+      if ((policy.required_attention_sinks ?? []).length === 0) continue;
+      if (!requiredAttentionSinksHealthy(store, config, policy)) {
+        recordUnhealthySupervisionSinkAttention(store, config, policy);
+      } else {
+        resolveHealthySupervisionSinkAttention(store, config, policy);
+      }
+    }
+    const plan = await planNotificationDeliveries({ store, config: notificationConfig });
+    const dispatch = await dispatchNotificationDeliveries({
+      store,
+      config: notificationConfig,
+      owner: optionalArg(args, "--owner") ?? `notification_dispatcher_${process.pid}`,
+      limit: positiveIntOption(args, "--limit", 20, 1, 100),
+      env: process.env,
+      output: (line) => process.stdout.write(line),
+    });
+    const payload = {
+      planned: plan,
+      dispatched: dispatch,
+      approval_created: false,
+      source_database_changed: false,
+    };
+    const rendered = args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : `Notifications: ${dispatch.delivered} delivered, ${dispatch.retry_wait} retrying, ${dispatch.dead_letter} dead-lettered; ${plan.batched} batched and ${plan.suppressed} kept quiet.\n`;
+    if (notificationConfig.sinks.some((sink) => sink.type === "jsonl")) process.stderr.write(rendered);
+    else process.stdout.write(rendered);
+    return dispatch.dead_letter > 0 ? 3 : 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function notificationsReplay(args: string[]): Promise<number> {
+  const configPath = runnerConfigPath(args);
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      "notifications replay",
+      (bridgeStorePath) => notificationsReplay(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "notifications replay", args);
+  assertKnownOptions(
+    args,
+    new Set([
+      "--config",
+      "--store",
+      "--yes",
+      "--reason",
+      "--actor",
+      "--identity",
+      "--identity-key",
+      "--json",
+      runtimeStoreBridgeFlag,
+    ]),
+    "notifications replay",
+  );
+  if (!args.includes("--yes")) throw new Error("notifications replay requires --yes; it re-sends one redacted notification but never replays approval or mutation");
+  const reason = optionalArg(args, "--reason")?.trim();
+  if (!reason) throw new Error("notifications replay requires --reason <operator recovery reason>");
+  if (config.operator_identity?.provider !== "signed_key" && config.operator_identity?.provider !== "jwt_oidc") {
+    throw new Error("notifications replay requires a configured signed_key or jwt_oidc operator identity");
+  }
+  const store = await openLocalStore(args);
+  try {
+    const requested = positional(args, 0);
+    const delivery = requested && requested !== "latest"
+      ? store.getNotificationDelivery(requested)
+      : store.listNotificationDeliveries({ status: "dead_letter", limit: 1 })[0];
+    if (!delivery) {
+      throw new Error(
+        requested && requested !== "latest"
+          ? `notification delivery not found: ${requested}`
+          : "no dead-letter notification delivery found",
+      );
+    }
+    const identity = await resolveOperatorIdentity({
+      config: config.operator_identity as OperatorIdentityConfig,
+      configPath,
+      proposal: notificationReplayDecisionSubject(delivery),
+      action: "notification_replay",
+      reason,
+      actor: optionalArg(args, "--actor"),
+      identity: optionalArg(args, "--identity"),
+      privateKeyPath: optionalArg(args, "--identity-key"),
+    });
+    const requeued = store.requeueNotificationDelivery({
+      delivery_id: delivery.delivery_id,
+      identity,
+      reason,
+    });
+    const payload = {
+      delivery: requeued,
+      operator: {
+        subject: identity.subject,
+        provider: identity.provider,
+        decision_hash: identity.decision_hash,
+      },
+      approval_replayed: false,
+      mutation_replayed: false,
+      source_database_changed: false,
+    };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : `Requeued notification delivery ${requeued.delivery_id}. No approval or database mutation was replayed.\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+function selectNotificationSink(
+  sinks: NonNullable<RuntimeConfig["notifications"]>["sinks"],
+  requested: string | undefined,
+) {
+  const enabled = sinks.filter((sink) => sink.enabled !== false);
+  if (requested) {
+    const selected = enabled.find((sink) => sink.id === requested);
+    if (!selected) throw new Error(`enabled notification sink not found: ${requested}`);
+    return selected;
+  }
+  if (enabled.length !== 1) throw new Error("select one enabled notification sink with --sink <id>");
+  return enabled[0]!;
+}
+
+function notificationDeliveryCounts(deliveries: ReturnType<ProposalStore["listNotificationDeliveries"]>) {
+  const counts: Record<NotificationDeliveryStatus, number> = {
+    pending: 0,
+    leased: 0,
+    delivered: 0,
+    retry_wait: 0,
+    dead_letter: 0,
+    suppressed: 0,
+    batched: 0,
+  };
+  for (const delivery of deliveries) counts[delivery.status] += 1;
+  return counts;
+}
+
+function notificationSinkHealth(
+  deliveries: ReturnType<ProposalStore["listNotificationDeliveries"]>,
+): "healthy" | "degraded" | "untested" {
+  const latest = [...deliveries].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0];
+  if (!latest) return "untested";
+  if (latest.status === "delivered") return "healthy";
+  if (latest.status === "dead_letter") return "degraded";
+  const delivered = deliveries.some((delivery) => delivery.status === "delivered");
+  return delivered ? "healthy" : "untested";
+}
+
+function requiredAttentionSinksHealthy(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+): boolean {
+  const required = policy.required_attention_sinks ?? [];
+  if (required.length === 0) return true;
+  if (!config.notifications?.enabled) return false;
+  return required.every((sinkId) => {
+    const configured = config.notifications?.sinks.find((sink) => sink.id === sinkId && sink.enabled !== false);
+    if (!configured) return false;
+    return notificationSinkHealth(store.listNotificationDeliveries({ sink_id: sinkId, limit: 1_000 })) === "healthy";
+  });
+}
+
+function supervisedWorkerEligibilityCode(reasons: string[]): string {
+  if (reasons.some((reason) => /digest|contract_permission|allowlist/.test(reason))) {
+    return "SUPERVISED_WORKER_DIGEST_STALE";
+  }
+  if (reasons.some((reason) => /identity/.test(reason))) {
+    return "SUPERVISED_WORKER_IDENTITY_MISMATCH";
+  }
+  if (reasons.some((reason) => /writer|source|receipt/.test(reason))) {
+    return "SUPERVISED_WORKER_CREDENTIAL_POSTURE_INVALID";
+  }
+  if (reasons.some((reason) => /tenant|principal|scope/.test(reason))) {
+    return "SUPERVISED_WORKER_SCOPE_INVALID";
+  }
+  return "SUPERVISED_WORKER_POLICY_STALE";
+}
+
+function currentSupervisedApprovalPolicy(
+  config: RuntimeConfig,
+  capability: RuntimeCapabilityConfig,
+): { policy: string; limits: PolicyApprovalLimit[]; spec: PolicySpec } | undefined {
+  if (capability.approval?.mode !== "policy" || !capability.approval.policy) return undefined;
+  const policy = config.policies?.find((candidate) => candidate.name === capability.approval!.policy);
+  if (!policy || policy.kind !== "approval") {
+    throw workerPolicyError(
+      "SUPERVISED_WORKER_POLICY_STALE",
+      `approval policy ${capability.approval.policy} is no longer active`,
+    );
+  }
+  return {
+    policy: policy.name,
+    limits: (policy.limits ?? []) as PolicyApprovalLimit[],
+    spec: policy,
+  };
+}
+
+export function assertSupervisedPolicyApprovalCurrent(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  capability: RuntimeCapabilityConfig,
+  proposal: StoredProposal,
+): { policy: string; limits: PolicyApprovalLimit[] } | undefined {
+  const current = currentSupervisedApprovalPolicy(config, capability);
+  if (!current) return undefined;
+  const actor = `policy:${current.policy}`;
+  const approval = store.approvals(proposal.proposal_id).find((candidate) =>
+    candidate.status === "approved"
+    && candidate.approver === actor
+    && candidate.proposal_hash === proposal.proposal_hash
+    && candidate.proposal_version === proposal.proposal_version);
+  if (!approval) return undefined;
+
+  const approvalEvent = [...store.events(proposal.proposal_id)].reverse().find((event) =>
+    event.kind === "proposal_approved"
+    && event.actor === actor
+    && event.payload.proposal_hash === proposal.proposal_hash
+    && event.payload.proposal_version === proposal.proposal_version);
+  if (!approvalEvent) {
+    throw workerPolicyError(
+      "SUPERVISED_WORKER_POLICY_STALE",
+      "policy approval is missing its immutable policy snapshot",
+    );
+  }
+  const approvedLimits = Array.isArray(approvalEvent.payload.aggregate_limits)
+    ? approvalEvent.payload.aggregate_limits
+    : [];
+  if (canonicalJsonDigest(approvedLimits) !== canonicalJsonDigest(current.limits)) {
+    throw workerPolicyError(
+      "SUPERVISED_WORKER_POLICY_STALE",
+      "the active approval-policy limits changed after this proposal was approved",
+    );
+  }
+  const evaluation = evaluateApprovalPolicy(
+    capability,
+    current.spec,
+    proposal.change_set.patch,
+  );
+  if (!evaluation.qualifies) {
+    throw workerPolicyError(
+      "SUPERVISED_WORKER_POLICY_STALE",
+      "the active approval policy no longer authorizes this immutable proposal",
+    );
+  }
+  store.assertWorkerPolicyExecutionLimits({
+    proposalId: proposal.proposal_id,
+    policy: current.policy,
+    limits: current.limits,
+  });
+  return { policy: current.policy, limits: current.limits };
+}
+
+export type SupervisedWriterPostureAssessment = {
+  ok: boolean;
+  fingerprint: `sha256:${string}`;
+  expected_fingerprint: `sha256:${string}` | null;
+  reasons: string[];
+  allowed_relations: string[];
+  writable_relations: string[];
+};
+
+export function assessSupervisedWriterPosture(
+  config: RuntimeConfig,
+  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+  inspection: SchemaInspection,
+): SupervisedWriterPostureAssessment {
+  const reasons: string[] = [];
+  const fingerprint = rolePostureFingerprint(inspection);
+  const role = inspection.role_posture;
+  const allowed = new Map<string, Set<keyof NonNullable<TableInfo["role_posture"]>["privileges"]>>();
+  const required = new Map<string, Set<"insert" | "update">>();
+  const rlsRequired = new Set<string>();
+  const addAllowed = (
+    relation: string,
+    privileges: Array<keyof NonNullable<TableInfo["role_posture"]>["privileges"]>,
+  ) => {
+    const existing = allowed.get(relation) ?? new Set();
+    privileges.forEach((privilege) => existing.add(privilege));
+    allowed.set(relation, existing);
+  };
+
+  for (const candidate of config.supervised_worker?.capabilities ?? []) {
+    if (candidate.write_url_env !== policy.write_url_env) continue;
+    const capability = config.capabilities?.find((entry) =>
+      entry.name === candidate.capability
+      && entry.contract_provenance?.digest === candidate.contract_digest);
+    if (!capability) {
+      reasons.push("allowlisted_capability_unresolved");
+      continue;
+    }
+    const source = config.sources?.[capability.source];
+    if (!source || source.engine !== inspection.engine || source.write_url_env !== policy.write_url_env) {
+      reasons.push("writer_source_mismatch");
+      continue;
+    }
+    const relation = `${capability.target.schema}.${capability.target.table}`;
+    const operation = capability.operation?.kind ?? "update";
+    if (operation !== "insert" && operation !== "update") {
+      reasons.push("writer_operation_ineligible");
+      continue;
+    }
+    addAllowed(relation, ["select", operation]);
+    const requiredPrivileges = required.get(relation) ?? new Set();
+    requiredPrivileges.add(operation);
+    required.set(relation, requiredPrivileges);
+    if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(relation);
+
+    if (source.receipts?.authority === "source_db") {
+      if (
+        source.receipts.provisioning !== "precreated"
+        || !source.receipts.schema
+        || !source.receipts.table
+      ) {
+        reasons.push("precreated_receipt_relation_required");
+      } else {
+        addAllowed(
+          `${source.receipts.schema}.${source.receipts.table}`,
+          ["select", "insert", "update"],
+        );
+      }
+    }
+  }
+
+  const enginePrivilegePostureSafe = inspection.engine === "mysql"
+    ? (role?.superuser === false || role?.superuser === "unsupported")
+      && (role?.bypass_rls === false || role?.bypass_rls === "unsupported")
+    : role?.superuser === false && role?.bypass_rls === false;
+  if (!role?.verified) reasons.push("writer_posture_unverified");
+  if (!enginePrivilegePostureSafe) reasons.push("writer_privileged_role");
+  if ((role?.owned_relations.length ?? 0) > 0) reasons.push("writer_owns_relation");
+  if (!policy.writer_posture_fingerprint) reasons.push("writer_posture_fingerprint_missing");
+  else if (fingerprint !== policy.writer_posture_fingerprint) reasons.push("writer_posture_fingerprint_changed");
+
+  const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
+  for (const [relation, requiredPrivileges] of required.entries()) {
+    const table = tables.get(relation);
+    if (!table?.role_posture) {
+      reasons.push("writer_target_posture_unavailable");
+      continue;
+    }
+    for (const privilege of requiredPrivileges) {
+      if (!table.role_posture.privileges[privilege]) {
+        reasons.push(`writer_target_${privilege}_missing`);
+      }
+    }
+    if (
+      rlsRequired.has(relation)
+      && (
+        table.row_level_security !== true
+        || table.role_posture.row_security_effective_for_current_role !== true
+      )
+    ) {
+      reasons.push("writer_rls_not_effective");
+    }
+  }
+
+  for (const table of inspection.tables) {
+    const relation = `${table.schema}.${table.name}`;
+    const posture = table.role_posture;
+    if (!posture) {
+      reasons.push("writer_relation_posture_unavailable");
+      continue;
+    }
+    const granted = Object.entries(posture.privileges)
+      .filter(([, enabled]) => enabled)
+      .map(([privilege]) => privilege as keyof typeof posture.privileges);
+    if (granted.length === 0) continue;
+    const reviewed = allowed.get(relation);
+    if (!reviewed) {
+      reasons.push("writer_unreviewed_relation_privilege");
+      continue;
+    }
+    if (granted.some((privilege) => !reviewed.has(privilege))) {
+      reasons.push("writer_excess_relation_privilege");
+    }
+    if (posture.current_role_is_owner || posture.current_role_can_assume_owner) {
+      reasons.push("writer_owns_relation");
+    }
+  }
+
+  return {
+    ok: reasons.length === 0,
+    fingerprint,
+    expected_fingerprint: policy.writer_posture_fingerprint ?? null,
+    reasons: [...new Set(reasons)].sort(),
+    allowed_relations: [...allowed.keys()].sort(),
+    writable_relations: [...(role?.writable_relations ?? [])].sort(),
+  };
+}
+
+function supervisedWriterPostureKey(
+  environment: string,
+  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+): string {
+  return `supervised_writer_posture:${canonicalJsonDigest({
+    environment,
+    capability: policy.capability,
+    contract_digest: policy.contract_digest,
+  })}`;
+}
+
+function supervisedWriterPostureAttentionKey(
+  environment: string,
+  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+): string {
+  return [
+    environment,
+    "credential.posture_changed",
+    policy.capability,
+    policy.contract_digest,
+  ].join(":");
+}
+
+function recordSupervisedWriterPosture(
+  store: ProposalStore,
+  environment: string,
+  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+  assessment: SupervisedWriterPostureAssessment,
+): void {
+  const stateKey = supervisedWriterPostureKey(environment, policy);
+  const previous = store.getRunnerState(stateKey);
+  const occurrence = assessment.ok
+    ? Number(previous?.occurrence ?? 0)
+    : previous?.status === "invalid"
+      ? Number(previous.occurrence ?? 1)
+      : Number(previous?.occurrence ?? 0) + 1;
+  store.setRunnerState(stateKey, {
+    status: assessment.ok ? "healthy" : "invalid",
+    checked_at: new Date().toISOString(),
+    occurrence,
+    capability: policy.capability,
+    contract_digest: policy.contract_digest,
+    expected_fingerprint: assessment.expected_fingerprint,
+    observed_fingerprint: assessment.fingerprint,
+    reason_codes: assessment.reasons,
+    allowed_relation_count: assessment.allowed_relations.length,
+    writable_relation_count: assessment.writable_relations.length,
+  });
+
+  const attentionKey = supervisedWriterPostureAttentionKey(environment, policy);
+  const attentionId = workbenchAttentionId(attentionKey);
+  if (assessment.ok) {
+    const attention = store.getAttentionItem(attentionId);
+    if (attention && attention.status !== "resolved" && attention.status !== "expired") {
+      store.resolveAttention({ attention_id: attention.attention_id });
+    }
+    return;
+  }
+  store.recordAttentionEvent({
+    event_type: "credential.posture_changed",
+    severity: "critical",
+    environment,
+    capability: policy.capability,
+    contract_digest: policy.contract_digest,
+    attention_key: attentionKey,
+    attention_required: true,
+    immediate_default: true,
+    failure_class: "SUPERVISED_WORKER_CREDENTIAL_POSTURE_INVALID",
+    summary: `${policy.capability} writer posture no longer matches reviewed least privilege`,
+    workbench_path: workbenchAttentionPath(attentionKey),
+    details: {
+      reason_codes: assessment.reasons.join(","),
+      expected_fingerprint: assessment.expected_fingerprint,
+      observed_fingerprint: assessment.fingerprint,
+      allowed_relation_count: assessment.allowed_relations.length,
+      writable_relation_count: assessment.writable_relations.length,
+      source_database_changed: false,
+    },
+    source_event_key: `worker-posture:${policy.contract_digest}:${occurrence}:${canonicalJsonDigest({
+      fingerprint: assessment.fingerprint,
+      reasons: assessment.reasons,
+    })}`,
+  });
+}
+
+async function assertSupervisedWriterPosture(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+  env: NodeJS.ProcessEnv = process.env,
+  inspect: typeof inspectDatabase = inspectDatabase,
+): Promise<SupervisedWriterPostureAssessment | undefined> {
+  if (policy.require_least_privilege_writer !== true) return undefined;
+  const environment = config.supervised_worker?.profile ?? "unknown";
+  const source = config.capabilities
+    ?.filter((capability) => capability.name === policy.capability)
+    .map((capability) => config.sources?.[capability.source])
+    .find((candidate) => candidate?.write_url_env === policy.write_url_env);
+  let assessment: SupervisedWriterPostureAssessment;
+  try {
+    if (!source) throw new Error("writer source is unavailable");
+    const inspection = await inspect({
+      engine: source.engine,
+      databaseUrlEnv: policy.write_url_env,
+      statementTimeoutMs: source.statement_timeout_ms ?? 5_000,
+      env,
+    });
+    assessment = assessSupervisedWriterPosture(config, policy, inspection);
+  } catch {
+    const fallback = canonicalJsonDigest({
+      environment,
+      capability: policy.capability,
+      contract_digest: policy.contract_digest,
+      posture: "inspection_unavailable",
+    });
+    assessment = {
+      ok: false,
+      fingerprint: fallback,
+      expected_fingerprint: policy.writer_posture_fingerprint ?? null,
+      reasons: ["writer_posture_inspection_failed"],
+      allowed_relations: [],
+      writable_relations: [],
+    };
+  }
+  recordSupervisedWriterPosture(store, environment, policy, assessment);
+  if (!assessment.ok) {
+    throw workerPolicyError(
+      "SUPERVISED_WORKER_CREDENTIAL_POSTURE_INVALID",
+      `supervised writer posture failed closed: ${assessment.reasons.join(", ")}`,
+    );
+  }
+  return assessment;
+}
+
+function workerPolicyError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
+}
+
 async function workerCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "run") return workerRun(rest);
   if (subcommand === "status" || subcommand === "list") return workerStatus(rest);
+  if (subcommand === "pause" || subcommand === "resume" || subcommand === "drain") {
+    return workerControlMutate(subcommand, rest);
+  }
+  if (subcommand === "enable" || subcommand === "disable" || subcommand === "revoke") {
+    return workerCapabilityControlMutate(subcommand, rest);
+  }
+  if (subcommand === "cancel") return workerCancel(rest);
   if (subcommand === "dead-letter") return workerDeadLetter(rest);
   usage(["worker"]);
   return 2;
 }
 
 async function workerStatus(args: string[]): Promise<number> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreReadBridge(args, config, "worker status", (bridgeStorePath) => workerStatus(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
@@ -11152,13 +13215,214 @@ async function workerStatus(args: string[]): Promise<number> {
   try {
     const status = optionalArg(args, "--status") as Parameters<ProposalStore["listWorkerQueue"]>[0];
     const items = store.listWorkerQueue(status);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ worker_queue: items }, null, 2)}\n`);
-    else if (items.length === 0) process.stdout.write("Worker queue is empty.\n");
-    else for (const item of items) process.stdout.write(`${item.status.toUpperCase()} ${item.proposal_id} attempt=${item.attempts}/${item.max_attempts}${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`);
+    const control = store.workerControlState();
+    const now = Date.now();
+    const summary = {
+      queue_depth: items.filter((item) => item.status === "queued" || item.status === "retry_wait").length,
+      active_leases: items.filter((item) => item.status === "leased" && Date.parse(item.lease_expires_at ?? "") > now).length,
+      retry_wait: items.filter((item) => item.status === "retry_wait").length,
+      dead_letters: items.filter((item) => item.status === "dead_letter").length,
+      reconciliation_required: items.filter((item) => item.status === "reconciliation_required").length,
+      blocked: items.filter((item) => item.status === "blocked").length,
+      oldest_queued_at: items
+        .filter((item) => item.status === "queued" || item.status === "retry_wait")
+        .map((item) => item.created_at)
+        .sort()[0] ?? null,
+    };
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ worker_control: control, summary, worker_queue: items }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`Supervised execution: ${control.mode} (control revision ${control.revision})\n`);
+      process.stdout.write(
+        `Queue: ${summary.queue_depth} waiting · ${summary.active_leases} leased · ${summary.retry_wait} retrying · ${summary.dead_letters} dead letter · ${summary.reconciliation_required} reconciliation\n`,
+      );
+      if (items.length === 0) process.stdout.write("Worker queue is empty.\n");
+      else for (const item of items) {
+        process.stdout.write(
+          `${item.status.toUpperCase()} ${item.proposal_id} mode=${item.execution_mode}`
+          + `${item.contract_digest ? ` digest=${item.contract_digest}` : ""}`
+          + ` attempt=${item.attempts}/${item.max_attempts}`
+          + `${item.lease_owner ? ` lease=${item.lease_owner} until=${item.lease_expires_at}` : ""}`
+          + `${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`,
+        );
+      }
+    }
     return 0;
   } finally {
     store.close();
   }
+}
+
+async function workerControlMutate(
+  action: "pause" | "resume" | "drain",
+  args: string[],
+): Promise<number> {
+  return workerControlMutation(action, {}, args);
+}
+
+async function workerCapabilityControlMutate(
+  action: "enable" | "disable" | "revoke",
+  args: string[],
+): Promise<number> {
+  const capability = positional(args, 0);
+  const contractDigest = optionalArg(args, "--digest");
+  if (!capability) throw new Error(`worker ${action} requires <capability>`);
+  if (!contractDigest || !/^sha256:[a-f0-9]{64}$/.test(contractDigest)) {
+    throw new Error(`worker ${action} requires --digest <exact sha256 contract digest>`);
+  }
+  return workerControlMutation(
+    action === "enable"
+      ? "capability_enable"
+      : action === "disable"
+        ? "capability_disable"
+        : "digest_revoke",
+    {
+      capability,
+      contract_digest: contractDigest as `sha256:${string}`,
+    },
+    args,
+  );
+}
+
+async function workerControlMutation(
+  action: WorkerControlAction,
+  target: Omit<WorkerControlTarget, "action">,
+  args: string[],
+): Promise<number> {
+  if (!args.includes("--yes")) throw new Error(`worker ${action.replaceAll("_", " ")} requires --yes`);
+  const configPath = runnerConfigPath(args);
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      `worker ${action}`,
+      (bridgeStorePath) => workerControlMutation(action, target, argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, `worker ${action}`, args);
+  const store = await openLocalStoreAt(resolvedLocalStorePath(args, config.storage?.sqlite_path));
+  try {
+    const controlTarget: WorkerControlTarget = { action, ...target };
+    const current = store.workerControlState();
+    const subject = workerControlDecisionSubject(current, controlTarget);
+    const policies = config.supervised_worker?.capabilities.filter((policy) =>
+      !target.capability
+      || (policy.capability === target.capability && policy.contract_digest === target.contract_digest)) ?? [];
+    if (target.capability && policies.length !== 1) {
+      throw new Error("worker capability control must target one configured exact capability/digest allowlist entry");
+    }
+    const requiredRoles = [...new Set(policies.flatMap((policy) =>
+      policy.control_role ? [policy.control_role] : []))].sort();
+    await confirmDangerousAction(
+      args,
+      target.capability
+        ? `${action.replaceAll("_", " ")} ${target.capability} at ${target.contract_digest}?`
+        : `${action} supervised execution globally?`,
+    );
+    const identity = await resolveOperatorIdentity({
+      config: config.operator_identity as OperatorIdentityConfig | undefined,
+      configPath,
+      proposal: subject,
+      action: workerControlOperatorDecisionAction(action),
+      reason: optionalArg(args, "--reason"),
+      actor: optionalArg(args, "--actor"),
+      identity: optionalArg(args, "--identity"),
+      privateKeyPath: optionalArg(args, "--identity-key"),
+    });
+    for (const role of requiredRoles) {
+      if (!identity.roles.includes(role)) {
+        throw new Error(`operator ${identity.subject} lacks required supervised-worker control role ${role}`);
+      }
+    }
+    const production = config.supervised_worker?.profile === "production";
+    const updated = store.updateWorkerControl({
+      ...controlTarget,
+      actor: identity.subject,
+      identity,
+      require_verified_identity: production,
+      environment: config.supervised_worker?.profile ?? "unknown",
+    });
+    const payload = {
+      worker_control: updated,
+      source_database_changed: false,
+      queued_proposals_discarded: 0,
+    };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : `${workerControlHumanLabel(action)}. New leases now follow control revision ${updated.revision}; queued proposals were preserved.\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+async function workerCancel(args: string[]): Promise<number> {
+  if (!args.includes("--yes")) throw new Error("worker cancel requires --yes");
+  const proposalReference = positional(args, 0) ?? "latest";
+  const configPath = runnerConfigPath(args);
+  const config = await readRuntimeConfig(configPath);
+  if (runtimeStoreBridgeRequired(args, config)) {
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      `worker cancel ${proposalReference}`,
+      (bridgeStorePath) => workerCancel(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    );
+  }
+  assertNoRuntimeStoreForLocalMutation(config, "worker cancel", args);
+  const store = await openLocalStoreAt(resolvedLocalStorePath(args, config.storage?.sqlite_path));
+  try {
+    const proposalId = resolveProposalIdFromStore(proposalReference, store);
+    const proposal = requireLocalProposal(store, proposalId);
+    const queue = store.getWorkerQueueItem(proposalId);
+    if (!queue) throw new Error(`worker queue item not found for ${proposalId}`);
+    const policy = config.supervised_worker?.capabilities.find((candidate) =>
+      candidate.capability === proposal.action
+      && candidate.contract_digest === queue.contract_digest);
+    await confirmDangerousAction(args, `Cancel queued proposal ${proposalId} before worker lease?`);
+    const identity = await resolveOperatorIdentity({
+      config: config.operator_identity as OperatorIdentityConfig | undefined,
+      configPath,
+      proposal,
+      action: "worker_cancel",
+      reason: optionalArg(args, "--reason"),
+      actor: optionalArg(args, "--actor"),
+      identity: optionalArg(args, "--identity"),
+      privateKeyPath: optionalArg(args, "--identity-key"),
+      requiredRole: policy?.control_role,
+    });
+    const cancelled = store.cancelWorkerItem({
+      proposalId,
+      actor: identity.subject,
+      identity,
+      require_verified_identity: config.supervised_worker?.profile === "production",
+    });
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify({ worker_queue: cancelled, source_database_changed: false }, null, 2)}\n`
+      : `Cancelled queued proposal ${proposalId}. Source database changed: no.\n`);
+    return 0;
+  } finally {
+    store.close();
+  }
+}
+
+function workerControlOperatorDecisionAction(action: WorkerControlAction) {
+  if (action === "pause") return "worker_pause" as const;
+  if (action === "resume") return "worker_resume" as const;
+  if (action === "drain") return "worker_drain" as const;
+  if (action === "capability_enable") return "worker_capability_enable" as const;
+  if (action === "capability_disable") return "worker_capability_disable" as const;
+  return "worker_digest_revoke" as const;
+}
+
+function workerControlHumanLabel(action: WorkerControlAction): string {
+  if (action === "pause") return "Supervised execution paused";
+  if (action === "resume") return "Supervised execution resumed";
+  if (action === "drain") return "Supervised execution is draining";
+  if (action === "capability_enable") return "Exact capability/digest execution enabled";
+  if (action === "capability_disable") return "Exact capability/digest execution disabled";
+  return "Exact capability digest revoked";
 }
 
 async function workerDeadLetter(args: string[]): Promise<number> {
@@ -11174,7 +13438,7 @@ async function workerDeadLetter(args: string[]): Promise<number> {
 async function workerDeadLetterShow(args: string[]): Promise<number> {
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("worker dead-letter show requires <proposal_id>");
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter show ${proposalId}`, (bridgeStorePath) => workerDeadLetterShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
@@ -11206,7 +13470,7 @@ async function workerDeadLetterMutate(action: "requeue" | "discard", args: strin
   if (!proposalId) throw new Error(`worker dead-letter ${action} requires <proposal_id>`);
   const reason = optionalArg(args, "--reason");
   if (action === "discard" && !reason) throw new Error("worker dead-letter discard requires --reason <text>");
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter ${action} ${proposalId}`, (bridgeStorePath) => workerDeadLetterMutate(action, argsWithRuntimeStoreBridge(args, bridgeStorePath)));
@@ -11247,10 +13511,520 @@ async function workerDeadLetterMutate(action: "requeue" | "discard", args: strin
   }
 }
 
+function enqueueApprovedForSupervisedWorker(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  filters: { capability?: string; tenant?: string },
+): void {
+  const proposals = [
+    ...store.listProposals({ state: "approved", capability: filters.capability, tenant: filters.tenant }),
+    ...store.listProposals({ state: "pending_worker", capability: filters.capability, tenant: filters.tenant }),
+  ];
+  for (const proposal of proposals) {
+    const existing = store.getWorkerQueueItem(proposal.proposal_id);
+    if (existing) continue;
+    let capability: RuntimeCapabilityConfig;
+    try {
+      capability = findProposalCapability(config, proposal);
+    } catch {
+      continue;
+    }
+    const eligibility = resolveSupervisedWorkerEligibility(config, capability, { phase: "queue" });
+    if (
+      !eligibility.eligible
+      || !eligibility.policy
+      || !eligibility.contract_digest
+      || proposal.change_set.contract?.digest !== eligibility.contract_digest
+    ) {
+      continue;
+    }
+    try {
+      store.enqueueWorkerProposal({
+        proposal_id: proposal.proposal_id,
+        execution_mode: "supervised_worker",
+        contract_digest: eligibility.contract_digest,
+        max_attempts: eligibility.policy.max_attempts,
+        queue_limit: eligibility.policy.queue_limit,
+      });
+    } catch (error) {
+      const code = safeOperationalErrorCode(error);
+      if (code !== "WORKER_QUEUE_LIMIT_EXCEEDED") throw error;
+      const attentionKey = [
+        eligibility.profile ?? "unknown",
+        "policy.limit_exceeded",
+        capability.name,
+        eligibility.contract_digest,
+        "worker_queue",
+      ].join(":");
+      store.recordAttentionEvent({
+        event_type: "policy.limit_exceeded",
+        severity: "critical",
+        environment: eligibility.profile ?? "unknown",
+        capability: capability.name,
+        contract_digest: eligibility.contract_digest,
+        attention_key: attentionKey,
+        attention_required: true,
+        immediate_default: true,
+        failure_class: code,
+        summary: `${capability.name} supervised-execution queue reached its reviewed limit`,
+        workbench_path: workbenchAttentionPath(attentionKey),
+        details: {
+          failure_class: code,
+          source_database_changed: false,
+        },
+        source_event_key: `worker-queue-limit:${proposal.proposal_id}:${eligibility.contract_digest}`,
+      });
+    }
+  }
+}
+
+async function claimSupervisedWorkerItem(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  input: { workerId: string; capability?: string; tenant?: string },
+): Promise<{
+  item: WorkerQueueItem;
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>;
+} | undefined> {
+  const workerControl = store.workerControlState();
+  updateSupervisedWorkerBacklogAttention(store, config);
+  updateSupervisedProposalExpiryAttention(store, config);
+  if (workerControl.mode !== "active") return undefined;
+  const policies = (config.supervised_worker?.capabilities ?? [])
+    .filter((policy) => !input.capability || policy.capability === input.capability)
+    .sort((left, right) => left.capability.localeCompare(right.capability)
+      || left.contract_digest.localeCompare(right.contract_digest));
+  for (const policy of policies) {
+    const capability = config.capabilities?.find((candidate) => candidate.name === policy.capability);
+    if (!capability) continue;
+    const eligibility = resolveSupervisedWorkerEligibility(config, capability, {
+      workerIdentity: input.workerId,
+      phase: "execute",
+    });
+    if (!eligibility.eligible || !eligibility.policy || !eligibility.contract_digest) continue;
+    if (!workerControlAllowsPolicy(workerControl, eligibility.policy)) continue;
+    if (!requiredAttentionSinksHealthy(store, config, eligibility.policy)) {
+      recordUnhealthySupervisionSinkAttention(store, config, eligibility.policy);
+      continue;
+    }
+    resolveHealthySupervisionSinkAttention(store, config, eligibility.policy);
+    try {
+      await assertSupervisedWriterPosture(store, config, eligibility.policy);
+    } catch {
+      continue;
+    }
+    const approvalPolicy = currentSupervisedApprovalPolicy(config, capability);
+    const item = store.claimWorkerItem({
+      workerId: input.workerId,
+      leaseSeconds: eligibility.policy.lease_seconds,
+      executionMode: "supervised_worker",
+      capability: capability.name,
+      tenant: input.tenant,
+      contractDigest: eligibility.contract_digest,
+      maxConcurrent: eligibility.policy.concurrency,
+      rateLimit: {
+        executions: eligibility.policy.rate_limit.executions,
+        windowSeconds: eligibility.policy.rate_limit.window_seconds,
+      },
+      proposalTtlSeconds: eligibility.policy.proposal_ttl_seconds,
+      ...(approvalPolicy ? {
+        policyExecution: {
+          policy: approvalPolicy.policy,
+          limits: approvalPolicy.limits,
+        },
+      } : {}),
+    });
+    if (item) return { item, policy: eligibility.policy };
+  }
+  return undefined;
+}
+
+function workerControlAllowsPolicy(
+  state: ReturnType<ProposalStore["workerControlState"]>,
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+): boolean {
+  const control = state.capability_controls.find((entry) =>
+    entry.capability === policy.capability
+    && entry.contract_digest === policy.contract_digest);
+  return control?.status !== "disabled" && control?.status !== "revoked";
+}
+
+function updateSupervisedWorkerBacklogAttention(
+  store: ProposalStore,
+  config: RuntimeConfig,
+): void {
+  const environment = config.supervised_worker?.profile ?? "unknown";
+  const now = new Date().toISOString();
+  const nowMs = Date.parse(now);
+  for (const policy of config.supervised_worker?.capabilities ?? []) {
+    const matchingSinks = (config.notifications?.sinks ?? []).filter((sink) =>
+      sink.enabled !== false
+      && (!sink.capabilities || sink.capabilities.includes(policy.capability))
+      && (!sink.environments || sink.environments.includes(environment))
+      && (!sink.events || sink.events.includes("worker.queue_backlog")));
+    const depthThreshold = Math.min(
+      ...((matchingSinks.length ? matchingSinks : [{ budgets: undefined }])
+        .map((sink) => sink.budgets?.queue_depth_threshold ?? 100)),
+    );
+    const ageThreshold = Math.min(
+      ...((matchingSinks.length ? matchingSinks : [{ budgets: undefined }])
+        .map((sink) => sink.budgets?.queue_age_seconds ?? 300)),
+    );
+    const groups = new Map<string, {
+      proposal: StoredProposal;
+      items: WorkerQueueItem[];
+      scope_digest: `sha256:${string}`;
+    }>();
+    for (const item of store.listWorkerQueue().filter((candidate) =>
+      candidate.execution_mode === "supervised_worker"
+      && candidate.contract_digest === policy.contract_digest
+      && (candidate.status === "queued" || candidate.status === "retry_wait"))) {
+      const proposal = store.getProposal(item.proposal_id);
+      if (!proposal || proposal.action !== policy.capability) continue;
+      const scopeDigest = canonicalJsonDigest({
+        tenant_id: proposal.tenant_id,
+        principal: proposal.principal ?? null,
+      });
+      const group = groups.get(scopeDigest) ?? { proposal, items: [], scope_digest: scopeDigest };
+      group.items.push(item);
+      if (item.created_at < group.proposal.created_at) group.proposal = proposal;
+      groups.set(scopeDigest, group);
+    }
+    const activeAttentionKeys = new Set<string>();
+    for (const group of groups.values()) {
+      const oldest = [...group.items].sort((left, right) =>
+        left.created_at.localeCompare(right.created_at))[0]!;
+      const oldestAgeSeconds = Math.max(0, Math.floor((nowMs - Date.parse(oldest.created_at)) / 1_000));
+      const thresholdCrossed = group.items.length >= depthThreshold || oldestAgeSeconds >= ageThreshold;
+      const attentionKey = [
+        environment,
+        "worker.queue_backlog",
+        policy.capability,
+        policy.contract_digest,
+        group.scope_digest,
+      ].join(":");
+      const stateKey = `notification_worker_backlog:${canonicalJsonDigest({ attention_key: attentionKey })}`;
+      const previous = store.getRunnerState(stateKey) ?? {};
+      if (!thresholdCrossed) {
+        if (previous.active === true) {
+          const existing = store.getAttentionItem(workbenchAttentionId(attentionKey));
+          if (existing && existing.status !== "resolved" && existing.status !== "expired") {
+            store.resolveAttention({ attention_id: existing.attention_id });
+          }
+          store.setRunnerState(stateKey, {
+            active: false,
+            resolved_at: now,
+            last_depth: group.items.length,
+            last_oldest_age_seconds: oldestAgeSeconds,
+          });
+        }
+        continue;
+      }
+      activeAttentionKeys.add(attentionKey);
+      const firstObservedAt = previous.active === true && typeof previous.first_observed_at === "string"
+        ? previous.first_observed_at
+        : now;
+      store.setRunnerState(stateKey, {
+        active: true,
+        first_observed_at: firstObservedAt,
+        last_observed_at: now,
+        depth: group.items.length,
+        oldest_age_seconds: oldestAgeSeconds,
+      });
+      if (previous.active === true) continue;
+      store.recordAttentionEvent({
+        event_type: "worker.queue_backlog",
+        severity: "warning",
+        environment,
+        proposal_id: oldest.proposal_id,
+        capability: policy.capability,
+        contract_digest: policy.contract_digest,
+        attention_key: attentionKey,
+        attention_required: true,
+        immediate_default: true,
+        summary: `${policy.capability} trusted-execution queue needs operator attention`,
+        worker_state: "backlog",
+        workbench_path: workbenchAttentionPath(attentionKey),
+        details: {
+          queue_depth: group.items.length,
+          oldest_queue_age_seconds: oldestAgeSeconds,
+          queue_depth_threshold: depthThreshold,
+          queue_age_threshold_seconds: ageThreshold,
+          source_database_changed: false,
+        },
+        source_event_key: `worker-queue-backlog:${policy.contract_digest}:${group.scope_digest}:${firstObservedAt}`,
+        now,
+      });
+    }
+    for (const item of store.listAttentionItems({ capability: policy.capability, limit: 1_000 })) {
+      if (item.event_type !== "worker.queue_backlog"
+        || item.contract_digest !== policy.contract_digest
+        || activeAttentionKeys.has(item.attention_key)
+        || item.status === "resolved"
+        || item.status === "expired") continue;
+      store.resolveAttention({ attention_id: item.attention_id });
+    }
+  }
+}
+
+export function updateSupervisedProposalExpiryAttention(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  now = new Date().toISOString(),
+): void {
+  const environment = config.supervised_worker?.profile ?? "unknown";
+  const nowMs = Date.parse(now);
+  if (!Number.isFinite(nowMs)) throw new Error("proposal expiry scan requires a valid ISO timestamp");
+
+  for (const policy of config.supervised_worker?.capabilities ?? []) {
+    const warningSeconds = Math.min(
+      3_600,
+      Math.max(60, Math.floor(policy.proposal_ttl_seconds / 10)),
+    );
+    const activeKeys = new Set<string>();
+    for (const item of store.listWorkerQueue().filter((candidate) =>
+      candidate.execution_mode === "supervised_worker"
+      && candidate.contract_digest === policy.contract_digest
+      && (
+        candidate.status === "queued"
+        || candidate.status === "retry_wait"
+        || (
+          candidate.status === "leased"
+          && Date.parse(candidate.lease_expires_at ?? "") <= nowMs
+        )
+      ))) {
+      const proposal = store.getProposal(item.proposal_id);
+      if (
+        !proposal
+        || proposal.action !== policy.capability
+        || (proposal.state !== "approved" && proposal.state !== "pending_worker")
+      ) {
+        continue;
+      }
+      const expiresAtMs = Date.parse(proposal.created_at) + policy.proposal_ttl_seconds * 1_000;
+      const remainingSeconds = Math.ceil((expiresAtMs - nowMs) / 1_000);
+      if (remainingSeconds <= 0 || remainingSeconds > warningSeconds) continue;
+
+      const attentionKey = [
+        environment,
+        "proposal.expiring",
+        proposal.proposal_id,
+        policy.capability,
+        policy.contract_digest,
+      ].join(":");
+      activeKeys.add(attentionKey);
+      const existing = store.getAttentionItem(workbenchAttentionId(attentionKey));
+      if (existing && existing.status !== "resolved" && existing.status !== "expired") continue;
+      store.recordAttentionEvent({
+        event_type: "proposal.expiring",
+        severity: "warning",
+        environment,
+        proposal_id: proposal.proposal_id,
+        capability: policy.capability,
+        contract_digest: policy.contract_digest,
+        attention_key: attentionKey,
+        attention_required: true,
+        immediate_default: true,
+        summary: `${policy.capability} proposal is approaching expiry while operator action is still possible`,
+        approval_source: proposal.change_set.approval.mode === "policy" ? "policy_auto" : "human",
+        worker_state: item.status,
+        expires_at: new Date(expiresAtMs).toISOString(),
+        workbench_path: workbenchAttentionPath(attentionKey),
+        details: {
+          seconds_remaining: remainingSeconds,
+          warning_window_seconds: warningSeconds,
+          source_database_changed: false,
+        },
+        source_event_key: `proposal-expiring:${proposal.proposal_id}:${policy.contract_digest}`,
+        now,
+      });
+    }
+
+    for (const attention of store.listAttentionItems({
+      capability: policy.capability,
+      limit: 1_000,
+    })) {
+      if (
+        attention.event_type !== "proposal.expiring"
+        || attention.contract_digest !== policy.contract_digest
+        || activeKeys.has(attention.attention_key)
+        || attention.status === "resolved"
+        || attention.status === "expired"
+      ) {
+        continue;
+      }
+      store.resolveAttention({ attention_id: attention.attention_id, now });
+    }
+  }
+}
+
+function recordUnhealthySupervisionSinkAttention(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+): void {
+  const now = new Date().toISOString();
+  const sinkStates = (policy.required_attention_sinks ?? []).map((sinkId) => {
+    const deliveries = store.listNotificationDeliveries({ sink_id: sinkId, limit: 1_000 });
+    const latest = [...deliveries].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0];
+    const configured = config.notifications?.sinks.find((sink) => sink.id === sinkId);
+    return {
+      sink_id: sinkId,
+      health: notificationSinkHealth(deliveries),
+      latest_state: latest?.status ?? "untested",
+      latest_at: latest?.updated_at ?? null,
+      degraded_duration_seconds: configured?.budgets?.degraded_duration_seconds ?? 120,
+    };
+  });
+  const unhealthy = sinkStates.filter((sink) => sink.health !== "healthy");
+  if (unhealthy.length === 0) return;
+  const environment = config.supervised_worker?.profile ?? "unknown";
+  const attentionKey = supervisionSinkAttentionKey(environment, policy);
+  const episode = canonicalJsonDigest(unhealthy);
+  const healthStateKey = supervisionSinkHealthStateKey(environment, policy);
+  const previous = store.getRunnerState(healthStateKey) ?? {};
+  const continuingEpisode = previous.status === "unhealthy"
+    && previous.fingerprint === episode
+    && typeof previous.first_observed_at === "string"
+    && Number.isFinite(Date.parse(previous.first_observed_at));
+  const firstObservedAt = continuingEpisode
+    ? String(previous.first_observed_at)
+    : now;
+  store.setRunnerState(healthStateKey, {
+    status: "unhealthy",
+    fingerprint: episode,
+    first_observed_at: firstObservedAt,
+    last_observed_at: now,
+    sink_count: sinkStates.length,
+    unhealthy_sink_count: unhealthy.length,
+  });
+  const degradedDurationSeconds = Math.min(...unhealthy.map((sink) => sink.degraded_duration_seconds));
+  const observedDurationSeconds = Math.max(0, Math.floor(
+    (Date.parse(now) - Date.parse(firstObservedAt)) / 1_000,
+  ));
+  if (observedDurationSeconds < degradedDurationSeconds) return;
+  store.recordAttentionEvent({
+    event_type: "worker.unhealthy",
+    severity: "critical",
+    environment,
+    capability: policy.capability,
+    contract_digest: policy.contract_digest,
+    attention_key: attentionKey,
+    attention_required: true,
+    immediate_default: true,
+    failure_class: "REQUIRED_ATTENTION_SINK_UNHEALTHY",
+    summary: `${policy.capability} automatic execution is held because required supervision is unavailable`,
+    worker_state: "paused",
+    workbench_path: workbenchAttentionPath(attentionKey),
+    details: {
+      required_sink_count: sinkStates.length,
+      unhealthy_sink_count: unhealthy.length,
+      degraded_duration_seconds: observedDurationSeconds,
+      source_database_changed: false,
+    },
+    source_event_key: `worker-sink-health:${policy.contract_digest}:${episode}:${firstObservedAt}`,
+    now,
+  });
+}
+
+function resolveHealthySupervisionSinkAttention(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+): void {
+  const environment = config.supervised_worker?.profile ?? "unknown";
+  const attentionKey = supervisionSinkAttentionKey(environment, policy);
+  const healthStateKey = supervisionSinkHealthStateKey(environment, policy);
+  const previous = store.getRunnerState(healthStateKey) ?? {};
+  const item = store.getAttentionItem(workbenchAttentionId(attentionKey));
+  if (item && item.status !== "resolved" && item.status !== "expired") {
+    store.resolveAttention({ attention_id: item.attention_id });
+  }
+  const now = new Date().toISOString();
+  store.setRunnerState(healthStateKey, {
+    status: "healthy",
+    recovered_at: now,
+    previous_first_observed_at: typeof previous.first_observed_at === "string"
+      ? previous.first_observed_at
+      : null,
+  });
+  const recoveryEnabled = (policy.required_attention_sinks ?? []).some((sinkId) =>
+    config.notifications?.sinks.some((sink) =>
+      sink.id === sinkId && sink.enabled !== false && sink.recovery_notifications === true));
+  if (item
+    && previous.status === "unhealthy"
+    && recoveryEnabled) {
+    store.recordAttentionEvent({
+      event_type: "worker.recovered",
+      severity: "informational",
+      environment,
+      capability: policy.capability,
+      contract_digest: policy.contract_digest,
+      attention_required: false,
+      immediate_default: true,
+      summary: `${policy.capability} required supervision is healthy again`,
+      worker_state: "active",
+      workbench_path: "/",
+      details: {
+        resolved_attention_id: item.attention_id,
+        source_database_changed: false,
+      },
+      source_event_key: `worker-sink-recovered:${policy.contract_digest}:${String(previous.first_observed_at ?? item.first_seen_at)}`,
+      now,
+    });
+  }
+}
+
+function supervisionSinkAttentionKey(
+  environment: string,
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+): string {
+  return [
+    environment,
+    "worker.unhealthy",
+    policy.capability,
+    policy.contract_digest,
+    "required_attention_sink",
+  ].join(":");
+}
+
+function supervisionSinkHealthStateKey(
+  environment: string,
+  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+): string {
+  return `notification_worker_health:${canonicalJsonDigest({
+    environment,
+    capability: policy.capability,
+    contract_digest: policy.contract_digest,
+  })}`;
+}
+
+function workbenchAttentionPath(attentionKey: string): string {
+  return `/attention/${workbenchAttentionId(attentionKey)}`;
+}
+
+function workbenchAttentionId(attentionKey: string): string {
+  const digest = canonicalJsonDigest({ attention_key: attentionKey });
+  return `attn_${digest.slice("sha256:".length, "sha256:".length + 32)}`;
+}
+
 async function workerRun(args: string[]): Promise<number> {
   if (!args.includes("--yes")) throw new Error("worker run requires --yes because it applies approved proposals");
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await readRuntimeConfig(configPath);
+  const supervised = args.includes("--supervised");
+  if (supervised) {
+    const validation = validateRunnerCapabilityConfig(config);
+    if (!validation.ok) {
+      throw new Error(`cannot run supervised worker with invalid config: ${validation.errors.map((error) => `${error.path} ${error.code}`).join("; ")}`);
+    }
+    if (!config.supervised_worker?.enabled) {
+      if (!args.includes("--batch-quiet")) {
+        process.stdout.write("Supervised execution is disabled. No proposal was leased or applied.\n");
+      }
+      return 0;
+    }
+  }
   if (config && runtimeStoreBridgeRequired(args, config)) {
     if (!args.includes("--once") && !args.includes("--drain")) {
       return workerRunSharedRuntimeStoreDaemon(args, config);
@@ -11258,7 +14032,7 @@ async function workerRun(args: string[]): Promise<number> {
     return withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => workerRun(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
   assertNoRuntimeStoreForLocalMutation(config, "worker run", args);
-  const storePath = optionalArg(args, "--store") ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args, config.storage?.sqlite_path);
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
     if (!args.includes("--once") && !args.includes("--drain")) {
       throw new Error("shared Postgres ledger mirror for worker run requires --once or --drain. Use storage.shared_postgres.mode=runtime_store for long-running shared worker loops.");
@@ -11275,6 +14049,30 @@ async function workerRun(args: string[]): Promise<number> {
   const drain = args.includes("--drain");
   const capability = optionalArg(args, "--capability");
   const tenant = optionalArg(args, "--tenant");
+  const startupStore = new ProposalStore(storePath);
+  try {
+    const environment = supervised ? config.supervised_worker?.profile ?? "unknown" : "unknown";
+    startupStore.setRunnerState("attention_context", { environment });
+    startupStore.recordAttentionEvent({
+      event_type: "worker.started",
+      severity: "informational",
+      environment,
+      ...(capability ? { capability } : {}),
+      attention_required: false,
+      immediate_default: false,
+      summary: supervised ? "Trusted supervised worker started" : "Trusted worker started",
+      worker_state: drain ? "draining" : "active",
+      details: {
+        worker_identity: workerId,
+        execution_mode: supervised ? "supervised_worker" : "legacy",
+        source_database_changed: false,
+      },
+      source_event_key: `worker-started:${workerId}:${supervised ? "supervised_worker" : "legacy"}:${capability ?? "all"}:${runnerProcessStartedAt}`,
+      now: runnerProcessStartedAt,
+    });
+  } finally {
+    startupStore.close();
+  }
   let stopped = false;
   const stop = () => { stopped = true; };
   process.once("SIGINT", stop);
@@ -11283,9 +14081,21 @@ async function workerRun(args: string[]): Promise<number> {
     do {
       const store = new ProposalStore(storePath);
       let item;
+      let supervisedPolicy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]> | undefined;
       try {
-        store.enqueueApprovedForWorker({ capability, tenant, maxAttempts });
-        item = store.claimWorkerItem({ workerId, leaseSeconds });
+        if (supervised) {
+          enqueueApprovedForSupervisedWorker(store, config, { capability, tenant });
+          const claimed = await claimSupervisedWorkerItem(store, config, {
+            workerId,
+            capability,
+            tenant,
+          });
+          item = claimed?.item;
+          supervisedPolicy = claimed?.policy;
+        } else {
+          store.enqueueApprovedForWorker({ capability, tenant, maxAttempts });
+          item = store.claimWorkerItem({ workerId, leaseSeconds, executionMode: "legacy" });
+        }
       } finally {
         store.close();
       }
@@ -11303,8 +14113,14 @@ async function workerRun(args: string[]): Promise<number> {
           "--store", storePath,
           "--runner", workerId,
           "--worker-attempt", String(item.attempts),
+          ...(supervised && item.lease_id ? [
+            "--worker-execution-mode", "supervised_worker",
+            "--worker-lease-id", item.lease_id,
+          ] : []),
+          ...(supervisedPolicy ? ["--lease-seconds", String(supervisedPolicy.lease_seconds)] : []),
           "--batch-quiet",
           "--yes",
+          ...(args.includes("--dry-run") ? ["--dry-run"] : []),
           ...(args.includes(runtimeStoreBridgeFlag) ? [runtimeStoreBridgeFlag] : []),
           ...(optionalArg(args, "--identity") ? ["--identity", optionalArg(args, "--identity")!] : []),
           ...(optionalArg(args, "--identity-key") ? ["--identity-key", optionalArg(args, "--identity-key")!] : []),
@@ -11316,15 +14132,39 @@ async function workerRun(args: string[]): Promise<number> {
           const receipt = afterStore.receipts(item.proposal_id).at(-1)?.receipt;
           executionCode = receipt?.safe_error_code ?? (proposal.state === "failed" ? "WRITEBACK_FAILED" : "WORKER_STATE_INVALID");
           if (proposal.state === "applied") {
-            afterStore.completeWorkerItem(item.proposal_id, workerId, receipt?.status === "already_applied" ? "already_applied" : "applied");
+            afterStore.completeWorkerItem(
+              item.proposal_id,
+              workerId,
+              receipt?.status === "already_applied" ? "already_applied" : "applied",
+              undefined,
+              item.lease_id,
+            );
             operationalLog("info", "worker_item_completed", { proposal_id: item.proposal_id, worker_id: workerId, status: proposal.state, attempt: item.attempts });
           } else if (proposal.state === "conflict") {
-            afterStore.completeWorkerItem(item.proposal_id, workerId, "conflict");
+            afterStore.completeWorkerItem(item.proposal_id, workerId, "conflict", undefined, item.lease_id);
             operationalLog("warn", "worker_item_completed", { proposal_id: item.proposal_id, worker_id: workerId, status: proposal.state, attempt: item.attempts });
+          } else if (proposal.state === "reconciliation_required") {
+            if (!item.lease_id) throw workerPolicyError("WORKER_LEASE_REQUIRED", "worker queue lease id is missing");
+            afterStore.requireWorkerReconciliation({
+              proposalId: item.proposal_id,
+              workerId,
+              leaseId: item.lease_id,
+              errorCode: receipt?.safe_error_code ?? "RECONCILIATION_REQUIRED",
+            });
+            operationalLog("error", "worker_reconciliation_required", {
+              proposal_id: item.proposal_id,
+              worker_id: workerId,
+              error_code: receipt?.safe_error_code ?? "RECONCILIATION_REQUIRED",
+              attempt: item.attempts,
+            });
           } else if (proposal.state === "failed") {
             finishWorkerFailure(afterStore, item, workerId, executionCode, retryBaseMs, retryMaxMs);
           } else {
             finishWorkerFailure(afterStore, item, workerId, "WORKER_STATE_INVALID", retryBaseMs, retryMaxMs);
+          }
+          if (supervised) {
+            updateSupervisedWorkerBacklogAttention(afterStore, config);
+            updateSupervisedProposalExpiryAttention(afterStore, config);
           }
         } finally {
           afterStore.close();
@@ -11334,6 +14174,10 @@ async function workerRun(args: string[]): Promise<number> {
         const failureStore = new ProposalStore(storePath);
         try {
           finishWorkerFailure(failureStore, item, workerId, executionCode, retryBaseMs, retryMaxMs);
+          if (supervised) {
+            updateSupervisedWorkerBacklogAttention(failureStore, config);
+            updateSupervisedProposalExpiryAttention(failureStore, config);
+          }
         } finally {
           failureStore.close();
         }
@@ -11375,10 +14219,43 @@ function finishWorkerFailure(
   retryBaseMs: number,
   retryMaxMs: number,
 ): void {
-  const retryable = isRetryableWritebackCode(errorCode);
+  const supervised = item.execution_mode === "supervised_worker";
+  if (supervised && /^(OUTCOME_UNKNOWN|RECONCILIATION_REQUIRED|RECEIPT_OUTCOME_UNKNOWN)$/.test(errorCode)) {
+    if (!item.lease_id) throw workerPolicyError("WORKER_LEASE_REQUIRED", "worker queue lease id is missing");
+    store.requireWorkerReconciliation({
+      proposalId: item.proposal_id,
+      workerId,
+      leaseId: item.lease_id,
+      errorCode,
+    });
+    operationalLog("error", "worker_reconciliation_required", {
+      proposal_id: item.proposal_id,
+      worker_id: workerId,
+      error_code: errorCode,
+      attempt: item.attempts,
+    });
+    return;
+  }
+  const retryable = isRetryableWritebackCode(errorCode, item.execution_mode);
   if (!retryable) {
-    store.deadLetterWorkerItem({ proposalId: item.proposal_id, workerId, errorCode });
-    operationalLog("error", "worker_item_dead_lettered", { proposal_id: item.proposal_id, worker_id: workerId, error_code: errorCode, attempt: item.attempts });
+    if (supervised) {
+      if (!item.lease_id) throw workerPolicyError("WORKER_LEASE_REQUIRED", "worker queue lease id is missing");
+      store.blockWorkerItem({
+        proposalId: item.proposal_id,
+        workerId,
+        leaseId: item.lease_id,
+        errorCode,
+      });
+      operationalLog("warn", "worker_item_blocked", {
+        proposal_id: item.proposal_id,
+        worker_id: workerId,
+        error_code: errorCode,
+        attempt: item.attempts,
+      });
+    } else {
+      store.deadLetterWorkerItem({ proposalId: item.proposal_id, workerId, errorCode, leaseId: item.lease_id });
+      operationalLog("error", "worker_item_dead_lettered", { proposal_id: item.proposal_id, worker_id: workerId, error_code: errorCode, attempt: item.attempts });
+    }
     return;
   }
   const delay = Math.min(retryMaxMs, retryBaseMs * 2 ** Math.max(0, item.attempts - 1));
@@ -11387,6 +14264,7 @@ function finishWorkerFailure(
     workerId,
     errorCode,
     retryAt: new Date(Date.now() + delay).toISOString(),
+    leaseId: item.lease_id,
   });
   operationalLog(updated.status === "dead_letter" ? "error" : "warn", updated.status === "dead_letter" ? "worker_item_dead_lettered" : "worker_retry_scheduled", {
     proposal_id: item.proposal_id,
@@ -11397,7 +14275,10 @@ function finishWorkerFailure(
   });
 }
 
-function isRetryableWritebackCode(code: string): boolean {
+function isRetryableWritebackCode(code: string, mode: WorkerQueueItem["execution_mode"] = "legacy"): boolean {
+  if (mode === "supervised_worker") {
+    return /^(DATABASE_UNAVAILABLE|TEMPORARILY_UNAVAILABLE|TRANSACTION_FAILED|IDEMPOTENCY_RECEIPT_IN_PROGRESS)$/.test(code);
+  }
   return /^(DATABASE_UNAVAILABLE|TRANSACTION_FAILED|HANDLER_TIMEOUT|HANDLER_REQUEST_FAILED|HANDLER_HTTP_(429|5\d\d)|IDEMPOTENCY_RECEIPT_IN_PROGRESS|WORKER_EXECUTION_ERROR)$/.test(code);
 }
 
@@ -11475,9 +14356,12 @@ async function ui(args: string[]): Promise<number> {
   const portArg = optionalArg(args, "--port");
   const boundaryRoot = optionalArg(args, "--boundary-root");
   const boundaryProjectRoot = boundaryRoot ? path.resolve(boundaryRoot, "../..") : undefined;
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
-  const configuredStorePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const projectRoot = boundaryProjectRoot ?? path.dirname(path.resolve(configPath));
+  const deploymentProfile = workbenchDeploymentProfileArg(args);
+  const ledgerScope = workbenchLedgerScopeFromConfig(config);
+  const configuredStorePath = resolvedLocalStorePath(args, config?.storage?.sqlite_path);
   const storeAccess: LocalUiStoreAccess | undefined = config?.storage?.shared_postgres?.mode === "runtime_store"
     ? async (mode, operation, callback) => (mode === "read" ? withSharedPostgresRuntimeStoreReadBridge : withSharedPostgresRuntimeStoreBridge)(args, config, `ui ${operation}`, async (bridgeStorePath) => {
       const store = new ProposalStore(bridgeStorePath);
@@ -11488,6 +14372,269 @@ async function ui(args: string[]): Promise<number> {
       }
     })
     : undefined;
+  const workbenchStore = async <T>(
+    mode: "read" | "write",
+    operation: string,
+    callback: (store: ProposalStore) => T,
+  ): Promise<T> => {
+    if (storeAccess) return await storeAccess(mode, operation, callback);
+    const store = new ProposalStore(configuredStorePath);
+    try {
+      return callback(store);
+    } finally {
+      store.close();
+    }
+  };
+  const trustedDecisionSupported = config?.operator_identity?.provider !== "signed_key";
+  const authorityArgs = ["--yes", "--config", configPath, "--store", configuredStorePath];
+  const proposalApprove: WorkbenchProposalDecision | undefined = trustedDecisionSupported
+    ? (input) => proposalsApprove([input.proposalId, ...authorityArgs], {
+      quiet: true,
+      decision: {
+        actor: input.actor,
+        reason: input.reason,
+        identityToken: input.identityToken,
+      },
+    }).then((code) => ({ code }))
+    : undefined;
+  const proposalApply: WorkbenchProposalDecision | undefined = trustedDecisionSupported
+    ? (input) => applyProposal(authorityArgs, input.proposalId, {
+      quiet: true,
+      decision: {
+        actor: input.actor,
+        reason: input.reason,
+        identityToken: input.identityToken,
+      },
+    }).then((code) => ({ code }))
+    : undefined;
+  const attentionAcknowledge: WorkbenchAttentionDecision | undefined = config?.operator_identity?.provider === "jwt_oidc"
+    ? async (input) => {
+      const item = await workbenchStore("read", "attention-acknowledge-authority-read", (store) => {
+        const selected = store.getAttentionItem(input.attentionId);
+        if (!selected) throw new Error(`attention item not found: ${input.attentionId}`);
+        assertWorkbenchAttentionScope(store, selected, ledgerScope);
+        return selected;
+      });
+      const identity = await resolveOperatorIdentity({
+        config: config.operator_identity as OperatorIdentityConfig,
+        configPath,
+        proposal: attentionDecisionSubject(item),
+        action: "attention_acknowledge",
+        actor: input.actor,
+        token: input.identityToken,
+      });
+      await workbenchStore("write", "attention-acknowledge-authority-write", (store) => {
+        store.acknowledgeAttention({
+          attention_id: item.attention_id,
+          actor: identity.subject,
+          identity,
+          require_verified_identity: true,
+        });
+      });
+      return { code: 0 };
+    }
+    : undefined;
+  const workerDecision: WorkbenchWorkerDecision | undefined = config && trustedDecisionSupported
+    ? async (input) => {
+      if ([
+        "pause",
+        "resume",
+        "drain",
+        "capability_enable",
+        "capability_disable",
+        "digest_revoke",
+      ].includes(input.action)) {
+        const action = input.action as WorkerControlAction;
+        const target: WorkerControlTarget = {
+          action,
+          ...(input.capability ? { capability: input.capability } : {}),
+          ...(input.contractDigest ? { contract_digest: input.contractDigest } : {}),
+        };
+        const current = await workbenchStore(
+          "read",
+          "worker-control-authority-read",
+          (store) => store.workerControlState(),
+        );
+        const policies = config.supervised_worker?.capabilities.filter((policy) =>
+          !input.capability
+          || (policy.capability === input.capability && policy.contract_digest === input.contractDigest)) ?? [];
+        if (input.capability && policies.length !== 1) {
+          throw new Error("worker capability control must target one configured exact capability/digest entry");
+        }
+        const identity = await resolveOperatorIdentity({
+          config: config.operator_identity as OperatorIdentityConfig | undefined,
+          configPath,
+          proposal: workerControlDecisionSubject(current, target),
+          action: workerControlOperatorDecisionAction(action),
+          reason: input.reason,
+          actor: input.actor,
+          token: input.identityToken,
+        });
+        const requiredRoles = [...new Set(policies.flatMap((policy) =>
+          policy.control_role ? [policy.control_role] : []))];
+        for (const role of requiredRoles) {
+          if (!identity.roles.includes(role)) {
+            throw new Error(`operator ${identity.subject} lacks required supervised-worker control role ${role}`);
+          }
+        }
+        await workbenchStore("write", "worker-control-authority-write", (store) => {
+          store.updateWorkerControl({
+            ...target,
+            actor: identity.subject,
+            identity,
+            require_verified_identity: config.supervised_worker?.profile === "production",
+            environment: config.supervised_worker?.profile ?? "unknown",
+          });
+        });
+        return { code: 0 };
+      }
+
+      if (!input.proposalId) throw new Error("worker queue decision requires an exact proposal id");
+      const proposal = await workbenchStore("read", "worker-queue-authority-read", (store) => {
+        const selected = requireLocalProposal(store, input.proposalId!);
+        assertWorkbenchProposalScope(selected, ledgerScope);
+        const queue = store.getWorkerQueueItem(selected.proposal_id);
+        if (!queue) throw new Error(`worker queue item not found for ${selected.proposal_id}`);
+        return selected;
+      });
+      if (input.action === "cancel") {
+        const queue = await workbenchStore(
+          "read",
+          "worker-cancel-policy-read",
+          (store) => store.getWorkerQueueItem(proposal.proposal_id),
+        );
+        const policy = config.supervised_worker?.capabilities.find((candidate) =>
+          candidate.capability === proposal.action
+          && candidate.contract_digest === queue?.contract_digest);
+        const identity = await resolveOperatorIdentity({
+          config: config.operator_identity as OperatorIdentityConfig | undefined,
+          configPath,
+          proposal,
+          action: "worker_cancel",
+          reason: input.reason,
+          actor: input.actor,
+          token: input.identityToken,
+          requiredRole: policy?.control_role,
+        });
+        await workbenchStore("write", "worker-cancel-authority-write", (store) => {
+          store.cancelWorkerItem({
+            proposalId: proposal.proposal_id,
+            actor: identity.subject,
+            identity,
+            require_verified_identity: config.supervised_worker?.profile === "production",
+          });
+        });
+        return { code: 0 };
+      }
+
+      const deadLetterAction = input.action === "dead_letter_requeue"
+        ? "worker_requeue"
+        : "worker_discard";
+      const identity = await operatorIdentityForDecision({
+        args: [],
+        config,
+        configPath,
+        proposal,
+        action: deadLetterAction,
+        reason: input.reason,
+        decision: {
+          actor: input.actor,
+          reason: input.reason,
+          identityToken: input.identityToken,
+        },
+      });
+      if (!identity.verified) {
+        throw new Error(`${input.action.replaceAll("_", " ")} requires a verified operator identity`);
+      }
+      await workbenchStore("write", "worker-dead-letter-authority-write", (store) => {
+        if (input.action === "dead_letter_requeue") {
+          store.requeueDeadLetter({
+            proposalId: proposal.proposal_id,
+            retryBudget: input.retryBudget ?? 3,
+            identity,
+            reason: input.reason,
+          });
+        } else {
+          if (!input.reason?.trim()) throw new Error("dead-letter discard requires an operator reason");
+          store.discardDeadLetter({
+            proposalId: proposal.proposal_id,
+            identity,
+            reason: input.reason,
+          });
+        }
+      });
+      return { code: 0 };
+    }
+    : undefined;
+  const workbenchReconciliationContext = config
+    ? async (intentId: string) => {
+      const authority = await workbenchStore("read", "worker-reconciliation-authority-read", (store) => {
+        const intent = store.getWritebackIntent(intentId);
+        if (!intent) throw new Error(`writeback intent not found: ${intentId}`);
+        if (intent.status !== "reconciliation_required" && intent.status !== "applying") {
+          throw new Error(`writeback intent ${intentId} is ${intent.status}, not reconcilable`);
+        }
+        const proposal = requireLocalProposal(store, intent.proposal_id);
+        assertWorkbenchProposalScope(proposal, ledgerScope);
+        return { intent, proposal };
+      });
+      const observation = await inspectWritebackSourceContext(
+        authority.intent,
+        authority.proposal,
+        configPath,
+        config,
+      );
+      return { ...authority, observation };
+    }
+    : undefined;
+  const workerReconciliationInspect: WorkbenchReconciliationInspect | undefined = workbenchReconciliationContext
+    ? async ({ intentId }) => {
+      const context = await workbenchReconciliationContext(intentId);
+      return workbenchReconciliationView(context.intent, context.observation);
+    }
+    : undefined;
+  const workerReconciliationResolve: WorkbenchReconciliationResolve | undefined =
+    workbenchReconciliationContext && config && trustedDecisionSupported
+      ? async (input) => {
+        const context = await workbenchReconciliationContext(input.intentId);
+        const supportedOutcome = reconciliationSupportedOutcome(context.observation);
+        if (input.outcome !== supportedOutcome) {
+          throw new Error(`live source observation supports ${supportedOutcome}, not ${input.outcome}`);
+        }
+        const identity = await operatorIdentityForDecision({
+          args: [],
+          config,
+          configPath,
+          proposal: context.proposal,
+          action: "reconcile",
+          reason: input.reason,
+          decision: {
+            actor: input.actor,
+            reason: input.reason,
+            identityToken: input.identityToken,
+          },
+        });
+        const receipt = reconciliationReceipt(
+          context.intent,
+          context.observation,
+          input.outcome,
+          identity.subject,
+          input.reason,
+        );
+        await workbenchStore("write", "worker-reconciliation-authority-write", (store) => {
+          store.reconcileWritebackIntent({
+            intent_id: context.intent.intent_id,
+            receipt,
+            actor: identity.subject,
+            reason: input.reason,
+            observation: context.observation,
+            identity,
+            require_verified_identity: Boolean(config.operator_identity && config.operator_identity.provider !== "dev_env"),
+          });
+        });
+        return { code: 0 };
+      }
+      : undefined;
   const server = await startLocalUiServer({
     configPath,
     storePath: configuredStorePath,
@@ -11497,14 +14644,22 @@ async function ui(args: string[]): Promise<number> {
     allowRemoteBind: args.includes("--allow-remote-bind"),
     tour: args.includes("--tour"),
     boundaryRoot,
-    projectRoot: boundaryProjectRoot,
+    projectRoot,
+    ledgerScope,
+    deploymentProfile,
+    proposalApprove,
+    proposalApply,
+    attentionAcknowledge,
+    workerDecision,
+    workerReconciliationInspect,
+    workerReconciliationResolve,
   });
   process.stdout.write(`Synapsor Runner local UI: ${server.url}\n`);
   if (args.includes("--open")) {
     openBrowser(server.url);
     process.stdout.write("Opening the local review UI in your browser when a desktop opener is available.\n");
   }
-  process.stdout.write("Approval and rejection actions require the per-run local session plus CSRF token. Press Ctrl+C to stop.\n");
+  process.stdout.write("Approval and guarded apply are separate trusted-operator actions protected by the per-run local session and CSRF token. Press Ctrl+C to stop.\n");
   await new Promise<void>((resolve) => {
     const stop = async () => {
       process.off("SIGINT", stop);
@@ -11516,6 +14671,79 @@ async function ui(args: string[]): Promise<number> {
     process.once("SIGTERM", stop);
   });
   return 0;
+}
+
+export function workbenchDeploymentProfileArg(args: string[]): WorkbenchDeploymentProfile | undefined {
+  const value = optionalArg(args, "--profile");
+  if (value === undefined) return undefined;
+  if (value !== "development" && value !== "staging" && value !== "production" && value !== "unknown") {
+    throw new Error("ui --profile must be development, staging, production, or unknown");
+  }
+  return value;
+}
+
+function workbenchLedgerScopeFromConfig(config: RuntimeConfig | undefined): WorkbenchLedgerScope | undefined {
+  const shared = config?.storage?.shared_postgres?.mode === "runtime_store";
+  const context = config?.trusted_context;
+  if (!context) return shared ? { required: true } : undefined;
+  const values = context.values ?? {};
+  const tenantEnv = typeof values.tenant_id_env === "string" ? values.tenant_id_env : "SYNAPSOR_TENANT_ID";
+  const principalEnv = typeof values.principal_env === "string" ? values.principal_env : "SYNAPSOR_PRINCIPAL";
+  const tenant = context.provider === "environment"
+    ? envValue(process.env, tenantEnv)
+    : context.provider === "static_dev"
+      ? envValue(process.env, tenantEnv) ?? stringRecordValue(values, "tenant_id")
+      : undefined;
+  const principal = context.provider === "environment"
+    ? envValue(process.env, principalEnv)
+    : context.provider === "static_dev"
+      ? envValue(process.env, principalEnv) ?? stringRecordValue(values, "principal")
+      : undefined;
+  return {
+    ...(tenant ? { tenant } : {}),
+    ...(principal ? { principal } : {}),
+    required: shared,
+  };
+}
+
+function assertWorkbenchAttentionScope(
+  store: ProposalStore,
+  item: AttentionItem,
+  scope: WorkbenchLedgerScope | undefined,
+): void {
+  if (!scope) return;
+  if (scope.required && (!scope.tenant || !scope.principal)) {
+    throw new Error("verified tenant and principal scope are required for this shared Workbench acknowledgement");
+  }
+  const event = store.getAttentionEvent(item.latest_event_id);
+  const proposal = event?.proposal_id ? store.getProposal(event.proposal_id) : undefined;
+  if (
+    (scope.tenant && proposal?.tenant_id !== scope.tenant)
+    || (scope.principal && proposal?.principal !== scope.principal)
+  ) {
+    throw new Error("attention item is outside the trusted Workbench tenant or principal scope");
+  }
+}
+
+function assertWorkbenchProposalScope(
+  proposal: StoredProposal,
+  scope: WorkbenchLedgerScope | undefined,
+): void {
+  if (!scope) return;
+  if (scope.required && (!scope.tenant || !scope.principal)) {
+    throw new Error("verified tenant and principal scope are required for this shared Workbench action");
+  }
+  if (
+    (scope.tenant && proposal.tenant_id !== scope.tenant)
+    || (scope.principal && proposal.principal !== scope.principal)
+  ) {
+    throw new Error("proposal is outside the trusted Workbench tenant or principal scope");
+  }
+}
+
+function stringRecordValue(value: Record<string, unknown>, key: string): string | undefined {
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }
 
 function openBrowser(url: string): void {
@@ -12051,7 +15279,7 @@ async function proposalsCheckFreshness(args: string[]): Promise<number> {
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals check-freshness requires <proposal_id|latest>");
   const storePath = localStorePath(args);
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(
@@ -12163,48 +15391,71 @@ function formatFreshnessResult(result: ProposalFreshnessEvaluation, details: boo
   return `${lines.join("\n")}\n`;
 }
 
-async function proposalsApprove(args: string[]): Promise<number> {
+async function proposalsApprove(
+  args: string[],
+  invocation: TrustedOperatorInvocation = {},
+): Promise<number> {
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals approve requires <proposal_id>");
   const storePath = localStorePath(args);
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   assertLocalGovernanceMutationAllowed(config, "proposals approve");
   if (config && runtimeStoreBridgeRequired(args, config)) {
-    return withSharedPostgresRuntimeStoreBridge(args, config, `proposals approve ${proposalId}`, (bridgeStorePath) => proposalsApprove(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      `proposals approve ${proposalId}`,
+      (bridgeStorePath) => proposalsApprove(argsWithRuntimeStoreBridge(args, bridgeStorePath), invocation),
+    );
   }
   assertNoRuntimeStoreForLocalMutation(config, "proposals approve", args);
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
-    return withSharedPostgresLedgerMirror(args, storePath, `proposals approve ${proposalId}`, () => proposalsApprove(withoutSharedPostgresLedgerMirror(args)), config);
+    return withSharedPostgresLedgerMirror(
+      args,
+      storePath,
+      `proposals approve ${proposalId}`,
+      () => proposalsApprove(withoutSharedPostgresLedgerMirror(args), invocation),
+      config,
+    );
   }
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
     const proposal = requireLocalProposal(store, resolvedProposalId);
-    if (!args.includes("--json")) {
+    if (!invocation.quiet && !args.includes("--json")) {
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
     const freshness = await evaluateAndRecordProposalFreshness({ proposal, config, configPath, store });
-    if (!args.includes("--json")) process.stdout.write(formatFreshnessResult(freshness, args.includes("--details")));
+    if (!invocation.quiet && !args.includes("--json")) process.stdout.write(formatFreshnessResult(freshness, args.includes("--details")));
     if (freshness.status !== "fresh" && freshness.status !== "not_required") {
       if (freshness.required) {
         store.recordFreshnessApprovalBlocked(resolvedProposalId, {
           proof_digest: freshness.proof.proof_digest,
           safe_code: freshness.safe_code,
-          actor: "operator",
+          actor: invocation.decision?.actor ?? "operator",
         });
       }
-      if (args.includes("--json")) process.stdout.write(`${JSON.stringify(freshnessJson(freshness), null, 2)}\n`);
+      if (!invocation.quiet && args.includes("--json")) process.stdout.write(`${JSON.stringify(freshnessJson(freshness), null, 2)}\n`);
       return freshnessExitCodes[freshness.status];
     }
     await confirmDangerousAction(args, `Approve proposal ${resolvedProposalId} for guarded writeback?`);
-    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "approve", reason: optionalArg(args, "--reason") });
+    const reason = invocation.decision?.reason ?? optionalArg(args, "--reason");
+    const identity = await operatorIdentityForDecision({
+      args,
+      config,
+      configPath,
+      proposal,
+      action: "approve",
+      reason,
+      decision: invocation.decision,
+    });
     const updated = store.approveProposal(resolvedProposalId, {
       approver: identity.subject,
       proposal_hash: proposal.proposal_hash,
       proposal_version: proposal.proposal_version,
-      reason: optionalArg(args, "--reason") ?? undefined,
+      reason,
       identity,
       require_verified_identity: Boolean(config?.operator_identity && config.operator_identity.provider !== "dev_env"),
       freshness_proof_digest: freshness.required ? freshness.proof.proof_digest : undefined,
@@ -12223,20 +15474,54 @@ async function proposalsApprove(args: string[]): Promise<number> {
       ...(freshness.required ? { freshness_proof_digest: freshness.proof.proof_digest } : {}),
     });
     const progress = store.approvalProgress(resolvedProposalId);
+    const workerQueue = progress.complete
+      ? enqueueApprovedProposalForSupervisedWorker(store, config, updated)
+      : undefined;
     const approvalResult = {
       ...updated,
       approval_progress: progress,
       freshness: freshnessJson(freshness),
+      ...(workerQueue ? {
+        execution: {
+          mode: "supervised_worker",
+          status: workerQueue.status,
+          contract_digest: workerQueue.contract_digest,
+        },
+      } : {}),
     };
-    process.stdout.write(args.includes("--json")
-      ? `${JSON.stringify(approvalResult, null, 2)}\n`
-      : progress.complete
-        ? `approved ${updated.proposal_id} (${progress.approved}/${progress.required})\n`
-        : `approval recorded for ${updated.proposal_id} (${progress.approved}/${progress.required}); awaiting ${progress.remaining} more verified reviewer${progress.remaining === 1 ? "" : "s"}\n`);
+    if (!invocation.quiet) {
+      process.stdout.write(args.includes("--json")
+        ? `${JSON.stringify(approvalResult, null, 2)}\n`
+        : progress.complete
+          ? `approved ${updated.proposal_id} (${progress.approved}/${progress.required})`
+            + (workerQueue
+              ? `\nqueued for separately trusted supervised execution under ${workerQueue.contract_digest}\n`
+              : "\n")
+          : `approval recorded for ${updated.proposal_id} (${progress.approved}/${progress.required}); awaiting ${progress.remaining} more verified reviewer${progress.remaining === 1 ? "" : "s"}\n`);
+    }
     return 0;
   } finally {
     store.close();
   }
+}
+
+function enqueueApprovedProposalForSupervisedWorker(
+  store: ProposalStore,
+  config: RuntimeConfig | undefined,
+  proposal: StoredProposal,
+): WorkerQueueItem | undefined {
+  if (!config?.supervised_worker?.enabled || proposal.state !== "approved") return undefined;
+  const capability = findProposalCapability(config, proposal);
+  const eligibility = resolveSupervisedWorkerEligibility(config, capability, { phase: "queue" });
+  if (!eligibility.eligible || !eligibility.policy || !eligibility.contract_digest) return undefined;
+  if (proposal.change_set.contract?.digest !== eligibility.contract_digest) return undefined;
+  return store.enqueueWorkerProposal({
+    proposal_id: proposal.proposal_id,
+    execution_mode: "supervised_worker",
+    contract_digest: eligibility.contract_digest,
+    max_attempts: eligibility.policy.max_attempts,
+    queue_limit: eligibility.policy.queue_limit,
+  });
 }
 
 async function proposalsReject(args: string[]): Promise<number> {
@@ -12245,7 +15530,7 @@ async function proposalsReject(args: string[]): Promise<number> {
   const reason = optionalArg(args, "--reason");
   if (!reason) throw new Error("proposals reject requires --reason <text>");
   const storePath = localStorePath(args);
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   assertLocalGovernanceMutationAllowed(config, "proposals reject");
   if (config && runtimeStoreBridgeRequired(args, config)) {
@@ -12767,7 +16052,7 @@ async function storePrune(args: string[]): Promise<number> {
 
 async function storeReset(args: string[]): Promise<number> {
   assertKnownOptions(args, storeResetAllowedOptions, "store reset");
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args);
   if (storePath === ":memory:") throw new Error("store reset does not apply to :memory: stores");
   if (!args.includes("--yes")) {
     throw new Error("store reset is destructive for the local ledger. Rerun with --yes after backing up anything you need.");
@@ -12887,7 +16172,7 @@ async function storeSharedPostgresSync(args: string[]): Promise<number> {
   assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres sync");
   const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
   const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args);
   const dryRun = args.includes("--dry-run");
   if (!dryRun && !args.includes("--yes")) throw new Error("store shared-postgres sync requires --yes unless --dry-run is set.");
 
@@ -12911,7 +16196,7 @@ async function storeSharedPostgresRestore(args: string[]): Promise<number> {
   assertKnownOptions(args, storeSharedPostgresAllowedOptions, "store shared-postgres restore");
   const schema = optionalArg(args, "--schema") ?? "synapsor_runner";
   const urlEnv = optionalArg(args, "--url-env") ?? "SYNAPSOR_LEDGER_DATABASE_URL";
-  const storePath = optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  const storePath = resolvedLocalStorePath(args);
   const dryRun = args.includes("--dry-run");
   if (!dryRun && !args.includes("--yes")) throw new Error("store shared-postgres restore requires --yes unless --dry-run is set.");
   const entries = await fetchSharedPostgresEntriesFromEnv(urlEnv, schema);
@@ -13254,7 +16539,7 @@ async function maybeSharedPostgresRuntimeStoreRead(
   command: string,
   callback: (storePath: string) => Promise<number>,
 ): Promise<number | undefined> {
-  const configPath = optionalArg(args, "--config") ?? "synapsor.runner.json";
+  const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (!config || !runtimeStoreBridgeRequired(args, config)) return undefined;
   return withSharedPostgresRuntimeStoreReadBridge(args, config, command, callback);
@@ -14014,7 +17299,10 @@ function proposalIdFromReplayId(replayId: string): string {
 }
 
 async function openLocalStore(args: string[]): Promise<ProposalStore> {
-  const storePath = localStorePath(args);
+  return openLocalStoreAt(localStorePath(args));
+}
+
+async function openLocalStoreAt(storePath: string): Promise<ProposalStore> {
   if (storePath !== ":memory:") {
     if (!await fileExists(storePath)) throw missingLocalStoreError(storePath);
     await fs.mkdir(path.dirname(path.resolve(storePath)), { recursive: true });
@@ -14023,7 +17311,42 @@ async function openLocalStore(args: string[]): Promise<ProposalStore> {
 }
 
 function localStorePath(args: string[]): string {
-  return optionalArg(args, "--store") ?? process.env.SYNAPSOR_LOCAL_STORE ?? "./.synapsor/local.db";
+  return resolvedLocalStorePath(args);
+}
+
+function runnerConfigPath(args: string[], fallback = "synapsor.runner.json"): string {
+  return optionalArg(args, "--config")
+    ?? process.env.SYNAPSOR_RUNNER_CONFIG
+    ?? process.env.SYNAPSOR_MCP_CONFIG
+    ?? activeProjectResolution?.config_path
+    ?? fallback;
+}
+
+function resolvedLocalStorePath(
+  args: string[],
+  configuredPath?: string,
+  fallback = "./.synapsor/local.db",
+): string {
+  return optionalResolvedLocalStorePath(args) ?? configuredPath ?? fallback;
+}
+
+function optionalResolvedLocalStorePath(args: string[]): string | undefined {
+  const explicit = optionalArg(args, "--store");
+  if (explicit) return explicit;
+  if (process.env.SYNAPSOR_LOCAL_STORE) return process.env.SYNAPSOR_LOCAL_STORE;
+  if (!optionalArg(args, "--config") && activeProjectResolution?.store_path) {
+    return activeProjectResolution.store_path;
+  }
+  return undefined;
+}
+
+async function optionalRunnerConfigPath(args: string[]): Promise<string | undefined> {
+  const selected = optionalArg(args, "--config")
+    ?? process.env.SYNAPSOR_RUNNER_CONFIG
+    ?? process.env.SYNAPSOR_MCP_CONFIG
+    ?? activeProjectResolution?.config_path;
+  if (selected) return selected;
+  return await fileExists("synapsor.runner.json") ? "synapsor.runner.json" : undefined;
 }
 
 async function writeFileGuarded(filePath: string, content: string, force: boolean): Promise<void> {
@@ -14071,20 +17394,30 @@ async function operatorIdentityForDecision(input: {
   config: RuntimeConfig | undefined;
   configPath: string;
   proposal: StoredProposal;
-  action: "approve" | "reject" | "apply" | "revert" | "reconcile" | "worker_requeue" | "worker_discard";
+  action:
+    | "approve"
+    | "reject"
+    | "apply"
+    | "revert"
+    | "reconcile"
+    | "worker_requeue"
+    | "worker_discard"
+    | "worker_cancel";
   reason?: string;
+  decision?: TrustedOperatorDecisionOverride;
 }) {
-  const applyAuthorityAction = ["apply", "reconcile", "worker_requeue", "worker_discard"].includes(input.action);
+  const applyAuthorityAction = ["apply", "reconcile", "worker_requeue", "worker_discard", "worker_cancel"].includes(input.action);
   const requiredRole = applyAuthorityAction ? undefined : input.proposal.change_set.approval.required_role;
   const identity = await resolveOperatorIdentity({
     config: input.config?.operator_identity as OperatorIdentityConfig | undefined,
     configPath: input.configPath,
     proposal: input.proposal,
     action: input.action,
-    reason: input.reason,
-    actor: optionalArg(input.args, "--actor"),
-    identity: optionalArg(input.args, "--identity"),
-    privateKeyPath: optionalArg(input.args, "--identity-key"),
+    reason: input.decision?.reason ?? input.reason,
+    actor: input.decision?.actor ?? optionalArg(input.args, "--actor"),
+    identity: input.decision?.identity ?? optionalArg(input.args, "--identity"),
+    privateKeyPath: input.decision?.privateKeyPath ?? optionalArg(input.args, "--identity-key"),
+    token: input.decision?.identityToken,
     requiredRole,
   });
   const applyRoles = input.config?.operator_identity?.apply_roles ?? [];
@@ -14129,7 +17462,44 @@ function missingLocalStoreError(storePath: string): Error {
 }
 
 async function readRuntimeConfig(configPath: string): Promise<RuntimeConfig> {
-  return loadRuntimeConfigFromFile(configPath);
+  const parsed = await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config");
+  const resolved = resolveRuntimeConfig(parsed, path.dirname(path.resolve(configPath)));
+  const validation = validateRunnerCapabilityConfig(resolved);
+  if (!validation.ok) {
+    const first = validation.errors[0]!;
+    throw new Error(
+      `Invalid Runner config ${path.resolve(configPath)}: ${first.path} ${first.code}: ${first.message} ` +
+      `State preserved: the config and source database were not changed. ` +
+      `Next: run ${cliCommandName()} config validate --config ${shellQuote(configPath)} --json.`,
+    );
+  }
+  return resolved;
+}
+
+async function readJsonFileWithLocation<T>(filePath: string, label: string): Promise<T> {
+  const resolved = path.resolve(filePath);
+  const source = await fs.readFile(resolved, "utf8");
+  try {
+    return JSON.parse(source) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const explicit = message.match(/\bline\s+(\d+)\s+column\s+(\d+)\b/i);
+    const position = message.match(/\bposition\s+(\d+)\b/i);
+    let line = explicit ? Number(explicit[1]) : undefined;
+    let column = explicit ? Number(explicit[2]) : undefined;
+    if ((!line || !column) && position) {
+      const offset = Math.max(0, Math.min(source.length, Number(position[1])));
+      const prefix = source.slice(0, offset);
+      line = prefix.split("\n").length;
+      column = offset - prefix.lastIndexOf("\n");
+    }
+    const location = line && column ? ` at line ${line}, column ${column}` : "";
+    throw new Error(
+      `${label} is not valid JSON: ${resolved}${location}. ${message} ` +
+      `State preserved: the file and source database were not changed. ` +
+      `Next: correct that location, then run ${cliCommandName()} config validate --config ${shellQuote(filePath)} --json.`,
+    );
+  }
 }
 
 function isSynapsorContractLike(value: unknown): boolean {
@@ -15728,6 +19098,8 @@ function isKnownTopLevelCommand(command: string): boolean {
     "events",
     "metrics",
     "activation",
+    "attention",
+    "notifications",
     "worker",
     "store",
     "shadow",
@@ -15767,7 +19139,7 @@ Usage:
   ${cmd} <command>
 
 Commands:
-  try          Run the complete no-account proposal-to-commit proof
+  try          Prove the boundary or drive active project tools and exploration
   inspect      Inspect a Postgres/MySQL schema
   start        Start guided own-database setup, or no-arg legacy worker polling
   action       Validate/watch disabled TypeScript Safe Action drafts
@@ -15798,6 +19170,8 @@ Commands:
   events      Tail or push local proposal/writeback lifecycle events
   metrics     Export tenant/capability operational counters
   activation  Inspect/export the local try-to-first-proposal funnel
+  attention   Inspect human-attention work without copying proposal IDs
+  notifications  Test and dispatch quiet, signed operator notifications
   worker      Run or inspect the supervised local writeback queue
   store       Inspect and maintain the local SQLite ledger
   shadow      Compare shadow proposals with authoritative outcomes
@@ -15850,6 +19224,13 @@ Global options:
   ${cmd} try --yes --no-open
   ${cmd} try --json --yes --no-open
   ${cmd} try --prove --state-dir ./tmp/synapsor-state
+  ${cmd} try call --list
+  ${cmd} try call <capability-name> --sample
+  ${cmd} try explore
+  ${cmd} try explore --suggested
+  ${cmd} try explore --resource public.check_ins --count-distinct member_id --group-by outcome --time-bucket checked_in_at:week
+  ${cmd} try explore --plan '{"kind":"aggregate",...}'
+  ${cmd} try protect --name analytics.protected_analysis
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
@@ -15865,12 +19246,24 @@ and CI; it does not grant model authority.
 --state-dir selects a caller-owned container. Runner stores the disposable
 proof in a marked managed child, preserves unrelated files, and refuses
 protected or symlinked paths.
+
+In an initialized project, try call lists or invokes the active reviewed
+named capabilities through the same runtime used by MCP. try explore
+describes or executes the active local development/staging Scoped Explore
+boundary using reviewed flags or advanced structured plans, never SQL.
+Use field@reviewed_relationship when one reviewed many-to-one path supplies a
+dimension. try protect promotes the
+latest unexpired successful exploration into public DSL, canonical JSON, and
+tests as a disabled named capability. It never activates the result.
 	`,
     config: `Usage:
+  ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
-Validate local Runner wiring before tools preview, doctor, smoke, or MCP serve.
+Initialize or validate local Runner wiring before tools preview, doctor, smoke,
+or MCP serve. config init creates a valid read-only zero-authority shell using
+environment-variable references and refuses to overwrite an existing file.
 Contract paths are resolved relative to the config file. SQLite store paths are
 resolved by the Runner process working directory.
 `,
@@ -16234,6 +19627,8 @@ Use --include-instructions to include the recommended propose-first agent prompt
 Call a generated semantic tool locally before wiring Claude, Cursor, or another MCP client. The call uses the same runtime as MCP, records evidence/query audit/proposals in the local store, and does not expose raw SQL or write credentials.
 `,
     writeback: `Usage:
+  ${cmd} writeback setup [--config ./synapsor.runner.json] [--source <name>] [--profile development|staging|production]
+  ${cmd} writeback setup --apply --profile staging --confirm "APPLY WRITEBACK SETUP sha256:..." [--writer-role app_writer] [--setup-url-env APP_SETUP_DATABASE_URL]
   ${cmd} writeback doctor --config ./synapsor.runner.json [--check-db]
   ${cmd} writeback migration --engine postgres [--schema synapsor] [--table synapsor_writeback_receipts]
   ${cmd} writeback migration --engine mysql [--schema appdb] [--table synapsor_writeback_receipts]
@@ -16243,7 +19638,9 @@ Call a generated semantic tool locally before wiring Claude, Cursor, or another 
   ${cmd} writeback reconcile inspect latest --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} writeback reconcile resolve wbi:... --outcome applied --reason "verified source state" --yes --config ./synapsor.runner.json --store ./.synapsor/local.db
 
-Print and verify receipt setup for direct writeback. source_db + auto_migrate
+Preview or safely apply receipt setup for direct writeback. setup is plan-only
+unless a development/staging profile and the exact plan digest are confirmed.
+Production and unknown profiles never apply DDL. source_db + auto_migrate
 creates the fixed receipt table idempotently; source_db + precreated verifies
 rollback-only permissions and never runs DDL. runner_ledger creates no receipt
 table in the source database and sends ambiguous post-commit outcomes to the
@@ -16500,6 +19897,32 @@ It contains no database rows, object IDs, tenant IDs, credentials, or project
 paths and sends no telemetry. Product activation time excludes initial npm
 download/cache population; record cold npx timing separately.
 `,
+    attention: `Usage:
+  ${cmd} attention list [--status open] [--severity critical] [--json]
+  ${cmd} attention show
+  ${cmd} attention show <attention_id>
+  ${cmd} attention acknowledge [<attention_id>] [--actor local_operator]
+
+Inspect the durable Human Attention Inbox without copying proposal ids. Bare
+"attention show" resolves the highest-priority matching item. Acknowledgement
+records that a human saw an item; it never approves a proposal, applies a write,
+or changes the source database.
+`,
+    notifications: `Usage:
+  ${cmd} notifications status [--json]
+  ${cmd} notifications test [--sink operations]
+  ${cmd} notifications dispatch [--sink operations] [--limit 20]
+  ${cmd} notifications replay [<delivery_id>|latest] --yes --reason "sink repaired" [--identity alice --identity-key ./alice.pem]
+
+Plan and deliver operator-owned attention events through the configured signed
+HTTPS webhook or JSONL development sink. Notifications are disabled by default.
+The default route is quiet: successful lifecycle events stay in the ledger and
+Workbench, related incidents coalesce, transient retries stay internal, and
+timely human-attention states are delivered. A webhook response cannot approve,
+apply, cancel, acknowledge, or otherwise mutate Runner authority. Dead-letter
+replay requires an exact signed-key or OIDC operator decision and requeues only
+the immutable redacted event, never its proposal or database mutation.
+`,
     worker: `Usage:
   ${cmd} worker run --yes --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} worker run --once --yes --max-attempts 5 --retry-base-ms 1000
@@ -16507,16 +19930,33 @@ download/cache population; record cold npx timing separately.
   ${cmd} worker run --once --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
   ${cmd} worker run --yes --config ./synapsor.runner.json
   ${cmd} worker status --store ./.synapsor/local.db [--status dead_letter] [--json]
+  ${cmd} worker pause --yes --config ./synapsor.runner.json
+  ${cmd} worker resume --yes --config ./synapsor.runner.json
+  ${cmd} worker drain --yes --config ./synapsor.runner.json
+  ${cmd} worker enable <capability> --digest sha256:<exact-digest> --yes --config ./synapsor.runner.json
+  ${cmd} worker disable <capability> --digest sha256:<exact-digest> --yes --config ./synapsor.runner.json
+  ${cmd} worker revoke <capability> --digest sha256:<exact-digest> --yes --config ./synapsor.runner.json
+  ${cmd} worker cancel [latest|<proposal_id>] --yes --config ./synapsor.runner.json
   ${cmd} worker dead-letter list --config ./synapsor.runner.json
   ${cmd} worker dead-letter show wrp_... --config ./synapsor.runner.json
   ${cmd} worker dead-letter requeue wrp_... --retry-budget 3 --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
   ${cmd} worker dead-letter discard wrp_... --reason "closed by operator" --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
 
-Run a supervised local writeback worker over approved proposals. Queue claims
-use leases, transient failures use bounded exponential retries, terminal or
-exhausted failures enter the dead-letter queue, and durable idempotency receipts
-prevent duplicate effects. Signed-key configs still require a writeback operator
-identity through --identity/--identity-key or their documented environment vars.
+Run a supervised local writeback worker over approved proposals. Automatic
+execution is disabled by default. It requires public contract permission plus
+an independent deployment allowlist for the exact active digest. Contracts
+without both opt-ins, including legacy AUTO APPROVE contracts, still wait for
+manual apply. The worker reuses guarded apply and
+rechecks approval, policy, limits, scope, target/supporting-row freshness,
+credential posture, idempotency, and receipt authority before execution.
+
+Queue claims use fenced leases, transient failures use bounded exponential
+retries, terminal or exhausted failures enter the dead-letter queue, and
+durable idempotency receipts prevent duplicate effects. Ambiguous outcomes
+require reconciliation and are never blindly retried. Pause/drain and
+capability controls preserve queued truth and are operator-only. Signed-key
+configs still require a writeback operator identity through
+--identity/--identity-key or their documented environment vars.
 Shared-ledger mirror mode is only allowed for finite worker runs (--once or
 --drain). It holds a schema-scoped Postgres advisory lock during the bounded
 run. With storage.shared_postgres.mode=runtime_store, worker runs use repeated
@@ -16525,6 +19965,9 @@ lock while idle, so multiple workers can share one runtime ledger safely.
 Dead-letter requeue and discard require verified operator identity, preserve all
 receipts/events, and refuse requeue when a durable receipt already proves the
 database effect completed.
+
+See docs/supervised-automatic-apply.md and
+docs/human-attention-notifications.md.
 `,
     store: `Usage:
   ${cmd} store stats --store ./.synapsor/local.db
@@ -16588,28 +20031,88 @@ Legacy compatibility:
 	Use --quick as a backward-compatible alias for the isolated real try pipeline. Use demo inspect after try to print follow-up commands for its proposal, evidence, receipt, and replay.
 	`,
     ui: `Usage:
-  ${cmd} ui [--open] [--tour] [--config synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} ui [--open] [--tour] [--profile development|staging|production|unknown] [--config synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Open the localhost review UI for proposals, diffs, evidence, receipts, replay,
 and local shadow-study reports.
 Use --open to launch the URL in your browser when a desktop opener is available.
+Local Workbench approval and guarded apply require an explicit development or
+staging profile. Production, unknown, and Cloud-governed authority routes to
+the configured trusted operator/control-plane path.
 `,
   };
   process.stdout.write(help[key] ?? help[command ?? ""] ?? help[""] ?? "");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2))
-    .then((code) => process.exit(code))
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      operationalLog("warn", "cli_rejected", {
-        command: process.argv[2] ?? "unknown",
-        error_code: safeOperationalErrorCode(error),
-      });
-      process.stderr.write(`${message}${formatCliErrorHint(message)}\n`);
-      process.exit(1);
+export async function runCliProcess(argv: string[]): Promise<number> {
+  try {
+    return await main(argv);
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = redactCliErrorMessage(rawMessage);
+    const errorCode = safeOperationalErrorCode(error);
+    operationalLog("warn", "cli_rejected", {
+      command: normalizeCliArgv(argv)[0] ?? "unknown",
+      error_code: errorCode,
     });
+    if (requestsJsonOutput(argv)) {
+      process.stdout.write(`${JSON.stringify({
+        ok: false,
+        error: {
+          code: errorCode,
+          message,
+        },
+        recovery: {
+          state_preserved: errorStatePreserved(message),
+          source_database_changed: errorSourceDatabaseChanged(message),
+          next_action: errorNextAction(message, argv),
+        },
+      }, null, 2)}\n`);
+    }
+    process.stderr.write(`${message}${formatCliErrorHint(message)}\n`);
+    return 1;
+  }
+}
+
+function requestsJsonOutput(argv: string[]): boolean {
+  const normalized = normalizeCliArgv(argv);
+  return normalized.includes("--json")
+    || normalized.includes("--format=json")
+    || normalized.some((arg, index) => arg === "--format" && normalized[index + 1] === "json");
+}
+
+function redactCliErrorMessage(message: string): string {
+  return redact(message)
+    .replace(/((?:token|secret|password|api[_-]?key)\s*[=:]\s*)[^\s,;]+/gi, "$1<redacted>")
+    .replace(/\b(?:sk|pk|ghp|gho|glpat|xox[baprs]|syn)_[A-Za-z0-9._~+/=-]{8,}\b/g, "<redacted>");
+}
+
+function errorStatePreserved(message: string): string {
+  const match = message.match(/State preserved:\s*([^]*?)(?=\s+Next:|$)/i);
+  if (match?.[1]?.trim()) return match[1].trim().replace(/\s+/g, " ");
+  return "The command stopped without discarding existing durable state; inspect that state before retrying.";
+}
+
+function errorSourceDatabaseChanged(message: string): false | null {
+  return /(?:source database|database)(?:\s+were|\s+was|\s+is)?\s+(?:not changed|unchanged)|no source row was changed/i.test(message)
+    ? false
+    : null;
+}
+
+function errorNextAction(message: string, argv: string[]): string {
+  const explicit = message.match(/\bNext:\s*([^\n]+)/i)?.[1]?.trim();
+  if (explicit) return explicit;
+  const normalized = normalizeCliArgv(argv);
+  const command = normalized
+    .slice(0, 2)
+    .filter((part) => part && !part.startsWith("-"))
+    .join(" ");
+  return `Run ${cliCommandName()}${command ? ` ${command}` : ""} --help.`;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runCliProcess(process.argv.slice(2))
+    .then((code) => process.exit(code));
 }
 
 function formatCliErrorHint(message: string): string {

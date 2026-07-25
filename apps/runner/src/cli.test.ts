@@ -6,9 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpRuntime, loadRuntimeConfigFromFile, type DbRowReader } from "@synapsor-runner/mcp-server";
+import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { ProposalStore, type StoredWritebackIntent } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, parseExecutionReceipt, parseWritebackJob, principalScopeFingerprint, protocolVersions } from "@synapsor-runner/protocol";
-import { main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runInitWizard, verifyLocalWritebackAuthority } from "./cli.js";
+import { rolePostureFingerprint, type SchemaInspection, type TableInfo } from "@synapsor-runner/schema-inspector";
+import { assertSupervisedPolicyApprovalCurrent, assessSupervisedWriterPosture, main, reconciliationReceipt, reconciliationSupportedOutcome, resolveSqlWriteDatabaseUrl, runCliProcess, runInitWizard, updateSupervisedProposalExpiryAttention, verifyLocalWritebackAuthority, workbenchDeploymentProfileArg } from "./cli.js";
 import { installCursorProject } from "./cursor-project.js";
 import type { ReconciliationObservation } from "@synapsor-runner/worker-core";
 import runnerPackage from "../package.json" with { type: "json" };
@@ -20,6 +22,54 @@ function workspacePath(...segments: string[]): string {
     }
   }
   return path.resolve(process.cwd(), ...segments);
+}
+
+function writerPostureTable(
+  schema: string,
+  name: string,
+  options: {
+    select?: boolean;
+    insert?: boolean;
+    update?: boolean;
+    delete?: boolean;
+    rowSecurity?: boolean;
+  },
+): TableInfo {
+  return {
+    schema,
+    name,
+    type: "table",
+    writable: true,
+    columns: [],
+    primary_key: [],
+    unique_constraints: [],
+    foreign_keys: [],
+    indexes: [],
+    row_level_security: options.rowSecurity ?? false,
+    row_level_security_policies: [],
+    role_posture: {
+      owner: "app_owner",
+      current_role_is_owner: false,
+      current_role_can_assume_owner: false,
+      privileges: {
+        select: options.select ?? false,
+        insert: options.insert ?? false,
+        update: options.update ?? false,
+        delete: options.delete ?? false,
+        truncate: false,
+        references: false,
+        trigger: false,
+      },
+      row_security_forced: options.rowSecurity ?? false,
+      row_security_effective_for_current_role: options.rowSecurity ?? false,
+    },
+    suggestions: {
+      tenant_columns: [],
+      conflict_columns: [],
+      sensitive_columns: [],
+      default_visible_columns: [],
+    },
+  };
 }
 
 async function readGeneratedOnboarding(configPath: string): Promise<{
@@ -258,6 +308,17 @@ async function createApprovedContractProposal(input: {
 }
 
 describe("runner cli", () => {
+  it("preserves explicit Workbench deployment profiles and rejects unknown values", () => {
+    expect(workbenchDeploymentProfileArg([])).toBeUndefined();
+    expect(workbenchDeploymentProfileArg(["--profile", "development"])).toBe("development");
+    expect(workbenchDeploymentProfileArg(["--profile", "staging"])).toBe("staging");
+    expect(workbenchDeploymentProfileArg(["--profile", "production"])).toBe("production");
+    expect(workbenchDeploymentProfileArg(["--profile", "unknown"])).toBe("unknown");
+    expect(() => workbenchDeploymentProfileArg(["--profile", "prod"])).toThrow(
+      "ui --profile must be development, staging, production, or unknown",
+    );
+  });
+
   it("keeps fresh selector-free start interactive and established answers routing noninteractive", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-start-routing-"));
     const answersPath = path.join(tempDir, "answers.json");
@@ -396,8 +457,95 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.6.2");
+      expect(output.join("").trim()).toBe("1.6.3");
     }
+  });
+
+  it("emits one documented JSON error value and keeps diagnostics on stderr", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-json-error-"));
+    const configPath = path.join(tempDir, "broken.runner.json");
+    await fs.writeFile(configPath, [
+      "{",
+      '  "version": 1,',
+      '  "mode": "read_only",',
+      '  "capabilities": []',
+      '  "secret": "syn_do_not_echo_this"',
+      "}",
+      "",
+    ].join("\n"));
+    const output: string[] = [];
+    const diagnostics: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      diagnostics.push(String(chunk));
+      return true;
+    });
+
+    await expect(runCliProcess([
+      "config",
+      "validate",
+      "--config",
+      configPath,
+      "--json",
+    ])).resolves.toBe(1);
+
+    const payload = JSON.parse(output.join(""));
+    expect(payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "COMMAND_REJECTED",
+        message: expect.stringContaining(`Runner config is not valid JSON: ${configPath}`),
+      },
+      recovery: {
+        state_preserved: expect.stringContaining("source database were not changed"),
+        source_database_changed: false,
+        next_action: expect.stringContaining("config validate"),
+      },
+    });
+    expect(payload.error.message).toMatch(/line \d+, column \d+/);
+    expect(output.join("")).not.toContain("syn_do_not_echo_this");
+    expect(diagnostics.join("")).toContain('"event":"cli_rejected"');
+    expect(diagnostics.join("")).not.toContain("syn_do_not_echo_this");
+  });
+
+  it("documents invalid config fields and the exact validation retry in JSON mode", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-recovery-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, `${JSON.stringify({
+      version: 1,
+      mode: "unsafe",
+      capabilities: [],
+    }, null, 2)}\n`);
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "config",
+      "validate",
+      "--config",
+      configPath,
+      "--json",
+    ])).resolves.toBe(1);
+
+    const payload = JSON.parse(output.join(""));
+    expect(payload).toMatchObject({
+      ok: false,
+      config_path: configPath,
+      state_preserved: true,
+      source_database_changed: false,
+      next_action: expect.stringContaining("config validate"),
+    });
+    expect(payload.errors).toContainEqual(expect.objectContaining({
+      path: "$.mode",
+      code: "INVALID_MODE",
+      message: expect.stringContaining("read_only, shadow, review, or cloud"),
+    }));
   });
 
   it("starts and validates a disabled code-first Safe Action without activating it", async () => {
@@ -656,6 +804,42 @@ describe("runner cli", () => {
         clock_boundary: expect.stringContaining("excludes npm package download"),
       });
       expect(manifest.activation.product_activation_ms).toBeGreaterThanOrEqual(0);
+    } finally {
+      process.chdir(oldCwd);
+    }
+  });
+
+  it("lists active project tools from a nested directory without repeated config or store flags", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-try-active-project-"));
+    const nestedDir = path.join(tempDir, "apps", "web");
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    await fs.mkdir(nestedDir, { recursive: true });
+    await fs.copyFile(
+      workspacePath("examples/mcp-postgres-support/synapsor.runner.json"),
+      path.join(tempDir, "synapsor.runner.json"),
+    );
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    try {
+      process.chdir(nestedDir);
+      await expect(main(["try", "call", "--list", "--format", "json"])).resolves.toBe(0);
+      const parsed = JSON.parse(output.join(""));
+      expect(parsed).toMatchObject({
+        ok: true,
+        active_tools: [
+          "support.inspect_ticket",
+          "support.propose_ticket_resolution",
+        ],
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+      });
+      expect(parsed.next_action).toContain("try call support.inspect_ticket --sample");
+      expect(output.join("")).not.toMatch(/postgres(?:ql)?:\/\/|password|secret|bearer/i);
     } finally {
       process.chdir(oldCwd);
     }
@@ -1496,9 +1680,9 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect(seenRequest.body?.local_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.5.0",
-        "@synapsor/dsl": "1.5.0",
-        "@synapsor/runner": "1.6.2",
+        "@synapsor/spec": "1.6.0",
+        "@synapsor/dsl": "1.6.0",
+        "@synapsor/runner": "1.6.3",
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -2531,6 +2715,44 @@ END
     } finally {
       process.chdir(oldCwd);
     }
+  });
+
+  it("initializes a parser-valid zero-authority config without reading or writing secrets", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-init-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(main([
+      "config",
+      "init",
+      "--output",
+      configPath,
+      "--engine",
+      "mysql",
+      "--read-url-env",
+      "FITFLOW_DATABASE_URL",
+      "--json",
+    ])).resolves.toBe(0);
+    const result = JSON.parse(output.join(""));
+    const config = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "read_only",
+      active_capabilities: 0,
+      read_url_env: "FITFLOW_DATABASE_URL",
+      source_database_changed: false,
+    });
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+    expect(config).toMatchObject({
+      mode: "read_only",
+      sources: { local_mysql: { engine: "mysql", read_url_env: "FITFLOW_DATABASE_URL", read_only: true } },
+      capabilities: [],
+    });
+    expect(JSON.stringify(config)).not.toMatch(/mysql:\/\/|postgres(?:ql)?:\/\//i);
+    await expect(main(["config", "init", "--output", configPath])).rejects.toThrow(/already exists/i);
   });
 
   it("validates and shows redacted runner config", async () => {
@@ -5279,7 +5501,290 @@ END
 
     output.length = 0;
     await expect(main(["writeback", "--help"])).resolves.toBe(0);
+    expect(output.join("")).toContain("writeback setup");
     expect(output.join("")).toContain("writeback reconcile inspect latest");
+  });
+
+  it("previews and applies runner-ledger setup without source DDL", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-setup-ledger-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ".synapsor/local.db" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          receipts: { authority: "runner_ledger" },
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [{
+        name: "billing.propose_invoice_update",
+        kind: "proposal",
+        source: "app_postgres",
+        target: {
+          schema: "public",
+          table: "invoices",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {
+          invoice_id: { type: "string", required: true, max_length: 128 },
+          reason: { type: "string", required: true, max_length: 500 },
+        },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "version", "waiver_reason"],
+        evidence: "required",
+        max_rows: 1,
+        patch: { waiver_reason: { from_arg: "reason" } },
+        allowed_columns: ["waiver_reason"],
+        conflict_guard: { column: "version" },
+        operation: { kind: "update", version_advance: { column: "version", strategy: "integer_increment" } },
+      }],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "staging",
+      "--json",
+    ])).resolves.toBe(0);
+    const preview = JSON.parse(output.join("")) as {
+      applied: boolean;
+      plan: { digest: string; receipt_mode: string; execution: string; sql_preview: string; source_database_changed: boolean };
+    };
+    expect(preview).toMatchObject({
+      applied: false,
+      plan: {
+        receipt_mode: "runner_ledger",
+        execution: "no_source_ddl",
+        sql_preview: "",
+        source_database_changed: false,
+      },
+    });
+
+    output.length = 0;
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "staging",
+      "--apply",
+      "--confirm", `APPLY WRITEBACK SETUP ${preview.plan.digest}`,
+      "--json",
+    ])).resolves.toBe(0);
+    const applied = JSON.parse(output.join("")) as {
+      applied: boolean;
+      result: { source_database_changed: boolean; message: string };
+      state_path: string;
+    };
+    expect(applied).toMatchObject({
+      applied: true,
+      result: {
+        source_database_changed: false,
+      },
+    });
+    expect(applied.result.message).toContain("No source receipt DDL");
+    expect(JSON.parse(await fs.readFile(applied.state_path, "utf8"))).toMatchObject({
+      receipt_mode: "runner_ledger",
+      source_database_changed: false,
+      status: "verified",
+    });
+  });
+
+  it("keeps precreated receipt setup production-plan-only and requires a separate admin credential", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-setup-precreated-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          receipts: {
+            authority: "source_db",
+            provisioning: "precreated",
+            schema: "synapsor",
+            table: "writeback_receipts",
+          },
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [{
+        name: "billing.propose_invoice_update",
+        kind: "proposal",
+        source: "app_postgres",
+        target: {
+          schema: "public",
+          table: "invoices",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {
+          invoice_id: { type: "string", required: true, max_length: 128 },
+          reason: { type: "string", required: true, max_length: 500 },
+        },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "updated_at", "waiver_reason"],
+        evidence: "required",
+        max_rows: 1,
+        patch: { waiver_reason: { from_arg: "reason" } },
+        allowed_columns: ["waiver_reason"],
+        conflict_guard: { column: "updated_at" },
+      }],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "production",
+      "--writer-role", "fitflow_rw",
+      "--setup-url-env", "FITFLOW_SETUP_DATABASE_URL",
+      "--json",
+    ])).resolves.toBe(0);
+    const preview = JSON.parse(output.join("")) as {
+      plan: {
+        digest: string;
+        apply_allowed: boolean;
+        receipt_mode: string;
+        setup_connection_env: string;
+        writer_role: string;
+        sql_preview: string;
+      };
+    };
+    expect(preview.plan).toMatchObject({
+      apply_allowed: false,
+      receipt_mode: "source_precreated",
+      setup_connection_env: "FITFLOW_SETUP_DATABASE_URL",
+      writer_role: "fitflow_rw",
+    });
+    expect(preview.plan.sql_preview).toContain('CREATE SCHEMA IF NOT EXISTS "synapsor"');
+    expect(preview.plan.sql_preview).toContain('GRANT SELECT, INSERT, UPDATE ON TABLE "synapsor"."writeback_receipts" TO "fitflow_rw"');
+
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "production",
+      "--writer-role", "fitflow_rw",
+      "--setup-url-env", "FITFLOW_SETUP_DATABASE_URL",
+      "--apply",
+      "--confirm", `APPLY WRITEBACK SETUP ${preview.plan.digest}`,
+    ])).rejects.toThrow(/Production and unknown profiles are plan-only/);
+
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "staging",
+      "--writer-role", "fitflow_rw",
+      "--setup-url-env", "APP_POSTGRES_WRITE_URL",
+    ])).rejects.toThrow(/refuses to reuse the read or steady-state writer credential/);
+  });
+
+  it("previews the exact configured auto-migrate SQL and requires digest confirmation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-writeback-setup-auto-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: ":memory:" },
+      sources: {
+        app_postgres: {
+          engine: "postgres",
+          read_url_env: "APP_POSTGRES_READ_URL",
+          write_url_env: "APP_POSTGRES_WRITE_URL",
+          receipts: {
+            authority: "source_db",
+            provisioning: "auto_migrate",
+            schema: "synapsor",
+            table: "writeback_receipts",
+          },
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+      capabilities: [{
+        name: "billing.propose_invoice_update",
+        kind: "proposal",
+        source: "app_postgres",
+        target: {
+          schema: "public",
+          table: "invoices",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {
+          invoice_id: { type: "string", required: true, max_length: 128 },
+          reason: { type: "string", required: true, max_length: 500 },
+        },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "updated_at", "waiver_reason"],
+        evidence: "required",
+        max_rows: 1,
+        patch: { waiver_reason: { from_arg: "reason" } },
+        allowed_columns: ["waiver_reason"],
+        conflict_guard: { column: "updated_at" },
+      }],
+    }), "utf8");
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "staging",
+      "--json",
+    ])).resolves.toBe(0);
+    const preview = JSON.parse(output.join("")) as {
+      plan: { digest: string; receipt_mode: string; setup_connection_env: string; sql_preview: string };
+    };
+    expect(preview.plan).toMatchObject({
+      receipt_mode: "source_auto_migrate",
+      setup_connection_env: "APP_POSTGRES_WRITE_URL",
+    });
+    expect(preview.plan.sql_preview).toContain('CREATE TABLE IF NOT EXISTS "synapsor"."writeback_receipts"');
+    expect(preview.plan.sql_preview).not.toContain("CREATE SCHEMA");
+
+    await expect(main([
+      "writeback", "setup",
+      "--config", configPath,
+      "--profile", "staging",
+      "--apply",
+    ])).rejects.toThrow(new RegExp(`APPLY WRITEBACK SETUP ${preview.plan.digest}`));
   });
 
   it("emits an exact v3 receipt when a frozen set is reconciled as applied", () => {
@@ -6166,9 +6671,14 @@ END
     const reopened = new ProposalStore(storePath);
     const compensation = reopened.listProposals().find((proposal) => proposal.change_set.schema_version === "synapsor.compensation-change-set.v1");
     expect(compensation).toMatchObject({ state: "pending_review", source_database_mutated: false });
+    expect(compensation?.change_set.principal).toEqual(forward.principal);
     expect(compensation?.change_set.approval).toMatchObject({ required_role: "support_lead", required_approvals: 2 });
     expect(reopened.receipts(compensation!.proposal_id)).toEqual([]);
-    expect(reopened.replay(compensation!.proposal_id).evidence).toHaveLength(1);
+    const compensationReplay = reopened.replay(compensation!.proposal_id);
+    expect(compensationReplay.evidence).toHaveLength(1);
+    expect(compensationReplay.evidence[0]?.payload).toMatchObject({
+      requested_by: { subject: "support_lead", provider: "dev_env", verified: false },
+    });
     expect(reopened.operationalMetrics({ capability: "billing.adjust_credit" })).toEqual([
       expect.objectContaining({ proposals: 2, applies: 1, revert_proposals: 1, revert_applies: 0 }),
     ]);
@@ -6363,6 +6873,581 @@ END
     expect(afterWorker.receipts("wrp_batch_role")).toEqual([]);
     expect(afterWorker.receipts("wrp_worker_role")).toEqual([]);
     afterWorker.close();
+  });
+
+  it("runs only exact-digest dual-opt-in proposals through supervised guarded apply", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-supervised-worker-"));
+    const fixture = await writeContractApplyFixture(tempDir, {
+      source: {
+        receipts: {
+          authority: "source_db",
+          provisioning: "precreated",
+        },
+      },
+    });
+    const contract = JSON.parse(await fs.readFile(fixture.contractPath, "utf8"));
+    const proposalCapability = contract.capabilities.find((candidate: any) =>
+      candidate.name === "billing.propose_late_fee_waiver");
+    proposalCapability.proposal.execution = { supervised_worker: "allowed" };
+    await fs.writeFile(fixture.contractPath, `${JSON.stringify(contract, null, 2)}\n`, "utf8");
+
+    const resolved = loadRuntimeConfigFromFile(fixture.configPath);
+    const capability = resolved.capabilities?.find((candidate) =>
+      candidate.name === "billing.propose_late_fee_waiver");
+    const digest = capability?.contract_provenance?.digest;
+    expect(digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const rawConfig = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+    rawConfig.supervised_worker = {
+      enabled: true,
+      profile: "development",
+      capabilities: [{
+        capability: "billing.propose_late_fee_waiver",
+        contract_digest: digest,
+        mode: "supervised_worker",
+        concurrency: 1,
+        queue_limit: 10,
+        lease_seconds: 60,
+        max_attempts: 2,
+        proposal_ttl_seconds: 86_400,
+        rate_limit: { executions: 10, window_seconds: 60 },
+        write_url_env: "APP_POSTGRES_WRITE_URL",
+        worker_identity: "supervised_test",
+        required_attention_sinks: ["operations"],
+      }],
+    };
+    rawConfig.notifications = {
+      enabled: true,
+      sinks: [{
+        id: "operations",
+        type: "jsonl",
+        destination: "stdout",
+        minimum_severity: "warning",
+        delivery: "immediate",
+        budgets: {
+          queue_depth_threshold: 1,
+          queue_age_seconds: 300,
+        },
+      }],
+    };
+    await fs.writeFile(fixture.configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, "utf8");
+
+    const proposalId = await createApprovedContractProposal({
+      configPath: fixture.configPath,
+      storePath: fixture.storePath,
+    });
+    vi.stubEnv("APP_POSTGRES_WRITE_URL", "postgresql://writer@example/app");
+    vi.stubEnv("SYNAPSOR_TENANT_ID", "acme");
+    vi.stubEnv("SYNAPSOR_PRINCIPAL", "local_operator");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await expect(main([
+      "worker", "pause",
+      "--yes",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+    await expect(main([
+      "worker", "run",
+      "--supervised",
+      "--once",
+      "--yes",
+      "--dry-run",
+      "--worker-id", "supervised_test",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+    const held = new ProposalStore(fixture.storePath);
+    try {
+      expect(held.getProposal(proposalId)?.state).toBe("approved");
+      expect(held.getWorkerQueueItem(proposalId)).toMatchObject({ status: "queued" });
+      expect(held.workerControlState()).toMatchObject({ mode: "paused", revision: 1 });
+    } finally {
+      held.close();
+    }
+
+    await expect(main([
+      "worker", "resume",
+      "--yes",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+    await expect(main([
+      "worker", "run",
+      "--supervised",
+      "--once",
+      "--yes",
+      "--dry-run",
+      "--worker-id", "supervised_test",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+    const unhealthy = new ProposalStore(fixture.storePath);
+    try {
+      expect(unhealthy.getProposal(proposalId)?.state).toBe("approved");
+      expect(unhealthy.listAttentionItems({ severity: "critical" })).toEqual([]);
+      const warnings = unhealthy.listAttentionItems({ severity: "warning" });
+      expect(warnings.find((item) => item.event_type === "worker.queue_backlog"))
+        .toMatchObject({ status: "open" });
+      expect(warnings.find((item) => item.event_type === "proposal.review_required"))
+        .toMatchObject({ status: "resolved" });
+      const healthState = unhealthy.db.prepare(
+        "SELECT key, value_json FROM runner_state WHERE key LIKE 'notification_worker_health:%'",
+      ).get() as { key: string; value_json: string } | undefined;
+      if (!healthState) throw new Error("expected persisted supervision-health observation");
+      const value = JSON.parse(healthState.value_json);
+      unhealthy.setRunnerState(healthState.key, {
+        ...value,
+        first_observed_at: "2000-01-01T00:00:00.000Z",
+      });
+    } finally {
+      unhealthy.close();
+    }
+
+    await expect(main([
+      "worker", "run",
+      "--supervised",
+      "--once",
+      "--yes",
+      "--dry-run",
+      "--worker-id", "supervised_test",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+    const sustainedUnhealthy = new ProposalStore(fixture.storePath);
+    try {
+      expect(sustainedUnhealthy.listAttentionItems({ severity: "critical" })).toEqual([
+        expect.objectContaining({ event_type: "worker.unhealthy", status: "open" }),
+      ]);
+    } finally {
+      sustainedUnhealthy.close();
+    }
+
+    await expect(main([
+      "notifications", "test",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--sink", "operations",
+    ])).resolves.toBe(0);
+
+    await expect(main([
+      "worker", "run",
+      "--supervised",
+      "--once",
+      "--yes",
+      "--dry-run",
+      "--worker-id", "supervised_test",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      expect(store.getProposal(proposalId)?.state).toBe("applied");
+      expect(store.getWorkerQueueItem(proposalId)).toMatchObject({
+        status: "completed",
+        execution_mode: "supervised_worker",
+        contract_digest: digest,
+        terminal_outcome: "applied",
+      });
+      expect(store.events(proposalId)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "writeback_worker_claimed", actor: "supervised_test" }),
+        expect.objectContaining({ kind: "writeback_worker_completed", actor: "supervised_test" }),
+      ]));
+      expect(store.listAttentionItems({ severity: "critical" })).toEqual([
+        expect.objectContaining({ event_type: "worker.unhealthy", status: "resolved" }),
+      ]);
+      const warnings = store.listAttentionItems({ severity: "warning" });
+      expect(warnings.find((item) => item.event_type === "worker.queue_backlog"))
+        .toMatchObject({ status: "resolved" });
+      expect(warnings.find((item) => item.event_type === "proposal.review_required"))
+        .toMatchObject({ status: "resolved" });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("opens one pre-expiry attention item and resolves it when queued work is cancelled", () => {
+    const digest = `sha256:${"a".repeat(64)}` as const;
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet as any);
+      const proposal = store.getProposal("wrp_cli");
+      if (!proposal) throw new Error("expected proposal fixture");
+      store.approveProposal("wrp_cli", {
+        approver: "support_lead",
+        proposal_hash: proposal.proposal_hash,
+        proposal_version: proposal.proposal_version,
+      });
+      store.enqueueWorkerProposal({
+        proposal_id: "wrp_cli",
+        execution_mode: "supervised_worker",
+        contract_digest: digest,
+        max_attempts: 2,
+        queue_limit: 10,
+        now: "2026-06-20T14:31:10.000Z",
+      });
+      const config = {
+        version: 1,
+        mode: "review",
+        supervised_worker: {
+          enabled: true,
+          profile: "production",
+          capabilities: [{
+            capability: "billing.waive_late_fee",
+            contract_digest: digest,
+            mode: "supervised_worker",
+            concurrency: 1,
+            queue_limit: 10,
+            lease_seconds: 60,
+            max_attempts: 2,
+            proposal_ttl_seconds: 600,
+            rate_limit: { executions: 10, window_seconds: 60 },
+            write_url_env: "APP_POSTGRES_WRITE_URL",
+          }],
+        },
+      } as any;
+
+      updateSupervisedProposalExpiryAttention(
+        store,
+        config,
+        "2026-06-20T14:40:10.000Z",
+      );
+      updateSupervisedProposalExpiryAttention(
+        store,
+        config,
+        "2026-06-20T14:40:20.000Z",
+      );
+      expect(store.listAttentionEvents({ event_type: "proposal.expiring" })).toEqual([
+        expect.objectContaining({
+          proposal_id: "wrp_cli",
+          severity: "warning",
+          immediate_default: true,
+          expires_at: "2026-06-20T14:41:09.000Z",
+          details: expect.objectContaining({
+            seconds_remaining: 59,
+            source_database_changed: false,
+          }),
+        }),
+      ]);
+      expect(store.listAttentionItems({ status: "open" })).toEqual([
+        expect.objectContaining({
+          event_type: "proposal.expiring",
+          occurrence_count: 1,
+        }),
+      ]);
+
+      store.cancelWorkerItem({
+        proposalId: "wrp_cli",
+        actor: "operator",
+        now: "2026-06-20T14:40:30.000Z",
+      });
+      updateSupervisedProposalExpiryAttention(
+        store,
+        config,
+        "2026-06-20T14:40:30.000Z",
+      );
+      expect(store.listAttentionItems().find((item) =>
+        item.attention_key === `production:proposal.expiring:wrp_cli:billing.waive_late_fee:${digest}`))
+        .toEqual(expect.objectContaining({
+          event_type: "proposal.cancelled",
+          status: "resolved",
+          title: "Proposal cancelled",
+        }));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("refuses a supervised policy approval after its reviewed policy snapshot changes", () => {
+    const store = new ProposalStore();
+    try {
+      store.createProposal(changeSet as any);
+      const proposal = store.getProposal("wrp_cli");
+      if (!proposal) throw new Error("expected proposal fixture");
+      const limits = [{
+        kind: "count",
+        max: 10,
+        period: "day",
+        scope: "tenant_policy",
+      }] as const;
+      store.approveProposalByPolicy("wrp_cli", {
+        policy: "billing_auto_waiver",
+        proposal_hash: proposal.proposal_hash,
+        proposal_version: proposal.proposal_version,
+        reason: "late_fee_cents 0 <= 0",
+        limits: [...limits],
+      });
+      const capability = {
+        name: "billing.waive_late_fee",
+        kind: "proposal",
+        source: "local_postgres",
+        target: {
+          schema: "public",
+          table: "invoices",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {
+          waiver_reason: { type: "string", required: true },
+        },
+        lookup: { id_from_arg: "invoice_id" },
+        visible_columns: ["id", "tenant_id", "late_fee_cents", "waiver_reason", "updated_at"],
+        patch: {
+          late_fee_cents: { fixed: 0 },
+          waiver_reason: { from_arg: "waiver_reason" },
+        },
+        allowed_columns: ["late_fee_cents", "waiver_reason"],
+        approval: {
+          mode: "policy",
+          policy: "billing_auto_waiver",
+          required_role: "billing_lead",
+        },
+      } as any;
+      const config = {
+        version: 1,
+        mode: "review",
+        capabilities: [capability],
+        policies: [{
+          kind: "approval",
+          name: "billing_auto_waiver",
+          mode: "green",
+          rules: [{ field: "late_fee_cents", max: 0 }],
+          limits: [...limits],
+        }],
+      } as any;
+
+      expect(assertSupervisedPolicyApprovalCurrent(store, config, capability, proposal))
+        .toEqual({ policy: "billing_auto_waiver", limits: [...limits] });
+
+      const changedLimit = structuredClone(config);
+      changedLimit.policies[0].limits[0].max = 11;
+      expect(() => assertSupervisedPolicyApprovalCurrent(
+        store,
+        changedLimit,
+        capability,
+        proposal,
+      )).toThrowError(expect.objectContaining({ code: "SUPERVISED_WORKER_POLICY_STALE" }));
+
+      const changedRule = structuredClone(config);
+      changedRule.policies[0].rules[0].max = -1;
+      expect(() => assertSupervisedPolicyApprovalCurrent(
+        store,
+        changedRule,
+        capability,
+        proposal,
+      )).toThrowError(expect.objectContaining({ code: "SUPERVISED_WORKER_POLICY_STALE" }));
+      expect(store.receipts("wrp_cli")).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("binds supervised execution to an exact least-privilege writer posture", () => {
+    const digest = `sha256:${"a".repeat(64)}` as const;
+    const inspection: SchemaInspection = {
+      engine: "postgres",
+      server_version: "16",
+      current_user: "fitflow_worker",
+      role_posture: {
+        verified: true,
+        superuser: false,
+        bypass_rls: false,
+        read_only: false,
+        writable_relations: ["public.memberships", "synapsor.synapsor_writeback_receipts"],
+        owned_relations: [],
+        reasons: ["current role has write authority on 2 inspected relation(s)"],
+      },
+      inspected_at: "2026-07-24T00:00:00.000Z",
+      schemas: ["public", "synapsor"],
+      tables: [
+        writerPostureTable("public", "memberships", {
+          select: true,
+          update: true,
+          rowSecurity: true,
+        }),
+        writerPostureTable("synapsor", "synapsor_writeback_receipts", {
+          select: true,
+          insert: true,
+          update: true,
+        }),
+      ],
+      warnings: [],
+    };
+    const config: any = {
+      version: 1,
+      mode: "review",
+      sources: {
+        fitflow: {
+          engine: "postgres",
+          read_url_env: "FITFLOW_READ_URL",
+          write_url_env: "FITFLOW_WRITE_URL",
+          database_scope: {
+            mode: "postgres_rls",
+            tenant_setting: "app.tenant_id",
+          },
+          receipts: {
+            authority: "source_db",
+            provisioning: "precreated",
+            schema: "synapsor",
+            table: "synapsor_writeback_receipts",
+          },
+        },
+      },
+      capabilities: [{
+        name: "fitflow.propose_membership_status",
+        kind: "proposal",
+        source: "fitflow",
+        contract_provenance: { digest, version: "1" },
+        target: {
+          schema: "public",
+          table: "memberships",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+        },
+        args: {},
+        lookup: { id_from_arg: "id" },
+        visible_columns: ["id", "tenant_id", "status", "version"],
+        allowed_columns: ["status"],
+        operation: { kind: "update", cardinality: "single" },
+        conflict_guard: { column: "version" },
+        execution: { supervised_worker: "allowed" },
+        writeback: { mode: "direct_sql" },
+      }],
+    };
+    const policy: any = {
+      capability: "fitflow.propose_membership_status",
+      contract_digest: digest,
+      mode: "supervised_worker",
+      concurrency: 1,
+      queue_limit: 10,
+      lease_seconds: 60,
+      max_attempts: 3,
+      proposal_ttl_seconds: 3600,
+      rate_limit: { executions: 10, window_seconds: 60 },
+      write_url_env: "FITFLOW_WRITE_URL",
+      require_least_privilege_writer: true,
+      writer_posture_fingerprint: rolePostureFingerprint(inspection),
+    };
+    config.supervised_worker = {
+      enabled: true,
+      profile: "production",
+      capabilities: [policy],
+    };
+
+    expect(assessSupervisedWriterPosture(config, policy, inspection)).toMatchObject({
+      ok: true,
+      reasons: [],
+      allowed_relations: ["public.memberships", "synapsor.synapsor_writeback_receipts"],
+    });
+
+    const widened = structuredClone(inspection);
+    widened.tables[0]!.role_posture!.privileges.delete = true;
+    expect(assessSupervisedWriterPosture(config, policy, widened)).toMatchObject({
+      ok: false,
+      reasons: expect.arrayContaining([
+        "writer_excess_relation_privilege",
+        "writer_posture_fingerprint_changed",
+      ]),
+    });
+
+    const unrelated = structuredClone(inspection);
+    unrelated.tables.push(writerPostureTable("public", "private_notes", { select: true }));
+    expect(assessSupervisedWriterPosture(config, policy, unrelated)).toMatchObject({
+      ok: false,
+      reasons: expect.arrayContaining([
+        "writer_posture_fingerprint_changed",
+        "writer_unreviewed_relation_privilege",
+      ]),
+    });
+  });
+
+  it("keeps hardened supervised work queued when live writer posture cannot be verified", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-worker-posture-"));
+    const fixture = await writeContractApplyFixture(tempDir, {
+      source: {
+        statement_timeout_ms: 250,
+        receipts: {
+          authority: "source_db",
+          provisioning: "precreated",
+          schema: "synapsor",
+          table: "synapsor_writeback_receipts",
+        },
+      },
+    });
+    const contract = JSON.parse(await fs.readFile(fixture.contractPath, "utf8"));
+    const proposalCapability = contract.capabilities.find((candidate: any) =>
+      candidate.name === "billing.propose_late_fee_waiver");
+    proposalCapability.proposal.execution = { supervised_worker: "allowed" };
+    await fs.writeFile(fixture.contractPath, `${JSON.stringify(contract, null, 2)}\n`, "utf8");
+    const resolved = loadRuntimeConfigFromFile(fixture.configPath);
+    const capability = resolved.capabilities?.find((candidate) =>
+      candidate.name === "billing.propose_late_fee_waiver");
+    const digest = capability?.contract_provenance?.digest;
+    if (!digest) throw new Error("expected exact contract digest");
+    const rawConfig = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+    rawConfig.supervised_worker = {
+      enabled: true,
+      profile: "staging",
+      capabilities: [{
+        capability: "billing.propose_late_fee_waiver",
+        contract_digest: digest,
+        mode: "supervised_worker",
+        concurrency: 1,
+        queue_limit: 10,
+        lease_seconds: 60,
+        max_attempts: 2,
+        proposal_ttl_seconds: 86_400,
+        rate_limit: { executions: 10, window_seconds: 60 },
+        write_url_env: "APP_POSTGRES_WRITE_URL",
+        worker_identity: "posture_worker",
+        require_least_privilege_writer: true,
+        writer_posture_fingerprint: `sha256:${"f".repeat(64)}`,
+      }],
+    };
+    await fs.writeFile(fixture.configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, "utf8");
+    const proposalId = await createApprovedContractProposal({
+      configPath: fixture.configPath,
+      storePath: fixture.storePath,
+    });
+    vi.stubEnv("APP_POSTGRES_WRITE_URL", "postgresql://writer@127.0.0.1:1/app");
+    vi.stubEnv("SYNAPSOR_TENANT_ID", "acme");
+    vi.stubEnv("SYNAPSOR_PRINCIPAL", "local_operator");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await expect(main([
+      "worker", "run",
+      "--supervised",
+      "--once",
+      "--yes",
+      "--dry-run",
+      "--worker-id", "posture_worker",
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+    ])).resolves.toBe(0);
+
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      expect(store.getProposal(proposalId)?.state).toBe("approved");
+      expect(store.getWorkerQueueItem(proposalId)).toMatchObject({
+        status: "queued",
+        lease_id: undefined,
+        lease_owner: undefined,
+      });
+      expect(store.events(proposalId).some((event) => event.kind === "writeback_worker_claimed"))
+        .toBe(false);
+      expect(store.receipts(proposalId)).toEqual([]);
+      expect(store.listAttentionItems({ severity: "critical" })).toEqual([
+        expect.objectContaining({
+          event_type: "credential.posture_changed",
+          status: "open",
+          occurrence_count: 1,
+        }),
+      ]);
+    } finally {
+      store.close();
+    }
   });
 
   it("refuses writeback when a stored signed approval record was tampered", async () => {
@@ -6887,6 +7972,18 @@ END
     expect(completed.getProposal("wrp_cli")?.state).toBe("applied");
     expect(completed.listWorkerQueue()).toEqual([expect.objectContaining({ status: "completed", attempts: 2 })]);
     expect(completed.receipts("wrp_cli").map((receipt) => receipt.status)).toEqual(["failed", "applied"]);
+    expect(completed.listAttentionEvents({ event_type: "worker.started" })).toEqual([
+      expect.objectContaining({
+        severity: "informational",
+        immediate_default: false,
+        attention_required: false,
+        worker_state: "active",
+        details: expect.objectContaining({
+          worker_identity: "worker_test",
+          execution_mode: "legacy",
+        }),
+      }),
+    ]);
     completed.close();
   });
 
@@ -7310,6 +8407,38 @@ END
       unmatched_cases: 1,
       invalid_or_unsafe_scope_attempts: 1,
     });
+  });
+
+  it("discovers config and local store from a nested generated project without repeated flags", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-project-discovery-"));
+    const oldCwd = process.cwd();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    try {
+      await fs.mkdir(path.join(tempDir, ".git"));
+      process.chdir(tempDir);
+      await expect(main(["recipes", "init", "billing.late_fee_waiver", "--force", "--yes"])).resolves.toBe(0);
+      const storePath = path.join(tempDir, ".synapsor/local.db");
+      const store = new ProposalStore(storePath);
+      store.close();
+      const nested = path.join(tempDir, "apps/web/src");
+      await fs.mkdir(nested, { recursive: true });
+      process.chdir(nested);
+
+      output.length = 0;
+      await expect(main(["config", "validate"])).resolves.toBe(0);
+      expect(output.join("")).toContain(`config valid: ${path.join(tempDir, "synapsor.runner.json")}`);
+
+      output.length = 0;
+      await expect(main(["proposals", "list", "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join(""))).toEqual({ proposals: [] });
+    } finally {
+      process.chdir(oldCwd);
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -40,6 +40,9 @@ Unknown keys fail when `strict` is true (the default).
 | `rate_limits` | No | Operational fixed-window limits; fleet-wide only with shared `runtime_store`. |
 | `metrics` | No | Separately authorized scrapeable HTTP metrics. Disabled by default. |
 | `graduated_trust` | No | Off-by-default, operator-only policy recommendation criteria and kill switch. |
+| `generated_authority` | Generated projects | Generation-lock path and required drift enforcement for generated authority only. |
+| `supervised_worker` | No | Default-off exact-digest allowlist for trusted automatic execution of approved proposals. |
+| `notifications` | No | Default-off quiet attention routing to JSONL or signed HTTPS webhooks. |
 | `executors` | No | App-owned writeback wiring. |
 | `cloud` | Cloud mode | Scoped Cloud adapter configuration. |
 
@@ -499,6 +502,129 @@ synapsor-runner doctor --check-writeback --config ./synapsor.runner.json
 The complete validation, privilege, lifecycle, and error-code contract is in
 [Proposal And Evidence Freshness](proposal-evidence-freshness.md).
 
+## Supervised worker
+
+`supervised_worker` is a separate deployment opt-in for automatic execution of
+already-approved proposals. It does not change `AUTO APPROVE`; old and new
+auto-approved proposals still wait for manual apply unless both the contract
+and this exact-digest allowlist permit worker execution.
+
+```json
+{
+  "supervised_worker": {
+    "enabled": true,
+    "profile": "production",
+    "capabilities": [
+      {
+        "capability": "billing.propose_small_credit",
+        "contract_digest": "sha256:EXACT_ACTIVE_DIGEST",
+        "mode": "supervised_worker",
+        "concurrency": 1,
+        "queue_limit": 100,
+        "lease_seconds": 60,
+        "max_attempts": 5,
+        "proposal_ttl_seconds": 3600,
+        "rate_limit": {
+          "executions": 20,
+          "window_seconds": 60
+        },
+        "write_url_env": "BILLING_POSTGRES_WRITE_URL",
+        "worker_identity": "billing_worker",
+        "control_role": "runner_operator",
+        "require_least_privilege_writer": true,
+        "writer_posture_fingerprint": "sha256:REVIEWED_POSTURE_DIGEST",
+        "required_attention_sinks": ["operations"]
+      }
+    ]
+  }
+}
+```
+
+`profile` is `development`, `staging`, or `production`. Production requires
+verified operator identity and hardened writer posture. Every entry binds
+capability name, active contract digest, worker mode, queue/concurrency/rate
+bounds, proposal TTL, writer credential reference, and optional fixed worker
+identity/control role.
+
+`required_attention_sinks` is optional and default-off. When present, an
+otherwise eligible job remains queued until every named enabled notification
+sink has a healthy delivery record. Sink health never grants approval or
+execution authority.
+
+The active capability must itself contain
+`execution.supervised_worker = "allowed"`, compile from `ALLOW SUPERVISED
+WORKER APPLY`, use direct single-row guarded INSERT/UPDATE, and satisfy the
+receipt, trusted-scope, conflict/deduplication, and eligibility checks. See
+[Operator-Supervised Automatic Apply](supervised-automatic-apply.md).
+
+## Notifications
+
+`notifications` routes immutable redacted attention events. It is absent or
+`enabled: false` by default and starts no background dispatcher.
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "workbench_url_env": "SYNAPSOR_WORKBENCH_URL",
+    "sinks": [
+      {
+        "id": "operations",
+        "type": "webhook",
+        "url_env": "SYNAPSOR_NOTIFY_WEBHOOK_URL",
+        "signing_secret_env": "SYNAPSOR_NOTIFY_SIGNING_SECRET",
+        "minimum_severity": "warning",
+        "events": [
+          "proposal.review_required",
+          "worker.dead_lettered",
+          "worker.unknown_outcome"
+        ],
+        "environments": ["production"],
+        "delivery": "immediate",
+        "max_attempts": 5,
+        "timeout_ms": 3000,
+        "max_response_bytes": 1024,
+        "replay_window_seconds": 300,
+        "allow_private_destinations": false,
+        "recovery_notifications": false,
+        "budgets": {
+          "per_minute": 10,
+          "per_hour": 100,
+          "cooldown_seconds": 600,
+          "retry_attempt_threshold": 3,
+          "degraded_duration_seconds": 120,
+          "queue_depth_threshold": 100,
+          "queue_age_seconds": 300
+        },
+        "quiet_hours": {
+          "start_utc_hour": 22,
+          "end_utc_hour": 7
+        }
+      }
+    ]
+  }
+}
+```
+
+Sink `type` is `webhook` or `jsonl`. JSONL requires
+`destination: "stdout"` and accepts no URL/signing fields. Webhook URLs and
+32-byte-or-longer signing secrets come only from the named environment
+variables.
+
+`delivery` is `immediate`, `digest`, or `all`. Each sink can filter fixed event
+names, qualified capability names, environments, and minimum severity.
+Per-minute/hour budgets, informational budgets, aggregation windows, cooldown,
+unresolved reminders, digest cadence, escalation delay, retry/degraded
+thresholds, queue thresholds, UTC quiet hours, and opt-in recovery messages
+control interruption volume. Critical events bypass ordinary quiet hours and
+budgets but still coalesce.
+
+Private webhook destinations require both
+`allow_private_destinations: true` and an exact
+`private_host_allowlist`. See [Human Attention And
+Notifications](human-attention-notifications.md) for event classes, commands,
+signature verification, SSRF protections, and quiet-default behavior.
+
 ## Rate limits
 
 ```json
@@ -553,6 +679,12 @@ contract artifact bound to the current digest/version; Runner never activates
 it. See [Graduated Trust Recommendations](graduated-trust.md).
 
 ## Operator identity
+
+For the complete lifecycle from public DSL `APPROVAL ROLE`, through IdP group
+mapping and JWT verification, to the immutable approval record and independent
+apply decision, use [Approval Roles And Verified Operator
+Identity](approval-roles-and-operator-identity.md). The examples below are the
+configuration summary; that guide contains the tested local OIDC/JWKS flow.
 
 Local development compatibility uses an explicitly unverified environment
 identity:

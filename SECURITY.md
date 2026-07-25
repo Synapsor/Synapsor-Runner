@@ -6,6 +6,14 @@ Do not include production credentials, customer data, or full source rows in bug
 
 ## Supported security scope
 
-The v0.1 runner protects the local writeback boundary for approved structured jobs. It does not make the hosted Synapsor control plane self-hosted, and it does not provide HA, compliance certification, or a general database proxy.
+Runner protects the local model/database boundary for reviewed semantic reads,
+structured proposals, verified approval, guarded writeback, receipts, replay,
+and optional exact-digest supervised execution. Human-attention notifications
+are redacted interruption channels and never authority.
 
-See `docs/threat-model.md` for detailed trust boundaries, covered threats, non-goals, and release blockers.
+It does not make the hosted Synapsor control plane self-hosted, prevent prompt
+injection, replace database roles/RLS, or provide HA, compliance certification,
+or a general database proxy.
+
+See `THREAT_MODEL.md` and `docs/security-boundary.md` for detailed trust
+boundaries, covered threats, non-goals, and release blockers.

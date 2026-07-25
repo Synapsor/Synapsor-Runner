@@ -162,6 +162,74 @@ describe("reviewed schema and API candidate generation", () => {
       .toThrow(/exceeds/);
   });
 
+  it("uses the shared sensitivity classifier for Prisma, Drizzle, and OpenAPI fields", () => {
+    const sources: Array<{ format: SchemaCandidateFormat; source: string }> = [{
+      format: "prisma",
+      source: `
+model Member {
+  id                  String @id
+  tenantId            String
+  paymentMethod       String
+  medicalWaiverNotes  String?
+  status              String
+}`,
+    }, {
+      format: "drizzle",
+      source: `
+export const members = pgTable("members", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  medicalWaiverNotes: text("medical_waiver_notes"),
+  status: text("status").notNull(),
+});`,
+    }, {
+      format: "openapi",
+      source: `
+openapi: 3.1.0
+info: { title: Test, version: "1" }
+components:
+  schemas:
+    Member:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        payment_method: { type: string }
+        medical_waiver_notes: { type: string }
+        status: { type: string }
+paths:
+  /members/{id}:
+    get:
+      operationId: getMember
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+`,
+    }];
+
+    for (const input of sources) {
+      const parsed = parseSchemaCandidateSource(input.format, input.source, `${input.format}-inline`);
+      const fields = new Map(parsed.objects[0]!.fields.map((field) => [field.name, field]));
+      const payment = fields.get("payment_method");
+      const medical = fields.get("medical_waiver_notes");
+      expect(payment?.sensitivity).toMatchObject({
+        state: "high_confidence_sensitive",
+        reason_codes: expect.arrayContaining(["payment_or_bank_detail"]),
+      });
+      expect(medical?.sensitivity).toMatchObject({
+        state: "high_confidence_sensitive",
+        reason_codes: expect.arrayContaining(["medical_or_health_information"]),
+      });
+      expect(fields.get("status")?.sensitivity.state).toBe("structurally_low_risk");
+    }
+  });
+
   it("never overwrites source or an unowned directory and requires explicit force", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-schema-overwrite-"));
     const input = fixtures[0]!.input;

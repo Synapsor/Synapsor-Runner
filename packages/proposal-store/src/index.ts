@@ -73,7 +73,23 @@ export type ProposalEvent = {
 
 export type OperatorDecision = {
   schema_version: "synapsor.operator-decision.v1";
-  action: "approve" | "reject" | "apply" | "revert" | "reconcile" | "worker_requeue" | "worker_discard";
+  action:
+    | "approve"
+    | "reject"
+    | "apply"
+    | "revert"
+    | "reconcile"
+    | "worker_requeue"
+    | "worker_discard"
+    | "worker_pause"
+    | "worker_resume"
+    | "worker_drain"
+    | "worker_capability_enable"
+    | "worker_capability_disable"
+    | "worker_digest_revoke"
+    | "worker_cancel"
+    | "attention_acknowledge"
+    | "notification_replay";
   proposal_id: string;
   proposal_version: number;
   proposal_hash: string;
@@ -252,6 +268,155 @@ export type CloudGovernanceEvent = {
   payload: Record<string, unknown>;
   integrity_hash: `sha256:${string}`;
   created_at: string;
+};
+
+export type AttentionSeverity = "informational" | "warning" | "critical";
+
+export type AttentionEventType =
+  | "proposal.created"
+  | "proposal.review_required"
+  | "proposal.auto_approved"
+  | "proposal.approved"
+  | "proposal.queued"
+  | "proposal.expiring"
+  | "proposal.expired"
+  | "proposal.cancelled"
+  | "proposal.applied"
+  | "proposal.conflict"
+  | "proposal.refused"
+  | "worker.started"
+  | "worker.paused"
+  | "worker.unhealthy"
+  | "worker.recovered"
+  | "worker.queue_backlog"
+  | "worker.retry_scheduled"
+  | "worker.dead_lettered"
+  | "worker.unknown_outcome"
+  | "worker.reconciliation_required"
+  | "capability.review_required"
+  | "capability.activated"
+  | "capability.revoked"
+  | "contract.digest_stale"
+  | "schema.drift_detected"
+  | "credential.posture_changed"
+  | "policy.limit_near"
+  | "policy.limit_exceeded"
+  | "sensitive_override_activated"
+  | "notification.replayed"
+  | "notification.digest";
+
+export type AttentionEvent = {
+  schema_version: "synapsor.attention-event.v1";
+  event_id: string;
+  event_type: AttentionEventType;
+  severity: AttentionSeverity;
+  occurred_at: string;
+  environment: string;
+  proposal_id?: string;
+  job_id?: string;
+  operation_id?: string;
+  correlation_id?: string;
+  capability?: string;
+  contract_digest?: `sha256:${string}`;
+  attention_key?: string;
+  attention_required: boolean;
+  immediate_default: boolean;
+  summary: string;
+  approval_source?: "human" | "policy_auto";
+  worker_state?: string;
+  failure_class?: string;
+  expires_at?: string;
+  workbench_path?: string;
+  details: Record<string, string | number | boolean | null>;
+  payload_hash: `sha256:${string}`;
+};
+
+export type RecordAttentionEventInput = {
+  event_type: AttentionEventType;
+  severity: AttentionSeverity;
+  environment: string;
+  proposal_id?: string;
+  job_id?: string;
+  operation_id?: string;
+  correlation_id?: string;
+  capability?: string;
+  contract_digest?: `sha256:${string}`;
+  attention_key?: string;
+  attention_required?: boolean;
+  immediate_default?: boolean;
+  summary?: string;
+  approval_source?: "human" | "policy_auto";
+  worker_state?: string;
+  failure_class?: string;
+  expires_at?: string;
+  workbench_path?: string;
+  details?: Record<string, string | number | boolean | null>;
+  source_event_key?: string;
+  now?: string;
+};
+
+export type AttentionItemStatus = "open" | "acknowledged" | "resolved" | "expired";
+
+export type AttentionItem = {
+  attention_id: string;
+  attention_key: string;
+  status: AttentionItemStatus;
+  severity: AttentionSeverity;
+  environment: string;
+  event_type: AttentionEventType;
+  capability?: string;
+  contract_digest?: `sha256:${string}`;
+  title: string;
+  occurrence_count: number;
+  first_event_id: string;
+  latest_event_id: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  acknowledged_by?: string;
+  acknowledged_at?: string;
+  acknowledgement_identity?: OperatorIdentityProof;
+  resolved_at?: string;
+  expires_at?: string;
+};
+
+export type AttentionDecisionSubject = {
+  proposal_id: string;
+  proposal_version: number;
+  proposal_hash: `sha256:${string}`;
+};
+
+export type NotificationReplayDecisionSubject = {
+  proposal_id: string;
+  proposal_version: number;
+  proposal_hash: `sha256:${string}`;
+};
+
+export type NotificationDeliveryStatus =
+  | "pending"
+  | "leased"
+  | "delivered"
+  | "retry_wait"
+  | "dead_letter"
+  | "suppressed"
+  | "batched";
+
+export type NotificationDelivery = {
+  delivery_id: string;
+  sink_id: string;
+  event_id: string;
+  attention_id?: string;
+  status: NotificationDeliveryStatus;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  lease_owner?: string;
+  lease_id?: string;
+  lease_expires_at?: string;
+  last_error_code?: string;
+  external_reference?: string;
+  delivered_at?: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type LocalListOptions = {
@@ -524,6 +689,9 @@ export type StoreStats = {
   shadow_study_cases: number;
   shadow_outcomes: number;
   worker_queue: number;
+  attention_events: number;
+  attention_items: number;
+  notification_deliveries: number;
   policy_recommendations: number;
   page_count: number;
   page_size: number;
@@ -624,17 +792,74 @@ export type FleetEventMetricRow = {
   freshness_apply_blocked: number;
 };
 
-export type WorkerQueueStatus = "queued" | "leased" | "retry_wait" | "completed" | "dead_letter" | "discarded";
+export type WorkerQueueStatus =
+  | "queued"
+  | "leased"
+  | "retry_wait"
+  | "completed"
+  | "dead_letter"
+  | "discarded"
+  | "cancelled"
+  | "blocked"
+  | "reconciliation_required";
+
+export type WorkerExecutionMode = "legacy" | "supervised_worker";
+
+export type WorkerControlMode = "active" | "paused" | "draining";
+
+export type WorkerCapabilityControlStatus = "enabled" | "disabled" | "revoked";
+
+export type WorkerCapabilityControl = {
+  capability: string;
+  contract_digest: `sha256:${string}`;
+  status: WorkerCapabilityControlStatus;
+  updated_at: string;
+  actor: string;
+};
+
+export type WorkerControlState = {
+  schema_version: "synapsor.worker-control.v1";
+  mode: WorkerControlMode;
+  revision: number;
+  capability_controls: WorkerCapabilityControl[];
+  last_decision?: OperatorIdentityProof;
+  updated_at: string;
+  integrity_hash: `sha256:${string}`;
+};
+
+export type WorkerControlAction =
+  | "pause"
+  | "resume"
+  | "drain"
+  | "capability_enable"
+  | "capability_disable"
+  | "digest_revoke";
+
+export type WorkerControlTarget = {
+  action: WorkerControlAction;
+  capability?: string;
+  contract_digest?: `sha256:${string}`;
+};
+
+export type WorkerControlDecisionSubject = {
+  proposal_id: string;
+  proposal_version: number;
+  proposal_hash: `sha256:${string}`;
+};
 
 export type WorkerQueueItem = {
   proposal_id: string;
   status: WorkerQueueStatus;
+  execution_mode: WorkerExecutionMode;
+  contract_digest?: `sha256:${string}`;
   attempts: number;
   max_attempts: number;
   next_attempt_at: string;
   lease_owner?: string;
+  lease_id?: string;
   lease_expires_at?: string;
   last_error_code?: string;
+  terminal_outcome?: string;
   created_at: string;
   updated_at: string;
 };
@@ -691,6 +916,11 @@ export type PolicyApprovalDecision = {
   approved: boolean;
   policy: string;
   tripped_limits: PolicyApprovalLimitTrip[];
+};
+
+export type WorkerPolicyExecutionLimits = {
+  policy: string;
+  limits: PolicyApprovalLimit[];
 };
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -771,6 +1001,165 @@ export type ProposalRuntimeStore = {
   markWritebackIntentApplying?(intentId: string, runnerId: string): MaybePromise<void>;
   completeWritebackIntent?(intentId: string, result: WritebackResult): MaybePromise<void>;
   requireWritebackReconciliation?(intentId: string, reason: string): MaybePromise<void>;
+  enqueueWorkerProposal?(input: {
+    proposal_id: string;
+    execution_mode?: WorkerExecutionMode;
+    contract_digest?: `sha256:${string}`;
+    max_attempts?: number;
+    queue_limit?: number;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem>;
+  claimWorkerItem?(input: {
+    workerId: string;
+    leaseSeconds?: number;
+    executionMode?: WorkerExecutionMode;
+    capability?: string;
+    tenant?: string;
+    contractDigest?: `sha256:${string}`;
+    maxConcurrent?: number;
+    rateLimit?: {
+      executions: number;
+      windowSeconds: number;
+    };
+    proposalTtlSeconds?: number;
+    policyExecution?: WorkerPolicyExecutionLimits;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem | undefined>;
+  assertActiveWorkerLease?(input: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem>;
+  renewWorkerLease?(input: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    leaseSeconds?: number;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem>;
+  completeWorkerItem?(
+    proposalId: string,
+    workerId: string,
+    outcome: "applied" | "already_applied" | "conflict",
+    now?: string,
+    leaseId?: string,
+  ): MaybePromise<WorkerQueueItem>;
+  blockWorkerItem?(input: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    errorCode: string;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem>;
+  requireWorkerReconciliation?(input: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    errorCode: string;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem>;
+  workerControlState?(): MaybePromise<WorkerControlState>;
+  updateWorkerControl?(input: WorkerControlTarget & {
+    actor: string;
+    identity?: OperatorIdentityProof;
+    require_verified_identity?: boolean;
+    environment?: string;
+    now?: string;
+  }): MaybePromise<WorkerControlState>;
+  cancelWorkerItem?(input: {
+    proposalId: string;
+    actor: string;
+    identity?: OperatorIdentityProof;
+    require_verified_identity?: boolean;
+    now?: string;
+  }): MaybePromise<WorkerQueueItem>;
+  listWorkerQueue?(status?: WorkerQueueStatus): MaybePromise<WorkerQueueItem[]>;
+  getWorkerQueueItem?(proposalId: string): MaybePromise<WorkerQueueItem | undefined>;
+  recordAttentionEvent?(input: RecordAttentionEventInput): MaybePromise<AttentionEvent>;
+  listAttentionEvents?(filters?: {
+    event_type?: AttentionEventType;
+    severity?: AttentionSeverity;
+    proposal_id?: string;
+    capability?: string;
+    tenant?: string;
+    principal?: string;
+    from?: string;
+    limit?: number;
+  }): MaybePromise<AttentionEvent[]>;
+  getAttentionEvent?(eventId: string): MaybePromise<AttentionEvent | undefined>;
+  listAttentionItems?(filters?: {
+    status?: AttentionItemStatus;
+    severity?: AttentionSeverity;
+    capability?: string;
+    tenant?: string;
+    principal?: string;
+    limit?: number;
+  }): MaybePromise<AttentionItem[]>;
+  getAttentionItem?(attentionId: string): MaybePromise<AttentionItem | undefined>;
+  acknowledgeAttention?(input: {
+    attention_id: string;
+    actor: string;
+    identity?: OperatorIdentityProof;
+    require_verified_identity?: boolean;
+    now?: string;
+  }): MaybePromise<AttentionItem>;
+  resolveAttention?(input: {
+    attention_id: string;
+    now?: string;
+  }): MaybePromise<AttentionItem>;
+  enqueueNotificationDelivery?(input: {
+    sink_id: string;
+    event_id: string;
+    attention_id?: string;
+    max_attempts?: number;
+    status?: "pending" | "batched" | "suppressed";
+    next_attempt_at?: string;
+    now?: string;
+  }): MaybePromise<NotificationDelivery>;
+  includeNotificationDeliveriesInDigest?(input: {
+    sink_id: string;
+    delivery_ids: string[];
+    digest_event_id: string;
+    now?: string;
+  }): MaybePromise<number>;
+  claimNotificationDeliveries?(input: {
+    owner: string;
+    sink_id?: string;
+    limit?: number;
+    lease_seconds?: number;
+    now?: string;
+  }): MaybePromise<NotificationDelivery[]>;
+  completeNotificationDelivery?(input: {
+    delivery_id: string;
+    owner: string;
+    lease_id: string;
+    external_reference?: string;
+    now?: string;
+  }): MaybePromise<NotificationDelivery>;
+  failNotificationDelivery?(input: {
+    delivery_id: string;
+    owner: string;
+    lease_id: string;
+    error_code: string;
+    retryable: boolean;
+    retry_at?: string;
+    now?: string;
+  }): MaybePromise<NotificationDelivery>;
+  listNotificationDeliveries?(filters?: {
+    status?: NotificationDeliveryStatus;
+    sink_id?: string;
+    event_id?: string;
+    attention_id?: string;
+    limit?: number;
+  }): MaybePromise<NotificationDelivery[]>;
+  getNotificationDelivery?(deliveryId: string): MaybePromise<NotificationDelivery | undefined>;
+  requeueNotificationDelivery?(input: {
+    delivery_id: string;
+    identity: OperatorIdentityProof;
+    reason: string;
+    now?: string;
+  }): MaybePromise<NotificationDelivery>;
   enqueueCloudOutbox?(input: {
     event_id: string;
     proposal_id?: string;
@@ -1115,6 +1504,148 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     await this.withWrite("requireWritebackReconciliation", (store) => store.requireWritebackReconciliation(intentId, reason));
   }
 
+  async enqueueWorkerProposal(input: Parameters<NonNullable<ProposalRuntimeStore["enqueueWorkerProposal"]>>[0]): Promise<WorkerQueueItem> {
+    return await this.withWrite("enqueueWorkerProposal", (store) => store.enqueueWorkerProposal(input));
+  }
+
+  async claimWorkerItem(input: Parameters<NonNullable<ProposalRuntimeStore["claimWorkerItem"]>>[0]): Promise<WorkerQueueItem | undefined> {
+    return await this.withWrite("claimWorkerItem", (store) => store.claimWorkerItem(input));
+  }
+
+  async assertActiveWorkerLease(input: Parameters<NonNullable<ProposalRuntimeStore["assertActiveWorkerLease"]>>[0]): Promise<WorkerQueueItem> {
+    return await this.withRead((store) => store.assertActiveWorkerLease(input));
+  }
+
+  async renewWorkerLease(input: Parameters<NonNullable<ProposalRuntimeStore["renewWorkerLease"]>>[0]): Promise<WorkerQueueItem> {
+    return await this.withWrite("renewWorkerLease", (store) => store.renewWorkerLease(input));
+  }
+
+  async completeWorkerItem(
+    proposalId: string,
+    workerId: string,
+    outcome: "applied" | "already_applied" | "conflict",
+    now?: string,
+    leaseId?: string,
+  ): Promise<WorkerQueueItem> {
+    return await this.withWrite("completeWorkerItem", (store) =>
+      store.completeWorkerItem(proposalId, workerId, outcome, now, leaseId));
+  }
+
+  async blockWorkerItem(input: Parameters<NonNullable<ProposalRuntimeStore["blockWorkerItem"]>>[0]): Promise<WorkerQueueItem> {
+    return await this.withWrite("blockWorkerItem", (store) => store.blockWorkerItem(input));
+  }
+
+  async requireWorkerReconciliation(
+    input: Parameters<NonNullable<ProposalRuntimeStore["requireWorkerReconciliation"]>>[0],
+  ): Promise<WorkerQueueItem> {
+    return await this.withWrite("requireWorkerReconciliation", (store) => store.requireWorkerReconciliation(input));
+  }
+
+  async workerControlState(): Promise<WorkerControlState> {
+    return await this.withRead((store) => store.workerControlState());
+  }
+
+  async updateWorkerControl(
+    input: Parameters<NonNullable<ProposalRuntimeStore["updateWorkerControl"]>>[0],
+  ): Promise<WorkerControlState> {
+    return await this.withWrite("updateWorkerControl", (store) => store.updateWorkerControl(input));
+  }
+
+  async cancelWorkerItem(
+    input: Parameters<NonNullable<ProposalRuntimeStore["cancelWorkerItem"]>>[0],
+  ): Promise<WorkerQueueItem> {
+    return await this.withWrite("cancelWorkerItem", (store) => store.cancelWorkerItem(input));
+  }
+
+  async listWorkerQueue(status?: WorkerQueueStatus): Promise<WorkerQueueItem[]> {
+    return await this.withRead((store) => store.listWorkerQueue(status));
+  }
+
+  async getWorkerQueueItem(proposalId: string): Promise<WorkerQueueItem | undefined> {
+    return await this.withRead((store) => store.getWorkerQueueItem(proposalId));
+  }
+
+  async recordAttentionEvent(input: Parameters<NonNullable<ProposalRuntimeStore["recordAttentionEvent"]>>[0]): Promise<AttentionEvent> {
+    return await this.withWrite("recordAttentionEvent", (store) => store.recordAttentionEvent(input));
+  }
+
+  async listAttentionEvents(
+    filters: Parameters<NonNullable<ProposalRuntimeStore["listAttentionEvents"]>>[0] = {},
+  ): Promise<AttentionEvent[]> {
+    return await this.withRead((store) => store.listAttentionEvents(filters));
+  }
+
+  async getAttentionEvent(eventId: string): Promise<AttentionEvent | undefined> {
+    return await this.withRead((store) => store.getAttentionEvent(eventId));
+  }
+
+  async listAttentionItems(
+    filters: Parameters<NonNullable<ProposalRuntimeStore["listAttentionItems"]>>[0] = {},
+  ): Promise<AttentionItem[]> {
+    return await this.withRead((store) => store.listAttentionItems(filters));
+  }
+
+  async getAttentionItem(attentionId: string): Promise<AttentionItem | undefined> {
+    return await this.withRead((store) => store.getAttentionItem(attentionId));
+  }
+
+  async acknowledgeAttention(input: Parameters<NonNullable<ProposalRuntimeStore["acknowledgeAttention"]>>[0]): Promise<AttentionItem> {
+    return await this.withWrite("acknowledgeAttention", (store) => store.acknowledgeAttention(input));
+  }
+
+  async resolveAttention(input: Parameters<NonNullable<ProposalRuntimeStore["resolveAttention"]>>[0]): Promise<AttentionItem> {
+    return await this.withWrite("resolveAttention", (store) => store.resolveAttention(input));
+  }
+
+  async enqueueNotificationDelivery(
+    input: Parameters<NonNullable<ProposalRuntimeStore["enqueueNotificationDelivery"]>>[0],
+  ): Promise<NotificationDelivery> {
+    return await this.withWrite("enqueueNotificationDelivery", (store) => store.enqueueNotificationDelivery(input));
+  }
+
+  async includeNotificationDeliveriesInDigest(
+    input: Parameters<NonNullable<ProposalRuntimeStore["includeNotificationDeliveriesInDigest"]>>[0],
+  ): Promise<number> {
+    return await this.withWrite(
+      "includeNotificationDeliveriesInDigest",
+      (store) => store.includeNotificationDeliveriesInDigest(input),
+    );
+  }
+
+  async claimNotificationDeliveries(
+    input: Parameters<NonNullable<ProposalRuntimeStore["claimNotificationDeliveries"]>>[0],
+  ): Promise<NotificationDelivery[]> {
+    return await this.withWrite("claimNotificationDeliveries", (store) => store.claimNotificationDeliveries(input));
+  }
+
+  async completeNotificationDelivery(
+    input: Parameters<NonNullable<ProposalRuntimeStore["completeNotificationDelivery"]>>[0],
+  ): Promise<NotificationDelivery> {
+    return await this.withWrite("completeNotificationDelivery", (store) => store.completeNotificationDelivery(input));
+  }
+
+  async failNotificationDelivery(
+    input: Parameters<NonNullable<ProposalRuntimeStore["failNotificationDelivery"]>>[0],
+  ): Promise<NotificationDelivery> {
+    return await this.withWrite("failNotificationDelivery", (store) => store.failNotificationDelivery(input));
+  }
+
+  async listNotificationDeliveries(
+    filters: Parameters<NonNullable<ProposalRuntimeStore["listNotificationDeliveries"]>>[0] = {},
+  ): Promise<NotificationDelivery[]> {
+    return await this.withRead((store) => store.listNotificationDeliveries(filters));
+  }
+
+  async getNotificationDelivery(deliveryId: string): Promise<NotificationDelivery | undefined> {
+    return await this.withRead((store) => store.getNotificationDelivery(deliveryId));
+  }
+
+  async requeueNotificationDelivery(
+    input: Parameters<NonNullable<ProposalRuntimeStore["requeueNotificationDelivery"]>>[0],
+  ): Promise<NotificationDelivery> {
+    return await this.withWrite("requeueNotificationDelivery", (store) => store.requeueNotificationDelivery(input));
+  }
+
   async enqueueCloudOutbox(input: Parameters<NonNullable<ProposalRuntimeStore["enqueueCloudOutbox"]>>[0]): Promise<CloudOutboxItem> {
     return await this.withWrite("enqueueCloudOutbox", (store) => store.enqueueCloudOutbox(input));
   }
@@ -1409,6 +1940,9 @@ export class ProposalStore {
       shadow_study_cases: this.countTable("shadow_study_cases"),
       shadow_outcomes: this.countTable("shadow_outcomes"),
       worker_queue: this.countTable("worker_queue"),
+      attention_events: this.countTable("attention_events"),
+      attention_items: this.countTable("attention_items"),
+      notification_deliveries: this.countTable("notification_deliveries"),
       policy_recommendations: this.countTable("policy_recommendations"),
       page_count: pageCount,
       page_size: pageSize,
@@ -1751,15 +2285,95 @@ export class ProposalStore {
         updated_at TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS worker_queue (
-        proposal_id TEXT PRIMARY KEY,
+      CREATE TABLE IF NOT EXISTS attention_events (
+        event_id TEXT PRIMARY KEY,
+        schema_version TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        proposal_id TEXT,
+        job_id TEXT,
+        operation_id TEXT,
+        correlation_id TEXT,
+        capability TEXT,
+        contract_digest TEXT,
+        attention_key TEXT,
+        attention_required INTEGER NOT NULL,
+        immediate_default INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        approval_source TEXT,
+        worker_state TEXT,
+        failure_class TEXT,
+        expires_at TEXT,
+        workbench_path TEXT,
+        details_json TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attention_items (
+        attention_id TEXT PRIMARY KEY,
+        attention_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        capability TEXT,
+        contract_digest TEXT,
+        title TEXT NOT NULL,
+        occurrence_count INTEGER NOT NULL,
+        first_event_id TEXT NOT NULL,
+        latest_event_id TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        acknowledged_by TEXT,
+        acknowledged_at TEXT,
+        acknowledgement_identity_json TEXT,
+        acknowledgement_decision_hash TEXT,
+        acknowledgement_signature TEXT,
+        acknowledgement_integrity_hash TEXT,
+        resolved_at TEXT,
+        expires_at TEXT,
+        FOREIGN KEY (first_event_id) REFERENCES attention_events(event_id),
+        FOREIGN KEY (latest_event_id) REFERENCES attention_events(event_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS notification_deliveries (
+        delivery_id TEXT PRIMARY KEY,
+        sink_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        attention_id TEXT,
         status TEXT NOT NULL,
         attempts INTEGER NOT NULL DEFAULT 0,
         max_attempts INTEGER NOT NULL,
         next_attempt_at TEXT NOT NULL,
         lease_owner TEXT,
+        lease_id TEXT,
         lease_expires_at TEXT,
         last_error_code TEXT,
+        external_reference TEXT,
+        delivered_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(sink_id, event_id),
+        FOREIGN KEY (event_id) REFERENCES attention_events(event_id),
+        FOREIGN KEY (attention_id) REFERENCES attention_items(attention_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS worker_queue (
+        proposal_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        execution_mode TEXT DEFAULT 'legacy',
+        contract_digest TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL,
+        next_attempt_at TEXT NOT NULL,
+        lease_owner TEXT,
+        lease_id TEXT,
+        lease_expires_at TEXT,
+        last_error_code TEXT,
+        terminal_outcome TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
@@ -1781,6 +2395,12 @@ export class ProposalStore {
       CREATE INDEX IF NOT EXISTS idx_cloud_outbox_due ON cloud_outbox(status, next_attempt_at, sequence, created_at);
       CREATE INDEX IF NOT EXISTS idx_cloud_outbox_proposal ON cloud_outbox(proposal_id, sequence, created_at);
       CREATE INDEX IF NOT EXISTS idx_cloud_governance_proposal ON cloud_governance_events(proposal_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_attention_events_type_time ON attention_events(event_type, occurred_at, event_id);
+      CREATE INDEX IF NOT EXISTS idx_attention_events_proposal ON attention_events(proposal_id, occurred_at, event_id);
+      CREATE INDEX IF NOT EXISTS idx_attention_events_capability ON attention_events(capability, occurred_at, event_id);
+      CREATE INDEX IF NOT EXISTS idx_attention_items_status ON attention_items(status, severity, last_seen_at, attention_id);
+      CREATE INDEX IF NOT EXISTS idx_notification_deliveries_due ON notification_deliveries(status, next_attempt_at, created_at, delivery_id);
+      CREATE INDEX IF NOT EXISTS idx_notification_deliveries_sink ON notification_deliveries(sink_id, status, updated_at, delivery_id);
 
       INSERT OR IGNORE INTO proposal_store_schema(version, applied_at)
       VALUES (1, datetime('now'));
@@ -1813,6 +2433,14 @@ export class ProposalStore {
     this.ensureColumn("approvals", "signature", "TEXT");
     this.ensureColumn("approvals", "integrity_hash", "TEXT");
     this.ensureColumn("approvals", "freshness_proof_digest", "TEXT");
+    this.ensureColumn("attention_items", "acknowledgement_identity_json", "TEXT");
+    this.ensureColumn("attention_items", "acknowledgement_decision_hash", "TEXT");
+    this.ensureColumn("attention_items", "acknowledgement_signature", "TEXT");
+    this.ensureColumn("attention_items", "acknowledgement_integrity_hash", "TEXT");
+    this.ensureColumn("worker_queue", "execution_mode", "TEXT DEFAULT 'legacy'");
+    this.ensureColumn("worker_queue", "contract_digest", "TEXT");
+    this.ensureColumn("worker_queue", "lease_id", "TEXT");
+    this.ensureColumn("worker_queue", "terminal_outcome", "TEXT");
   }
 
   private ensureSearchIndexes(): void {
@@ -1857,6 +2485,7 @@ export class ProposalStore {
 
       CREATE INDEX IF NOT EXISTS idx_proposal_events_kind_created ON proposal_events(kind, created_at);
       CREATE INDEX IF NOT EXISTS idx_worker_queue_claim ON worker_queue(status, next_attempt_at, lease_expires_at, created_at);
+      CREATE INDEX IF NOT EXISTS idx_worker_queue_supervised_claim ON worker_queue(execution_mode, contract_digest, status, next_attempt_at, lease_expires_at, created_at);
     `);
   }
 
@@ -2294,6 +2923,7 @@ export class ProposalStore {
     const now = options.now ?? new Date().toISOString();
     const window = utcDayWindow(now);
     const trippedLimits: PolicyApprovalLimitTrip[] = [];
+    const nearLimits: PolicyApprovalLimitTrip[] = [];
     let quorumDeferred = false;
     this.transaction(() => {
       const proposal = this.requireProposal(proposalId);
@@ -2346,6 +2976,17 @@ export class ProposalStore {
               window_end: window.end,
               reason: `${scope} daily auto-approval count ${projected} exceeds ${limit.max}`,
             });
+          } else if (projected / limit.max >= 0.8) {
+            nearLimits.push({
+              ...limit,
+              scope,
+              observed: rows.length,
+              proposed: 1,
+              projected,
+              window_start: window.start,
+              window_end: window.end,
+              reason: `${scope} daily auto-approval count ${projected} is approaching ${limit.max}`,
+            });
           }
           continue;
         }
@@ -2381,6 +3022,17 @@ export class ProposalStore {
             reason: invalidHistory || !field || typeof proposed !== "number" || !Number.isSafeInteger(proposed)
               ? `${scope} daily auto-approval total could not be verified safely${field ? ` for ${field}` : ""}`
               : `${scope} daily auto-approval total ${projected} for ${field} exceeds ${limit.max}`,
+          });
+        } else if (projected / limit.max >= 0.8) {
+          nearLimits.push({
+            ...limit,
+            scope,
+            observed,
+            proposed: proposedNumber,
+            projected,
+            window_start: window.start,
+            window_end: window.end,
+            reason: `${scope} daily auto-approval total is approaching its reviewed maximum`,
           });
         }
       }
@@ -2418,6 +3070,19 @@ export class ProposalStore {
         aggregate_limits: options.limits ?? [],
         freshness_proof_digest: options.freshness_proof_digest ?? null,
       });
+      for (const near of nearLimits) {
+        this.appendEvent(proposalId, "policy_limit_near", actor, {
+          policy: options.policy,
+          kind: near.kind,
+          scope: near.scope,
+          observed: near.observed,
+          proposed: near.proposed,
+          projected: near.projected,
+          max: near.max,
+          window_start: near.window_start,
+          window_end: near.window_end,
+        });
+      }
     });
     return {
       proposal: this.requireProposal(proposalId),
@@ -2769,6 +3434,30 @@ export class ProposalStore {
         decision_hash: input.identity?.decision_hash,
       });
       this.recordExecutionReceiptRows(receipt, proposal);
+      const workerItem = this.workerQueueItem(intent.proposal_id);
+      if (workerItem?.status === "reconciliation_required") {
+        const queueStatus: WorkerQueueStatus = receipt.status === "failed" ? "dead_letter" : "completed";
+        const terminalOutcome = receipt.status === "failed" ? "dead_letter" : receipt.status;
+        this.db.prepare(`
+          UPDATE worker_queue
+          SET status = ?, lease_owner = NULL, lease_id = NULL,
+              lease_expires_at = NULL, last_error_code = ?,
+              terminal_outcome = ?, updated_at = ?
+          WHERE proposal_id = ? AND status = 'reconciliation_required'
+        `).run(
+          queueStatus,
+          receipt.status === "failed" ? "RECONCILED_FAILED" : null,
+          terminalOutcome,
+          receipt.executed_at,
+          intent.proposal_id,
+        );
+        this.appendEvent(intent.proposal_id, "writeback_worker_reconciled", input.actor, {
+          intent_id: intent.intent_id,
+          outcome: receipt.status,
+          queue_status: queueStatus,
+          source_database_changed: false,
+        });
+      }
     });
     return this.requireWritebackIntent(intent.intent_id);
   }
@@ -3127,6 +3816,86 @@ export class ProposalStore {
     return rows.map(rowToEvent).filter((event): event is ProposalEvent => event !== undefined);
   }
 
+  enqueueWorkerProposal(options: {
+    proposal_id: string;
+    execution_mode?: WorkerExecutionMode;
+    contract_digest?: `sha256:${string}`;
+    max_attempts?: number;
+    queue_limit?: number;
+    now?: string;
+  }): WorkerQueueItem {
+    const proposal = this.requireProposal(options.proposal_id);
+    if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
+      throw new ProposalStoreError(
+        "WORKER_PROPOSAL_NOT_APPROVED",
+        `proposal ${proposal.proposal_id} is ${proposal.state}, not approved for worker execution`,
+      );
+    }
+    const executionMode = options.execution_mode ?? "legacy";
+    const contractDigest = options.contract_digest;
+    if (executionMode === "supervised_worker" && !contractDigest) {
+      throw new ProposalStoreError(
+        "SUPERVISED_WORKER_DIGEST_REQUIRED",
+        `supervised worker queue item ${proposal.proposal_id} requires an exact contract digest`,
+      );
+    }
+    if (contractDigest && !/^sha256:[a-f0-9]{64}$/.test(contractDigest)) {
+      throw new ProposalStoreError("WORKER_CONTRACT_DIGEST_INVALID", "worker queue contract digest must be a full lowercase sha256 digest");
+    }
+    const maxAttempts = Math.max(1, Math.min(options.max_attempts ?? 5, 100));
+    const queueLimit = Math.max(1, Math.min(options.queue_limit ?? 10_000, 100_000));
+    const now = options.now ?? new Date().toISOString();
+    this.transaction(() => {
+      const existing = this.workerQueueItem(proposal.proposal_id);
+      if (existing) {
+        if (existing.execution_mode !== executionMode || existing.contract_digest !== contractDigest) {
+          throw new ProposalStoreError(
+            "WORKER_QUEUE_AUTHORITY_MISMATCH",
+            `worker queue item ${proposal.proposal_id} already exists under different execution authority`,
+          );
+        }
+        return;
+      }
+      const active = this.db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM worker_queue q
+        JOIN proposals p ON p.proposal_id = q.proposal_id
+        WHERE q.execution_mode = ?
+          AND (? IS NULL OR q.contract_digest = ?)
+          AND p.action = ?
+          AND q.status IN ('queued', 'leased', 'retry_wait', 'blocked', 'reconciliation_required')
+      `).get(executionMode, contractDigest ?? null, contractDigest ?? null, proposal.action);
+      if (isRecord(active) && Number(active.count ?? 0) >= queueLimit) {
+        throw new ProposalStoreError(
+          "WORKER_QUEUE_LIMIT_EXCEEDED",
+          `worker queue limit ${queueLimit} reached for ${proposal.action}`,
+        );
+      }
+      this.db.prepare(`
+        INSERT INTO worker_queue (
+          proposal_id, status, execution_mode, contract_digest, attempts,
+          max_attempts, next_attempt_at, lease_owner, lease_id,
+          lease_expires_at, last_error_code, terminal_outcome, created_at,
+          updated_at
+        ) VALUES (?, 'queued', ?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)
+      `).run(
+        proposal.proposal_id,
+        executionMode,
+        contractDigest ?? null,
+        maxAttempts,
+        now,
+        now,
+        now,
+      );
+      this.appendEvent(proposal.proposal_id, "writeback_worker_queued", "runner", {
+        execution_mode: executionMode,
+        contract_digest: contractDigest ?? null,
+        max_attempts: maxAttempts,
+      });
+    });
+    return this.requireWorkerQueueItem(proposal.proposal_id);
+  }
+
   enqueueApprovedForWorker(options: {
     capability?: string;
     tenant?: string;
@@ -3146,9 +3915,11 @@ export class ProposalStore {
       for (const proposal of proposals) {
         this.db.prepare(`
           INSERT OR IGNORE INTO worker_queue (
-            proposal_id, status, attempts, max_attempts, next_attempt_at,
-            lease_owner, lease_expires_at, last_error_code, created_at, updated_at
-          ) VALUES (?, 'queued', 0, ?, ?, NULL, NULL, NULL, ?, ?)
+            proposal_id, status, execution_mode, contract_digest, attempts,
+            max_attempts, next_attempt_at, lease_owner, lease_id,
+            lease_expires_at, last_error_code, terminal_outcome, created_at,
+            updated_at
+          ) VALUES (?, 'queued', 'legacy', NULL, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)
         `).run(proposal.proposal_id, maxAttempts, now, now, now);
       }
     });
@@ -3158,6 +3929,17 @@ export class ProposalStore {
   claimWorkerItem(options: {
     workerId: string;
     leaseSeconds?: number;
+    executionMode?: WorkerExecutionMode;
+    capability?: string;
+    tenant?: string;
+    contractDigest?: `sha256:${string}`;
+    maxConcurrent?: number;
+    rateLimit?: {
+      executions: number;
+      windowSeconds: number;
+    };
+    proposalTtlSeconds?: number;
+    policyExecution?: WorkerPolicyExecutionLimits;
     now?: string;
   }): WorkerQueueItem | undefined {
     const now = options.now ?? new Date().toISOString();
@@ -3165,6 +3947,58 @@ export class ProposalStore {
     const leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
     let claimed: WorkerQueueItem | undefined;
     this.transaction(() => {
+      if (options.maxConcurrent !== undefined) {
+        const maximum = Math.max(1, Math.min(options.maxConcurrent, 32));
+        const active = this.db.prepare(`
+          SELECT COUNT(*) AS count
+          FROM worker_queue q
+          JOIN proposals p ON p.proposal_id = q.proposal_id
+          WHERE q.status = 'leased'
+            AND q.lease_expires_at > ?
+            AND (? IS NULL OR q.execution_mode = ?)
+            AND (? IS NULL OR p.action = ?)
+            AND (? IS NULL OR p.tenant_id = ?)
+            AND (? IS NULL OR q.contract_digest = ?)
+        `).get(
+          now,
+          options.executionMode ?? null,
+          options.executionMode ?? null,
+          options.capability ?? null,
+          options.capability ?? null,
+          options.tenant ?? null,
+          options.tenant ?? null,
+          options.contractDigest ?? null,
+          options.contractDigest ?? null,
+        );
+        if (isRecord(active) && Number(active.count ?? 0) >= maximum) return;
+      }
+      if (options.rateLimit) {
+        const executions = Math.max(1, Math.min(options.rateLimit.executions, 100_000));
+        const windowSeconds = Math.max(1, Math.min(options.rateLimit.windowSeconds, 86_400));
+        const windowStart = new Date(Date.parse(now) - windowSeconds * 1_000).toISOString();
+        const recent = this.db.prepare(`
+          SELECT COUNT(*) AS count
+          FROM worker_queue q
+          JOIN proposals p ON p.proposal_id = q.proposal_id
+          WHERE q.status = 'completed'
+            AND q.updated_at >= ?
+            AND (? IS NULL OR q.execution_mode = ?)
+            AND (? IS NULL OR p.action = ?)
+            AND (? IS NULL OR p.tenant_id = ?)
+            AND (? IS NULL OR q.contract_digest = ?)
+        `).get(
+          windowStart,
+          options.executionMode ?? null,
+          options.executionMode ?? null,
+          options.capability ?? null,
+          options.capability ?? null,
+          options.tenant ?? null,
+          options.tenant ?? null,
+          options.contractDigest ?? null,
+          options.contractDigest ?? null,
+        );
+        if (isRecord(recent) && Number(recent.count ?? 0) >= executions) return;
+      }
       const raw = this.db.prepare(`
         SELECT q.*
         FROM worker_queue q
@@ -3174,24 +4008,70 @@ export class ProposalStore {
           OR (q.status = 'leased' AND q.lease_expires_at <= ?)
         )
           AND p.state IN ('approved', 'pending_worker', 'failed')
+          AND (? IS NULL OR q.execution_mode = ?)
+          AND (? IS NULL OR p.action = ?)
+          AND (? IS NULL OR p.tenant_id = ?)
+          AND (? IS NULL OR q.contract_digest = ?)
         ORDER BY q.next_attempt_at ASC, q.created_at ASC
         LIMIT 1
-      `).get(now, now);
+      `).get(
+        now,
+        now,
+        options.executionMode ?? null,
+        options.executionMode ?? null,
+        options.capability ?? null,
+        options.capability ?? null,
+        options.tenant ?? null,
+        options.tenant ?? null,
+        options.contractDigest ?? null,
+        options.contractDigest ?? null,
+      );
       const item = rowToWorkerQueueItem(raw);
       if (!item) return;
+      const proposal = this.requireProposal(item.proposal_id);
+      if (options.proposalTtlSeconds !== undefined) {
+        const ttlSeconds = Math.max(60, Math.min(options.proposalTtlSeconds, 2_592_000));
+        const expiresAt = Date.parse(proposal.created_at) + ttlSeconds * 1_000;
+        if (!Number.isFinite(expiresAt) || expiresAt <= Date.parse(now)) {
+          this.blockQueuedWorkerItem(item, options.workerId, "SUPERVISED_WORKER_PROPOSAL_EXPIRED", now);
+          return;
+        }
+      }
+      if (options.policyExecution) {
+        const trips = this.workerPolicyExecutionLimitTrips({
+          proposal,
+          policy: options.policyExecution.policy,
+          limits: options.policyExecution.limits,
+          now,
+        });
+        if (trips.length > 0) {
+          this.blockQueuedWorkerItem(
+            item,
+            options.workerId,
+            "SUPERVISED_WORKER_POLICY_LIMIT_EXCEEDED",
+            now,
+            { policy: options.policyExecution.policy, tripped_limits: trips },
+          );
+          return;
+        }
+      }
+      const leaseId = workerLeaseId(item.proposal_id, options.workerId, item.attempts + 1, now);
       this.db.prepare(`
         UPDATE worker_queue
         SET status = 'leased', attempts = attempts + 1, lease_owner = ?,
-            lease_expires_at = ?, updated_at = ?
+            lease_id = ?, lease_expires_at = ?, last_error_code = NULL,
+            terminal_outcome = NULL, updated_at = ?
         WHERE proposal_id = ?
-      `).run(options.workerId, leaseExpiresAt, now, item.proposal_id);
-      const proposal = this.requireProposal(item.proposal_id);
+      `).run(options.workerId, leaseId, leaseExpiresAt, now, item.proposal_id);
       if (proposal.state === "failed") {
         this.db.prepare("UPDATE proposals SET state = 'pending_worker', updated_at = ? WHERE proposal_id = ?").run(now, item.proposal_id);
       }
       this.appendEvent(item.proposal_id, "writeback_worker_claimed", options.workerId, {
         attempt: item.attempts + 1,
         max_attempts: item.max_attempts,
+        execution_mode: item.execution_mode,
+        contract_digest: item.contract_digest ?? null,
+        lease_id: leaseId,
         lease_expires_at: leaseExpiresAt,
       });
       claimed = this.workerQueueItem(item.proposal_id);
@@ -3199,16 +4079,261 @@ export class ProposalStore {
     return claimed;
   }
 
-  completeWorkerItem(proposalId: string, workerId: string, outcome: "applied" | "already_applied" | "conflict", now = new Date().toISOString()): WorkerQueueItem {
+  assertWorkerPolicyExecutionLimits(input: {
+    proposalId: string;
+    policy: string;
+    limits: PolicyApprovalLimit[];
+    now?: string;
+  }): void {
+    const proposal = this.requireProposal(input.proposalId);
+    const trips = this.workerPolicyExecutionLimitTrips({
+      proposal,
+      policy: input.policy,
+      limits: input.limits,
+      now: input.now ?? new Date().toISOString(),
+    });
+    if (trips.length > 0) {
+      throw new ProposalStoreError(
+        "SUPERVISED_WORKER_POLICY_LIMIT_EXCEEDED",
+        `execution-time policy limit no longer permits proposal ${proposal.proposal_id}`,
+      );
+    }
+  }
+
+  private blockQueuedWorkerItem(
+    item: WorkerQueueItem,
+    actor: string,
+    errorCode: string,
+    now: string,
+    payload: Record<string, unknown> = {},
+  ): void {
+    this.db.prepare(`
+      UPDATE worker_queue
+      SET status = 'blocked', lease_owner = NULL, lease_id = NULL,
+          lease_expires_at = NULL, last_error_code = ?,
+          terminal_outcome = NULL, updated_at = ?
+      WHERE proposal_id = ?
+    `).run(errorCode, now, item.proposal_id);
+    this.appendEvent(item.proposal_id, "writeback_worker_blocked", actor, {
+      error_code: errorCode,
+      execution_mode: item.execution_mode,
+      contract_digest: item.contract_digest ?? null,
+      ...payload,
+    });
+  }
+
+  private workerPolicyExecutionLimitTrips(input: {
+    proposal: StoredProposal;
+    policy: string;
+    limits: PolicyApprovalLimit[];
+    now: string;
+  }): PolicyApprovalLimitTrip[] {
+    if (input.limits.length === 0) return [];
+    const actor = `policy:${input.policy}`;
+    const candidateApproval = this.db.prepare(`
+      SELECT approval_id
+      FROM approvals
+      WHERE proposal_id = ?
+        AND approver = ?
+        AND status = 'approved'
+        AND proposal_hash = ?
+        AND proposal_version = ?
+      LIMIT 1
+    `).get(
+      input.proposal.proposal_id,
+      actor,
+      input.proposal.proposal_hash,
+      input.proposal.proposal_version,
+    );
+    if (!isRecord(candidateApproval)) return [];
+
+    const window = utcDayWindow(input.now);
+    const rows = this.db.prepare(`
+      SELECT DISTINCT
+        p.proposal_id,
+        p.business_object,
+        p.object_id,
+        p.change_set_json
+      FROM worker_queue q
+      JOIN proposals p ON p.proposal_id = q.proposal_id
+      JOIN approvals a ON a.proposal_id = p.proposal_id
+      WHERE a.approver = ?
+        AND a.status = 'approved'
+        AND p.tenant_id = ?
+        AND (
+          (q.status = 'leased' AND q.lease_expires_at > ?)
+          OR (
+            q.status = 'completed'
+            AND q.terminal_outcome IN ('applied', 'already_applied')
+            AND q.updated_at >= ?
+            AND q.updated_at < ?
+          )
+          OR (
+            q.status = 'reconciliation_required'
+            AND q.updated_at >= ?
+            AND q.updated_at < ?
+          )
+          OR (
+            p.state = 'applied'
+            AND p.updated_at >= ?
+            AND p.updated_at < ?
+          )
+        )
+    `).all(
+      actor,
+      input.proposal.tenant_id,
+      input.now,
+      window.start,
+      window.end,
+      window.start,
+      window.end,
+      window.start,
+      window.end,
+    );
+    const active = new Map<string, {
+      proposal_id: string;
+      business_object: string;
+      object_id: string;
+      change_set: ChangeSet;
+    }>();
+    let invalidHistory = false;
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      try {
+        const proposalId = String(row.proposal_id);
+        active.set(proposalId, {
+          proposal_id: proposalId,
+          business_object: String(row.business_object),
+          object_id: String(row.object_id),
+          change_set: parseChangeSet(JSON.parse(String(row.change_set_json))),
+        });
+      } catch {
+        // A malformed historical row must fail a value limit closed below.
+        invalidHistory = true;
+        active.set(String(row.proposal_id), {
+          proposal_id: String(row.proposal_id),
+          business_object: String(row.business_object),
+          object_id: String(row.object_id),
+          change_set: input.proposal.change_set,
+        });
+      }
+    }
+    active.set(input.proposal.proposal_id, {
+      proposal_id: input.proposal.proposal_id,
+      business_object: input.proposal.business_object,
+      object_id: input.proposal.object_id,
+      change_set: input.proposal.change_set,
+    });
+
+    const trips: PolicyApprovalLimitTrip[] = [];
+    for (const limit of input.limits) {
+      const scope = limit.scope ?? "tenant_policy";
+      const scoped = [...active.values()].filter((proposal) =>
+        scope !== "tenant_policy_object"
+        || (
+          proposal.business_object === input.proposal.business_object
+          && proposal.object_id === input.proposal.object_id
+        ));
+      if (limit.kind === "count") {
+        const projected = scoped.length;
+        if (projected > limit.max) {
+          trips.push({
+            ...limit,
+            scope,
+            observed: Math.max(0, projected - 1),
+            proposed: 1,
+            projected,
+            window_start: window.start,
+            window_end: window.end,
+            reason: `${scope} execution count ${projected} exceeds ${limit.max}`,
+          });
+        }
+        continue;
+      }
+
+      const field = limit.field;
+      let projected = 0;
+      let proposed = 0;
+      let invalid = !field || invalidHistory;
+      for (const proposal of scoped) {
+        const value = field ? proposal.change_set.patch[field] : undefined;
+        if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+          invalid = true;
+          continue;
+        }
+        projected += value;
+        if (proposal.proposal_id === input.proposal.proposal_id) proposed = value;
+      }
+      if (invalid || projected > limit.max) {
+        trips.push({
+          ...limit,
+          scope,
+          observed: projected - proposed,
+          proposed,
+          projected,
+          window_start: window.start,
+          window_end: window.end,
+          reason: invalid
+            ? `${scope} execution total could not be verified safely${field ? ` for ${field}` : ""}`
+            : `${scope} execution total ${projected} for ${field} exceeds ${limit.max}`,
+        });
+      }
+    }
+    return trips;
+  }
+
+  assertActiveWorkerLease(options: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    const item = this.assertWorkerLease(options.proposalId, options.workerId, options.leaseId);
+    if (!item.lease_expires_at || Date.parse(item.lease_expires_at) <= Date.parse(now)) {
+      throw new ProposalStoreError("WORKER_LEASE_EXPIRED", `worker lease ${options.leaseId} for ${options.proposalId} has expired`);
+    }
+    return item;
+  }
+
+  renewWorkerLease(options: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    leaseSeconds?: number;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    const leaseSeconds = Math.max(15, Math.min(options.leaseSeconds ?? 60, 3600));
+    const leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
     this.transaction(() => {
-      this.assertWorkerLease(proposalId, workerId);
+      this.assertActiveWorkerLease({ ...options, now });
       this.db.prepare(`
         UPDATE worker_queue
-        SET status = 'completed', lease_owner = NULL, lease_expires_at = NULL,
-            last_error_code = NULL, updated_at = ?
+        SET lease_expires_at = ?, updated_at = ?
+        WHERE proposal_id = ? AND status = 'leased' AND lease_owner = ? AND lease_id = ?
+      `).run(leaseExpiresAt, now, options.proposalId, options.workerId, options.leaseId);
+    });
+    return this.requireWorkerQueueItem(options.proposalId);
+  }
+
+  completeWorkerItem(
+    proposalId: string,
+    workerId: string,
+    outcome: "applied" | "already_applied" | "conflict",
+    now = new Date().toISOString(),
+    leaseId?: string,
+  ): WorkerQueueItem {
+    this.transaction(() => {
+      this.assertWorkerLease(proposalId, workerId, leaseId);
+      this.db.prepare(`
+        UPDATE worker_queue
+        SET status = 'completed', lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, last_error_code = NULL,
+            terminal_outcome = ?, updated_at = ?
         WHERE proposal_id = ?
-      `).run(now, proposalId);
-      this.appendEvent(proposalId, "writeback_worker_completed", workerId, { outcome });
+      `).run(outcome, now, proposalId);
+      this.appendEvent(proposalId, "writeback_worker_completed", workerId, { outcome, lease_id: leaseId ?? null });
     });
     return this.requireWorkerQueueItem(proposalId);
   }
@@ -3218,22 +4343,25 @@ export class ProposalStore {
     workerId: string;
     errorCode: string;
     retryAt: string;
+    leaseId?: string;
     now?: string;
   }): WorkerQueueItem {
     const now = options.now ?? new Date().toISOString();
     this.transaction(() => {
-      const item = this.assertWorkerLease(options.proposalId, options.workerId);
+      const item = this.assertWorkerLease(options.proposalId, options.workerId, options.leaseId);
       const deadLetter = item.attempts >= item.max_attempts;
       this.db.prepare(`
         UPDATE worker_queue
-        SET status = ?, next_attempt_at = ?, lease_owner = NULL,
-            lease_expires_at = NULL, last_error_code = ?, updated_at = ?
+        SET status = ?, next_attempt_at = ?, lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, last_error_code = ?, terminal_outcome = NULL,
+            updated_at = ?
         WHERE proposal_id = ?
       `).run(deadLetter ? "dead_letter" : "retry_wait", options.retryAt, options.errorCode, now, options.proposalId);
       this.appendEvent(options.proposalId, deadLetter ? "writeback_dead_lettered" : "writeback_retry_scheduled", options.workerId, {
         attempt: item.attempts,
         max_attempts: item.max_attempts,
         error_code: options.errorCode,
+        lease_id: options.leaseId ?? null,
         ...(deadLetter ? {} : { retry_at: options.retryAt }),
       });
     });
@@ -3244,21 +4372,121 @@ export class ProposalStore {
     proposalId: string;
     workerId: string;
     errorCode: string;
+    leaseId?: string;
     now?: string;
   }): WorkerQueueItem {
     const now = options.now ?? new Date().toISOString();
     this.transaction(() => {
-      const item = this.assertWorkerLease(options.proposalId, options.workerId);
+      const item = this.assertWorkerLease(options.proposalId, options.workerId, options.leaseId);
       this.db.prepare(`
         UPDATE worker_queue
-        SET status = 'dead_letter', lease_owner = NULL, lease_expires_at = NULL,
-            last_error_code = ?, updated_at = ?
+        SET status = 'dead_letter', lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, last_error_code = ?,
+            terminal_outcome = 'dead_letter', updated_at = ?
         WHERE proposal_id = ?
       `).run(options.errorCode, now, options.proposalId);
       this.appendEvent(options.proposalId, "writeback_dead_lettered", options.workerId, {
         attempt: item.attempts,
         max_attempts: item.max_attempts,
         error_code: options.errorCode,
+        lease_id: options.leaseId ?? null,
+      });
+    });
+    return this.requireWorkerQueueItem(options.proposalId);
+  }
+
+  blockWorkerItem(options: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    errorCode: string;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    this.transaction(() => {
+      this.assertWorkerLease(options.proposalId, options.workerId, options.leaseId);
+      this.db.prepare(`
+        UPDATE worker_queue
+        SET status = 'blocked', lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, last_error_code = ?,
+            terminal_outcome = 'blocked', updated_at = ?
+        WHERE proposal_id = ?
+      `).run(options.errorCode, now, options.proposalId);
+      this.appendEvent(options.proposalId, "writeback_worker_blocked", options.workerId, {
+        error_code: options.errorCode,
+        lease_id: options.leaseId,
+      });
+    });
+    return this.requireWorkerQueueItem(options.proposalId);
+  }
+
+  requireWorkerReconciliation(options: {
+    proposalId: string;
+    workerId: string;
+    leaseId: string;
+    errorCode: string;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    this.transaction(() => {
+      this.assertWorkerLease(options.proposalId, options.workerId, options.leaseId);
+      this.db.prepare(`
+        UPDATE worker_queue
+        SET status = 'reconciliation_required', lease_owner = NULL,
+            lease_id = NULL, lease_expires_at = NULL, last_error_code = ?,
+            terminal_outcome = 'reconciliation_required', updated_at = ?
+        WHERE proposal_id = ?
+      `).run(options.errorCode, now, options.proposalId);
+      this.appendEvent(options.proposalId, "writeback_reconciliation_required", options.workerId, {
+        safe_error_code: options.errorCode,
+        lease_id: options.leaseId,
+      });
+    });
+    return this.requireWorkerQueueItem(options.proposalId);
+  }
+
+  cancelWorkerItem(options: {
+    proposalId: string;
+    actor: string;
+    identity?: OperatorIdentityProof;
+    require_verified_identity?: boolean;
+    now?: string;
+  }): WorkerQueueItem {
+    const now = options.now ?? new Date().toISOString();
+    const proposal = this.requireProposal(options.proposalId);
+    assertOperatorDecision(
+      proposal,
+      "worker_cancel",
+      options.actor,
+      options.identity,
+      options.require_verified_identity === true,
+    );
+    this.transaction(() => {
+      const item = this.requireWorkerQueueItem(options.proposalId);
+      if (item.status !== "queued" && item.status !== "retry_wait") {
+        throw new ProposalStoreError(
+          "WORKER_ITEM_NOT_CANCELLABLE",
+          `worker queue item ${options.proposalId} is ${item.status}, not safely cancellable before lease`,
+        );
+      }
+      this.db.prepare(`
+        UPDATE worker_queue
+        SET status = 'cancelled', lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, terminal_outcome = 'cancelled',
+            updated_at = ?
+        WHERE proposal_id = ?
+      `).run(now, options.proposalId);
+      if (proposal.state === "approved" || proposal.state === "pending_worker") {
+        this.db.prepare(`
+          UPDATE proposals
+          SET state = 'canceled', updated_at = ?
+          WHERE proposal_id = ?
+        `).run(now, options.proposalId);
+      }
+      this.appendEvent(options.proposalId, "writeback_canceled", options.actor, {
+        execution_mode: item.execution_mode,
+        contract_digest: item.contract_digest ?? null,
+        identity: options.identity ? publicIdentitySummary(options.identity) : null,
       });
     });
     return this.requireWorkerQueueItem(options.proposalId);
@@ -3299,7 +4527,8 @@ export class ProposalStore {
       this.db.prepare(`
         UPDATE worker_queue
         SET status = 'queued', attempts = 0, max_attempts = ?, next_attempt_at = ?,
-            lease_owner = NULL, lease_expires_at = NULL, last_error_code = NULL, updated_at = ?
+            lease_owner = NULL, lease_id = NULL, lease_expires_at = NULL,
+            last_error_code = NULL, terminal_outcome = NULL, updated_at = ?
         WHERE proposal_id = ?
       `).run(retryBudget, now, now, options.proposalId);
       if (proposal.state === "failed") {
@@ -3330,7 +4559,8 @@ export class ProposalStore {
       }
       this.db.prepare(`
         UPDATE worker_queue
-        SET status = 'discarded', lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+        SET status = 'discarded', lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, terminal_outcome = 'discarded', updated_at = ?
         WHERE proposal_id = ?
       `).run(now, options.proposalId);
       this.appendEvent(options.proposalId, "writeback_dead_letter_discarded", options.identity.subject, {
@@ -3351,9 +4581,13 @@ export class ProposalStore {
     return item;
   }
 
-  private assertWorkerLease(proposalId: string, workerId: string): WorkerQueueItem {
+  private assertWorkerLease(proposalId: string, workerId: string, leaseId?: string): WorkerQueueItem {
     const item = this.requireWorkerQueueItem(proposalId);
-    if (item.status !== "leased" || item.lease_owner !== workerId) {
+    if (
+      item.status !== "leased"
+      || item.lease_owner !== workerId
+      || (leaseId !== undefined && item.lease_id !== leaseId)
+    ) {
       throw new ProposalStoreError("WORKER_LEASE_MISMATCH", `worker ${workerId} does not hold the lease for ${proposalId}`);
     }
     return item;
@@ -3639,6 +4873,777 @@ export class ProposalStore {
     return recommendation;
   }
 
+  recordAttentionEvent(input: RecordAttentionEventInput): AttentionEvent {
+    let event: AttentionEvent | undefined;
+    const record = () => {
+      event = this.recordAttentionEventInternal(input);
+    };
+    if (this.db.isTransaction) record();
+    else this.transaction(record);
+    if (!event) throw new ProposalStoreError("ATTENTION_EVENT_CREATE_FAILED", "attention event was not persisted");
+    return event;
+  }
+
+  listAttentionEvents(filters: {
+    event_type?: AttentionEventType;
+    severity?: AttentionSeverity;
+    proposal_id?: string;
+    capability?: string;
+    tenant?: string;
+    principal?: string;
+    from?: string;
+    limit?: number;
+  } = {}): AttentionEvent[] {
+    const clauses: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filters.event_type) {
+      clauses.push("event_type = ?");
+      params.push(filters.event_type);
+    }
+    if (filters.severity) {
+      clauses.push("severity = ?");
+      params.push(filters.severity);
+    }
+    if (filters.proposal_id) {
+      clauses.push("proposal_id = ?");
+      params.push(filters.proposal_id);
+    }
+    if (filters.capability) {
+      clauses.push("capability = ?");
+      params.push(filters.capability);
+    }
+    if (filters.tenant) {
+      clauses.push("EXISTS (SELECT 1 FROM proposals p WHERE p.proposal_id = attention_events.proposal_id AND p.tenant_id = ?)");
+      params.push(filters.tenant);
+    }
+    if (filters.principal) {
+      clauses.push("EXISTS (SELECT 1 FROM proposals p WHERE p.proposal_id = attention_events.proposal_id AND p.principal = ?)");
+      params.push(filters.principal);
+    }
+    if (filters.from) {
+      clauses.push("occurred_at >= ?");
+      params.push(filters.from);
+    }
+    const limit = Math.max(1, Math.min(filters.limit ?? 200, 1_000));
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    return this.db.prepare(`
+      SELECT *
+      FROM attention_events
+      ${where}
+      ORDER BY occurred_at DESC, event_id DESC
+      LIMIT ?
+    `).all(...params, limit)
+      .map(rowToAttentionEvent)
+      .filter((event): event is AttentionEvent => event !== undefined);
+  }
+
+  getAttentionEvent(eventId: string): AttentionEvent | undefined {
+    return rowToAttentionEvent(
+      this.db.prepare("SELECT * FROM attention_events WHERE event_id = ?").get(eventId),
+    );
+  }
+
+  listAttentionItems(filters: {
+    status?: AttentionItemStatus;
+    severity?: AttentionSeverity;
+    capability?: string;
+    tenant?: string;
+    principal?: string;
+    limit?: number;
+  } = {}): AttentionItem[] {
+    const clauses: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filters.status) {
+      clauses.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters.severity) {
+      clauses.push("severity = ?");
+      params.push(filters.severity);
+    }
+    if (filters.capability) {
+      clauses.push("capability = ?");
+      params.push(filters.capability);
+    }
+    if (filters.tenant) {
+      clauses.push(`EXISTS (
+        SELECT 1
+        FROM attention_events ae
+        JOIN proposals p ON p.proposal_id = ae.proposal_id
+        WHERE ae.attention_key = attention_items.attention_key
+          AND p.tenant_id = ?
+      )`);
+      params.push(filters.tenant);
+    }
+    if (filters.principal) {
+      clauses.push(`EXISTS (
+        SELECT 1
+        FROM attention_events ae
+        JOIN proposals p ON p.proposal_id = ae.proposal_id
+        WHERE ae.attention_key = attention_items.attention_key
+          AND p.principal = ?
+      )`);
+      params.push(filters.principal);
+    }
+    const limit = Math.max(1, Math.min(filters.limit ?? 200, 1_000));
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    return this.db.prepare(`
+      SELECT *
+      FROM attention_items
+      ${where}
+      ORDER BY
+        CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+        last_seen_at DESC,
+        attention_id DESC
+      LIMIT ?
+    `).all(...params, limit)
+      .map(rowToAttentionItem)
+      .filter((item): item is AttentionItem => item !== undefined);
+  }
+
+  getAttentionItem(attentionId: string): AttentionItem | undefined {
+    return rowToAttentionItem(this.db.prepare("SELECT * FROM attention_items WHERE attention_id = ?").get(attentionId));
+  }
+
+  acknowledgeAttention(input: {
+    attention_id: string;
+    actor: string;
+    identity?: OperatorIdentityProof;
+    require_verified_identity?: boolean;
+    now?: string;
+  }): AttentionItem {
+    const actor = boundedSafeLabel(input.actor, "attention acknowledgement actor", 256);
+    const now = input.now ?? new Date().toISOString();
+    this.transaction(() => {
+      const item = this.requireAttentionItem(input.attention_id);
+      if (item.status !== "open") {
+        throw new ProposalStoreError("ATTENTION_ITEM_NOT_ACKNOWLEDGEABLE", `attention item ${item.attention_id} is ${item.status}`);
+      }
+      assertAttentionOperatorDecision(
+        item,
+        actor,
+        input.identity,
+        input.require_verified_identity === true,
+      );
+      this.db.prepare(`
+        UPDATE attention_items
+        SET status = 'acknowledged', acknowledged_by = ?, acknowledged_at = ?,
+            acknowledgement_identity_json = ?,
+            acknowledgement_decision_hash = ?,
+            acknowledgement_signature = ?,
+            acknowledgement_integrity_hash = ?,
+            last_seen_at = MAX(last_seen_at, ?)
+        WHERE attention_id = ?
+      `).run(
+        actor,
+        now,
+        input.identity ? JSON.stringify(input.identity) : null,
+        input.identity?.decision_hash ?? null,
+        input.identity?.signature ?? null,
+        input.identity?.integrity_hash ?? null,
+        now,
+        item.attention_id,
+      );
+    });
+    return this.requireAttentionItem(input.attention_id);
+  }
+
+  resolveAttention(input: {
+    attention_id: string;
+    now?: string;
+  }): AttentionItem {
+    const now = input.now ?? new Date().toISOString();
+    this.transaction(() => {
+      const item = this.requireAttentionItem(input.attention_id);
+      if (item.status === "expired") {
+        throw new ProposalStoreError("ATTENTION_ITEM_NOT_RESOLVABLE", `attention item ${item.attention_id} is expired`);
+      }
+      this.db.prepare(`
+        UPDATE attention_items
+        SET status = 'resolved', resolved_at = ?, last_seen_at = MAX(last_seen_at, ?)
+        WHERE attention_id = ?
+      `).run(now, now, item.attention_id);
+    });
+    return this.requireAttentionItem(input.attention_id);
+  }
+
+  enqueueNotificationDelivery(input: {
+    sink_id: string;
+    event_id: string;
+    attention_id?: string;
+    max_attempts?: number;
+    status?: "pending" | "batched" | "suppressed";
+    next_attempt_at?: string;
+    now?: string;
+  }): NotificationDelivery {
+    const sinkId = boundedSinkId(input.sink_id);
+    const event = this.requireAttentionEvent(input.event_id);
+    const attention = input.attention_id ? this.requireAttentionItem(input.attention_id) : undefined;
+    if (attention && event.attention_key !== attention.attention_key) {
+      throw new ProposalStoreError(
+        "NOTIFICATION_ATTENTION_MISMATCH",
+        `attention event ${event.event_id} does not belong to attention item ${attention.attention_id}`,
+      );
+    }
+    const maxAttempts = Math.max(1, Math.min(input.max_attempts ?? 5, 100));
+    const status = input.status ?? "pending";
+    const now = input.now ?? new Date().toISOString();
+    if (!Number.isFinite(Date.parse(now))) {
+      throw new ProposalStoreError("NOTIFICATION_TIME_INVALID", "notification delivery time must be an ISO timestamp");
+    }
+    const nextAttemptAt = input.next_attempt_at ?? now;
+    if (!Number.isFinite(Date.parse(nextAttemptAt))) {
+      throw new ProposalStoreError(
+        "NOTIFICATION_TIME_INVALID",
+        "notification delivery next-attempt time must be an ISO timestamp",
+      );
+    }
+    const deliveryId = notificationDeliveryId(sinkId, event.event_id);
+    this.transaction(() => {
+      const existing = this.getNotificationDelivery(deliveryId);
+      if (existing) {
+        if (
+          existing.sink_id !== sinkId
+          || existing.event_id !== event.event_id
+          || existing.attention_id !== attention?.attention_id
+        ) {
+          throw new ProposalStoreError(
+            "NOTIFICATION_DELIVERY_IDEMPOTENCY_MISMATCH",
+            `notification delivery ${deliveryId} already exists with different immutable routing`,
+          );
+        }
+        return;
+      }
+      this.db.prepare(`
+        INSERT INTO notification_deliveries (
+          delivery_id, sink_id, event_id, attention_id, status, attempts,
+          max_attempts, next_attempt_at, lease_owner, lease_id,
+          lease_expires_at, last_error_code, external_reference, delivered_at,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)
+      `).run(
+        deliveryId,
+        sinkId,
+        event.event_id,
+        attention?.attention_id ?? null,
+        status,
+        maxAttempts,
+        nextAttemptAt,
+        now,
+        now,
+      );
+    });
+    return this.requireNotificationDelivery(deliveryId);
+  }
+
+  includeNotificationDeliveriesInDigest(input: {
+    sink_id: string;
+    delivery_ids: string[];
+    digest_event_id: string;
+    now?: string;
+  }): number {
+    const sinkId = boundedSinkId(input.sink_id);
+    const deliveryIds = [...new Set(input.delivery_ids)];
+    if (deliveryIds.length === 0 || deliveryIds.length > 1_000) {
+      throw new ProposalStoreError(
+        "NOTIFICATION_DIGEST_MEMBERS_INVALID",
+        "a notification digest must contain from 1 through 1000 delivery ids",
+      );
+    }
+    const digestEvent = this.requireAttentionEvent(input.digest_event_id);
+    if (digestEvent.event_type !== "notification.digest") {
+      throw new ProposalStoreError(
+        "NOTIFICATION_DIGEST_EVENT_INVALID",
+        "notification digest membership requires a notification.digest event",
+      );
+    }
+    const now = input.now ?? new Date().toISOString();
+    if (!Number.isFinite(Date.parse(now))) {
+      throw new ProposalStoreError("NOTIFICATION_TIME_INVALID", "notification digest time must be an ISO timestamp");
+    }
+    let included = 0;
+    this.transaction(() => {
+      for (const deliveryId of deliveryIds) {
+        const item = this.requireNotificationDelivery(deliveryId);
+        const digestReference = `digest:${digestEvent.event_id}`;
+        if (
+          item.status === "suppressed"
+          && item.sink_id === sinkId
+          && item.external_reference === digestReference
+        ) {
+          continue;
+        }
+        if (item.sink_id !== sinkId || item.status !== "batched") {
+          throw new ProposalStoreError(
+            "NOTIFICATION_DIGEST_MEMBER_STATE_INVALID",
+            `notification delivery ${deliveryId} is not a batched member of sink ${sinkId}`,
+          );
+        }
+        this.db.prepare(`
+          UPDATE notification_deliveries
+          SET status = 'suppressed', external_reference = ?, updated_at = ?
+          WHERE delivery_id = ?
+        `).run(digestReference, now, deliveryId);
+        included += 1;
+      }
+    });
+    return included;
+  }
+
+  claimNotificationDeliveries(input: {
+    owner: string;
+    sink_id?: string;
+    limit?: number;
+    lease_seconds?: number;
+    now?: string;
+  }): NotificationDelivery[] {
+    const owner = boundedSafeLabel(input.owner, "notification dispatcher identity", 128);
+    const sinkId = input.sink_id ? boundedSinkId(input.sink_id) : undefined;
+    const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
+    const leaseSeconds = Math.max(15, Math.min(input.lease_seconds ?? 60, 3600));
+    const now = input.now ?? new Date().toISOString();
+    if (!Number.isFinite(Date.parse(now))) {
+      throw new ProposalStoreError("NOTIFICATION_TIME_INVALID", "notification claim time must be an ISO timestamp");
+    }
+    const leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
+    const claimed: NotificationDelivery[] = [];
+    this.transaction(() => {
+      const rows = this.db.prepare(`
+        SELECT *
+        FROM notification_deliveries
+        WHERE (
+          (status IN ('pending', 'retry_wait') AND next_attempt_at <= ?)
+          OR (status = 'leased' AND lease_expires_at <= ?)
+        )
+          AND (? IS NULL OR sink_id = ?)
+        ORDER BY next_attempt_at ASC, created_at ASC, delivery_id ASC
+        LIMIT ?
+      `).all(now, now, sinkId ?? null, sinkId ?? null, limit);
+      for (const row of rows) {
+        const item = rowToNotificationDelivery(row);
+        if (!item) continue;
+        const leaseId = notificationLeaseId(item.delivery_id, owner, item.attempts + 1, now);
+        this.db.prepare(`
+          UPDATE notification_deliveries
+          SET status = 'leased', attempts = attempts + 1, lease_owner = ?,
+              lease_id = ?, lease_expires_at = ?, last_error_code = NULL,
+              updated_at = ?
+          WHERE delivery_id = ?
+        `).run(owner, leaseId, leaseExpiresAt, now, item.delivery_id);
+        claimed.push(this.requireNotificationDelivery(item.delivery_id));
+      }
+    });
+    return claimed;
+  }
+
+  completeNotificationDelivery(input: {
+    delivery_id: string;
+    owner: string;
+    lease_id: string;
+    external_reference?: string;
+    now?: string;
+  }): NotificationDelivery {
+    const now = input.now ?? new Date().toISOString();
+    const externalReference = input.external_reference
+      ? boundedSafeLabel(input.external_reference, "notification external reference", 256)
+      : undefined;
+    this.transaction(() => {
+      this.assertNotificationLease(input.delivery_id, input.owner, input.lease_id, now);
+      this.db.prepare(`
+        UPDATE notification_deliveries
+        SET status = 'delivered', lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, last_error_code = NULL,
+            external_reference = COALESCE(?, external_reference),
+            delivered_at = ?, updated_at = ?
+        WHERE delivery_id = ?
+      `).run(externalReference ?? null, now, now, input.delivery_id);
+    });
+    return this.requireNotificationDelivery(input.delivery_id);
+  }
+
+  failNotificationDelivery(input: {
+    delivery_id: string;
+    owner: string;
+    lease_id: string;
+    error_code: string;
+    retryable: boolean;
+    retry_at?: string;
+    now?: string;
+  }): NotificationDelivery {
+    const now = input.now ?? new Date().toISOString();
+    const errorCode = boundedSafeErrorCode(input.error_code);
+    this.transaction(() => {
+      const item = this.assertNotificationLease(input.delivery_id, input.owner, input.lease_id, now);
+      const retryable = input.retryable && item.attempts < item.max_attempts;
+      const retryAt = retryable
+        ? input.retry_at ?? new Date(Date.parse(now) + 1_000).toISOString()
+        : now;
+      if (!Number.isFinite(Date.parse(retryAt))) {
+        throw new ProposalStoreError("NOTIFICATION_RETRY_TIME_INVALID", "notification retry time must be an ISO timestamp");
+      }
+      this.db.prepare(`
+        UPDATE notification_deliveries
+        SET status = ?, next_attempt_at = ?, lease_owner = NULL, lease_id = NULL,
+            lease_expires_at = NULL, last_error_code = ?, updated_at = ?
+        WHERE delivery_id = ?
+      `).run(retryable ? "retry_wait" : "dead_letter", retryAt, errorCode, now, input.delivery_id);
+    });
+    return this.requireNotificationDelivery(input.delivery_id);
+  }
+
+  listNotificationDeliveries(filters: {
+    status?: NotificationDeliveryStatus;
+    sink_id?: string;
+    event_id?: string;
+    attention_id?: string;
+    limit?: number;
+  } = {}): NotificationDelivery[] {
+    const clauses: string[] = [];
+    const params: SQLInputValue[] = [];
+    for (const [column, value] of [
+      ["status", filters.status],
+      ["sink_id", filters.sink_id],
+      ["event_id", filters.event_id],
+      ["attention_id", filters.attention_id],
+    ] as const) {
+      if (!value) continue;
+      clauses.push(`${column} = ?`);
+      params.push(value);
+    }
+    const limit = Math.max(1, Math.min(filters.limit ?? 200, 1_000));
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    return this.db.prepare(`
+      SELECT *
+      FROM notification_deliveries
+      ${where}
+      ORDER BY created_at DESC, delivery_id DESC
+      LIMIT ?
+    `).all(...params, limit)
+      .map(rowToNotificationDelivery)
+      .filter((delivery): delivery is NotificationDelivery => delivery !== undefined);
+  }
+
+  getNotificationDelivery(deliveryId: string): NotificationDelivery | undefined {
+    return rowToNotificationDelivery(
+      this.db.prepare("SELECT * FROM notification_deliveries WHERE delivery_id = ?").get(deliveryId),
+    );
+  }
+
+  requeueNotificationDelivery(input: {
+    delivery_id: string;
+    identity: OperatorIdentityProof;
+    reason: string;
+    now?: string;
+  }): NotificationDelivery {
+    const now = input.now ?? new Date().toISOString();
+    const reason = boundedSafeLabel(input.reason, "notification replay reason", 256);
+    this.transaction(() => {
+      const item = this.requireNotificationDelivery(input.delivery_id);
+      if (!["dead_letter", "suppressed", "batched"].includes(item.status)) {
+        throw new ProposalStoreError(
+          "NOTIFICATION_DELIVERY_NOT_REQUEUEABLE",
+          `notification delivery ${item.delivery_id} is ${item.status}`,
+        );
+      }
+      assertNotificationReplayOperatorDecision(item, input.identity, reason);
+      const event = this.requireAttentionEvent(item.event_id);
+      this.db.prepare(`
+        UPDATE notification_deliveries
+        SET status = 'pending', attempts = 0, next_attempt_at = ?,
+            lease_owner = NULL, lease_id = NULL, lease_expires_at = NULL,
+            last_error_code = NULL, delivered_at = NULL, updated_at = ?
+        WHERE delivery_id = ?
+      `).run(now, now, item.delivery_id);
+      this.recordAttentionEventInternal({
+        event_type: "notification.replayed",
+        severity: "informational",
+        environment: event.environment,
+        ...(event.proposal_id ? { proposal_id: event.proposal_id } : {}),
+        ...(event.job_id ? { job_id: event.job_id } : {}),
+        ...(event.operation_id ? { operation_id: event.operation_id } : {}),
+        ...(event.correlation_id ? { correlation_id: event.correlation_id } : {}),
+        ...(event.capability ? { capability: event.capability } : {}),
+        ...(event.contract_digest ? { contract_digest: event.contract_digest } : {}),
+        attention_required: false,
+        immediate_default: false,
+        summary: `Notification delivery ${item.delivery_id} requeued by a verified operator`,
+        ...(event.workbench_path ? { workbench_path: event.workbench_path } : {}),
+        details: {
+          delivery_id: item.delivery_id,
+          sink_id: item.sink_id,
+          replayed_event_id: item.event_id,
+          operator_subject: input.identity.subject,
+          identity_provider: input.identity.provider,
+          operator_decision_hash: input.identity.decision_hash,
+          reason,
+          approval_replayed: false,
+          mutation_replayed: false,
+          source_database_changed: false,
+        },
+        source_event_key: `notification-replay:${item.delivery_id}:${input.identity.decision_hash}`,
+        now,
+      });
+    });
+    return this.requireNotificationDelivery(input.delivery_id);
+  }
+
+  private recordAttentionEventInternal(input: RecordAttentionEventInput): AttentionEvent {
+    assertAttentionEventInput(input);
+    const occurredAt = input.now ?? new Date().toISOString();
+    const environment = boundedSafeLabel(input.environment, "attention environment", 64);
+    const capability = input.capability ? boundedSafeLabel(input.capability, "attention capability", 256) : undefined;
+    const contractDigest = input.contract_digest;
+    const attentionRequired = input.attention_required ?? defaultAttentionEventTypes.has(input.event_type);
+    const immediateDefault = input.immediate_default ?? defaultImmediateAttentionEventTypes.has(input.event_type);
+    const details = Object.fromEntries(
+      Object.entries(input.details ?? {})
+        .sort(([left], [right]) => left.localeCompare(right)),
+    );
+    const sourceEventKey = input.source_event_key
+      ? boundedSafeLabel(input.source_event_key, "attention source event key", 512)
+      : canonicalJsonDigest({
+        event_type: input.event_type,
+        occurred_at: occurredAt,
+        proposal_id: input.proposal_id ?? null,
+        job_id: input.job_id ?? null,
+        operation_id: input.operation_id ?? null,
+        capability: capability ?? null,
+        details,
+      });
+    const eventId = attentionEventId(sourceEventKey, input.event_type);
+    const attentionKey = attentionRequired
+      ? boundedSafeLabel(
+        input.attention_key ?? defaultAttentionKey({
+          environment,
+          event_type: input.event_type,
+          capability,
+          contract_digest: contractDigest,
+          details,
+        }),
+        "attention coalescing key",
+        512,
+      )
+      : undefined;
+    const unsigned = {
+      schema_version: "synapsor.attention-event.v1" as const,
+      event_id: eventId,
+      event_type: input.event_type,
+      severity: input.severity,
+      occurred_at: occurredAt,
+      environment,
+      ...(input.proposal_id ? { proposal_id: boundedSafeLabel(input.proposal_id, "attention proposal id", 256) } : {}),
+      ...(input.job_id ? { job_id: boundedSafeLabel(input.job_id, "attention job id", 256) } : {}),
+      ...(input.operation_id ? { operation_id: boundedSafeLabel(input.operation_id, "attention operation id", 256) } : {}),
+      ...(input.correlation_id ? { correlation_id: boundedSafeLabel(input.correlation_id, "attention correlation id", 256) } : {}),
+      ...(capability ? { capability } : {}),
+      ...(contractDigest ? { contract_digest: contractDigest } : {}),
+      ...(attentionKey ? { attention_key: attentionKey } : {}),
+      attention_required: attentionRequired,
+      immediate_default: immediateDefault,
+      summary: boundedSafeLabel(input.summary ?? attentionEventTitle(input.event_type), "attention summary", 512),
+      ...(input.approval_source ? { approval_source: input.approval_source } : {}),
+      ...(input.worker_state ? { worker_state: boundedSafeLabel(input.worker_state, "attention worker state", 128) } : {}),
+      ...(input.failure_class ? { failure_class: boundedSafeLabel(input.failure_class, "attention failure class", 128) } : {}),
+      ...(input.expires_at ? { expires_at: input.expires_at } : {}),
+      ...(input.workbench_path ? { workbench_path: boundedWorkbenchPath(input.workbench_path) } : {}),
+      details,
+    };
+    assertNoSecretMaterial(unsigned, `attention_event.${eventId}`);
+    const event: AttentionEvent = {
+      ...unsigned,
+      payload_hash: canonicalJsonDigest(unsigned),
+    };
+    const existing = rowToAttentionEvent(this.db.prepare("SELECT * FROM attention_events WHERE event_id = ?").get(eventId));
+    if (existing) {
+      if (existing.payload_hash !== event.payload_hash) {
+        throw new ProposalStoreError(
+          "ATTENTION_EVENT_IDEMPOTENCY_MISMATCH",
+          `attention event ${eventId} already exists with different immutable content`,
+        );
+      }
+      return existing;
+    }
+    this.db.prepare(`
+      INSERT INTO attention_events (
+        event_id, schema_version, event_type, severity, occurred_at, environment,
+        proposal_id, job_id, operation_id, correlation_id, capability,
+        contract_digest, attention_key, attention_required, immediate_default,
+        summary, approval_source, worker_state, failure_class, expires_at,
+        workbench_path, details_json, payload_hash, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.event_id,
+      event.schema_version,
+      event.event_type,
+      event.severity,
+      event.occurred_at,
+      event.environment,
+      event.proposal_id ?? null,
+      event.job_id ?? null,
+      event.operation_id ?? null,
+      event.correlation_id ?? null,
+      event.capability ?? null,
+      event.contract_digest ?? null,
+      event.attention_key ?? null,
+      event.attention_required ? 1 : 0,
+      event.immediate_default ? 1 : 0,
+      event.summary,
+      event.approval_source ?? null,
+      event.worker_state ?? null,
+      event.failure_class ?? null,
+      event.expires_at ?? null,
+      event.workbench_path ?? null,
+      JSON.stringify(event.details),
+      event.payload_hash,
+      event.occurred_at,
+    );
+    if (event.attention_required && event.attention_key) this.projectAttentionItem(event);
+    if (event.proposal_id && event.event_type === "proposal.expired") {
+      this.closeProposalExpiryAttention(event, "expired");
+    } else if (
+      event.proposal_id
+      && (
+        event.event_type === "proposal.applied"
+        || event.event_type === "proposal.cancelled"
+        || event.event_type === "proposal.refused"
+      )
+    ) {
+      this.closeProposalExpiryAttention(event, "resolved");
+    }
+    return event;
+  }
+
+  private closeProposalExpiryAttention(
+    event: AttentionEvent,
+    status: "resolved" | "expired",
+  ): void {
+    if (!event.proposal_id) return;
+    this.db.prepare(`
+      UPDATE attention_items
+      SET status = ?,
+          event_type = ?,
+          title = ?,
+          latest_event_id = ?,
+          resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE NULL END,
+          last_seen_at = MAX(last_seen_at, ?)
+      WHERE status IN ('open', 'acknowledged')
+        AND attention_key IN (
+          SELECT DISTINCT attention_key
+          FROM attention_events
+          WHERE proposal_id = ?
+            AND event_type = 'proposal.expiring'
+            AND attention_key IS NOT NULL
+        )
+    `).run(
+      status,
+      event.event_type,
+      event.summary,
+      event.event_id,
+      status,
+      event.occurred_at,
+      event.occurred_at,
+      event.proposal_id,
+    );
+  }
+
+  private projectAttentionItem(event: AttentionEvent): void {
+    const attentionKey = event.attention_key;
+    if (!attentionKey) return;
+    const existing = rowToAttentionItem(this.db.prepare("SELECT * FROM attention_items WHERE attention_key = ?").get(attentionKey));
+    if (!existing) {
+      this.db.prepare(`
+        INSERT INTO attention_items (
+          attention_id, attention_key, status, severity, environment, event_type,
+          capability, contract_digest, title, occurrence_count, first_event_id,
+          latest_event_id, first_seen_at, last_seen_at, acknowledged_by,
+          acknowledged_at, resolved_at, expires_at
+        ) VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, NULL, NULL, ?)
+      `).run(
+        attentionItemId(attentionKey),
+        attentionKey,
+        event.severity,
+        event.environment,
+        event.event_type,
+        event.capability ?? null,
+        event.contract_digest ?? null,
+        event.summary,
+        event.event_id,
+        event.event_id,
+        event.occurred_at,
+        event.occurred_at,
+        event.expires_at ?? null,
+      );
+      return;
+    }
+    const severity = attentionSeverityRank(event.severity) > attentionSeverityRank(existing.severity)
+      ? event.severity
+      : existing.severity;
+    this.db.prepare(`
+      UPDATE attention_items
+      SET status = 'open', severity = ?, event_type = ?, title = ?,
+          occurrence_count = occurrence_count + 1, latest_event_id = ?,
+          last_seen_at = ?, acknowledged_by = NULL, acknowledged_at = NULL,
+          acknowledgement_identity_json = NULL,
+          acknowledgement_decision_hash = NULL,
+          acknowledgement_signature = NULL,
+          acknowledgement_integrity_hash = NULL,
+          resolved_at = NULL,
+          expires_at = COALESCE(?, expires_at)
+      WHERE attention_id = ?
+    `).run(
+      severity,
+      event.event_type,
+      event.summary,
+      event.event_id,
+      event.occurred_at,
+      event.expires_at ?? null,
+      existing.attention_id,
+    );
+  }
+
+  private requireAttentionItem(attentionId: string): AttentionItem {
+    const item = this.getAttentionItem(attentionId);
+    if (!item) throw new ProposalStoreError("ATTENTION_ITEM_NOT_FOUND", `attention item not found: ${attentionId}`);
+    return item;
+  }
+
+  private requireAttentionEvent(eventId: string): AttentionEvent {
+    const event = rowToAttentionEvent(this.db.prepare("SELECT * FROM attention_events WHERE event_id = ?").get(eventId));
+    if (!event) throw new ProposalStoreError("ATTENTION_EVENT_NOT_FOUND", `attention event not found: ${eventId}`);
+    return event;
+  }
+
+  private requireNotificationDelivery(deliveryId: string): NotificationDelivery {
+    const delivery = this.getNotificationDelivery(deliveryId);
+    if (!delivery) {
+      throw new ProposalStoreError("NOTIFICATION_DELIVERY_NOT_FOUND", `notification delivery not found: ${deliveryId}`);
+    }
+    return delivery;
+  }
+
+  private assertNotificationLease(
+    deliveryId: string,
+    owner: string,
+    leaseId: string,
+    now: string,
+  ): NotificationDelivery {
+    const item = this.requireNotificationDelivery(deliveryId);
+    if (
+      item.status !== "leased"
+      || item.lease_owner !== owner
+      || item.lease_id !== leaseId
+    ) {
+      throw new ProposalStoreError(
+        "NOTIFICATION_LEASE_MISMATCH",
+        `dispatcher ${owner} does not hold lease ${leaseId} for ${deliveryId}`,
+      );
+    }
+    if (!item.lease_expires_at || Date.parse(item.lease_expires_at) <= Date.parse(now)) {
+      throw new ProposalStoreError("NOTIFICATION_LEASE_EXPIRED", `notification lease ${leaseId} has expired`);
+    }
+    return item;
+  }
+
   enqueueCloudOutbox(input: {
     event_id: string;
     proposal_id?: string;
@@ -3833,6 +5838,112 @@ export class ProposalStore {
     return item;
   }
 
+  workerControlState(): WorkerControlState {
+    const raw = this.getRunnerState("supervised_worker_control");
+    if (!raw) return defaultWorkerControlState();
+    return parseWorkerControlState(raw);
+  }
+
+  updateWorkerControl(input: WorkerControlTarget & {
+    actor: string;
+    identity?: OperatorIdentityProof;
+    require_verified_identity?: boolean;
+    environment?: string;
+    now?: string;
+  }): WorkerControlState {
+    const now = input.now ?? new Date().toISOString();
+    const current = this.workerControlState();
+    assertWorkerControlTarget(input);
+    assertWorkerControlOperatorDecision(
+      current,
+      input,
+      input.actor,
+      input.identity,
+      input.require_verified_identity === true,
+    );
+    let mode = current.mode;
+    let controls = [...current.capability_controls];
+    if (input.action === "pause") mode = "paused";
+    else if (input.action === "resume") mode = "active";
+    else if (input.action === "drain") mode = "draining";
+    else {
+      const capability = input.capability!;
+      const contractDigest = input.contract_digest!;
+      const keyMatches = (entry: WorkerCapabilityControl) =>
+        entry.capability === capability && entry.contract_digest === contractDigest;
+      const existing = controls.find(keyMatches);
+      if (existing?.status === "revoked" && input.action === "capability_enable") {
+        throw new ProposalStoreError(
+          "WORKER_DIGEST_REVOKED",
+          `revoked supervised-worker digest ${contractDigest} cannot be re-enabled`,
+        );
+      }
+      const status: WorkerCapabilityControlStatus = input.action === "capability_enable"
+        ? "enabled"
+        : input.action === "capability_disable"
+          ? "disabled"
+          : "revoked";
+      controls = [
+        ...controls.filter((entry) => !keyMatches(entry)),
+        {
+          capability,
+          contract_digest: contractDigest,
+          status,
+          updated_at: now,
+          actor: input.actor,
+        },
+      ].sort((left, right) => left.capability.localeCompare(right.capability)
+        || left.contract_digest.localeCompare(right.contract_digest));
+    }
+    const unsigned = {
+      schema_version: "synapsor.worker-control.v1" as const,
+      mode,
+      revision: current.revision + 1,
+      capability_controls: controls,
+      ...(input.identity ? { last_decision: input.identity } : {}),
+      updated_at: now,
+    };
+    const updated: WorkerControlState = {
+      ...unsigned,
+      integrity_hash: canonicalJsonDigest(unsigned),
+    };
+    assertNoSecretMaterial(updated, "runner_state.supervised_worker_control");
+    this.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO runner_state (key, value_json, updated_at)
+        VALUES ('supervised_worker_control', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+      `).run(JSON.stringify(updated), now);
+      const global = input.action === "pause" || input.action === "resume" || input.action === "drain";
+      const eventType: AttentionEventType = input.action === "resume" || input.action === "capability_enable"
+        ? "capability.activated"
+        : global
+          ? "worker.paused"
+          : "capability.revoked";
+      this.recordAttentionEventInternal({
+        event_type: eventType,
+        severity: "informational",
+        environment: input.environment
+          ? boundedSafeLabel(input.environment, "worker control environment", 64)
+          : "unknown",
+        ...(input.capability ? { capability: input.capability } : {}),
+        ...(input.contract_digest ? { contract_digest: input.contract_digest } : {}),
+        attention_required: false,
+        immediate_default: false,
+        summary: workerControlSummary(input),
+        worker_state: mode,
+        details: {
+          control_action: input.action,
+          control_revision: updated.revision,
+          source_database_changed: false,
+        },
+        source_event_key: `worker-control:${updated.revision}:${updated.integrity_hash}`,
+        now,
+      });
+    });
+    return updated;
+  }
+
   setRunnerState(key: string, value: Record<string, unknown>): void {
     assertNoSecretMaterial(value, `runner_state.${key}`);
     this.db.prepare(`
@@ -3874,6 +5985,9 @@ export class ProposalStore {
       { table: "shadow_study_cases", kind: "shadow_study_case", key: "case_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id", capability: "capability" },
       { table: "shadow_outcomes", kind: "shadow_outcome", key: "outcome_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id" },
       { table: "worker_queue", kind: "worker_queue_item", key: "proposal_id", created: "created_at", proposal: "proposal_id" },
+      { table: "attention_events", kind: "attention_event", key: "event_id", created: "created_at", proposal: "proposal_id", capability: "capability" },
+      { table: "attention_items", kind: "attention_item", key: "attention_id", created: "first_seen_at", capability: "capability" },
+      { table: "notification_deliveries", kind: "notification_delivery", key: "delivery_id", created: "created_at" },
       { table: "runner_state", kind: "runner_state", key: "key", created: "updated_at" },
       { table: "policy_recommendations", kind: "policy_recommendation", key: "recommendation_id", created: "created_at", tenant: "tenant_id", capability: "capability" },
       { table: "cloud_outbox", kind: "cloud_outbox_event", key: "event_id", created: "created_at", proposal: "proposal_id" },
@@ -4561,10 +6675,59 @@ export class ProposalStore {
     actor: string,
     payload: Record<string, unknown>,
   ): void {
+    const append = () => {
+      const createdAt = new Date().toISOString();
+      const result = this.db.prepare(`
+        INSERT INTO proposal_events (proposal_id, kind, actor, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(proposalId, kind, actor, JSON.stringify(payload), createdAt);
+      const proposal = this.requireProposal(proposalId);
+      for (const event of attentionEventsForProposalEvent({
+        proposal,
+        proposal_event_id: String(result.lastInsertRowid),
+        kind,
+        actor,
+        payload,
+        environment: this.attentionEnvironment(),
+        occurred_at: createdAt,
+      })) {
+        this.recordAttentionEventInternal(event);
+      }
+      if (proposal.state !== "pending_review") {
+        this.resolveSatisfiedProposalReviewAttention(proposal, createdAt);
+      }
+    };
+    if (this.db.isTransaction) append();
+    else this.transaction(append);
+  }
+
+  private attentionEnvironment(): string {
+    const context = this.getRunnerState("attention_context");
+    const environment = context?.environment;
+    return typeof environment === "string" && /^(development|staging|production|unknown)$/.test(environment)
+      ? environment
+      : "unknown";
+  }
+
+  private resolveSatisfiedProposalReviewAttention(
+    proposal: StoredProposal,
+    now: string,
+  ): void {
+    const attentionKey = proposalReviewAttentionKey(proposal, this.attentionEnvironment());
+    const pending = this.db.prepare(`
+      SELECT COUNT(DISTINCT p.proposal_id) AS count
+      FROM attention_events ae
+      JOIN proposals p ON p.proposal_id = ae.proposal_id
+      WHERE ae.attention_key = ?
+        AND p.state = 'pending_review'
+    `).get(attentionKey);
+    if (isRecord(pending) && Number(pending.count ?? 0) > 0) return;
     this.db.prepare(`
-      INSERT INTO proposal_events (proposal_id, kind, actor, payload_json, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(proposalId, kind, actor, JSON.stringify(payload), new Date().toISOString());
+      UPDATE attention_items
+      SET status = 'resolved', resolved_at = ?, last_seen_at = MAX(last_seen_at, ?)
+      WHERE attention_key = ?
+        AND status IN ('open', 'acknowledged')
+    `).run(now, now, attentionKey);
   }
 
   private queryAudit(proposalId: string): Record<string, unknown>[] {
@@ -5426,22 +7589,1019 @@ function assertPolicyRecommendationIdentity(
   if (proof.integrity_hash !== canonicalJsonDigest(canonicalCore)) throw new ProposalStoreError("POLICY_RECOMMENDATION_IDENTITY_TAMPERED", "verified operator identity proof failed its integrity check");
 }
 
+type ProposalEventAttentionInput = {
+  proposal: StoredProposal;
+  proposal_event_id: string;
+  kind: string;
+  actor: string;
+  payload: Record<string, unknown>;
+  environment: string;
+  occurred_at: string;
+};
+
+function attentionEventsForProposalEvent(input: ProposalEventAttentionInput): RecordAttentionEventInput[] {
+  const proposal = input.proposal;
+  const contractDigest = proposal.change_set.contract?.digest as `sha256:${string}` | undefined;
+  const scopeDigest = canonicalJsonDigest({
+    tenant_id: proposal.tenant_id,
+    principal: proposal.principal ?? null,
+  });
+  const sourceKey = (eventType: AttentionEventType) =>
+    `proposal:${proposal.proposal_id}:event:${input.proposal_event_id}:${eventType}`;
+  const base = (eventType: AttentionEventType, severity: AttentionSeverity): RecordAttentionEventInput => ({
+    event_type: eventType,
+    severity,
+    environment: input.environment,
+    proposal_id: proposal.proposal_id,
+    capability: proposal.capability ?? proposal.action,
+    ...(contractDigest ? { contract_digest: contractDigest } : {}),
+    source_event_key: sourceKey(eventType),
+    now: input.occurred_at,
+  });
+  const safeCode = safeAttentionPayloadString(input.payload, "safe_error_code")
+    ?? safeAttentionPayloadString(input.payload, "error_code")
+    ?? safeAttentionPayloadString(input.payload, "reason_code");
+  const workerDetails = safeAttentionDetails(input.payload, [
+    "attempt",
+    "max_attempts",
+    "execution_mode",
+    "outcome",
+  ]);
+  const requiredRole = typeof proposal.change_set.approval.required_role === "string"
+    ? proposal.change_set.approval.required_role
+    : "reviewer";
+  const reviewAttention = (summary?: string): RecordAttentionEventInput => {
+    const attentionKey = proposalReviewAttentionKey(proposal, input.environment);
+    return {
+      ...base("proposal.review_required", "warning"),
+      attention_required: true,
+      immediate_default: true,
+      attention_key: attentionKey,
+      summary: summary ?? `${proposal.capability ?? proposal.action} proposals need ${requiredRole} review`,
+      workbench_path: `/attention/${attentionItemId(attentionKey)}`,
+      details: {
+        required_role: requiredRole,
+        ...(safeCode ? { failure_class: safeCode } : {}),
+      },
+      ...(safeCode ? { failure_class: safeCode } : {}),
+    };
+  };
+  const criticalWorkerAttention = (
+    eventType: "worker.dead_lettered" | "worker.unknown_outcome" | "worker.reconciliation_required",
+    summary?: string,
+  ): RecordAttentionEventInput => {
+    const failureClass = safeCode ?? (
+      eventType === "worker.dead_lettered"
+        ? "RETRY_BUDGET_EXHAUSTED"
+        : eventType === "worker.unknown_outcome"
+          ? "OUTCOME_UNKNOWN"
+          : "RECONCILIATION_REQUIRED"
+    );
+    const attentionKey = [
+      input.environment,
+      eventType,
+      proposal.capability ?? proposal.action,
+      contractDigest ?? "no_digest",
+      failureClass,
+      scopeDigest,
+    ].join(":");
+    return {
+      ...base(eventType, "critical"),
+      attention_required: true,
+      immediate_default: true,
+      attention_key: attentionKey,
+      summary,
+      workbench_path: `/attention/${attentionItemId(attentionKey)}`,
+      worker_state: eventType.slice("worker.".length),
+      failure_class: failureClass,
+      details: {
+        ...workerDetails,
+        failure_class: failureClass,
+      },
+    };
+  };
+
+  if (input.kind === "proposal_created") {
+    const events: RecordAttentionEventInput[] = [{
+      ...base("proposal.created", "informational"),
+      attention_required: false,
+      immediate_default: false,
+      details: { source_database_changed: false },
+    }];
+    const approvalMode = proposal.change_set.approval.mode;
+    // Policy evaluation happens immediately after persistence. Delay the human
+    // interruption until that deterministic evaluation actually falls back to
+    // review, so a normal auto-approved request stays quiet.
+    if (proposal.state === "pending_review" && approvalMode !== "policy") events.push(reviewAttention());
+    return events;
+  }
+
+  if (input.kind === "proposal_approved") {
+    const policyApproved = input.actor.startsWith("policy:");
+    return [{
+      ...base(policyApproved ? "proposal.auto_approved" : "proposal.approved", "informational"),
+      attention_required: false,
+      immediate_default: false,
+      approval_source: policyApproved ? "policy_auto" : "human",
+      details: safeAttentionDetails(input.payload, ["approvals", "required_approvals", "remaining_approvals"]),
+    }];
+  }
+
+  if (input.kind === "policy_auto_approval_deferred" || input.kind === "proposal_approval_blocked_freshness") {
+    return [reviewAttention(
+      input.kind === "proposal_approval_blocked_freshness"
+        ? `${proposal.capability ?? proposal.action} needs review because its source freshness check failed`
+        : `${proposal.capability ?? proposal.action} exceeded automatic-approval policy and needs human review`,
+    )];
+  }
+
+  if (input.kind === "proposal_rejected" || input.kind === "proposal_failed") {
+    return [{
+      ...base("proposal.refused", "warning"),
+      attention_required: false,
+      immediate_default: false,
+      ...(safeCode ? { failure_class: safeCode, details: { failure_class: safeCode } } : {}),
+    }];
+  }
+
+  if (input.kind === "proposal_canceled" || input.kind === "writeback_canceled") {
+    return [{
+      ...base("proposal.cancelled", "informational"),
+      attention_required: false,
+      immediate_default: false,
+    }];
+  }
+
+  if (input.kind === "proposal_conflict" || input.kind === "writeback_conflict" || input.kind === "writeback_intent_conflict") {
+    return [{
+      ...base("proposal.conflict", "warning"),
+      attention_required: false,
+      immediate_default: false,
+      ...(safeCode ? { failure_class: safeCode, details: { failure_class: safeCode } } : {}),
+    }];
+  }
+
+  if (input.kind === "proposal_pending_worker" || input.kind === "writeback_worker_queued") {
+    return [{
+      ...base("proposal.queued", "informational"),
+      attention_required: false,
+      immediate_default: false,
+      worker_state: "queued",
+      details: safeAttentionDetails(input.payload, ["execution_mode", "max_attempts"]),
+    }];
+  }
+
+  if (input.kind === "writeback_retry_scheduled") {
+    return [{
+      ...base("worker.retry_scheduled", "warning"),
+      attention_required: false,
+      immediate_default: false,
+      worker_state: "retry_wait",
+      ...(safeCode ? { failure_class: safeCode } : {}),
+      details: {
+        ...workerDetails,
+        ...(safeCode ? { failure_class: safeCode } : {}),
+      },
+    }];
+  }
+
+  if (input.kind === "writeback_dead_lettered") {
+    return [criticalWorkerAttention("worker.dead_lettered")];
+  }
+
+  if (input.kind === "writeback_worker_blocked") {
+    const failureClass = safeCode ?? "WORKER_POLICY_BLOCKED";
+    if (/PROPOSAL_.*EXPIRED|PROPOSAL_EXPIRED/i.test(failureClass)) {
+      return [{
+        ...base("proposal.expired", "warning"),
+        attention_required: false,
+        immediate_default: false,
+        worker_state: "blocked",
+        failure_class: failureClass,
+        details: {
+          ...workerDetails,
+          failure_class: failureClass,
+        },
+      }];
+    }
+    const digestStale = /(?:CONTRACT|DIGEST|GENERATION_LOCK|SCHEMA|POLICY)_.*(?:STALE|MISMATCH|CHANGED)|ACTIVE_CONTRACT_DIGEST/i.test(failureClass);
+    const limitExceeded = /(?:LIMIT|RATE|QUEUE|BUDGET)_.*(?:EXCEEDED|STALE|MISMATCH)|POLICY_LIMIT/i.test(failureClass);
+    const eventType: AttentionEventType = digestStale
+      ? "contract.digest_stale"
+      : limitExceeded
+        ? "policy.limit_exceeded"
+        : "proposal.refused";
+    const severity: AttentionSeverity = digestStale || limitExceeded ? "critical" : "warning";
+    const attentionRequired = digestStale || limitExceeded;
+    const attentionKey = [
+      input.environment,
+      eventType,
+      proposal.capability ?? proposal.action,
+      contractDigest ?? "no_digest",
+      failureClass,
+      scopeDigest,
+    ].join(":");
+    return [{
+      ...base(eventType, severity),
+      attention_required: attentionRequired,
+      immediate_default: attentionRequired,
+      ...(attentionRequired ? {
+        attention_key: attentionKey,
+        workbench_path: `/attention/${attentionItemId(attentionKey)}`,
+      } : {}),
+      worker_state: "blocked",
+      failure_class: failureClass,
+      details: {
+        ...workerDetails,
+        failure_class: failureClass,
+      },
+    }];
+  }
+
+  if (input.kind === "policy_limit_near") {
+    return [{
+      ...base("policy.limit_near", "warning"),
+      attention_required: false,
+      immediate_default: false,
+      summary: `${proposal.capability ?? proposal.action} is approaching a reviewed policy limit`,
+      details: safeAttentionDetails(input.payload, [
+        "kind",
+        "scope",
+        "observed",
+        "proposed",
+        "projected",
+        "max",
+        "window_start",
+        "window_end",
+      ]),
+    }];
+  }
+
+  if (input.kind === "writeback_reconciliation_required" || input.kind === "writeback_intent_reconciliation_required") {
+    return [criticalWorkerAttention("worker.reconciliation_required")];
+  }
+
+  if (
+    (input.kind === "writeback_failed" || input.kind === "writeback_intent_failed")
+    && (safeCode === "OUTCOME_UNKNOWN" || safeCode === "RECONCILIATION_REQUIRED")
+  ) {
+    return [criticalWorkerAttention("worker.unknown_outcome")];
+  }
+
+  if (input.kind === "writeback_applied" || input.kind === "writeback_already_applied"
+    || input.kind === "writeback_intent_applied" || input.kind === "writeback_intent_already_applied") {
+    return [{
+      ...base("proposal.applied", "informational"),
+      attention_required: false,
+      immediate_default: false,
+      worker_state: "completed",
+      details: safeAttentionDetails(input.payload, ["rows_affected", "source_database_mutated"]),
+    }];
+  }
+
+  if (input.kind === "writeback_worker_completed") {
+    const outcome = safeAttentionPayloadString(input.payload, "outcome");
+    if (outcome === "conflict") {
+      return [{
+        ...base("proposal.conflict", "warning"),
+        attention_required: false,
+        immediate_default: false,
+        worker_state: "completed",
+        details: { outcome },
+      }];
+    }
+    if (outcome === "applied" || outcome === "already_applied") {
+      return [{
+        ...base("proposal.applied", "informational"),
+        attention_required: false,
+        immediate_default: false,
+        worker_state: "completed",
+        details: { outcome },
+      }];
+    }
+  }
+
+  if (input.kind === "proposal_reconciliation_required") {
+    return [criticalWorkerAttention("worker.reconciliation_required")];
+  }
+
+  return [];
+}
+
+function proposalReviewAttentionKey(
+  proposal: StoredProposal,
+  environment: string,
+): string {
+  const contractDigest = proposal.change_set.contract?.digest as `sha256:${string}` | undefined;
+  const requiredRole = typeof proposal.change_set.approval.required_role === "string"
+    ? proposal.change_set.approval.required_role
+    : "reviewer";
+  const scopeDigest = canonicalJsonDigest({
+    tenant_id: proposal.tenant_id,
+    principal: proposal.principal ?? null,
+  });
+  return [
+    environment,
+    "proposal.review_required",
+    proposal.capability ?? proposal.action,
+    contractDigest ?? "no_digest",
+    requiredRole,
+    scopeDigest,
+  ].join(":");
+}
+
+function safeAttentionPayloadString(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value.trim().slice(0, 128);
+}
+
+function safeAttentionDetails(
+  payload: Record<string, unknown>,
+  keys: string[],
+): Record<string, string | number | boolean | null> {
+  const details: Record<string, string | number | boolean | null> = {};
+  for (const key of keys) {
+    const value = payload[key];
+    if (value === null || typeof value === "boolean") details[key] = value;
+    else if (typeof value === "number" && Number.isFinite(value)) details[key] = value;
+    else if (typeof value === "string" && value.trim()) details[key] = value.trim().slice(0, 128);
+  }
+  return details;
+}
+
+const attentionEventTypes = new Set<AttentionEventType>([
+  "proposal.created",
+  "proposal.review_required",
+  "proposal.auto_approved",
+  "proposal.approved",
+  "proposal.queued",
+  "proposal.expiring",
+  "proposal.expired",
+  "proposal.cancelled",
+  "proposal.applied",
+  "proposal.conflict",
+  "proposal.refused",
+  "worker.started",
+  "worker.paused",
+  "worker.unhealthy",
+  "worker.recovered",
+  "worker.queue_backlog",
+  "worker.retry_scheduled",
+  "worker.dead_lettered",
+  "worker.unknown_outcome",
+  "worker.reconciliation_required",
+  "capability.review_required",
+  "capability.activated",
+  "capability.revoked",
+  "contract.digest_stale",
+  "schema.drift_detected",
+  "credential.posture_changed",
+  "policy.limit_near",
+  "policy.limit_exceeded",
+  "sensitive_override_activated",
+  "notification.replayed",
+  "notification.digest",
+]);
+
+const defaultAttentionEventTypes = new Set<AttentionEventType>([
+  "proposal.review_required",
+  "proposal.expiring",
+  "proposal.expired",
+  "worker.unhealthy",
+  "worker.queue_backlog",
+  "worker.dead_lettered",
+  "worker.unknown_outcome",
+  "worker.reconciliation_required",
+  "capability.review_required",
+  "contract.digest_stale",
+  "schema.drift_detected",
+  "credential.posture_changed",
+  "policy.limit_exceeded",
+  "sensitive_override_activated",
+]);
+
+const defaultImmediateAttentionEventTypes = new Set<AttentionEventType>([
+  "proposal.review_required",
+  "proposal.expiring",
+  "worker.unhealthy",
+  "worker.queue_backlog",
+  "worker.dead_lettered",
+  "worker.unknown_outcome",
+  "worker.reconciliation_required",
+  "contract.digest_stale",
+  "schema.drift_detected",
+  "credential.posture_changed",
+  "policy.limit_exceeded",
+]);
+
+function attentionEventTitle(eventType: AttentionEventType): string {
+  const titles: Record<AttentionEventType, string> = {
+    "proposal.created": "Proposal created",
+    "proposal.review_required": "Proposal needs human review",
+    "proposal.auto_approved": "Proposal approved by reviewed policy",
+    "proposal.approved": "Proposal approved",
+    "proposal.queued": "Proposal queued for trusted execution",
+    "proposal.expiring": "Approved proposal is approaching expiry",
+    "proposal.expired": "Approved proposal expired without execution",
+    "proposal.cancelled": "Proposal cancelled",
+    "proposal.applied": "Proposal applied",
+    "proposal.conflict": "Guarded writeback conflict",
+    "proposal.refused": "Proposal refused",
+    "worker.started": "Trusted worker started",
+    "worker.paused": "Trusted worker paused",
+    "worker.unhealthy": "Trusted worker needs attention",
+    "worker.recovered": "Trusted worker supervision recovered",
+    "worker.queue_backlog": "Trusted worker queue backlog",
+    "worker.retry_scheduled": "Trusted worker retry scheduled",
+    "worker.dead_lettered": "Trusted worker job dead-lettered",
+    "worker.unknown_outcome": "Database transaction outcome is unknown",
+    "worker.reconciliation_required": "Operator reconciliation is required",
+    "capability.review_required": "Capability needs human review",
+    "capability.activated": "Capability activated",
+    "capability.revoked": "Capability revoked",
+    "contract.digest_stale": "Active contract or policy authority is stale",
+    "schema.drift_detected": "Schema drift blocks active authority",
+    "credential.posture_changed": "Credential posture changed",
+    "policy.limit_near": "Policy limit is approaching",
+    "policy.limit_exceeded": "Policy limit exceeded",
+    "sensitive_override_activated": "Sensitive-field override activated",
+    "notification.replayed": "Notification delivery requeued by a verified operator",
+    "notification.digest": "Runner activity digest",
+  };
+  return titles[eventType];
+}
+
+function assertAttentionEventInput(input: RecordAttentionEventInput): void {
+  if (!attentionEventTypes.has(input.event_type)) {
+    throw new ProposalStoreError("ATTENTION_EVENT_TYPE_INVALID", `unsupported attention event type: ${String(input.event_type)}`);
+  }
+  if (!["informational", "warning", "critical"].includes(input.severity)) {
+    throw new ProposalStoreError("ATTENTION_EVENT_SEVERITY_INVALID", `unsupported attention severity: ${String(input.severity)}`);
+  }
+  if (input.contract_digest && !/^sha256:[a-f0-9]{64}$/.test(input.contract_digest)) {
+    throw new ProposalStoreError("ATTENTION_EVENT_DIGEST_INVALID", "attention event contract digest must be a lowercase sha256 digest");
+  }
+  for (const [label, value] of [["now", input.now], ["expires_at", input.expires_at]] as const) {
+    if (value !== undefined && !Number.isFinite(Date.parse(value))) {
+      throw new ProposalStoreError("ATTENTION_EVENT_TIME_INVALID", `attention event ${label} must be an ISO timestamp`);
+    }
+  }
+  const entries = Object.entries(input.details ?? {});
+  if (entries.length > 32) {
+    throw new ProposalStoreError("ATTENTION_EVENT_DETAILS_TOO_LARGE", "attention event details may contain at most 32 safe fields");
+  }
+  for (const [key, value] of entries) {
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) {
+      throw new ProposalStoreError("ATTENTION_EVENT_DETAIL_KEY_INVALID", `attention event detail key is invalid: ${key}`);
+    }
+    if (typeof value === "string") boundedSafeLabel(value, `attention detail ${key}`, 256);
+    else if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new ProposalStoreError("ATTENTION_EVENT_DETAIL_VALUE_INVALID", `attention event detail ${key} must be finite`);
+    } else if (value !== null && typeof value !== "number" && typeof value !== "boolean") {
+      throw new ProposalStoreError("ATTENTION_EVENT_DETAIL_VALUE_INVALID", `attention event detail ${key} must be scalar`);
+    }
+  }
+  assertNoSecretMaterial(input.details ?? {}, "attention_event.details");
+}
+
+function boundedSafeLabel(value: string, label: string, maximum: number): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maximum || /[\u0000-\u001f\u007f]/.test(trimmed)) {
+    throw new ProposalStoreError("ATTENTION_EVENT_FIELD_INVALID", `${label} must be a non-empty bounded single-line value`);
+  }
+  assertNoSecretMaterial({ value: trimmed }, label);
+  return trimmed;
+}
+
+function boundedWorkbenchPath(value: string): string {
+  const path = boundedSafeLabel(value, "attention Workbench path", 512);
+  if (!path.startsWith("/") || path.includes("?") || path.includes("#") || path.includes("://") || path.includes("..")) {
+    throw new ProposalStoreError(
+      "ATTENTION_WORKBENCH_PATH_INVALID",
+      "attention Workbench path must be a local absolute path without query, fragment, traversal, or authority",
+    );
+  }
+  return path;
+}
+
+function defaultAttentionKey(input: {
+  environment: string;
+  event_type: AttentionEventType;
+  capability?: string;
+  contract_digest?: string;
+  details: Record<string, string | number | boolean | null>;
+}): string {
+  const failureClass = typeof input.details.failure_class === "string"
+    ? input.details.failure_class
+    : typeof input.details.reason_code === "string"
+      ? input.details.reason_code
+      : "none";
+  return [
+    input.environment,
+    input.event_type,
+    input.capability ?? "global",
+    input.contract_digest ?? "no_digest",
+    failureClass,
+  ].join(":");
+}
+
+function attentionEventId(sourceEventKey: string, eventType: AttentionEventType): string {
+  const digest = canonicalJsonDigest({ source_event_key: sourceEventKey, event_type: eventType });
+  return `aev_${digest.slice("sha256:".length)}`;
+}
+
+function attentionItemId(attentionKey: string): string {
+  const digest = canonicalJsonDigest({ attention_key: attentionKey });
+  return `attn_${digest.slice("sha256:".length, "sha256:".length + 32)}`;
+}
+
+function boundedSinkId(value: string): string {
+  const sinkId = boundedSafeLabel(value, "notification sink id", 128);
+  if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(sinkId)) {
+    throw new ProposalStoreError(
+      "NOTIFICATION_SINK_ID_INVALID",
+      "notification sink id must use letters, numbers, underscore, period, or hyphen",
+    );
+  }
+  return sinkId;
+}
+
+function boundedSafeErrorCode(value: string): string {
+  const errorCode = boundedSafeLabel(value, "notification error code", 128);
+  if (!/^[A-Z][A-Z0-9_]*$/.test(errorCode)) {
+    throw new ProposalStoreError(
+      "NOTIFICATION_ERROR_CODE_INVALID",
+      "notification error code must be an uppercase safe code",
+    );
+  }
+  return errorCode;
+}
+
+function notificationDeliveryId(sinkId: string, eventId: string): string {
+  const digest = canonicalJsonDigest({ sink_id: sinkId, event_id: eventId });
+  return `ndl_${digest.slice("sha256:".length, "sha256:".length + 32)}`;
+}
+
+function notificationLeaseId(deliveryId: string, owner: string, attempt: number, now: string): string {
+  const digest = canonicalJsonDigest({
+    delivery_id: deliveryId,
+    owner,
+    attempt,
+    now,
+  });
+  return `nlease_${digest.slice("sha256:".length, "sha256:".length + 32)}`;
+}
+
+function attentionSeverityRank(severity: AttentionSeverity): number {
+  if (severity === "critical") return 3;
+  if (severity === "warning") return 2;
+  return 1;
+}
+
+export function workerControlDecisionSubject(
+  state: WorkerControlState,
+  target: WorkerControlTarget,
+): WorkerControlDecisionSubject {
+  assertWorkerControlTarget(target);
+  const targetDigest = canonicalJsonDigest({
+    schema_version: "synapsor.worker-control-decision-subject.v1",
+    current_revision: state.revision,
+    current_integrity_hash: state.integrity_hash,
+    action: target.action,
+    capability: target.capability ?? null,
+    contract_digest: target.contract_digest ?? null,
+  });
+  return {
+    proposal_id: `worker_control_${targetDigest.slice("sha256:".length, "sha256:".length + 32)}`,
+    proposal_version: state.revision + 1,
+    proposal_hash: targetDigest,
+  };
+}
+
+function defaultWorkerControlState(): WorkerControlState {
+  const unsigned = {
+    schema_version: "synapsor.worker-control.v1" as const,
+    mode: "active" as const,
+    revision: 0,
+    capability_controls: [] as WorkerCapabilityControl[],
+    updated_at: "1970-01-01T00:00:00.000Z",
+  };
+  return { ...unsigned, integrity_hash: canonicalJsonDigest(unsigned) };
+}
+
+function parseWorkerControlState(value: unknown): WorkerControlState {
+  if (!isRecord(value)
+    || value.schema_version !== "synapsor.worker-control.v1"
+    || !["active", "paused", "draining"].includes(String(value.mode))
+    || !Number.isSafeInteger(value.revision)
+    || Number(value.revision) < 0
+    || !Array.isArray(value.capability_controls)
+    || typeof value.updated_at !== "string"
+    || typeof value.integrity_hash !== "string") {
+    throw new ProposalStoreError("WORKER_CONTROL_STATE_INVALID", "stored supervised-worker control state is invalid");
+  }
+  const controls = value.capability_controls.map((entry) => {
+    if (!isRecord(entry)
+      || typeof entry.capability !== "string"
+      || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(entry.capability)
+      || typeof entry.contract_digest !== "string"
+      || !/^sha256:[a-f0-9]{64}$/.test(entry.contract_digest)
+      || !["enabled", "disabled", "revoked"].includes(String(entry.status))
+      || typeof entry.updated_at !== "string"
+      || typeof entry.actor !== "string") {
+      throw new ProposalStoreError("WORKER_CONTROL_STATE_INVALID", "stored supervised-worker capability control is invalid");
+    }
+    return {
+      capability: entry.capability,
+      contract_digest: entry.contract_digest as `sha256:${string}`,
+      status: entry.status as WorkerCapabilityControlStatus,
+      updated_at: entry.updated_at,
+      actor: entry.actor,
+    };
+  });
+  const lastDecision = isRecord(value.last_decision)
+    ? value.last_decision as OperatorIdentityProof
+    : undefined;
+  const unsigned = {
+    schema_version: "synapsor.worker-control.v1" as const,
+    mode: value.mode as WorkerControlMode,
+    revision: Number(value.revision),
+    capability_controls: controls,
+    ...(lastDecision ? { last_decision: lastDecision } : {}),
+    updated_at: value.updated_at,
+  };
+  const integrityHash = value.integrity_hash as `sha256:${string}`;
+  if (integrityHash !== canonicalJsonDigest(unsigned)) {
+    throw new ProposalStoreError("WORKER_CONTROL_STATE_TAMPERED", "stored supervised-worker control state failed integrity validation");
+  }
+  return { ...unsigned, integrity_hash: integrityHash };
+}
+
+function assertWorkerControlTarget(target: WorkerControlTarget): void {
+  const capabilityAction = target.action === "capability_enable"
+    || target.action === "capability_disable"
+    || target.action === "digest_revoke";
+  if (capabilityAction) {
+    if (!target.capability || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(target.capability)) {
+      throw new ProposalStoreError("WORKER_CONTROL_CAPABILITY_REQUIRED", `${target.action} requires a fixed capability name`);
+    }
+    if (!target.contract_digest || !/^sha256:[a-f0-9]{64}$/.test(target.contract_digest)) {
+      throw new ProposalStoreError("WORKER_CONTROL_DIGEST_REQUIRED", `${target.action} requires an exact sha256 contract digest`);
+    }
+  } else if (target.capability || target.contract_digest) {
+    throw new ProposalStoreError("WORKER_CONTROL_TARGET_INVALID", `${target.action} is a global control and cannot carry capability authority`);
+  }
+}
+
+function workerControlOperatorAction(action: WorkerControlAction): OperatorDecision["action"] {
+  if (action === "pause") return "worker_pause";
+  if (action === "resume") return "worker_resume";
+  if (action === "drain") return "worker_drain";
+  if (action === "capability_enable") return "worker_capability_enable";
+  if (action === "capability_disable") return "worker_capability_disable";
+  return "worker_digest_revoke";
+}
+
+function assertWorkerControlOperatorDecision(
+  state: WorkerControlState,
+  target: WorkerControlTarget,
+  actor: string,
+  identity: OperatorIdentityProof | undefined,
+  requireVerified: boolean,
+): void {
+  if (requireVerified && (!identity || !identity.verified || identity.provider === "dev_env")) {
+    throw new ProposalStoreError(
+      "VERIFIED_OPERATOR_IDENTITY_REQUIRED",
+      `verified operator identity is required to ${target.action} supervised execution`,
+    );
+  }
+  if (!identity) return;
+  if (identity.subject !== actor || identity.decision.subject !== actor) {
+    throw new ProposalStoreError("OPERATOR_IDENTITY_MISMATCH", "worker-control identity does not match its actor");
+  }
+  const subject = workerControlDecisionSubject(state, target);
+  if (
+    identity.decision.action !== workerControlOperatorAction(target.action)
+    || identity.decision.proposal_id !== subject.proposal_id
+    || identity.decision.proposal_version !== subject.proposal_version
+    || identity.decision.proposal_hash !== subject.proposal_hash
+  ) {
+    throw new ProposalStoreError("OPERATOR_DECISION_MISMATCH", "operator proof is not bound to this exact worker-control revision");
+  }
+  if (identity.decision_hash !== canonicalJsonDigest(identity.decision)) {
+    throw new ProposalStoreError("OPERATOR_IDENTITY_TAMPERED", "worker-control decision hash failed integrity validation");
+  }
+  const { integrity_hash: _integrityHash, ...identityCore } = identity;
+  if (identity.integrity_hash !== canonicalJsonDigest(identityCore)) {
+    throw new ProposalStoreError("OPERATOR_IDENTITY_TAMPERED", "worker-control identity proof failed integrity validation");
+  }
+}
+
+function workerControlSummary(target: WorkerControlTarget): string {
+  if (target.action === "pause") return "Supervised execution paused by an operator";
+  if (target.action === "resume") return "Supervised execution resumed by an operator";
+  if (target.action === "drain") return "Supervised execution is draining without new leases";
+  if (target.action === "capability_enable") return `${target.capability} supervised execution enabled for the exact reviewed digest`;
+  if (target.action === "capability_disable") return `${target.capability} supervised execution disabled for the exact reviewed digest`;
+  return `${target.capability} supervised execution digest revoked`;
+}
+
+export function attentionDecisionSubject(item: AttentionItem): AttentionDecisionSubject {
+  return {
+    proposal_id: item.attention_id,
+    proposal_version: item.occurrence_count,
+    proposal_hash: canonicalJsonDigest({
+      schema_version: "synapsor.attention-decision-subject.v1",
+      attention_id: item.attention_id,
+      attention_key: item.attention_key,
+      status: item.status,
+      severity: item.severity,
+      environment: item.environment,
+      event_type: item.event_type,
+      capability: item.capability ?? null,
+      contract_digest: item.contract_digest ?? null,
+      occurrence_count: item.occurrence_count,
+      latest_event_id: item.latest_event_id,
+      last_seen_at: item.last_seen_at,
+    }),
+  };
+}
+
+export function notificationReplayDecisionSubject(
+  delivery: NotificationDelivery,
+): NotificationReplayDecisionSubject {
+  return {
+    proposal_id: delivery.delivery_id,
+    proposal_version: Math.max(1, delivery.attempts),
+    proposal_hash: canonicalJsonDigest({
+      schema_version: "synapsor.notification-replay-decision-subject.v1",
+      delivery_id: delivery.delivery_id,
+      sink_id: delivery.sink_id,
+      event_id: delivery.event_id,
+      attention_id: delivery.attention_id ?? null,
+      status: delivery.status,
+      attempts: delivery.attempts,
+      max_attempts: delivery.max_attempts,
+      last_error_code: delivery.last_error_code ?? null,
+      updated_at: delivery.updated_at,
+    }),
+  };
+}
+
+function assertNotificationReplayOperatorDecision(
+  delivery: NotificationDelivery,
+  identity: OperatorIdentityProof,
+  reason: string,
+): void {
+  if (!identity.verified || identity.provider === "dev_env") {
+    throw new ProposalStoreError(
+      "VERIFIED_OPERATOR_IDENTITY_REQUIRED",
+      `verified operator identity is required to replay notification delivery ${delivery.delivery_id}`,
+    );
+  }
+  if (identity.subject !== identity.decision.subject) {
+    throw new ProposalStoreError(
+      "OPERATOR_IDENTITY_MISMATCH",
+      "notification replay identity does not match its signed decision subject",
+    );
+  }
+  const subject = notificationReplayDecisionSubject(delivery);
+  if (
+    identity.decision.action !== "notification_replay"
+    || identity.decision.proposal_id !== subject.proposal_id
+    || identity.decision.proposal_version !== subject.proposal_version
+    || identity.decision.proposal_hash !== subject.proposal_hash
+    || identity.decision.reason !== reason
+  ) {
+    throw new ProposalStoreError(
+      "OPERATOR_DECISION_MISMATCH",
+      "operator proof is not bound to this exact notification delivery revision and replay reason",
+    );
+  }
+  if (identity.decision_hash !== canonicalJsonDigest(identity.decision)) {
+    throw new ProposalStoreError(
+      "OPERATOR_IDENTITY_TAMPERED",
+      "notification replay decision hash failed its integrity check",
+    );
+  }
+  const { integrity_hash: _integrityHash, ...core } = identity;
+  const canonicalCore = JSON.parse(JSON.stringify(core)) as Record<string, unknown>;
+  if (identity.integrity_hash !== canonicalJsonDigest(canonicalCore)) {
+    throw new ProposalStoreError(
+      "OPERATOR_IDENTITY_TAMPERED",
+      "notification replay identity proof failed its integrity check",
+    );
+  }
+}
+
+function assertAttentionOperatorDecision(
+  item: AttentionItem,
+  actor: string,
+  identity: OperatorIdentityProof | undefined,
+  requireVerified: boolean,
+): void {
+  if (requireVerified && (!identity || !identity.verified || identity.provider === "dev_env")) {
+    throw new ProposalStoreError(
+      "VERIFIED_OPERATOR_IDENTITY_REQUIRED",
+      `verified operator identity is required to acknowledge attention item ${item.attention_id}`,
+    );
+  }
+  if (!identity) return;
+  if (identity.subject !== actor || identity.decision.subject !== actor) {
+    throw new ProposalStoreError(
+      "OPERATOR_IDENTITY_MISMATCH",
+      `operator identity ${identity.subject} does not match attention acknowledgement actor ${actor}`,
+    );
+  }
+  const subject = attentionDecisionSubject(item);
+  if (
+    identity.decision.action !== "attention_acknowledge"
+    || identity.decision.proposal_id !== subject.proposal_id
+    || identity.decision.proposal_version !== subject.proposal_version
+    || identity.decision.proposal_hash !== subject.proposal_hash
+  ) {
+    throw new ProposalStoreError(
+      "OPERATOR_DECISION_MISMATCH",
+      "operator proof is not bound to this exact attention item version",
+    );
+  }
+  if (identity.decision_hash !== canonicalJsonDigest(identity.decision)) {
+    throw new ProposalStoreError(
+      "OPERATOR_IDENTITY_TAMPERED",
+      "attention acknowledgement decision hash failed its integrity check",
+    );
+  }
+  const { integrity_hash: _integrityHash, ...core } = identity;
+  const canonicalCore = JSON.parse(JSON.stringify(core)) as Record<string, unknown>;
+  if (identity.integrity_hash !== canonicalJsonDigest(canonicalCore)) {
+    throw new ProposalStoreError(
+      "OPERATOR_IDENTITY_TAMPERED",
+      "attention acknowledgement identity proof failed its integrity check",
+    );
+  }
+}
+
+function rowToAttentionEvent(row: unknown): AttentionEvent | undefined {
+  if (!isRecord(row)) return undefined;
+  const eventType = String(row.event_type) as AttentionEventType;
+  const severity = String(row.severity) as AttentionSeverity;
+  if (!attentionEventTypes.has(eventType) || !["informational", "warning", "critical"].includes(severity)) return undefined;
+  let details: Record<string, string | number | boolean | null>;
+  try {
+    const parsed = JSON.parse(String(row.details_json)) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    details = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value !== null && typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return undefined;
+      details[key] = value;
+    }
+  } catch {
+    return undefined;
+  }
+  const event: AttentionEvent = {
+    schema_version: "synapsor.attention-event.v1",
+    event_id: String(row.event_id),
+    event_type: eventType,
+    severity,
+    occurred_at: String(row.occurred_at),
+    environment: String(row.environment),
+    ...(row.proposal_id == null ? {} : { proposal_id: String(row.proposal_id) }),
+    ...(row.job_id == null ? {} : { job_id: String(row.job_id) }),
+    ...(row.operation_id == null ? {} : { operation_id: String(row.operation_id) }),
+    ...(row.correlation_id == null ? {} : { correlation_id: String(row.correlation_id) }),
+    ...(row.capability == null ? {} : { capability: String(row.capability) }),
+    ...(row.contract_digest == null ? {} : { contract_digest: String(row.contract_digest) as `sha256:${string}` }),
+    ...(row.attention_key == null ? {} : { attention_key: String(row.attention_key) }),
+    attention_required: Number(row.attention_required) === 1,
+    immediate_default: Number(row.immediate_default) === 1,
+    summary: String(row.summary),
+    ...(row.approval_source === "human" || row.approval_source === "policy_auto"
+      ? { approval_source: row.approval_source }
+      : {}),
+    ...(row.worker_state == null ? {} : { worker_state: String(row.worker_state) }),
+    ...(row.failure_class == null ? {} : { failure_class: String(row.failure_class) }),
+    ...(row.expires_at == null ? {} : { expires_at: String(row.expires_at) }),
+    ...(row.workbench_path == null ? {} : { workbench_path: String(row.workbench_path) }),
+    details,
+    payload_hash: String(row.payload_hash) as `sha256:${string}`,
+  };
+  const { payload_hash: _payloadHash, ...unsigned } = event;
+  if (event.payload_hash !== canonicalJsonDigest(unsigned)) {
+    throw new ProposalStoreError("ATTENTION_EVENT_CORRUPT", `attention event ${event.event_id} failed its integrity check`);
+  }
+  return event;
+}
+
+function rowToAttentionItem(row: unknown): AttentionItem | undefined {
+  if (!isRecord(row)) return undefined;
+  const status = String(row.status);
+  const severity = String(row.severity);
+  const eventType = String(row.event_type) as AttentionEventType;
+  if (!["open", "acknowledged", "resolved", "expired"].includes(status)) return undefined;
+  if (!["informational", "warning", "critical"].includes(severity) || !attentionEventTypes.has(eventType)) return undefined;
+  let acknowledgementIdentity: OperatorIdentityProof | undefined;
+  if (row.acknowledgement_identity_json != null) {
+    try {
+      const parsed = JSON.parse(String(row.acknowledgement_identity_json)) as unknown;
+      if (!isRecord(parsed) || !isRecord(parsed.decision)) return undefined;
+      acknowledgementIdentity = parsed as OperatorIdentityProof;
+    } catch {
+      return undefined;
+    }
+  }
+  return {
+    attention_id: String(row.attention_id),
+    attention_key: String(row.attention_key),
+    status: status as AttentionItemStatus,
+    severity: severity as AttentionSeverity,
+    environment: String(row.environment),
+    event_type: eventType,
+    capability: row.capability == null ? undefined : String(row.capability),
+    contract_digest: row.contract_digest == null ? undefined : String(row.contract_digest) as `sha256:${string}`,
+    title: String(row.title),
+    occurrence_count: Number(row.occurrence_count),
+    first_event_id: String(row.first_event_id),
+    latest_event_id: String(row.latest_event_id),
+    first_seen_at: String(row.first_seen_at),
+    last_seen_at: String(row.last_seen_at),
+    acknowledged_by: row.acknowledged_by == null ? undefined : String(row.acknowledged_by),
+    acknowledged_at: row.acknowledged_at == null ? undefined : String(row.acknowledged_at),
+    acknowledgement_identity: acknowledgementIdentity,
+    resolved_at: row.resolved_at == null ? undefined : String(row.resolved_at),
+    expires_at: row.expires_at == null ? undefined : String(row.expires_at),
+  };
+}
+
+function rowToNotificationDelivery(row: unknown): NotificationDelivery | undefined {
+  if (!isRecord(row)) return undefined;
+  const status = String(row.status);
+  if (![
+    "pending",
+    "leased",
+    "delivered",
+    "retry_wait",
+    "dead_letter",
+    "suppressed",
+    "batched",
+  ].includes(status)) return undefined;
+  return {
+    delivery_id: String(row.delivery_id),
+    sink_id: String(row.sink_id),
+    event_id: String(row.event_id),
+    ...(row.attention_id == null ? {} : { attention_id: String(row.attention_id) }),
+    status: status as NotificationDeliveryStatus,
+    attempts: Number(row.attempts),
+    max_attempts: Number(row.max_attempts),
+    next_attempt_at: String(row.next_attempt_at),
+    ...(row.lease_owner == null ? {} : { lease_owner: String(row.lease_owner) }),
+    ...(row.lease_id == null ? {} : { lease_id: String(row.lease_id) }),
+    ...(row.lease_expires_at == null ? {} : { lease_expires_at: String(row.lease_expires_at) }),
+    ...(row.last_error_code == null ? {} : { last_error_code: String(row.last_error_code) }),
+    ...(row.external_reference == null ? {} : { external_reference: String(row.external_reference) }),
+    ...(row.delivered_at == null ? {} : { delivered_at: String(row.delivered_at) }),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
 function rowToWorkerQueueItem(row: unknown): WorkerQueueItem | undefined {
   if (!isRecord(row)) return undefined;
   const status = String(row.status);
-  if (!["queued", "leased", "retry_wait", "completed", "dead_letter", "discarded"].includes(status)) return undefined;
+  if (![
+    "queued",
+    "leased",
+    "retry_wait",
+    "completed",
+    "dead_letter",
+    "discarded",
+    "cancelled",
+    "blocked",
+    "reconciliation_required",
+  ].includes(status)) return undefined;
+  const executionMode = row.execution_mode == null ? "legacy" : String(row.execution_mode);
+  if (executionMode !== "legacy" && executionMode !== "supervised_worker") return undefined;
   return {
     proposal_id: String(row.proposal_id),
     status: status as WorkerQueueStatus,
+    execution_mode: executionMode,
+    contract_digest: row.contract_digest == null ? undefined : String(row.contract_digest) as `sha256:${string}`,
     attempts: Number(row.attempts),
     max_attempts: Number(row.max_attempts),
     next_attempt_at: String(row.next_attempt_at),
     lease_owner: row.lease_owner == null ? undefined : String(row.lease_owner),
+    lease_id: row.lease_id == null ? undefined : String(row.lease_id),
     lease_expires_at: row.lease_expires_at == null ? undefined : String(row.lease_expires_at),
     last_error_code: row.last_error_code == null ? undefined : String(row.last_error_code),
+    terminal_outcome: row.terminal_outcome == null ? undefined : String(row.terminal_outcome),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
+}
+
+function workerLeaseId(proposalId: string, workerId: string, attempt: number, now: string): string {
+  const prefixLength = "sha256:".length;
+  return `wlease_${canonicalJsonDigest({ proposal_id: proposalId, worker_id: workerId, attempt, now }).slice(prefixLength, prefixLength + 32)}`;
 }
 
 function rowToCloudOutboxItem(row: unknown): CloudOutboxItem | undefined {
@@ -5652,7 +8812,17 @@ function writebackIntentFromPayload(payload: Record<string, unknown>): StoredWri
 }
 
 function isStoredWritebackOperation(operation: string): operation is StoredWritebackIntent["operation"] {
-  return ["single_row_update", "single_row_insert", "single_row_delete", "set_update", "set_delete", "batch_insert"].includes(operation);
+  return [
+    "single_row_update",
+    "single_row_insert",
+    "single_row_delete",
+    "set_update",
+    "set_delete",
+    "batch_insert",
+    "restore_update",
+    "remove_insert",
+    "restore_insert",
+  ].includes(operation);
 }
 
 function assertIntentMatchesJob(intent: StoredWritebackIntent, job: WritebackJob): void {
@@ -5788,6 +8958,8 @@ const sharedLedgerJsonColumns = new Set([
   "selected_capabilities_json",
   "proposed_effect_json",
   "actual_effect_json",
+  "details_json",
+  "acknowledgement_identity_json",
 ]);
 
 const sharedLedgerKindToTable: Record<string, string> = {
@@ -5807,6 +8979,9 @@ const sharedLedgerKindToTable: Record<string, string> = {
   shadow_study_case: "shadow_study_cases",
   shadow_outcome: "shadow_outcomes",
   worker_queue_item: "worker_queue",
+  attention_event: "attention_events",
+  attention_item: "attention_items",
+  notification_delivery: "notification_deliveries",
   runner_state: "runner_state",
   policy_recommendation: "policy_recommendations",
   cloud_outbox_event: "cloud_outbox",
@@ -5840,7 +9015,142 @@ const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> = {
   shadow_studies: restoreSpec("study_id", ["study_id", "name", "description", "selected_capabilities_json", "starts_at", "ends_at", "status", "created_at", "updated_at"], ["study_id", "name", "selected_capabilities_json", "status", "created_at", "updated_at"]),
   shadow_study_cases: restoreSpec("case_id", ["case_id", "study_id", "request_id", "proposal_id", "tenant_id", "principal", "capability", "business_object", "object_id", "evidence_bundle_id", "proposed_effect_json", "agent_result", "decision_reason", "risk_score", "amount_value", "created_at"], ["case_id", "study_id", "request_id", "tenant_id", "capability", "business_object", "object_id", "agent_result", "created_at"]),
   shadow_outcomes: restoreSpec("outcome_id", ["outcome_id", "study_id", "request_id", "proposal_id", "tenant_id", "business_object", "object_id", "actor", "disposition", "actual_effect_json", "occurred_at", "source", "reference", "reason", "created_at"], ["outcome_id", "study_id", "request_id", "tenant_id", "business_object", "object_id", "actor", "disposition", "occurred_at", "source", "created_at"]),
-  worker_queue: restoreSpec("proposal_id", ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "lease_owner", "lease_expires_at", "last_error_code", "created_at", "updated_at"], ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"]),
+  worker_queue: restoreSpec(
+    "proposal_id",
+    [
+      "proposal_id",
+      "status",
+      "execution_mode",
+      "contract_digest",
+      "attempts",
+      "max_attempts",
+      "next_attempt_at",
+      "lease_owner",
+      "lease_id",
+      "lease_expires_at",
+      "last_error_code",
+      "terminal_outcome",
+      "created_at",
+      "updated_at",
+    ],
+    ["proposal_id", "status", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"],
+  ),
+  attention_events: restoreSpec(
+    "event_id",
+    [
+      "event_id",
+      "schema_version",
+      "event_type",
+      "severity",
+      "occurred_at",
+      "environment",
+      "proposal_id",
+      "job_id",
+      "operation_id",
+      "correlation_id",
+      "capability",
+      "contract_digest",
+      "attention_key",
+      "attention_required",
+      "immediate_default",
+      "summary",
+      "approval_source",
+      "worker_state",
+      "failure_class",
+      "expires_at",
+      "workbench_path",
+      "details_json",
+      "payload_hash",
+      "created_at",
+    ],
+    [
+      "event_id",
+      "schema_version",
+      "event_type",
+      "severity",
+      "occurred_at",
+      "environment",
+      "attention_required",
+      "immediate_default",
+      "summary",
+      "details_json",
+      "payload_hash",
+      "created_at",
+    ],
+  ),
+  attention_items: restoreSpec(
+    "attention_id",
+    [
+      "attention_id",
+      "attention_key",
+      "status",
+      "severity",
+      "environment",
+      "event_type",
+      "capability",
+      "contract_digest",
+      "title",
+      "occurrence_count",
+      "first_event_id",
+      "latest_event_id",
+      "first_seen_at",
+      "last_seen_at",
+      "acknowledged_by",
+      "acknowledged_at",
+      "acknowledgement_identity_json",
+      "acknowledgement_decision_hash",
+      "acknowledgement_signature",
+      "acknowledgement_integrity_hash",
+      "resolved_at",
+      "expires_at",
+    ],
+    [
+      "attention_id",
+      "attention_key",
+      "status",
+      "severity",
+      "environment",
+      "event_type",
+      "title",
+      "occurrence_count",
+      "first_event_id",
+      "latest_event_id",
+      "first_seen_at",
+      "last_seen_at",
+    ],
+  ),
+  notification_deliveries: restoreSpec(
+    "delivery_id",
+    [
+      "delivery_id",
+      "sink_id",
+      "event_id",
+      "attention_id",
+      "status",
+      "attempts",
+      "max_attempts",
+      "next_attempt_at",
+      "lease_owner",
+      "lease_id",
+      "lease_expires_at",
+      "last_error_code",
+      "external_reference",
+      "delivered_at",
+      "created_at",
+      "updated_at",
+    ],
+    [
+      "delivery_id",
+      "sink_id",
+      "event_id",
+      "status",
+      "attempts",
+      "max_attempts",
+      "next_attempt_at",
+      "created_at",
+      "updated_at",
+    ],
+  ),
   runner_state: restoreSpec("key", ["key", "value_json", "updated_at"], ["key", "value_json", "updated_at"]),
   policy_recommendations: restoreSpec("recommendation_id", ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"], ["recommendation_id", "tenant_id", "capability", "policy", "base_contract_digest", "status", "payload_json", "integrity_hash", "created_at", "updated_at"]),
   cloud_outbox: restoreSpec("event_id", ["event_id", "proposal_id", "sequence", "kind", "status", "payload_hash", "payload_json", "attempts", "max_attempts", "next_attempt_at", "lease_owner", "lease_expires_at", "last_error_code", "sent_at", "acknowledged_at", "created_at", "updated_at"], ["event_id", "sequence", "kind", "status", "payload_hash", "payload_json", "attempts", "max_attempts", "next_attempt_at", "created_at", "updated_at"]),
@@ -5893,6 +9203,9 @@ function sharedLedgerRestoreRank(entry: SharedLedgerEntry): number {
     "shadow_human_actions",
     "shadow_outcomes",
     "worker_queue",
+    "attention_events",
+    "attention_items",
+    "notification_deliveries",
     "runner_state",
     "policy_recommendations",
     "cloud_outbox",
