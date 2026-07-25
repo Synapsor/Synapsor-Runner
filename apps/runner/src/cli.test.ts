@@ -308,6 +308,8 @@ async function createApprovedContractProposal(input: {
 }
 
 describe("runner cli", () => {
+  const suiteCwd = process.cwd();
+
   it("preserves explicit Workbench deployment profiles and rejects unknown values", () => {
     expect(workbenchDeploymentProfileArg([])).toBeUndefined();
     expect(workbenchDeploymentProfileArg(["--profile", "development"])).toBe("development");
@@ -356,8 +358,19 @@ describe("runner cli", () => {
   });
 
   afterEach(() => {
+    process.chdir(suiteCwd);
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+  });
+
+  it("contains a test that leaves the process cwd changed", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-cwd-isolation-"));
+    process.chdir(tempDir);
+    expect(process.cwd()).toBe(tempDir);
+  });
+
+  it("restores the process cwd before the next test", () => {
+    expect(process.cwd()).toBe(suiteCwd);
   });
 
   it("prints product help for the public synapsor-runner command surface", async () => {
@@ -6813,7 +6826,7 @@ END
       expect.objectContaining({ event: "writeback_outcome", status: "applied", capability: "billing.waive_late_fee", tenant: "acme" }),
     ]));
     expect(logs.join("")).not.toMatch(/handler-secret-token|handler-signing-secret|BEGIN PRIVATE KEY|https:\/\/handler\.internal/i);
-  });
+  }, 15_000);
 
   it("enforces signed apply roles through batch and supervised worker paths", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-apply-role-paths-"));
@@ -6873,7 +6886,7 @@ END
     expect(afterWorker.receipts("wrp_batch_role")).toEqual([]);
     expect(afterWorker.receipts("wrp_worker_role")).toEqual([]);
     afterWorker.close();
-  });
+  }, 15_000);
 
   it("runs only exact-digest dual-opt-in proposals through supervised guarded apply", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-supervised-worker-"));

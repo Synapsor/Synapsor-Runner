@@ -82,6 +82,7 @@ services.
 | JSON output, setup, lint, and recovery | completed | Mode-aware `writeback setup`, exact digest confirmation, no-DDL ledger mode, production plan-only behavior, naming-lint precision, one-document JSON failures, and recovery guidance pass the source and release gates. |
 | Documentation and deep dive | completed | README/package README, help, security/threat model, release notes, operator guides, Workbench copy, examples, and the external technical deep dive now distinguish published 1.6.2 from verified unpublished 1.6.3 and document the full guided, OIDC, worker, drift, notification, and compatibility boundaries. |
 | FitFlow, compatibility, packed, visual, and release verification | completed | Clean packed FitFlow first-command/read/aggregate/Protect/proposal/manual-and-supervised-apply/retry/conflict/replay/compensation, 39-resource large-schema, two competing workers/dispatchers, host parity, client configs, desktop/mobile visual gates, both compatibility baselines, live safety suites, package dry-runs, and the complete release gate pass. |
+| Pre-publish CI test isolation | completed | Suite-level cwd restoration prevents a timed-out CLI test from poisoning later fixture paths; focused multi-command signed-identity tests use the scoped integration budget. Exact smoke passes 430/430 and the full four-worker suite passes 845/845. |
 
 ## Published And Local Baseline
 
@@ -584,7 +585,7 @@ operations programmatically.
   its RLS boundary. Guarded CRUD, bounded-set, reversible, proposal-freshness,
   database-scope, principal-scope, and generated MCP-client live gates all
   pass.
-- The final full source suite passes 55/55 files and 843/843 tests, followed by
+- The final full source suite passes 55/55 files and 845/845 tests, followed by
   license/content, DSL source-path, and Cursor-plugin verification.
 - `corepack pnpm publish --dry-run --no-git-checks` passes independently for
   `@synapsor/spec@1.6.0`, `@synapsor/dsl@1.6.0`, and
@@ -598,7 +599,7 @@ operations programmatically.
   resolved the expected publish-order `ETARGET` without weakening the packed
   manifest assertion.
 - `./scripts/verify-release-gate.sh 1.6.3` passes uninterrupted after that
-  correction: 428/428 selected release tests, current Claude/Codex/generic MCP
+  correction: 430/430 selected release tests, current Claude/Codex/generic MCP
   client checks, the Docker first-run proof, public checkout commands, local
   Runner, packed Runner, packed own-database live Postgres apply, license/
   content, no phantom handler package, Runner publish dry-run, and
@@ -606,5 +607,13 @@ operations programmatically.
 - After writing the final handoff and release-order note, the Runner package
   rebuilt successfully, packaged Markdown links remained valid, the
   license/content check passed, `bash -n scripts/verify-packed-runner.sh`
-  passed, and the final worktree diff remained whitespace-clean. No external
-  service action was performed.
+  passed, and the final worktree diff remained whitespace-clean. At that
+  checkpoint no external service action had been performed.
+- A post-merge loaded-machine review reproduced a test-only cwd cascade: a
+  timed-out quick-demo body could outlive Vitest's timeout while the process
+  remained in its temporary directory. The CLI suite now restores its original
+  cwd in `afterEach`, with a direct cross-test regression. Two signed-identity
+  tests that each execute multiple complete CLI transactions now use the
+  established scoped 15-second integration budget instead of the five-second
+  unit default. The exact release gate passes 430/430 selected tests and the
+  full four-worker suite passes 55 files and 845/845 tests.

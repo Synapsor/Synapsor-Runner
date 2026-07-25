@@ -2,7 +2,9 @@
 
 Prepared: 2026-07-24
 
-Branch: `feature/runner-1.6.3-guided-adoption`
+Implementation branch: `feature/runner-1.6.3-guided-adoption`
+
+Initial merge: PR #42 into `main` (`b128725`)
 
 Baseline: `6a6f49f` (`main`, published Runner 1.6.2)
 
@@ -14,8 +16,9 @@ Prepared package graph:
 @synapsor/runner  1.6.3
 ```
 
-Nothing was pushed, published, tagged, released, deployed, or changed in an
-external service while completing this goal.
+The implementation and its pre-publish test-hygiene follow-up were pushed and
+merged through protected GitHub pull requests. Nothing was published, tagged,
+released, deployed, or changed in Synapsor Cloud or AWS.
 
 ## Executive Summary
 
@@ -503,6 +506,31 @@ development/runner-1.6.3-progress.md
 development/runner-1.6.3-handoff.md
 development/runner-1.6.3-visual/
 ```
+
+## Pre-Publish CI Hardening
+
+An independent loaded-machine run exposed two test-harness failure modes after
+the initial merge:
+
+- a timed-out quick-demo test could leave the process cwd in its temporary
+  directory until its async body unwound, causing later fixture lookups to fail;
+- two signed-identity CLI integration tests performed four to five complete
+  signing, SQLite, approval, and guarded-execution commands under Vitest's
+  five-second unit-test default.
+
+The CLI suite now restores its original cwd in the suite-level `afterEach`, and
+two consecutive tests prove a deliberately changed cwd cannot reach the next
+test. The two multi-command signed-identity cases use the repository's existing
+scoped 15-second integration budget; the global unit-test timeout is unchanged.
+
+Post-fix evidence:
+
+- focused cwd and signed-identity regression: 4/4;
+- exact `test:smoke` release gate stage: 8/8 files, 430/430 tests;
+- complete `./scripts/verify-release-gate.sh 1.6.3`: passed;
+- full four-worker source suite: 55/55 files, 845/845 tests;
+- license/content, DSL source-path, Cursor-plugin, packed Runner,
+  own-database Docker, and npm publish-dry-run checks: passed.
 
 ## Known Limits And Manual Checks
 
