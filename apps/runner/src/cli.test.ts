@@ -1313,8 +1313,9 @@ describe("runner cli", () => {
     });
     try {
       process.chdir(tempDir);
-      await expect(main(["demo", "--quick", "--no-interactive"])).resolves.toBe(0);
       const storePath = path.join(tempDir, ".synapsor/try/ledger.db");
+      await fs.mkdir(path.dirname(storePath), { recursive: true });
+      await fs.writeFile(storePath, "store-reset-fixture", "utf8");
       await fs.access(storePath);
 
       await expect(main(["store", "reset", "--store", "./.synapsor/try/ledger.db"])).rejects.toThrow(/--yes/);
@@ -1336,6 +1337,7 @@ describe("runner cli", () => {
       await expect(fs.access(`${storePath}.lease.json`)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       process.chdir(oldCwd);
+      await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 
