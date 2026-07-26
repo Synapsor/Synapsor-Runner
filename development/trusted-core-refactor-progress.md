@@ -43,7 +43,7 @@ MySQL, worker-core, and its existing focused authoring/UI modules.
 | Phase | Status | Evidence |
 | --- | --- | --- |
 | 0. Baseline and characterization | Complete | 948 tests and trusted-core parity verifier passed |
-| 1. Proposal store | Pending | |
+| 1. Proposal store | Complete | 69 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
 | 2. MCP server | Pending | |
 | 3. Runner CLI | Pending | |
 | 4. Integrated architecture and packed parity | Pending | |
@@ -85,6 +85,48 @@ source rows, or kept-out values are captured.
   compatibility, not byte identity of internal declaration layout.
 - No package version, release note, dist-tag, dependency manifest, or publish
   state will change.
+- `ProposalStore` remains the exported constructor. Its domain methods retain
+  own, non-enumerable, writable, configurable prototype descriptors through one
+  checked installer; the public TypeScript interface is composed from the same
+  domain method signatures.
+
+## Phase 1: Proposal Store
+
+`packages/proposal-store/src/index.ts` is now a 98-line explicit compatibility
+facade, down from 9,573 lines. The implementation is separated as follows:
+
+- `domain-types.ts`: public domain records and the runtime-store interface.
+- `errors.ts`: the stable coded store error.
+- `proposal-integrity.ts`, `query-builders.ts`, and `writeback-domain.ts`:
+  proposal identity/freshness, filtered query construction, and writeback
+  semantics.
+- `attention-domain.ts`, `worker-control-domain.ts`, and
+  `shadow-analysis.ts`: attention mapping, operator-bound worker controls, and
+  shadow comparison.
+- `record-codecs.ts` and `shared-ledger-domain.ts`: durable row codecs,
+  integrity parsing, shared-ledger mapping, and restoration order.
+- `sqlite-*-methods.ts`: schema/lifecycle, proposals/approvals,
+  writeback/reconciliation, workers, metrics/policy, attention/notifications,
+  Cloud/control state, shadow studies, and common persistence internals.
+- `sqlite-store.ts`: the SQLite constructor/composition root.
+- `postgres-runtime-store.ts`: shared-Postgres and fleet-intent adapters.
+
+No production module exceeds 1,203 lines. A source-import graph inspection found
+no proposal-store cycles and confirmed that no lower-level module imports the
+compatibility facade.
+
+Phase 1 evidence:
+
+- `corepack pnpm typecheck`: passed.
+- `corepack pnpm --filter @synapsor-runner/proposal-store test`: passed, 69
+  tests.
+- `corepack pnpm build:runner-package`: passed.
+- `node scripts/trusted-core-baseline.mjs`: passed.
+- `git diff --check`: passed.
+- Added a descriptor characterization proving installed methods remain
+  non-enumerable own prototype methods.
+
+Phase 1 implementation commit: pending checkpoint creation.
 
 ## Deviations And Blockers
 
@@ -92,6 +134,6 @@ None.
 
 ## Exact Next Action
 
-Commit the complete Phase 0 baseline checkpoint. Then map proposal-store types,
-Postgres adapters, SQLite responsibilities, and helper ownership before the
-first mechanical extraction.
+Create the Phase 1 proposal-store checkpoint commit and record its hash here.
+Then map MCP runtime public types, authority/planning functions, runtime
+composition, and transport/network ownership before the first MCP extraction.
