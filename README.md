@@ -8,10 +8,10 @@
 
 **MCP connects the agent. Synapsor controls the commit.**
 
-Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It gives
-agents reviewed business actions, records proposed changes as exact Data PRs,
-and keeps credentials, activation, approval, and commit authority outside the
-model-facing surface.
+Synapsor Runner is an open-source MCP runtime for Postgres and MySQL. It lets
+agents ask bounded business questions of reviewed data and propose exact Data
+PRs, while keeping credentials, activation, approval, and commit authority
+outside the model-facing surface.
 
 ## Prove The Boundary In Four Seconds
 
@@ -72,19 +72,35 @@ writes off; broader paths require full review.
 [Database To First Safe Tool](docs/guided-onboarding.md) covers the complete
 path.
 
-## Ask Your First Real Question In Cursor
+## Ask Your First Real Question
 
-After activation, install only the local authoring entry in this Cursor project:
+Runner is host-neutral. These three paths execute the same typed plans against
+the same activated digest, trusted scope, suppression rules, budgets, and
+denials:
+
+1. **Workbench composer:** no MCP client, model, or API key. Choose only reviewed
+   measures, dimensions, filters, and time buckets.
+2. **Workbench Ask:** optional OpenAI, Anthropic, or loopback
+   OpenAI-compatible model after explicit digest-bound egress consent. Keys and
+   conversation history remain in memory; a loopback model keeps data local.
+3. **Any MCP client:** use a managed project installer for Cursor, Claude Code,
+   or VS Code, or a checked recipe for Claude Desktop, Codex, OpenAI Agents,
+   LangChain/LangGraph, Google ADK, LlamaIndex, and generic stdio.
+
+For a managed project, choose one:
 
 ```bash
-synapsor-runner mcp install cursor \
-  --project \
-  --authoring \
-  --project-root . \
-  --yes
+synapsor-runner mcp install cursor --project --authoring --project-root . --yes
+synapsor-runner mcp install claude-code --project --authoring --project-root . --yes
+synapsor-runner mcp install vscode --project --authoring --project-root . --yes
 ```
 
-Cursor sees exactly two temporary tools:
+Runner merges only its `synapsor` entry into `.cursor/mcp.json`, `.mcp.json`, or
+`.vscode/mcp.json`; it preserves other settings, backs up existing files, pins
+the exact Runner version, and writes no credentials. See
+[Client And Framework Recipes](docs/client-recipes.md).
+
+The selected client sees exactly two temporary tools:
 
 ```text
 app.describe_data
@@ -104,13 +120,10 @@ three activated one- or two-link many-to-one paths are supported; inactive or
 unsafe joins fail closed. This is descriptive analysis, not causation. See
 [Reviewed Relationships](docs/reviewed-relationships.md).
 
-### Optional: Ask In Workbench With Your Model
-
-The no-model composer remains the default. Optional local Workbench Ask can use
-OpenAI, Anthropic, or a tested OpenAI-compatible endpoint after explicit
-digest-bound egress consent. It can call only displayed reviewed tools; keys
-and history remain in memory, and writes remain proposals. See [Workbench
-Ask](docs/workbench-ask.md).
+This is bounded, governed analytics over reviewed measures, dimensions, time
+grains, and relationship paths, not a general BI dashboard or SQL surface.
+Protect turns a useful analysis into a named, digest-reviewed metric capability.
+See [Workbench Ask](docs/workbench-ask.md).
 
 ## Protect This Query
 
@@ -118,12 +131,12 @@ Choose a useful result without copying an ID. Runner freezes public DSL,
 canonical JSON, and tests under `synapsor/protected/drafts/`; the named
 capability starts disabled.
 
-After activation, Scoped Explore is disabled. Update Cursor to the production
-config:
+After activation, Scoped Explore is disabled. Update the selected project
+client to the production config:
 
 ```bash
-synapsor-runner mcp install cursor \
-  --project \
+CLIENT=claude-code # or cursor / vscode
+synapsor-runner mcp install "$CLIENT" --project \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --yes

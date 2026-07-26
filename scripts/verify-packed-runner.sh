@@ -291,6 +291,85 @@ if npx synapsor-runner contract lint "$SURFACE_FIXTURE" --strict > surface-stric
 fi
 grep -F "SURFACE_TARGET_DENSITY" surface-strict.txt >/dev/null
 npx synapsor-runner recipes init billing.late_fee_waiver --yes --force >/dev/null
+mkdir -p .cursor .vscode
+node --input-type=module <<'NODE'
+import fs from "node:fs";
+fs.writeFileSync(".cursor/mcp.json", `${JSON.stringify({
+  projectSetting: "preserve-cursor",
+  mcpServers: { existing: { command: "node", args: ["existing.mjs"] } },
+}, null, 2)}\n`);
+fs.writeFileSync(".mcp.json", `${JSON.stringify({
+  projectSetting: "preserve-claude",
+  mcpServers: { existing: { command: "node", args: ["existing.mjs"] } },
+}, null, 2)}\n`);
+fs.writeFileSync(".vscode/mcp.json", `{
+  // Preserve this VS Code project comment.
+  "projectSetting": "preserve-vscode",
+  "servers": {
+    "existing": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["existing.mjs"],
+    },
+  },
+}
+`);
+NODE
+for client in cursor claude-code vscode; do
+  npx synapsor-runner mcp install "$client" --project --dry-run --json > "mcp-$client-preview.json"
+  npx synapsor-runner mcp install "$client" --project --yes --json > "mcp-$client-install.json"
+  npx synapsor-runner mcp status "$client" --project --json > "mcp-$client-status.json"
+done
+node --input-type=module - "$EXPECTED_VERSION" <<'NODE'
+import fs from "node:fs";
+const version = process.argv[2];
+const cases = [
+  ["cursor", ".cursor/mcp.json", "mcpServers", "preserve-cursor"],
+  ["claude-code", ".mcp.json", "mcpServers", "preserve-claude"],
+  ["vscode", ".vscode/mcp.json", "servers", "preserve-vscode"],
+];
+for (const [client, destination, key, setting] of cases) {
+  const text = fs.readFileSync(destination, "utf8");
+  const json = JSON.parse(text.replace(/^\s*\/\/.*$/gm, "").replace(/,\s*([}\]])/g, "$1"));
+  const entry = json[key]?.synapsor;
+  if (json.projectSetting !== setting || json[key]?.existing?.command !== "node") {
+    throw new Error(`${client} install did not preserve unrelated project configuration`);
+  }
+  if (entry?.command !== "npx" || entry?.args?.[1] !== `@synapsor/runner@${version}`) {
+    throw new Error(`${client} install did not pin the packed Runner version`);
+  }
+  if (/postgres(?:ql)?:\/\/|mysql:\/\/|password|bearer|secret/i.test(JSON.stringify(entry))) {
+    throw new Error(`${client} install leaked credential material`);
+  }
+  const status = JSON.parse(fs.readFileSync(`mcp-${client}-status.json`, "utf8"));
+  if (!status.ok || status.state !== "installed" || status.client !== client) {
+    throw new Error(`${client} packed status did not recognize its managed entry`);
+  }
+}
+if (!fs.readFileSync(".vscode/mcp.json", "utf8").includes("Preserve this VS Code project comment.")) {
+  throw new Error("VS Code managed install removed JSONC comments");
+}
+NODE
+for client in cursor claude-code vscode; do
+  npx synapsor-runner mcp uninstall "$client" --project --yes --json > "mcp-$client-uninstall.json"
+done
+node --input-type=module <<'NODE'
+import fs from "node:fs";
+for (const [destination, key] of [
+  [".cursor/mcp.json", "mcpServers"],
+  [".mcp.json", "mcpServers"],
+  [".vscode/mcp.json", "servers"],
+]) {
+  const text = fs.readFileSync(destination, "utf8");
+  const json = JSON.parse(text.replace(/^\s*\/\/.*$/gm, "").replace(/,\s*([}\]])/g, "$1"));
+  if (json[key]?.synapsor !== undefined || json[key]?.existing?.command !== "node") {
+    throw new Error(`${destination} uninstall removed unrelated configuration or retained Synapsor`);
+  }
+}
+if (!fs.readFileSync(".vscode/mcp.json", "utf8").includes("Preserve this VS Code project comment.")) {
+  throw new Error("VS Code managed uninstall removed JSONC comments");
+}
+NODE
 npx synapsor-runner up --config ./synapsor.runner.json --store ./.synapsor/try/ledger.db --dry-run > up.txt
 grep -F "Synapsor Runner review-mode up" up.txt >/dev/null
 grep -F "Serve now: no" up.txt >/dev/null

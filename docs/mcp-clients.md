@@ -33,7 +33,8 @@ the checked-in client JSON.
 
 ## Stdio
 
-Use stdio for Claude Desktop, Cursor, and other local MCP clients:
+Use stdio for Claude Code, Claude Desktop, Cursor, VS Code, and other local MCP
+clients:
 
 ```json
 {
@@ -65,25 +66,52 @@ environment. Supply the required env values through the OS process environment
 or a local secret-manager wrapper; do not paste production credentials into a
 repository file.
 
-### Cursor
+### Managed Project Installs
 
-Prefer Runner's owned project lifecycle for one repository:
+Runner can safely manage its own project-local entry for Cursor, Claude Code,
+or VS Code. Choose the client you actually use:
 
 ```bash
 synapsor-runner mcp install cursor --project --dry-run \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
-synapsor-runner mcp install cursor --project --yes \
+synapsor-runner mcp install claude-code --project --dry-run \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
-synapsor-runner mcp status cursor --project --check-launch
+synapsor-runner mcp install vscode --project --dry-run \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
 ```
 
-Runner previews the merge, backs up an existing `.cursor/mcp.json`, preserves
-other MCP servers/settings, writes an exact-version `npx` invocation, and
-tracks only its own entry with an integrity marker. Repeating install is
-idempotent. `mcp uninstall cursor --project --yes` removes only that intact,
-Runner-owned entry and also creates a backup.
+Replace `--dry-run` with `--yes` only after reviewing the preview, then verify
+the selected client:
+
+```bash
+synapsor-runner mcp install claude-code --project --yes \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
+synapsor-runner mcp status claude-code --project --check-launch
+```
+
+| Client | Managed project file | Server map |
+| --- | --- | --- |
+| Cursor | `.cursor/mcp.json` | `mcpServers.synapsor` |
+| Claude Code | `.mcp.json` | `mcpServers.synapsor` |
+| VS Code | `.vscode/mcp.json` | `servers.synapsor` |
+
+Runner previews the merge, backs up an existing file, preserves unrelated
+servers and settings, writes an exact-version `npx` invocation, and tracks only
+its own entry with a client-specific integrity marker under `.synapsor/`.
+Repeating install is idempotent. VS Code JSON-with-comments, comments, and
+trailing commas are preserved. `mcp uninstall <client> --project --yes`
+removes only an intact Runner-owned entry and creates another backup.
+
+No managed client file contains a database URL, credential, trusted tenant or
+principal value, approval authority, or apply authority. Claude Code asks the
+human to approve project-scoped MCP servers; that host approval does not grant
+Synapsor activation, proposal approval, or writeback authority.
+
+### Cursor
 
 For global setup, merge `cursor-global.mcp.json` through Cursor's MCP settings
 and replace every `<absolute-path-to-bundle>` marker. Restart the MCP server
@@ -99,6 +127,14 @@ credentials as MCP tools. Inline MCP App review is not assumed for Cursor; use
 the secured localhost workbench or operator CLI. No Add to Cursor deep link is
 generated because Runner has not verified a currently documented generic
 payload for this server. See [Host Compatibility](host-compatibility.md).
+
+### Claude Code And VS Code
+
+For Claude Code, restart or open a new project session after installation and
+approve the project MCP server when prompted. For VS Code, reload the window
+and start the Synapsor server. `mcp status <client> --project --check-launch`
+validates the generated command with a real MCP initialize and `tools/list`
+handshake; it does not claim that a model completed a host UI interaction.
 
 ### OpenAI Agents SDK
 

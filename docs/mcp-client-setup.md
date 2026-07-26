@@ -101,7 +101,7 @@ with tenant/principal bound from verified claims. Details: [HTTP MCP](http-mcp.m
 Print a snippet without modifying any client files:
 
 ```bash
-npx -y @synapsor/runner mcp config claude-desktop \
+synapsor-runner mcp config claude-desktop \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -121,7 +121,7 @@ For OpenAI Agents SDK, generate the Streamable HTTP start command and Python
 snippet:
 
 ```bash
-npx -y @synapsor/runner mcp client-config \
+synapsor-runner mcp client-config \
   --client openai-agents \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
@@ -130,13 +130,13 @@ npx -y @synapsor/runner mcp client-config \
 The older form is still supported:
 
 ```bash
-npx -y @synapsor/runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Write is opt-in and requires an explicit destination:
 
 ```bash
-npx -y @synapsor/runner mcp configure \
+synapsor-runner mcp configure \
   --client cursor \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -266,6 +266,21 @@ examples/mcp-client-configs/claude-desktop.json
 examples/mcp-client-configs/cursor.json
 examples/mcp-client-configs/vscode.json
 ```
+
+For project-local Cursor, Claude Code, or VS Code configuration, prefer the
+managed lifecycle instead of editing JSON:
+
+```bash
+synapsor-runner mcp install claude-code --project --dry-run
+synapsor-runner mcp install claude-code --project --yes
+synapsor-runner mcp status claude-code --project --check-launch
+```
+
+Use `cursor` or `vscode` instead when that is the selected client. Runner
+backs up and merges only its own entry, pins the exact package version, and
+keeps credentials and trusted scope out of the client file. Claude Desktop is
+global application configuration and remains a checked template rather than a
+managed project install.
 
 Each example uses the same stdio command/args/env structure. Replace the placeholder environment variables in your client settings or shell environment.
 

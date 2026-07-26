@@ -52,6 +52,8 @@ const external = [
   "mysql2/*",
   "pg",
   "pg/*",
+  "jsonc-parser",
+  "jsonc-parser/*",
   "typescript",
   "vscode-languageserver",
   "vscode-languageserver/*",

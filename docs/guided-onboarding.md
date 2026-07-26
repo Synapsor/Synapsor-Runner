@@ -315,9 +315,9 @@ Never reuse the model/read credential as the elevated setup connection.
 
 ## Connect An MCP Client
 
-Workbench generates ready-to-copy Cursor, Claude, Codex, and generic stdio
-snippets for the same reviewed authority. Stdio opens no network listener and
-needs no HTTP bearer credential.
+Workbench generates ready-to-copy Cursor, Claude Code/Desktop, VS Code, Codex,
+and generic stdio snippets for the same reviewed authority. Stdio opens no
+network listener and needs no HTTP bearer credential.
 
 Render the generic snippet:
 
@@ -325,10 +325,12 @@ Render the generic snippet:
 synapsor-runner mcp config --absolute-paths
 ```
 
-Preview a project-scoped Cursor change:
+Preview a managed project change for the client you use:
 
 ```bash
+synapsor-runner mcp install claude-code --project --dry-run
 synapsor-runner mcp install cursor --project --dry-run
+synapsor-runner mcp install vscode --project --dry-run
 ```
 
 No client config contains database URLs, trusted scope values, approval,

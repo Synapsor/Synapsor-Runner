@@ -43,7 +43,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Finish authoring and review proposal");
     expect(html).not.toMatch(/id="protect-disable-explore" type="checkbox" checked/);
     expect(html).toContain("Generic stdio MCP");
-    expect(html).toContain("Claude-compatible local MCP");
+    expect(html).toContain("Managed project installers");
+    expect(html).toContain("mcp install cursor");
+    expect(html).toContain("mcp install claude-code");
+    expect(html).toContain("mcp install vscode");
     expect(html).toContain("Codex");
     expect(html).not.toMatch(/execute_sql|raw SQL tool|approve tool|apply tool/i);
   });

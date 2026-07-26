@@ -2,6 +2,7 @@ import type { Readable, Writable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import runnerPackage from "../package.json" with { type: "json" };
 import {
   createScopedExploreRuntime,
   SCOPED_EXPLORE_DESCRIBE_TOOL,
@@ -77,7 +78,7 @@ export function createScopedExploreMcpServer(runtime: ScopedExploreRuntime): Mcp
   }).strict();
 
   const server = new McpServer(
-    { name: "synapsor-runner-authoring", version: "1.6.4" },
+    { name: "synapsor-runner-authoring", version: runnerPackage.version },
     { capabilities: { tools: {} } },
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {

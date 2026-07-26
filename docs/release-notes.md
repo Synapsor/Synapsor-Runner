@@ -10,7 +10,29 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.4 (prepared, not published)
+## 1.6.5 (prepared, not published)
+
+### Managed Claude Code and VS Code project MCP installs
+
+- The same reviewed, backup-producing project lifecycle previously available
+  for Cursor now manages Claude Code `.mcp.json` and VS Code
+  `.vscode/mcp.json`.
+- Install previews preserve unrelated project settings, pin the exact Runner
+  version, write no credentials or trusted scope, and refuse unowned or
+  tampered `synapsor` entries. Reinstall is idempotent and uninstall removes
+  only Runner's intact entry.
+- VS Code JSONC comments and trailing commas survive install and uninstall.
+  `mcp status <client> --project --check-launch` validates the generated
+  command against the exact reviewed MCP tool list.
+- README, Workbench, onboarding, host recipes, and `doctor` now present Cursor,
+  Claude Code, and VS Code as peer project clients. Existing Cursor commands
+  and configuration remain compatible.
+
+Prepared package versions: `@synapsor/runner@1.6.5` and
+`synapsor-runner@1.6.5`. Spec 1.7.0 and DSL 1.7.0 are unchanged. No package is
+published by this change.
+
+## 1.6.4 (published 2026-07-25)
 
 ### Review-correct onboarding and reviewed relationship paths
 
@@ -77,17 +99,9 @@ for the Synapsor Cloud CLI.
   their exact normalized bytes/digests and existing tool lists remain
   unchanged unless the feature is adopted.
 
-Prepared package versions: `@synapsor/runner@1.6.4`,
+Published package versions: `@synapsor/runner@1.6.4`,
 `@synapsor/spec@1.7.0`, `@synapsor/dsl@1.7.0`, and the optional
 `synapsor-runner@1.6.4` command alias.
-No package is published by this change.
-
-Publish Spec first, then DSL, then the scoped Runner, and finally its exact
-version command alias. Force the final registry-only Runner dependency check
-with
-`VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC=0 ./scripts/verify-packed-runner.sh` after
-Spec 1.7.0 is visible on npm, and verify the alias only after
-`@synapsor/runner@1.6.4` is visible.
 
 ## 1.6.3 (published 2026-07-24)
 

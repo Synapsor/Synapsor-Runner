@@ -206,23 +206,25 @@ The no-model composer, CLI Try, and external MCP routes remain fully supported
 when no provider is configured or a provider is unavailable. See [Workbench
 Ask With Your Model](workbench-ask.md).
 
-## Add The Authoring Tools To Cursor
+## Add The Authoring Tools To A Project MCP Client
 
 After activation, let Runner manage only its own project entry:
 
 ```bash
-synapsor-runner mcp install cursor \
+synapsor-runner mcp install claude-code \
   --project \
   --authoring \
   --project-root . \
   --yes
 
-synapsor-runner mcp status cursor --project
+synapsor-runner mcp status claude-code --project
 ```
 
-The Cursor config contains command paths and package identity, not database
-URLs, credential values, tenant values, or principal values. Authoring mode
-uses local stdio and advertises exactly:
+Use `cursor` or `vscode` instead of `claude-code` for those clients. Runner
+manages `.cursor/mcp.json`, `.mcp.json`, or `.vscode/mcp.json` and preserves
+unrelated entries. The client config contains command paths and package
+identity, not database URLs, credential values, tenant values, or principal
+values. Authoring mode uses local stdio and advertises exactly:
 
 ```text
 app.describe_data
@@ -358,16 +360,18 @@ join-safety, deny, drift, and boundary tests. It becomes active only after a
 human reviews and confirms its exact contract digest outside MCP.
 
 When activation disables temporary Explore, the named capability remains
-available. Update Cursor from authoring mode to the production config:
+available. Update the selected project client from authoring mode to the
+production config:
 
 ```bash
-synapsor-runner mcp install cursor \
+synapsor-runner mcp install claude-code \
   --project \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --yes
 ```
 
+Again, substitute `cursor` or `vscode` for the selected client.
 Production then advertises only reviewed named capabilities. It does not
 advertise `app.explore_data`.
 

@@ -114,7 +114,15 @@ import { resolveReadableTryStateRoot } from "./try-state.js";
 import { buildCanonicalOnboardingArtifacts, type CanonicalOnboardingArtifacts } from "./onboarding-artifacts.js";
 import { detectProjectContext, formatProjectDetection } from "./project-detection.js";
 import { resolveSynapsorProject, type SynapsorProjectResolution } from "./project-resolution.js";
-import { cursorProjectStatus, installCursorProject, previewCursorProjectInstall, uninstallCursorProject } from "./cursor-project.js";
+import {
+  installManagedMcpProject,
+  managedMcpProjectDefinition,
+  managedMcpProjectStatus,
+  parseManagedMcpProjectClient,
+  previewManagedMcpProjectInstall,
+  uninstallManagedMcpProject,
+  type ManagedMcpProjectClient,
+} from "./managed-mcp-project.js";
 import {
   acceptEffectBaseline,
   compareEffectResult,
@@ -1598,7 +1606,7 @@ async function writeGeneratedOnboardingFiles(
   process.stdout.write(`created MCP client snippets under ${displayPath(mcpDirectory)}\n`);
   process.stdout.write(`created onboarding manifest ${displayPath(manifestPath)}\n`);
   if (options.printNext !== false) {
-    process.stdout.write(`Next: set the referenced environment variables, run \`${cliCommandName()} config validate --config ${configArgument}\`, then add the reviewed tools to Cursor with \`${cliCommandName()} mcp install cursor --project --config ${configArgument}\`.\n`);
+    process.stdout.write(`Next: set the referenced environment variables, run \`${cliCommandName()} config validate --config ${configArgument}\`, then add the reviewed tools to a project client with \`${cliCommandName()} mcp install <cursor|claude-code|vscode> --project --config ${configArgument}\`.\n`);
   }
   return artifacts;
 }
@@ -4463,7 +4471,7 @@ async function localDoctor(args: string[]): Promise<number> {
     level: forbiddenTools.length === 0 ? "pass" : "fail",
     message: forbiddenTools.length === 0 ? "MCP tool catalog is semantic-only." : `Forbidden model-facing tools: ${forbiddenTools.join(", ")}`,
   });
-  checks.push(...await cursorProjectDoctorChecks(configPath, tools, args));
+  checks.push(...await managedMcpProjectDoctorChecks(configPath, tools, args));
 
   const report: LocalDoctorReport = {
     ok: checks.every((check) => check.level !== "fail"),
@@ -4488,86 +4496,114 @@ async function localDoctor(args: string[]): Promise<number> {
   return report.ok ? 0 : 1;
 }
 
-async function cursorProjectDoctorChecks(configPath: string, expectedTools: string[], args: string[]): Promise<DoctorCheck[]> {
+async function managedMcpProjectDoctorChecks(configPath: string, expectedTools: string[], args: string[]): Promise<DoctorCheck[]> {
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? path.dirname(path.resolve(configPath)));
-  try {
-    const status = await cursorProjectStatus(projectRoot);
-    if (status.state === "not_installed") {
-      return [{
-        name: "cursor-project:installation",
-        ok: true,
-        level: "warn",
-        message: `No Runner-owned project Cursor entry is installed. Preview it with ${cliCommandName()} mcp install cursor --project --project-root ${projectRoot} --dry-run.`,
-      }];
-    }
-    if (status.state !== "installed") {
-      return [{
-        name: "cursor-project:installation",
-        ok: false,
-        level: "fail",
-        message: status.message,
-      }];
-    }
-    const authoring = isCursorAuthoringEntry(status.entry);
-    const authoringTools = ["app.describe_data", "app.explore_data"];
-    const reviewedTools = authoring ? authoringTools : expectedTools;
-    const recordedConfig = path.resolve(projectRoot, status.paths.configArgument);
-    const configMatches = recordedConfig === path.resolve(configPath);
-    const checks: DoctorCheck[] = [{
-      name: "cursor-project:installation",
-      ok: authoring || configMatches,
-      level: authoring || configMatches ? "pass" : "fail",
-      message: authoring
-        ? "Runner owns an intact local authoring Cursor entry; it does not depend on a production Runner config."
-        : configMatches
-          ? `Runner owns an intact project Cursor entry for ${status.paths.configArgument}.`
-        : `Cursor entry points to ${status.paths.configArgument}, but doctor inspected ${path.resolve(configPath)}.`,
-    }, {
-      name: "cursor-project:model-tools",
-      ok: reviewedTools.length > 0,
-      level: reviewedTools.length > 0 ? "pass" : "fail",
-      message: authoring
-        ? `Authoring tools: ${authoringTools.join(", ")}. Scoped Explore remains local development/staging only; activation, approval, apply, revert, credentials, and trusted identity remain outside MCP.`
-        : `Reviewed model-facing tools: ${expectedTools.join(", ") || "none"}. Approval, apply, revert, policy, credentials, and trusted identity remain outside MCP.`,
-    }];
-    if (!args.includes("--check-cursor")) {
-      checks.push({
-        name: "cursor-project:launch",
-        ok: true,
-        level: "warn",
-        message: `Cursor command was not launched. Rerun with --check-cursor to perform a real stdio initialize + tools/list handshake.`,
-      });
-      return checks;
-    }
-    const entry = status.entry;
-    const command = typeof entry?.command === "string" ? entry.command : "";
-    const commandArgs = Array.isArray(entry?.args) && entry.args.every((value) => typeof value === "string") ? entry.args as string[] : [];
-    if (!command) {
-      checks.push({ name: "cursor-project:launch", ok: false, level: "fail", message: "Cursor Synapsor entry has no valid command." });
-      return checks;
-    }
-    const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "10000");
-    if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new Error("--timeout-ms must be an integer from 100 to 120000");
-    const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, projectRoot);
-    const liveTools = mcpAuditToolNames(response);
-    const matches = stableStringArray(liveTools).join("\n") === stableStringArray(reviewedTools).join("\n");
-    checks.push({
-      name: "cursor-project:launch",
-      ok: matches,
-      level: matches ? "pass" : "fail",
-      message: matches
-        ? `Configured Cursor command started and exposed exactly ${liveTools.length} reviewed tool(s).`
-        : `Configured command exposed ${liveTools.join(", ") || "no tools"}; expected ${reviewedTools.join(", ") || "no tools"}.`,
-    });
-    return checks;
-  } catch (error) {
+  const clients: ManagedMcpProjectClient[] = ["cursor", "claude-code", "vscode"];
+  const requestedLaunch = args.includes("--check-cursor")
+    ? "cursor"
+    : optionalArg(args, "--check-mcp-client");
+  const launchClient = requestedLaunch === undefined
+    ? undefined
+    : parseManagedMcpProjectClient(requestedLaunch);
+  const statuses = await Promise.all(clients.map(async (client) => ({
+    client,
+    definition: managedMcpProjectDefinition(client),
+    status: await managedMcpProjectStatus(client, projectRoot),
+  })));
+  const relevant = statuses.filter(({ status, client }) =>
+    status.state !== "not_installed" || client === launchClient);
+  if (relevant.length === 0) {
     return [{
-      name: "cursor-project:installation",
-      ok: false,
-      level: "fail",
-      message: `Cursor project verification failed: ${safeErrorMessage(error)}`,
+      name: "mcp-project:installation",
+      ok: true,
+      level: "warn",
+      message: `No Runner-owned project MCP entry is installed. Preview one with ${cliCommandName()} mcp install <cursor|claude-code|vscode> --project --project-root ${projectRoot} --dry-run.`,
     }];
   }
+
+  const checks: DoctorCheck[] = [];
+  for (const { client, definition, status } of relevant) {
+    const prefix = `${client}-project`;
+    try {
+      if (status.state === "not_installed") {
+        checks.push({
+          name: `${prefix}:installation`,
+          ok: false,
+          level: "fail",
+          message: `No Runner-owned ${definition.displayName} project entry is installed, so the requested launch check cannot run.`,
+        });
+        continue;
+      }
+      if (status.state !== "installed") {
+        checks.push({
+          name: `${prefix}:installation`,
+          ok: false,
+          level: "fail",
+          message: status.message,
+        });
+        continue;
+      }
+      const authoring = isManagedAuthoringEntry(status.entry);
+      const authoringTools = ["app.describe_data", "app.explore_data"];
+      const reviewedTools = authoring ? authoringTools : expectedTools;
+      const recordedConfig = path.resolve(projectRoot, status.paths.configArgument);
+      const configMatches = recordedConfig === path.resolve(configPath);
+      checks.push({
+        name: `${prefix}:installation`,
+        ok: authoring || configMatches,
+        level: authoring || configMatches ? "pass" : "fail",
+        message: authoring
+          ? `Runner owns an intact local authoring ${definition.displayName} entry; it does not depend on a production Runner config.`
+          : configMatches
+            ? `Runner owns an intact ${definition.displayName} project entry for ${status.paths.configArgument}.`
+            : `${definition.displayName} entry points to ${status.paths.configArgument}, but doctor inspected ${path.resolve(configPath)}.`,
+      }, {
+        name: `${prefix}:model-tools`,
+        ok: reviewedTools.length > 0,
+        level: reviewedTools.length > 0 ? "pass" : "fail",
+        message: authoring
+          ? `Authoring tools: ${authoringTools.join(", ")}. Scoped Explore remains local development/staging only; activation, approval, apply, revert, credentials, and trusted identity remain outside MCP.`
+          : `Reviewed model-facing tools: ${expectedTools.join(", ") || "none"}. Approval, apply, revert, policy, credentials, and trusted identity remain outside MCP.`,
+      });
+      if (launchClient !== client) {
+        checks.push({
+          name: `${prefix}:launch`,
+          ok: true,
+          level: "warn",
+          message: `${definition.displayName} command was not launched. Rerun with --check-mcp-client ${client} to perform a real stdio initialize + tools/list handshake.`,
+        });
+        continue;
+      }
+      const entry = status.entry;
+      const command = typeof entry?.command === "string" ? entry.command : "";
+      const commandArgs = Array.isArray(entry?.args) && entry.args.every((value) => typeof value === "string") ? entry.args as string[] : [];
+      if (!command) {
+        checks.push({ name: `${prefix}:launch`, ok: false, level: "fail", message: `${definition.displayName} Synapsor entry has no valid command.` });
+        continue;
+      }
+      const timeoutMs = Number(optionalArg(args, "--timeout-ms") ?? "10000");
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new Error("--timeout-ms must be an integer from 100 to 120000");
+      const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, projectRoot);
+      const liveTools = mcpAuditToolNames(response);
+      const matches = stableStringArray(liveTools).join("\n") === stableStringArray(reviewedTools).join("\n");
+      checks.push({
+        name: `${prefix}:launch`,
+        ok: matches,
+        level: matches ? "pass" : "fail",
+        message: matches
+          ? `Configured ${definition.displayName} command started and exposed exactly ${liveTools.length} reviewed tool(s).`
+          : `Configured command exposed ${liveTools.join(", ") || "no tools"}; expected ${reviewedTools.join(", ") || "no tools"}.`,
+      });
+    } catch (error) {
+      checks.push({
+        name: `${prefix}:installation`,
+        ok: false,
+        level: "fail",
+        message: `${definition.displayName} project verification failed: ${safeErrorMessage(error)}`,
+      });
+    }
+  }
+  return checks;
 }
 
 async function httpSecurityDoctorChecks(config: RuntimeConfig, args: string[]): Promise<DoctorCheck[]> {
@@ -9131,11 +9167,12 @@ async function mcp(args: string[]): Promise<number> {
 }
 
 async function mcpProjectInstall(args: string[]): Promise<number> {
-  const [client, ...rest] = args;
-  if (client !== "cursor") throw new Error("mcp install currently supports cursor only");
-  assertKnownOptions(rest, new Set(["--project", "--project-root", "--config", "--store", "--authoring", "--dry-run", "--yes", "--json"]), "mcp install cursor");
+  const [clientValue, ...rest] = args;
+  const client = parseManagedMcpProjectClient(clientValue);
+  const definition = managedMcpProjectDefinition(client);
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--config", "--store", "--authoring", "--dry-run", "--yes", "--json"]), `mcp install ${client}`);
   if (!rest.includes("--project")) {
-    throw new Error("mcp install cursor requires --project so Runner changes only the current project's .cursor/mcp.json");
+    throw new Error(`mcp install ${client} requires --project so Runner changes only the current project's ${definition.destination}`);
   }
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
   const authoring = rest.includes("--authoring");
@@ -9150,39 +9187,40 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
     await readRuntimeConfig(absoluteConfig);
     const boundary = await inspectMcpToolBoundary(["--config", absoluteConfig, "--store", ":memory:"]);
     if (!boundary.ok) {
-      throw new Error(`Cursor install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
+      throw new Error(`${definition.displayName} install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
     }
     toolNames = boundary.names;
   }
-  const preview = await previewCursorProjectInstall({ projectRoot, configPath, storePath, authoring });
-  const report = cursorProjectLifecycleReport(preview, toolNames, authoring);
+  const preview = await previewManagedMcpProjectInstall({ client, projectRoot, configPath, storePath, authoring });
+  const report = managedMcpProjectLifecycleReport(client, preview, toolNames, authoring);
   const json = rest.includes("--json");
   if (rest.includes("--dry-run") || preview.action === "unchanged") {
     if (json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    else process.stdout.write(formatCursorProjectPreview(report));
+    else process.stdout.write(formatManagedMcpProjectPreview(report));
     return 0;
   }
-  if (!json) process.stdout.write(formatCursorProjectPreview(report));
+  if (!json) process.stdout.write(formatManagedMcpProjectPreview(report));
   await confirmDangerousAction(rest, `Install the reviewed Synapsor MCP entry in ${path.relative(projectRoot, preview.paths.destination)}?`);
-  const installed = await installCursorProject({ projectRoot, configPath, storePath, authoring });
+  const installed = await installManagedMcpProject({ client, projectRoot, configPath, storePath, authoring });
   if (json) {
     process.stdout.write(`${JSON.stringify({ ...report, action: installed.action, installed: true, backup: installed.backup ?? null }, null, 2)}\n`);
   } else {
-    process.stdout.write(`Cursor project MCP entry installed at ${path.relative(projectRoot, installed.paths.destination)}.\n`);
+    process.stdout.write(`${definition.displayName} project MCP entry installed at ${path.relative(projectRoot, installed.paths.destination)}.\n`);
     if (installed.backup) process.stdout.write(`Backup: ${installed.backup}\n`);
-    process.stdout.write("Restart or reload Cursor, then run `synapsor-runner mcp status cursor --project` to verify the reviewed tool boundary.\n");
+    process.stdout.write(`${definition.reloadInstruction}, then run \`synapsor-runner mcp status ${client} --project\` to verify the reviewed tool boundary.\n`);
   }
   return 0;
 }
 
 async function mcpProjectStatus(args: string[]): Promise<number> {
-  const [client, ...rest] = args;
-  if (client !== "cursor") throw new Error("mcp status currently supports cursor only");
-  assertKnownOptions(rest, new Set(["--project", "--project-root", "--json", "--check-launch", "--timeout-ms"]), "mcp status cursor");
-  if (!rest.includes("--project")) throw new Error("mcp status cursor requires --project");
+  const [clientValue, ...rest] = args;
+  const client = parseManagedMcpProjectClient(clientValue);
+  const definition = managedMcpProjectDefinition(client);
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--json", "--check-launch", "--timeout-ms"]), `mcp status ${client}`);
+  if (!rest.includes("--project")) throw new Error(`mcp status ${client} requires --project`);
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
-  const status = await cursorProjectStatus(projectRoot);
-  const authoring = status.state === "installed" && isCursorAuthoringEntry(status.entry);
+  const status = await managedMcpProjectStatus(client, projectRoot);
+  const authoring = status.state === "installed" && isManagedAuthoringEntry(status.entry);
   let tools: string[] = [];
   let launch: { checked: boolean; ok: boolean; message: string } = {
     checked: false,
@@ -9206,7 +9244,7 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
       const entry = status.entry;
       const command = typeof entry?.command === "string" ? entry.command : "";
       const commandArgs = Array.isArray(entry?.args) && entry.args.every((value) => typeof value === "string") ? entry.args as string[] : [];
-      if (!command) throw new Error("Cursor Synapsor entry does not contain a valid command");
+      if (!command) throw new Error(`${definition.displayName} Synapsor entry does not contain a valid command`);
       const timeoutMs = Number(optionalArg(rest, "--timeout-ms") ?? "10000");
       if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new Error("--timeout-ms must be an integer from 100 to 120000");
       const response = await fetchStdioMcpToolsCommand(command, commandArgs, timeoutMs, projectRoot);
@@ -9215,12 +9253,14 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
       launch = {
         checked: true,
         ok: matches,
-        message: matches ? `Cursor command started and exposed exactly ${liveNames.length} reviewed tool(s).` : `Started command exposed ${liveNames.join(", ") || "no tools"}; expected ${tools.join(", ") || "no tools"}.`,
+        message: matches ? `${definition.displayName} command started and exposed exactly ${liveNames.length} reviewed tool(s).` : `Started command exposed ${liveNames.join(", ") || "no tools"}; expected ${tools.join(", ") || "no tools"}.`,
       };
     }
   }
   const report = {
     ok: status.state === "installed" && launch.ok,
+    client,
+    client_name: definition.displayName,
     state: status.state,
     mode: authoring ? "authoring" : "runtime",
     message: status.message,
@@ -9232,19 +9272,22 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
     launch,
   };
   if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  else process.stdout.write(formatCursorProjectStatus(report));
+  else process.stdout.write(formatManagedMcpProjectStatus(report));
   return report.ok ? 0 : 1;
 }
 
 async function mcpProjectUninstall(args: string[]): Promise<number> {
-  const [client, ...rest] = args;
-  if (client !== "cursor") throw new Error("mcp uninstall currently supports cursor only");
-  assertKnownOptions(rest, new Set(["--project", "--project-root", "--dry-run", "--yes", "--json"]), "mcp uninstall cursor");
-  if (!rest.includes("--project")) throw new Error("mcp uninstall cursor requires --project");
+  const [clientValue, ...rest] = args;
+  const client = parseManagedMcpProjectClient(clientValue);
+  const definition = managedMcpProjectDefinition(client);
+  assertKnownOptions(rest, new Set(["--project", "--project-root", "--dry-run", "--yes", "--json"]), `mcp uninstall ${client}`);
+  if (!rest.includes("--project")) throw new Error(`mcp uninstall ${client} requires --project`);
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
-  const status = await cursorProjectStatus(projectRoot);
+  const status = await managedMcpProjectStatus(client, projectRoot);
   const preview = {
     ok: status.state === "installed" || status.state === "not_installed",
+    client,
+    client_name: definition.displayName,
     state: status.state,
     changed: status.state === "installed",
     destination: path.relative(projectRoot, status.paths.destination),
@@ -9258,37 +9301,43 @@ async function mcpProjectUninstall(args: string[]): Promise<number> {
     return preview.ok ? 0 : 1;
   }
   if (!json) process.stdout.write(`${preview.message}\nWill remove only the Runner-owned Synapsor entry from ${preview.destination}.\n`);
-  if (!preview.ok) throw new Error("Cursor project entry is unowned or changed; refusing to remove it automatically");
+  if (!preview.ok) throw new Error(`${definition.displayName} project entry is unowned or changed; refusing to remove it automatically`);
   await confirmDangerousAction(rest, `Remove only the Runner-owned Synapsor MCP entry from ${preview.destination}?`);
-  const removed = await uninstallCursorProject({ projectRoot });
+  const removed = await uninstallManagedMcpProject({ client, projectRoot });
   if (json) process.stdout.write(`${JSON.stringify({ ...preview, changed: removed.changed, backup: removed.backup ?? null }, null, 2)}\n`);
-  else process.stdout.write(`Removed Runner-owned Cursor project MCP entry. Backup: ${removed.backup}\n`);
+  else process.stdout.write(`Removed Runner-owned ${definition.displayName} project MCP entry. Backup: ${removed.backup}\n`);
   return 0;
 }
 
-function cursorProjectLifecycleReport(
-  preview: Awaited<ReturnType<typeof previewCursorProjectInstall>>,
+function managedMcpProjectLifecycleReport(
+  client: ManagedMcpProjectClient,
+  preview: Awaited<ReturnType<typeof previewManagedMcpProjectInstall>>,
   tools: string[],
   authoring = false,
 ): Record<string, unknown> {
+  const definition = managedMcpProjectDefinition(client);
   return {
     ok: true,
+    client,
+    client_name: definition.displayName,
     action: preview.action,
     mode: authoring ? "authoring" : "runtime",
     destination: path.relative(preview.paths.projectRoot, preview.paths.destination),
     config: authoring ? null : preview.paths.configArgument,
     store: authoring ? null : preview.paths.storeArgument,
     preserves_other_servers: true,
-    credentials_in_cursor_config: false,
+    credentials_in_client_config: false,
+    ...(client === "cursor" ? { credentials_in_cursor_config: false } : {}),
     tools,
     not_exposed_to_mcp: defaultBlockedToolSurface(),
   };
 }
 
-function formatCursorProjectPreview(report: Record<string, unknown>): string {
+function formatManagedMcpProjectPreview(report: Record<string, unknown>): string {
   const tools = Array.isArray(report.tools) ? report.tools.join(", ") : "";
+  const clientName = String(report.client_name);
   return [
-    `Cursor project MCP ${String(report.action)} preview`,
+    `${clientName} project MCP ${String(report.action)} preview`,
     `Mode: ${String(report.mode)}`,
     `Destination: ${String(report.destination)}`,
     ...(report.mode === "authoring"
@@ -9296,13 +9345,14 @@ function formatCursorProjectPreview(report: Record<string, unknown>): string {
       : [`Runner config: ${String(report.config)}`, `Runner store: ${String(report.store)}`]),
     `Model-facing tools: ${tools || "none"}`,
     "Approval, apply, revert, policy, credentials, and trusted identity stay outside MCP.",
-    "Other Cursor MCP servers and project settings are preserved.",
+    `Other ${clientName} MCP servers and project settings are preserved.`,
     "",
   ].join("\n");
 }
 
-function formatCursorProjectStatus(report: {
+function formatManagedMcpProjectStatus(report: {
   ok: boolean;
+  client_name: string;
   state: string;
   message: string;
   mode: string;
@@ -9312,7 +9362,7 @@ function formatCursorProjectStatus(report: {
   launch: { checked: boolean; ok: boolean; message: string };
 }): string {
   return [
-    `Cursor project MCP: ${report.state}`,
+    `${report.client_name} project MCP: ${report.state}`,
     report.message,
     `Mode: ${report.mode}`,
     `Destination: ${report.destination}`,
@@ -9324,7 +9374,7 @@ function formatCursorProjectStatus(report: {
   ].join("\n");
 }
 
-function isCursorAuthoringEntry(entry: Record<string, unknown> | undefined): boolean {
+function isManagedAuthoringEntry(entry: Record<string, unknown> | undefined): boolean {
   return Array.isArray(entry?.args)
     && entry.args.every((value) => typeof value === "string")
     && entry.args.includes("--authoring");
@@ -20014,7 +20064,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary activate --headless --review-bundle boundary-review.json --config ./synapsor/synapsor.runner.json --confirm "ACTIVATE sha256:..." --identity reviewer --identity-key ./reviewer.pem --required-role boundary_reviewer --reason "Reviewed staging authority"
   ${cmd} boundary status [--project-root .] [--json]
   ${cmd} boundary diff [--project-root .] [--json]
-  ${cmd} mcp install cursor --project --authoring --project-root . --yes
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --project-root . --yes
 
 Draft the whole deterministic application boundary without opening a browser,
 inspect/export its disabled review state, and compare the generation lock with
@@ -20027,7 +20077,8 @@ exact digest confirmation, a short-lived nonce-bound decision, and a configured
 signed_key or jwt_oidc operator identity carrying the required role. --yes and
 an actor string are never sufficient. Workbench and CLI converge on the same
 activation checks. After activation, --authoring installs exactly
-app.describe_data and app.explore_data in the current Cursor project. Scoped
+app.describe_data and app.explore_data in the selected Cursor, Claude Code, or
+VS Code project. Scoped
 Explore remains local stdio only and is absent from production and remote HTTP.
 `,
     action: `Usage:
@@ -20090,10 +20141,10 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
-  ${cmd} mcp install cursor --project --authoring [--project-root .] [--dry-run]
-  ${cmd} mcp install cursor --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
-  ${cmd} mcp status cursor --project [--check-launch]
-  ${cmd} mcp uninstall cursor --project [--dry-run]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp status <cursor|claude-code|vscode> --project [--check-launch]
+  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--dry-run]
   ${cmd} mcp audit --example dangerous-db-mcp
   ${cmd} mcp audit ./tools-list.json
   ${cmd} mcp audit generate ./tools-list.json --output ./synapsor-audit-candidates
@@ -20103,10 +20154,11 @@ Stdio opens no network socket and needs no HTTP credential. Networked MCP is aut
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
 `,
     "mcp install": `Usage:
-  ${cmd} mcp install cursor --project --authoring [--project-root .] [--dry-run] [--yes]
-  ${cmd} mcp install cursor --project [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db] [--dry-run] [--yes]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run] [--yes]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db] [--dry-run] [--yes]
 
-Preview, confirm, and merge a project-scoped Synapsor entry into .cursor/mcp.json.
+Preview, confirm, and merge a project-scoped Synapsor entry into
+.cursor/mcp.json, .mcp.json, or .vscode/mcp.json.
 Runner preserves other servers/settings, creates a backup before changing an
 existing file, records explicit ownership, and never writes database URLs,
 credentials, trusted identity, approval, apply, revert, or policy authority.
@@ -20117,16 +20169,16 @@ runtime config. Re-run without --authoring after Protect activates a production
 named capability.
 `,
     "mcp status": `Usage:
-  ${cmd} mcp status cursor --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
+  ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
 
-Verify Runner's project-scoped Cursor ownership marker and print the exact
+Verify Runner's project-scoped client ownership marker and print the exact
 reviewed model-facing tools. --check-launch performs a real stdio initialize +
 tools/list handshake with the configured command.
 `,
     "mcp uninstall": `Usage:
-  ${cmd} mcp uninstall cursor --project [--project-root .] [--dry-run] [--yes] [--json]
+  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--project-root .] [--dry-run] [--yes] [--json]
 
-Remove only the Runner-owned Synapsor entry. Other Cursor MCP servers and
+Remove only the Runner-owned Synapsor entry. Other client MCP servers and
 project settings are preserved, and edited/unowned entries fail closed.
 `,
     tools: `Usage:
@@ -20331,6 +20383,7 @@ security guarantee.
   ${cmd} doctor --config synapsor.runner.json --check-handlers
   ${cmd} doctor --config synapsor.runner.json --check-writeback
   ${cmd} doctor --config synapsor.runner.json --check-rls
+  ${cmd} doctor --config synapsor.runner.json --check-mcp-client <cursor|claude-code|vscode>
   ${cmd} doctor --config synapsor.runner.json --transport streamable-http --host 127.0.0.1 --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} doctor --config synapsor.runner.json --transport streamable-http --host 0.0.0.0 --trusted-tls-proxy
   ${cmd} doctor --config synapsor.runner.json --transport streamable-http --host 0.0.0.0 --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM

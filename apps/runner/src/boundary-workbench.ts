@@ -1775,12 +1775,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
-	    function renderClientConfigs(){
-	      const command="npx -y @synapsor/runner mcp serve --authoring --project-root .";
-	      const config={mcpServers:{synapsor_authoring:{command:"npx",args:["-y","@synapsor/runner","mcp","serve","--authoring","--project-root","."]}}};
-	      const codex='[mcp_servers.synapsor_authoring]\\ncommand = "npx"\\nargs = '+JSON.stringify(config.mcpServers.synapsor_authoring.args);
-	      byId("client-configs").innerHTML='<p>All clients receive the same two local authoring tools and no approval or commit tool.</p><h3>Generic stdio MCP</h3><pre>'+esc(JSON.stringify(config,null,2))+'</pre><h3>Cursor project</h3><p>Save the same JSON as <code>.cursor/mcp.json</code>, or use the consent-gated installer.</p><pre>'+esc("synapsor-runner mcp install cursor --project --authoring --project-root . --yes")+'</pre><h3>Claude-compatible local MCP</h3><p>Use the same stdio server command in the client MCP configuration. No model API key is needed by Runner.</p><pre>'+esc(command)+'</pre><h3>Codex</h3><pre>'+esc(codex)+'</pre>';
-	    }
+		    function renderClientConfigs(){
+		      const command="npx -y @synapsor/runner mcp serve --authoring --project-root .";
+		      const config={mcpServers:{synapsor_authoring:{command:"npx",args:["-y","@synapsor/runner","mcp","serve","--authoring","--project-root","."]}}};
+		      const codex='[mcp_servers.synapsor_authoring]\\ncommand = "npx"\\nargs = '+JSON.stringify(config.mcpServers.synapsor_authoring.args);
+		      byId("client-configs").innerHTML='<p>Every path receives the same two local authoring tools and no approval or commit tool. Runner never puts database credentials in these files.</p><h3>Managed project installers</h3><p>Each command previews and owns only the <code>synapsor</code> entry, preserves other project settings, and creates a backup before editing an existing file.</p><pre>'+esc("synapsor-runner mcp install cursor --project --authoring --project-root . --yes\\nsynapsor-runner mcp install claude-code --project --authoring --project-root . --yes\\nsynapsor-runner mcp install vscode --project --authoring --project-root . --yes")+'</pre><h3>Generic stdio MCP</h3><pre>'+esc(JSON.stringify(config,null,2))+'</pre><h3>Direct server command</h3><p>Use this in another local MCP client. No model API key is needed by Runner.</p><pre>'+esc(command)+'</pre><h3>Codex</h3><pre>'+esc(codex)+'</pre>';
+		    }
 
     async function loadProtect(preferredRef=preferredProtectQueryRef){
       const status=byId("protect-message");
