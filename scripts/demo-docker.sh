@@ -39,16 +39,13 @@ trap cleanup_generated_artifacts EXIT
 
 node_module_mounts=(
   --mount "type=volume,destination=$ROOT/node_modules"
-  --mount "type=volume,destination=$ROOT/apps/runner/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/config/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/control-plane-client/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/mcp-server/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/mysql/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/postgres/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/proposal-store/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/protocol/node_modules"
-  --mount "type=volume,destination=$ROOT/packages/worker-core/node_modules"
 )
+
+for package_json in "$ROOT"/apps/*/package.json "$ROOT"/packages/*/package.json; do
+  [ -f "$package_json" ] || continue
+  workspace_dir="${package_json%/package.json}"
+  node_module_mounts+=(--mount "type=volume,destination=$workspace_dir/node_modules")
+done
 
 echo "Running local MCP proof inside Docker:"
 echo "- starts disposable Postgres/MySQL containers"
@@ -66,6 +63,8 @@ docker run --rm \
   -e HOME=/tmp/synapsor-demo-home \
   -e COREPACK_HOME=/tmp/synapsor-demo-corepack \
   -e PNPM_HOME=/tmp/synapsor-demo-pnpm-home \
+  -e SYNAPSOR_DEMO_HOST_GID="$(id -g)" \
+  -e SYNAPSOR_DEMO_HOST_UID="$(id -u)" \
   -e SYNAPSOR_RUNNER_TMP_ROOT=/tmp/synapsor-runner-local-demo \
   -e SYNAPSOR_RUNNER_SKIP_RELEASE_ASSETS=1 \
   -e SYNAPSOR_LOCAL_DB_HOST=host.docker.internal \
@@ -74,7 +73,15 @@ docker run --rm \
   -v "$ROOT:$ROOT" \
   -w "$ROOT" \
   "$IMAGE" \
-  'mkdir -p "$HOME" "$COREPACK_HOME" "$PNPM_HOME" "$XDG_CACHE_HOME" "$SYNAPSOR_RUNNER_TMP_ROOT" /tmp/synapsor-demo-pnpm-store && corepack pnpm --store-dir=/tmp/synapsor-demo-pnpm-store install --frozen-lockfile && corepack pnpm run build:runner-package && corepack pnpm run test:mcp-local'
+  'restore_host_build_ownership() {
+     chown -R "$SYNAPSOR_DEMO_HOST_UID:$SYNAPSOR_DEMO_HOST_GID" "$PWD"/apps/*/dist "$PWD"/packages/*/dist 2>/dev/null || true
+     chown "$SYNAPSOR_DEMO_HOST_UID:$SYNAPSOR_DEMO_HOST_GID" "$PWD"/apps/*/tsconfig.tsbuildinfo "$PWD"/packages/*/tsconfig.tsbuildinfo 2>/dev/null || true
+   }
+   trap restore_host_build_ownership EXIT
+   mkdir -p "$HOME" "$COREPACK_HOME" "$PNPM_HOME" "$XDG_CACHE_HOME" "$SYNAPSOR_RUNNER_TMP_ROOT" /tmp/synapsor-demo-pnpm-store
+   corepack pnpm --store-dir=/tmp/synapsor-demo-pnpm-store install --frozen-lockfile
+   corepack pnpm run build:runner-package
+   corepack pnpm run test:mcp-local'
 
 echo
 echo "Docker-only local demo complete."
