@@ -96,6 +96,73 @@ if [[ "$ACTUAL_SPEC_VERSION" != "$EXPECTED_SPEC_VERSION" ]]; then
   echo "packed Runner resolved Spec $ACTUAL_SPEC_VERSION, expected $EXPECTED_SPEC_VERSION" >&2
   exit 1
 fi
+
+# Compile every public declaration entrypoint from the clean packed install.
+# Internal workspace aliases and source-only relative modules must never leak
+# into the published type surface.
+npm install \
+  --ignore-scripts \
+  --no-audit \
+  --no-fund \
+  --save-dev \
+  "typescript@5.9.3" \
+  "@types/node@22" \
+  >/dev/null
+cat > packed-consumer.ts <<'TS'
+import { main, type SupervisedWriterPostureAssessment } from "@synapsor/runner/cli";
+import { defineResource, type ResourceSpec } from "@synapsor/runner/authoring";
+import {
+  createShadowOutcomeRecorder,
+  type ShadowEffect,
+} from "@synapsor/runner/shadow";
+import {
+  startRunnerStreamableHttp,
+  type TenantCredentialResolver,
+} from "@synapsor/runner/runtime";
+
+const assessment: SupervisedWriterPostureAssessment | undefined = undefined;
+const resource: ResourceSpec | undefined = undefined;
+const effect: ShadowEffect | undefined = undefined;
+const resolver: TenantCredentialResolver | undefined = undefined;
+
+void [
+  main,
+  defineResource,
+  createShadowOutcomeRecorder,
+  startRunnerStreamableHttp,
+  assessment,
+  resource,
+  effect,
+  resolver,
+];
+TS
+cat > tsconfig.packed-consumer.json <<'JSON'
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "strict": true,
+    "skipLibCheck": false,
+    "noEmit": true
+  },
+  "include": ["packed-consumer.ts"]
+}
+JSON
+./node_modules/.bin/tsc --project tsconfig.packed-consumer.json
+if grep -E \
+  '@synapsor-runner/|from "\./|import\("\./' \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/cli.d.ts" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/shadow.d.ts"; then
+  echo "packed Runner declarations expose an omitted internal module" >&2
+  exit 1
+fi
+if grep -F "$ROOT/" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/cli.d.ts" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/shadow.d.ts"; then
+  echo "packed Runner declarations expose a repository-local absolute path" >&2
+  exit 1
+fi
 STORE_PATH="$TEMP_DIR/.synapsor/try/ledger.db"
 
 PACKED_ROOT="$TEMP_DIR/node_modules/@synapsor/runner"
