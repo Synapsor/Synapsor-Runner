@@ -59,9 +59,9 @@ It does not claim distributed exactly-once. See
 Use the helper commands before enabling direct SQL writeback:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner writeback doctor --config ./synapsor.runner.json
-npx -y -p @synapsor/runner synapsor-runner writeback migration --engine postgres
-npx -y -p @synapsor/runner synapsor-runner writeback grants --engine postgres --writer-role app_writer
+npx -y @synapsor/runner writeback doctor --config ./synapsor.runner.json
+npx -y @synapsor/runner writeback migration --engine postgres
+npx -y @synapsor/runner writeback grants --engine postgres --writer-role app_writer
 ```
 
 `writeback doctor --check-db` connects with the configured writer credential and
@@ -106,7 +106,7 @@ literal values.
 Run after approval:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner apply \
+npx -y @synapsor/runner apply \
   --proposal wrp_123 \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
@@ -199,13 +199,13 @@ handler receipt.
 Or generate one into your app:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner handler template node-fastify \
+npx -y @synapsor/runner handler template node-fastify \
   --output ./synapsor-writeback-handler.mjs
 
-npx -y -p @synapsor/runner synapsor-runner handler template python-fastapi \
+npx -y @synapsor/runner handler template python-fastapi \
   --output ./synapsor_writeback_handler.py
 
-npx -y -p @synapsor/runner synapsor-runner handler template command \
+npx -y @synapsor/runner handler template command \
   --output ./synapsor-command-handler.mjs
 ```
 

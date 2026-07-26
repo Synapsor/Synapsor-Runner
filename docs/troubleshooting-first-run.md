@@ -3,26 +3,26 @@
 Run the friendly doctor first:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner doctor --first-run
+npx -y @synapsor/runner doctor --first-run
 ```
 
 Use JSON for automation:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner doctor --first-run --json
+npx -y @synapsor/runner doctor --first-run --json
 ```
 
 ## Guided Recovery Contract
 
-Runner 1.6.3 failures should tell you what failed, why the boundary stopped,
+Runner 1.6.4 failures should tell you what failed, why the boundary stopped,
 what state remains, and one next action. Do not delete the project or add
 `--force` merely to recover.
 
 | Failure | State preserved | One next action |
 | --- | --- | --- |
-| Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the exported URL/network without printing the credential, then rerun `npx -y @synapsor/runner@latest start --from-env DATABASE_URL`. |
+| Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the URL/network without printing the credential, then rerun `npx -y @synapsor/runner start`. |
 | Read role is writable, owner, superuser, `BYPASSRLS`, or unverifiable | Disabled metadata draft; no source-row Explore | Supply a verifiably SELECT-only non-owner staging role, then rerun the same `start` command. |
-| Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner@latest start --from-env DATABASE_URL --schema public`. |
+| Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner start --schema public`. |
 | Tenant or principal scope is unresolved | Conservative blocked resource decisions | Open the same Workbench URL and resolve the highlighted scope exception. |
 | Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
 | Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
@@ -33,6 +33,9 @@ what state remains, and one next action. Do not delete the project or add
 | Config mode is missing/invalid | Config and source database are unchanged | Set `mode` to `read_only`, `shadow`, `review`, or `cloud`, then rerun `synapsor-runner config validate --json`. |
 | Config contains an unknown field | Config and source database are unchanged | Remove or correct the reported JSON path, then rerun `synapsor-runner config validate --json`. |
 | Workbench port is occupied | Review files, ledger, and source database | Rerun `synapsor-runner ui --open`; the default selects a free loopback port. |
+| Workbench Ask is missing | Reviewed project remains usable through no-model Workbench/CLI/MCP | Use authenticated loopback Workbench with an explicit development/staging profile and at least one active reviewed tool. |
+| Ask provider/key fails | Boundary, no-model composer, and external MCP remain usable | Check the exported key name, provider/model access, and local DNS/TLS; then retry without changing authority. |
+| Ask says authority changed | Previous consent is invalid; active reviewed tools remain unchanged | Inspect the new tool/digest summary and acknowledge direct egress again. |
 | Writeback setup fails | Config and reviewed plan; transactional setup rolls back | Rerun `synapsor-runner writeback setup --profile staging --json` and review the reported prerequisite. |
 | Writer role/setup URL is missing | No DDL or grant was applied | Rerun the preview with `--writer-role <role> --setup-url-env <ADMIN_URL_ENV>`. |
 | No supported write candidate exists | Read boundary remains active; no write authority | Use **Add a safe action** on a writable base table with a proven identity/version field, or retain read-only mode. |
@@ -49,9 +52,10 @@ outcome; inspect the durable receipt/reconciliation state rather than guessing.
 
 ## Fresh Start Did Not Enter Auto Boundary
 
-Auto Boundary is the default only for a fresh interactive `start --from-env`
-with no existing config, selector, answers file, machine-output flag, or other
-automation input. This preserves every established 1.x route.
+Auto Boundary is the default only for a fresh interactive `start` with no
+existing config, selector, answers file, machine-output flag, or other
+automation input. An exported `DATABASE_URL` is implied; explicit connection
+and schema flags still win. This preserves every established 1.x route.
 
 Check the generated state:
 
@@ -92,6 +96,42 @@ transaction for every Explore call.
 A write-capable, owner, superuser, `BYPASSRLS`, or unverifiable credential may
 still inspect metadata with a warning. It cannot enable source-row Explore.
 Use a dedicated staging reader instead of weakening this check.
+
+## Workbench Ask Is Missing Or Refused
+
+Ask is optional and follows a stricter local profile boundary. It appears only
+in authenticated loopback Workbench for explicit `development` or `staging`
+projects with at least one reviewed tool. Production, unknown, shared, remote,
+and non-loopback surfaces intentionally omit it.
+
+Normal Runner and MCP execution do not automatically source `.env`. Fresh
+interactive `start` may read a regular project `.env` only after explicit
+consent and keeps the selected database URL in that process. For the optional
+model provider, export the key in the same shell that launches Workbench, then
+select **Read an environment variable** and enter only the variable name. A
+session-only masked paste is also supported.
+
+Provider errors are redacted and do not disable the no-model composer:
+
+- `ASK_KEY_REQUIRED`: export the selected key or use the masked session paste;
+- `ASK_AUTHORITY_CHANGED`: review the current tools/digest and acknowledge
+  direct egress again;
+- `ASK_PROVIDER_UNAVAILABLE`: verify provider availability, key/model access,
+  and local DNS/TLS, then retry;
+- `ASK_PROVIDER_REDIRECT_REFUSED`: use the final fixed endpoint; Runner never
+  forwards credentials across redirects;
+- `ASK_PROVIDER_DESTINATION_REFUSED`: the host resolved to a private, special,
+  metadata, or otherwise disallowed remote address;
+- `ASK_REMOTE_HTTPS_REQUIRED`: remote custom endpoints require HTTPS; HTTP is
+  accepted only on loopback;
+- `ASK_TOOL_REQUIRED`: the provider answered from prose without using a
+  reviewed Synapsor tool;
+- `ASK_UNKNOWN_TOOL` or `ASK_OPERATOR_TOOL_REFUSED`: the provider requested
+  authority outside the displayed tool surface.
+
+Select **Clear** after a session to cancel active work and discard in-memory
+provider configuration/history. See [Workbench Ask With Your
+Model](workbench-ask.md).
 
 ## Cursor Has Production Tools Instead Of Authoring Tools
 
@@ -327,13 +367,13 @@ Own-database MCP setup needs a reviewed config before serving tools.
 Fix:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner init --from-env DATABASE_URL --mode review --wizard
+npx -y @synapsor/runner init --from-env DATABASE_URL --mode review --wizard
 ```
 
 Or pass an example config:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner tools preview --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner tools preview --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 ## SQLite Store Missing
@@ -379,7 +419,7 @@ Fix:
 
 ```bash
 export SYNAPSOR_DATABASE_READ_URL="<read-only-url>"
-npx -y -p @synapsor/runner synapsor-runner doctor --config synapsor.runner.json
+npx -y @synapsor/runner doctor --config synapsor.runner.json
 ```
 
 ## Read/Write Credential Split Failed
@@ -491,7 +531,7 @@ Fix:
 Regenerate the snippet:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp config claude-desktop \
+npx -y @synapsor/runner mcp config claude-desktop \
   --absolute-paths \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db

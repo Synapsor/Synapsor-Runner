@@ -89,7 +89,8 @@ export type OperatorDecision = {
     | "worker_digest_revoke"
     | "worker_cancel"
     | "attention_acknowledge"
-    | "notification_replay";
+    | "notification_replay"
+    | "boundary_activate";
   proposal_id: string;
   proposal_version: number;
   proposal_hash: string;

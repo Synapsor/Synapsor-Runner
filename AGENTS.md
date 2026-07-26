@@ -10,8 +10,8 @@ writeback, and local evidence/replay.
 Use the stable package for public/user-facing examples:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner demo --quick
-npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp
+npx -y @synapsor/runner demo --quick
+npx -y @synapsor/runner audit --example dangerous-db-mcp
 ```
 
 Use the local checkout while editing this repo:

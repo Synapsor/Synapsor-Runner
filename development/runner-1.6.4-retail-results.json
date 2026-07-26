@@ -1,0 +1,151 @@
+{
+  "domain": "multi-tenant retail operations",
+  "package": {
+    "spec_tarball": "synapsor-spec-1.7.0.tgz",
+    "spec_sha256": "sha256:2f2fd600f4b5c7d2f30477aa7128f0c8fbd315edc946df57984c7ad5f73d3554",
+    "runner_tarball": "synapsor-runner-1.6.4.tgz",
+    "runner_sha256": "sha256:01b3de2c05ce956a496a92633a8d973c083581c1a8d38a2853f4bc08c0776e10"
+  },
+  "timings_ms": {
+    "schema_summary": 17055,
+    "boundary_activation": 18841,
+    "first_safe_read": 19312,
+    "first_pm_aggregate": 19947,
+    "protected_capability": 23979,
+    "first_guided_proposal": 25142,
+    "first_guarded_apply": 35009
+  },
+  "interactions": {
+    "shell_commands_through_first_value": 1,
+    "browser_clicks": 64,
+    "browser_text_entries": 25,
+    "manual_file_edits": 0
+  },
+  "starter_resources": [
+    "public.orders",
+    "public.products",
+    "public.sales_line_facts"
+  ],
+  "generated": {
+    "dsl": "synapsor/generated/read-capabilities.synapsor.sql",
+    "canonical_contract": "synapsor/generated/synapsor.candidate.contract.json",
+    "generation_lock": ".synapsor/generation-lock.json",
+    "review_report": ".synapsor/review-report.json",
+    "config": "synapsor.runner.json",
+    "store": ".synapsor/local.db"
+  },
+  "first_read": {
+    "resource": "public.sales_line_facts",
+    "object_id": "sales-fact-001",
+    "source_database_changed": false,
+    "tenant_scope": "merchant-northstar",
+    "principal_scope": "staff-manager-alex"
+  },
+  "aggregate": {
+    "question": "How did net revenue change by week across reviewed stores and product categories?",
+    "plan": "Calculate total net revenue cents for sales line facts grouped by Name from Stores, Name from Product categories for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.sales_line_facts\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"net_revenue_cents\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_store_id_fkey\"\n    },\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_product_category_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"sold_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
+    "source_database_changed": false,
+    "official_mcp_parity": true,
+    "mcp_returned_groups": 10
+  },
+  "view_recipe": {
+    "question": "What is the average net-to-gross revenue retention rate for my Pacific orders?",
+    "formula_owner": "reviewed security-invoker PostgreSQL view",
+    "capability": "retail.average_net_revenue_retention_pacific",
+    "value_basis_points": 9000,
+    "cohort_rows_included": false,
+    "trusted_tenant_and_principal_scope": true,
+    "source_database_changed": false,
+    "model_expression_grammar_added": false
+  },
+  "protected": {
+    "capability": "retail.weekly_revenue_by_store_and_category",
+    "digest": "sha256:72f5e53758ab7e8512d58cda9e6faad13b4a1fa1ea6e66616a8bbfb8335143d0",
+    "disabled_before_activation": true,
+    "activated_by_human": true,
+    "mode": "aggregate",
+    "generated_tests": 10
+  },
+  "write_lifecycle": {
+    "capability": "retail.propose_order_fulfillment",
+    "target": "public.orders:order-005",
+    "proposal_hash": "sha256:0418950090edec2000458be8b595fa6330b25dc061f995b0093998e7af1d2677",
+    "action_digest": "sha256:4f6238852ce6d586270d750711cadcb69e5a165ac69c798acc27e4743a9ed078",
+    "before": {
+      "status": "processing",
+      "version": 1
+    },
+    "after": {
+      "status": "fulfilled",
+      "version": 2
+    },
+    "proposal_changed_source": false,
+    "approval_changed_source": false,
+    "apply_changed_source": true,
+    "reversible": true,
+    "model_can_activate": false,
+    "model_can_approve": false,
+    "model_can_apply": false
+  },
+  "ask": {
+    "provider": "custom_openai_compatible_loopback",
+    "aggregate_official_mcp_parity": true,
+    "aggregate_source_database_changed": false,
+    "kept_out_field_refused": true,
+    "refusal_source_database_changed": false,
+    "provider_key_required": false,
+    "synapsor_relay": false,
+    "proposal_only": true,
+    "proposal_id": "wrp_1f50fb8aed84054fa21d",
+    "proposal_target": "order-010",
+    "model_can_activate": false,
+    "model_can_approve": false,
+    "model_can_apply": false
+  },
+  "security": {
+    "assigned_read_allowed": true,
+    "same_tenant_other_principal_hidden": true,
+    "other_tenant_hidden": true,
+    "model_selected_scope_refused": true,
+    "kept_out_plan_positions_refused": true,
+    "raw_sql_refused": true,
+    "authoring_tools": [
+      "app.describe_data",
+      "app.explore_data"
+    ]
+  },
+  "parity": {
+    "generated_dsl_matches_canonical_contract": true,
+    "explore_disabled_after_authoring": true,
+    "protected_capability_survives": true,
+    "runtime_tools": [
+      "retail.weekly_revenue_by_store_and_category",
+      "retail.propose_order_fulfillment"
+    ],
+    "protected_result_source_changed": false,
+    "proposal_tool_source_changed": false,
+    "cli_latest_lifecycle_without_id": true,
+    "redacted_query_audit_without_id": true
+  },
+  "elapsed_ms": 46747,
+  "screenshots": [
+    "01-overview.png",
+    "02-ready-to-activate.png",
+    "03-explore-ready.png",
+    "04-first-safe-read.png",
+    "05-pm-aggregate.png",
+    "05b-ask-aggregate.png",
+    "05c-ask-refusal.png",
+    "06-protected-draft.png",
+    "06b-protected-draft-dark.png",
+    "07-next-safe-action.png",
+    "08-disabled-safe-action.png",
+    "08b-disabled-safe-action-dark.png",
+    "09-proposal-created.png",
+    "10-human-review.png",
+    "11-approved-awaiting-apply.png",
+    "12-guarded-apply.png",
+    "13-ledger-timeline.png",
+    "13b-ask-proposal-only.png"
+  ]
+}

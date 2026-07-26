@@ -43,6 +43,9 @@ export type GuidedOnboardingState = {
   authority_active: boolean;
   source_database_changed: false;
   recommended_next_action: string;
+  instant_onboarding?: boolean;
+  graduation_tip_suppressed?: boolean;
+  graduation_tip_shown_at?: string;
 };
 
 export type GuidedProjectResult = {
@@ -85,6 +88,8 @@ export async function initializeGuidedProject(input: {
   runnerVersion: string;
   force?: boolean;
   now?: string;
+  instantOnboarding?: boolean;
+  suppressGraduationTip?: boolean;
 }): Promise<GuidedProjectResult> {
   const projectRoot = path.resolve(input.projectRoot);
   const paths = guidedProjectPaths(projectRoot);
@@ -136,9 +141,7 @@ export async function initializeGuidedProject(input: {
   const packageRef = `@synapsor/runner@${input.runnerVersion}`;
   const commandArgs = [
     "-y",
-    "-p",
     packageRef,
-    "synapsor-runner",
     "mcp",
     "serve",
     "--authoring",
@@ -185,6 +188,8 @@ export async function initializeGuidedProject(input: {
     authority_active: false,
     source_database_changed: false,
     recommended_next_action: "Review what the agent can see.",
+    ...(input.instantOnboarding ? { instant_onboarding: true } : {}),
+    ...(input.suppressGraduationTip ? { graduation_tip_suppressed: true } : {}),
   };
 
   const generatedFiles = new Map<string, string>([
@@ -262,6 +267,25 @@ export async function updateGuidedOnboardingState(input: {
   };
   await writeAtomic(path.join(projectRoot, ".synapsor/guided-onboarding.json"), json(next));
   return next;
+}
+
+export async function consumeGuidedGraduationTip(input: {
+  projectRoot: string;
+  now?: string;
+}): Promise<string | undefined> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const current = await readGuidedOnboardingState(projectRoot);
+  if (!current || current.graduation_tip_suppressed || current.graduation_tip_shown_at) {
+    return undefined;
+  }
+  const timestamp = input.now ?? new Date().toISOString();
+  const next: GuidedOnboardingState = {
+    ...current,
+    graduation_tip_shown_at: timestamp,
+    updated_at: timestamp,
+  };
+  await writeAtomic(path.join(projectRoot, ".synapsor/guided-onboarding.json"), json(next));
+  return "Install once: npm install -g @synapsor/runner. Then run synapsor-runner <command> without npx.";
 }
 
 export async function resetGuidedOnboardingForBoundaryReview(input: {

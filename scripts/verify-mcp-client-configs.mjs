@@ -301,7 +301,7 @@ verifyInstalledCliConfiguration("claude", [
     type: "stdio",
     command: "npx",
     args: [
-      "-y", "-p", "@synapsor/runner", "synapsor-runner", "mcp", "serve",
+      "-y", "@synapsor/runner", "mcp", "serve",
       "--config", "./examples/support-plan-credit/synapsor.runner.json",
       "--store", "./tmp/support-plan-credit/local.db",
     ],
@@ -309,7 +309,7 @@ verifyInstalledCliConfiguration("claude", [
 ], "claude-code");
 verifyInstalledCliConfiguration("codex", [
   "mcp", "add", "synapsor", "--",
-  "npx", "-y", "-p", "@synapsor/runner", "synapsor-runner", "mcp", "serve",
+  "npx", "-y", "@synapsor/runner", "mcp", "serve",
   "--config", "./examples/support-plan-credit/synapsor.runner.json",
   "--store", "./tmp/support-plan-credit/local.db",
 ], "codex");

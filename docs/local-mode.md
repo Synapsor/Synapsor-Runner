@@ -44,13 +44,13 @@ when you do not want to change your host Node version.
 Create a starter config without putting credentials in the file:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner init --engine postgres --mode review
+npx -y @synapsor/runner init --engine postgres --mode review
 ```
 
 For MySQL:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner init --engine mysql --mode review --output synapsor.mysql.runner.json
+npx -y @synapsor/runner init --engine mysql --mode review --output synapsor.mysql.runner.json
 ```
 
 The generated config uses environment-variable names for read/write URLs and trusted context. Edit the table, column, and capability names before serving tools.
@@ -63,8 +63,8 @@ persisted into proposals, evidence, query audit, runner state, or replay.
 For a reviewed own-database setup generated from explicit selections, use:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner init --spec onboarding-selection.json --non-interactive
-npx -y -p @synapsor/runner synapsor-runner doctor --config synapsor.runner.json
+npx -y @synapsor/runner init --spec onboarding-selection.json --non-interactive
+npx -y @synapsor/runner doctor --config synapsor.runner.json
 ```
 
 `doctor --config` checks config validation, required environment variables,
@@ -76,7 +76,7 @@ and the semantic MCP tool boundary without printing credential values.
 Use stdio for local MCP clients that launch Synapsor Runner:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp serve \
+npx -y @synapsor/runner mcp serve \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -87,7 +87,7 @@ MCP client:
 ```bash
 export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+npx -y @synapsor/runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
@@ -131,19 +131,19 @@ If neither is set, the CLI uses:
 List proposals:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals list --store ./.synapsor/local.db
+npx -y @synapsor/runner proposals list --store ./.synapsor/local.db
 ```
 
 Show a proposal:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals show wrp_123 --store ./.synapsor/local.db
+npx -y @synapsor/runner proposals show wrp_123 --store ./.synapsor/local.db
 ```
 
 Check a freshness-enabled proposal without copying its id:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals check-freshness latest \
+npx -y @synapsor/runner proposals check-freshness latest \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -151,7 +151,7 @@ npx -y -p @synapsor/runner synapsor-runner proposals check-freshness latest \
 Approve:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals approve wrp_123 \
+npx -y @synapsor/runner proposals approve wrp_123 \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --actor local_reviewer \
@@ -177,7 +177,7 @@ revalidates again because source data can change after approval. See
 Create a guarded writeback job from an approved proposal:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals writeback-job wrp_123 \
+npx -y @synapsor/runner proposals writeback-job wrp_123 \
   --store ./.synapsor/local.db \
   --project local \
   --runner local_runner \
@@ -189,7 +189,7 @@ The generated job uses the public `synapsor.writeback-job.v1` protocol and can b
 ```bash
 export SYNAPSOR_DATABASE_WRITE_URL="postgresql://writer:<password>@localhost:5432/app"
 SYNAPSOR_ENGINE=postgres \
-npx -y -p @synapsor/runner synapsor-runner apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner apply --job job.json --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 When `--config` is passed, direct SQL writeback reads the writer connection from
@@ -201,7 +201,7 @@ Passing `--store` records the terminal `synapsor.execution-receipt.v1` locally. 
 Reject:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals reject wrp_123 \
+npx -y @synapsor/runner proposals reject wrp_123 \
   --store ./.synapsor/local.db \
   --reason "policy evidence is incomplete" \
   --yes
@@ -222,7 +222,7 @@ pilot, use [Shadow Studies](shadow-studies.md).
 Start a localhost-only review UI:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner ui --config synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner ui --config synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 The UI shows setup summary, semantic tools, proposal states, exact diffs,
@@ -240,20 +240,20 @@ tools, MCP commit tools, or controls that widen configured tables/columns.
 Show replay:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner replay show wrp_123 --store ./.synapsor/local.db
-npx -y -p @synapsor/runner synapsor-runner replay show --proposal wrp_123 --store ./.synapsor/local.db
-npx -y -p @synapsor/runner synapsor-runner replay show --replay replay_wrp_123 --store ./.synapsor/local.db
-npx -y -p @synapsor/runner synapsor-runner replay show --evidence ev_123 --store ./.synapsor/local.db
+npx -y @synapsor/runner replay show wrp_123 --store ./.synapsor/local.db
+npx -y @synapsor/runner replay show --proposal wrp_123 --store ./.synapsor/local.db
+npx -y @synapsor/runner replay show --replay replay_wrp_123 --store ./.synapsor/local.db
+npx -y @synapsor/runner replay show --evidence ev_123 --store ./.synapsor/local.db
 ```
 
 Export replay:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner replay export wrp_123 \
+npx -y @synapsor/runner replay export wrp_123 \
   --store ./.synapsor/local.db \
   --output replay.json
 
-npx -y -p @synapsor/runner synapsor-runner replay export --proposal wrp_123 \
+npx -y @synapsor/runner replay export --proposal wrp_123 \
   --format markdown \
   --store ./.synapsor/local.db \
   --output replay.md

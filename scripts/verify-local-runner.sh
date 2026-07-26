@@ -36,8 +36,8 @@ grep -F "synapsor-runner evidence show ev_wrp_try_INV_3001 --store $STORE_PATH" 
 grep -F "synapsor-runner replay show wrp_try_INV_3001 --store $STORE_PATH" inspect.txt >/dev/null
 
 run demo inspect --npx > inspect-npx.txt
-grep -F "npx -y -p @synapsor/runner synapsor-runner proposals show wrp_try_INV_3001" inspect-npx.txt >/dev/null
-grep -F "npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp" inspect-npx.txt >/dev/null
+grep -F "npx -y @synapsor/runner proposals show wrp_try_INV_3001" inspect-npx.txt >/dev/null
+grep -F "npx -y @synapsor/runner audit --example dangerous-db-mcp" inspect-npx.txt >/dev/null
 
 run events webhook --url http://127.0.0.1:8788/synapsor/events --kind proposal_created --store ./.synapsor/try/ledger.db --dry-run > events-webhook.txt
 grep -F "synapsor.local-event-webhook.v1" events-webhook.txt >/dev/null

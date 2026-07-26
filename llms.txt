@@ -18,17 +18,22 @@ Start here:
 
 Current adoption loop:
 Connect staging -> deterministic whole-schema draft -> human boundary review ->
-bounded row or PM-style aggregate Explore in local Cursor -> Protect This Query
--> digest-bound human activation -> named production capability -> proposal ->
-external approval -> guarded commit -> receipt and replay.
+bounded row or PM-style aggregate Explore in Workbench or an MCP client ->
+Protect This Query -> digest-bound human activation -> named production
+capability -> proposal -> external approval -> guarded commit -> receipt and
+replay.
 
 Important boundaries:
 - No raw SQL or SQL-string tool argument.
 - Scoped Explore is disabled by default and is local development/staging
   authoring only. Production and shared/remote HTTP never advertise it.
 - Aggregate Explore is a reviewed analytical cube: approved measures,
-  dimensions, time buckets, filters, at most one proven many-to-one path,
-  suppression, and extraction/differencing budgets.
+  dimensions, time buckets, filters, and at most three activated paths of one
+  or two catalog-proven many-to-one links, plus suppression and
+  extraction/differencing budgets.
+- Optional local Workbench Ask can use OpenAI, Anthropic, or a tested
+  OpenAI-compatible endpoint, but it calls only the exact reviewed tools and
+  adds no activation, approval, or commit authority.
 - Auto Boundary and Protect are deterministic and use no LLM.
 - Generated authority starts disabled. The model cannot activate, approve,
   apply, commit, or widen it.

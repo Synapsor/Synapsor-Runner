@@ -23,6 +23,8 @@ export type {
   ProtectedReadMeasureSpec,
   ProtectedReadPredicateSpec,
   ProtectedReadRelationshipSpec,
+  ProtectedReadRelationshipLinkSpec,
+  ProtectedReadRelationshipPathSpec,
   ProtectedReadSpec,
   ProtectedReadTimeBucketSpec,
   ProtectedReadValueSpec,

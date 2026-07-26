@@ -376,7 +376,22 @@ export type GeneratedOnboardingFiles = {
   mcpSnippets: Record<string, unknown>;
 };
 
-const TENANT_COLUMNS = new Set(["tenant_id", "account_id", "organization_id", "org_id", "workspace_id", "customer_id"]);
+const TENANT_COLUMNS = new Set([
+  "tenant_id",
+  "account_id",
+  "organization_id",
+  "org_id",
+  "workspace_id",
+  "customer_id",
+  "merchant_id",
+  "store_id",
+  "company_id",
+  "team_id",
+  "facility_id",
+  "property_id",
+  "clinic_id",
+  "project_id",
+]);
 const CONFLICT_COLUMNS = new Set(["updated_at", "modified_at", "row_version", "version", "lock_version", "etag"]);
 const IMMUTABLE_COLUMNS = new Set(["id", "uuid", "created_at", "created_by"]);
 const DEFAULT_RESULT_FORMAT = 2;
@@ -769,7 +784,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     const [versionRows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, CURRENT_USER() AS `current_user`");
     const schemaParam = options.schema ?? null;
     const [schemaRows] = await connection.query<mysql.RowDataPacket[]>(
-      `SELECT schema_name FROM information_schema.schemata
+      `SELECT schema_name AS schema_name FROM information_schema.schemata
        WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
        ORDER BY schema_name`,
     );
@@ -785,8 +800,8 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     );
     const [columnRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, column_name AS name,
-              data_type, column_type AS udt_name, is_nullable,
-              column_default, extra AS is_generated, extra AS is_identity,
+              data_type AS data_type, column_type AS udt_name, is_nullable AS is_nullable,
+              column_default AS column_default, extra AS is_generated, extra AS is_identity,
               ordinal_position AS ordinal_position, column_comment AS comment
        FROM information_schema.columns
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')

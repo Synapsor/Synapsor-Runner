@@ -15,8 +15,10 @@ Please do not submit pull requests or code patches unless the maintainers have
 explicitly requested them under an approved contribution process.
 
 For maintainers, use small changes with tests. Do not add support for arbitrary
-SQL, multi-row updates, DDL, stored procedures, or model-generated write
-statements.
+SQL, model-generated or unbounded multi-row predicates, DDL, stored procedures,
+or model-generated write statements. Existing bounded-set support must retain
+its reviewer-fixed predicate, hard row/value caps, atomic execution, frozen
+members, and exact receipts.
 
 Before opening a change:
 
@@ -36,10 +38,15 @@ idempotency, replay, MCP tool exposure, or app-owned handlers must prove:
 
 - no model-facing `execute_sql`, raw SQL, approval, commit, apply, or writeback
   tool was added;
-- tenant/scope values come from trusted context, not model-controlled args;
+- tenant/principal values come from trusted context, not model-controlled args;
 - direct writeback still checks primary key, tenant key, allowed columns,
   expected version/conflict guard, affected-row count, idempotency, and receipt
   recording;
+- generated authority remains disabled until exact-digest human activation,
+  Scoped Explore remains local authoring-only, and reviewed relationship paths
+  cannot be supplied or activated by the model;
+- proposal/evidence freshness and supervised worker apply continue to fail
+  closed on source, digest, scope, policy, limit, or role-posture drift;
 - app-owned handler templates tell developers to re-check tenant/scope,
   expected version, idempotency, allowed action, transaction/rollback, and
   receipt shape.

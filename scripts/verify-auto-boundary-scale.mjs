@@ -10,6 +10,7 @@ import {
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
 import { createScopedExploreMcpServer } from "../apps/runner/dist/authoring-mcp.js";
+import { recommendedWorkbenchCandidate } from "../apps/runner/dist/local-ui.js";
 
 const TABLE_COUNT = 40;
 const ACTIVE_PACK_SIZE = 3;
@@ -36,11 +37,30 @@ try {
   assert(first.contract_digest === reversed.contract_digest, "Whole-schema output depends on catalog row order.");
   assert(first.dsl === reversed.dsl, "Whole-schema DSL depends on catalog row order.");
   assert(first.exploration_boundary.pack.resources.length === TABLE_COUNT, "Candidate catalog omitted reviewed resources.");
+  const fullRelationshipDecisions = first.exploration_boundary.unresolved_decisions
+    .filter((decision) => decision.includes(": review relationship "));
+  const relationshipCountByResource = new Map();
+  for (const decision of fullRelationshipDecisions) {
+    const resource = decision.slice(0, decision.indexOf(": "));
+    relationshipCountByResource.set(resource, (relationshipCountByResource.get(resource) ?? 0) + 1);
+  }
+  assert(
+    [...relationshipCountByResource.values()].every((count) => count <= 7),
+    "Whole-schema generation exceeded the bounded four-direct plus three-depth-two relationship proposal limit.",
+  );
   await writeAutoBoundaryArtifacts({ projectRoot, build: first });
 
-  const candidate = structuredClone(first.exploration_boundary);
+  const candidate = recommendedWorkbenchCandidate(first.exploration_boundary, ACTIVE_PACK_SIZE);
   candidate.pack.name = "support_operations";
-  candidate.pack.resources = candidate.pack.resources.slice(0, ACTIVE_PACK_SIZE);
+  const starterRelationshipDecisions = candidate.unresolved_decisions
+    .filter((decision) => decision.includes(": review relationship "));
+  const preRelationshipDecisionBaseline = candidate.unresolved_decisions.length
+    - starterRelationshipDecisions.length;
+  assert(candidate.pack.resources.length === ACTIVE_PACK_SIZE, "Recommended starter pack exceeded its resource limit.");
+  assert(starterRelationshipDecisions.length <= ACTIVE_PACK_SIZE,
+    "Relationship support recreated a starter-pack confirmation wall.");
+  assert(starterRelationshipDecisions.length < preRelationshipDecisionBaseline,
+    "Relationship review decisions dominate the existing starter review.");
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot,
@@ -108,6 +128,13 @@ try {
       estimated_tools_list_tokens: estimatedTokens,
       byte_budget: MAX_TOOLS_LIST_BYTES,
       estimated_token_budget: MAX_ESTIMATED_TOKENS,
+      review_burden: {
+        full_catalog_relationship_candidates: fullRelationshipDecisions.length,
+        maximum_relationship_candidates_per_resource: Math.max(0, ...relationshipCountByResource.values()),
+        starter_pre_relationship_decisions: preRelationshipDecisionBaseline,
+        starter_added_relationship_decisions: starterRelationshipDecisions.length,
+        starter_total_decisions: candidate.unresolved_decisions.length,
+      },
     }, null, 2)}\n`);
   } finally {
     await client.close().catch(() => undefined);
@@ -118,7 +145,7 @@ try {
 }
 
 function largeInspection() {
-  return {
+  const inspection = {
     engine: "postgres",
     server_version: "PostgreSQL 16 scale fixture",
     current_user: "app_reader",
@@ -187,6 +214,33 @@ function largeInspection() {
       };
     }),
   };
+  const fact = inspection.tables[0];
+  for (let targetIndex = 1; targetIndex <= 8; targetIndex += 1) {
+    const suffix = String(targetIndex + 1).padStart(2, "0");
+    const field = `dimension_${suffix}_id`;
+    fact.columns.push(column(field, "uuid"));
+    fact.suggestions.default_visible_columns.push(field);
+    fact.foreign_keys.push({
+      name: `entity_01_${field}_fkey`,
+      columns: [field],
+      referenced_schema: "public",
+      referenced_table: `entity_${suffix}`,
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    });
+  }
+  const firstDimension = inspection.tables[1];
+  firstDimension.columns.push(column("parent_dimension_id", "uuid"));
+  firstDimension.suggestions.default_visible_columns.push("parent_dimension_id");
+  firstDimension.foreign_keys.push({
+    name: "entity_02_parent_dimension_id_fkey",
+    columns: ["parent_dimension_id"],
+    referenced_schema: "public",
+    referenced_table: "entity_10",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  });
+  return inspection;
 }
 
 function column(name, dataType, flags = {}) {

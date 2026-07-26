@@ -139,6 +139,16 @@ try {
 - `REQUIRE EVIDENCE`
 - `AGGREGATE READ COUNT ROWS|COUNT NON NULL column|SUM column|AVG column`
 - `MIN GROUP SIZE n` for mandatory aggregate suppression
+- `PROTECTED READ ROWS|AGGREGATE` for a named capability produced from a
+  human-reviewed local Explore plan
+- `BOUNDARY DIGEST` and `GENERATION LOCK` for exact reviewed authority
+- legacy one-hop `PROTECTED RELATIONSHIP name ON ... REFERENCES ...`
+- additive `PROTECTED RELATIONSHIP name LINK 1|2 ON ... REFERENCES ...
+  UNMATCHED EXCLUDE|KEEP NULL` for up to three reviewed paths containing at
+  most two catalog-proven many-to-one links each
+- fixed `PROTECTED FILTER`, reviewed `MEASURE`, `GROUP DIMENSION`,
+  `TIME DIMENSION`, `COMPARE RANGE`, aggregate ordering/top-N, row ordering,
+  and `PROTECTED LIMITS`
 - `PROPOSE ACTION`
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE` (operation defaults to `UPDATE`)
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE SET` for bounded-set authoring
@@ -181,6 +191,15 @@ Quoted literals may contain the word `AND` without becoming another term. See
 the packaged
 [`bounded-set-multi-term.synapsor.sql`](examples/bounded-set-multi-term.synapsor.sql)
 example.
+
+Reviewed relationship paths are fixed authority, not a model-facing join
+grammar. `name` is a user-reviewed path identifier; `LINK`, `ON`,
+`REFERENCES`, `PRIMARY KEY`, `TENANT KEY`, and `UNMATCHED` are DSL keywords.
+Link numbers must be contiguous, and every compiled link has
+`cardinality: "many_to_one"` plus `max_fan_out: 1`. The model may reference an
+activated path by name but cannot supply table names, keys, join types, or add
+authority. See the [reviewed relationship
+guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/reviewed-relationships.md).
 
 Reviewed reversible writes require direct SQL, human/operator approval, and
 operation-specific exact guards. After apply, `synapsor-runner revert` creates

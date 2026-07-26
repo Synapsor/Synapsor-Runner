@@ -57,7 +57,7 @@ provisions the same environment value to Runner and the authorized client:
 ```bash
 export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+npx -y @synapsor/runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
@@ -69,7 +69,7 @@ OpenAI-safe aliases while keeping canonical Synapsor capability names in MCP
 metadata:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+npx -y @synapsor/runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
@@ -85,7 +85,7 @@ same time.
 Preview the exact alias mapping before wiring a client:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner tools preview \
+npx -y @synapsor/runner tools preview \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --alias-mode openai
@@ -101,7 +101,7 @@ with tenant/principal bound from verified claims. Details: [HTTP MCP](http-mcp.m
 Print a snippet without modifying any client files:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp config claude-desktop \
+npx -y @synapsor/runner mcp config claude-desktop \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
@@ -121,7 +121,7 @@ For OpenAI Agents SDK, generate the Streamable HTTP start command and Python
 snippet:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp client-config \
+npx -y @synapsor/runner mcp client-config \
   --client openai-agents \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
@@ -130,13 +130,13 @@ npx -y -p @synapsor/runner synapsor-runner mcp client-config \
 The older form is still supported:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner mcp configure --client claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Write is opt-in and requires an explicit destination:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp configure \
+npx -y @synapsor/runner mcp configure \
   --client cursor \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
@@ -162,7 +162,7 @@ standalone local UI or terminal for human review.
 From the runner repository:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner mcp serve --config ./examples/mcp-postgres-billing/synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 For reproducible deployments, pin an exact stable version in package manifests
@@ -172,7 +172,7 @@ the current `latest` release.
 For standard app/server HTTP MCP mode:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+npx -y @synapsor/runner mcp serve-streamable-http \
   --config ./examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
@@ -190,10 +190,7 @@ sessions, so do not use it for a shared identity deployment.
     "synapsor-runner": {
       "command": "npx",
       "args": [
-        "-y",
-        "-p",
-        "@synapsor/runner",
-        "synapsor-runner",
+        "-y", "@synapsor/runner",
         "mcp",
         "serve",
         "--config",
@@ -235,7 +232,7 @@ small tool-call test.
 First confirm what Runner exposes:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner tools preview \
+npx -y @synapsor/runner tools preview \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```

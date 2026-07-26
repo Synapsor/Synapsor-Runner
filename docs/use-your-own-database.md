@@ -10,9 +10,11 @@ model.
 Short path:
 
 ```bash
-export DATABASE_URL="postgresql://readonly_user:password@host:5432/app?sslmode=require"
-npx -y -p @synapsor/runner synapsor-runner start --from-env DATABASE_URL --schema public
+npx -y @synapsor/runner start
 ```
 
-Runner stores environment-variable names in `synapsor.runner.json`, not database
-URLs. Keep credentials in your shell, process manager, or secret manager.
+Paste a read-only URL into the hidden prompt, explicitly approve a regular
+project `.env` file for this process, or export `DATABASE_URL`. PostgreSQL
+defaults to `public`; explicit `--from-env`, `--schema`, and `--project-root`
+flags remain available and always win. Runner stores environment-variable names
+in `synapsor.runner.json`, not database URLs.

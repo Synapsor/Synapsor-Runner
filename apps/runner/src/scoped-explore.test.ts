@@ -155,6 +155,301 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("describes only activated one-hop relationship fields for the guided PM composer", async () => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{
+          relationships: Array<Record<string, any>>;
+          suggested_questions: Array<Record<string, any>>;
+        }>;
+      };
+      const resource = description.resources[0]!;
+      expect(resource.relationships).toEqual([
+        expect.objectContaining({
+          id: "subscriptions_region_id_fkey",
+          label: "Regions",
+          target_resource: "public.regions",
+          cardinality: "many_to_one",
+          groupable_fields: expect.arrayContaining(["name"]),
+          field_labels: expect.objectContaining({ name: "Name" }),
+        }),
+      ]);
+      expect(resource.suggested_questions).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          text: "Which reviewed regions have the most subscriptions?",
+          dimension: {
+            field: "name",
+            relationship: "subscriptions_region_id_fkey",
+          },
+        }),
+      ]));
+      expect(JSON.stringify(resource)).not.toMatch(/billing_token|sql/i);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("compiles reviewed star dimensions with independent trusted scope on every relation", async () => {
+    const { boundary } = await activatedFixture(undefined, starRelationshipInspection());
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [
+        { field: "name", relationship: "subscriptions_region_id_fkey" },
+        { field: "name", relationship: "subscriptions_segment_id_fkey" },
+        { field: "name", relationship: "subscriptions_plan_id_fkey" },
+      ],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      expect(query?.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.plans",
+        "public.regions",
+        "public.segments",
+        "public.subscriptions",
+      ]);
+      expect(query?.params).toEqual([
+        "tenant-acme",
+        "pm-1",
+        "tenant-acme",
+        "pm-1",
+        "tenant-acme",
+        "pm-1",
+        "tenant-acme",
+        "pm-1",
+        boundary.budgets.max_groups + 1,
+      ]);
+      expect(query?.sql).toContain(engine === "postgres"
+        ? "JOIN \"public\".\"regions\" t1"
+        : "JOIN `public`.`regions` t1");
+      expect(query?.sql).toContain(engine === "postgres"
+        ? "JOIN \"public\".\"segments\" t2"
+        : "JOIN `public`.`segments` t2");
+      expect(query?.sql).toContain(engine === "postgres"
+        ? "JOIN \"public\".\"plans\" t3"
+        : "JOIN `public`.`plans` t3");
+      expect(query?.sql).toContain("COUNT(*)");
+      expect(query?.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+    }
+  });
+
+  it("returns exact catalog evidence when a safe plan needs a proven but inactive relationship", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      const root = candidate.pack.resources.find((resource) =>
+        resource.id === "public.subscriptions")!;
+      root.relationships = [];
+    }, relationshipInspection());
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{
+          relationships: Array<Record<string, unknown>>;
+          suggested_questions: Array<Record<string, unknown>>;
+        }>;
+      };
+      expect(description.resources[0]?.relationships).toContainEqual(expect.objectContaining({
+        id: "subscriptions_region_id_fkey",
+        activation: "review_required",
+        operator_review_required: true,
+        cardinality: "many_to_one",
+      }));
+      expect(description.resources[0]?.suggested_questions).toContainEqual(expect.objectContaining({
+        relationship_review_required: true,
+        dimension: {
+          field: "name",
+          relationship: "subscriptions_region_id_fkey",
+        },
+      }));
+
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{
+          field: "name",
+          relationship: "subscriptions_region_id_fkey",
+        }],
+        top_n: 10,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+        details: {
+          relationship_review: {
+            action: "Review and add this relationship",
+            operator_plane_only: true,
+            resource: "public.subscriptions",
+            relationship: "subscriptions_region_id_fkey",
+            target_resource: "public.regions",
+            counted_entity: "id",
+            path_depth: 1,
+            nullable: false,
+            evidence: [{
+              constraint: "subscriptions_region_id_fkey",
+              source_resource: "public.subscriptions",
+              target_resource: "public.regions",
+              uniqueness: {
+                kind: "primary_key",
+                columns: ["id"],
+              },
+              cardinality: "many_to_one",
+              max_fan_out: 1,
+            }],
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("never weakens cohort suppression as reviewed dimensions become more specific", async () => {
+    const fixture = await activatedFixture(undefined, starRelationshipInspection());
+    const plans = [
+      {
+        dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+        rows: [
+          { dimension_0: "West", measure_0: 16, __cohort_size: 16 },
+        ],
+        suppressed: 0,
+      },
+      {
+        dimensions: [
+          { field: "name", relationship: "subscriptions_region_id_fkey" },
+          { field: "name", relationship: "subscriptions_segment_id_fkey" },
+        ],
+        rows: [
+          { dimension_0: "West", dimension_1: "Enterprise", measure_0: 12, __cohort_size: 12 },
+          { dimension_0: "West", dimension_1: "Rare", measure_0: 4, __cohort_size: 4 },
+        ],
+        suppressed: 1,
+      },
+      {
+        dimensions: [
+          { field: "name", relationship: "subscriptions_region_id_fkey" },
+          { field: "name", relationship: "subscriptions_segment_id_fkey" },
+          { field: "name", relationship: "subscriptions_plan_id_fkey" },
+        ],
+        rows: [
+          { dimension_0: "West", dimension_1: "Enterprise", dimension_2: "Annual", measure_0: 8, __cohort_size: 8 },
+          { dimension_0: "West", dimension_1: "Enterprise", dimension_2: "Monthly", measure_0: 4, __cohort_size: 4 },
+          { dimension_0: "West", dimension_1: "Rare", dimension_2: "Annual", measure_0: 4, __cohort_size: 4 },
+        ],
+        suppressed: 2,
+      },
+    ];
+    const observed: number[] = [];
+    for (const item of plans) {
+      const runtime = await createScopedExploreRuntime({
+        projectRoot: fixture.root,
+        transport: "stdio",
+        env: fixture.env,
+        executor: fixedExecutor(item.rows),
+        inspectDatabaseFn: async () => fixture.inspection,
+      });
+      try {
+        const result = await runtime.explore({
+          kind: "aggregate",
+          resource: "public.subscriptions",
+          measures: [{ function: "count" }],
+          dimensions: item.dimensions,
+          top_n: 10,
+        });
+        expect(result.privacy).toMatchObject({ suppressed_groups: item.suppressed });
+        observed.push((result.privacy as { suppressed_groups: number }).suppressed_groups);
+      } finally {
+        await runtime.close();
+      }
+    }
+    expect(observed).toEqual([0, 1, 2]);
+  });
+
+  it("invalidates only the relationship whose catalog proof drifted", async () => {
+    const fixture = await activatedFixture(undefined, starRelationshipInspection());
+    const drifted = structuredClone(fixture.inspection);
+    const subscriptions = drifted.tables.find((table) => table.name === "subscriptions")!;
+    subscriptions.foreign_keys = subscriptions.foreign_keys.filter((foreignKey) =>
+      foreignKey.name !== "subscriptions_region_id_fkey");
+    let executions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async ({ sql }) => {
+          executions += 1;
+          return sql.includes('"segments"')
+            ? [{ dimension_0: "enterprise", measure_0: 8, __cohort_size: 8 }]
+            : [{ region: "north" }];
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => drifted,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).resolves.toMatchObject({
+        data: [{ region: "north" }],
+        source_database_changed: false,
+      });
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{
+          field: "name",
+          relationship: "subscriptions_segment_id_fkey",
+        }],
+        top_n: 10,
+      })).resolves.toMatchObject({
+        data: [{ dimension_0: "enterprise", measure_0: 8 }],
+        counted_entity: {
+          resource: "public.subscriptions",
+          primary_key: "id",
+        },
+      });
+      const beforeRefusal = executions;
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{
+          field: "name",
+          relationship: "subscriptions_region_id_fkey",
+        }],
+        top_n: 10,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringContaining("subscriptions_region_id_fkey"),
+      });
+      expect(executions).toBe(beforeRefusal);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("suppresses small cohorts and stores only a keyed, redacted plan plus encrypted Protect state", async () => {
     const fixture = await activatedFixture();
     const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
@@ -533,6 +828,7 @@ function aggregatePlan(value: string) {
 
 async function activatedFixture(
   narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+  inspection = churnInspection(),
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -541,7 +837,6 @@ async function activatedFixture(
 }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-explore-"));
   temporaryRoots.push(root);
-  const inspection = churnInspection();
   const build = buildAutoBoundary({
     inspection,
     project: {
@@ -575,6 +870,112 @@ async function activatedFixture(
       SYNAPSOR_TENANT_ID: "tenant-acme",
       SYNAPSOR_PRINCIPAL: "pm-1",
     },
+  };
+}
+
+function relationshipInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  inspection.tables[0]!.columns.splice(2, 0, column("region_id", "uuid", { immutable: true }));
+  inspection.tables[0]!.foreign_keys = [{
+    name: "subscriptions_region_id_fkey",
+    columns: ["region_id"],
+    referenced_schema: "public",
+    referenced_table: "regions",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  inspection.tables.push({
+    schema: "public",
+    name: "regions",
+    type: "table",
+    writable: false,
+    columns: [
+      column("id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("name", "text"),
+      column("billing_token", "text", { sensitive: true }),
+    ],
+    primary_key: ["id"],
+    unique_constraints: [{ name: "regions_pkey", columns: ["id"] }],
+    foreign_keys: [],
+    indexes: [{ name: "regions_pkey", columns: ["id"], unique: true }],
+    row_level_security: true,
+    row_level_security_policies: [{
+      name: "regions_tenant_read",
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+    }],
+    role_posture: structuredClone(inspection.tables[0]!.role_posture),
+    suggestions: {
+      tenant_columns: ["tenant_id"],
+      conflict_columns: [],
+      sensitive_columns: ["billing_token"],
+      default_visible_columns: ["id", "tenant_id", "name"],
+    },
+  });
+  return inspection;
+}
+
+function starRelationshipInspection(): SchemaInspection {
+  const inspection = relationshipInspection();
+  const subscriptions = inspection.tables.find((table) => table.name === "subscriptions")!;
+  const regions = inspection.tables.find((table) => table.name === "regions")!;
+  subscriptions.columns.push(
+    column("segment_id", "uuid", { immutable: true }),
+    column("plan_id", "uuid", { immutable: true }),
+    column("assigned_pm_id", "uuid", { immutable: true }),
+  );
+  subscriptions.foreign_keys.push({
+    name: "subscriptions_segment_id_fkey",
+    columns: ["segment_id"],
+    referenced_schema: "public",
+    referenced_table: "segments",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }, {
+    name: "subscriptions_plan_id_fkey",
+    columns: ["plan_id"],
+    referenced_schema: "public",
+    referenced_table: "plans",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  });
+  subscriptions.row_level_security_policies!.push(principalPolicy("subscriptions_principal_read"));
+  subscriptions.suggestions.default_visible_columns.push("segment_id", "assigned_pm_id");
+
+  regions.columns.push(column("assigned_pm_id", "uuid", { immutable: true }));
+  regions.row_level_security_policies!.push(principalPolicy("regions_principal_read"));
+  regions.suggestions.default_visible_columns.push("assigned_pm_id");
+
+  const segments = structuredClone(regions);
+  segments.name = "segments";
+  segments.row_level_security_policies = [
+    structuredClone(regions.row_level_security_policies![0]!),
+    principalPolicy("segments_principal_read"),
+  ];
+  segments.unique_constraints = [{ name: "segments_pkey", columns: ["id"] }];
+  segments.indexes = [{ name: "segments_pkey", columns: ["id"], unique: true }];
+  const plans = structuredClone(regions);
+  plans.name = "plans";
+  plans.row_level_security_policies = [
+    structuredClone(regions.row_level_security_policies![0]!),
+    principalPolicy("plans_principal_read"),
+  ];
+  plans.unique_constraints = [{ name: "plans_pkey", columns: ["id"] }];
+  plans.indexes = [{ name: "plans_pkey", columns: ["id"], unique: true }];
+  inspection.tables.push(segments, plans);
+  return inspection;
+}
+
+function principalPolicy(name: string) {
+  return {
+    name,
+    command: "SELECT",
+    permissive: true,
+    roles: ["app_reader"],
+    using_expression: "(assigned_pm_id = current_setting('app.principal_id')::uuid)",
   };
 }
 

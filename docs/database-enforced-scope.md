@@ -106,6 +106,12 @@ attested. Required properties include:
 - `INSERT` has a suitable `WITH CHECK` expression;
 - `UPDATE` has both `USING` and `WITH CHECK`.
 
+For read-only PostgreSQL views, hardened mode additionally requires
+`security_invoker=true` and `security_barrier=true`, a non-owner/non-bypass
+Runner role, and successful recursive attestation of every referenced base
+relation. See [Reviewed Database Views](reviewed-database-views.md). Ordinary
+owner-rights or unverifiable views fail closed.
+
 ### Example PostgreSQL policy
 
 Use a non-owner read role and a separate non-owner write role. Adapt names and

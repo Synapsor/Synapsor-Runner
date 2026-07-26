@@ -2,7 +2,8 @@
   "ok": true,
   "package": "@synapsor/runner",
   "fixture": "FitFlow",
-  "inspected_resources": 39,
+  "inspected_resources": 40,
+  "starter_resources": 3,
   "packed_artifact": true,
   "public_first_command": "npx -y @synapsor/runner@latest start --from-env DATABASE_URL",
   "measured_clock_excludes": [
@@ -10,13 +11,13 @@
     "database startup"
   ],
   "timing": {
-    "schema_summary_ms": 3271,
-    "boundary_activation_ms": 3485,
-    "first_safe_read_ms": 5743,
-    "pm_aggregate_ms": 8357,
-    "protected_capability_ms": 9709,
-    "first_guided_proposal_ms": 20530,
-    "first_guarded_apply_ms": 147961
+    "schema_summary_ms": 3329,
+    "boundary_activation_ms": 3601,
+    "first_safe_read_ms": 5863,
+    "pm_aggregate_ms": 8482,
+    "protected_capability_ms": 9889,
+    "first_guided_proposal_ms": 20952,
+    "first_guarded_apply_ms": 149329
   },
   "interactions": {
     "shell_commands_in_human_golden_path_through_first_proposal": 1,

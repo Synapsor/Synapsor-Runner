@@ -12,7 +12,7 @@ import {
 
 const scalar = z.union([z.string().max(512), z.number().finite(), z.boolean(), z.null()]);
 const fieldId = z.string().min(1).max(256).describe("A reviewed field alias returned by app.describe_data.");
-const relationshipId = z.string().min(1).max(256).describe("An activated one-hop relationship alias returned by app.describe_data.");
+const relationshipId = z.string().min(1).max(256).describe("An activated or explicitly review-required relationship alias returned by app.describe_data. Review-required aliases fail closed until a human activates the exact catalog proof outside MCP.");
 const filter = z.object({
   field: fieldId,
   op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "in"]),
@@ -77,12 +77,12 @@ export function createScopedExploreMcpServer(runtime: ScopedExploreRuntime): Mcp
   }).strict();
 
   const server = new McpServer(
-    { name: "synapsor-runner-authoring", version: "1.6.3" },
+    { name: "synapsor-runner-authoring", version: "1.6.4" },
     { capabilities: { tools: {} } },
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Lists a bounded page of the exact resources, fields, aggregate dimensions, measures, time buckets, relationships, and privacy limits activated for this local authoring session. It returns metadata only, never source rows.",
+    description: "Lists a bounded page of the exact resources, fields, aggregate dimensions, measures, time buckets, relationships, and privacy limits activated for this local authoring session. Catalog-proven inactive relationships may be listed as review_required metadata, but they cannot read rows until a human activates their exact proof outside MCP. It returns metadata only, never source rows.",
     inputSchema: {
       resource: resource.optional(),
       cursor: z.number().int().nonnegative().optional(),
@@ -105,7 +105,7 @@ export function createScopedExploreMcpServer(runtime: ScopedExploreRuntime): Mcp
   }, async (input) => toolResult(() => runtime.describe(input)));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: "Runs one bounded row or descriptive aggregate plan against the activated local staging boundary. Use only aliases from app.describe_data. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
+    description: "Runs one bounded row or descriptive aggregate plan against the activated local staging boundary. Use only aliases from app.describe_data. A review_required relationship is refused with exact catalog evidence until a human activates it outside MCP. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
     inputSchema: {
       plan: z.discriminatedUnion("kind", [rowPlan, aggregatePlan]),
     },
@@ -181,7 +181,13 @@ async function toolResult(action: () => Record<string, unknown> | Promise<Record
     };
   } catch (error) {
     const payload = error instanceof ScopedExploreError
-      ? { ok: false, error_code: error.code, message: error.message, source_database_changed: false }
+      ? {
+        ok: false,
+        error_code: error.code,
+        message: error.message,
+        ...(error.details ? { details: error.details } : {}),
+        source_database_changed: false,
+      }
       : { ok: false, error_code: "EXPLORE_INTERNAL", message: "Scoped Explore refused the request.", source_database_changed: false };
     return {
       content: [{ type: "text" as const, text: JSON.stringify(payload) }],

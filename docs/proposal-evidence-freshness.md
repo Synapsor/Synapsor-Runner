@@ -1,6 +1,6 @@
 # Proposal And Evidence Freshness
 
-Runner 1.6.1 adds an optional fail-closed freshness gate for proposals whose
+Runner provides an optional fail-closed freshness gate for proposals whose
 review depends on live source state.
 
 This closes two different review gaps without changing the model-facing MCP
@@ -11,8 +11,8 @@ surface:
 2. A proposal can declare reviewed supporting rows whose exact versions must
    still match before approval and again at apply.
 
-Target-row drift was already blocked by the exact conflict guard at apply.
-Version 1.6.1 does not replace that protection. It adds an earlier review-time
+Target-row drift is also blocked by the exact conflict guard at apply.
+Freshness does not replace that protection. It adds an earlier review-time
 check and extends the final transaction to declared same-source dependencies.
 
 ## What Freshness Does And Does Not Mean
@@ -36,10 +36,10 @@ new source read and create a new proposal with a new hash and review.
 
 ## Configuration
 
-Freshness is a Runner deployment overlay in `synapsor.runner.json`. Version
-1.6.1 adds no DSL clause and no canonical Spec field. Existing hand-authored
-DSL, canonical JSON, contract digests, and `tools/list` output remain unchanged
-when this optional section is absent.
+Freshness is a Runner deployment overlay in `synapsor.runner.json`. It adds no
+DSL clause and no canonical Spec field. Existing hand-authored DSL, canonical
+JSON, contract digests, and `tools/list` output remain unchanged when this
+optional section is absent.
 
 ```json
 {

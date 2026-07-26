@@ -1,6 +1,6 @@
 # Fresh-Developer Usability Protocol
 
-This is the owner-observation script for Runner 1.6.3. Give it to a
+This is the owner-observation script for Runner 1.6.4. Give it to a
 database-familiar developer who has not used Synapsor. Automated tests prove
 the mechanics; this protocol checks whether the product is understandable.
 
@@ -23,7 +23,7 @@ Measure product time separately from initial npm download. Start the timer
 after this succeeds:
 
 ```bash
-npx -y @synapsor/runner@latest --version
+npx -y @synapsor/runner --version
 ```
 
 ## Setup
@@ -33,8 +33,8 @@ Provide:
 - Node 22.13 or newer;
 - the packaged synthetic FitFlow fixture or equivalent disposable staging
   Postgres;
-- an exported `DATABASE_URL` using a SELECT-only, non-owner role;
-- exported synthetic `SYNAPSOR_TENANT_ID` and `SYNAPSOR_PRINCIPAL`;
+- a SELECT-only, non-owner connection URL available for hidden paste or an
+  explicitly approved project `.env` file;
 - the README only;
 - no existing Synapsor project files.
 
@@ -59,7 +59,7 @@ Do not explain Synapsor’s architecture first.
 The participant should find and run:
 
 ```bash
-npx -y @synapsor/runner@latest start --from-env DATABASE_URL
+npx -y @synapsor/runner start
 ```
 
 No other shell command should be required through the first proposal. The
@@ -177,7 +177,7 @@ The automated packed FitFlow run records deterministic timing and interaction
 evidence in:
 
 ```text
-development/runner-1.6.3-fitflow-results.json
+development/runner-1.6.4-fitflow-results.json
 ```
 
 That evidence does not substitute for a first-time participant. Until a real

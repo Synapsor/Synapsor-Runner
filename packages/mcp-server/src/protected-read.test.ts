@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import {
+  buildProtectedReadQuery,
   createMcpRuntime,
+  protectedReadTargets,
   type DbRowReader,
   type RuntimeCapabilityConfig,
   type RuntimeConfig,
@@ -11,6 +13,138 @@ const digest = `sha256:${"a".repeat(64)}` as const;
 const lock = `sha256:${"b".repeat(64)}` as const;
 
 describe("protected named reads", () => {
+  it("compiles a reviewed star and depth-two path with scope on every relation", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    delete capability.protected_read.relationship;
+    delete capability.protected_read.predicates;
+    delete capability.protected_read.aggregate.comparison;
+    capability.args = {};
+    capability.protected_read.relationships = [
+      {
+        name: "store",
+        links: [{
+          schema: "public",
+          table: "stores",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+          local_key: "store_id",
+          target_key: "id",
+          cardinality: "many_to_one",
+          max_fan_out: 1,
+          unmatched_rows: "exclude",
+        }],
+      },
+      {
+        name: "category",
+        links: [
+          {
+            schema: "public",
+            table: "products",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+            principal_scope_key: "catalog_manager_id",
+            local_key: "product_id",
+            target_key: "id",
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+            unmatched_rows: "keep_null",
+          },
+          {
+            schema: "public",
+            table: "categories",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+            local_key: "category_id",
+            target_key: "id",
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+            unmatched_rows: "keep_null",
+          },
+        ],
+      },
+      {
+        name: "region",
+        links: [{
+          schema: "public",
+          table: "regions",
+          primary_key: "id",
+          tenant_key: "tenant_id",
+          local_key: "region_id",
+          target_key: "id",
+          cardinality: "many_to_one",
+          max_fan_out: 1,
+          unmatched_rows: "exclude",
+        }],
+      },
+    ];
+    capability.protected_read.aggregate.dimensions = [
+      { name: "store_name", field: "name", relationship: "store" },
+      { name: "category_name", field: "name", relationship: "category" },
+      { name: "region_name", field: "name", relationship: "region" },
+    ];
+    delete capability.protected_read.aggregate.time_bucket;
+    delete capability.protected_read.aggregate.order_by;
+
+    const context = {
+      tenant_id: "tenant-acme",
+      principal: "manager-1",
+      provenance: "environment" as const,
+    };
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, context);
+      expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"stores\"" : "`public`.`stores`"} r1_1`);
+      expect(query.sql).toContain("LEFT JOIN");
+      expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"products\"" : "`public`.`products`"} r2_1`);
+      expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"categories\"" : "`public`.`categories`"} r2_2`);
+      expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"regions\"" : "`public`.`regions`"} r3_1`);
+      expect(query.sql).toContain("GROUP BY");
+      expect(query.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+      expect(query.values).toEqual([
+        "tenant-acme",
+        "tenant-acme",
+        "manager-1",
+        "tenant-acme",
+        "tenant-acme",
+        "tenant-acme",
+        "manager-1",
+      ]);
+    }
+    expect(protectedReadTargets(capability)).toEqual([
+      { schema: "public", table: "subscriptions", principalScoped: true },
+      { schema: "public", table: "stores", principalScoped: false },
+      { schema: "public", table: "products", principalScoped: true },
+      { schema: "public", table: "categories", principalScoped: false },
+      { schema: "public", table: "regions", principalScoped: false },
+    ]);
+  });
+
+  it("keeps RLS principal preflight requirements relation-specific", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.relationship = {
+      name: "subscriptions_region_id_fkey",
+      schema: "public",
+      table: "regions",
+      local_key: "region_id",
+      target_key: "id",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+    };
+    expect(protectedReadTargets(capability)).toEqual([
+      { schema: "public", table: "subscriptions", principalScoped: true },
+      { schema: "public", table: "regions", principalScoped: false },
+    ]);
+    capability.protected_read.relationship!.principal_scope_key = "assigned_operator_id";
+    expect(protectedReadTargets(capability)[1]).toEqual({
+      schema: "public",
+      table: "regions",
+      principalScoped: true,
+    });
+  });
+
   it("serves a frozen PM aggregate, suppresses small cohorts, and stores no result or trusted values", async () => {
     const store = new ProposalStore(":memory:");
     const seen: RuntimeCapabilityConfig[] = [];

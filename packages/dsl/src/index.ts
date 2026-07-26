@@ -8,6 +8,7 @@ import {
   type ProtectedReadAggregateSpec,
   type ProtectedReadLimitsSpec,
   type ProtectedReadPredicateSpec,
+  type ProtectedReadRelationshipPathSpec,
   type ProtectedReadRelationshipSpec,
   type ProtectedReadSpec,
   type ProtectedReadValueSpec,
@@ -67,6 +68,7 @@ export type AgentDslCapabilityAst = {
     generationLockFingerprint?: `sha256:${string}`;
     predicates: ProtectedReadPredicateSpec[];
     relationship?: ProtectedReadRelationshipSpec;
+    relationships: ProtectedReadRelationshipPathSpec[];
     rowOrderBy: Array<{ field: string; direction: "asc" | "desc" }>;
     aggregate?: Partial<ProtectedReadAggregateSpec> & {
       measures?: ProtectedReadAggregateSpec["measures"];
@@ -305,6 +307,7 @@ function protectedReadSpecFromDsl(capability: AgentDslCapabilityAst): ProtectedR
     generation_lock_fingerprint: protectedRead.generationLockFingerprint,
     ...(protectedRead.predicates.length ? { predicates: protectedRead.predicates } : {}),
     ...(protectedRead.relationship ? { relationship: protectedRead.relationship } : {}),
+    ...(protectedRead.relationships.length ? { relationships: protectedRead.relationships } : {}),
     ...(protectedRead.rowOrderBy.length ? { row_order_by: protectedRead.rowOrderBy } : {}),
     ...(protectedRead.aggregate ? { aggregate: protectedRead.aggregate as ProtectedReadAggregateSpec } : {}),
     limits: protectedRead.limits,
@@ -557,6 +560,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       capability.protectedRead = {
         mode,
         predicates: [],
+        relationships: [],
         rowOrderBy: [],
         ...(mode === "aggregate" ? {
           aggregate: {
@@ -580,10 +584,42 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       reviewed.generationLockFingerprint = generationLock[1].toLowerCase() as `sha256:${string}`;
       continue;
     }
+    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([12])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
+    if (protectedRelationshipLink?.[1] && protectedRelationshipLink[2] && protectedRelationshipLink[3]
+      && protectedRelationshipLink[4] && protectedRelationshipLink[5] && protectedRelationshipLink[6]
+      && protectedRelationshipLink[7] && protectedRelationshipLink[8] && protectedRelationshipLink[10]) {
+      const reviewed = requireProtectedRead(capability, item);
+      if (reviewed.relationship) {
+        throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_FORMS_CONFLICT", "legacy PROTECTED RELATIONSHIP and LINK path syntax cannot be combined");
+      }
+      const linkIndex = Number(protectedRelationshipLink[2]);
+      let path = reviewed.relationships.find((candidate) => candidate.name === protectedRelationshipLink[1]);
+      if (!path) {
+        if (reviewed.relationships.length >= 3) throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_LIMIT", "PROTECTED READ permits at most three reviewed relationship paths");
+        path = { name: protectedRelationshipLink[1], links: [] };
+        reviewed.relationships.push(path);
+      }
+      if (linkIndex !== path.links.length + 1) {
+        throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_LINK_ORDER", "relationship LINK declarations must be contiguous and ordered from 1");
+      }
+      path.links.push({
+        local_key: protectedRelationshipLink[3],
+        schema: protectedRelationshipLink[4],
+        table: protectedRelationshipLink[5],
+        target_key: protectedRelationshipLink[6],
+        primary_key: protectedRelationshipLink[7],
+        tenant_key: protectedRelationshipLink[8],
+        ...(protectedRelationshipLink[9] ? { principal_scope_key: protectedRelationshipLink[9] } : {}),
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+        unmatched_rows: /^KEEP\s+NULL$/i.test(protectedRelationshipLink[10]) ? "keep_null" : "exclude",
+      });
+      continue;
+    }
     const protectedRelationship = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
     if (protectedRelationship?.[1] && protectedRelationship[2] && protectedRelationship[3] && protectedRelationship[4] && protectedRelationship[5] && protectedRelationship[6] && protectedRelationship[7]) {
       const reviewed = requireProtectedRead(capability, item);
-      if (reviewed.relationship) throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_LIMIT", "PROTECTED READ permits at most one reviewed many-to-one relationship");
+      if (reviewed.relationship || reviewed.relationships.length) throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_LIMIT", "legacy PROTECTED RELATIONSHIP permits one reviewed many-to-one relationship and cannot be combined with LINK paths");
       reviewed.relationship = {
         name: protectedRelationship[1],
         local_key: protectedRelationship[2],

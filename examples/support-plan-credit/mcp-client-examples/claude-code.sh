@@ -8,10 +8,7 @@ claude mcp add-json --scope project synapsor "$(cat <<'JSON'
   "type": "stdio",
   "command": "npx",
   "args": [
-    "-y",
-    "-p",
-    "@synapsor/runner",
-    "synapsor-runner",
+    "-y", "@synapsor/runner",
     "mcp",
     "serve",
     "--config",

@@ -12,10 +12,13 @@ import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
 import { ProposalStore } from "../packages/proposal-store/dist/index.js";
 import {
   captureScreenshot,
+  clickSelector,
   configurePage,
   createPage,
   launchChrome,
   navigateAndWait,
+  selectOptionByValue,
+  typeIntoSelector,
   waitForExpression,
 } from "./demo-video/cdp-client.mjs";
 
@@ -23,7 +26,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-visual-"));
 const outputRoot = path.resolve(
   process.env.SYNAPSOR_WORKBENCH_VISUAL_OUTPUT
-    ?? path.join(root, "development", "runner-1.6.3-visual"),
+    ?? path.join(root, "development", "runner-1.6.4-visual"),
 );
 const chromeProfile = path.join(projectRoot, "chrome-profile");
 const screenshots = [];
@@ -49,7 +52,8 @@ try {
   const guided = await initializeGuidedProject({
     projectRoot,
     build,
-    runnerVersion: "1.6.3",
+    runnerVersion: "1.6.4",
+    instantOnboarding: true,
   });
   seedVisualAttention(guided.store_path);
   await fs.writeFile(
@@ -65,7 +69,19 @@ try {
     storePath: guided.store_path,
     token: "visual-bootstrap-token",
     csrfToken: "visual-csrf-token",
+    instantOnboarding: true,
     schemaInspector: async () => inspection,
+    scopedExploreRuntimeFactory: async () => ({
+      boundary: {},
+      session_fingerprint: `sha256:${"c".repeat(64)}`,
+      describe: () => ({}),
+      explore: async () => ({
+        schema_version: "synapsor.scoped-explore.result.v1",
+        columns: ["count"],
+        rows: [{ count: 12 }],
+      }),
+      close: async () => undefined,
+    }),
   });
   chrome = await launchChrome({ userDataDir: chromeProfile, width: 1440, height: 1100 });
   const page = await createPage(chrome.port);
@@ -73,22 +89,80 @@ try {
     await configurePage(page, 1440, 1100);
     await navigateAndWait(page, localUi.url);
     await waitForExpression(page, "document.querySelector('#header-state')?.textContent !== 'Loading'");
-    await waitForExpression(page, "document.querySelectorAll('.resource').length === 40");
+    await waitForExpression(page, "document.querySelectorAll('.resource').length > 0");
+    await waitForExpression(page, "document.querySelector('#instant-path')?.offsetParent !== null");
+    assert(
+      await evaluate(page, "document.querySelector('#instant-path')?.textContent.includes('one conservative data area')"),
+      "instant onboarding did not explain the narrow boundary",
+    );
+    await screenshot(page, "workbench-instant-ready-desktop.png");
+    await selectOptionByValue(page, "#instant-profile", "own_development");
+    await typeIntoSelector(page, "#instant-tenant", "visual-tenant-kept-in-memory");
+    if (await evaluate(page, "document.querySelector('#instant-principal-wrap')?.offsetParent !== null")) {
+      await typeIntoSelector(page, "#instant-principal", "visual-principal-kept-in-memory");
+    }
+    await waitForExpression(page, "document.querySelector('#run-instant')?.disabled === false");
+    await clickSelector(page, "#run-instant");
+    await waitForExpression(page, "document.querySelector('#instant-result')?.textContent.includes('Your first safe tool is working')");
+    await waitForExpression(page, "document.querySelector('#instant-result')?.textContent.includes('Source database changed: no')");
+    assert(
+      await evaluate(page, "document.querySelector('#instant-result pre')?.textContent.includes('12')"),
+      "instant onboarding did not render the real bounded result",
+    );
+    const activeArtifact = await fs.readFile(
+      path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+      "utf8",
+    );
+    assert(!activeArtifact.includes("visual-tenant-kept-in-memory"), "trusted tenant leaked into the activated artifact");
+    assert(!activeArtifact.includes("visual-principal-kept-in-memory"), "trusted principal leaked into the activated artifact");
+    await screenshot(page, "workbench-instant-success-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, "document.querySelector('#instant-path')?.scrollIntoView({block:'start'})");
+    await screenshot(page, "workbench-instant-success-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    const starterResourceCount = await evaluate(page, "document.querySelectorAll('.resource').length");
+    assert(
+      starterResourceCount < 40,
+      "desktop overview: fresh Workbench did not present a bounded starter pack",
+      { starterResourceCount },
+    );
     await assertWorkbenchDom(page, "desktop overview", {
       expectedView: "overview",
-      expectedResources: 40,
+      maximumResources: 8,
+      requireCatalogFixtures: true,
     });
     await screenshot(page, "workbench-overview-desktop-light.png");
+    await clickSelector(page, "#show-all");
+    await waitForExpression(page, "document.querySelectorAll('.resource').length === 40");
+    await assertWorkbenchDom(page, "desktop full catalog", {
+      expectedView: "overview",
+      expectedResources: 40,
+      requireCatalogFixtures: true,
+    });
 
     await evaluate(page, `(() => {
       document.querySelector("#header-state").textContent="Loading deterministic schema evidence";
-      document.querySelector("#journey-state").innerHTML="<div><strong>Database connected.</strong><p>Agent authority: none. Source database changed: no.</p></div><span>Next: Review what the agent can see.</span>";
+      document.querySelector("#journey-state").innerHTML="<div><strong>Database connected.</strong><p>Agent data access: none. Source database changed: no.</p></div><span>Next: Review what the agent can see.</span>";
       document.querySelector("#resources").setAttribute("aria-busy","true");
     })()`);
     await screenshot(page, "workbench-loading-partial.png");
     await evaluate(page, `(() => {
       document.querySelector("#resources").removeAttribute("aria-busy");
-      document.querySelector("#header-state").textContent="Disabled · review required";
+      document.querySelector("#header-state").textContent="No data access active";
     })()`);
 
     await page.send("Emulation.setEmulatedMedia", {
@@ -101,18 +175,20 @@ try {
       features: [{ name: "prefers-color-scheme", value: "light" }],
     });
 
-    await evaluate(page, `(() => {
-      const blocked=[...document.querySelectorAll(".resource")].find(resource=>resource.textContent.includes("Blocked"));
-      blocked?.querySelector("[data-open-resource]")?.click();
-    })()`);
+    const blockedResource = await evaluate(page, `([...document.querySelectorAll(".resource")]
+      .find(resource=>resource.textContent.includes("Blocked"))
+      ?.querySelector("[data-open-resource]")
+      ?.getAttribute("data-open-resource"))`);
+    assert(blockedResource, "visual fixture did not expose a blocked resource");
+    await clickSelector(page, `[data-open-resource="${blockedResource}"]`);
     await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
     await waitForExpression(page, "document.querySelector('#resource-detail')?.textContent.includes('Blocked') === true");
     await assertWorkbenchDom(page, "blocked exception", { expectedView: "exceptions" });
     await screenshot(page, "workbench-blocked-identity.png");
 
+    await clickSelector(page, '[data-view="activate"]');
+    await typeIntoSelector(page, "#actor", "visual-reviewer@example.test");
     await evaluate(page, `(() => {
-      document.querySelector('[data-view="activate"]').click();
-      document.querySelector("#actor").focus();
       document.querySelector("#message").textContent="Schema changed after review. Your disabled draft and completed decisions were preserved. Next: rescan and review the semantic diff.";
       document.querySelector("#message").className="status-message error";
     })()`);
@@ -122,20 +198,22 @@ try {
     await assertWorkbenchDom(page, "keyboard stale failure", { expectedView: "activate" });
     await screenshot(page, "workbench-keyboard-stale-failure.png");
 
-    await evaluate(page, `document.querySelector('[data-view="explore"]').click()`);
+    await clickSelector(page, '[data-view="explore"]');
     await waitForExpression(page, "document.querySelector('#view-explore')?.classList.contains('active') === true");
-    await evaluate(page, `document.querySelector("#run-preflight")?.click()`);
-    await waitForExpression(page, "document.querySelector('#explore-preflight')?.textContent.includes('blocked') === true || document.querySelector('#explore-preflight')?.textContent.includes('unavailable') === true || document.querySelector('#explore-preflight')?.textContent.includes('active') === true");
+    if (await evaluate(page, "Boolean(document.querySelector('#run-preflight'))")) {
+      await clickSelector(page, "#run-preflight");
+    }
+    await waitForExpression(page, "document.querySelector('#explore-preflight')?.textContent.includes('Ready for local bounded exploration') === true || document.querySelector('#explore-preflight')?.textContent.includes('Bind this local authoring session') === true || document.querySelector('#explore-preflight')?.textContent.includes('Explore is not ready') === true");
     await assertWorkbenchDom(page, "explore blocked", { expectedView: "explore" });
     await screenshot(page, "workbench-explore-blocked.png");
 
-    await evaluate(page, `document.querySelector('[data-view="protect"]').click()`);
+    await clickSelector(page, '[data-view="protect"]');
     await waitForExpression(page, "document.querySelector('#view-protect')?.classList.contains('active') === true");
     await waitForExpression(page, "document.querySelector('#protect-queries')?.textContent.length > 0");
     await assertWorkbenchDom(page, "protect empty", { expectedView: "protect" });
     await screenshot(page, "workbench-protect-empty.png");
 
-    await evaluate(page, `document.querySelector('[data-view="action"]').click()`);
+    await clickSelector(page, '[data-view="action"]');
     await waitForExpression(page, "document.querySelector('#view-action')?.classList.contains('active') === true");
     await waitForExpression(page, "document.querySelector('#action-loading')?.textContent.length > 0");
     await assertWorkbenchDom(page, "action unavailable", { expectedView: "action" });
@@ -149,11 +227,21 @@ try {
       screenWidth: 390,
       screenHeight: 844,
     });
-    await evaluate(page, `document.querySelector('[data-view="overview"]').click();window.scrollTo(0,0)`);
+    await clickSelector(page, '[data-view="overview"]');
+    await clickSelector(page, "#show-all");
+    await evaluate(page, "window.scrollTo(0,0)");
+    await waitForExpression(page, "document.querySelectorAll('.resource').length > 0");
+    const mobileStarterResourceCount = await evaluate(page, "document.querySelectorAll('.resource').length");
+    assert(
+      mobileStarterResourceCount < 40,
+      "mobile overview: fresh Workbench did not present a bounded starter pack",
+      { mobileStarterResourceCount },
+    );
     await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
     await assertWorkbenchDom(page, "mobile overview", {
       expectedView: "overview",
-      expectedResources: 40,
+      maximumResources: 8,
+      requireCatalogFixtures: true,
     });
     await screenshot(page, "workbench-overview-mobile-light.png");
 
@@ -172,11 +260,11 @@ try {
     await screenshot(page, "workbench-attention-open-desktop.png");
 
     for (const status of ["acknowledged", "resolved", "expired"]) {
-      await evaluate(page, `(() => {
-        const select=document.querySelector('#attention select[aria-label="Human attention status"]');
-        select.value=${JSON.stringify(status)};
-        select.dispatchEvent(new Event("change"));
-      })()`);
+      await selectOptionByValue(
+        page,
+        '#attention select[aria-label="Human attention status"]',
+        status,
+      );
       await waitForExpression(page, `document.querySelector('#attention select[aria-label="Human attention status"]')?.value === ${JSON.stringify(status)} && document.querySelectorAll('#attention .attention-item').length === 1`);
       await assertActivityDom(page, `attention ${status}`, status);
       await screenshot(page, `workbench-attention-${status}-desktop.png`);
@@ -190,12 +278,8 @@ try {
       screenWidth: 390,
       screenHeight: 844,
     });
-    await evaluate(page, `(() => {
-      const select=document.querySelector('#attention select[aria-label="Human attention status"]');
-      select.value="open";
-      select.dispatchEvent(new Event("change"));
-      window.scrollTo(0, document.querySelector("#attention").offsetTop);
-    })()`);
+    await navigateAndWait(page, `http://${localUi.host}:${localUi.port}/?surface=activity`);
+    await evaluate(page, "window.scrollTo(0, document.querySelector('#attention').offsetTop)");
     await waitForExpression(page, "document.querySelector('#attention select[aria-label=\"Human attention status\"]')?.value === 'open' && document.querySelectorAll('#attention .attention-item').length >= 3");
     await assertActivityDom(page, "attention mobile", "open");
     await screenshot(page, "workbench-attention-mobile.png");
@@ -233,6 +317,9 @@ try {
       "attention-dead-letter",
       "attention-unknown",
       "attention-reconciliation",
+      "instant-ready",
+      "instant-success-desktop",
+      "instant-success-mobile",
       "attention-unhealthy-sink",
       "attention-large-backlog",
       "worker-disabled",
@@ -281,7 +368,7 @@ async function assertWorkbenchDom(page, label, options) {
   })()`);
   assert(report.title === "Auto Boundary Review | Synapsor Runner", `${label}: wrong page title`, report);
   assert(report.header && report.main, `${label}: missing page landmarks`, report);
-  assert(report.steps === 6, `${label}: six-step journey is missing`, report);
+  assert(report.steps === 5, `${label}: five-stage journey is missing`, report);
   assert(report.visibleView === `view-${options.expectedView}`, `${label}: wrong visible journey step`, report);
   assert(report.horizontalOverflow === false, `${label}: horizontal overflow`, report);
   assert(report.unlabeled.length === 0, `${label}: unlabeled form controls`, report);
@@ -289,6 +376,11 @@ async function assertWorkbenchDom(page, label, options) {
   assert(report.primary.length <= 1, `${label}: more than one visually primary next action`, report);
   if (options.expectedResources !== undefined) {
     assert(report.resources === options.expectedResources, `${label}: resource catalog size changed`, report);
+  }
+  if (options.maximumResources !== undefined) {
+    assert(report.resources <= options.maximumResources, `${label}: starter review is not bounded`, report);
+  }
+  if (options.requireCatalogFixtures) {
     assert(/does not give the agent SQL access/i.test(report.intro), `${label}: no-SQL mental model is missing`, report);
     assert(report.advancedMatrixOpen === false, `${label}: dense permission matrix opened by default`, report);
     assert(report.longNameVisible, `${label}: long-name fixture is absent`, report);
@@ -315,7 +407,7 @@ async function assertActivityDom(page, label, expectedStatus) {
       workerBoundary:/controls are never MCP tools/i.test(document.querySelector("#worker")?.textContent||""),
     };
   })()`);
-  assert(report.title === "Synapsor Runner Local UI", `${label}: wrong activity page title`, report);
+  assert(report.title === "Synapsor Workbench | Activity", `${label}: wrong activity page title`, report);
   assert(report.horizontalOverflow === false, `${label}: horizontal overflow`, report);
   assert(report.unlabeled.length === 0, `${label}: unlabeled form controls`, report);
   assert(report.duplicateIds.length === 0, `${label}: duplicate element IDs`, report);

@@ -271,6 +271,13 @@ describe("guided write actions", () => {
       capabilityName: created.draft.capability,
     });
     await expect(fs.stat(path.join(fixture.root, preview.config_path))).resolves.toBeDefined();
+    const previewConfig = JSON.parse(await fs.readFile(path.join(fixture.root, preview.config_path), "utf8"));
+    expect(previewConfig.proposal_freshness).toEqual({
+      "membership.set_loyalty_balance": {
+        approval: "required",
+        dependencies: [],
+      },
+    });
     await recordGuidedActionPreview({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
@@ -305,6 +312,12 @@ describe("guided write actions", () => {
       receipts: { authority: "runner_ledger" },
     });
     expect(config.contracts).toContain("./synapsor/actions/active/membership_set_loyalty_balance.contract.json");
+    expect(config.proposal_freshness).toEqual({
+      "membership.set_loyalty_balance": {
+        approval: "required",
+        dependencies: [],
+      },
+    });
     const environmentExample = await fs.readFile(path.join(fixture.root, ".env.example"), "utf8");
     expect(environmentExample).toContain("SYNAPSOR_DATABASE_WRITE_URL=");
     expect(environmentExample).not.toContain("postgres://");
@@ -337,6 +350,16 @@ describe("guided write actions", () => {
     const secondPreviewPath = path.join(fixture.root, secondPreview.config_path);
     const secondPreviewConfig = JSON.parse(await fs.readFile(secondPreviewPath, "utf8"));
     expect(secondPreviewConfig.contracts).toHaveLength(2);
+    expect(secondPreviewConfig.proposal_freshness).toEqual({
+      "membership.freeze_membership": {
+        approval: "required",
+        dependencies: [],
+      },
+      "membership.set_loyalty_balance": {
+        approval: "required",
+        dependencies: [],
+      },
+    });
     for (const contractPath of secondPreviewConfig.contracts) {
       await expect(fs.stat(path.resolve(path.dirname(secondPreviewPath), contractPath))).resolves.toBeDefined();
     }
@@ -372,7 +395,7 @@ async function activatedFitFlowFixture(): Promise<{ root: string; inspection: Sc
     },
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
-  await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.6.3" });
+  await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.6.4" });
   const candidate = structuredClone(build.exploration_boundary);
   const digest = explorationBoundaryCandidateDigest(candidate);
   await activateExplorationBoundary({
@@ -432,7 +455,7 @@ function fitFlowInspection(): SchemaInspection {
         command: "SELECT",
         permissive: true,
         roles: ["fitflow_reader"],
-        using_expression: "(organization_id = current_setting('app.organization_id')::uuid)",
+        using_expression: "(organization_id = current_setting('app.organization_id')::uuid AND assigned_trainer_id = current_setting('app.principal')::uuid)",
       }],
       role_posture: {
         owner: "fitflow_owner",

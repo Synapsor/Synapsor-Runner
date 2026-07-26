@@ -21,9 +21,8 @@ No database, Docker, config, MCP client, LLM, or account is required:
 npx -y @synapsor/runner try --prove
 ```
 
-Timing begins after package resolution; cold `npx` download time varies.
-
-The embedded synthetic source requests a $55 waiver and proves:
+Cold `npx` download time is excluded. The embedded source requests a $55
+waiver and proves:
 
 ```text
 Proposed effect: late_fee_cents: 5500 -> 0
@@ -33,9 +32,8 @@ Restart-safe retry: yes; duplicate mutations: 0
 Stale apply refused: yes
 ```
 
-Review happens outside model-facing tools. State is stored under
-`./.synapsor/try/`; this proves the boundary, not your database connection.
-`demo --quick` remains a noninteractive compatibility alias.
+State stays under `./.synapsor/try/`. This proves the boundary, not your
+database connection; `demo --quick` remains a noninteractive compatibility alias.
 
 ## Audit An Existing MCP Server
 
@@ -45,35 +43,31 @@ Audit a typical raw-SQL MCP server without launching or calling one:
 npx -y @synapsor/runner audit --example dangerous-db-mcp
 ```
 
-Audit your own tool manifest, remote `tools/list`, or stdio server:
+Or audit your own manifest, remote `tools/list`, or stdio server:
 
 ```bash
 npx -y @synapsor/runner audit ./tools-list.json
 ```
 
 It flags raw SQL, arbitrary identifiers, model-controlled authority, and
-model-facing writeback without calling business tools. See [MCP Database Risk
-Review](docs/mcp-audit.md) and the [alternatives
-guide](docs/alternatives.md).
+model-facing writeback without calling business tools. See [MCP Audit](docs/mcp-audit.md).
 
 ## Connect Your Staging Application
 
-Use a dedicated SELECT-only, non-owner staging credential. Runner combines the
-whole database schema with statically parsed Prisma, Drizzle, OpenAPI, and
-existing Synapsor definitions. It does not execute adopter code, sample source
-rows, or use an LLM:
+Use a SELECT-only, non-owner development or staging credential. Runner combines
+database metadata with statically parsed Prisma, Drizzle, OpenAPI, and existing
+Synapsor definitions without executing adopter code, sampling rows, or using an
+LLM:
 
 ```bash
-export DATABASE_URL="postgresql://runner_reader:REPLACE_ME@db.example.com:5432/app?sslmode=require"
-export SYNAPSOR_TENANT_ID="acme"
-export SYNAPSOR_PRINCIPAL="developer-1"
-npx -y @synapsor/runner@latest start --from-env DATABASE_URL
+npx -y @synapsor/runner start
 ```
 
-A fresh project checks credentials, inspects metadata, emits a validated
-zero-authority project, and opens secured localhost Workbench. Review its
-disabled DSL, fields, scope, analytical boundary, and role/RLS posture before
-activating the exact digest.
+Paste the URL into the hidden prompt, approve a regular project `.env` for this
+process, or export `DATABASE_URL`. Runner creates a validated zero-authority
+project and opens secured localhost Workbench. A personal-development fast lane
+offers one conservative resource with sensitive fields, relationships, and
+writes off; broader paths require full review.
 
 [Database To First Safe Tool](docs/guided-onboarding.md) covers the complete
 path.
@@ -104,20 +98,25 @@ Which reviewed regions and reason categories contributed most to the increase
 in churned accounts by week?
 ```
 
-Runner validates a typed plan against the activated digest, injects trusted
-scope, and runs a read-only transaction. Cohort suppression and durable budgets
-limit extraction. This is descriptive analysis, not proof of causation.
+Runner validates a typed plan against the active digest, injects trusted scope,
+and runs read-only. Suppression and durable budgets limit extraction. Up to
+three activated one- or two-link many-to-one paths are supported; inactive or
+unsafe joins fail closed. This is descriptive analysis, not causation. See
+[Reviewed Relationships](docs/reviewed-relationships.md).
 
-Scoped Explore is local authoring only. Missing/unknown/production profiles,
-write-capable or owner credentials, stale generation locks, remote/shared HTTP,
-and non-loopback runtimes never advertise these tools.
+### Optional: Ask In Workbench With Your Model
+
+The no-model composer remains the default. Optional local Workbench Ask can use
+OpenAI, Anthropic, or a tested OpenAI-compatible endpoint after explicit
+digest-bound egress consent. It can call only displayed reviewed tools; keys
+and history remain in memory, and writes remain proposals. See [Workbench
+Ask](docs/workbench-ask.md).
 
 ## Protect This Query
 
-Choose the useful result in Workbench. No opaque ID needs to be copied. Runner
-freezes the reviewed shape into public DSL, canonical JSON, and tests under
-`synapsor/protected/drafts/`. The named capability starts disabled and requires
-exact-digest human activation outside MCP.
+Choose a useful result without copying an ID. Runner freezes public DSL,
+canonical JSON, and tests under `synapsor/protected/drafts/`; the named
+capability starts disabled.
 
 After activation, Scoped Explore is disabled. Update Cursor to the production
 config:
@@ -130,9 +129,8 @@ synapsor-runner mcp install cursor \
   --yes
 ```
 
-Production exposes the protected named capability, not `app.explore_data`.
-Read the complete [Auto Boundary, Scoped Explore, And Protect
-guide](docs/auto-boundary-and-scoped-explore.md).
+Production exposes the activated named capability, never `app.explore_data`.
+See [Explore And Protect](docs/auto-boundary-and-scoped-explore.md).
 
 ## Create An Exact Data PR
 
@@ -156,24 +154,17 @@ Effect   plan_credit_cents: 0 -> 2500
 Source unchanged before approval: Yes
 ```
 
-Approve in Workbench outside MCP; a trusted operator or worker commits. Runner
-supports guarded single-row INSERT/UPDATE/DELETE, fixed-predicate bounded
-UPDATE/DELETE, and exact-review batch INSERT. Rich transactions and external
-effects use app-owned executors.
-
-Runner rechecks scope, policy, row version, bounds, idempotency, and affected
-rows before returning a receipt. A retry cannot duplicate the mutation and a
-stale proposal conflicts. Inspect the latest lifecycle without copying an ID:
+Approval stays outside MCP. A trusted operator or worker rechecks scope,
+freshness, policy, version, bounds, idempotency, and affected rows before a
+receipt. Runner supports guarded single-row CRUD and bounded reviewed sets;
+rich transactions use app-owned executors. Inspect without copying an ID:
 
 ```bash
 synapsor-runner lifecycle --details --store ./.synapsor/local.db
 ```
 
-For proposals whose review depends on other source rows, Runner 1.6.1 can also
-require a live target/supporting-evidence check immediately before every local
-approval. Apply rechecks those declared same-database dependencies again inside
-the write transaction; stale evidence produces zero mutation and requires a new
-proposal:
+Optional same-database evidence freshness is checked before approval and again
+inside direct-SQL apply; drift produces zero mutation:
 
 ```bash
 synapsor-runner proposals check-freshness latest \
@@ -181,12 +172,8 @@ synapsor-runner proposals check-freshness latest \
   --store ./.synapsor/local.db
 ```
 
-See the [own-database guide](docs/getting-started-own-database.md),
-[proposal freshness](docs/proposal-evidence-freshness.md), and
-[store lifecycle](docs/store-lifecycle.md). For production identity, follow
-`APPROVAL ROLE` through verified OIDC/signed-key approval and a separate apply
-role in [Approval Roles And Verified Operator
-Identity](docs/approval-roles-and-operator-identity.md).
+See [Proposal Freshness](docs/proposal-evidence-freshness.md) and [Verified
+Operator Identity](docs/approval-roles-and-operator-identity.md).
 
 ## Safety Model
 
@@ -194,7 +181,8 @@ Contracts fix trusted context, fields, bounds, transitions, and approval.
 Model-facing tools can inspect scoped data and propose exact changes, but cannot
 approve, apply, or revert. A trusted operator/worker performs guarded writeback;
 the ledger links evidence, proposal, decision, receipt, and replay. Runner does
-not make raw SQL or prompt-injection-prone clients safe.
+not make raw SQL or prompt-injection-prone clients safe. Compare the boundary
+with [prompt and application guardrails](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Choose An Isolation Mode
 
@@ -205,13 +193,10 @@ not make raw SQL or prompt-injection-prone clients safe.
 | `postgres_rls` | PostgreSQL also checks transaction-bound tenant/principal scope. Arbitrary trusted-context or credential control remains outside this guarantee. |
 | `tenant_bound` | Authenticated context selects a restricted per-tenant credential or process. |
 
-Use stdio; no socket opens. HTTP requires authentication; non-loopback
-listeners require TLS or an explicit trusted TLS proxy. Shared services require
-signed claims. Model-controlled input and MCP session IDs never establish
-identity. See [HTTP MCP].
-MySQL has no native RLS; use restricted views or tenant credentials. See
-[Database scope] and the
-[build-vs-adopt guide](docs/why-synapsor-vs-app-guardrails.md).
+Stdio opens no socket. HTTP requires authentication; remote listeners require
+TLS or a trusted TLS proxy, and shared services require signed claims. MySQL has
+no native RLS; use restricted views or tenant credentials. See [HTTP MCP] and
+[Database scope].
 
 ## Review And Prove Your Contract
 
@@ -222,49 +207,30 @@ and the [own-database guide](docs/getting-started-own-database.md).
 
 ## Trust And Verification
 
-Start with the **[Threat Model](THREAT_MODEL.md)**. It defines protected assets,
-trust boundaries, covered threats, non-goals, and required operator controls.
-
-[Conformance fixtures](docs/conformance.md) and `contract test` cover trusted
-scope, kept-out fields, proposals, approval, receipts, and replay. Resource
-handles re-check tenant/principal rather than acting as bearer authority. Live
-gates cover principal denial, no pre-approval mutation, idempotency, conflict,
-bounded sets, compensation, and proposal/evidence freshness on disposable
-databases.
-
-Runner is a narrow agent/database safety boundary, not a replacement for
-least-privilege database access, host security, or application authorization.
-See [Security Boundary](docs/security-boundary.md) and
-[Current Limitations](docs/limitations.md).
+Start with the **[Threat Model](THREAT_MODEL.md)** and [Security
+Boundary](docs/security-boundary.md). Conformance and live disposable-database
+gates cover scope, hidden fields, no pre-approval mutation, idempotency,
+conflicts, bounded sets, freshness, receipts, and replay. Runner does not
+replace least-privilege roles, host security, or application authorization.
 
 [Database scope]: docs/database-enforced-scope.md
 [HTTP MCP]: docs/http-mcp.md
 
 ## Operate The Approval Loop
 
-Policies can combine per-proposal and aggregate ceilings; exceeding one routes
-to human review. Auto-approval does not mean auto-apply: existing policies wait
-for manual apply unless the exact contract digest and deployment both opt into
-a separately trusted supervised worker. That worker repeats scope, freshness,
-policy, limit, credential-posture, idempotency, and guarded-write checks before
-every execution.
-
-The ledger and secured Workbench also provide a Human Attention Inbox.
-External notifications are disabled and quiet by default; an operator can route
-review-required, UNKNOWN, reconciliation, dead-letter, drift, or sustained
-health incidents through a signed generic webhook without granting the receiver
-approval authority. A webhook response cannot approve, apply, or change Runner
-state. See [Supervised Automatic
-Apply](docs/supervised-automatic-apply.md), [Human Attention And
-Notifications](docs/human-attention-notifications.md),
-[Production](docs/production.md), and [Small Runner
-Fleets](docs/running-a-runner-fleet.md).
+Auto-approval does not mean auto-apply. Manual apply remains default unless the
+exact contract digest and deployment both opt into a trusted supervised worker
+that repeats all guards. External notifications are disabled and quiet by default.
+A webhook response cannot approve or apply. See [Supervised
+Apply](docs/supervised-automatic-apply.md) and
+[Notifications](docs/human-attention-notifications.md).
 
 ## Packages
 
 | Package | Purpose |
 | --- | --- |
 | `@synapsor/runner` | CLI, MCP runtime, local ledger, proposals, approval, guarded writeback, replay, and MCP audit. |
+| `synapsor-runner` | Optional short command alias that delegates to the exact matching `@synapsor/runner`; no separate runtime. |
 | `@synapsor/spec` | Canonical portable contracts for contexts, capabilities, workflows, evidence, proposals, receipts, and replay. |
 | `@synapsor/dsl` | SQL-like authoring that compiles contexts, capabilities, and workflow declarations into canonical contract JSON. |
 | `@synapsor/cli` | Synapsor Cloud administration, contract governance, human review, Runner connections, and shared audit records. |
@@ -292,6 +258,8 @@ guide](https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/cloud-cli.md).
 - Follow the [step-by-step Synapsor Tutorial](https://github.com/sandeshtiwari/Synapsor-Tutorial).
 - Run the [`support-billing-agent` flagship example](examples/support-billing-agent).
 - Connect [Claude, Cursor, OpenAI Agents SDK, or another MCP client](docs/mcp-clients.md).
+- Use the optional local [Workbench Ask](docs/workbench-ask.md) client without
+  broadening the reviewed tool surface.
 - Author and [push a validated contract to Cloud](docs/cloud-push.md).
 - Browse the [task-first documentation index](docs/README.md).
 - Report bugs or request features through [GitHub Issues](https://github.com/Synapsor/Synapsor-Runner/issues).

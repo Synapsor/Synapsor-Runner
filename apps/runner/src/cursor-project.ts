@@ -225,8 +225,8 @@ function cursorEntry(
     type: "stdio",
     command: "npx",
     args: authoring
-      ? ["-y", "-p", resolvedPackage, "synapsor-runner", "mcp", "serve", "--authoring", "--project-root", "."]
-      : ["-y", "-p", resolvedPackage, "synapsor-runner", "mcp", "serve", "--config", configPath, "--store", storePath],
+      ? ["-y", resolvedPackage, "mcp", "serve", "--authoring", "--project-root", "."]
+      : ["-y", resolvedPackage, "mcp", "serve", "--config", configPath, "--store", storePath],
   };
 }
 

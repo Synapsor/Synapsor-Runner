@@ -114,6 +114,44 @@ describe("postgres adapter", () => {
     expect(report).not.toHaveProperty("principal_setting");
   });
 
+  it("attests a security-invoker read view only when every base relation passes hardened RLS", async () => {
+    const report = await inspectPostgresRlsTarget(new HardenedPostgresViewClient(), {
+      schema: "public",
+      table: "reviewed_order_values",
+      scope: { tenantSetting: "app.tenant_id", principalSetting: "app.principal_id" },
+      operations: ["SELECT"],
+    });
+    expect(report).toMatchObject({
+      ok: true,
+      target_kind: "view",
+      security_invoker: true,
+      security_barrier: true,
+      referenced_relations: [{
+        schema: "public",
+        table: "orders",
+        target_kind: "table",
+        ok: true,
+        errors: [],
+      }],
+    });
+  });
+
+  it("refuses owner-rights or non-barrier views in hardened RLS mode", async () => {
+    const report = await inspectPostgresRlsTarget(new HardenedPostgresViewClient({
+      relationOptions: [],
+    }), {
+      schema: "public",
+      table: "reviewed_order_values",
+      scope: { tenantSetting: "app.tenant_id", principalSetting: "app.principal_id" },
+      operations: ["SELECT"],
+    });
+    expect(report.ok).toBe(false);
+    expect(report.errors).toEqual(expect.arrayContaining([
+      "POSTGRES_RLS_VIEW_SECURITY_INVOKER_REQUIRED",
+      "POSTGRES_RLS_VIEW_SECURITY_BARRIER_REQUIRED",
+    ]));
+  });
+
   it("fails hardened apply before mutation when the role can bypass RLS", async () => {
     const client = new HardenedPostgresClient({ bypass: true });
     await expect(applyPostgresJobWithClient(job, {
@@ -1038,6 +1076,48 @@ class TenantOnlyPostgresClient extends HardenedPostgresClient {
           permissive: true,
           using_expression: "(tenant_id = current_setting('app.tenant_id'::text, true))",
           with_check_expression: null,
+        }],
+        rowCount: 1,
+      };
+    }
+    return super.query(sql, values);
+  }
+}
+
+class HardenedPostgresViewClient extends HardenedPostgresClient {
+  constructor(private readonly viewOptions: {
+    relationOptions?: string[];
+  } = {}) {
+    super();
+  }
+
+  override async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    const normalized = sql.trim();
+    if (normalized.includes("FROM pg_catalog.pg_class c") && values?.[1] === "reviewed_order_values") {
+      return {
+        rows: [{
+          role: "runner_role",
+          table_oid: "5252",
+          relation_kind: "v",
+          relation_options: this.viewOptions.relationOptions ?? [
+            "security_barrier=true",
+            "security_invoker=true",
+          ],
+          row_security_enabled: false,
+          force_row_security: false,
+          role_is_table_owner: false,
+          role_is_superuser: false,
+          role_has_bypassrls: false,
+        }],
+        rowCount: 1,
+      };
+    }
+    if (normalized.includes("FROM pg_catalog.pg_rewrite rewrite")) {
+      return {
+        rows: [{
+          schema_name: "public",
+          relation_name: "orders",
+          relation_kind: "r",
         }],
         rowCount: 1,
       };

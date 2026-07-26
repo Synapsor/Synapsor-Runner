@@ -39,7 +39,7 @@ Use stdio for Claude Desktop, Cursor, and other local MCP clients:
 {
   "command": "npx",
   "args": [
-    "-y", "-p", "@synapsor/runner", "synapsor-runner",
+    "-y", "@synapsor/runner",
     "mcp", "serve", "--config", "./synapsor.runner.json",
     "--store", "./.synapsor/local.db"
   ]

@@ -198,6 +198,8 @@ const publicDocs = [
   "openai-agents-sdk.md",
   "oss-vs-cloud.md",
   "production.md",
+  "reviewed-relationships.md",
+  "reviewed-database-views.md",
   "proposal-evidence-freshness.md",
   "release-notes.md",
   "release-policy.md",
@@ -218,9 +220,10 @@ const publicDocs = [
   "troubleshooting-first-run.md",
   "writeback-executors.md",
   "use-your-own-database.md",
+  "workbench-ask.md",
   "why-synapsor-vs-app-guardrails.md",
 ];
-const publishedCompatibilityBaselines = ["published-1.5.4", "published-1.6.0"];
+const publishedCompatibilityBaselines = ["published-1.5.4", "published-1.6.0", "published-1.6.3"];
 const publishedCompatibilityAssets = [];
 for (const baseline of publishedCompatibilityBaselines) {
   const manifestPath = `fixtures/compatibility/${baseline}/manifest.json`;
@@ -251,6 +254,8 @@ const releaseAssets = [
   ["examples/dangerous-mcp-tools.json", "examples/dangerous-mcp-tools.json"],
   ["examples/app-owned-writeback", "examples/app-owned-writeback"],
   ["examples/auto-boundary-churn", "examples/auto-boundary-churn"],
+  ["examples/community-solar-clean-room", "examples/community-solar-clean-room"],
+  ["examples/retail-clean-room", "examples/retail-clean-room"],
   ["examples/fitflow-guided-onboarding", "examples/fitflow-guided-onboarding"],
   ["examples/claude-desktop-postgres", "examples/claude-desktop-postgres"],
   ["examples/cursor-postgres", "examples/cursor-postgres"],

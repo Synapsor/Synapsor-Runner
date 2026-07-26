@@ -73,6 +73,9 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - model-facing capability descriptions and returns hints;
 - visible and kept-out fields;
 - evidence/query-audit requirements;
+- optional protected named row/aggregate reads with fixed predicates, reviewed
+  one-hop or star/depth-two many-to-one paths, explicit missing-row semantics,
+  privacy budgets, and generation-lock/boundary digests;
 - proposal action shape, explicit INSERT/UPDATE/DELETE operation, source-unique
   INSERT deduplication, UPDATE version advancement, numeric bounds, transition
   guards, optional bounded-set cardinality/fixed selection/row and aggregate
@@ -178,8 +181,8 @@ Current additive safety fields:
   database-generated advancement of the exact conflict guard.
 - bounded-set `operation.cardinality = "set"`, fixed typed `selection`,
   `max_rows` (hard ceiling 100), aggregate bounds, exact batch item source, and
-  source-unique per-item deduplication. Runner 1.3 requires human/operator
-  approval and freezes the exact set before apply.
+  source-unique per-item deduplication. Runner requires human/operator approval
+  and freezes the exact set before apply.
 - proposal `reversibility.mode = "reviewed_inverse"`: opt-in portable authority
   to capture a bounded inverse for direct SQL and create a separately approved
   compensation proposal. It does not authorize automatic or model-facing
@@ -190,6 +193,12 @@ Current additive safety fields:
   reviewed count/sum/avg, optional contract-fixed equality selection, mandatory
   minimum-group suppression, required evidence/query audit, and no row-facing
   arguments or visible fields.
+- capability `protected_read.relationships`: up to three operator-reviewed
+  paths, each containing one or two `many_to_one` links with
+  `max_fan_out: 1` and explicit `unmatched_rows = "exclude" | "keep_null"`.
+  The legacy singular `protected_read.relationship` field remains canonical
+  for unchanged one-hop contracts so their normalized bytes and digest do not
+  change.
 
 Receipt authority, receipt-table provisioning, credentials, and Runner ledger
 topology are deliberately not canonical fields. They remain deployment choices

@@ -30,13 +30,13 @@ OpenAI Agents stdio example smoke passed.
 Generate `synapsor.runner.json` first:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner demo
+npx -y @synapsor/runner demo
 ```
 
 or connect your own staging database:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner onboard db --from-env DATABASE_URL
+npx -y @synapsor/runner onboard db --from-env DATABASE_URL
 ```
 
 Then install the Python dependencies:

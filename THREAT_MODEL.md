@@ -14,6 +14,11 @@ It is not a general MCP security gateway, not a prompt-injection cure, not a rep
   Postgres proposal/evidence/replay ledger.
 - Exact-digest supervised-worker policy, worker leases, attention events,
   notification delivery records, and webhook signing secrets.
+- Generated boundary drafts, review decisions, exact activation digests,
+  generation locks, reviewed relationship proofs, and Scoped Explore privacy
+  budgets.
+- Optional Workbench Ask provider credentials and direct-egress consent held
+  only in the local process.
 
 ## Trust Boundaries
 
@@ -54,6 +59,27 @@ idempotency boundary for effects.
 ## Covered Threats
 
 - Model asks for arbitrary SQL: no generic SQL tool is exposed in the Synapsor path.
+- Model tries to turn Scoped Explore into generic SQL or production authority:
+  Explore accepts only reviewed typed plans, is local authoring-only, and is
+  absent from production, unknown-profile, remote, shared HTTP, and non-loopback
+  tool catalogs. Protect output starts disabled and requires exact-digest human
+  activation.
+- Model invents or widens a join: aggregate relationships must be activated,
+  catalog-proven many-to-one paths with fan-out one; table/key/join semantics
+  and activation are not plan arguments. Ambiguous, one-to-many, many-to-many,
+  stale, and over-depth paths fail closed.
+- Generated authority widens after schema/role drift: generated capability and
+  exploration authority are bound to schema, compiler/Spec, role, grant,
+  ownership, RLS, and reviewed-proof fingerprints. Manual legacy projects are
+  unaffected unless they adopt a generation lock.
+- Optional Workbench Ask becomes a second policy engine: Ask lists and calls the
+  exact active MCP/runtime tools, adds no activation/approval/apply authority,
+  keeps provider choice outside model control, and treats provider prose/tool
+  arguments as untrusted.
+- Provider endpoint exfiltration or SSRF: official origins are fixed, custom
+  remote origins require HTTPS, plaintext is loopback-only, redirects are
+  refused, DNS is revalidated and pinned, and private/link-local/metadata
+  destinations fail closed.
 - Model supplies `tenant_id`, `principal`, source id, allowed columns, row version, or approval identity: runner rejects trusted-binding overrides.
 - Prompt injection in database content asks the model to bypass policy: the runner ignores text as authority and only accepts structured capability/job state.
 - Aggregate inference through a one-record group: reviewed aggregate tools
@@ -104,6 +130,9 @@ idempotency boundary for effects.
 - Credential theft outside the runner process.
 - OAuth, SSRF, token-passthrough, or confused-deputy bugs in unrelated MCP systems.
 - Sensitive data already returned to a model.
+- Reviewed visible data intentionally sent to an operator-selected external
+  model provider after Workbench egress consent; the provider's retention and
+  training policy remains outside Runner.
 - Prompt injection itself.
 - Business invariants not represented in the capability config, proposal, application handler, or database constraints.
 - Generic multi-row business transactions, DDL, UPSERT, model-generated
@@ -136,6 +165,14 @@ idempotency boundary for effects.
   queues; `dev_env` is unverified.
 - Treat proposal/evidence/replay handles as identifiers, not authorization;
   preserve verified per-session context on every networked resource read.
+- Keep Scoped Explore and Workbench Ask local to explicit development/staging
+  authoring, verify a SELECT-only non-owner role, and disable Explore before
+  production. Production should serve only activated named capabilities.
+- Review generation-lock and relationship-proof drift instead of bypassing it,
+  and do not treat Prisma/Drizzle/OpenAPI names as authorization.
+- For Workbench Ask, choose provider/model/origin yourself, acknowledge direct
+  egress, keep keys out of project files and chat, and clear in-memory sessions
+  when finished.
 
 ## Release Blockers
 

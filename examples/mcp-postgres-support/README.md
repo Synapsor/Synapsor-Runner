@@ -52,7 +52,7 @@ export SUPPORT_POSTGRES_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_support_agent"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve \
+npx -y @synapsor/runner mcp serve \
   --config examples/mcp-postgres-support/synapsor.runner.json \
   --store ./tmp/mcp-postgres-support/local.db
 ```

@@ -5,12 +5,22 @@ describe("shared deterministic sensitivity classifier", () => {
   it.each([
     ["payment_method", "database", "payment_or_bank_detail"],
     ["paymentMethod", "prisma", "payment_or_bank_detail"],
+    ["card_on_file", "database", "payment_or_bank_detail"],
+    ["payment_card", "drizzle", "payment_or_bank_detail"],
+    ["cardholder_name", "openapi", "payment_or_bank_detail"],
+    ["card_expiry", "database", "payment_or_bank_detail"],
+    ["cc", "database", "payment_or_bank_detail"],
+    ["pan", "database", "payment_or_bank_detail"],
+    ["full_pan", "database", "payment_or_bank_detail"],
+    ["fullPan", "prisma", "payment_or_bank_detail"],
     ["medical_waiver_notes", "drizzle", "medical_or_health_information"],
     ["medicalWaiverNotes", "openapi", "medical_or_health_information"],
     ["password_hash", "database", "credential_or_secret"],
     ["bank_account_number", "database", "payment_or_bank_detail"],
     ["dateOfBirth", "prisma", "birth_information"],
     ["home_address", "database", "direct_contact_or_address"],
+    ["resident_address", "database", "direct_contact_or_address"],
+    ["shippingAddress", "prisma", "direct_contact_or_address"],
     ["precise_location", "openapi", "biometric_or_precise_location"],
   ] as const)("keeps %s out for %s evidence", (name, source, reason) => {
     const result = classifySensitivity({ name, source });
@@ -51,6 +61,14 @@ describe("shared deterministic sensitivity classifier", () => {
     ["updated_at", "timestamp"],
     ["organization_id", "uuid"],
     ["payment_status", "text"],
+    ["card_brand_display", "text"],
+    ["pan_last_four", "text"],
+    ["invoice_total", "numeric"],
+    ["amount_cents", "integer"],
+    ["accounting_period", "date"],
+    ["panel_position", "integer"],
+    ["pan_size_cm", "numeric"],
+    ["cardinality", "integer"],
   ])("does not over-classify ordinary field %s", (name, dataType) => {
     expect(classifySensitivity({ name, dataType, source: "database" }).state)
       .toBe("structurally_low_risk");

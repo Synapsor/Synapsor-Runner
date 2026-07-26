@@ -1,14 +1,14 @@
 # Limitations
 
-Synapsor Runner is intentionally narrow. Version 1.6 adds deterministic
-whole-application boundary drafting and a local authoring-only Explore ->
-Protect path on top of guarded writes. Version 1.6.1 also adds opt-in
-proposal/evidence freshness for exact same-source direct-SQL proposals. It does
-not turn Runner into a generic database query tool, claim Synapsor Cloud scale,
-or claim an enterprise SLA. Version 1.6.3 adds guided onboarding, verified
-approval-role evidence, default-off exact-digest supervised execution for a
-narrow write subset, and quiet human-attention delivery without changing
-existing manual behavior.
+Synapsor Runner is intentionally narrow. It combines deterministic
+whole-application boundary drafting, local authoring-only Explore -> Protect,
+guarded writes, opt-in proposal/evidence freshness, verified operator identity,
+default-off supervised execution, and quiet human-attention delivery. Reviewed
+aggregate paths are limited to proven star/depth-two many-to-one relationships,
+not a general join planner. Optional local Workbench Ask is a client of the
+existing reviewed tools; the complete no-model path remains the default.
+Runner does not become a generic database query tool, Synapsor Cloud, or an
+enterprise SLA.
 
 ## Supported
 
@@ -63,10 +63,20 @@ existing manual behavior.
   existing Synapsor definitions. Generated authority starts disabled.
 - Local development/staging Scoped Explore through exactly
   `app.describe_data` and `app.explore_data`, with no SQL-string argument.
+- Optional development/staging loopback Workbench Ask through OpenAI,
+  Anthropic, or a configured OpenAI-compatible endpoint. Provider calls use the
+  exact active MCP/runtime surface, explicit direct-egress consent, in-memory
+  credential/history state, fixed tool/time/size/token bounds, and
+  proposal-only write behavior.
 - Reviewed PM-style aggregate Explore with `count`, `count_distinct`, `sum`,
   `avg`, categorical dimensions, fixed time buckets, typed filters, bounded
-  top-N, optional one-hop proven many-to-one relationships, cohort suppression,
-  and durable extraction/differencing budgets.
+  top-N, up to three reviewed relationship paths of at most two proven
+  many-to-one links each, cohort suppression, and durable
+  extraction/differencing budgets.
+- Demand-driven operator review for an exact catalog-proven relationship,
+  including an explicit missing-row choice for nullable links. The model cannot
+  activate a relationship, and every participating relation receives trusted
+  tenant/principal scope.
 - Protect This Query to public DSL, canonical JSON, tests, and a disabled named
   capability that survives Explore shutdown after exact-digest activation.
 - Generation-lock drift detection for generated authority. Manually authored
@@ -123,14 +133,18 @@ truth for the model-facing tools.
 - Unbounded/high-throughput or multi-region ledger scale.
 - Managed fleet, SLA, compliance certification, or production support guarantee.
 - Production, shared HTTP, remote, or non-loopback Scoped Explore.
+- Production, shared HTTP, remote, or non-loopback Workbench Ask; model-facing
+  provider configuration; Synapsor-relayed provider traffic; durable chat
+  history; automatic provider retries; exact monetary spend enforcement; or
+  universal compatibility with OpenAI-compatible servers.
 - Automatic supervised execution for hard DELETE, reversible changes, bounded
   sets, app-owned/external effects, or writes without deterministic conflict,
   deduplication, freshness, and receipt authority.
 - Arbitrary aggregate expressions, dynamic identifiers, unrestricted joins,
   many-to-many joins, formulas, window functions, subqueries, `HAVING`,
-  user-defined functions, or a statistical privacy guarantee. Version 1.6
-  supports only the explicitly reviewed authoring cube described above and
-  fixed protected named capabilities produced from it.
+  user-defined functions, or a statistical privacy guarantee. Runner supports
+  only the explicitly reviewed authoring cube described above and fixed
+  protected named capabilities produced from it.
 - Automatic policy widening or activation from graduated-trust metrics.
 - Immutable/WORM compliance storage from the local report exporter.
 
@@ -164,6 +178,12 @@ Only homogeneous 1.x fleet operation is claimed for protocol-v4 compensation
 jobs. Mixed-minor v3/v4 rolling compensation is not claimed.
 See [Running A Small Runner
 Fleet](running-a-runner-fleet.md).
+
+Workbench Ask token accounting uses provider-reported usage. A provider that
+omits or misreports usage cannot provide exact token or monetary enforcement.
+Runner still enforces request/response, tool-result, iteration, history, and
+wall-clock bounds. A provider outage does not disable the no-model composer or
+external MCP path. See [Workbench Ask With Your Model](workbench-ask.md).
 
 Use this wording:
 

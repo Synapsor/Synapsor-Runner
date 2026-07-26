@@ -1,6 +1,6 @@
 # MCP database risk review
 
-`npx -y -p @synapsor/runner synapsor-runner audit <target>` performs a
+`npx -y @synapsor/runner audit <target>` performs a
 static MCP database risk review over an exported tool manifest, a remote MCP
 `tools/list` endpoint, or a stdio MCP server. The `mcp audit` subcommand is also
 available for users who look for the command under the MCP namespace.
@@ -26,7 +26,7 @@ MCP annotations are treated as hints, not enforcement.
 Built-in database MCP risk example:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp
+npx -y @synapsor/runner audit --example dangerous-db-mcp
 ```
 
 This bundled example does not require a source checkout or local examples file.
@@ -37,7 +37,7 @@ table/column inputs, and model-controlled tenant/principal fields.
 Human-readable output:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json
+npx -y @synapsor/runner audit ./tools-list.json
 ```
 
 The default terminal report groups repeated findings into the three most
@@ -46,32 +46,32 @@ and one next action instead of repeating the same explanation for every tool.
 Use the complete view when triaging every finding:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json --verbose
+npx -y @synapsor/runner audit ./tools-list.json --verbose
 ```
 
 Remote `tools/list` endpoint with a bearer token kept in the environment:
 
 ```bash
 SYNAPSOR_MCP_AUDIT_BEARER="..." \
-npx -y -p @synapsor/runner synapsor-runner audit https://mcp.example.com --format json
+npx -y @synapsor/runner audit https://mcp.example.com --format json
 ```
 
 Remote endpoint with a custom bearer-token environment variable:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --format json
+npx -y @synapsor/runner audit https://mcp.example.com --bearer-env MCP_AUDIT_TOKEN --format json
 ```
 
 Stdio MCP server:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit 'stdio:node ./server.mjs' --timeout-ms 5000
+npx -y @synapsor/runner audit 'stdio:node ./server.mjs' --timeout-ms 5000
 ```
 
 JSON output:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json --format json
+npx -y @synapsor/runner audit ./tools-list.json --format json
 ```
 
 The JSON contract remains `synapsor.mcp-audit.v1`; its published schema is
@@ -80,19 +80,19 @@ The JSON contract remains `synapsor.mcp-audit.v1`; its published schema is
 SARIF 2.1.0 output for code-scanning ingestion:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit ./tools-list.json --format sarif > mcp-audit.sarif
+npx -y @synapsor/runner audit ./tools-list.json --format sarif > mcp-audit.sarif
 ```
 
 Markdown output for issues, PRs, or security review notes:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit --example dangerous-db-mcp --format markdown
+npx -y @synapsor/runner audit --example dangerous-db-mcp --format markdown
 ```
 
 Inspect a project-scoped Cursor configuration without launching anything:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit \
+npx -y @synapsor/runner audit \
   --mcp-config ./.cursor/mcp.json \
   --format markdown
 ```
@@ -102,7 +102,7 @@ as `requires_operator_verification`. To query one reviewed stdio command, name
 that exact server and give explicit consent:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit \
+npx -y @synapsor/runner audit \
   --mcp-config ./.cursor/mcp.json \
   --live-server synapsor \
   --yes \
@@ -132,7 +132,7 @@ Audit can create a separate review directory without editing or activating the
 source configuration:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit generate \
+npx -y @synapsor/runner audit generate \
   ./tools-list.json \
   --output ./synapsor-audit-candidates
 ```
@@ -141,7 +141,7 @@ Open the same blocked candidate directly in the secured local review
 workbench:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner audit generate \
+npx -y @synapsor/runner audit generate \
   ./tools-list.json \
   --output ./synapsor-audit-candidates \
   --open-ui

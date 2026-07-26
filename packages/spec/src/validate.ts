@@ -54,6 +54,7 @@ const PROTECTED_READ_KEYS = new Set([
   "generation_lock_fingerprint",
   "predicates",
   "relationship",
+  "relationships",
   "row_order_by",
   "aggregate",
   "limits",
@@ -71,6 +72,19 @@ const PROTECTED_RELATIONSHIP_KEYS = new Set([
   "target_key",
   "cardinality",
   "max_fan_out",
+]);
+const PROTECTED_RELATIONSHIP_PATH_KEYS = new Set(["name", "links"]);
+const PROTECTED_RELATIONSHIP_LINK_KEYS = new Set([
+  "schema",
+  "table",
+  "primary_key",
+  "tenant_key",
+  "principal_scope_key",
+  "local_key",
+  "target_key",
+  "cardinality",
+  "max_fan_out",
+  "unmatched_rows",
 ]);
 const PROTECTED_ROW_ORDER_KEYS = new Set(["field", "direction"]);
 const PROTECTED_AGGREGATE_KEYS = new Set([
@@ -490,11 +504,28 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
   const keptOut = new Set(Array.isArray(capability.kept_out_fields) ? capability.kept_out_fields.filter((field): field is string => typeof field === "string") : []);
   const subject = isRecord(capability.subject) ? capability.subject : {};
   const trustedScopeFields = new Set([subject.tenant_key, subject.principal_scope_key].filter((field): field is string => isSafeIdentifier(field)));
-  const relationshipName = validateProtectedRelationship(
+  const relationshipNames = new Set<string>();
+  const legacyRelationshipName = validateProtectedRelationship(
     protectedRead.relationship,
     keptOut,
     trustedScopeFields,
     `${path}.protected_read.relationship`,
+    errors,
+  );
+  if (legacyRelationshipName) relationshipNames.add(legacyRelationshipName);
+  if (protectedRead.relationship !== undefined && protectedRead.relationships !== undefined) {
+    errors.push({
+      path: `${path}.protected_read`,
+      code: "PROTECTED_RELATIONSHIP_FORMS_CONFLICT",
+      message: "protected_read must use either legacy relationship or reviewed relationships, not both.",
+    });
+  }
+  validateProtectedRelationshipPaths(
+    protectedRead.relationships,
+    keptOut,
+    trustedScopeFields,
+    `${path}.protected_read.relationships`,
+    relationshipNames,
     errors,
   );
 
@@ -517,7 +548,7 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
           return;
         }
         checkUnknownKeys(predicate, PROTECTED_PREDICATE_KEYS, predicatePath, errors);
-        validateProtectedFieldReference(predicate.field, predicate.relationship, relationshipName, keptOut, trustedScopeFields, predicatePath, errors);
+        validateProtectedFieldReference(predicate.field, predicate.relationship, relationshipNames, keptOut, trustedScopeFields, predicatePath, errors);
         if (!["eq", "neq", "lt", "lte", "gt", "gte", "in"].includes(String(predicate.operator))) {
           errors.push({ path: `${predicatePath}.operator`, code: "INVALID_PROTECTED_PREDICATE_OPERATOR", message: "protected predicate operator must be eq, neq, lt, lte, gt, gte, or in." });
         }
@@ -571,7 +602,7 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
     validateProtectedAggregate(protectedRead.aggregate, {
       args,
       referencedArgs,
-      relationshipName,
+      relationshipNames,
       keptOut,
       trustedScopeFields,
       maxGroups: isRecord(protectedRead.limits) ? protectedRead.limits.max_groups : undefined,
@@ -620,12 +651,78 @@ function validateProtectedRelationship(
   return isSafeIdentifier(value.name) ? value.name : undefined;
 }
 
+function validateProtectedRelationshipPaths(
+  value: unknown,
+  keptOut: Set<string>,
+  trustedScopeFields: Set<string>,
+  path: string,
+  relationshipNames: Set<string>,
+  errors: ValidationIssue[],
+): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
+    errors.push({
+      path,
+      code: "INVALID_PROTECTED_RELATIONSHIP_PATHS",
+      message: "protected relationships must contain 1 through 3 reviewed paths.",
+    });
+    return;
+  }
+  value.forEach((candidate, pathIndex) => {
+    const candidatePath = `${path}[${pathIndex}]`;
+    if (!isRecord(candidate)) {
+      errors.push({ path: candidatePath, code: "PROTECTED_RELATIONSHIP_PATH_NOT_OBJECT", message: "protected relationship path must be an object." });
+      return;
+    }
+    checkUnknownKeys(candidate, PROTECTED_RELATIONSHIP_PATH_KEYS, candidatePath, errors);
+    if (!isSafeIdentifier(candidate.name)) {
+      errors.push({ path: `${candidatePath}.name`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "relationship path name must be a fixed safe identifier." });
+    } else if (relationshipNames.has(candidate.name)) {
+      errors.push({ path: `${candidatePath}.name`, code: "DUPLICATE_PROTECTED_RELATIONSHIP", message: "protected relationship names must be unique." });
+    } else {
+      relationshipNames.add(candidate.name);
+    }
+    if (!Array.isArray(candidate.links) || candidate.links.length < 1 || candidate.links.length > 2) {
+      errors.push({ path: `${candidatePath}.links`, code: "INVALID_PROTECTED_RELATIONSHIP_LINKS", message: "a protected relationship path requires one or two reviewed many-to-one links." });
+      return;
+    }
+    candidate.links.forEach((link, linkIndex) => {
+      const linkPath = `${candidatePath}.links[${linkIndex}]`;
+      if (!isRecord(link)) {
+        errors.push({ path: linkPath, code: "PROTECTED_RELATIONSHIP_LINK_NOT_OBJECT", message: "protected relationship link must be an object." });
+        return;
+      }
+      checkUnknownKeys(link, PROTECTED_RELATIONSHIP_LINK_KEYS, linkPath, errors);
+      for (const key of ["schema", "table", "primary_key", "tenant_key", "local_key", "target_key"] as const) {
+        if (!isSafeIdentifier(link[key])) errors.push({ path: `${linkPath}.${key}`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
+      }
+      if (link.principal_scope_key !== undefined && !isSafeIdentifier(link.principal_scope_key)) {
+        errors.push({ path: `${linkPath}.principal_scope_key`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "principal_scope_key must be a fixed safe identifier." });
+      }
+      if (link.cardinality !== "many_to_one" || link.max_fan_out !== 1) {
+        errors.push({ path: linkPath, code: "PROTECTED_RELATIONSHIP_CARDINALITY_FORBIDDEN", message: "every protected relationship link must be reviewed many-to-one with max_fan_out 1." });
+      }
+      if (link.unmatched_rows !== "exclude" && link.unmatched_rows !== "keep_null") {
+        errors.push({ path: `${linkPath}.unmatched_rows`, code: "PROTECTED_RELATIONSHIP_NULL_SEMANTICS_REQUIRED", message: "every protected relationship link must freeze exclude or keep_null unmatched-row semantics." });
+      }
+      if (linkIndex === 0 && isSafeIdentifier(link.local_key)
+        && (keptOut.has(link.local_key) || trustedScopeFields.has(link.local_key))) {
+        errors.push({
+          path: `${linkPath}.local_key`,
+          code: "PROTECTED_RELATIONSHIP_LOCAL_KEY_FORBIDDEN",
+          message: "the reviewed relationship cannot join through a kept-out or trusted-scope subject field.",
+        });
+      }
+    });
+  });
+}
+
 function validateProtectedAggregate(
   value: unknown,
   input: {
     args: JsonRecord;
     referencedArgs: Set<string>;
-    relationshipName?: string;
+    relationshipNames: Set<string>;
     keptOut: Set<string>;
     trustedScopeFields: Set<string>;
     maxGroups: unknown;
@@ -653,12 +750,12 @@ function validateProtectedAggregate(
       checkUnknownKeys(measure, PROTECTED_MEASURE_KEYS, measurePath, errors);
       validateUniqueIdentifier(measure.name, measureNames, `${measurePath}.name`, "DUPLICATE_PROTECTED_MEASURE_NAME", errors);
       if (!["count", "count_distinct", "sum", "avg"].includes(String(measure.function))) errors.push({ path: `${measurePath}.function`, code: "INVALID_PROTECTED_MEASURE_FUNCTION", message: "measure function must be count, count_distinct, sum, or avg." });
-      validateProtectedRelationshipReference(measure.relationship, input.relationshipName, `${measurePath}.relationship`, errors);
+      validateProtectedRelationshipReference(measure.relationship, input.relationshipNames, `${measurePath}.relationship`, errors);
       if (measure.function === "count") {
         if (measure.field !== undefined) errors.push({ path: `${measurePath}.field`, code: "PROTECTED_COUNT_FIELD_FORBIDDEN", message: "count measures count scoped subject rows and must not declare a field." });
         if (measure.relationship !== undefined) errors.push({ path: `${measurePath}.relationship`, code: "PROTECTED_COUNT_RELATIONSHIP_FORBIDDEN", message: "count measures count the scoped subject entity, not a joined relation." });
       } else {
-        validateProtectedFieldReference(measure.field, measure.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, measurePath, errors);
+        validateProtectedFieldReference(measure.field, measure.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, measurePath, errors);
       }
     });
   }
@@ -676,7 +773,7 @@ function validateProtectedAggregate(
         }
         checkUnknownKeys(dimension, PROTECTED_DIMENSION_KEYS, dimensionPath, errors);
         validateUniqueIdentifier(dimension.name, dimensionNames, `${dimensionPath}.name`, "DUPLICATE_PROTECTED_DIMENSION_NAME", errors);
-        validateProtectedFieldReference(dimension.field, dimension.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, dimensionPath, errors);
+        validateProtectedFieldReference(dimension.field, dimension.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, dimensionPath, errors);
       });
     }
   }
@@ -689,7 +786,7 @@ function validateProtectedAggregate(
       checkUnknownKeys(value.time_bucket, PROTECTED_TIME_BUCKET_KEYS, bucketPath, errors);
       if (!isSafeIdentifier(value.time_bucket.name)) errors.push({ path: `${bucketPath}.name`, code: "INVALID_PROTECTED_TIME_BUCKET_NAME", message: "time bucket name must be a safe identifier." });
       if (value.time_bucket.bucket !== "day" && value.time_bucket.bucket !== "week" && value.time_bucket.bucket !== "month") errors.push({ path: `${bucketPath}.bucket`, code: "INVALID_PROTECTED_TIME_BUCKET", message: "time bucket must be day, week, or month." });
-      validateProtectedFieldReference(value.time_bucket.field, value.time_bucket.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, bucketPath, errors);
+      validateProtectedFieldReference(value.time_bucket.field, value.time_bucket.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, bucketPath, errors);
     }
   }
 
@@ -699,7 +796,7 @@ function validateProtectedAggregate(
       errors.push({ path: comparisonPath, code: "PROTECTED_COMPARISON_NOT_OBJECT", message: "comparison must be an object." });
     } else {
       checkUnknownKeys(value.comparison, PROTECTED_COMPARISON_KEYS, comparisonPath, errors);
-      validateProtectedFieldReference(value.comparison.field, value.comparison.relationship, input.relationshipName, input.keptOut, input.trustedScopeFields, comparisonPath, errors);
+      validateProtectedFieldReference(value.comparison.field, value.comparison.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, comparisonPath, errors);
       if (!Array.isArray(value.comparison.ranges) || value.comparison.ranges.length < 1 || value.comparison.ranges.length > 2) {
         errors.push({ path: `${comparisonPath}.ranges`, code: "INVALID_PROTECTED_COMPARISON_RANGES", message: "comparison requires one or two bounded time ranges." });
       } else {
@@ -792,7 +889,7 @@ function validateProtectedValue(value: unknown, args: JsonRecord, referencedArgs
 function validateProtectedFieldReference(
   field: unknown,
   relationship: unknown,
-  relationshipName: string | undefined,
+  relationshipNames: Set<string>,
   keptOut: Set<string>,
   trustedScopeFields: Set<string>,
   path: string,
@@ -803,12 +900,14 @@ function validateProtectedFieldReference(
   } else if (relationship === undefined && (keptOut.has(field) || trustedScopeFields.has(field))) {
     errors.push({ path: `${path}.field`, code: "PROTECTED_FIELD_FORBIDDEN", message: "kept-out and trusted-scope fields cannot be selected, filtered, grouped, sorted, joined, aggregated, or counted distinctly." });
   }
-  validateProtectedRelationshipReference(relationship, relationshipName, `${path}.relationship`, errors);
+  validateProtectedRelationshipReference(relationship, relationshipNames, `${path}.relationship`, errors);
 }
 
-function validateProtectedRelationshipReference(value: unknown, relationshipName: string | undefined, path: string, errors: ValidationIssue[]): void {
+function validateProtectedRelationshipReference(value: unknown, relationshipNames: Set<string>, path: string, errors: ValidationIssue[]): void {
   if (value === undefined) return;
-  if (!isSafeIdentifier(value) || value !== relationshipName) errors.push({ path, code: "UNKNOWN_PROTECTED_RELATIONSHIP", message: "relationship must reference the capability's one reviewed many-to-one relationship." });
+  if (!isSafeIdentifier(value) || !relationshipNames.has(value)) {
+    errors.push({ path, code: "UNKNOWN_PROTECTED_RELATIONSHIP", message: "relationship must reference one of the capability's reviewed many-to-one paths." });
+  }
 }
 
 function validateUniqueIdentifier(value: unknown, seen: Set<string>, path: string, code: string, errors: ValidationIssue[]): void {

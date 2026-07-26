@@ -52,7 +52,7 @@ Run:
 ```bash
 node --version
 test -n "${DATABASE_URL:-}"
-npx -y @synapsor/runner@latest --version
+npx -y @synapsor/runner --version
 ```
 
 Do not run `echo "$DATABASE_URL"` or otherwise reveal its value. Runner
@@ -77,7 +77,7 @@ it into chat, then ask me to continue.
 From the intended project directory, run:
 
 ```bash
-npx -y @synapsor/runner@latest start --from-env DATABASE_URL
+npx -y @synapsor/runner start --from-env DATABASE_URL
 ```
 
 For a fresh interactive project, Runner performs metadata-only inspection,
@@ -118,7 +118,7 @@ The coding agent may verify the active local surface without copying an opaque
 handle:
 
 ```bash
-npx -y @synapsor/runner@latest try call --list --format json
+npx -y @synapsor/runner try call --list --format json
 ```
 
 If no named capability is active yet, that is expected: a temporary local
@@ -134,14 +134,14 @@ for the user.
 After the human activates a protected named capability, run:
 
 ```bash
-npx -y @synapsor/runner@latest try call --list --format json
+npx -y @synapsor/runner try call --list --format json
 ```
 
 Use the tool name returned by that command. For a tool with generated sample
 input, run:
 
 ```bash
-npx -y @synapsor/runner@latest try call <tool-name> --sample --json
+npx -y @synapsor/runner try call <tool-name> --sample --json
 ```
 
 Do not invent tenant or principal arguments. Trusted scope comes from the
@@ -171,14 +171,14 @@ authority surface.
 For a terminal-rendered generic configuration, run:
 
 ```bash
-npx -y @synapsor/runner@latest mcp config --absolute-paths
+npx -y @synapsor/runner mcp config --absolute-paths
 ```
 
 Do not write into a client configuration without explicit user consent. Cursor
 has a separate consent-gated installer:
 
 ```bash
-npx -y @synapsor/runner@latest mcp install cursor --project --dry-run
+npx -y @synapsor/runner mcp install cursor --project --dry-run
 ```
 
 Show the dry-run result first. Installation remains a human choice.

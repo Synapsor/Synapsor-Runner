@@ -1,6 +1,72 @@
 # Changelog
 
-## 1.6.3 (prepared, not published)
+## 1.6.4 (prepared, not published)
+
+### Review-correct onboarding and reviewed relationship paths
+
+- Repairs generated-boundary review state so edits invalidate only dependent
+  confirmations, stale browser revisions fail compare-and-swap checks, and
+  unrelated reviewed decisions survive. Secure headless activation now uses the
+  same exact-digest/operator boundary as Workbench.
+- Reworks the first Workbench experience around a small starter resource pack,
+  clearer plain-language authority and source-change status, stable
+  progressive disclosure, managed identity/scope decisions, and one primary
+  next action. Nested-project config discovery and resume behavior no longer
+  force a developer to rediscover paths or restart review.
+- Adds a no-argument first-run path that accepts the database URL through a
+  hidden terminal prompt or explicitly confirmed, key-specific environment-file
+  discovery. A conservative local-development fast lane reaches a real safe
+  read with at most two plain questions and one recorded exact-digest human
+  gesture, without exporting the URL or editing generated files.
+- Tightens deterministic sensitive-field classification across unfamiliar
+  schemas and combines database, Prisma, Drizzle, OpenAPI, and existing
+  Synapsor evidence without an LLM. Ambiguous identity/scope and high-risk
+  fields stay blocked or kept out for human review.
+- Adds public, additive reviewed relationship paths for protected aggregate
+  reads: up to three activated paths, each containing one or two
+  catalog-proven many-to-one links with fan-out one. The model may reference an
+  active path by name but cannot supply identifiers, join semantics, or
+  activation.
+- Adds demand-driven relationship review. A plan requiring an inactive proven
+  path fails closed, Workbench stages that exact proof for an operator, nullable
+  links require an explicit `EXCLUDE` or `KEEP NULL` choice, and a new digest is
+  required before retry.
+- Enforces trusted tenant/principal scope on every participating relation,
+  suppression after final grouping, generation-lock/catalog-proof drift, and
+  permanent rejection of one-to-many, many-to-many, ambiguous-cardinality,
+  over-depth, and model-improvised joins. Complex formulas and relationship
+  graphs remain on reviewed database views.
+- Adds clean-room Community Solar and Retail onboarding/PM-analysis journeys,
+  plus live PostgreSQL/MySQL star/depth-two, nullable-link, drift, privacy, and
+  deliberately wrong fan-out tests. Published `1.6.3` contracts, digests,
+  startup routes, and tool surfaces remain byte-compatible unless the new
+  feature is explicitly adopted.
+- Adds optional local Workbench Ask over the exact reviewed MCP/runtime tool
+  surface. OpenAI, Anthropic, and custom OpenAI-compatible adapters use
+  digest-bound direct-egress consent, in-memory credentials/history, fixed
+  size/time/tool/token bounds, escaped model output, and proposal-only writes;
+  the no-model composer remains complete and enabled by default.
+- Hardens provider endpoints with fixed official origins, remote HTTPS,
+  loopback-only plaintext, redirect refusal, per-connection DNS validation and
+  address pinning, private/special destination refusal, and redacted failures.
+  The pinned lookup supports Node 22's multi-address callback shape.
+- Extends both packed clean-room labs through the actual Ask UI. Retail visibly
+  refuses a kept-out customer-note aggregate, and Community Solar proves a
+  proposal cannot commit. An owner-authorized live OpenAI `gpt-5-mini` run
+  matched official MCP results and passed exact-key artifact/browser scans;
+  Anthropic and generic compatible claims remain protocol-scoped.
+- Uses direct `npx` only for first acquisition and the installed
+  `synapsor-runner` binary afterward. The optional unscoped command package is a
+  version-locked delegate with no independent runtime or authority logic;
+  explicit pinned and automation invocations remain compatible.
+- Adds one local, escaped, copy-exact DSL syntax highlighter for every
+  Workbench DSL preview, with no CDN or unsafe HTML path, and gives activity,
+  review, and apply detail the full available width on desktop and mobile.
+- Prepares `@synapsor/runner@1.6.4`, `@synapsor/spec@1.7.0`,
+  `@synapsor/dsl@1.7.0`, and the optional `synapsor-runner@1.6.4` command
+  alias. No package is published by this change.
+
+## 1.6.3 (published 2026-07-24)
 
 ### Guided adoption without weaker authority
 
@@ -67,13 +133,11 @@
   additive behavior is staged as `@synapsor/spec@1.6.0` and
   `@synapsor/dsl@1.6.0`; legacy contracts retain their exact normalization and
   digests.
-- Prepares `@synapsor/runner@1.6.3`, `@synapsor/spec@1.6.0`, and
-  `@synapsor/dsl@1.6.0`. No package is published by this change.
-- Makes the clean Runner tarball gate use the locally packed public Spec while
-  the new Spec version is still unpublished, then automatically return to the
-  stronger registry-only dependency-resolution proof once npm has that exact
-  Spec. This preserves the required Spec-first release order without masking a
-  broken packed Runner manifest.
+- Published `@synapsor/runner@1.6.3`, `@synapsor/spec@1.6.0`, and
+  `@synapsor/dsl@1.6.0`.
+- The clean Runner tarball gate used the locally packed public Spec before the
+  coordinated release, then returned to the stronger registry-only
+  dependency-resolution proof once npm had that exact Spec.
 
 ## 1.6.2 (published 2026-07-23)
 

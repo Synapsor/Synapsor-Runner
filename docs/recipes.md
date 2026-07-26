@@ -9,20 +9,20 @@ tenant key, conflict column, and business limits.
 List recipes:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner recipes list
+npx -y @synapsor/runner recipes list
 ```
 
 Inspect one:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner recipes show billing.late_fee_waiver
+npx -y @synapsor/runner recipes show billing.late_fee_waiver
 ```
 
 Initialize a starter config:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner recipes init billing.late_fee_waiver --output synapsor.runner.json
-npx -y -p @synapsor/runner synapsor-runner config validate --config synapsor.runner.json
+npx -y @synapsor/runner recipes init billing.late_fee_waiver --output synapsor.runner.json
+npx -y @synapsor/runner config validate --config synapsor.runner.json
 ```
 
 Built-in recipes are JSON files under `recipes/`. They are starter data, not
@@ -31,8 +31,8 @@ domain, and initialize from your file:
 
 ```bash
 cp recipes/billing.late_fee_waiver.json my-recipe.json
-npx -y -p @synapsor/runner synapsor-runner recipes show ./my-recipe.json
-npx -y -p @synapsor/runner synapsor-runner recipes init ./my-recipe.json --output synapsor.runner.json
+npx -y @synapsor/runner recipes show ./my-recipe.json
+npx -y @synapsor/runner recipes init ./my-recipe.json --output synapsor.runner.json
 ```
 
 Available recipes:

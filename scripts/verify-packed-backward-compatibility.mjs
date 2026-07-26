@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runnerPackageDir = path.join(root, "apps", "runner");
 const specPackageDir = path.join(root, "packages", "spec");
 const dslPackageDir = path.join(root, "packages", "dsl");
-const compatibilityBaseline = "published-1.6.0";
+const compatibilityBaseline = "published-1.6.3";
 const manifest = JSON.parse(await fsp.readFile(
   path.join(root, "fixtures", "compatibility", compatibilityBaseline, "manifest.json"),
   "utf8",
@@ -56,6 +56,7 @@ try {
 
   verifyPackedCanonicalCompatibility(current);
   await verifyLegacyToolSurface(baseline, current);
+  verifyLegacySingleHopProtectedDsl(baseline, current);
   verifyCliRouting(baseline, current);
   await verifyTypeScriptAuthoring(baseline, current);
 
@@ -171,6 +172,65 @@ async function verifyLegacyToolSurface(baseline, current) {
     ],
   );
   assert.equal(fs.existsSync(path.join(current.installRoot, ".synapsor", "generation-lock.json")), false);
+}
+
+function verifyLegacySingleHopProtectedDsl(baseline, current) {
+  const fixtureRoot = path.join(tempRoot, "single-hop-protected");
+  fs.mkdirSync(fixtureRoot);
+  const source = path.join(fixtureRoot, "single-hop.synapsor.sql");
+  fs.writeFileSync(source, [
+    "CREATE AGENT CONTEXT analytics_operator",
+    "  BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED",
+    "  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED",
+    "  TENANT BINDING tenant_id",
+    "  PRINCIPAL BINDING principal",
+    "END",
+    "",
+    "CREATE CAPABILITY analytics.revenue_by_region",
+    "  DESCRIPTION 'Return reviewed revenue by one proven region relationship.'",
+    "  USING CONTEXT analytics_operator",
+    "  SOURCE app_postgres",
+    "  ON public.sales_facts",
+    "  PRIMARY KEY id",
+    "  TENANT KEY tenant_id",
+    "  PRINCIPAL SCOPE KEY assigned_to",
+    "  PROTECTED READ AGGREGATE",
+    `  BOUNDARY DIGEST sha256:${"a".repeat(64)}`,
+    `  GENERATION LOCK sha256:${"b".repeat(64)}`,
+    "  PROTECTED RELATIONSHIP region ON region_id REFERENCES public.regions.id PRIMARY KEY id TENANT KEY tenant_id PRINCIPAL SCOPE KEY assigned_to",
+    "  MEASURE revenue SUM revenue_cents",
+    "  GROUP DIMENSION region_name BY region.name",
+    "  AGGREGATE ORDER BY MEASURE revenue DESC",
+    "  TOP 20 GROUPS",
+    "  MIN GROUP SIZE 5",
+    "  KEEP OUT private_note",
+    "  REQUIRE EVIDENCE",
+    "  PROTECTED LIMITS ROWS 50 GROUPS 50 CELLS 500 BYTES 65536 TIMEOUT MS 3000 QUERIES 40 EXTRACTED CELLS 4000 DIFFERENCING 6 RATE PER MINUTE 20",
+    "END",
+    "",
+  ].join("\n"));
+  const baselineOutput = path.join(fixtureRoot, "baseline.contract.json");
+  const currentOutput = path.join(fixtureRoot, "current.contract.json");
+  run(process.execPath, [baseline.cli, "dsl", "compile", source, "--out", baselineOutput, "--strict"], {
+    cwd: fixtureRoot,
+  });
+  run(process.execPath, [current.cli, "dsl", "compile", source, "--out", currentOutput, "--strict"], {
+    cwd: fixtureRoot,
+  });
+  const baselineBytes = fs.readFileSync(baselineOutput);
+  const currentBytes = fs.readFileSync(currentOutput);
+  assert.deepEqual(
+    currentBytes,
+    baselineBytes,
+    "legacy single-hop protected DSL no longer compiles byte-identically",
+  );
+  const protectedRead = JSON.parse(currentBytes).capabilities[0].protected_read;
+  assert.ok(protectedRead.relationship, "legacy single-hop capability lost its relationship field");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(protectedRead, "relationships"),
+    false,
+    "legacy single-hop capability gained the additive star relationship field",
+  );
 }
 
 async function listLegacyTools(installed) {

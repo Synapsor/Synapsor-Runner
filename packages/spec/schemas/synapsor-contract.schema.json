@@ -446,6 +446,43 @@
         "max_fan_out": { "const": 1 }
       }
     },
+    "protectedReadRelationshipLink": {
+      "type": "object",
+      "required": ["schema", "table", "primary_key", "tenant_key", "local_key", "target_key", "cardinality", "max_fan_out", "unmatched_rows"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "schema": { "$ref": "#/$defs/safeIdentifier" },
+        "table": { "$ref": "#/$defs/safeIdentifier" },
+        "primary_key": { "$ref": "#/$defs/safeIdentifier" },
+        "tenant_key": { "$ref": "#/$defs/safeIdentifier" },
+        "principal_scope_key": { "$ref": "#/$defs/safeIdentifier" },
+        "local_key": { "$ref": "#/$defs/safeIdentifier" },
+        "target_key": { "$ref": "#/$defs/safeIdentifier" },
+        "cardinality": { "const": "many_to_one" },
+        "max_fan_out": { "const": 1 },
+        "unmatched_rows": { "enum": ["exclude", "keep_null"] }
+      }
+    },
+    "protectedReadRelationshipPath": {
+      "type": "object",
+      "required": ["name", "links"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "name": { "$ref": "#/$defs/safeIdentifier" },
+        "links": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/protectedReadRelationshipLink" }
+        }
+      }
+    },
     "protectedReadMeasure": {
       "type": "object",
       "required": ["name", "function"],
@@ -578,6 +615,7 @@
       "type": "object",
       "required": ["version", "mode", "boundary_digest", "generation_lock_fingerprint", "limits"],
       "additionalProperties": false,
+      "not": { "required": ["relationship", "relationships"] },
       "patternProperties": {
         "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
       },
@@ -592,6 +630,12 @@
           "items": { "$ref": "#/$defs/protectedReadPredicate" }
         },
         "relationship": { "$ref": "#/$defs/protectedReadRelationship" },
+        "relationships": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/protectedReadRelationshipPath" }
+        },
         "row_order_by": {
           "type": "array",
           "minItems": 1,

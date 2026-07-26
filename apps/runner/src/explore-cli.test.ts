@@ -97,8 +97,8 @@ function boundary(): ActivatedExplorationBoundary {
     },
     deployment_profile: "staging",
     source: "app_postgres",
-    compiler_version: "1.6.3",
-    spec_version: "1.6.0",
+    compiler_version: "1.6.4",
+    spec_version: "1.7.0",
     trusted_context: {
       provider: "environment",
       tenant_env: "SYNAPSOR_TENANT_ID",

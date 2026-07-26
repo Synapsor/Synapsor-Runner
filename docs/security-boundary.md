@@ -42,6 +42,36 @@ The model does not receive:
 - MCP endpoint tokens, JWTs, refresh tokens, client secrets, or TLS keys;
 - trusted tenant or principal authority as ordinary model arguments.
 
+## Optional Workbench model client
+
+Workbench Ask is a local client of that same reviewed surface, not another
+policy engine. It is available only from authenticated loopback Workbench in an
+explicit development/staging profile. Its provider may request only the exact
+active named capabilities plus valid local authoring tools. The request is
+dispatched through the official MCP SDK and the existing typed-plan/runtime
+validators; there is no parallel query or mutation executor.
+
+The operator chooses provider, model, endpoint, and credential source and
+acknowledges direct egress for the current authority digest. No model output can
+change those values. Provider credentials and bounded conversation state stay
+in local server memory and are not written to the project, ledger, browser
+storage, logs, evidence, receipts, or replay. Reviewed tool results may be sent
+directly to the provider after consent; Synapsor does not relay them.
+
+Official remote providers use fixed HTTPS origins. Custom remote endpoints
+require HTTPS; plaintext is restricted to loopback. Redirects are refused,
+resolved destinations are checked and pinned on every connection, and
+private/link-local/metadata/special remote addresses are blocked. Unknown
+tools, malformed arguments/responses, authority drift, oversized data, time or
+tool-loop exhaustion, and reported source mutation fail closed.
+
+Provider prose remains untrusted. A write tool can create only the normal inert
+proposal, and the Workbench directs the human to the separate operator path.
+Ask never receives activation, Protect, approval, apply, worker, notification,
+attention, or reconciliation tools. It is absent from production,
+unknown-profile, shared, remote, and non-loopback surfaces. See [Workbench Ask
+With Your Model](workbench-ask.md).
+
 ## Network transport and identity
 
 Local stdio is the preferred one-client path. The MCP client launches Runner and

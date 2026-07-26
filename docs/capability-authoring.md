@@ -406,8 +406,8 @@ surface.
 ### Optional Live Freshness
 
 The proposal's exact `conflict_guard` already protects its target at apply.
-Runner 1.6.1 can additionally recheck that target before local approval and can
-bind explicitly reviewed supporting rows to both approval and apply.
+Runner can additionally recheck that target before local approval and bind
+explicitly reviewed supporting rows to both approval and apply.
 
 This is deployment wiring, not DSL or canonical contract syntax:
 

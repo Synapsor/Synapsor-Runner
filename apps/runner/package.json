@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "Open-source MCP runtime for governed Postgres/MySQL access with reviewed capabilities, proposals, guarded writes, receipts, and replay.",
   "license": "Apache-2.0",
   "type": "module",
@@ -8,6 +8,10 @@
     "synapsor-runner": "dist/cli.js"
   },
   "exports": {
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/runner.mjs"
+    },
     "./authoring": {
       "types": "./dist/authoring.d.ts",
       "import": "./dist/authoring.mjs"
@@ -41,6 +45,8 @@
     "examples/dangerous-mcp-tools.json",
     "examples/app-owned-writeback/**",
     "examples/auto-boundary-churn/**",
+    "examples/community-solar-clean-room/**",
+    "examples/retail-clean-room/**",
     "examples/fitflow-guided-onboarding/**",
     "examples/claude-desktop-postgres/**",
     "examples/cursor-postgres/**",
@@ -94,7 +100,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@synapsor/spec": "workspace:^1.6.0",
+    "@synapsor/spec": "workspace:^1.7.0",
     "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pdf-lib": "1.17.1",

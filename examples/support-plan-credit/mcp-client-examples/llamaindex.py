@@ -7,7 +7,7 @@ async def main() -> None:
     client = BasicMCPClient(
         "npx",
         args=[
-            "-y", "-p", "@synapsor/runner", "synapsor-runner", "mcp", "serve",
+            "-y", "@synapsor/runner", "mcp", "serve",
             "--config", "./examples/support-plan-credit/synapsor.runner.json",
             "--store", "./tmp/support-plan-credit/local.db",
         ],

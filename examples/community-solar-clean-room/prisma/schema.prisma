@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Cooperative {
+  id          String       @id
+  name        String
+  regions     Region[]
+  teams       TechnicianTeam[]
+  technicians Technician[]
+  sites       SolarSite[]
+  models      InverterModel[]
+  workOrders  WorkOrder[]
+  incidents   Incident[]
+
+  @@map("cooperatives")
+}
+
+model Region {
+  id            String      @id
+  cooperativeId String      @map("cooperative_id")
+  name          String
+  climateZone   String      @map("climate_zone")
+  cooperative   Cooperative @relation(fields: [cooperativeId], references: [id])
+  sites         SolarSite[]
+  workOrders    WorkOrder[]
+  incidents     Incident[]
+
+  @@unique([cooperativeId, name])
+  @@map("regions")
+}
+
+model TechnicianTeam {
+  id            String      @id
+  cooperativeId String      @map("cooperative_id")
+  name          String
+  cooperative   Cooperative @relation(fields: [cooperativeId], references: [id])
+  technicians   Technician[]
+  workOrders    WorkOrder[]
+
+  @@unique([cooperativeId, name])
+  @@map("technician_teams")
+}
+
+model Technician {
+  id            String         @id
+  cooperativeId String         @map("cooperative_id")
+  teamId        String         @map("team_id")
+  displayName   String         @map("display_name")
+  privateNotes  String         @map("private_technician_notes")
+  cooperative   Cooperative    @relation(fields: [cooperativeId], references: [id])
+  team          TechnicianTeam @relation(fields: [teamId], references: [id])
+  workOrders    WorkOrder[]
+
+  @@map("technicians")
+}
+
+model SolarSite {
+  id            String      @id
+  cooperativeId String      @map("cooperative_id")
+  regionId      String      @map("region_id")
+  name          String
+  siteGroup     String      @map("site_group")
+  cooperative   Cooperative @relation(fields: [cooperativeId], references: [id])
+  region        Region      @relation(fields: [regionId], references: [id])
+  inverters     Inverter[]
+  workOrders    WorkOrder[]
+  incidents     Incident[]
+
+  @@unique([cooperativeId, name])
+  @@map("solar_sites")
+}
+
+model InverterModel {
+  id            String      @id
+  cooperativeId String      @map("cooperative_id")
+  manufacturer  String
+  modelName     String      @map("model_name")
+  cooperative   Cooperative @relation(fields: [cooperativeId], references: [id])
+  inverters     Inverter[]
+  workOrders    WorkOrder[]
+  incidents     Incident[]
+
+  @@unique([cooperativeId, manufacturer, modelName])
+  @@map("inverter_models")
+}
+
+model Inverter {
+  id              String        @id
+  cooperativeId   String        @map("cooperative_id")
+  siteId          String        @map("site_id")
+  inverterModelId String        @map("inverter_model_id")
+  serialNumber    String        @map("serial_number")
+  accessToken     String        @map("access_token")
+  panelPosition   String        @map("panel_position")
+  site            SolarSite     @relation(fields: [siteId], references: [id])
+  model           InverterModel @relation(fields: [inverterModelId], references: [id])
+
+  @@unique([cooperativeId, serialNumber])
+  @@map("inverters")
+}
+
+model FaultCategory {
+  id            String @id
+  cooperativeId String @map("cooperative_id")
+  name          String
+  severity      String
+  incidents     Incident[]
+  workOrders    WorkOrder[]
+
+  @@unique([cooperativeId, name])
+  @@map("fault_categories")
+}
+
+model WorkOrder {
+  id                     String         @id
+  cooperativeId          String         @map("cooperative_id")
+  siteId                 String         @map("site_id")
+  regionId               String         @map("region_id")
+  inverterModelId        String         @map("inverter_model_id")
+  faultCategoryId        String         @map("fault_category_id")
+  assignedTechnicianId   String         @map("assigned_technician_id")
+  technicianTeamId       String         @map("technician_team_id")
+  status                 String
+  openedAt               DateTime       @map("opened_at") @db.Timestamptz(6)
+  completedAt            DateTime?      @map("completed_at") @db.Timestamptz(6)
+  downtimeMinutes        Int            @map("downtime_minutes")
+  repairDurationMinutes  Int            @map("repair_duration_minutes")
+  estimatedEnergyLossWh  Int            @map("estimated_energy_loss_wh")
+  lostRevenueCents       Int            @map("lost_revenue_cents")
+  inspectionFailed       Boolean        @map("inspection_failed")
+  version                Int
+  privateTechnicianNotes String         @map("private_technician_notes")
+  cooperative            Cooperative    @relation(fields: [cooperativeId], references: [id])
+  site                   SolarSite      @relation(fields: [siteId], references: [id])
+  region                 Region         @relation(fields: [regionId], references: [id])
+  inverterModel          InverterModel  @relation(fields: [inverterModelId], references: [id])
+  faultCategory          FaultCategory  @relation(fields: [faultCategoryId], references: [id])
+  assignedTechnician     Technician     @relation(fields: [assignedTechnicianId], references: [id])
+  technicianTeam         TechnicianTeam @relation(fields: [technicianTeamId], references: [id])
+
+  @@index([cooperativeId, assignedTechnicianId, openedAt])
+  @@map("work_orders")
+}
+
+model Incident {
+  id                    String        @id
+  cooperativeId         String        @map("cooperative_id")
+  siteId                String        @map("site_id")
+  regionId              String        @map("region_id")
+  inverterModelId       String        @map("inverter_model_id")
+  faultCategoryId       String        @map("fault_category_id")
+  status                String
+  occurredAt            DateTime      @map("occurred_at") @db.Timestamptz(6)
+  resolvedAt            DateTime?     @map("resolved_at") @db.Timestamptz(6)
+  downtimeMinutes       Int           @map("downtime_minutes")
+  estimatedEnergyLossWh Int           @map("estimated_energy_loss_wh")
+  cooperative           Cooperative   @relation(fields: [cooperativeId], references: [id])
+  site                  SolarSite     @relation(fields: [siteId], references: [id])
+  region                Region        @relation(fields: [regionId], references: [id])
+  inverterModel         InverterModel @relation(fields: [inverterModelId], references: [id])
+  faultCategory         FaultCategory @relation(fields: [faultCategoryId], references: [id])
+
+  @@index([cooperativeId, occurredAt])
+  @@map("incidents")
+}

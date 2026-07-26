@@ -1,0 +1,149 @@
+{
+  "domain": "multi-tenant community-solar operations",
+  "package": {
+    "spec_tarball": "synapsor-spec-1.7.0.tgz",
+    "spec_sha256": "sha256:2f2fd600f4b5c7d2f30477aa7128f0c8fbd315edc946df57984c7ad5f73d3554",
+    "runner_tarball": "synapsor-runner-1.6.4.tgz",
+    "runner_sha256": "sha256:01b3de2c05ce956a496a92633a8d973c083581c1a8d38a2853f4bc08c0776e10"
+  },
+  "timings_ms": {
+    "schema_summary": 11800,
+    "boundary_activation": 13222,
+    "first_safe_read": 13671,
+    "first_pm_aggregate": 14305,
+    "protected_capability": 17992,
+    "first_guided_proposal": 19137,
+    "first_guarded_apply": 28595
+  },
+  "interactions": {
+    "shell_commands_through_first_value": 1,
+    "browser_clicks": 55,
+    "browser_text_entries": 24,
+    "manual_file_edits": 0
+  },
+  "onboarding": {
+    "command": "synapsor-runner start",
+    "database_input": "hidden_session_paste",
+    "database_url_exported": false,
+    "database_url_in_process_arguments": false,
+    "database_url_in_output": false,
+    "database_url_in_generated_artifacts": false
+  },
+  "starter_resources": [
+    "public.work_orders",
+    "public.inverter_models",
+    "public.solar_sites"
+  ],
+  "generated": {
+    "dsl": "synapsor/generated/read-capabilities.synapsor.sql",
+    "canonical_contract": "synapsor/generated/synapsor.candidate.contract.json",
+    "generation_lock": ".synapsor/generation-lock.json",
+    "review_report": ".synapsor/review-report.json",
+    "config": "synapsor.runner.json",
+    "store": ".synapsor/local.db"
+  },
+  "first_read": {
+    "resource": "public.work_orders",
+    "object_id": "wo-001",
+    "source_database_changed": false,
+    "tenant_scope": "coop-sunward",
+    "principal_scope": "tech-alex"
+  },
+  "aggregate": {
+    "question": "How did total downtime change by week across reviewed inverter models?",
+    "plan": "Calculate total downtime minutes for work orders grouped by Model name from Inverter models for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.work_orders\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"downtime_minutes\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"model_name\",\n      \"relationship\": \"work_orders_inverter_model_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"opened_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
+    "source_database_changed": false,
+    "official_mcp_parity": true,
+    "mcp_returned_groups": 2
+  },
+  "protected": {
+    "capability": "solar.weekly_downtime_by_inverter_model",
+    "digest": "sha256:bce16008a96c74f4b3678b32caa2089c339539a40f970788157fa7de429024b2",
+    "disabled_before_activation": true,
+    "activated_by_human": true,
+    "mode": "aggregate",
+    "generated_tests": 10
+  },
+  "write_lifecycle": {
+    "capability": "solar.propose_work_order_start",
+    "target": "public.work_orders:wo-005",
+    "proposal_hash": "sha256:70286f45706f4bac08ddfa2cd36f98d9d10a6d4de9593626fa52baf21109f93b",
+    "action_digest": "sha256:b9d1ae4da76fab2417ab965a13aa5768fa46fdcf8c16f1097fc3e091e71d3f12",
+    "before": {
+      "status": "open",
+      "version": 1
+    },
+    "after": {
+      "status": "in_progress",
+      "version": 2
+    },
+    "proposal_changed_source": false,
+    "approval_changed_source": false,
+    "apply_changed_source": true,
+    "reversible": true,
+    "model_can_activate": false,
+    "model_can_approve": false,
+    "model_can_apply": false
+  },
+  "ask": {
+    "provider": "custom_openai_compatible_loopback",
+    "aggregate_official_mcp_parity": true,
+    "aggregate_source_database_changed": false,
+    "provider_key_required": false,
+    "synapsor_relay": false,
+    "proposal_only": true,
+    "proposal_id": "wrp_943ad90437e238fad286",
+    "proposal_target": "wo-015",
+    "model_can_activate": false,
+    "model_can_approve": false,
+    "model_can_apply": false
+  },
+  "live_openai": {
+    "attempted": false
+  },
+  "security": {
+    "assigned_read_allowed": true,
+    "same_tenant_other_principal_hidden": true,
+    "other_tenant_hidden": true,
+    "model_selected_scope_refused": true,
+    "kept_out_plan_positions_refused": true,
+    "raw_sql_refused": true,
+    "authoring_tools": [
+      "app.describe_data",
+      "app.explore_data"
+    ]
+  },
+  "parity": {
+    "generated_dsl_matches_canonical_contract": true,
+    "explore_disabled_after_authoring": true,
+    "protected_capability_survives": true,
+    "runtime_tools": [
+      "solar.weekly_downtime_by_inverter_model",
+      "solar.propose_work_order_start"
+    ],
+    "protected_result_source_changed": false,
+    "proposal_tool_source_changed": false,
+    "cli_latest_lifecycle_without_id": true,
+    "redacted_query_audit_without_id": true
+  },
+  "elapsed_ms": 37471,
+  "screenshots": [
+    "01-overview.png",
+    "02-ready-to-activate.png",
+    "03-explore-ready.png",
+    "04-first-safe-read.png",
+    "05-pm-aggregate.png",
+    "05b-ask-aggregate.png",
+    "06-protected-draft.png",
+    "06b-protected-draft-dark.png",
+    "07-next-safe-action.png",
+    "08-disabled-safe-action.png",
+    "08b-disabled-safe-action-dark.png",
+    "09-proposal-created.png",
+    "10-human-review.png",
+    "11-approved-awaiting-apply.png",
+    "12-guarded-apply.png",
+    "13-ledger-timeline.png",
+    "13b-ask-proposal-only.png"
+  ]
+}

@@ -1,7 +1,7 @@
 # FitFlow Guided Onboarding Fixture
 
 FitFlow is a synthetic multi-tenant fitness application used to verify the
-Runner 1.6.3 first-time developer journey.
+Runner 1.6.4 first-time developer journey.
 
 Its live PostgreSQL schema contains 41 relations: six seeded core relations,
 34 realistic surrounding application subsystems, and one readiness marker.
@@ -37,7 +37,7 @@ Use the organization analytics role for the first onboarding journey:
 ```bash
 export DATABASE_URL='postgresql://fitflow_analytics_reader:fitflow_analytics_reader_password@127.0.0.1:55463/fitflow'
 export SYNAPSOR_TENANT_ID='org-fitflow'
-npx -y @synapsor/runner@latest start --from-env DATABASE_URL
+npx -y @synapsor/runner start --from-env DATABASE_URL
 ```
 
 Use only synthetic data. The fixture is not a production deployment template.

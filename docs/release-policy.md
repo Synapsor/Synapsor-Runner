@@ -7,7 +7,7 @@ shared runtime-store deployment are part of the documented compatibility
 surface. Use the stable package for normal installs:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner demo --quick
+npx -y @synapsor/runner demo --quick
 npm install -g @synapsor/runner
 ```
 
@@ -38,9 +38,10 @@ Alpha releases must keep the safety boundary intact:
 - no generic model-generated INSERT/DELETE/UPSERT/DDL/multi-row SQL;
 - proposal-first write path stays explicit.
 
-## Stable Expectations
+## Stable Release Expectations
 
-A stable `0.1.0` release should only be tagged after:
+Every stable release must preserve the safety boundary and should be tagged
+only after:
 
 - npm README commands match the published package;
 - `synapsor-runner demo --quick` works from a clean directory;
@@ -62,7 +63,7 @@ A stable `0.1.0` release should only be tagged after:
 - there are no known docs/code mismatches around transport, credentials,
   receipt tables, or handler expectations.
 
-## 1.0 Stability Gate
+## Historical 1.0 Stability Gate
 
 Do not tag `1.0.0` only because the package is useful. `1.0.0` is the public
 semver contract for the Runner production approval loop, and it should be cut
@@ -89,7 +90,7 @@ versioning. Breaking changes require a new major version, except for security
 fixes that close a vulnerability while preserving the safest possible
 compatibility path.
 
-## 1.1 Fleet Gate
+## Historical 1.1 Fleet Gate
 
 Do not publish `1.1.0` until all 1.0 gates remain green and the local synthetic
 fleet verifier proves:
@@ -167,15 +168,27 @@ Before publishing any release:
 ./scripts/verify-release-gate.sh
 ```
 
+For a coordinated Spec/DSL/Runner release, publish in dependency order:
+
+1. `@synapsor/spec`;
+2. `@synapsor/dsl`;
+3. `@synapsor/runner`;
+4. the optional `synapsor-runner` command alias, when prepared.
+
+The alias must have the same version as the scoped Runner and depend on that
+exact registry version. It contains no independent runtime or authority logic.
+Run `corepack pnpm verify:packed-runner-alias` before publishing it, and do not
+publish it until the matching scoped Runner is visible on npm.
+
 After publishing an alpha prerelease:
 
 ```bash
-VERIFY_PUBLISHED_ALPHA=1 ./scripts/verify-release-gate.sh 0.1.0-alpha.17
+VERIFY_PUBLISHED_ALPHA=1 ./scripts/verify-release-gate.sh <prerelease-version>
 ```
 
 After publishing/promoting stable `latest`, verify the stable channel from a
 clean temporary directory:
 
 ```bash
-./scripts/verify-published-stable.sh 0.1.0
+./scripts/verify-published-stable.sh <stable-version>
 ```
