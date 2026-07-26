@@ -126,7 +126,7 @@ Phase 1 evidence:
 - Added a descriptor characterization proving installed methods remain
   non-enumerable own prototype methods.
 
-Phase 1 implementation commit: pending checkpoint creation.
+Phase 1 implementation commit: `f0a3c6599609`.
 
 ## Deviations And Blockers
 
@@ -134,6 +134,5 @@ None.
 
 ## Exact Next Action
 
-Create the Phase 1 proposal-store checkpoint commit and record its hash here.
-Then map MCP runtime public types, authority/planning functions, runtime
-composition, and transport/network ownership before the first MCP extraction.
+Map MCP runtime public types, authority/planning functions, runtime composition,
+and transport/network ownership before the first MCP extraction.
