@@ -44,7 +44,7 @@ MySQL, worker-core, and its existing focused authoring/UI modules.
 | --- | --- | --- |
 | 0. Baseline and characterization | Complete | 948 tests and trusted-core parity verifier passed |
 | 1. Proposal store | Complete | 69 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
-| 2. MCP server | Pending | |
+| 2. MCP server | Complete | 111 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
 | 3. Runner CLI | Pending | |
 | 4. Integrated architecture and packed parity | Pending | |
 | 5. Completion audit, merge, and push | Pending | |
@@ -128,11 +128,58 @@ Phase 1 evidence:
 
 Phase 1 implementation commit: `f0a3c6599609`.
 
+## Phase 2: MCP Server
+
+`packages/mcp-server/src/index.ts` is now a 118-line explicit compatibility
+facade, down from 7,511 lines. The implementation is separated into these trust
+and operational domains:
+
+- `runtime-types.ts`: public and internal runtime/transport data contracts.
+- `capability-authority.ts`, `trusted-context.ts`, and `runtime-config.ts`:
+  capability eligibility, trusted tenant/principal/credential resolution, and
+  normalized runtime configuration.
+- `generated-authority.ts`: generated-boundary lock, dependency, and drift
+  preflight.
+- `read-planning.ts`, `source-runtime.ts`, and
+  `protected-read-runtime.ts`: parameterized row/aggregate SQL planning, source
+  pools and RLS binding, privacy budgets, suppression, and analytical audit.
+- `proposal-freshness.ts`, `proposal-builder.ts`, and `approval-policy.ts`:
+  freshness authority, immutable proposal construction, guarded policy
+  evaluation, and auto-approval eligibility.
+- `tool-catalog.ts`, `tool-dispatch.ts`, `result-envelope.ts`, and
+  `local-resources.ts`: model-facing schemas/catalog, canonical dispatch,
+  response compatibility, and read-only proposal/evidence/replay resources.
+- `runtime-composition.ts`, `server-composition.ts`, and `cloud-linked.ts`:
+  runtime lifecycle, official MCP server registration/stdio, and Cloud outbox
+  coordination.
+- `http-security.ts`, `http-transport.ts`, `runtime-observability.ts`, and
+  `tool-naming.ts`: authentication/TLS/OAuth/CORS/host controls, HTTP and
+  Streamable HTTP sessions, readiness/metrics, and deterministic aliases.
+- `runtime-errors.ts`, `runtime-logging.ts`, and `safe-values.ts`: stable error
+  classification/redaction, trusted rejection logging, and bounded canonical
+  value/hash helpers.
+
+No production module exceeds 782 lines. A compiler-symbol import graph
+inspection found no MCP-server cycles and confirmed that no implementation
+module imports the compatibility facade.
+
+Phase 2 evidence:
+
+- `corepack pnpm typecheck`: passed.
+- `corepack pnpm --filter @synapsor-runner/mcp-server test`: passed, 111 tests.
+- `corepack pnpm --filter @synapsor-runner/mcp-server build`: passed.
+- `corepack pnpm build:runner-package`: passed.
+- `node scripts/trusted-core-baseline.mjs`: passed.
+- `git diff --check`: passed.
+
+Phase 2 implementation commit: pending checkpoint creation.
+
 ## Deviations And Blockers
 
 None.
 
 ## Exact Next Action
 
-Map MCP runtime public types, authority/planning functions, runtime composition,
-and transport/network ownership before the first MCP extraction.
+Create and record the Phase 2 MCP-server checkpoint commit. Then map Runner CLI
+shared parsing/output behavior, command families, and bootstrap dispatch before
+the first CLI extraction.
