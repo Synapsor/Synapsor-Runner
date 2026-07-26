@@ -1,0 +1,1244 @@
+{
+  "schema_version": 1,
+  "versions": {
+    "runner": "1.6.5",
+    "spec": "1.7.0",
+    "dsl": "1.7.0"
+  },
+  "public_declarations": {
+    "packages/proposal-store/dist/index.d.ts": [
+      {
+        "name": "ActiveProposalLookup",
+        "kind": "type"
+      },
+      {
+        "name": "ApprovalProgress",
+        "kind": "type"
+      },
+      {
+        "name": "attentionDecisionSubject",
+        "kind": "value",
+        "value_signature": "(item: AttentionItem) => AttentionDecisionSubject"
+      },
+      {
+        "name": "AttentionDecisionSubject",
+        "kind": "type"
+      },
+      {
+        "name": "AttentionEvent",
+        "kind": "type"
+      },
+      {
+        "name": "AttentionEventType",
+        "kind": "type"
+      },
+      {
+        "name": "AttentionItem",
+        "kind": "type"
+      },
+      {
+        "name": "AttentionItemStatus",
+        "kind": "type"
+      },
+      {
+        "name": "AttentionSeverity",
+        "kind": "type"
+      },
+      {
+        "name": "CloudGovernanceEvent",
+        "kind": "type"
+      },
+      {
+        "name": "CloudOutboxItem",
+        "kind": "type"
+      },
+      {
+        "name": "CloudOutboxKind",
+        "kind": "type"
+      },
+      {
+        "name": "CloudOutboxStatus",
+        "kind": "type"
+      },
+      {
+        "name": "CreatePolicyRecommendationInput",
+        "kind": "type"
+      },
+      {
+        "name": "CreateWritebackJobOptions",
+        "kind": "type"
+      },
+      {
+        "name": "EventSearchFilters",
+        "kind": "type"
+      },
+      {
+        "name": "EvidenceSearchFilters",
+        "kind": "type"
+      },
+      {
+        "name": "FleetEventMetricRow",
+        "kind": "type"
+      },
+      {
+        "name": "GraduatedTrustMetrics",
+        "kind": "type"
+      },
+      {
+        "name": "LocalListOptions",
+        "kind": "type"
+      },
+      {
+        "name": "LocalProposalState",
+        "kind": "type"
+      },
+      {
+        "name": "MaybePromise",
+        "kind": "type"
+      },
+      {
+        "name": "migrateSharedPostgresRuntimeStore",
+        "kind": "value",
+        "value_signature": "(pool: PostgresRuntimePool, schema?: string, lockTimeoutMs?: number) => Promise<void>"
+      },
+      {
+        "name": "NotificationDelivery",
+        "kind": "type"
+      },
+      {
+        "name": "NotificationDeliveryStatus",
+        "kind": "type"
+      },
+      {
+        "name": "notificationReplayDecisionSubject",
+        "kind": "value",
+        "value_signature": "(delivery: NotificationDelivery) => NotificationReplayDecisionSubject"
+      },
+      {
+        "name": "NotificationReplayDecisionSubject",
+        "kind": "type"
+      },
+      {
+        "name": "OperationalMetricRow",
+        "kind": "type"
+      },
+      {
+        "name": "OperatorDecision",
+        "kind": "type"
+      },
+      {
+        "name": "OperatorIdentityProof",
+        "kind": "type"
+      },
+      {
+        "name": "PolicyApprovalDecision",
+        "kind": "type"
+      },
+      {
+        "name": "PolicyApprovalLimit",
+        "kind": "type"
+      },
+      {
+        "name": "PolicyApprovalLimitTrip",
+        "kind": "type"
+      },
+      {
+        "name": "PolicyRecommendation",
+        "kind": "type"
+      },
+      {
+        "name": "PolicyRecommendationStatus",
+        "kind": "type"
+      },
+      {
+        "name": "PostgresProposalRuntimeStore",
+        "kind": "type+value",
+        "value_signature": "typeof PostgresProposalRuntimeStore"
+      },
+      {
+        "name": "PostgresProposalRuntimeStoreOptions",
+        "kind": "type"
+      },
+      {
+        "name": "PostgresRuntimeClient",
+        "kind": "type"
+      },
+      {
+        "name": "PostgresRuntimePool",
+        "kind": "type"
+      },
+      {
+        "name": "PostgresRuntimeQueryResult",
+        "kind": "type"
+      },
+      {
+        "name": "PostgresWritebackIntentStore",
+        "kind": "type+value",
+        "value_signature": "typeof PostgresWritebackIntentStore"
+      },
+      {
+        "name": "PostgresWritebackIntentStoreOptions",
+        "kind": "type"
+      },
+      {
+        "name": "ProposalEvent",
+        "kind": "type"
+      },
+      {
+        "name": "ProposalReplayRecord",
+        "kind": "type"
+      },
+      {
+        "name": "ProposalRuntimeStore",
+        "kind": "type"
+      },
+      {
+        "name": "ProposalSearchFilters",
+        "kind": "type"
+      },
+      {
+        "name": "ProposalStore",
+        "kind": "type+value",
+        "value_signature": "typeof ProposalStore"
+      },
+      {
+        "name": "ProposalStoreError",
+        "kind": "type+value",
+        "value_signature": "typeof ProposalStoreError"
+      },
+      {
+        "name": "QueryAuditSearchFilters",
+        "kind": "type"
+      },
+      {
+        "name": "ReceiptSearchFilters",
+        "kind": "type"
+      },
+      {
+        "name": "ReconcileWritebackIntentInput",
+        "kind": "type"
+      },
+      {
+        "name": "RecordAttentionEventInput",
+        "kind": "type"
+      },
+      {
+        "name": "RecordHandlerWritebackJobInput",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowAgentResult",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowComparison",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowComparisonStatus",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowDistribution",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowEffect",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowOutcomeDisposition",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowReport",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowStudyComparison",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowStudyReport",
+        "kind": "type"
+      },
+      {
+        "name": "SharedLedgerEntry",
+        "kind": "type"
+      },
+      {
+        "name": "SharedLedgerImportResult",
+        "kind": "type"
+      },
+      {
+        "name": "sharedPostgresRuntimeStoreMigration",
+        "kind": "value",
+        "value_signature": "(schema?: string) => string"
+      },
+      {
+        "name": "StoredApproval",
+        "kind": "type"
+      },
+      {
+        "name": "StoredEvidenceBundle",
+        "kind": "type"
+      },
+      {
+        "name": "StoredProposal",
+        "kind": "type"
+      },
+      {
+        "name": "StoredShadowCase",
+        "kind": "type"
+      },
+      {
+        "name": "StoredShadowHumanAction",
+        "kind": "type"
+      },
+      {
+        "name": "StoredShadowOutcome",
+        "kind": "type"
+      },
+      {
+        "name": "StoredShadowStudy",
+        "kind": "type"
+      },
+      {
+        "name": "StoredWritebackIntent",
+        "kind": "type"
+      },
+      {
+        "name": "StoredWritebackJob",
+        "kind": "type"
+      },
+      {
+        "name": "StoredWritebackReceipt",
+        "kind": "type"
+      },
+      {
+        "name": "StorePruneResult",
+        "kind": "type"
+      },
+      {
+        "name": "StoreStats",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerCapabilityControl",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerCapabilityControlStatus",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerControlAction",
+        "kind": "type"
+      },
+      {
+        "name": "workerControlDecisionSubject",
+        "kind": "value",
+        "value_signature": "(state: WorkerControlState, target: WorkerControlTarget) => WorkerControlDecisionSubject"
+      },
+      {
+        "name": "WorkerControlDecisionSubject",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerControlMode",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerControlState",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerControlTarget",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerExecutionMode",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerPolicyExecutionLimits",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerQueueItem",
+        "kind": "type"
+      },
+      {
+        "name": "WorkerQueueStatus",
+        "kind": "type"
+      },
+      {
+        "name": "WritebackIntentClaim",
+        "kind": "type"
+      },
+      {
+        "name": "WritebackIntentStatus",
+        "kind": "type"
+      }
+    ],
+    "packages/mcp-server/dist/index.d.ts": [
+      {
+        "name": "assertApprovalPolicyResolvable",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, capability: RuntimeCapabilityConfig) => void"
+      },
+      {
+        "name": "assertProposalWritebackResolvable",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, capability: RuntimeCapabilityConfig) => void"
+      },
+      {
+        "name": "bindPostgresTrustedScope",
+        "kind": "value",
+        "value_signature": "(client: { query(sql: string, values?: unknown[]): Promise<unknown>; }, scope: RuntimeDatabaseScopeConfig | undefined, context: TrustedContext) => Promise<void>"
+      },
+      {
+        "name": "buildProposalReviewView",
+        "kind": "value",
+        "value_signature": "(proposal: StoredProposal, receipts?: StoredWritebackReceipt[]) => ProposalReviewView"
+      },
+      {
+        "name": "buildProtectedReadQuery",
+        "kind": "value",
+        "value_signature": "(capability: RuntimeCapabilityConfig, placeholderStyle: \"$\" | \"?\", args: Record<string, unknown>, context: TrustedContext) => { sql: string; values: unknown[]; }"
+      },
+      {
+        "name": "CapabilityKind",
+        "kind": "type"
+      },
+      {
+        "name": "capabilityWritebackExecutor",
+        "kind": "value",
+        "value_signature": "(capability: RuntimeCapabilityConfig) => string | undefined"
+      },
+      {
+        "name": "capabilityWritebackMode",
+        "kind": "value",
+        "value_signature": "(capability: RuntimeCapabilityConfig) => RuntimeWritebackMode"
+      },
+      {
+        "name": "checkRunnerReadiness",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, env?: NodeJS.ProcessEnv, timeoutMs?: number) => Promise<ReadinessReport>"
+      },
+      {
+        "name": "CloudLinkedConnection",
+        "kind": "type"
+      },
+      {
+        "name": "CloudLinkedSynchronizer",
+        "kind": "type+value",
+        "value_signature": "typeof CloudLinkedSynchronizer"
+      },
+      {
+        "name": "CloudLinkedSyncStatus",
+        "kind": "type"
+      },
+      {
+        "name": "ContextProvider",
+        "kind": "type"
+      },
+      {
+        "name": "createDefaultRuntimeStore",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string) => ProposalRuntimeStore"
+      },
+      {
+        "name": "createJwtVerifier",
+        "kind": "value",
+        "value_signature": "(config: JwtVerificationConfig, env: NodeJS.ProcessEnv, options?: { baseDir?: string; }) => JwtVerifier"
+      },
+      {
+        "name": "createMcpRuntime",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, options?: McpRuntimeOptions) => McpRuntime"
+      },
+      {
+        "name": "createMcpRuntimeSharedResources",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, env?: NodeJS.ProcessEnv, customReadRow?: DbRowReader, clock?: () => number, credentialResolver?: TenantCredentialResolver) => McpRuntimeSharedResources"
+      },
+      {
+        "name": "createSynapsorMcpServer",
+        "kind": "value",
+        "value_signature": "(runtime: McpRuntime, options?: SynapsorMcpServerOptions) => McpServer"
+      },
+      {
+        "name": "DbRowReader",
+        "kind": "type"
+      },
+      {
+        "name": "describeIsolationAssurance",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig) => SourceIsolationAssurance[]"
+      },
+      {
+        "name": "enqueueCloudLinkedProposal",
+        "kind": "value",
+        "value_signature": "(input: { config: RuntimeConfig; store: ProposalRuntimeStore; proposal: StoredProposal; evidenceBundleId: string; queryFingerprint: string; env?: NodeJS.ProcessEnv; }) => Promise<CloudOutboxItem | undefined>"
+      },
+      {
+        "name": "enqueueCloudLinkedResult",
+        "kind": "value",
+        "value_signature": "(input: { config: RuntimeConfig; store: ProposalRuntimeStore; proposalId: string; result: WritebackResult; leaseId: string; }) => Promise<CloudOutboxItem | undefined>"
+      },
+      {
+        "name": "evaluateApprovalPolicy",
+        "kind": "value",
+        "value_signature": "(capability: RuntimeCapabilityConfig, policy: PolicySpec, patch: Record<string, Scalar>) => { qualifies: boolean; reason: string; }"
+      },
+      {
+        "name": "evaluateProposalFreshness",
+        "kind": "value",
+        "value_signature": "(input: { config: RuntimeConfig; proposal: StoredProposal; env?: NodeJS.ProcessEnv; readRow?: DbRowReader; credentialResolver?: TenantCredentialResolver; clock?: () => number; proofValidityMs?: number; }) => Promise<ProposalFreshnessEvaluation>"
+      },
+      {
+        "name": "HttpMcpServerHandle",
+        "kind": "type"
+      },
+      {
+        "name": "HttpMcpServerOptions",
+        "kind": "type"
+      },
+      {
+        "name": "IsolationAssuranceMode",
+        "kind": "type"
+      },
+      {
+        "name": "JwtAlgorithm",
+        "kind": "type"
+      },
+      {
+        "name": "JwtVerificationConfig",
+        "kind": "type"
+      },
+      {
+        "name": "JwtVerifier",
+        "kind": "type"
+      },
+      {
+        "name": "loadCloudLinkedConnection",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, env?: NodeJS.ProcessEnv) => CloudLinkedConnection"
+      },
+      {
+        "name": "loadRuntimeConfigFromFile",
+        "kind": "value",
+        "value_signature": "(configPath?: string) => RuntimeConfig"
+      },
+      {
+        "name": "LocalToolMetadata",
+        "kind": "type"
+      },
+      {
+        "name": "McpRuntime",
+        "kind": "type"
+      },
+      {
+        "name": "McpRuntimeError",
+        "kind": "type+value",
+        "value_signature": "typeof McpRuntimeError"
+      },
+      {
+        "name": "McpRuntimeOptions",
+        "kind": "type"
+      },
+      {
+        "name": "McpRuntimeSharedResources",
+        "kind": "type"
+      },
+      {
+        "name": "openaiToolNameAlias",
+        "kind": "value",
+        "value_signature": "(canonicalName: string) => string"
+      },
+      {
+        "name": "preflightGeneratedAuthority",
+        "kind": "value",
+        "value_signature": "(inputConfig: RuntimeConfig, env?: NodeJS.ProcessEnv, inspect?: typeof inspectDatabase) => Promise<void>"
+      },
+      {
+        "name": "preflightPostgresDatabaseScope",
+        "kind": "value",
+        "value_signature": "(inputConfig: RuntimeConfig, env?: NodeJS.ProcessEnv, credentialResolver?: TenantCredentialResolver, trustedContext?: TrustedContext) => Promise<void>"
+      },
+      {
+        "name": "PROPOSAL_APP_SPEC_VERSION",
+        "kind": "value",
+        "value_signature": "\"2026-01-26\""
+      },
+      {
+        "name": "PROPOSAL_APP_URI",
+        "kind": "value",
+        "value_signature": "\"ui://synapsor/proposal-review.html\""
+      },
+      {
+        "name": "proposalAppHtml",
+        "kind": "value",
+        "value_signature": "() => string"
+      },
+      {
+        "name": "proposalAppInitializeRequest",
+        "kind": "value",
+        "value_signature": "(id?: number | string) => { jsonrpc: \"2.0\"; id: string | number; method: \"ui/initialize\"; params: { appInfo: { name: string; version: string; }; appCapabilities: {}; protocolVersion: string; }; }"
+      },
+      {
+        "name": "ProposalFreshnessEvaluation",
+        "kind": "type"
+      },
+      {
+        "name": "ProposalReviewView",
+        "kind": "type"
+      },
+      {
+        "name": "protectedReadTargets",
+        "kind": "value",
+        "value_signature": "(capability: RuntimeCapabilityConfig) => Array<{ schema: string; table: string; principalScoped: boolean; }>"
+      },
+      {
+        "name": "ReadinessComponent",
+        "kind": "type"
+      },
+      {
+        "name": "ReadinessReport",
+        "kind": "type"
+      },
+      {
+        "name": "resolveRuntimeConfig",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, baseDir?: string) => RuntimeConfig"
+      },
+      {
+        "name": "resolveRuntimeSourceCredential",
+        "kind": "value",
+        "value_signature": "(input: { sourceName: string; source: RuntimeSourceConfig; context: TrustedContext; env: NodeJS.ProcessEnv; resolver?: TenantCredentialResolver; access?: \"read\" | \"write\"; now?: number; }) => Promise<{ connectionUrl: string; poolKey: string; expiresAt?: number; }>"
+      },
+      {
+        "name": "resolveSupervisedWorkerEligibility",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, capability: RuntimeCapabilityConfig, options?: { workerIdentity?: string; phase?: \"queue\" | \"execute\"; }) => SupervisedWorkerEligibility"
+      },
+      {
+        "name": "ResultEnvelopeV2",
+        "kind": "type"
+      },
+      {
+        "name": "ResultFormat",
+        "kind": "type"
+      },
+      {
+        "name": "RunnerMode",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeArgConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeCapabilityConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeCredentialScopeConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeDatabaseScopeConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeNotificationBudgetConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeNotificationsConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeNotificationSinkConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeNumericBoundConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimePoolMetric",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeProposalFreshnessConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeProposalFreshnessDependencyConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeRateLimitMetric",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeRateLimitRule",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeScalarArgConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeSourceConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeSourcePoolConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeSupervisedWorkerCapabilityPolicy",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeSupervisedWorkerConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeTransitionGuardConfig",
+        "kind": "type"
+      },
+      {
+        "name": "RuntimeWritebackMode",
+        "kind": "type"
+      },
+      {
+        "name": "SafeToolErrorCode",
+        "kind": "type"
+      },
+      {
+        "name": "Scalar",
+        "kind": "type"
+      },
+      {
+        "name": "serveStdio",
+        "kind": "value",
+        "value_signature": "(options?: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat; stdin?: Readable; stdout?: Writable; readRow?: DbRowReader; credentialResolver?: TenantCredentialResolver; }) => Promise<void>"
+      },
+      {
+        "name": "SourceEngine",
+        "kind": "type"
+      },
+      {
+        "name": "SourceIsolationAssurance",
+        "kind": "type"
+      },
+      {
+        "name": "startHttpMcpServer",
+        "kind": "value",
+        "value_signature": "(options?: HttpMcpServerOptions) => Promise<HttpMcpServerHandle>"
+      },
+      {
+        "name": "startStreamableHttpMcpServer",
+        "kind": "value",
+        "value_signature": "(options?: HttpMcpServerOptions) => Promise<HttpMcpServerHandle>"
+      },
+      {
+        "name": "StreamableHttpTlsOptions",
+        "kind": "type"
+      },
+      {
+        "name": "SupervisedWorkerEligibility",
+        "kind": "type"
+      },
+      {
+        "name": "SynapsorMcpServerOptions",
+        "kind": "type"
+      },
+      {
+        "name": "TenantCredentialResolver",
+        "kind": "type"
+      },
+      {
+        "name": "ToolNameExposure",
+        "kind": "type"
+      },
+      {
+        "name": "toolNameExposures",
+        "kind": "value",
+        "value_signature": "(canonicalNames: string[], style: ToolNameStyle) => ToolNameExposure[]"
+      },
+      {
+        "name": "ToolNameStyle",
+        "kind": "type"
+      },
+      {
+        "name": "TrustedContext",
+        "kind": "type"
+      },
+      {
+        "name": "TrustedContextBindingMode",
+        "kind": "type"
+      },
+      {
+        "name": "VerifiedJwt",
+        "kind": "type"
+      }
+    ],
+    "apps/runner/dist/cli.d.ts": [
+      {
+        "name": "assertSupervisedPolicyApprovalCurrent",
+        "kind": "value",
+        "value_signature": "(store: ProposalStore, config: RuntimeConfig, capability: RuntimeCapabilityConfig, proposal: StoredProposal) => { policy: string; limits: PolicyApprovalLimit[]; } | undefined"
+      },
+      {
+        "name": "assessSupervisedWriterPosture",
+        "kind": "value",
+        "value_signature": "(config: RuntimeConfig, policy: RuntimeSupervisedWorkerCapabilityPolicy, inspection: SchemaInspection) => SupervisedWriterPostureAssessment"
+      },
+      {
+        "name": "boundaryActivateCommand",
+        "kind": "value",
+        "value_signature": "(args: string[], schemaInspector?: typeof inspectDatabase) => Promise<number>"
+      },
+      {
+        "name": "boundaryReviewCommand",
+        "kind": "value",
+        "value_signature": "(args: string[]) => Promise<number>"
+      },
+      {
+        "name": "databaseInputFromArgs",
+        "kind": "value",
+        "value_signature": "(args: string[], options?: { implyDatabaseUrl?: boolean; }) => { explicit: boolean; inlineUrl: boolean; inspectionDatabaseUrlEnv: string; configDatabaseUrlEnv: string; env?: NodeJS.ProcessEnv; }"
+      },
+      {
+        "name": "main",
+        "kind": "value",
+        "value_signature": "(argv: string[]) => Promise<number>"
+      },
+      {
+        "name": "reconciliationReceipt",
+        "kind": "value",
+        "value_signature": "(intent: StoredWritebackIntent, observation: ReconciliationObservation, outcome: \"applied\" | \"conflict\" | \"failed\", runnerId: string, reason: string) => ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4"
+      },
+      {
+        "name": "reconciliationSupportedOutcome",
+        "kind": "value",
+        "value_signature": "(observation: ReconciliationObservation) => \"applied\" | \"conflict\" | \"failed\""
+      },
+      {
+        "name": "resolveSqlWriteDatabaseUrl",
+        "kind": "value",
+        "value_signature": "(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv) => Promise<string>"
+      },
+      {
+        "name": "runCliProcess",
+        "kind": "value",
+        "value_signature": "(argv: string[]) => Promise<number>"
+      },
+      {
+        "name": "runInitWizard",
+        "kind": "value",
+        "value_signature": "(args: string[], options?: { ask?: WizardAsk; env?: NodeJS.ProcessEnv; inspection?: SchemaInspection; readRow?: DbRowReader; stdout?: Pick<NodeJS.WriteStream, \"write\">; }) => Promise<number>"
+      },
+      {
+        "name": "SupervisedWriterPostureAssessment",
+        "kind": "type"
+      },
+      {
+        "name": "updateSupervisedProposalExpiryAttention",
+        "kind": "value",
+        "value_signature": "(store: ProposalStore, config: RuntimeConfig, now?: string) => void"
+      },
+      {
+        "name": "verifyLocalWritebackAuthority",
+        "kind": "value",
+        "value_signature": "(job: WritebackJob, configPath: string, storePath?: string, options?: { cloudApproved?: boolean; }) => Promise<void>"
+      },
+      {
+        "name": "workbenchDeploymentProfileArg",
+        "kind": "value",
+        "value_signature": "(args: string[]) => WorkbenchDeploymentProfile | undefined"
+      }
+    ],
+    "apps/runner/dist/runtime.d.ts": [
+      {
+        "name": "RunnerHttpOptions",
+        "kind": "type"
+      },
+      {
+        "name": "RunnerHttpServerHandle",
+        "kind": "type"
+      },
+      {
+        "name": "RunnerStdioOptions",
+        "kind": "type"
+      },
+      {
+        "name": "serveRunnerStdio",
+        "kind": "value",
+        "value_signature": "(options: RunnerStdioOptions) => Promise<void>"
+      },
+      {
+        "name": "startRunnerJsonRpcHttp",
+        "kind": "value",
+        "value_signature": "(options: RunnerHttpOptions) => Promise<RunnerHttpServerHandle>"
+      },
+      {
+        "name": "startRunnerStreamableHttp",
+        "kind": "value",
+        "value_signature": "(options: RunnerHttpOptions) => Promise<RunnerHttpServerHandle>"
+      },
+      {
+        "name": "TenantCredentialResolver",
+        "kind": "type"
+      }
+    ],
+    "apps/runner/dist/authoring.d.ts": [
+      {
+        "name": "AgentContextSpec",
+        "kind": "type"
+      },
+      {
+        "name": "CapabilitySpec",
+        "kind": "type"
+      },
+      {
+        "name": "compileContract",
+        "kind": "value",
+        "value_signature": "(definition: SynapsorContractDefinition | SynapsorContract) => SynapsorContract"
+      },
+      {
+        "name": "contractJson",
+        "kind": "value",
+        "value_signature": "(definition: SynapsorContractDefinition | SynapsorContract, indentation?: number) => string"
+      },
+      {
+        "name": "defineAgentContext",
+        "kind": "value",
+        "value_signature": "<const T extends AgentContextSpec>(context: T) => T"
+      },
+      {
+        "name": "defineCapability",
+        "kind": "value",
+        "value_signature": "<const T extends CapabilitySpec>(capability: T) => T"
+      },
+      {
+        "name": "defineContract",
+        "kind": "value",
+        "value_signature": "<const T extends SynapsorContractDefinition>(definition: T) => SynapsorContract & T"
+      },
+      {
+        "name": "definePolicy",
+        "kind": "value",
+        "value_signature": "<const T extends PolicySpec>(policy: T) => T"
+      },
+      {
+        "name": "defineResource",
+        "kind": "value",
+        "value_signature": "<const T extends ResourceSpec>(resource: T) => T"
+      },
+      {
+        "name": "defineWorkflow",
+        "kind": "value",
+        "value_signature": "<const T extends WorkflowSpec>(workflow: T) => T"
+      },
+      {
+        "name": "PolicySpec",
+        "kind": "type"
+      },
+      {
+        "name": "ResourceSpec",
+        "kind": "type"
+      },
+      {
+        "name": "SynapsorContract",
+        "kind": "type"
+      },
+      {
+        "name": "SynapsorContractDefinition",
+        "kind": "type"
+      },
+      {
+        "name": "WorkflowSpec",
+        "kind": "type"
+      }
+    ],
+    "apps/runner/dist/shadow.d.ts": [
+      {
+        "name": "AuthoritativeShadowOutcome",
+        "kind": "type"
+      },
+      {
+        "name": "createShadowOutcomeRecorder",
+        "kind": "value",
+        "value_signature": "(input: { storePath: string; studyId: string; actor: string; source: string; }) => ShadowOutcomeRecorder"
+      },
+      {
+        "name": "recordAuthoritativeShadowOutcome",
+        "kind": "value",
+        "value_signature": "(input: { storePath: string; studyId: string; actor: string; source: string; outcome: AuthoritativeShadowOutcome; }) => StoredShadowOutcome"
+      },
+      {
+        "name": "ShadowEffect",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowOutcomeDisposition",
+        "kind": "type"
+      },
+      {
+        "name": "ShadowOutcomeRecorder",
+        "kind": "type"
+      },
+      {
+        "name": "StoredShadowOutcome",
+        "kind": "type"
+      }
+    ]
+  },
+  "package_surface": {
+    "name": "@synapsor/runner",
+    "version": "1.6.5",
+    "type": "module",
+    "engines": {
+      "node": ">=22.13.0"
+    },
+    "bin": {
+      "synapsor-runner": "dist/cli.js"
+    },
+    "exports": {
+      "./cli": {
+        "types": "./dist/cli.d.ts",
+        "import": "./dist/runner.mjs"
+      },
+      "./authoring": {
+        "types": "./dist/authoring.d.ts",
+        "import": "./dist/authoring.mjs"
+      },
+      "./shadow": {
+        "types": "./dist/shadow.d.ts",
+        "import": "./dist/shadow.mjs"
+      },
+      "./runtime": {
+        "types": "./dist/runtime.d.ts",
+        "import": "./dist/runtime.mjs"
+      }
+    },
+    "files": [
+      "dist/cli.js",
+      "dist/cli.d.ts",
+      "dist/cli.d.ts.map",
+      "dist/local-ui.d.ts",
+      "dist/local-ui.d.ts.map",
+      "dist/runner.mjs",
+      "dist/runtime.mjs",
+      "dist/runtime.d.ts",
+      "dist/runtime.d.ts.map",
+      "dist/authoring.mjs",
+      "dist/authoring.d.ts",
+      "dist/authoring.d.ts.map",
+      "dist/shadow.mjs",
+      "dist/shadow.d.ts",
+      "dist/shadow.d.ts.map",
+      "docs/**/*.md",
+      "examples/dangerous-mcp-tools.json",
+      "examples/app-owned-writeback/**",
+      "examples/auto-boundary-churn/**",
+      "examples/community-solar-clean-room/**",
+      "examples/retail-clean-room/**",
+      "examples/fitflow-guided-onboarding/**",
+      "examples/claude-desktop-postgres/**",
+      "examples/cursor-postgres/**",
+      "examples/mcp-postgres-billing-app-handler/**",
+      "examples/mysql-refund-agent/**",
+      "examples/operator-oidc/**",
+      "examples/openai-agents-http/**",
+      "examples/openai-agents-stdio/**",
+      "examples/raw-sql-vs-synapsor/**",
+      "examples/reference-support-billing-app/**",
+      "examples/runner-fleet/**",
+      "examples/support-plan-credit/**",
+      "examples/support-billing-agent/**",
+      "fixtures/**",
+      "schemas/**",
+      "recipes/**/*.json",
+      "README.md",
+      "AGENTS.md",
+      "CHANGELOG.md",
+      "CONTRIBUTING.md",
+      "SECURITY.md",
+      "LICENSE",
+      "NOTICE",
+      "THREAT_MODEL.md",
+      "TRADEMARKS.md",
+      "llms.txt"
+    ],
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "1.29.0",
+      "@synapsor/spec": "workspace:^1.7.0",
+      "jose": "6.2.3",
+      "jsonc-parser": "3.3.1",
+      "mysql2": "^3.11.0",
+      "pdf-lib": "1.17.1",
+      "pg": "^8.13.0",
+      "typescript": "5.9.3",
+      "vscode-languageserver": "9.0.1",
+      "vscode-languageserver-textdocument": "1.0.12",
+      "yaml": "2.8.3",
+      "zod": "^3.25.0"
+    }
+  },
+  "cli_help": "Synapsor Runner\n\nSafe MCP tools for Postgres/MySQL-backed agent actions.\n\nUsage:\n  synapsor-runner <command>\n\nCommands:\n  try          Prove the boundary or drive active project tools and exploration\n  inspect      Inspect a Postgres/MySQL schema\n  start        Start guided own-database setup, or no-arg legacy worker polling\n  action       Validate/watch disabled TypeScript Safe Action drafts\n  up           Bring up local review mode guidance/server\n  init         Generate a Synapsor capability contract\n  config       Validate local synapsor.runner.json wiring\n  mcp          Serve safe semantic tools over MCP\n  contract     Validate and normalize canonical Synapsor contract files\n  effect       Catch changed agent business effects with offline fixtures\n  report       Export and verify scoped tamper-evident ledger reports\n  policy       Evaluate and review opt-in graduated-trust recommendations\n  dsl          Compile SQL-like Synapsor authoring DSL to contract JSON\n  language-server  Start the Synapsor contract LSP over stdio\n  cloud        Register runner metadata or dry-run contract push to Cloud\n  onboard      One-command own-database setup\n  smoke        Test generated tool calls before wiring an MCP client\n  tools        List model-facing MCP tools and aliases\n  writeback    Print direct SQL writeback receipt DDL, grants, and checks\n  handler      Create app-owned writeback handler templates\n  propose      Create a local evidence-backed proposal\n  audit        Review MCP/database tool risk\n  proposals   Review, approve, or reject proposals\n  lifecycle   Inspect an action from proposal through receipt/replay\n  evidence    Inspect local evidence bundles\n  query-audit Inspect local query audit records\n  receipts    Inspect guarded writeback receipts\n  activity    Search local evidence/replay ledger\n  events      Tail or push local proposal/writeback lifecycle events\n  metrics     Export tenant/capability operational counters\n  activation  Inspect/export the local try-to-first-proposal funnel\n  attention   Inspect human-attention work without copying proposal IDs\n  notifications  Test and dispatch quiet, signed operator notifications\n  worker      Run or inspect the supervised local writeback queue\n  store       Inspect and maintain the local SQLite ledger\n  shadow      Compare shadow proposals with authoritative outcomes\n  apply        Apply an approved proposal with guarded writeback\n  revert       Create a reviewed compensation proposal for an applied write\n  replay       Show what happened\n  demo         Start the local commit-safety demo\n  ui           Open the local review UI\n\nExamples:\n  synapsor-runner try\n  synapsor-runner try --prove --yes --no-open\n  synapsor-runner start --from-env DATABASE_URL\n  synapsor-runner start --action refund_order --description \"Propose one reviewed order refund\"\n  synapsor-runner action validate ./synapsor/actions/billing.propose_refund_order.ts\n  synapsor-runner up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run\n  synapsor-runner onboard db --from-env DATABASE_URL\n  synapsor-runner inspect --from-env DATABASE_URL\n  synapsor-runner init --wizard --from-env DATABASE_URL\n  synapsor-runner config validate --config ./synapsor.runner.json\n  synapsor-runner contract validate ./synapsor.contract.json\n  synapsor-runner contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json\n  synapsor-runner contract explain ./contract.synapsor.sql --format markdown\n  synapsor-runner contract lint ./contract.synapsor.sql --strict\n  synapsor-runner lifecycle --store ./.synapsor/local.db\n  synapsor-runner lifecycle show --object invoice:INV-3001 --details --store ./.synapsor/local.db\n  synapsor-runner effect fixture create --from-replay replay_wrp_... --request \"Waive the late fee\" --contract ./synapsor.contract.json --store ./.synapsor/local.db --out ./effects/late-fee.json\n  synapsor-runner effect run --fixture ./effects/late-fee.json --result ./effects/late-fee.result.json\n  synapsor-runner report --object invoice:INV-3001 --tenant tenant_acme --store ./.synapsor/local.db --format markdown\n  synapsor-runner policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant tenant_acme --capability billing.propose_credit --policy low_risk_credit --store ./.synapsor/local.db\n  synapsor-runner dsl compile ./contract.synapsor.sql --out ./synapsor.contract.json\n  synapsor-runner language-server --stdio\n  synapsor-runner cloud push ./synapsor.contract.json --dry-run\n  synapsor-runner smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db\n  synapsor-runner tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db\n  synapsor-runner handler template node-fastify --output ./synapsor-writeback-handler.mjs\n  synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db\n  synapsor-runner propose billing.propose_late_fee_waiver --sample\n  synapsor-runner audit ./synapsor.runner.json\n  synapsor-runner activation show --config ./synapsor.runner.json --store ./.synapsor/local.db\n\nGlobal options:\n  --secrets-provider aws-secretsmanager-cli --secret-map-env SYNAPSOR_SECRET_MAP\n  --secrets-provider env-json --secret-map-env SYNAPSOR_SECRET_MAP --secret-values-env SYNAPSOR_SECRET_VALUES\n",
+  "runtime_behavior": {
+    "tool_catalog": [
+      {
+        "name": "support.inspect_customer",
+        "title": "support.inspect_customer",
+        "description": "Inspect one support customer in the trusted tenant before proposing a plan credit.\nReturns reviewed customer fields plus evidence/query-audit handles.\nEvidence handles are audit/replay handles; the model does not need to call them during this turn.",
+        "kind": "read",
+        "input_schema": {
+          "customer_id": {
+            "type": "string",
+            "required": true,
+            "description": "Customer id such as CUS-3001.",
+            "max_length": 128
+          }
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false,
+          "raw_sql_exposed": false,
+          "approval_or_commit_tool": false
+        }
+      },
+      {
+        "name": "support.propose_plan_credit",
+        "title": "support.propose_plan_credit",
+        "description": "Propose a bounded support plan credit after inspecting customer and ticket evidence.\nReturns a proposal id, exact diff, evidence handle, and source_database_changed:false. Policy may approve small credits, but writeback is still separate.\nEvidence handles are audit/replay handles; the model does not need to call them during this turn.",
+        "kind": "proposal",
+        "input_schema": {
+          "credit_cents": {
+            "type": "number",
+            "required": true,
+            "description": "Requested plan credit in cents.",
+            "minimum": 1
+          },
+          "customer_id": {
+            "type": "string",
+            "required": true,
+            "description": "Customer id such as CUS-3001.",
+            "max_length": 128
+          },
+          "reason": {
+            "type": "string",
+            "required": true,
+            "description": "Business reason tied to support evidence.",
+            "max_length": 500
+          }
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": false,
+          "raw_sql_exposed": false,
+          "approval_or_commit_tool": false
+        }
+      },
+      {
+        "name": "support.propose_plan_credit_record",
+        "title": "support.propose_plan_credit_record",
+        "description": "Propose creating one bounded plan-credit record with source-enforced deduplication.\nReturns a proposal id for one new account_credits row; source database unchanged until human approval and guarded apply.\nEvidence handles are audit/replay handles; the model does not need to call them during this turn.",
+        "kind": "proposal",
+        "input_schema": {
+          "credit_cents": {
+            "type": "number",
+            "required": true,
+            "description": "Requested plan credit in cents.",
+            "minimum": 1,
+            "maximum": 50000
+          },
+          "customer_id": {
+            "type": "string",
+            "required": true,
+            "description": "Customer id such as CUS-3001.",
+            "max_length": 128
+          },
+          "reason": {
+            "type": "string",
+            "required": true,
+            "description": "Business reason tied to support evidence.",
+            "max_length": 500
+          }
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": false,
+          "raw_sql_exposed": false,
+          "approval_or_commit_tool": false
+        }
+      }
+    ],
+    "protected_read_query": {
+      "sql": "SELECT * FROM ((SELECT t0.\"region\" AS \"region\", date_trunc('week', t0.\"churned_at\") AS \"churn_week\", COUNT(*) AS \"churned_accounts\", COUNT(*) AS \"__cohort_size\", 'period_1' AS \"__period\" FROM \"public\".\"subscriptions\" t0 WHERE t0.\"tenant_id\" = $1 AND t0.\"owner_id\" = $2 AND t0.\"status\" = $3 AND t0.\"churned_at\" >= $4 AND t0.\"churned_at\" < $5 GROUP BY t0.\"region\", date_trunc('week', t0.\"churned_at\") ORDER BY \"churned_accounts\" DESC LIMIT 21)) AS protected_periods",
+      "values": [
+        "fixture-tenant",
+        "fixture-principal",
+        "churned",
+        "2026-07-01T00:00:00.000Z",
+        "2026-08-01T00:00:00.000Z"
+      ]
+    },
+    "canonical_contract_digest": "sha256:96cbb70835133134ca6da2b70ae478322b9b737f34b30ea8d6658284e533e87d",
+    "shared_postgres_migration": "CREATE SCHEMA IF NOT EXISTS \"synapsor_runner\";\nCREATE TABLE IF NOT EXISTS \"synapsor_runner\".ledger_entries (\n  entry_id bigserial PRIMARY KEY,\n  entry_key text UNIQUE NOT NULL,\n  kind text NOT NULL,\n  proposal_id text,\n  tenant_id text,\n  capability text,\n  payload_json jsonb NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_proposal ON \"synapsor_runner\".ledger_entries(proposal_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_tenant_capability ON \"synapsor_runner\".ledger_entries(tenant_id, capability, created_at);\nCREATE INDEX IF NOT EXISTS idx_synapsor_ledger_entries_kind_created ON \"synapsor_runner\".ledger_entries(kind, created_at);\nCREATE TABLE IF NOT EXISTS \"synapsor_runner\".proposal_locks (\n  proposal_id text PRIMARY KEY,\n  proposal_hash text NOT NULL,\n  state text NOT NULL,\n  tenant_id text NOT NULL,\n  capability text NOT NULL,\n  updated_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS \"synapsor_runner\".worker_leases (\n  proposal_id text PRIMARY KEY,\n  worker_id text NOT NULL,\n  lease_expires_at timestamptz NOT NULL,\n  attempt integer NOT NULL DEFAULT 1,\n  updated_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS \"synapsor_runner\".rate_limit_buckets (\n  bucket_key text NOT NULL,\n  window_start bigint NOT NULL,\n  request_count bigint NOT NULL DEFAULT 0,\n  rejected_count bigint NOT NULL DEFAULT 0,\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (bucket_key, window_start)\n);",
+    "ledger": {
+      "created": {
+        "proposal_id": "wrp_trusted_core_baseline",
+        "state": "pending_review",
+        "source_database_mutated": false
+      },
+      "approved": {
+        "approved": true,
+        "state": "approved",
+        "policy": "fixture_auto_policy"
+      },
+      "events": [
+        {
+          "kind": "proposal_created",
+          "actor": "fixture-principal"
+        },
+        {
+          "kind": "proposal_approved",
+          "actor": "policy:fixture_auto_policy"
+        }
+      ],
+      "attention": [
+        {
+          "event_type": "proposal.review_required",
+          "severity": "warning",
+          "status": "resolved",
+          "occurrence_count": 1
+        }
+      ],
+      "approvals": [
+        {
+          "status": "approved",
+          "approver": "policy:fixture_auto_policy",
+          "proposal_hash": "sha256:fixture-proposal"
+        }
+      ]
+    }
+  }
+}
