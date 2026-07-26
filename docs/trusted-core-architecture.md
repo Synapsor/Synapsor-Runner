@@ -252,6 +252,23 @@ Packed-artifact gates additionally exercise clean installation, executable
 behavior, published-contract compatibility, generated authority, onboarding,
 freshness, scope, guarded writes, replay, and fleet behavior.
 
+`scripts/make-runner-declarations-portable.mjs` runs during Runner packaging.
+It preserves the captured public `./cli` and `./shadow` symbol/signature
+surfaces while structurally resolving the internal workspace types those
+signatures use. The packed declarations therefore do not depend on unpublished
+`@synapsor-runner/*` packages, repository-local absolute paths, or extracted
+source files omitted by the unchanged package `files` list.
+`scripts/verify-packed-runner.sh` installs the tarball in a clean consumer,
+compiles all four public declaration entrypoints with `skipLibCheck: false`,
+and rejects internal or repository-local declaration references.
+
+`development/trusted-core-fixtures/pre-refactor-8989163-ledger.db` was created
+by the pre-refactor `ProposalStore`. A characterization test copies it,
+validates its synthetic proposal/evidence/audit/approval/receipt/replay records,
+appends a new proposal through the current store, and reopens it. The fixture
+pins SQLite schema, migration, codec, and ordinary read/write compatibility
+without entering the published Runner tarball.
+
 ## Remaining Hotspots
 
 The three target entry monoliths are now thin facades. Larger pre-existing

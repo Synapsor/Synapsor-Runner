@@ -2,6 +2,7 @@ import { access, chmod, cp, mkdir, readFile, readdir, rm, writeFile } from "node
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { makeRunnerDeclarationsPortable } from "./make-runner-declarations-portable.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const entryPoint = resolve(root, "apps/runner/src/cli.ts");
@@ -145,6 +146,7 @@ await writeFile(
   ].join("\n"),
 );
 await chmod(binfile, 0o755);
+await makeRunnerDeclarationsPortable();
 
 if (process.env.SYNAPSOR_RUNNER_SKIP_RELEASE_ASSETS === "1") {
   process.exit(0);

@@ -89,6 +89,11 @@ const writebackJob = {
   lease: { lease_id: "lease_123", attempt: 1, expires_at: "2026-06-20T14:36:00Z" }
 };
 
+const preRefactorLedgerFixture = new URL(
+  "../../../development/trusted-core-fixtures/pre-refactor-8989163-ledger.db",
+  import.meta.url,
+);
+
 function boundedSetWritebackJob() {
   return parseWritebackJob({
     protocol_version: "3.0",
@@ -449,6 +454,73 @@ function verifiedWorkerControlIdentity(
 }
 
 describe("proposal store", () => {
+  it("opens and extends the pre-refactor SQLite ledger without migration drift", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-pre-refactor-ledger-"));
+    const storePath = path.join(tempDir, "ledger.db");
+    await fs.copyFile(preRefactorLedgerFixture, storePath);
+
+    const store = new ProposalStore(storePath);
+    try {
+      const existing = store.getProposal("wrp_pre_refactor");
+      expect(existing).toMatchObject({
+        proposal_hash: "sha256:pre-refactor-proposal",
+        state: "applied",
+        tenant_id: "fixture_tenant",
+        source_database_mutated: true,
+      });
+      expect(store.getEvidenceBundle("ev_pre_refactor")).toMatchObject({
+        proposal_id: "wrp_pre_refactor",
+        tenant_id: "fixture_tenant",
+      });
+      expect(store.listQueryAudit({ proposal: "wrp_pre_refactor" })).toHaveLength(1);
+      expect(store.approvals("wrp_pre_refactor")).toEqual([
+        expect.objectContaining({
+          approver: "support_lead_fixture",
+          proposal_hash: "sha256:pre-refactor-proposal",
+          status: "approved",
+        }),
+      ]);
+      expect(store.receipts("wrp_pre_refactor")).toEqual([
+        expect.objectContaining({
+          status: "applied",
+          receipt: expect.objectContaining({
+            receipt_hash: "sha256:pre-refactor-receipt",
+          }),
+        }),
+      ]);
+      expect(store.getRunnerState("trusted_core_fixture")).toEqual({
+        source_database_contains_real_data: false,
+        starting_head: "8989163f324e7e8abaf55696796d1f13d7a6d71b",
+      });
+
+      const successor = structuredClone(existing!.change_set);
+      successor.proposal_id = "wrp_post_refactor";
+      successor.scope.object_id = "INV-POST-REFACTOR";
+      successor.source.primary_key.value = "INV-POST-REFACTOR";
+      successor.evidence.bundle_id = "ev_post_refactor";
+      successor.integrity.proposal_hash = "sha256:post-refactor-proposal";
+      successor.created_at = "2026-07-26T00:00:03Z";
+      expect(store.createProposal(successor)).toMatchObject({
+        proposal_id: "wrp_post_refactor",
+        state: "pending_review",
+        source_database_mutated: false,
+      });
+    } finally {
+      store.close();
+    }
+
+    const reopened = new ProposalStore(storePath);
+    try {
+      expect(reopened.getProposal("wrp_pre_refactor")?.state).toBe("applied");
+      expect(reopened.getProposal("wrp_post_refactor")).toMatchObject({
+        proposal_hash: "sha256:post-refactor-proposal",
+        state: "pending_review",
+      });
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("keeps store methods as non-enumerable own prototype methods", () => {
     const descriptor = Object.getOwnPropertyDescriptor(
       ProposalStore.prototype,
