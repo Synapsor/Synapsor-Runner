@@ -45,7 +45,7 @@ MySQL, worker-core, and its existing focused authoring/UI modules.
 | 0. Baseline and characterization | Complete | 948 tests and trusted-core parity verifier passed |
 | 1. Proposal store | Complete | 69 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
 | 2. MCP server | Complete | 111 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
-| 3. Runner CLI | Pending | |
+| 3. Runner CLI | Complete | 160 focused tests, 949-test root suite, packaged build, parity verifier, and declaration audit passed |
 | 4. Integrated architecture and packed parity | Pending | |
 | 5. Completion audit, merge, and push | Pending | |
 
@@ -174,11 +174,85 @@ Phase 2 evidence:
 
 Phase 2 implementation commit: `2066c1724567`.
 
+## Phase 3: Runner CLI
+
+`apps/runner/src/cli.ts` is now a 364-line shebang-bearing compatibility facade
+and command composition root, down from 20,781 lines. Its prior command
+implementations are separated into these operational groups:
+
+- `cli-command-meta.ts`, `cli-help.ts`, `cli-options.ts`, `cli-files.ts`,
+  `cli-format.ts`, and `cli-logging.ts`: command metadata/help, argument
+  parsing, guarded file IO, stable output formatting, and error redaction.
+- `cli-project.ts`, `cli-runtime.ts`, `config-domain.ts`,
+  `config-inspect.ts`, `config-templates.ts`, and `runtime-doctor.ts`:
+  project/config/store resolution, adapters, validation, generated
+  configuration, and runtime posture checks.
+- `guided-start.ts`, `onboarding.ts`, `boundary-commands.ts`,
+  `first-run-doctor.ts`, `ui-command.ts`, and `mcp-project*.ts`: guided
+  onboarding, exact-digest activation, Workbench, first-run checks, and managed
+  MCP client setup.
+- `mcp-runtime.ts`, `mcp-shared.ts`, `mcp-audit.ts`, and
+  `runtime-commands.ts`: MCP serving/smoke behavior, tool naming/output,
+  manifest audit, and local runtime lifecycle.
+- `proposal-ledger.ts`, `proposal-formatting.ts`, `ledger-commands.ts`,
+  `ledger-options.ts`, `activity-formatting.ts`, and `contract-commands.ts`:
+  proposal/evidence/receipt/replay inspection, lifecycle output, contract/DSL,
+  reports, policy, and effect commands.
+- `apply-commands.ts`, `guarded-apply.ts`, `writeback-domain.ts`,
+  `writeback-execution.ts`, and `writeback-setup.ts`: approval/apply/revert,
+  guarded authority checks, SQL/handler execution, idempotency,
+  reconciliation, and operator setup.
+- `worker-policy.ts`, `worker-runtime.ts`, `attention-domain.ts`, and
+  `attention-notifications.ts`: supervised-worker eligibility/runtime,
+  proposal-expiry and queue attention, notification delivery, and
+  operator-only controls.
+- `cloud-commands.ts`, `shared-ledger-domain.ts`, `store-shared.ts`,
+  `store-lease.ts`, `shadow-commands.ts`, and `try-commands.ts`: Cloud-linked
+  synchronization, shared-store bridges, local leases, shadow studies, and
+  isolated proof/demo flows.
+
+No new production module exceeds 1,634 lines, and no new security-critical
+module exceeds 2,000 lines. `onboarding.ts` is the only extracted module over
+the preferred 1,500-line target; it retains the cohesive existing init/wizard,
+artifact-generation, and receipt-setup flow rather than splitting one ordered
+interactive state machine across forwarding modules.
+
+The facade preserves each prior public helper with an explicit compatibility
+wrapper. This prevents `dist/cli.d.ts` from re-exporting newly extracted files
+that are intentionally omitted by the unchanged package `files` manifest. The
+only relative declaration dependency is the already-published
+`dist/local-ui.d.ts`.
+
+Phase 3 evidence:
+
+- `corepack pnpm typecheck`: passed.
+- Focused Runner command suites: passed, 8 files and 160 tests.
+- `corepack pnpm test`: passed, 63 files and 949 tests in 194.72 seconds,
+  followed by the license/content, human command-surface, DSL-source-path, and
+  Cursor-plugin verifiers.
+- `corepack pnpm build:runner-package`: passed.
+- `node scripts/trusted-core-baseline.mjs`: passed after extraction and after
+  the explicit declaration wrappers.
+- Generated `apps/runner/dist/cli.d.ts` retains the exact baseline public
+  symbol set and compatible signatures and has no reference to a newly
+  extracted relative module.
+- `git diff --check`: passed.
+
+Phase 3 implementation commit: `b08a1ee`.
+
 ## Deviations And Blockers
 
-None.
+- A diagnostic `corepack pnpm --filter @synapsor/runner test` invocation ran
+  Vitest from `apps/runner`, which changed root-relative fixture resolution and
+  used the package-local 5-second default timeout. It produced cascading
+  fixture errors and known load-sensitive timeouts. This is not a repository
+  gate and did not prompt test or timeout changes. The supported root
+  `corepack pnpm test` command runs from the repository root with four workers
+  and 20-second test/hook timeouts; it passed all 949 tests.
+- No active blockers.
 
 ## Exact Next Action
 
-Map Runner CLI shared parsing/output behavior, command families, and bootstrap
-dispatch before the first CLI extraction.
+Add the repository-owned dependency-direction/cycle checker, document the
+trusted-core architecture and enforcement ownership, then run every integrated
+and packed-artifact gate from the goal.
