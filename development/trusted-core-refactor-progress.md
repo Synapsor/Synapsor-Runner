@@ -172,7 +172,7 @@ Phase 2 evidence:
 - `node scripts/trusted-core-baseline.mjs`: passed.
 - `git diff --check`: passed.
 
-Phase 2 implementation commit: pending checkpoint creation.
+Phase 2 implementation commit: `2066c1724567`.
 
 ## Deviations And Blockers
 
@@ -180,6 +180,5 @@ None.
 
 ## Exact Next Action
 
-Create and record the Phase 2 MCP-server checkpoint commit. Then map Runner CLI
-shared parsing/output behavior, command families, and bootstrap dispatch before
-the first CLI extraction.
+Map Runner CLI shared parsing/output behavior, command families, and bootstrap
+dispatch before the first CLI extraction.
