@@ -74,20 +74,21 @@ path.
 
 ## Ask Your First Real Question
 
-Runner is host-neutral. These three paths execute the same typed plans against
-the same activated digest, trusted scope, suppression rules, budgets, and
-denials:
+For agent analytics without handing a model `execute_sql`, Runner exposes no
+SQL-string tool. The model combines only resources, fields, and relationships
+in a human-activated boundary; trusted scope, read-only execution, cohort
+suppression, and budgets apply to every plan. This is governed analytics, not
+a general BI dashboard or SQL surface; derived formulas use reviewed views.
 
-1. **Workbench composer:** no MCP client, model, or API key. Choose only reviewed
-   measures, dimensions, filters, and time buckets.
-2. **Workbench Ask:** optional OpenAI, Anthropic, or loopback
-   OpenAI-compatible model after explicit digest-bound egress consent. Keys and
-   conversation history remain in memory; a loopback model keeps data local.
-3. **Any MCP client:** use a managed project installer for Cursor, Claude Code,
-   or VS Code, or a checked recipe for Claude Desktop, Codex, OpenAI Agents,
-   LangChain/LangGraph, Google ADK, LlamaIndex, and generic stdio.
+Three host-neutral paths enforce identical authority:
 
-For a managed project, choose one:
+1. **Workbench composer:** no client, model, or key.
+2. **Workbench Ask:** your OpenAI/Anthropic key with egress consent, or a
+   local-only loopback model; keys/history stay in memory.
+3. **Any MCP client:** Cursor, Claude Code/Desktop, VS Code, Codex, OpenAI
+   Agents, LangChain/LangGraph, Google ADK, LlamaIndex, or generic stdio.
+
+Project-local installers:
 
 ```bash
 synapsor-runner mcp install cursor --project --authoring --project-root . --yes
@@ -95,33 +96,44 @@ synapsor-runner mcp install claude-code --project --authoring --project-root . -
 synapsor-runner mcp install vscode --project --authoring --project-root . --yes
 ```
 
-Runner merges only its `synapsor` entry into `.cursor/mcp.json`, `.mcp.json`, or
-`.vscode/mcp.json`; it preserves other settings, backs up existing files, pins
-the exact Runner version, and writes no credentials. See
-[Client And Framework Recipes](docs/client-recipes.md).
+Installers preserve and back up existing config, pin Runner, and write no
+credentials. See [Client Recipes](docs/client-recipes.md).
 
-The selected client sees exactly two temporary tools:
+Authoring exposes two temporary tools:
 
 ```text
 app.describe_data
 app.explore_data
 ```
 
-Ask a bounded question such as:
-
 ```text
+Question:
 Which reviewed regions and reason categories contributed most to the increase
 in churned accounts by week?
+
+Result:
+counted_entity: churned_account
+week        region  reason         churned_accounts
+2026-07-06  west    price          42
+2026-07-06  south   missing_value  31
+suppression: 1 group and its labels withheld (minimum cohort: 5)
 ```
 
-Runner validates a typed plan against the active digest, injects trusted scope,
-and runs read-only. Suppression and durable budgets limit extraction. Up to
-three activated one- or two-link many-to-one paths are supported; inactive or
-unsafe joins fail closed. This is descriptive analysis, not causation. See
-[Reviewed Relationships](docs/reviewed-relationships.md).
+A human reviews measures, dimensions, time grains, and relationships once. The
+agent may combine them with filters, comparisons, and top-N without
+per-question review, but cannot exceed the boundary. Review cost scales with
+the boundary; usefulness with legal combinations.
 
-This is bounded, governed analytics over reviewed measures, dimensions, time
-grains, and relationship paths, not a general BI dashboard or SQL surface.
+```text
+REFUSED: subscriptions.customer_id -> customers.id is catalog-proven but not
+active in this boundary. Source rows read: 0.
+```
+
+Workbench names the boundary and offers operator-only **Review and add this
+relationship**; the model cannot activate it. Up to three activated one- or
+two-link many-to-one paths are supported; unsafe joins fail closed. Results are
+descriptive, not causal. See [Reviewed Relationships](docs/reviewed-relationships.md).
+
 Protect turns a useful analysis into a named, digest-reviewed metric capability.
 See [Workbench Ask](docs/workbench-ask.md).
 
