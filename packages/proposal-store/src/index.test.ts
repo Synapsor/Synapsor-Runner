@@ -449,6 +449,18 @@ function verifiedWorkerControlIdentity(
 }
 
 describe("proposal store", () => {
+  it("keeps store methods as non-enumerable own prototype methods", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      ProposalStore.prototype,
+      "createProposal",
+    );
+    expect(descriptor?.enumerable).toBe(false);
+    expect(descriptor?.writable).toBe(true);
+    expect(descriptor?.configurable).toBe(true);
+    expect(typeof descriptor?.value).toBe("function");
+    expect(Object.keys(ProposalStore.prototype)).toEqual([]);
+  });
+
   it("creates the parent directory for file-backed stores", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-store-parent-"));
     const storePath = path.join(tempDir, ".synapsor", "nested", "local.db");
