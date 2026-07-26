@@ -492,7 +492,7 @@ describe("runner cli", () => {
     for (const invocation of invocations) {
       output.length = 0;
       await expect(main(invocation)).resolves.toBe(0);
-      expect(output.join("").trim()).toBe("1.6.4");
+      expect(output.join("").trim()).toBe(runnerPackage.version);
     }
   });
 
@@ -1723,7 +1723,7 @@ describe("runner cli", () => {
       expect(seenRequest.body?.source_versions).toEqual({
         "@synapsor/spec": "1.7.0",
         "@synapsor/dsl": "1.7.0",
-        "@synapsor/runner": "1.6.4",
+        "@synapsor/runner": runnerPackage.version,
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
     } finally {
@@ -6133,6 +6133,114 @@ END
     expect(removed.projectSetting).toBe("preserve-me");
     expect(removed.mcpServers.existing.command).toBe("node");
     expect(removed.mcpServers.synapsor).toBeUndefined();
+  });
+
+  it("manages reviewed Claude Code and VS Code project entries without changing unrelated settings", async () => {
+    const clients = [{
+      client: "claude-code",
+      destination: ".mcp.json",
+      serversKey: "mcpServers",
+      marker: ".synapsor/claude-code-project.json",
+    }, {
+      client: "vscode",
+      destination: ".vscode/mcp.json",
+      serversKey: "servers",
+      marker: ".synapsor/vscode-project.json",
+    }] as const;
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    for (const item of clients) {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `synapsor-cli-${item.client}-project-`));
+      const { configPath, storePath } = await writeContractApplyFixture(tempDir);
+      const destination = path.join(tempDir, item.destination);
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await fs.writeFile(destination, `${JSON.stringify({
+        projectSetting: "preserve-me",
+        [item.serversKey]: { existing: { command: "node", args: ["existing.mjs"] } },
+      }, null, 2)}\n`, "utf8");
+      const common = [
+        item.client,
+        "--project",
+        "--project-root",
+        tempDir,
+        "--config",
+        path.basename(configPath),
+        "--store",
+        path.relative(tempDir, storePath),
+        "--json",
+      ];
+
+      output.length = 0;
+      await expect(main(["mcp", "install", ...common, "--dry-run"])).resolves.toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({
+        client: item.client,
+        action: "install",
+        destination: item.destination,
+        credentials_in_client_config: false,
+        preserves_other_servers: true,
+      });
+      expect(await fs.readFile(destination, "utf8")).not.toContain("@synapsor/runner");
+
+      output.length = 0;
+      await expect(main(["mcp", "install", ...common, "--yes"])).resolves.toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({ installed: true, backup: expect.any(String) });
+      const installed = JSON.parse(await fs.readFile(destination, "utf8"));
+      expect(installed.projectSetting).toBe("preserve-me");
+      expect(installed[item.serversKey].existing.command).toBe("node");
+      expect(installed[item.serversKey].synapsor).toEqual({
+        type: "stdio",
+        command: "npx",
+        args: [
+          "-y", `@synapsor/runner@${runnerPackage.version}`,
+          "mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db",
+        ],
+      });
+      expect(await fs.readFile(path.join(tempDir, item.marker), "utf8")).toContain(item.destination);
+      expect(JSON.stringify(installed)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|password|bearer|secret|token/i);
+
+      output.length = 0;
+      await expect(main(["mcp", "status", item.client, "--project", "--project-root", tempDir, "--json"])).resolves.toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({
+        client: item.client,
+        state: "installed",
+        tools: ["billing.inspect_invoice", "billing.propose_late_fee_waiver"],
+      });
+
+      output.length = 0;
+      await expect(main(["doctor", "--config", configPath, "--project-root", tempDir, "--json"]))
+        .resolves.toBe(1);
+      const doctor = JSON.parse(output.join(""));
+      expect(doctor.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: `${item.client}-project:installation`, level: "pass" }),
+        expect.objectContaining({ name: `${item.client}-project:model-tools`, level: "pass" }),
+        expect.objectContaining({ name: `${item.client}-project:launch`, level: "warn" }),
+      ]));
+      expect(doctor.checks).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: "mcp-project:installation",
+          message: expect.stringContaining("No Runner-owned project MCP entry"),
+        }),
+      ]));
+
+      output.length = 0;
+      await expect(main(["mcp", "install", ...common, "--yes"])).resolves.toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({ action: "unchanged" });
+
+      output.length = 0;
+      await expect(main([
+        "mcp", "uninstall", item.client,
+        "--project", "--project-root", tempDir, "--yes", "--json",
+      ])).resolves.toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({ client: item.client, changed: true, backup: expect.any(String) });
+      const removed = JSON.parse(await fs.readFile(destination, "utf8"));
+      expect(removed.projectSetting).toBe("preserve-me");
+      expect(removed[item.serversKey].existing.command).toBe("node");
+      expect(removed[item.serversKey].synapsor).toBeUndefined();
+    }
   });
 
   it("reports a managed Cursor authoring entry as the two temporary Explore tools", async () => {

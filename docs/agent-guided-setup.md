@@ -161,7 +161,8 @@ Next: connect the same reviewed tool surface to your MCP client.
 Workbench displays ready-to-copy configurations for:
 
 - Cursor project MCP;
-- Claude-compatible local stdio MCP;
+- Claude Code project MCP and Claude-compatible local stdio MCP;
+- VS Code project MCP;
 - Codex;
 - generic stdio MCP.
 
@@ -171,17 +172,18 @@ authority surface.
 For a terminal-rendered generic configuration, run:
 
 ```bash
-npx -y @synapsor/runner mcp config --absolute-paths
+synapsor-runner mcp config --absolute-paths
 ```
 
-Do not write into a client configuration without explicit user consent. Cursor
-has a separate consent-gated installer:
+Do not write into a client configuration without explicit user consent.
+Cursor, Claude Code, and VS Code have consent-gated project installers:
 
 ```bash
-npx -y @synapsor/runner mcp install cursor --project --dry-run
+synapsor-runner mcp install claude-code --project --dry-run
 ```
 
-Show the dry-run result first. Installation remains a human choice.
+Use `cursor` or `vscode` instead when that is the selected client. Show the
+dry-run result first. Installation remains a human choice.
 
 ## Guided Write Action
 

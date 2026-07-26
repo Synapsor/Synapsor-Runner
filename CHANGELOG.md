@@ -1,6 +1,28 @@
 # Changelog
 
-## 1.6.4 (prepared, not published)
+## 1.6.5 (prepared, not published)
+
+### Managed Claude Code and VS Code project MCP installs
+
+- Extends Runner's reviewed project MCP lifecycle from Cursor to Claude Code
+  and VS Code. `mcp install`, `mcp status`, and `mcp uninstall` now manage only
+  Runner's project-local entry in `.mcp.json` or `.vscode/mcp.json`.
+- Preserves unrelated servers and settings, creates backups, pins the exact
+  Runner package version, tracks ownership with an integrity marker, refuses
+  tampered or unowned entries, and keeps credentials and trusted scope out of
+  client configuration.
+- Preserves VS Code JSONC comments and trailing commas. Static status and a
+  real optional stdio `tools/list` launch check prove that each client receives
+  the same reviewed model-facing authority.
+- Makes onboarding, Workbench guidance, README positioning, host recipes, and
+  `doctor` client-neutral while retaining the existing Cursor lifecycle and
+  `--check-cursor` compatibility.
+
+Prepared package versions: `@synapsor/runner@1.6.5` and the optional
+`synapsor-runner@1.6.5` command alias. `@synapsor/spec@1.7.0` and
+`@synapsor/dsl@1.7.0` are unchanged. No package is published by this change.
+
+## 1.6.4 (published 2026-07-25)
 
 ### Review-correct onboarding and reviewed relationship paths
 
@@ -62,9 +84,9 @@
 - Adds one local, escaped, copy-exact DSL syntax highlighter for every
   Workbench DSL preview, with no CDN or unsafe HTML path, and gives activity,
   review, and apply detail the full available width on desktop and mobile.
-- Prepares `@synapsor/runner@1.6.4`, `@synapsor/spec@1.7.0`,
+- Published `@synapsor/runner@1.6.4`, `@synapsor/spec@1.7.0`,
   `@synapsor/dsl@1.7.0`, and the optional `synapsor-runner@1.6.4` command
-  alias. No package is published by this change.
+  alias.
 
 ## 1.6.3 (published 2026-07-24)
 

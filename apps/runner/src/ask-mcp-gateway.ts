@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import runnerPackage from "../package.json" with { type: "json" };
 import {
   createMcpRuntime,
   createSynapsorMcpServer,
@@ -159,7 +160,7 @@ async function connectSurface(
 ): Promise<ConnectedMcpSurface> {
   const client = new Client({
     name: `synapsor-workbench-ask-${kind}`,
-    version: "1.6.4",
+    version: runnerPackage.version,
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   try {

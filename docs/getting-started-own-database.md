@@ -30,7 +30,7 @@ inspect the whole selected schema and structured application artifacts
 -> draft disabled public DSL, canonical JSON, tests, and generation lock
 -> review scope, fields, analytics permissions, relationships, and budgets
 -> activate the exact exploration-boundary digest in local Workbench
--> install exactly app.describe_data and app.explore_data in Cursor
+-> install exactly app.describe_data and app.explore_data in your project MCP client
 -> ask a bounded row or PM-style aggregate question against staging
 -> Protect This Query into a disabled named capability
 -> activate that exact digest and remove broad Explore
@@ -241,32 +241,34 @@ There is intentionally no CLI or MCP command a coding agent can use to
 activate the draft. If the host does not refresh `tools/list`, reconnect the
 MCP server after activation as the Workbench instructs.
 
-## 5. Add the reviewed tools to Cursor
+## 5. Add the reviewed tools to your MCP client
 
-After setting trusted environment values, preview and install a project-scoped
-entry without hand-editing `.cursor/mcp.json`:
+After setting trusted environment values, choose Cursor, Claude Code, or VS
+Code and preview a project-scoped entry without hand-editing client JSON:
 
 ```bash
-synapsor-runner mcp install cursor --project --dry-run \
+synapsor-runner mcp install claude-code --project --dry-run \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
-synapsor-runner mcp install cursor --project --yes \
+synapsor-runner mcp install claude-code --project --yes \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
-synapsor-runner mcp status cursor --project --check-launch
+synapsor-runner mcp status claude-code --project --check-launch
 ```
 
+Use `cursor` or `vscode` in place of `claude-code` for those clients. Runner
+targets `.cursor/mcp.json`, `.mcp.json`, or `.vscode/mcp.json` as appropriate.
 Runner merges rather than replaces existing MCP servers, creates a backup,
 records an integrity marker, and is idempotent. The entry uses an exact Runner
 version and contains no database URL, trusted tenant/principal value, approval,
 apply, or revert authority. Remove only the Runner-owned entry with:
 
 ```bash
-synapsor-runner mcp uninstall cursor --project --yes
+synapsor-runner mcp uninstall claude-code --project --yes
 ```
 
 See the [host compatibility matrix](host-compatibility.md) for the precise
-Cursor evidence and MCP Apps limitation.
+host evidence and MCP Apps limitations.
 
 ## 6. Inspect local activation evidence
 
@@ -460,16 +462,16 @@ files.
 Generate or refresh MCP client snippets later with:
 
 ```bash
-npx -y @synapsor/runner mcp config generic --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y @synapsor/runner mcp config claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y @synapsor/runner mcp config cursor --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y @synapsor/runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp config generic --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp config claude-desktop --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner mcp config cursor --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Call one generated tool locally before wiring an MCP client:
 
 ```bash
-npx -y @synapsor/runner smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
+synapsor-runner smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 `smoke call` uses the same runtime as the MCP server. It records evidence and

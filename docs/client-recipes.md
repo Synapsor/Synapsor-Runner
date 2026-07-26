@@ -89,17 +89,30 @@ list. Then ask for the shared proposal call.
 
 ## Claude Code
 
-**Status:** configuration-tested with Claude Code 2.1.216 and
+**Status:** managed project configuration-tested with Claude Code 2.1.220 and
 protocol-tested; a manual model-driven call remains a release gate.
 
-Run the checked command from the repository root:
+Use Runner's owned project lifecycle:
 
 ```bash
-bash ./examples/support-plan-credit/mcp-client-examples/claude-code.sh
+synapsor-runner mcp install claude-code --project --dry-run \
+  --config ./examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+synapsor-runner mcp install claude-code --project --yes \
+  --config ./examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+synapsor-runner mcp status claude-code --project --check-launch
 ```
 
-Claude Code records project-scoped MCP configuration without embedding source
-credentials. It will print the exact proposal prompt after configuration.
+Runner merges only `mcpServers.synapsor` into the project `.mcp.json`, creates
+a backup, pins the exact Runner version, and never embeds source credentials.
+Restart or open a new Claude Code project session, approve the project server
+when prompted, and make the shared proposal call. Remove only Runner's intact
+entry with `synapsor-runner mcp uninstall claude-code --project --yes`.
+
+The older checked shell recipe remains available for users who intentionally
+prefer Claude Code's own configuration command:
+[`claude-code.sh`](../examples/support-plan-credit/mcp-client-examples/claude-code.sh).
 
 Official source checked 2026-07-20:
 [Claude Code MCP](https://code.claude.com/docs/en/mcp).
@@ -120,13 +133,29 @@ Official source checked 2026-07-20:
 
 ## VS Code
 
-**Status:** configuration-parsed and protocol-tested; manual VS Code UI
-behavior is not claimed.
+**Status:** managed project configuration-tested with VS Code 1.123.0 and
+protocol-tested; manual VS Code UI behavior is not claimed.
 
-Copy or merge
-[`vscode.mcp.json`](../examples/support-plan-credit/mcp-client-examples/vscode.mcp.json)
-into `.vscode/mcp.json`. Start the server from VS Code, inspect the listed
-tools, and ask for the shared proposal call.
+Use Runner's owned project lifecycle:
+
+```bash
+synapsor-runner mcp install vscode --project --dry-run \
+  --config ./examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+synapsor-runner mcp install vscode --project --yes \
+  --config ./examples/support-plan-credit/synapsor.runner.json \
+  --store ./tmp/support-plan-credit/local.db
+synapsor-runner mcp status vscode --project --check-launch
+```
+
+Runner merges only `servers.synapsor` into `.vscode/mcp.json`, preserves JSONC
+comments and trailing commas, creates a backup, and pins the exact Runner
+version. Reload the VS Code window, start the server, inspect the listed tools,
+and ask for the shared proposal call. Remove only Runner's intact entry with
+`synapsor-runner mcp uninstall vscode --project --yes`.
+
+The checked standalone template remains available at
+[`vscode.mcp.json`](../examples/support-plan-credit/mcp-client-examples/vscode.mcp.json).
 
 Official source checked 2026-07-20:
 [VS Code MCP servers](https://code.visualstudio.com/docs/agent-customization/mcp-servers).

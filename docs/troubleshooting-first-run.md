@@ -84,9 +84,10 @@ Check:
 ```bash
 synapsor-runner boundary status --json
 synapsor-runner boundary diff --json
-synapsor-runner mcp status cursor --project
+synapsor-runner mcp status claude-code --project
 ```
 
+Use `cursor` or `vscode` instead when that is the selected client.
 The exact boundary digest must be active, the profile must explicitly be
 `development` or `staging`, the generation lock and compiler/Spec versions
 must be current, and the inspected database role must still be SELECT-only,
@@ -133,12 +134,12 @@ Select **Clear** after a session to cancel active work and discard in-memory
 provider configuration/history. See [Workbench Ask With Your
 Model](workbench-ask.md).
 
-## Cursor Has Production Tools Instead Of Authoring Tools
+## A Project Client Has Production Tools Instead Of Authoring Tools
 
 Install the managed local authoring entry only after boundary activation:
 
 ```bash
-synapsor-runner mcp install cursor \
+synapsor-runner mcp install claude-code \
   --project \
   --authoring \
   --project-root . \
@@ -151,12 +152,14 @@ production config. The protected named capability remains available while
 Explore disappears:
 
 ```bash
-synapsor-runner mcp install cursor \
+synapsor-runner mcp install claude-code \
   --project \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --yes
 ```
+
+Use `cursor` or `vscode` instead of `claude-code` for those clients.
 
 ## Boundary Became Stale After A Schema Or Grant Change
 
@@ -204,19 +207,20 @@ Open the secured Workbench, run the real source-unchanged staging Data PR
 preview, review the complete digest, and activate it there. There is
 intentionally no activation CLI command to hand to a coding agent.
 
-## Activated Tool Does Not Appear In Cursor
+## Activated Tool Does Not Appear In The MCP Client
 
 Some MCP hosts do not refresh `tools/list` for a running stdio session. First
 confirm that Runner's active tool surface changed:
 
 ```bash
 synapsor-runner action status --json
-synapsor-runner mcp status cursor --project --check-launch
+synapsor-runner mcp status claude-code --project --check-launch
 ```
 
+Use `cursor` or `vscode` instead of `claude-code` for those clients.
 Then reconnect or restart the project MCP server as directed by the Workbench.
 Do not work around a stale host session by adding approval, apply, activation,
-credentials, tenant values, or raw SQL to the Cursor configuration.
+credentials, tenant values, or raw SQL to the client configuration.
 
 ## Safe Action Validation Reports Review Placeholders
 
@@ -531,7 +535,7 @@ Fix:
 Regenerate the snippet:
 
 ```bash
-npx -y @synapsor/runner mcp config claude-desktop \
+synapsor-runner mcp config claude-desktop \
   --absolute-paths \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db

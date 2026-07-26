@@ -1,7 +1,7 @@
 # MCP Host Compatibility
 
 This matrix separates host evidence from protocol evidence. It was last
-reviewed on 2026-07-20. A working MCP SDK handshake is not presented as proof
+reviewed on 2026-07-25. A working MCP SDK handshake is not presented as proof
 that a specific editor renders an extension or protects app-only controls.
 
 | Host/surface | Status | Evidence and boundary |
@@ -14,32 +14,45 @@ that a specific editor renders an extension or protects app-only controls.
 | Generic stdio MCP client | Protocol-tested | Official MCP SDK initialization, tool listing, calls, resources, and display-only Apps metadata are covered in the suite. |
 | Generic Streamable HTTP MCP client | Protocol-tested | Official MCP SDK sessions, signed context, secret rotation, JWKS, mTLS, aliases, and session isolation are covered. |
 | Claude Desktop | Protocol-tested | Packaged stdio configuration and MCP transport are tested; manual host UI behavior varies by version and remains a release checklist item. |
-| Claude Code | Configuration-tested and protocol-tested | Claude Code 2.1.216 accepted the secret-free stdio configuration through `mcp add-json`; the same command completed MCP `tools/list`. A manual model-driven proposal call remains a release gate. |
+| Claude Code project `.mcp.json` lifecycle | Configuration-tested and protocol-tested | Runner install/status/uninstall tests cover preview, merge, backup, idempotency, ownership, tamper refusal, exact-version wiring, and the exact reviewed `tools/list`. Local Claude Code version observed: 2.1.220. A manual model-driven proposal call remains a release gate. |
 | Codex | Configuration-tested and protocol-tested | Codex CLI 0.144.6 accepted the secret-free stdio configuration through `codex mcp add`; the same command completed MCP `tools/list`. A manual model-driven proposal call remains a release gate. |
-| VS Code | Protocol-tested | The checked `.vscode/mcp.json` shape is parsed and the same stdio command completes MCP `tools/list`; manual editor UI behavior is not claimed. |
+| VS Code project `.vscode/mcp.json` lifecycle | Configuration-tested and protocol-tested | Runner install/status/uninstall tests cover JSONC-preserving merge, backup, idempotency, ownership, tamper refusal, exact-version wiring, and the exact reviewed `tools/list`. Local VS Code version observed: 1.123.0. Manual editor UI behavior is not claimed. |
 | OpenAI Agents SDK | Recipe-checked and protocol-tested | Packaged stdio/Streamable HTTP examples are syntax/safety checked and OpenAI-safe aliases are protocol-tested. The exact SDK agent call remains protocol-only until run with an owner-supplied API key. |
 | LangChain/LangGraph | Recipe-checked, protocol-only | The current `@langchain/mcp-adapters` recipe lists tools, rejects unsafe authority, and calls the proposal tool. The framework runtime has not been executed in this release environment. |
 | Google ADK | Recipe-checked, protocol-only | The current `McpToolset`/`StdioConnectionParams` recipe exposes only the two reviewed tools. The framework runtime has not been executed in this release environment. |
 | LlamaIndex | Recipe-checked, protocol-only | The current `BasicMCPClient` recipe lists tools and calls the proposal tool. The framework runtime has not been executed in this release environment. |
 
-## Cursor Project Setup
+## Managed Project Setup
 
-Current Cursor documentation supports project MCP configuration in
-`.cursor/mcp.json`. Runner manages only its `synapsor` entry:
+Runner manages only its `synapsor` entry in each supported project-local
+configuration:
 
 ```bash
 synapsor-runner mcp install cursor --project --dry-run
-synapsor-runner mcp install cursor --project --yes
-synapsor-runner mcp status cursor --project --check-launch
+synapsor-runner mcp install claude-code --project --dry-run
+synapsor-runner mcp install vscode --project --dry-run
+
+synapsor-runner mcp install claude-code --project --yes
+synapsor-runner mcp status claude-code --project --check-launch
 ```
 
-The generated entry contains command paths only. Database credentials and
-trusted tenant/principal values must come from the environment that launches
-Runner. Other Cursor MCP servers and settings are preserved.
+Cursor uses `.cursor/mcp.json` and `mcpServers`; Claude Code uses `.mcp.json`
+and `mcpServers`; VS Code uses `.vscode/mcp.json` and `servers`. The generated
+entry contains command paths and an exact package version only. Database
+credentials and trusted tenant/principal values must come from the environment
+that launches Runner. Other servers and project settings are preserved.
+
+`--dry-run` never writes. An approved install creates a backup and an integrity
+marker. A repeated install is idempotent; uninstall removes only an unchanged,
+Runner-owned entry. Claude Code still requires its own human project-server
+approval, and VS Code still requires the operator to reload/start the server.
+Those host actions do not grant Synapsor approval or commit authority.
 
 Primary references:
 
 - [Cursor MCP documentation](https://cursor.com/docs/context/mcp)
+- [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp)
+- [VS Code MCP servers](https://code.visualstudio.com/docs/agent-customization/mcp-servers)
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 - [MCP Apps specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
 
