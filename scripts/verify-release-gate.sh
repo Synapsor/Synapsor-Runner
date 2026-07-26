@@ -26,6 +26,10 @@ log "Release gate for @synapsor/runner $EXPECTED_VERSION"
 
 run corepack pnpm --dir "$ROOT" typecheck
 run corepack pnpm --dir "$ROOT" exec vitest run \
+  --maxWorkers=4 \
+  --minWorkers=1 \
+  --testTimeout=20000 \
+  --hookTimeout=20000 \
   apps/runner/src/cli.test.ts \
   packages/proposal-store/src/index.test.ts \
   packages/mcp-server/src/index.test.ts \
