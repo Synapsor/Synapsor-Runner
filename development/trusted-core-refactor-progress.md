@@ -46,8 +46,8 @@ MySQL, worker-core, and its existing focused authoring/UI modules.
 | 1. Proposal store | Complete | 69 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
 | 2. MCP server | Complete | 111 tests, typecheck, packaged build, parity verifier, and cycle audit passed |
 | 3. Runner CLI | Complete | 160 focused tests, 949-test root suite, packaged build, parity verifier, and declaration audit passed |
-| 4. Integrated architecture and packed parity | Pending | |
-| 5. Completion audit, merge, and push | Pending | |
+| 4. Integrated architecture and packed parity | Complete | Dependency checker, architecture map, 950-test suite, clean packed declarations, pre-refactor ledger, compatibility matrices, and every required integration gate passed |
+| 5. Completion audit | Complete | Final baseline, dependency, type, worktree, version, schema/storage, and facade-size audits passed |
 
 ## Baseline Commands
 
@@ -218,10 +218,10 @@ artifact-generation, and receipt-setup flow rather than splitting one ordered
 interactive state machine across forwarding modules.
 
 The facade preserves each prior public helper with an explicit compatibility
-wrapper. This prevents `dist/cli.d.ts` from re-exporting newly extracted files
-that are intentionally omitted by the unchanged package `files` manifest. The
-only relative declaration dependency is the already-published
-`dist/local-ui.d.ts`.
+wrapper. The packaging build now produces portable `./cli` and `./shadow`
+declarations with the same captured public symbols/signatures but without
+unpublished workspace aliases, repository-local absolute paths, or references
+to extracted files omitted by the unchanged package `files` manifest.
 
 Phase 3 evidence:
 
@@ -240,6 +240,115 @@ Phase 3 evidence:
 
 Phase 3 implementation commit: `b08a1ee`.
 
+## Phase 4: Integrated Architecture And Packed Parity
+
+The repository now owns and enforces the trusted-core import direction:
+
+- `scripts/check-trusted-core-dependencies.mjs` uses the TypeScript AST to scan
+  146 production modules and 736 internal edges.
+- It rejects package-direction violations, forbidden facade back-imports,
+  within-package layer violations, cycles, and oversized facades.
+- `docs/trusted-core-architecture.md` maps each trust decision, durable or
+  database side effect, and model-controlled versus trusted input to one owner.
+- The checker runs before Vitest in the root `test` command.
+
+The final compatibility work added two executable proofs required by the goal:
+
+- `scripts/make-runner-declarations-portable.mjs` preserves the exact captured
+  public symbols/signatures while resolving only the internal types needed by
+  `@synapsor/runner/cli` and `@synapsor/runner/shadow`. A clean packed consumer
+  compiles `./cli`, `./authoring`, `./shadow`, and `./runtime` with
+  `skipLibCheck: false`. No dependency, export, entrypoint, or package `files`
+  manifest changed.
+- `development/trusted-core-fixtures/pre-refactor-8989163-ledger.db` was
+  generated with the pre-refactor `ProposalStore` at the starting commit. The
+  current store opens it, validates synthetic proposal/evidence/query-audit/
+  approval/receipt/replay state, appends a successor, closes, and reopens it.
+  The fixture is excluded from the Runner tarball.
+
+Final integrated evidence:
+
+- `corepack pnpm install --frozen-lockfile`: passed; lockfile unchanged.
+- `corepack pnpm typecheck`: passed.
+- `corepack pnpm test`: passed, 63 files and 950 tests in 194.23 seconds,
+  followed by the license/content, human command-surface, DSL-source-path, and
+  Cursor-plugin verifiers.
+- `corepack pnpm build:runner-package`: passed.
+- `corepack pnpm test:smoke`: passed; 440 release-subset tests, current
+  Claude Code and Codex config validation, first-run Docker proof, public/local
+  command checks, clean packed declaration compilation, packed own-database
+  Postgres apply, and pnpm publish dry-run all passed.
+- `corepack pnpm test:packed-backward-compatibility`: passed against Runner
+  1.6.3, DSL 1.6.0, and Spec 1.6.0.
+- `corepack pnpm test:published-compatibility`: passed against the pinned
+  1.5.4, 1.6.0, and 1.6.3 public compatibility baselines.
+- `corepack pnpm test:auto-boundary-explore`: passed against live PostgreSQL +
+  Next.js + Prisma; authoring-only tool surface remained bounded.
+- `corepack pnpm test:auto-boundary-explore:packed`: passed from a clean
+  tarball; bounded aggregate denials, suppression, read-only posture, Protect,
+  and production tool-surface checks all passed.
+- `corepack pnpm test:reviewed-relationships`: passed on live Postgres/MySQL,
+  including star/depth-two totals, nullable semantics, per-relation scope, and
+  fan-out refusal.
+- `corepack pnpm test:workbench-ask`: passed desktop/mobile, provider, parity,
+  no-mutation, no-persisted-key, and browser-storage checks.
+- `corepack pnpm test:guided-onboarding:packed`: passed the 40-resource
+  FitFlow packed journey, OIDC approval roles, workers, policy/manual
+  combinations, limits, stale conflicts, replay, compensation, and
+  notifications.
+- `corepack pnpm test:proposal-freshness`: passed live Postgres/MySQL target and
+  supporting-evidence drift, quorum, shared-store, Cloud, idempotency, and
+  kept-out checks.
+- `corepack pnpm test:principal-scope`: passed Postgres/MySQL DSL variants and
+  shared-ledger isolation.
+- `corepack pnpm test:bounded-set`: passed source/ledger receipt modes, scope,
+  caps, values, drift, atomicity, reconciliation, and 1/10/100-row cases.
+- `corepack pnpm test:reversible`: passed Postgres/MySQL update/insert/delete,
+  compensation, stale conflict, exact restore, lineage, and redaction checks.
+- `corepack pnpm test:fleet`: passed two-runner shared-ledger isolation,
+  locking, quorum, duplicate-worker exclusion, crash recovery, dead letters,
+  readiness, pool-pressure classification, backup/restore, and retention.
+- `node scripts/trusted-core-baseline.mjs`: passed after the complete refactor
+  and final declaration build.
+- `corepack pnpm check:trusted-core-dependencies`: passed.
+- `git diff --check`: passed.
+
+No required gate is unverified. Docker, network registry access, live Postgres,
+live MySQL, Claude Code, and Codex prerequisites were available.
+
+Phase 4 architecture/checker commit: `693475e`.
+Phase 4 packed/storage parity commit: `e812d58`.
+
+## Phase 5: Completion Audit
+
+The final pre-merge audit confirms:
+
+- Compatibility facades are 98 lines for proposal-store, 118 lines for
+  MCP-server, and 364 lines for Runner CLI, down from 9,573, 7,511, and
+  20,781 lines respectively.
+- `node scripts/trusted-core-baseline.mjs`,
+  `corepack pnpm check:trusted-core-dependencies`,
+  `corepack pnpm typecheck`, and `git diff --check` all pass at the final
+  branch state.
+- Runner remains `1.6.5`, Spec remains `1.7.0`, and DSL remains `1.7.0`.
+- `pnpm-lock.yaml` and every published package manifest are unchanged. The
+  root-only `package.json` change adds the repository dependency checker and
+  runs it as part of `test`.
+- Existing SQLite schema and migration behavior are unchanged: the migration
+  SQL baseline is identical, all current store tests pass, and the current
+  implementation opens, validates, extends, closes, and reopens a ledger
+  created by the exact pre-refactor starting commit.
+- No npm publication, dist-tag movement, release, tag, or package-version
+  change occurred.
+
+Remaining pre-existing audit hotspots outside the three authorized monoliths
+are `apps/runner/src/local-ui.ts` (6,806 lines),
+`apps/runner/src/auto-boundary.ts` (2,443),
+`apps/runner/src/boundary-workbench.ts` (2,255), and
+`apps/runner/src/scoped-explore.ts` (1,889). They were not refactored because
+the goal explicitly prohibited broad cleanup outside the three trusted-core
+entry files.
+
 ## Deviations And Blockers
 
 - A diagnostic `corepack pnpm --filter @synapsor/runner test` invocation ran
@@ -248,11 +357,18 @@ Phase 3 implementation commit: `b08a1ee`.
   fixture errors and known load-sensitive timeouts. This is not a repository
   gate and did not prompt test or timeout changes. The supported root
   `corepack pnpm test` command runs from the repository root with four workers
-  and 20-second test/hook timeouts; it passed all 949 tests.
+  and 20-second test/hook timeouts; it passed all 950 tests.
+- The required clean packed-consumer compile exposed a pre-existing declaration
+  packaging defect: public CLI/shadow declarations named unpublished workspace
+  packages. The portable declaration build fixes resolution while preserving
+  the baseline public symbol/signature set and unchanged package manifest.
+- An intermediate publish dry-run showed the new old-ledger fixture under the
+  package-wide `fixtures` release copy. It was moved under `development/`;
+  a final packed artifact check proves it is absent from the tarball.
 - No active blockers.
 
 ## Exact Next Action
 
-Add the repository-owned dependency-direction/cycle checker, document the
-trusted-core architecture and enforcement ownership, then run every integrated
-and packed-artifact gate from the goal.
+Commit this completed progress record, fetch the current remote state, merge
+the reviewed branch into `main`, and push `main` without publishing, tagging,
+or changing any package version.
