@@ -1,0 +1,15 @@
+{
+  "name": "synapsor-community-solar-clean-room",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,6 +1,6 @@
 # Reviewed Reversible Change Sets
 
-Synapsor Runner 1.4 can capture a bounded inverse for an opt-in direct database
+Synapsor Runner can capture a bounded inverse for an opt-in direct database
 write. This is **reviewed compensation**, not rollback or database time travel.
 
 The operator flow is deliberately two separate approval loops:

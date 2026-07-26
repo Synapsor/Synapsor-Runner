@@ -186,6 +186,159 @@ export async function waitForExpression(page, expression, timeoutMs = 30_000) {
   throw new Error(`Timed out waiting for browser expression: ${expression}`);
 }
 
+export async function clickSelector(page, selector) {
+  const result = await page.send("Runtime.evaluate", {
+    expression: `(() => {
+      const element=document.querySelector(${JSON.stringify(selector)});
+      if(!element)throw new Error("Missing element: "+${JSON.stringify(selector)});
+      element.scrollIntoView({behavior:"instant",block:"center",inline:"center"});
+      const rect=element.getBoundingClientRect();
+      if(rect.width<1||rect.height<1)throw new Error("Element is not visible: "+${JSON.stringify(selector)});
+      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+    })()`,
+    returnByValue: true,
+  });
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.exception?.description ?? `Could not click ${selector}`);
+  }
+  const point = result.result?.value;
+  if (!point) throw new Error(`Could not locate ${selector}`);
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: point.x,
+    y: point.y,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+}
+
+export async function clickElementByText(page, selector, text) {
+  const result = await page.send("Runtime.evaluate", {
+    expression: `(() => {
+      const expected=${JSON.stringify(text)};
+      const element=[...document.querySelectorAll(${JSON.stringify(selector)})]
+        .find(candidate=>candidate.textContent.trim()===expected);
+      if(!element)throw new Error("Missing "+${JSON.stringify(selector)}+" with text: "+expected);
+      element.scrollIntoView({behavior:"instant",block:"center",inline:"center"});
+      const rect=element.getBoundingClientRect();
+      if(rect.width<1||rect.height<1)throw new Error("Element is not visible: "+expected);
+      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+    })()`,
+    returnByValue: true,
+  });
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.exception?.description ?? `Could not click ${selector} with text ${text}`);
+  }
+  const point = result.result?.value;
+  if (!point) throw new Error(`Could not locate ${selector} with text ${text}`);
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: point.x,
+    y: point.y,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+}
+
+export async function typeIntoSelector(page, selector, text) {
+  await clickSelector(page, selector);
+  await page.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+    nativeVirtualKeyCode: 65,
+    modifiers: 2,
+  });
+  await page.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+    nativeVirtualKeyCode: 65,
+    modifiers: 2,
+  });
+  await page.send("Input.insertText", { text: String(text) });
+}
+
+export async function selectOptionByValue(page, selector, value) {
+  const result = await page.send("Runtime.evaluate", {
+    expression: `(() => {
+      const element=document.querySelector(${JSON.stringify(selector)});
+      if(!(element instanceof HTMLSelectElement))throw new Error("Missing select: "+${JSON.stringify(selector)});
+      return [...element.options].findIndex(option=>option.value===${JSON.stringify(value)});
+    })()`,
+    returnByValue: true,
+  });
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.exception?.description ?? `Could not read ${selector}`);
+  }
+  const targetIndex = result.result?.value;
+  if (!Number.isInteger(targetIndex) || targetIndex < 0) {
+    throw new Error(`Select ${selector} has no option ${value}`);
+  }
+  await clickSelector(page, selector);
+  await dispatchKey(page, "Home", "Home", 36);
+  for (let index = 0; index < targetIndex; index += 1) {
+    await dispatchKey(page, "ArrowDown", "ArrowDown", 40);
+  }
+  await dispatchKey(page, "Enter", "Enter", 13);
+  const selected = await page.send("Runtime.evaluate", {
+    expression: `(() => {
+      const element=document.querySelector(${JSON.stringify(selector)});
+      if(!(element instanceof HTMLSelectElement))return null;
+      if(element.value!==${JSON.stringify(value)})return element.value;
+      element.dispatchEvent(new Event("change",{bubbles:true}));
+      return element.value;
+    })()`,
+    returnByValue: true,
+  });
+  if (selected.result?.value !== value) {
+    throw new Error(`Select ${selector} chose ${selected.result?.value ?? "nothing"} instead of ${value}`);
+  }
+}
+
+async function dispatchKey(page, key, code, virtualKeyCode) {
+  await page.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
+  });
+  await page.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
+  });
+}
+
 export async function captureScreenshot(page, outputPath, { format = "png", quality = 90 } = {}) {
   const result = await page.send("Page.captureScreenshot", {
     format,

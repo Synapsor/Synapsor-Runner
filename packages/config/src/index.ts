@@ -331,7 +331,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   );
   validateNotifications(input.notifications, strict, errors);
   validateSupervisedWorker(input.supervised_worker, input, strict, errors);
-  validateProposalFreshness(input.proposal_freshness, input.capabilities, strict, errors);
+  validateProposalFreshness(input.proposal_freshness, input.capabilities, strict, errors, hasContracts);
   validateEffectiveContextCompatibility(input.trusted_context, input.contexts, input.capabilities, errors);
   validateApprovalPolicyReferences(input.capabilities, input.policies, errors);
   validateWritebackReadiness(input.sources, input.capabilities, input.mode, errors, warnings);
@@ -1946,6 +1946,7 @@ function validateProposalFreshness(
   capabilitiesValue: unknown,
   strict: boolean,
   errors: ConfigIssue[],
+  hasContracts = false,
 ): void {
   if (value === undefined) return;
   if (!isRecord(value)) {
@@ -1977,7 +1978,9 @@ function validateProposalFreshness(
     }
     const proposal = byName.get(proposalName);
     if (!proposal) {
-      errors.push({ path, code: "FRESHNESS_PROPOSAL_UNKNOWN", message: `Freshness policy references unknown proposal capability ${proposalName}.` });
+      if (!hasContracts) {
+        errors.push({ path, code: "FRESHNESS_PROPOSAL_UNKNOWN", message: `Freshness policy references unknown proposal capability ${proposalName}.` });
+      }
       continue;
     }
     if (proposal.kind !== "proposal") {
@@ -2027,7 +2030,9 @@ function validateProposalFreshness(
       }
       const dependency = byName.get(String(rawDependency.capability));
       if (!dependency) {
-        errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_DEPENDENCY_UNKNOWN", message: `Unknown supporting capability ${String(rawDependency.capability)}.` });
+        if (!hasContracts) {
+          errors.push({ path: `${dependencyPath}.capability`, code: "FRESHNESS_DEPENDENCY_UNKNOWN", message: `Unknown supporting capability ${String(rawDependency.capability)}.` });
+        }
         continue;
       }
       if (dependency.kind !== "read" || dependency.protected_read !== undefined || dependency.aggregate !== undefined) {

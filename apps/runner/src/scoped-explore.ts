@@ -12,13 +12,21 @@ import {
 } from "@synapsor-runner/protocol";
 import { inspectDatabase, type SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
+  AUTHORITY_DEPENDENCIES_VERSION,
   AUTO_BOUNDARY_COMPILER_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
   compareGenerationLock,
+  credentialPostureFingerprintForAuthority,
   loadActivatedExplorationBoundary,
+  relationshipAuthorityDependencyFingerprint,
+  relationshipDependencyKey,
+  resourceAuthorityDependencyFingerprint,
   rolePostureFingerprint,
   type ActivatedExplorationBoundary,
+  type ExplorationBoundaryDraft,
+  type GenerationAuthorityDependencies,
   type GenerationLock,
+  type RelationshipLinkProof,
 } from "./auto-boundary.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
@@ -27,6 +35,7 @@ export const SCOPED_EXPLORE_VERSION = "synapsor.scoped-explore.v1";
 
 const MAX_FILTERS = 8;
 const MAX_IN_VALUES = 20;
+const MAX_RELATIONSHIPS_PER_PLAN = 3;
 const PROTECT_TTL_MS = 10 * 60 * 1000;
 const MAX_PROTECT_ITEMS = 32;
 
@@ -105,6 +114,7 @@ export class ScopedExploreError extends Error {
   constructor(
     public readonly code: ScopedExploreErrorCode,
     message: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ScopedExploreError";
@@ -165,16 +175,32 @@ export async function prepareScopedExplore(input: {
   const inspection = await (input.inspectDatabaseFn ?? inspectDatabase)({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,
+    ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
     env: input.env ?? process.env,
   });
-  const comparison = compareGenerationLock(lock, inspection);
-  if (!comparison.current) {
-    throw new ScopedExploreError("EXPLORE_LOCK_STALE", `Generated authority is stale: ${comparison.changes.join("; ")}.`);
+  if (lock.authority_dependencies) {
+    assertAuthorityDependenciesShape(lock.authority_dependencies);
+    if (lock.compiler_version !== boundary.compiler_version || lock.spec_version !== boundary.spec_version) {
+      throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active boundary and generation lock disagree on compiler or Spec version.");
+    }
+    if (credentialPostureFingerprintForAuthority(inspection)
+      !== lock.authority_dependencies.credential_posture_fingerprint) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        "Generated authority is stale: the inspected credential posture changed.",
+      );
+    }
+    assertGlobalReadOnlyPosture(inspection);
+  } else {
+    const comparison = compareGenerationLock(lock, inspection);
+    if (!comparison.current) {
+      throw new ScopedExploreError("EXPLORE_LOCK_STALE", `Generated authority is stale: ${comparison.changes.join("; ")}.`);
+    }
+    if (rolePostureFingerprint(inspection) !== boundary.role_posture_fingerprint) {
+      throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Database role, grant, ownership, or RLS posture changed after boundary activation.");
+    }
+    assertReadOnlyPosture(inspection, boundary);
   }
-  if (rolePostureFingerprint(inspection) !== boundary.role_posture_fingerprint) {
-    throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Database role, grant, ownership, or RLS posture changed after boundary activation.");
-  }
-  assertReadOnlyPosture(inspection, boundary);
   return { boundary, lock, inspection };
 }
 
@@ -216,13 +242,32 @@ export async function createScopedExploreRuntime(input: {
     engine: prepared.lock.engine,
     databaseUrl,
   });
+  const reviewableBoundary = await readOptionalExplorationDraft(projectRoot);
 
   return {
     boundary: prepared.boundary,
     session_fingerprint: sessionFingerprint,
-    describe: (request = {}) => describeBoundary(prepared.boundary, request),
+    describe: (request = {}) => describeBoundary(prepared.boundary, request, reviewableBoundary),
     explore: async (unknownPlan) => {
-      const plan = validateExplorePlan(unknownPlan, prepared.boundary);
+      let plan: ExplorePlan;
+      try {
+        plan = validateExplorePlan(unknownPlan, prepared.boundary);
+      } catch (error) {
+        throw enrichReviewableRelationshipError(
+          error,
+          unknownPlan,
+          prepared.boundary,
+          reviewableBoundary,
+        );
+      }
+      if (prepared.lock.authority_dependencies) {
+        assertPlanAuthorityDependenciesCurrent(
+          plan,
+          prepared.boundary,
+          prepared.lock.authority_dependencies,
+          prepared.inspection,
+        );
+      }
       const audit = auditSnapshot(store, sessionFingerprint, prepared.boundary.activation.digest, clock());
       enforcePreExecutionBudgets(plan, prepared.boundary, audit, clock());
       const normalizedAuditPlan = normalizedAudit(plan, auditKey);
@@ -316,6 +361,15 @@ export async function createScopedExploreRuntime(input: {
       return {
         ok: true,
         kind: plan.kind,
+        ...(plan.kind === "aggregate"
+          ? {
+            counted_entity: {
+              resource: plan.resource,
+              primary_key: resourceFor(prepared.boundary, plan.resource).primary_key,
+              semantics: "one input fact row remains one counted row",
+            },
+          }
+          : {}),
         boundary_digest: prepared.boundary.activation.digest,
         source_database_changed: false,
         untrusted_data: true,
@@ -344,6 +398,110 @@ export async function createScopedExploreRuntime(input: {
       if (ownsStore) store.close();
     },
   };
+}
+
+async function readOptionalExplorationDraft(
+  projectRoot: string,
+): Promise<ExplorationBoundaryDraft | undefined> {
+  try {
+    return JSON.parse(await fs.readFile(
+      path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
+      "utf8",
+    )) as ExplorationBoundaryDraft;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+function enrichReviewableRelationshipError(
+  error: unknown,
+  input: unknown,
+  active: ActivatedExplorationBoundary,
+  draft: ExplorationBoundaryDraft | undefined,
+): unknown {
+  if (!(error instanceof ScopedExploreError)
+    || error.code !== "EXPLORE_RELATIONSHIP_FORBIDDEN"
+    || !draft
+    || !isRecord(input)
+    || typeof input.resource !== "string") {
+    return error;
+  }
+  const activeRoot = active.pack.resources.find((resource) => resource.id === input.resource);
+  const draftRoot = draft.pack.resources.find((resource) => resource.id === input.resource);
+  if (!activeRoot || !draftRoot) return error;
+  const requested = requestedRelationshipIds(input);
+  const candidate = requested
+    .filter((id) => !activeRoot.relationships.some((relationship) => relationship.id === id))
+    .map((id) => draftRoot.relationships.find((relationship) => relationship.id === id))
+    .find((relationship) => relationship !== undefined);
+  if (!candidate?.proof
+    || candidate.proof.source !== "database_catalog"
+    || canonicalJsonDigest(candidate.proof.links) !== candidate.proof.digest
+    || candidate.proof.links.length < 1
+    || candidate.proof.links.length > 2) {
+    return error;
+  }
+  const activeResources = new Set(active.pack.resources.map((resource) => resource.id));
+  const reviewable = candidate.proof.links.every((link) =>
+    activeResources.has(link.source_resource)
+    && activeResources.has(link.target_resource)
+    && link.cardinality === "many_to_one"
+    && link.max_fan_out === 1
+    && link.target_uniqueness.columns.length === link.target_columns.length
+    && link.target_uniqueness.columns.every((field, index) => field === link.target_columns[index]));
+  if (!reviewable) return error;
+  const evidence = candidate.proof.links.map((link, index) => ({
+    link: index + 1,
+    constraint: link.constraint_name,
+    source_resource: link.source_resource,
+    source_columns: link.source_columns,
+    target_resource: link.target_resource,
+    target_columns: link.target_columns,
+    uniqueness: link.target_uniqueness,
+    cardinality: link.cardinality,
+    max_fan_out: link.max_fan_out,
+    nullable: link.nullable,
+  }));
+  return new ScopedExploreError(
+    "EXPLORE_RELATIONSHIP_FORBIDDEN",
+    `Relationship ${candidate.id} is structurally proven but is not in the active reviewed boundary. `
+      + `Catalog evidence: ${evidence.map((link) =>
+        `${link.constraint} maps ${link.source_resource}.${link.source_columns.join(",")} to unique ${link.target_resource}.${link.target_columns.join(",")}${link.nullable ? " (nullable)" : ""}`).join("; ")}. `
+      + "An operator may choose Review and add this relationship in Workbench; the model cannot add or approve it.",
+    {
+      relationship_review: {
+        action: "Review and add this relationship",
+        operator_plane_only: true,
+        resource: activeRoot.id,
+        relationship: candidate.id,
+        target_resource: candidate.target_resource,
+        counted_entity: candidate.counted_entity,
+        path_depth: candidate.path_depth ?? 1,
+        nullable: candidate.nullable ?? false,
+        unmatched_rows: candidate.unmatched_rows ?? "exclude",
+        proof_digest: candidate.proof.digest,
+        evidence,
+        active_boundary_digest: active.activation.digest,
+      },
+    },
+  );
+}
+
+function requestedRelationshipIds(input: Record<string, unknown>): string[] {
+  if (input.kind !== "aggregate") return [];
+  const ids: string[] = [];
+  const add = (value: unknown): void => {
+    if (typeof value === "string" && value) ids.push(value);
+  };
+  add(input.relationship);
+  for (const key of ["measures", "dimensions", "where"] as const) {
+    if (!Array.isArray(input[key])) continue;
+    for (const item of input[key]) if (isRecord(item)) add(item.relationship);
+  }
+  if (isRecord(input.time_bucket)) add(input.time_bucket.relationship);
+  if (isRecord(input.comparison)) add(input.comparison.relationship);
+  return unique(ids);
 }
 
 export function validateExplorePlan(input: unknown, boundary: ActivatedExplorationBoundary): ExplorePlan {
@@ -390,7 +548,8 @@ export async function listProtectedPlans(input: {
   const auditKey = await loadAuditKey(projectRoot);
   const state = await readProtectState(projectRoot);
   const now = input.now ?? Date.now();
-  return state.items
+  return [...state.items]
+    .reverse()
     .filter((item) => Date.parse(item.expires_at) > now)
     .map((item) => ({ token: item.token, ...decryptProtectItem(item, auditKey) }));
 }
@@ -476,8 +635,14 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     ...where.map((filter) => filter.relationship),
     comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
-  if (relationships.length > boundary.budgets.max_relationship_hops || relationships.length > 1) {
-    throw relationshipError("The first release permits at most one reviewed relationship path.");
+  if (relationships.length > MAX_RELATIONSHIPS_PER_PLAN) {
+    throw relationshipError(`A plan may use at most ${MAX_RELATIONSHIPS_PER_PLAN} reviewed relationship paths.`);
+  }
+  for (const id of relationships) {
+    const reviewed = reviewedRelationship(resource, id, boundary);
+    if ((reviewed.path_depth ?? 1) > boundary.budgets.max_relationship_hops) {
+      throw relationshipError(`Relationship ${id} exceeds the activated path-depth bound.`);
+    }
   }
   return {
     kind: "aggregate",
@@ -588,54 +753,61 @@ function compileAggregatePlan(
   comparison?: { range: { start: string; end: string }; period: "period_1" | "period_2" },
 ): { sql: string; params: Scalar[]; resources: BoundaryResource[]; period?: "period_1" | "period_2" } {
   const root = resourceFor(boundary, plan.resource);
-  const relationshipId = unique([
+  const relationshipIds = unique([
     plan.relationship,
     ...plan.measures.map((measure) => measure.relationship),
     ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
     plan.time_bucket?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
-  ].filter((value): value is string => Boolean(value)))[0];
-  const relationship = relationshipId ? reviewedRelationship(root, relationshipId, boundary) : undefined;
-  const joined = relationship ? resourceFor(boundary, relationship.target_resource) : undefined;
+  ].filter((value): value is string => Boolean(value)));
   const params: Scalar[] = [];
+  const joined = compileReviewedRelationshipJoins(
+    root,
+    relationshipIds,
+    boundary,
+    context,
+    params,
+    engine,
+  );
   const where = scopePredicates(root, "t0", context, params, engine);
-  let join = "";
-  if (relationship && joined) {
-    join = ` JOIN ${qualified(joined, engine)} t1 ON ${relationship.local_columns.map((column, index) =>
-      `t0.${quote(column, engine)} = t1.${quote(relationship.target_columns[index]!, engine)}`).join(" AND ")}`;
-    where.push(...scopePredicates(joined, "t1", context, params, engine));
-  }
   for (const filter of plan.where ?? []) {
-    const target = filter.relationship ? joined! : root;
-    where.push(filterSql(filter, target, filter.relationship ? "t1" : "t0", params, engine));
+    const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
+    where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
   }
   if (comparison) {
-    const target = plan.comparison?.relationship ? joined! : root;
-    const alias = plan.comparison?.relationship ? "t1" : "t0";
+    const target = plan.comparison?.relationship
+      ? joined.targets.get(plan.comparison.relationship)
+      : undefined;
+    const alias = target?.alias ?? "t0";
     const column = quote(plan.comparison!.field, engine);
     params.push(comparison.range.start);
     where.push(`${alias}.${column} >= ${placeholder(params.length, engine)}`);
     params.push(comparison.range.end);
     where.push(`${alias}.${column} < ${placeholder(params.length, engine)}`);
-    void target;
   }
   const select: string[] = [];
   const groupBy: string[] = [];
   (plan.dimensions ?? []).forEach((dimension, index) => {
-    const alias = dimension.relationship ? "t1" : "t0";
+    const alias = dimension.relationship
+      ? joined.targets.get(dimension.relationship)!.alias
+      : "t0";
     const expression = `${alias}.${quote(dimension.field, engine)}`;
     select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
     groupBy.push(expression);
   });
   if (plan.time_bucket) {
-    const alias = plan.time_bucket.relationship ? "t1" : "t0";
+    const alias = plan.time_bucket.relationship
+      ? joined.targets.get(plan.time_bucket.relationship)!.alias
+      : "t0";
     const expression = timeBucketSql(`${alias}.${quote(plan.time_bucket.field, engine)}`, plan.time_bucket.bucket, engine);
     select.push(`${expression} AS ${quote("time_bucket", engine)}`);
     groupBy.push(expression);
   }
   plan.measures.forEach((measure, index) => {
-    const alias = measure.relationship ? "t1" : "t0";
+    const alias = measure.relationship
+      ? joined.targets.get(measure.relationship)!.alias
+      : "t0";
     const expression = measure.function === "count"
       ? "COUNT(*)"
       : measure.function === "count_distinct"
@@ -654,10 +826,55 @@ function compileAggregatePlan(
   // exceeded the human-reviewed blast-radius bound.
   params.push(boundary.budgets.max_groups + 1);
   return {
-    sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${join} WHERE ${where.join(" AND ")}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
+    sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql} WHERE ${where.join(" AND ")}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
-    resources: joined ? [root, joined] : [root],
+    resources: joined.resources,
     ...(comparison ? { period: comparison.period } : {}),
+  };
+}
+
+function compileReviewedRelationshipJoins(
+  root: BoundaryResource,
+  relationshipIds: string[],
+  boundary: ActivatedExplorationBoundary,
+  context: { tenant: string; principal: string },
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): {
+  sql: string;
+  targets: Map<string, { resource: BoundaryResource; alias: string }>;
+  resources: BoundaryResource[];
+} {
+  const targets = new Map<string, { resource: BoundaryResource; alias: string }>();
+  const resources = new Map<string, BoundaryResource>([[root.id, root]]);
+  const joins: string[] = [];
+  let aliasIndex = 1;
+  for (const id of relationshipIds) {
+    const relationship = reviewedRelationship(root, id, boundary);
+    const links = relationshipLinks(root, relationship);
+    let source = root;
+    let sourceAlias = "t0";
+    for (const link of links) {
+      if (link.source_resource !== source.id) {
+        throw relationshipError(`Relationship ${id} contains a discontinuous structural path.`);
+      }
+      const target = resourceFor(boundary, link.target_resource);
+      const targetAlias = `t${aliasIndex++}`;
+      const on = link.source_columns.map((column, index) =>
+        `${sourceAlias}.${quote(column, engine)} = ${targetAlias}.${quote(link.target_columns[index]!, engine)}`);
+      on.push(...scopePredicates(target, targetAlias, context, params, engine));
+      const joinKind = relationship.unmatched_rows === "keep_null" ? " LEFT JOIN " : " JOIN ";
+      joins.push(`${joinKind}${qualified(target, engine)} ${targetAlias} ON ${on.join(" AND ")}`);
+      resources.set(target.id, target);
+      source = target;
+      sourceAlias = targetAlias;
+    }
+    targets.set(id, { resource: source, alias: sourceAlias });
+  }
+  return {
+    sql: joins.join(""),
+    targets,
+    resources: [...resources.values()],
   };
 }
 
@@ -728,6 +945,7 @@ function shapeExploreResponse(
 function describeBoundary(
   boundary: ActivatedExplorationBoundary,
   input: { resource?: string; cursor?: number; limit?: number },
+  reviewableBoundary?: ExplorationBoundaryDraft,
 ): Record<string, unknown> {
   const limit = input.limit === undefined ? 8 : positiveInteger(input.limit, "describe limit");
   if (limit > 10) throw planError("app.describe_data limit cannot exceed 10 resources");
@@ -740,6 +958,7 @@ function describeBoundary(
     boundary_digest: boundary.activation.digest,
     pack: boundary.pack.name,
     resources: selected.map((resource) => {
+      const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
       const reviewedFields = unique([
         resource.primary_key,
         ...resource.selectable_fields,
@@ -750,9 +969,12 @@ function describeBoundary(
         ...resource.count_distinct_fields,
         ...Object.keys(resource.time_bucket_fields),
       ]);
+      const fieldLabels = Object.fromEntries(reviewedFields.map((field) => [field, businessLabel(field)]));
       return {
         id: resource.id,
+        label: businessLabel(resource.table),
         primary_key: resource.primary_key,
+        field_labels: fieldLabels,
         selectable_fields: resource.selectable_fields,
         filterable_fields: Object.keys(resource.filterable_fields),
         filter_operators: resource.filterable_fields,
@@ -766,20 +988,201 @@ function describeBoundary(
           .filter((field) => resource.field_enums[field]?.length)
           .map((field) => [field, resource.field_enums[field]])),
         kept_out_field_count: resource.kept_out_fields.length,
-        relationships: resource.relationships.map((relationship) => ({
-          id: relationship.id,
-          target_resource: relationship.target_resource,
-          cardinality: relationship.cardinality,
-        })),
+        relationships: [
+          ...resource.relationships.map((relationship) => ({ relationship, activation: "active" as const })),
+          ...reviewableRelationships.map((relationship) => ({
+            relationship,
+            activation: "review_required" as const,
+          })),
+        ].map(({ relationship, activation }) => {
+          const target = resourceFor(boundary, relationship.target_resource);
+          const targetFields = unique([
+            ...target.selectable_fields,
+            ...Object.keys(target.filterable_fields),
+            ...target.groupable_fields,
+            ...target.aggregate_measures,
+            ...target.count_distinct_fields,
+            ...Object.keys(target.time_bucket_fields),
+          ]);
+          return {
+            id: relationship.id,
+            label: businessLabel(target.table),
+            activation,
+            operator_review_required: activation === "review_required",
+            target_resource: relationship.target_resource,
+            cardinality: relationship.cardinality,
+            counted_entity: relationship.counted_entity,
+            path_depth: relationship.path_depth ?? 1,
+            nullable: relationship.nullable ?? false,
+            unmatched_rows: relationship.unmatched_rows ?? "exclude",
+            structural_evidence: relationship.proof?.links.map((link) => ({
+              constraint_name: link.constraint_name,
+              source_resource: link.source_resource,
+              target_resource: link.target_resource,
+              source_columns: link.source_columns,
+              target_columns: link.target_columns,
+              target_uniqueness: link.target_uniqueness,
+              nullable: link.nullable,
+              cardinality: link.cardinality,
+            })) ?? [],
+            field_labels: Object.fromEntries(targetFields.map((field) => [field, businessLabel(field)])),
+            filterable_fields: Object.keys(target.filterable_fields),
+            filter_operators: target.filterable_fields,
+            groupable_fields: target.groupable_fields,
+            aggregate_measures: target.aggregate_measures,
+            count_distinct_fields: target.count_distinct_fields,
+            time_bucket_fields: target.time_bucket_fields,
+            field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
+          };
+        }),
         minimum_cohort_size: resource.minimum_cohort_size,
         maximum_rows: boundary.budgets.max_rows,
         maximum_groups: Math.min(boundary.budgets.max_groups, boundary.budgets.max_top_n),
+        suggested_questions: suggestedAggregateQuestions(
+          resource,
+          fieldLabels,
+          boundary,
+          reviewableRelationships,
+        ),
       };
     }),
     next_cursor: input.resource || cursor + selected.length >= boundary.pack.resources.length ? null : cursor + selected.length,
     raw_sql_available: false,
     source_rows_available_before_activation: false,
   };
+}
+
+function inactiveReviewableRelationships(
+  resource: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
+  draft?: ExplorationBoundaryDraft,
+): BoundaryResource["relationships"] {
+  if (!draft) return [];
+  const activeIds = new Set(resource.relationships.map((relationship) => relationship.id));
+  const activeResources = new Set(boundary.pack.resources.map((candidate) => candidate.id));
+  const draftResource = draft.pack.resources.find((candidate) => candidate.id === resource.id);
+  return (draftResource?.relationships ?? [])
+    .filter((relationship) =>
+      !activeIds.has(relationship.id)
+      && activeResources.has(relationship.target_resource)
+      && relationship.proof?.source === "database_catalog"
+      && canonicalJsonDigest(relationship.proof.links) === relationship.proof.digest
+      && relationship.proof.links.length >= 1
+      && relationship.proof.links.length <= 2
+      && relationship.proof.links.every((link) =>
+        activeResources.has(link.source_resource)
+        && activeResources.has(link.target_resource)
+        && link.cardinality === "many_to_one"
+        && link.max_fan_out === 1
+        && link.target_uniqueness.columns.length === link.target_columns.length
+        && link.target_uniqueness.columns.every((field, index) => field === link.target_columns[index])))
+    .sort((left, right) =>
+      (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
+}
+
+function suggestedAggregateQuestions(
+  resource: BoundaryResource,
+  labels: Record<string, string>,
+  boundary: ActivatedExplorationBoundary,
+  reviewableRelationships: BoundaryResource["relationships"] = [],
+): Array<Record<string, unknown>> {
+  const dimension = suggestedDimension(resource.groupable_fields);
+  const measure = resource.aggregate_measures[0];
+  const timeField = Object.keys(resource.time_bucket_fields)[0];
+  const resourceLabel = businessLabel(resource.table).toLowerCase();
+  const questions: Array<Record<string, unknown>> = [];
+  const relationship = resource.relationships[0];
+  if (relationship) {
+    const target = resourceFor(boundary, relationship.target_resource);
+    const relatedDimension = suggestedDimension(target.groupable_fields, true);
+    if (relatedDimension) {
+      questions.push({
+        text: `Which reviewed ${dimensionSubject(target, relatedDimension)} have the most ${resourceLabel}?`,
+        measure: { function: "count" },
+        dimension: { field: relatedDimension, relationship: relationship.id },
+      });
+    }
+  }
+  const reviewableRelationship = reviewableRelationships[0];
+  if (!relationship && reviewableRelationship) {
+    const target = resourceFor(boundary, reviewableRelationship.target_resource);
+    const relatedDimension = suggestedDimension(target.groupable_fields, true);
+    if (relatedDimension) {
+      questions.push({
+        text: `Which reviewed ${dimensionSubject(target, relatedDimension)} have the most ${resourceLabel}? Human relationship review is required before source rows are read.`,
+        measure: { function: "count" },
+        dimension: { field: relatedDimension, relationship: reviewableRelationship.id },
+        relationship_review_required: true,
+      });
+    }
+  }
+  if (timeField && dimension) {
+    questions.push({
+      text: `How did ${measure ? `total ${labels[measure]?.toLowerCase()}` : resourceLabel} change by week across ${labels[dimension]?.toLowerCase()}?`,
+      measure: measure ? { function: "sum", field: measure } : { function: "count" },
+      dimension,
+      time_field: timeField,
+      time_bucket: "week",
+    });
+  }
+  if (dimension) {
+    questions.push({
+      text: `Which ${dimensionSubject(resource, dimension)} have the most ${resourceLabel}?`,
+      measure: { function: "count" },
+      dimension,
+    });
+  }
+  if (timeField) {
+    questions.push({
+      text: `How did the number of ${resourceLabel} change by week?`,
+      measure: { function: "count" },
+      time_field: timeField,
+      time_bucket: "week",
+    });
+  }
+  if (!questions.length) {
+    questions.push({
+      text: `How many reviewed ${resourceLabel} records are available?`,
+      measure: { function: "count" },
+    });
+  }
+  return questions.slice(0, 3);
+}
+
+function suggestedDimension(fields: string[], allowGenericLabel = false): string | undefined {
+  const meaningful = fields.find((field) => !/^(?:name|title|label|display_name)$/i.test(field));
+  return meaningful ?? (allowGenericLabel ? fields[0] : undefined);
+}
+
+function dimensionSubject(resource: BoundaryResource, field: string): string {
+  if (/^(?:name|title|label|display_name)$/i.test(field)) {
+    return businessLabel(resource.table).toLowerCase();
+  }
+  const label = businessLabel(field).toLowerCase();
+  if (label.endsWith("status")) return `${label}es`;
+  if (label.endsWith("category")) return `${label.slice(0, -1)}ies`;
+  if (label.endsWith("s")) return label;
+  return `${label}s`;
+}
+
+function businessLabel(identifier: string): string {
+  const words = identifier
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (lower === "id") return "ID";
+      if (lower === "api") return "API";
+      if (lower === "url") return "URL";
+      if (lower === "sku") return "SKU";
+      return lower;
+    });
+  if (!words.length) return identifier;
+  const label = words.join(" ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function enforcePreExecutionBudgets(
@@ -1054,6 +1457,11 @@ async function applyPostgresRlsSettings(
 }
 
 function assertReadOnlyPosture(inspection: SchemaInspection, boundary: ActivatedExplorationBoundary): void {
+  assertGlobalReadOnlyPosture(inspection);
+  for (const resource of boundary.pack.resources) assertResourceReadOnlyPosture(inspection, resource);
+}
+
+function assertGlobalReadOnlyPosture(inspection: SchemaInspection): void {
   const role = inspection.role_posture;
   const enginePrivilegePostureSafe = inspection.engine === "mysql"
     ? (role?.superuser === false || role?.superuser === "unsupported")
@@ -1062,19 +1470,119 @@ function assertReadOnlyPosture(inspection: SchemaInspection, boundary: Activated
   if (!role?.verified || !role.read_only || !enginePrivilegePostureSafe) {
     throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Scoped Explore requires a verified read-only, non-owner, non-superuser, non-BYPASSRLS role.");
   }
+}
+
+function assertResourceReadOnlyPosture(
+  inspection: SchemaInspection,
+  resource: BoundaryResource,
+): void {
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
-  for (const resource of boundary.pack.resources) {
-    const table = tables.get(resource.id);
-    const posture = table?.role_posture;
-    if (!table || !posture || posture.current_role_is_owner || posture.current_role_can_assume_owner
-      || !posture.privileges.select || posture.privileges.insert || posture.privileges.update
-      || posture.privileges.delete || posture.privileges.truncate || posture.privileges.trigger) {
-      throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", `The exact role is not verified SELECT-only and non-owner for ${resource.id}.`);
-    }
-    if (table.row_level_security === true && posture.row_security_effective_for_current_role !== true) {
-      throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", `RLS does not constrain the exact role for ${resource.id}.`);
+  const table = tables.get(resource.id);
+  const posture = table?.role_posture;
+  if (!table || !posture || posture.current_role_is_owner || posture.current_role_can_assume_owner
+    || !posture.privileges.select || posture.privileges.insert || posture.privileges.update
+    || posture.privileges.delete || posture.privileges.truncate || posture.privileges.trigger) {
+    throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", `The exact role is not verified SELECT-only and non-owner for ${resource.id}.`);
+  }
+  if (table.row_level_security === true && posture.row_security_effective_for_current_role !== true) {
+    throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", `RLS does not constrain the exact role for ${resource.id}.`);
+  }
+}
+
+function assertAuthorityDependenciesShape(dependencies: GenerationAuthorityDependencies): void {
+  const digest = /^sha256:[a-f0-9]{64}$/;
+  if (dependencies.schema_version !== AUTHORITY_DEPENDENCIES_VERSION
+    || !digest.test(dependencies.credential_posture_fingerprint)
+    || !isRecord(dependencies.resources)
+    || !isRecord(dependencies.relationships)) {
+    throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The generation lock contains malformed authority dependencies.");
+  }
+  for (const [id, dependency] of Object.entries(dependencies.resources)) {
+    if (!id || !isRecord(dependency)
+      || typeof dependency.schema !== "string"
+      || typeof dependency.table !== "string"
+      || !Array.isArray(dependency.fields)
+      || dependency.fields.some((field) => typeof field !== "string")
+      || !digest.test(String(dependency.fingerprint))) {
+      throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", `The generation lock contains a malformed resource dependency for ${id || "(empty)"}.`);
     }
   }
+  for (const [key, dependency] of Object.entries(dependencies.relationships)) {
+    if (!key || !isRecord(dependency)
+      || typeof dependency.root_resource !== "string"
+      || typeof dependency.relationship_id !== "string"
+      || !Array.isArray(dependency.links)
+      || !digest.test(String(dependency.proof_digest))
+      || canonicalJsonDigest(dependency.links) !== dependency.proof_digest) {
+      throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", `The generation lock contains a malformed relationship dependency for ${key || "(empty)"}.`);
+    }
+  }
+}
+
+function assertPlanAuthorityDependenciesCurrent(
+  plan: ExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+  dependencies: GenerationAuthorityDependencies,
+  inspection: SchemaInspection,
+): void {
+  const root = resourceFor(boundary, plan.resource);
+  const resourceIds = new Set([root.id]);
+  for (const relationshipId of relationshipIdsForPlan(plan)) {
+    const relationship = reviewedRelationship(root, relationshipId, boundary);
+    const key = relationshipDependencyKey(root.id, relationshipId);
+    const dependency = dependencies.relationships[key];
+    if (!dependency || !relationship.proof
+      || dependency.root_resource !== root.id
+      || dependency.relationship_id !== relationshipId
+      || dependency.proof_digest !== relationship.proof.digest
+      || canonicalJsonDigest(dependency.links) !== relationship.proof.digest) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        `Reviewed relationship ${relationshipId} is not bound to the current generation-lock proof.`,
+      );
+    }
+    const currentProof = relationshipAuthorityDependencyFingerprint(dependency, inspection);
+    if (currentProof !== dependency.proof_digest) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        `Reviewed relationship ${relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
+      );
+    }
+    for (const link of dependency.links) {
+      resourceIds.add(link.source_resource);
+      resourceIds.add(link.target_resource);
+    }
+  }
+  for (const resourceId of resourceIds) {
+    const resource = resourceFor(boundary, resourceId);
+    const dependency = dependencies.resources[resourceId];
+    if (!dependency) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        `Reviewed resource ${resourceId} is not represented in the generation-lock dependencies.`,
+      );
+    }
+    const current = resourceAuthorityDependencyFingerprint(dependency, inspection);
+    if (current !== dependency.fingerprint) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        `Reviewed resource ${resourceId} is stale because authority-bearing schema or RLS metadata changed.`,
+      );
+    }
+    assertResourceReadOnlyPosture(inspection, resource);
+  }
+}
+
+function relationshipIdsForPlan(plan: ExplorePlan): string[] {
+  if (plan.kind !== "aggregate") return [];
+  return unique([
+    plan.relationship,
+    ...plan.measures.map((measure) => measure.relationship),
+    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    plan.time_bucket?.relationship,
+    ...(plan.where ?? []).map((filter) => filter.relationship),
+    plan.comparison?.relationship,
+  ].filter((value): value is string => Boolean(value)));
 }
 
 function requestedResource(boundary: ActivatedExplorationBoundary, value: unknown): BoundaryResource {
@@ -1093,11 +1601,65 @@ function resourceFor(boundary: ActivatedExplorationBoundary, id: string): Bounda
 function reviewedRelationship(root: BoundaryResource, id: string, boundary: ActivatedExplorationBoundary) {
   const relationship = root.relationships.find((candidate) => candidate.id === id);
   if (!relationship || relationship.cardinality !== "many_to_one" || relationship.max_fan_out !== 1) {
-    throw relationshipError(`Relationship ${id} is not an activated, cardinality-proven one-hop path.`);
+    throw relationshipError(`Relationship ${id} is not an activated, cardinality-proven path.`);
   }
-  const target = resourceFor(boundary, relationship.target_resource);
-  if (!target.tenant_key) throw relationshipError(`Relationship ${id} target has no independently reviewed tenant scope.`);
+  if (relationship.unmatched_rows === "review_required") {
+    throw relationshipError(`Relationship ${id} has unresolved nullable-link semantics.`);
+  }
+  const links = relationshipLinks(root, relationship);
+  if (links.length > 2 || links.length !== (relationship.path_depth ?? 1)) {
+    throw relationshipError(`Relationship ${id} exceeds the proven depth-two path boundary.`);
+  }
+  let expectedSource = root.id;
+  for (const link of links) {
+    if (link.source_resource !== expectedSource
+      || link.cardinality !== "many_to_one"
+      || link.max_fan_out !== 1
+      || link.target_uniqueness.columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.some((field, index) => field !== link.target_columns[index])) {
+      throw relationshipError(`Relationship ${id} does not contain continuous many-to-one uniqueness proof.`);
+    }
+    const target = resourceFor(boundary, link.target_resource);
+    if (!target.tenant_key) {
+      throw relationshipError(`Relationship ${id} target ${target.id} has no independently reviewed tenant scope.`);
+    }
+    expectedSource = target.id;
+  }
+  if (expectedSource !== relationship.target_resource) {
+    throw relationshipError(`Relationship ${id} proof does not end at its activated target.`);
+  }
+  if (relationship.proof
+    && canonicalJsonDigest(relationship.proof.links) !== relationship.proof.digest) {
+    throw relationshipError(`Relationship ${id} structural proof digest is invalid.`);
+  }
   return relationship;
+}
+
+function relationshipLinks(
+  root: BoundaryResource,
+  relationship: BoundaryResource["relationships"][number],
+): RelationshipLinkProof[] {
+  if (relationship.proof?.source === "database_catalog") {
+    return relationship.proof.links;
+  }
+  if ((relationship.path_depth ?? 1) !== 1) {
+    throw relationshipError(`Relationship ${relationship.id} has no catalog proof for a multi-link path.`);
+  }
+  return [{
+    constraint_name: relationship.id,
+    source_resource: root.id,
+    target_resource: relationship.target_resource,
+    source_columns: relationship.local_columns,
+    target_columns: relationship.target_columns,
+    target_uniqueness: {
+      kind: "unique_constraint",
+      name: "legacy_activated_relationship",
+      columns: relationship.target_columns,
+    },
+    nullable: false,
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+  }];
 }
 
 function relationshipResource(root: BoundaryResource, id: string, boundary: ActivatedExplorationBoundary): BoundaryResource {

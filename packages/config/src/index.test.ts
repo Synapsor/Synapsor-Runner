@@ -983,6 +983,28 @@ describe("runner capability config validation", () => {
     expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("FRESHNESS_DIRECT_SQL_REQUIRED");
   });
 
+  it("defers freshness capability references until external contracts are resolved", () => {
+    const config = mutableConfig();
+    delete config.capabilities;
+    config.contracts = ["./synapsor.contract.json"];
+    config.proposal_freshness = {
+      "billing.propose_late_fee_waiver": {
+        approval: "required",
+        dependencies: [{
+          id: "invoice_eligibility",
+          capability: "billing.inspect_invoice",
+          identity_from_arg: "invoice_id",
+          version_column: "updated_at",
+        }],
+      },
+    };
+
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    delete config.contracts;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("FRESHNESS_PROPOSAL_UNKNOWN");
+  });
+
   it("rejects invalid proposal guard templates", () => {
     const config = mutableConfig();
     config.capabilities[1].numeric_bounds = {

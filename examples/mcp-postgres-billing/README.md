@@ -68,7 +68,7 @@ export BILLING_POSTGRES_WRITE_URL="postgresql://synapsor_writer:synapsor_writer_
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_billing_agent"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve \
+npx -y @synapsor/runner mcp serve \
   --config examples/mcp-postgres-billing/synapsor.runner.json \
   --store ./tmp/mcp-postgres-billing/local.db
 ```

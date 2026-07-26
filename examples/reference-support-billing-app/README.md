@@ -36,14 +36,14 @@ examples/reference-support-billing-app/scripts/run-demo.sh
 Validate the reviewed contract:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner config validate --config examples/reference-support-billing-app/synapsor.runner.json
-npx -y -p @synapsor/runner synapsor-runner doctor --config examples/reference-support-billing-app/synapsor.runner.json
+npx -y @synapsor/runner config validate --config examples/reference-support-billing-app/synapsor.runner.json
+npx -y @synapsor/runner doctor --config examples/reference-support-billing-app/synapsor.runner.json
 ```
 
 Serve MCP:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp serve \
+npx -y @synapsor/runner mcp serve \
   --config examples/reference-support-billing-app/synapsor.runner.json \
   --store ./tmp/reference-support-billing/local.db
 ```
@@ -69,11 +69,11 @@ After `synapsor-runner demo` or after starting this fixture manually, try the sa
 proposal-first loop without connecting an MCP client:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner propose billing.propose_late_fee_waiver --sample
-npx -y -p @synapsor/runner synapsor-runner proposals show latest
-npx -y -p @synapsor/runner synapsor-runner proposals approve latest --yes
-npx -y -p @synapsor/runner synapsor-runner apply latest
-npx -y -p @synapsor/runner synapsor-runner replay latest
+npx -y @synapsor/runner propose billing.propose_late_fee_waiver --sample
+npx -y @synapsor/runner proposals show latest
+npx -y @synapsor/runner proposals approve latest --yes
+npx -y @synapsor/runner apply latest
+npx -y @synapsor/runner replay latest
 ```
 
 Expected safety output:
@@ -93,8 +93,8 @@ Guarded writeback applied.
 Other proposal examples use the same review/apply/replay path:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner propose support.propose_plan_credit --sample
-npx -y -p @synapsor/runner synapsor-runner propose orders.propose_status_change --sample
+npx -y @synapsor/runner propose support.propose_plan_credit --sample
+npx -y @synapsor/runner propose orders.propose_status_change --sample
 ```
 
 Safety guarantees:
@@ -115,17 +115,17 @@ or production-scale runner orchestration.
 After a proposal exists:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner proposals list --store ./tmp/reference-support-billing/local.db
-npx -y -p @synapsor/runner synapsor-runner proposals approve <proposal_id> --store ./tmp/reference-support-billing/local.db --actor local_reviewer --yes
-npx -y -p @synapsor/runner synapsor-runner proposals writeback-job <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/job.json
-npx -y -p @synapsor/runner synapsor-runner apply --job ./tmp/reference-support-billing/job.json --store ./tmp/reference-support-billing/local.db
-npx -y -p @synapsor/runner synapsor-runner replay export <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/replay.json
+npx -y @synapsor/runner proposals list --store ./tmp/reference-support-billing/local.db
+npx -y @synapsor/runner proposals approve <proposal_id> --store ./tmp/reference-support-billing/local.db --actor local_reviewer --yes
+npx -y @synapsor/runner proposals writeback-job <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/job.json
+npx -y @synapsor/runner apply --job ./tmp/reference-support-billing/job.json --store ./tmp/reference-support-billing/local.db
+npx -y @synapsor/runner replay export <proposal_id> --store ./tmp/reference-support-billing/local.db --output ./tmp/reference-support-billing/replay.json
 ```
 
 To inspect locally in a browser:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner ui \
+npx -y @synapsor/runner ui \
   --config examples/reference-support-billing-app/synapsor.runner.json \
   --store ./tmp/reference-support-billing/local.db
 ```

@@ -30,17 +30,17 @@ model can propose `paid -> shipped`, but it cannot commit the update.
 Manual loop after the fixture is running:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner propose orders.propose_status_change \
+npx -y @synapsor/runner propose orders.propose_status_change \
   --config examples/mcp-mysql-orders/synapsor.runner.json \
   --store ./tmp/mcp-mysql-orders/local.db \
   --sample
 
-npx -y -p @synapsor/runner synapsor-runner proposals show latest --store ./tmp/mcp-mysql-orders/local.db
-npx -y -p @synapsor/runner synapsor-runner proposals approve latest --store ./tmp/mcp-mysql-orders/local.db --yes
-npx -y -p @synapsor/runner synapsor-runner apply latest \
+npx -y @synapsor/runner proposals show latest --store ./tmp/mcp-mysql-orders/local.db
+npx -y @synapsor/runner proposals approve latest --store ./tmp/mcp-mysql-orders/local.db --yes
+npx -y @synapsor/runner apply latest \
   --config examples/mcp-mysql-orders/synapsor.runner.json \
   --store ./tmp/mcp-mysql-orders/local.db
-npx -y -p @synapsor/runner synapsor-runner replay latest --store ./tmp/mcp-mysql-orders/local.db
+npx -y @synapsor/runner replay latest --store ./tmp/mcp-mysql-orders/local.db
 ```
 
 Expected safety output includes:
@@ -72,7 +72,7 @@ export ORDERS_MYSQL_WRITE_URL="mysql://synapsor_writer:synapsor_writer_password@
 export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="local_orders_agent"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve \
+npx -y @synapsor/runner mcp serve \
   --config examples/mcp-mysql-orders/synapsor.runner.json \
   --store ./tmp/mcp-mysql-orders/local.db
 ```

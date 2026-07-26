@@ -33,6 +33,7 @@ import {
   pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
+  type ActivatedExplorationBoundary,
   type AutoBoundaryBuild,
   type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
@@ -51,10 +52,12 @@ import {
   ScopedExploreError,
 } from "./scoped-explore.js";
 import {
+  consumeGuidedGraduationTip,
   readGuidedOnboardingState,
   resetGuidedOnboardingForBoundaryReview,
   updateGuidedOnboardingState,
 } from "./guided-project.js";
+import { buildFriendlyAggregatePlan } from "./explore-cli.js";
 import {
   activateGuidedAction,
   createGuidedActionDraft,
@@ -79,9 +82,21 @@ import {
   resolveLifecycleProposal,
   type LifecycleViewV1,
 } from "./lifecycle-view.js";
+import {
+  AskError,
+  WorkbenchAskSession,
+  askToolSurfaceDigest,
+  type AskProvider,
+  type AskProviderDependencies,
+  type AskToolDefinition,
+  type AskToolGateway,
+} from "./model-ask.js";
+import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
+import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
 
 type JsonRecord = Record<string, unknown>;
-const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v1";
+const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v2";
+const LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v1";
 const workbenchWorkerControlActions = new Set<WorkerControlAction>([
   "pause",
   "resume",
@@ -91,11 +106,40 @@ const workbenchWorkerControlActions = new Set<WorkerControlAction>([
   "digest_revoke",
 ]);
 
-type BoundaryReviewProgress = {
+export type BoundaryReviewProgress = {
   schema_version: typeof BOUNDARY_REVIEW_PROGRESS_VERSION;
+  revision: number;
+  draft_digest: `sha256:${string}`;
   candidate: ExplorationBoundaryDraft;
+  candidate_digest: `sha256:${string}`;
   confirmed_decisions: string[];
+  confirmations: BoundaryReviewConfirmation[];
+  invalidated_decisions: BoundaryReviewInvalidation[];
   updated_at: string;
+};
+
+export type BoundaryReviewDecision = {
+  id: string;
+  kind: string;
+  decision: string;
+  input_digest: `sha256:${string}`;
+  resource_id?: string;
+};
+
+type BoundaryReviewConfirmation = BoundaryReviewDecision & {
+  status: "confirmed";
+  actor: string;
+  reason: string;
+  confirmed_at: string;
+};
+
+type BoundaryReviewInvalidation = {
+  id: string;
+  decision: string;
+  previous_input_digest: `sha256:${string}`;
+  current_input_digest?: `sha256:${string}`;
+  reason: "reviewed_input_changed" | "decision_removed";
+  invalidated_at: string;
 };
 
 export type LocalUiOptions = {
@@ -122,6 +166,10 @@ export type LocalUiOptions = {
   workerDecision?: WorkbenchWorkerDecision;
   workerReconciliationInspect?: WorkbenchReconciliationInspect;
   workerReconciliationResolve?: WorkbenchReconciliationResolve;
+  askGatewayFactory?: WorkbenchAskGatewayFactory;
+  askProviderDependencies?: AskProviderDependencies;
+  instantOnboarding?: boolean;
+  scopedExploreRuntimeFactory?: typeof createScopedExploreRuntime;
 };
 
 export type WorkbenchDeploymentProfile = "development" | "staging" | "production" | "unknown";
@@ -187,6 +235,13 @@ export type WorkbenchReconciliationResolve = (input: {
   reason: string;
   identityToken?: string;
 }) => Promise<{ code: number }>;
+
+export type WorkbenchAskGatewayFactory = (input: {
+  configPath: string;
+  storePath: string;
+  projectRoot: string;
+  env: NodeJS.ProcessEnv;
+}) => Promise<AskToolGateway>;
 
 export type SafeActionPreview = (input: {
   projectRoot: string;
@@ -255,6 +310,8 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
     consumed: false,
     trustedContext: {} as Record<string, string>,
   };
+  const askSession = new WorkbenchAskSession();
+  const askGatewayFactory = options.askGatewayFactory ?? createWorkbenchAskMcpGateway;
 
   const server = createServer(async (request, response) => {
     try {
@@ -278,6 +335,12 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         workerDecision: options.workerDecision,
         workerReconciliationInspect: options.workerReconciliationInspect,
         workerReconciliationResolve: options.workerReconciliationResolve,
+        askSession,
+        askGatewayFactory,
+        askProviderDependencies: options.askProviderDependencies,
+        instantOnboarding: options.instantOnboarding === true,
+        scopedExploreRuntimeFactory: options.scopedExploreRuntimeFactory ?? createScopedExploreRuntime,
+        workbenchHost: host,
         token,
         csrfToken,
         tour: options.tour === true,
@@ -310,6 +373,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
     token,
     csrfToken,
     close: () => new Promise((resolve, reject) => {
+      askSession.clear();
       server.close((error) => {
         if (error) reject(error);
         else resolve();
@@ -338,6 +402,12 @@ async function handleRequest(input: {
   workerDecision?: WorkbenchWorkerDecision;
   workerReconciliationInspect?: WorkbenchReconciliationInspect;
   workerReconciliationResolve?: WorkbenchReconciliationResolve;
+  askSession: WorkbenchAskSession;
+  askGatewayFactory: WorkbenchAskGatewayFactory;
+  askProviderDependencies?: AskProviderDependencies;
+  instantOnboarding: boolean;
+  scopedExploreRuntimeFactory: typeof createScopedExploreRuntime;
+  workbenchHost: string;
   token: string;
   csrfToken: string;
   tour: boolean;
@@ -366,6 +436,12 @@ async function handleRequest(input: {
     workerDecision,
     workerReconciliationInspect,
     workerReconciliationResolve,
+    askSession,
+    askGatewayFactory,
+    askProviderDependencies,
+    instantOnboarding,
+    scopedExploreRuntimeFactory,
+    workbenchHost,
     token,
     csrfToken,
     tour,
@@ -402,19 +478,157 @@ async function handleRequest(input: {
     const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
     const review = JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as Record<string, unknown>;
     const progress = await readBoundaryReviewProgress(projectRoot, draft);
-    const candidate = progress?.candidate ?? draft;
+    const candidate = progress?.candidate ?? recommendedWorkbenchCandidate(draft);
+    const reviewDecisions = boundaryReviewDecisions(candidate);
+    const confirmedDecisions = progress?.confirmed_decisions ?? [];
+    const active = await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+    const instantCandidate = instantWorkbenchCandidate(draft);
     sendJson(response, 200, {
       ok: true,
       draft,
       candidate,
-      confirmed_decisions: progress?.confirmed_decisions ?? [],
+      confirmed_decisions: confirmedDecisions,
+      review_decisions: reviewDecisions,
+      review_progress: {
+        revision: progress?.revision ?? 0,
+        invalidated_decisions: progress?.invalidated_decisions ?? [],
+        outstanding_decisions: reviewDecisions
+          .filter((decision) => !confirmedDecisions.includes(decision.decision)),
+      },
       review,
       candidate_digest: explorationBoundaryCandidateDigest(candidate),
-      active: await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
+      active,
       journey: await readGuidedOnboardingState(projectRoot),
       operator_identity: process.env.SYNAPSOR_OPERATOR_ID?.trim() || null,
       operator_identity_mode: "dev_env",
+      instant_onboarding: {
+        eligible: instantOnboarding && !active && isLocalHost(workbenchHost),
+        candidate: instantCandidate,
+        candidate_digest: explorationBoundaryCandidateDigest(instantCandidate),
+        resource: instantCandidate.pack.resources[0]?.id ?? null,
+        requires_principal: Boolean(instantCandidate.pack.resources[0]?.principal_key),
+      },
     });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/instant/activate-and-read") {
+    if (!boundaryRoot || !instantOnboarding || !isLocalHost(workbenchHost)) {
+      sendJson(response, 404, { ok: false, error: "Instant onboarding is available only in a fresh secured loopback Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for instant onboarding." });
+      return;
+    }
+    if (deploymentProfile && deploymentProfile !== "development") {
+      throw new Error("Instant onboarding is restricted to an explicitly asserted personal development database.");
+    }
+    const body = await readJsonBody(request);
+    if (body.profile_assertion !== "own_development") {
+      throw new Error("Confirm that this is your own development or disposable test database.");
+    }
+    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+    const candidate = instantWorkbenchCandidate(draft);
+    const resource = candidate.pack.resources[0];
+    if (!resource) throw new Error("Runner could not identify a conservative first resource. Continue with the full boundary review.");
+    const tenant = trustedSessionValue(body.tenant, "customer or tenant scope");
+    const principal = resource.principal_key
+      ? trustedSessionValue(body.principal, "user or principal scope")
+      : instantActivationActor();
+    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+    const inspection = await schemaInspector({
+      engine: lock.engine,
+      databaseUrlEnv: lock.source_env,
+      schema: lock.inspected_schema,
+      env: process.env,
+    });
+    const previousTenant = bootstrapState.trustedContext[candidate.trusted_context.tenant_env];
+    const previousPrincipal = bootstrapState.trustedContext[candidate.trusted_context.principal_env];
+    bootstrapState.trustedContext[candidate.trusted_context.tenant_env] = tenant;
+    bootstrapState.trustedContext[candidate.trusted_context.principal_env] = principal;
+    let active: ActivatedExplorationBoundary;
+    try {
+      const digest = explorationBoundaryCandidateDigest(candidate);
+      active = await activateExplorationBoundary({
+        projectRoot,
+        candidate,
+        expectedDigest: digest,
+        actor: instantActivationActor(),
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: candidate.unresolved_decisions,
+        currentInspection: inspection,
+        activationAudit: {
+          mode: "instant_development",
+          profile_assertion: "own_development",
+          confirmation_gesture: "activate_and_read",
+        },
+      });
+    } catch (error) {
+      restoreTrustedSessionValue(bootstrapState.trustedContext, candidate.trusted_context.tenant_env, previousTenant);
+      restoreTrustedSessionValue(bootstrapState.trustedContext, candidate.trusted_context.principal_env, previousPrincipal);
+      throw error;
+    }
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.activated",
+      severity: "informational",
+      environment: "development",
+      capability: "app.explore_data",
+      contract_digest: active.activation.digest,
+      attention_required: false,
+      immediate_default: false,
+      summary: "Conservative instant-development boundary activated",
+      workbench_path: "/",
+      details: {
+        authority_type: "scoped_explore",
+        activation_mode: "instant_development",
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-boundary-activated:instant:${active.activation.digest}`,
+      now: active.activation.activated_at,
+    });
+    let runtime: Awaited<ReturnType<typeof createScopedExploreRuntime>> | undefined;
+    try {
+      runtime = await scopedExploreRuntimeFactory({
+        projectRoot,
+        transport: "loopback_workbench",
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const plan = buildFriendlyAggregatePlan(active, {
+        resource: resource.id,
+        count: true,
+        top: 1,
+      });
+      const result = await runtime.explore(plan);
+      await updateGuidedOnboardingState({
+        projectRoot,
+        status: "first_value",
+        completedSteps: ["boundary_active", "first_safe_read"],
+        authorityActive: true,
+        recommendedNextAction: "Ask a bounded aggregate question.",
+      }).catch(() => undefined);
+      const graduationTip = await consumeGuidedGraduationTip({ projectRoot }).catch(() => undefined);
+      sendJson(response, 200, {
+        ok: true,
+        active,
+        plan,
+        result,
+        first_tool: "app.explore_data",
+        resource: resource.id,
+        agent_can_see: resource.selectable_fields,
+        agent_cannot_see: resource.kept_out_fields,
+        tenant_scope: "trusted Workbench session value",
+        principal_scope: resource.principal_key ? "trusted Workbench session value" : "reviewed resource has no principal column",
+        source_database_changed: false,
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        ...(graduationTip ? { graduation_tip: graduationTip } : {}),
+        next_action: "Ask a bounded aggregate question.",
+      });
+    } finally {
+      await runtime?.close().catch(() => undefined);
+    }
     return;
   }
 
@@ -434,20 +648,161 @@ async function handleRequest(input: {
       throw new Error("Boundary-review progress requires a candidate and an array of confirmed decisions.");
     }
     const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+    const existingProgress = await readBoundaryReviewProgress(projectRoot, draft);
+    const currentRevision = existingProgress?.revision ?? 0;
+    if (body.expected_revision !== undefined
+      && (!Number.isSafeInteger(body.expected_revision) || body.expected_revision !== currentRevision)) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Boundary review changed in another Workbench session. Reload before saving this review.",
+        current_revision: currentRevision,
+      });
+      return;
+    }
     const preview = reviewExplorationBoundaryCandidate(draft, body.candidate as unknown as ExplorationBoundaryDraft);
-    const confirmed = normalizePartialReviewDecisions(draft.unresolved_decisions, body.confirmed_decisions as string[]);
-    const progress: BoundaryReviewProgress = {
-      schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    const confirmed = normalizePartialReviewDecisions(
+      preview.candidate.unresolved_decisions,
+      body.confirmed_decisions as string[],
+    );
+    const progress = createBoundaryReviewProgress({
+      draft,
       candidate: preview.candidate,
-      confirmed_decisions: confirmed,
-      updated_at: new Date().toISOString(),
-    };
+      confirmedDecisions: confirmed,
+      previous: existingProgress,
+      actor: typeof body.actor === "string" ? body.actor : undefined,
+      revision: currentRevision + 1,
+    });
     await writePrivateJsonAtomic(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), progress);
     sendJson(response, 200, {
       ok: true,
       digest: preview.digest,
       confirmed_decisions: confirmed,
+      revision: progress.revision,
+      invalidated_decisions: progress.invalidated_decisions,
       source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/review-relationship") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to stage a relationship for human review." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const resourceId = requiredReviewText(body.resource, "resource");
+    const relationshipId = requiredReviewText(body.relationship, "relationship");
+    const expectedActiveDigest = requiredReviewText(body.active_boundary_digest, "active boundary digest");
+    const actor = requiredReviewText(body.actor, "human reviewer");
+    if (actor.length > 128 || /[\u0000-\u001f\u007f]/.test(actor)) {
+      throw new Error("Relationship review requires a bounded human reviewer identity.");
+    }
+    const draft = JSON.parse(await fs.readFile(
+      path.join(boundaryRoot, "exploration-boundary.draft.json"),
+      "utf8",
+    )) as ExplorationBoundaryDraft;
+    const active = await readOptionalJson(
+      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+    ) as ActivatedExplorationBoundary | null;
+    if (!active || active.activation.digest !== expectedActiveDigest) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "The active boundary changed after this refusal. Retry the analysis before reviewing a relationship.",
+      });
+      return;
+    }
+    const source = draft.pack.resources.find((resource) => resource.id === resourceId);
+    const reviewedRelationship = source?.relationships.find((relationship) =>
+      relationship.id === relationshipId);
+    if (!source || !reviewedRelationship?.proof
+      || reviewedRelationship.proof.source !== "database_catalog"
+      || canonicalJsonDigest(reviewedRelationship.proof.links) !== reviewedRelationship.proof.digest) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "This relationship is not backed by the current deterministic catalog proof.",
+      });
+      return;
+    }
+    if (body.confirmation !== `REVIEW RELATIONSHIP ${reviewedRelationship.proof.digest}`) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "Relationship review requires confirmation bound to the exact catalog-proof digest.",
+      });
+      return;
+    }
+    const existingProgress = await readBoundaryReviewProgress(projectRoot, draft);
+    const activeCandidate: ExplorationBoundaryDraft = {
+      schema_version: active.schema_version,
+      activation: "disabled_unreviewed",
+      deployment_profile: active.deployment_profile,
+      source: active.source,
+      compiler_version: active.compiler_version,
+      spec_version: active.spec_version,
+      trusted_context: structuredClone(active.trusted_context),
+      generation_lock_fingerprint: active.generation_lock_fingerprint,
+      role_posture_fingerprint: active.role_posture_fingerprint,
+      pack: structuredClone(active.pack),
+      budgets: structuredClone(active.budgets),
+      unresolved_decisions: [],
+    };
+    const candidate = structuredClone(existingProgress?.candidate ?? activeCandidate);
+    const candidateSource = candidate.pack.resources.find((resource) => resource.id === resourceId);
+    const candidateResources = new Set(candidate.pack.resources.map((resource) => resource.id));
+    if (!candidateSource || reviewedRelationship.proof.links.some((link) =>
+      !candidateResources.has(link.source_resource) || !candidateResources.has(link.target_resource))) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "This path crosses a data area outside the active reviewed pack. Review the pack explicitly instead.",
+      });
+      return;
+    }
+    if (!candidateSource.relationships.some((relationship) => relationship.id === relationshipId)) {
+      candidateSource.relationships.push(structuredClone(reviewedRelationship));
+      candidateSource.relationships.sort((left, right) =>
+        (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
+    }
+    const preview = reviewExplorationBoundaryCandidate(draft, candidate);
+    const confirmedDecisions = (existingProgress?.confirmed_decisions ?? active.activation.reviewed_decisions
+      .filter((decision) => decision.confirmed)
+      .map((decision) => decision.decision))
+      .filter((decision) => preview.candidate.unresolved_decisions.includes(decision));
+    const relationshipDecision =
+      `${resourceId}: review relationship ${relationshipId} cardinality and scope on ${reviewedRelationship.target_resource}`;
+    if (reviewedRelationship.unmatched_rows !== "review_required"
+      && preview.candidate.unresolved_decisions.includes(relationshipDecision)
+      && !confirmedDecisions.includes(relationshipDecision)) {
+      confirmedDecisions.push(relationshipDecision);
+    }
+    const progress = createBoundaryReviewProgress({
+      draft,
+      candidate: preview.candidate,
+      confirmedDecisions,
+      ...(existingProgress ? { previous: existingProgress } : {}),
+      actor,
+      revision: (existingProgress?.revision ?? 0) + 1,
+    });
+    await saveBoundaryReviewProgress(projectRoot, progress);
+    sendJson(response, 200, {
+      ok: true,
+      candidate: progress.candidate,
+      candidate_digest: progress.candidate_digest,
+      confirmed_decisions: progress.confirmed_decisions,
+      invalidated_decisions: progress.invalidated_decisions,
+      revision: progress.revision,
+      relationship_review: {
+        resource: resourceId,
+        relationship: relationshipId,
+        target_resource: reviewedRelationship.target_resource,
+        path_depth: reviewedRelationship.path_depth ?? 1,
+        nullable: reviewedRelationship.nullable ?? false,
+        proof: reviewedRelationship.proof,
+      },
+      source_database_changed: false,
+      message: "The catalog-proven path is staged for normal human review. It is not active and the model gained no authority.",
     });
     return;
   }
@@ -462,6 +817,10 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
+    const previousDraft = JSON.parse(
+      await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
+    ) as ExplorationBoundaryDraft;
+    const previousProgress = await readBoundaryReviewProgress(projectRoot, previousDraft);
     const previousActive = activeBoundaryEventMetadata(
       await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
     );
@@ -492,7 +851,12 @@ async function handleRequest(input: {
       outputRoot: path.relative(projectRoot, boundaryRoot),
       build,
       force: true,
+      preserveReviewProgress: true,
     });
+    const progress = reconcileBoundaryReviewProgress(previousProgress, build.exploration_boundary);
+    if (progress) {
+      await writePrivateJsonAtomic(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), progress);
+    }
     const journey = await resetGuidedOnboardingForBoundaryReview({
       projectRoot,
       schemaFingerprint: build.lock.schema_fingerprint,
@@ -555,6 +919,13 @@ async function handleRequest(input: {
       review: build.review,
       candidate_digest: candidateDigest,
       overrides: build.overrides,
+      confirmed_decisions: progress?.confirmed_decisions ?? [],
+      review_progress: {
+        revision: progress?.revision ?? 0,
+        invalidated_decisions: progress?.invalidated_decisions ?? [],
+        outstanding_decisions: boundaryReviewDecisions(build.exploration_boundary)
+          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.decision)),
+      },
       active: null,
       journey,
       source_database_changed: false,
@@ -613,12 +984,21 @@ async function handleRequest(input: {
     const previousActive = activeBoundaryEventMetadata(
       await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
     );
+    const previousDraft = JSON.parse(
+      await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
+    ) as ExplorationBoundaryDraft;
+    const previousProgress = await readBoundaryReviewProgress(projectRoot, previousDraft);
     await writeAutoBoundaryArtifacts({
       projectRoot,
       outputRoot: path.relative(projectRoot, boundaryRoot),
       build: prepared.build,
       force: true,
+      preserveReviewProgress: true,
     });
+    const progress = reconcileBoundaryReviewProgress(previousProgress, prepared.build.exploration_boundary);
+    if (progress) {
+      await writePrivateJsonAtomic(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), progress);
+    }
     const journey = await resetGuidedOnboardingForBoundaryReview({
       projectRoot,
       schemaFingerprint: prepared.build.lock.schema_fingerprint,
@@ -672,6 +1052,13 @@ async function handleRequest(input: {
       ok: true,
       diff: prepared.diff,
       journey,
+      confirmed_decisions: progress?.confirmed_decisions ?? [],
+      review_progress: {
+        revision: progress?.revision ?? 0,
+        invalidated_decisions: progress?.invalidated_decisions ?? [],
+        outstanding_decisions: boundaryReviewDecisions(prepared.build.exploration_boundary)
+          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.decision)),
+      },
       active: null,
       source_database_changed: false,
       message: "The rescanned boundary is disabled and ready for review. Protected named capabilities and ledger history were preserved.",
@@ -814,6 +1201,7 @@ async function handleRequest(input: {
       active,
       tools_list_changed: false,
       reconnect_required: true,
+      source_database_changed: false,
       message: "The reviewed authoring boundary is active. Scoped Explore remains local-only and must be explicitly served from this project.",
     });
     return;
@@ -1173,12 +1561,238 @@ async function handleRequest(input: {
         ok: false,
         error_code: error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL",
         error: error instanceof ScopedExploreError ? error.message : "Scoped Explore refused the request.",
+        ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
         remediation,
         source_database_changed: false,
       });
     } finally {
       await runtime?.close().catch(() => undefined);
     }
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/ask/status") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, {
+        ok: false,
+        available: false,
+        error_code: "ASK_SURFACE_UNAVAILABLE",
+        error: unavailable,
+        source_database_changed: false,
+      });
+      return;
+    }
+    let gateway: AskToolGateway | undefined;
+    try {
+      gateway = await askGatewayFactory({
+        configPath,
+        storePath,
+        projectRoot,
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const tools = await gateway.listTools();
+      const authority = await workbenchAskAuthority({
+        tools,
+        configPath,
+        projectRoot,
+        profile,
+      });
+      const authorityDigest = authority.authority_digest;
+      const session = askSession.status();
+      sendJson(response, 200, {
+        ok: true,
+        available: tools.length > 0,
+        profile,
+        authority_digest: authorityDigest,
+        tool_surface_digest: authority.tool_surface_digest,
+        active_boundary_digest: authority.active_boundary_digest,
+        runtime_config_digest: authority.runtime_config_digest,
+        authority_matches_consent: session.configuration?.authority_digest === authorityDigest,
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          title: tool.title ?? tool.name,
+          description: tool.description,
+          kind: tool.metadata?.["synapsor.kind"] ?? "reviewed_tool",
+        })),
+        session,
+        direct_provider_egress: true,
+        synapsor_relay: false,
+        persisted_conversation: false,
+        source_database_changed: false,
+        next_action: session.configured
+          ? "Ask one question through the reviewed tools."
+          : "Choose a provider and acknowledge direct data egress.",
+      });
+    } catch (error) {
+      sendAskFailure(response, error);
+    } finally {
+      await gateway?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ask/configure") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, {
+        ok: false,
+        error_code: "ASK_SURFACE_UNAVAILABLE",
+        error: unavailable,
+        source_database_changed: false,
+      });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error_code: "ASK_CSRF_REQUIRED", error: "CSRF token required for Ask configuration." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    let gateway: AskToolGateway | undefined;
+    try {
+      gateway = await askGatewayFactory({
+        configPath,
+        storePath,
+        projectRoot,
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const tools = await gateway.listTools();
+      if (tools.length === 0) throw new AskError("ASK_NO_ACTIVE_TOOLS", "Activate a reviewed tool before configuring Ask.", 409);
+      const authorityDigest = (await workbenchAskAuthority({
+        tools,
+        configPath,
+        projectRoot,
+        profile,
+      })).authority_digest;
+      if (body.authority_digest !== authorityDigest) {
+        throw new AskError("ASK_AUTHORITY_CHANGED", "The reviewed tool surface changed. Reload Ask before acknowledging egress.", 409);
+      }
+      const configuration = askSession.configure({
+        provider: askProviderValue(body.provider),
+        model: askStringValue(body.model),
+        ...(body.base_url === undefined ? {} : { base_url: askStringValue(body.base_url) }),
+        ...(body.api_key === undefined ? {} : { api_key: askStringValue(body.api_key) }),
+        ...(body.api_key_env === undefined ? {} : { api_key_env: askStringValue(body.api_key_env) }),
+        authority_digest: authorityDigest,
+        egress_acknowledged: body.egress_acknowledged === true,
+      }, process.env);
+      sendJson(response, 200, {
+        ok: true,
+        configuration,
+        egress_notice: `Reviewed visible data may be sent directly to ${askProviderDisplayName(configuration.provider)}. Synapsor does not receive it. Fields kept out by the active boundary are unavailable to this model.`,
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        source_database_changed: false,
+        next_action: "Ask one bounded question.",
+      });
+    } catch (error) {
+      sendAskFailure(response, error);
+    } finally {
+      await gateway?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ask/run") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, {
+        ok: false,
+        error_code: "ASK_SURFACE_UNAVAILABLE",
+        error: unavailable,
+        source_database_changed: false,
+      });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error_code: "ASK_CSRF_REQUIRED", error: "CSRF token required for Ask." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    let gateway: AskToolGateway | undefined;
+    try {
+      gateway = await askGatewayFactory({
+        configPath,
+        storePath,
+        projectRoot,
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const tools = await gateway.listTools();
+      const authorityDigest = (await workbenchAskAuthority({
+        tools,
+        configPath,
+        projectRoot,
+        profile,
+      })).authority_digest;
+      const result = await askSession.run(
+        askStringValue(body.question),
+        gateway,
+        askProviderDependencies,
+        authorityDigest,
+      );
+      gateway = undefined;
+      sendJson(response, 200, {
+        ...result,
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        next_action: result.tool_calls.some((call) => workbenchAskProposalId(call.result))
+          ? "Review the proposal through the separate operator workflow."
+          : "Ask another question, protect a useful analysis, or clear this in-memory session.",
+      });
+    } catch (error) {
+      sendAskFailure(response, error);
+    } finally {
+      await gateway?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ask/cancel") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, { ok: false, error_code: "ASK_SURFACE_UNAVAILABLE", error: unavailable });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error_code: "ASK_CSRF_REQUIRED", error: "CSRF token required for Ask cancellation." });
+      return;
+    }
+    const cancelled = askSession.cancel();
+    sendJson(response, 200, {
+      ok: true,
+      cancelled,
+      source_database_changed: false,
+      next_action: cancelled ? "The provider request was cancelled." : "No Ask request is running.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ask/clear") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, { ok: false, error_code: "ASK_SURFACE_UNAVAILABLE", error: unavailable });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error_code: "ASK_CSRF_REQUIRED", error: "CSRF token required for clearing Ask." });
+      return;
+    }
+    askSession.clear();
+    sendJson(response, 200, {
+      ok: true,
+      cleared: true,
+      provider_key_retained: false,
+      conversation_retained: false,
+      source_database_changed: false,
+      next_action: "Configure a provider again, use the no-model composer, or connect an external MCP client.",
+    });
     return;
   }
 
@@ -3601,7 +4215,96 @@ async function readOptionalJson(filePath: string): Promise<unknown | null> {
   }
 }
 
-async function readBoundaryReviewProgress(
+export function recommendedWorkbenchCandidate(
+  draft: ExplorationBoundaryDraft,
+  maximumResources = 3,
+): ExplorationBoundaryDraft {
+  if (draft.pack.resources.length <= maximumResources) {
+    return reviewExplorationBoundaryCandidate(draft, structuredClone(draft)).candidate;
+  }
+  const ranked = draft.pack.resources
+    .map((resource) => ({
+      resource,
+      score:
+        (resource.principal_key ? 40 : 0)
+        + (resource.rls_session ? 20 : 0)
+        + (Object.keys(resource.time_bucket_fields).length ? 12 : 0)
+        + (resource.aggregate_measures.length ? 10 : 0)
+        + (resource.groupable_fields.length ? 8 : 0)
+        + (resource.count_distinct_fields.length ? 5 : 0)
+        + Math.min(resource.relationships.length, 2) * 6
+        + Math.min(resource.selectable_fields.length, 8)
+        - Math.min(resource.kept_out_fields.length, 8),
+    }))
+    .sort((left, right) => right.score - left.score || left.resource.id.localeCompare(right.resource.id));
+  const rankedById = new Map(ranked.map((item) => [item.resource.id, item]));
+  const selectedIds = new Set<string>();
+  const anchor = ranked[0]?.resource;
+  if (anchor) {
+    selectedIds.add(anchor.id);
+    const dimensions = anchor.relationships
+      .map((relationship) => rankedById.get(relationship.target_resource))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((left, right) =>
+        right.score - left.score || left.resource.id.localeCompare(right.resource.id));
+    for (const dimension of dimensions) {
+      if (selectedIds.size >= maximumResources) break;
+      selectedIds.add(dimension.resource.id);
+    }
+  }
+  for (const item of ranked) {
+    if (selectedIds.size >= maximumResources) break;
+    selectedIds.add(item.resource.id);
+  }
+  const candidate = structuredClone(draft);
+  candidate.pack.resources = candidate.pack.resources
+    .filter((resource) => selectedIds.has(resource.id))
+    .map((resource) => ({
+      ...resource,
+      relationships: resource.relationships
+        .filter((relationship) => selectedIds.has(relationship.target_resource)),
+    }));
+  return reviewExplorationBoundaryCandidate(draft, candidate).candidate;
+}
+
+export function instantWorkbenchCandidate(draft: ExplorationBoundaryDraft): ExplorationBoundaryDraft {
+  const candidate = recommendedWorkbenchCandidate(draft, 1);
+  candidate.deployment_profile = "development";
+  candidate.pack.resources = candidate.pack.resources.map((resource) => ({
+    ...resource,
+    relationships: [],
+  }));
+  return reviewExplorationBoundaryCandidate(draft, candidate).candidate;
+}
+
+function trustedSessionValue(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`Instant onboarding requires a trusted ${label} value.`);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 256 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error(`Instant onboarding requires a non-empty trusted ${label} value of at most 256 characters.`);
+  }
+  return normalized;
+}
+
+function restoreTrustedSessionValue(
+  target: Record<string, string>,
+  name: string,
+  previous: string | undefined,
+): void {
+  if (previous === undefined) delete target[name];
+  else target[name] = previous;
+}
+
+function instantActivationActor(): string {
+  const candidate = process.env.SYNAPSOR_OPERATOR_ID?.trim()
+    || process.env.USER?.trim()
+    || "local-developer";
+  return candidate.length <= 128 && !/[\u0000-\u001f\u007f]/.test(candidate)
+    ? candidate
+    : "local-developer";
+}
+
+export async function readBoundaryReviewProgress(
   projectRoot: string,
   draft: ExplorationBoundaryDraft,
 ): Promise<BoundaryReviewProgress | undefined> {
@@ -3609,20 +4312,56 @@ async function readBoundaryReviewProgress(
   const raw = await readOptionalJson(filePath);
   if (raw === null) return undefined;
   if (!isRecord(raw)
-    || raw.schema_version !== BOUNDARY_REVIEW_PROGRESS_VERSION
+    || (raw.schema_version !== BOUNDARY_REVIEW_PROGRESS_VERSION
+      && raw.schema_version !== LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION)
     || !isRecord(raw.candidate)
     || !Array.isArray(raw.confirmed_decisions)
     || raw.confirmed_decisions.some((decision) => typeof decision !== "string")
     || typeof raw.updated_at !== "string") {
     throw new Error("Saved boundary-review progress is invalid; use explicit Rescan or Start over rather than trusting it.");
   }
-  const preview = reviewExplorationBoundaryCandidate(draft, raw.candidate as unknown as ExplorationBoundaryDraft);
-  return {
-    schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
-    candidate: preview.candidate,
-    confirmed_decisions: normalizePartialReviewDecisions(draft.unresolved_decisions, raw.confirmed_decisions as string[]),
-    updated_at: raw.updated_at,
-  };
+  if (raw.schema_version === LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION) {
+    const preview = reviewExplorationBoundaryCandidate(draft, raw.candidate as unknown as ExplorationBoundaryDraft);
+    return createBoundaryReviewProgress({
+      draft,
+      candidate: preview.candidate,
+      confirmedDecisions: normalizePartialReviewDecisions(
+        preview.candidate.unresolved_decisions,
+        (raw.confirmed_decisions as string[])
+          .filter((decision) => preview.candidate.unresolved_decisions.includes(decision)),
+      ),
+      actor: "legacy-workbench-review",
+      revision: 1,
+      now: raw.updated_at,
+    });
+  }
+  if (!Number.isSafeInteger(raw.revision)
+    || (raw.revision as number) < 1
+    || typeof raw.draft_digest !== "string"
+    || typeof raw.candidate_digest !== "string"
+    || !Array.isArray(raw.confirmations)
+    || !Array.isArray(raw.invalidated_decisions)) {
+    throw new Error("Saved boundary-review progress is invalid; use explicit Rescan or Start over rather than trusting it.");
+  }
+
+  const draftDigest = explorationBoundaryCandidateDigest(draft);
+  let candidate = draft;
+  if (raw.draft_digest === draftDigest) {
+    candidate = reviewExplorationBoundaryCandidate(
+      draft,
+      raw.candidate as unknown as ExplorationBoundaryDraft,
+    ).candidate;
+  }
+  const previous = normalizeStoredBoundaryReviewProgress(raw, candidate);
+  return createBoundaryReviewProgress({
+    draft,
+    candidate,
+    confirmedDecisions: previous.confirmed_decisions,
+    previous,
+    actor: "local-workbench-review",
+    revision: previous.revision,
+    now: previous.updated_at,
+  });
 }
 
 function normalizePartialReviewDecisions(required: string[], confirmed: string[]): string[] {
@@ -3634,6 +4373,309 @@ function normalizePartialReviewDecisions(required: string[], confirmed: string[]
   if (unknown.length) throw new Error("Boundary-review progress references a decision outside the current generated review.");
   const confirmedSet = new Set(confirmed);
   return required.filter((decision) => confirmedSet.has(decision));
+}
+
+export function createBoundaryReviewProgress(input: {
+  draft: ExplorationBoundaryDraft;
+  candidate: ExplorationBoundaryDraft;
+  confirmedDecisions: string[];
+  previous?: BoundaryReviewProgress;
+  actor?: string;
+  revision: number;
+  now?: string;
+}): BoundaryReviewProgress {
+  const now = input.now ?? new Date().toISOString();
+  const actor = input.actor?.trim().slice(0, 128)
+    || process.env.SYNAPSOR_OPERATOR_ID?.trim().slice(0, 128)
+    || "local-workbench-review";
+  const confirmed = new Set(normalizePartialReviewDecisions(
+    input.candidate.unresolved_decisions,
+    input.confirmedDecisions,
+  ));
+  const currentDecisions = boundaryReviewDecisions(input.candidate);
+  const previousById = new Map(input.previous?.confirmations.map((item) => [item.id, item]) ?? []);
+  const confirmations = currentDecisions
+    .filter((decision) => confirmed.has(decision.decision))
+    .map((decision): BoundaryReviewConfirmation => {
+      const previous = previousById.get(decision.id);
+      if (previous?.input_digest === decision.input_digest) {
+        return { ...previous, ...decision };
+      }
+      return {
+        ...decision,
+        status: "confirmed",
+        actor,
+        reason: "Confirmed during managed Workbench review.",
+        confirmed_at: now,
+      };
+    });
+  const currentById = new Map(currentDecisions.map((item) => [item.id, item]));
+  const invalidated = (input.previous?.confirmations ?? [])
+    .filter((previous) => {
+      const current = currentById.get(previous.id);
+      return !current || current.input_digest !== previous.input_digest;
+    })
+    .map((previous): BoundaryReviewInvalidation => {
+      const current = currentById.get(previous.id);
+      return {
+        id: previous.id,
+        decision: previous.decision,
+        previous_input_digest: previous.input_digest,
+        ...(current ? { current_input_digest: current.input_digest } : {}),
+        reason: current ? "reviewed_input_changed" : "decision_removed",
+        invalidated_at: now,
+      };
+    });
+  return {
+    schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    revision: input.revision,
+    draft_digest: explorationBoundaryCandidateDigest(input.draft),
+    candidate: input.candidate,
+    candidate_digest: explorationBoundaryCandidateDigest(input.candidate),
+    confirmed_decisions: currentDecisions
+      .filter((decision) => confirmations.some((confirmation) => confirmation.id === decision.id))
+      .map((decision) => decision.decision),
+    confirmations,
+    invalidated_decisions: mergeBoundaryReviewInvalidations(
+      input.previous?.invalidated_decisions ?? [],
+      invalidated,
+    ),
+    updated_at: now,
+  };
+}
+
+export async function saveBoundaryReviewProgress(
+  projectRoot: string,
+  progress: BoundaryReviewProgress,
+): Promise<void> {
+  await writePrivateJsonAtomic(
+    path.join(path.resolve(projectRoot), ".synapsor/boundary-review-progress.json"),
+    progress,
+  );
+}
+
+function reconcileBoundaryReviewProgress(
+  previous: BoundaryReviewProgress | undefined,
+  draft: ExplorationBoundaryDraft,
+): BoundaryReviewProgress | undefined {
+  if (!previous) return undefined;
+  const nextDecisions = boundaryReviewDecisions(draft);
+  const nextById = new Map(nextDecisions.map((decision) => [decision.id, decision]));
+  const confirmedDecisions = previous.confirmations
+    .filter((confirmation) => nextById.get(confirmation.id)?.input_digest === confirmation.input_digest)
+    .map((confirmation) => nextById.get(confirmation.id)!.decision);
+  return createBoundaryReviewProgress({
+    draft,
+    candidate: draft,
+    confirmedDecisions,
+    previous,
+    actor: "local-workbench-review",
+    revision: previous.revision + 1,
+  });
+}
+
+function normalizeStoredBoundaryReviewProgress(
+  raw: JsonRecord,
+  candidate: ExplorationBoundaryDraft,
+): BoundaryReviewProgress {
+  const decisions = boundaryReviewDecisions(candidate);
+  const decisionById = new Map(decisions.map((decision) => [decision.id, decision]));
+  const confirmations: BoundaryReviewConfirmation[] = [];
+  for (const item of raw.confirmations as unknown[]) {
+    if (!isRecord(item)
+      || typeof item.id !== "string"
+      || typeof item.decision !== "string"
+      || typeof item.input_digest !== "string"
+      || item.status !== "confirmed"
+      || typeof item.actor !== "string"
+      || typeof item.reason !== "string"
+      || typeof item.confirmed_at !== "string") {
+      throw new Error("Saved boundary-review confirmations are invalid.");
+    }
+    const current = decisionById.get(item.id);
+    if (!current || current.input_digest !== item.input_digest) continue;
+    confirmations.push({
+      ...current,
+      status: "confirmed",
+      actor: item.actor,
+      reason: item.reason,
+      confirmed_at: item.confirmed_at,
+    });
+  }
+  const invalidatedDecisions = (raw.invalidated_decisions as unknown[])
+    .flatMap((item): BoundaryReviewInvalidation[] => {
+      if (!isRecord(item)
+        || typeof item.id !== "string"
+        || typeof item.decision !== "string"
+        || typeof item.previous_input_digest !== "string"
+        || (item.current_input_digest !== undefined && typeof item.current_input_digest !== "string")
+        || (item.reason !== "reviewed_input_changed" && item.reason !== "decision_removed")
+        || typeof item.invalidated_at !== "string") return [];
+      return [{
+        id: item.id,
+        decision: item.decision,
+        previous_input_digest: item.previous_input_digest as `sha256:${string}`,
+        ...(item.current_input_digest
+          ? { current_input_digest: item.current_input_digest as `sha256:${string}` }
+          : {}),
+        reason: item.reason,
+        invalidated_at: item.invalidated_at,
+      }];
+    });
+  return {
+    schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    revision: raw.revision as number,
+    draft_digest: raw.draft_digest as `sha256:${string}`,
+    candidate,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate),
+    confirmed_decisions: decisions
+      .filter((decision) => confirmations.some((confirmation) => confirmation.id === decision.id))
+      .map((decision) => decision.decision),
+    confirmations,
+    invalidated_decisions: invalidatedDecisions,
+    updated_at: raw.updated_at as string,
+  };
+}
+
+function mergeBoundaryReviewInvalidations(
+  previous: BoundaryReviewInvalidation[],
+  next: BoundaryReviewInvalidation[],
+): BoundaryReviewInvalidation[] {
+  const merged = new Map(previous.map((item) => [`${item.id}:${item.previous_input_digest}`, item]));
+  for (const item of next) merged.set(`${item.id}:${item.previous_input_digest}`, item);
+  return [...merged.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .slice(-200);
+}
+
+export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): BoundaryReviewDecision[] {
+  const resources = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
+  return candidate.unresolved_decisions.map((decision) => {
+    if (decision.startsWith("deployment profile:")) {
+      return reviewDecision("global.deployment_profile", "deployment_profile", decision, {
+        deployment_profile: candidate.deployment_profile,
+      });
+    }
+    if (decision.startsWith("trusted context:")) {
+      return reviewDecision("global.trusted_context", "trusted_context", decision, candidate.trusted_context);
+    }
+    if (decision.startsWith("database role:")) {
+      return reviewDecision("global.database_role", "database_role", decision, {
+        role_posture_fingerprint: candidate.role_posture_fingerprint,
+      });
+    }
+    const separator = decision.indexOf(": ");
+    if (separator < 1) {
+      return reviewDecision(
+        `other.${reviewDecisionSuffix(decision)}`,
+        "other",
+        decision,
+        { decision },
+      );
+    }
+    const resourceId = decision.slice(0, separator);
+    const detail = decision.slice(separator + 2);
+    const resource = resources.get(resourceId);
+    if (!resource) {
+      return reviewDecision(
+        `resource.${resourceId}.blocked.${reviewDecisionSuffix(detail)}`,
+        "resource_blocker",
+        decision,
+        { resource_id: resourceId, blocker: detail },
+        resourceId,
+      );
+    }
+    if (detail.startsWith("confirm tenant key ")) {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        tenant_key: resource.tenant_key,
+        trusted_tenant_env: candidate.trusted_context.tenant_env,
+        rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail.startsWith("confirm principal scope ")) {
+      return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
+        principal_key: resource.principal_key ?? null,
+        trusted_principal_env: candidate.trusted_context.principal_env,
+        rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail === "confirm visible and kept-out fields") {
+      return reviewDecision(`resource.${resourceId}.field_visibility`, "field_visibility", decision, {
+        selectable_fields: resource.selectable_fields,
+        kept_out_fields: resource.kept_out_fields,
+      }, resourceId);
+    }
+    if (detail === "confirm filter/sort/group/aggregate-only field permissions") {
+      return reviewDecision(`resource.${resourceId}.field_permissions`, "field_permissions", decision, {
+        filterable_fields: resource.filterable_fields,
+        sortable_fields: resource.sortable_fields,
+        groupable_fields: resource.groupable_fields,
+        aggregate_measures: resource.aggregate_measures,
+        count_distinct_fields: resource.count_distinct_fields,
+        time_bucket_fields: resource.time_bucket_fields,
+      }, resourceId);
+    }
+    if (detail === "confirm minimum cohort and extraction/differencing budgets") {
+      return reviewDecision(`resource.${resourceId}.privacy_budgets`, "privacy_budgets", decision, {
+        minimum_cohort_size: resource.minimum_cohort_size,
+        suppression_aware_totals: resource.suppression_aware_totals,
+        budgets: candidate.budgets,
+      }, resourceId);
+    }
+    const relationship = /^review relationship (.+) cardinality and scope on (.+)$/.exec(detail);
+    if (relationship) {
+      const relationshipId = relationship[1]!;
+      const targetResource = resources.get(relationship[2]!);
+      return reviewDecision(
+        `resource.${resourceId}.relationship.${relationshipId}`,
+        "relationship",
+        decision,
+        {
+          relationship: resource.relationships.find((item) => item.id === relationshipId) ?? null,
+          source_scope: {
+            tenant_key: resource.tenant_key,
+            principal_key: resource.principal_key ?? null,
+          },
+          target_scope: targetResource ? {
+            tenant_key: targetResource.tenant_key,
+            principal_key: targetResource.principal_key ?? null,
+          } : null,
+        },
+        resourceId,
+      );
+    }
+    return reviewDecision(
+      `resource.${resourceId}.other.${reviewDecisionSuffix(detail)}`,
+      "resource_other",
+      decision,
+      { resource_id: resourceId, detail },
+      resourceId,
+    );
+  });
+}
+
+function reviewDecision(
+  id: string,
+  kind: string,
+  decision: string,
+  reviewedInput: unknown,
+  resourceId?: string,
+): BoundaryReviewDecision {
+  return {
+    id,
+    kind,
+    decision,
+    input_digest: canonicalJsonDigest({
+      schema_version: "synapsor.boundary-review-input.v1",
+      decision_kind: kind,
+      reviewed_input: reviewedInput,
+    }),
+    ...(resourceId ? { resource_id: resourceId } : {}),
+  };
+}
+
+function reviewDecisionSuffix(value: string): string {
+  return canonicalJsonDigest({ value }).slice("sha256:".length, "sha256:".length + 16);
 }
 
 async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise<void> {
@@ -3675,6 +4717,97 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.setHeader("x-content-type-options", "nosniff");
   response.end(`${JSON.stringify(redactSecrets(payload), null, 2)}\n`);
+}
+
+function askWorkbenchAccessFailure(
+  profile: WorkbenchDeploymentProfile,
+  host: string,
+): string | undefined {
+  if (!isLocalHost(host)) {
+    return "Ask is available only from the local loopback Workbench authoring surface.";
+  }
+  if (profile !== "development" && profile !== "staging") {
+    return "Ask is disabled unless the Workbench has an explicit development or staging deployment profile.";
+  }
+  return undefined;
+}
+
+async function workbenchAskAuthority(input: {
+  tools: AskToolDefinition[];
+  configPath: string;
+  projectRoot: string;
+  profile: WorkbenchDeploymentProfile;
+}): Promise<{
+  authority_digest: `sha256:${string}`;
+  tool_surface_digest: `sha256:${string}`;
+  runtime_config_digest: `sha256:${string}`;
+  active_boundary_digest?: `sha256:${string}`;
+}> {
+  const active = await readOptionalJson(path.join(input.projectRoot, ".synapsor/exploration-boundary.active.json"));
+  const activation = isRecord(active) ? asRecord(active.activation) : {};
+  const activeBoundaryDigest = typeof activation.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(activation.digest)
+    ? activation.digest as `sha256:${string}`
+    : undefined;
+  const toolSurfaceDigest = askToolSurfaceDigest(input.tools);
+  const runtimeConfig = await readOptionalJson(input.configPath);
+  if (!isRecord(runtimeConfig)) {
+    throw new AskError("ASK_RUNTIME_CONFIG_UNAVAILABLE", "Ask could not bind consent to the active Runner configuration.", 409);
+  }
+  const runtimeConfigDigest = canonicalJsonDigest(runtimeConfig);
+  return {
+    authority_digest: canonicalJsonDigest({
+      schema_version: "synapsor.workbench-ask-authority.v1",
+      deployment_profile: input.profile,
+      tool_surface_digest: toolSurfaceDigest,
+      runtime_config_digest: runtimeConfigDigest,
+      active_boundary_digest: activeBoundaryDigest ?? null,
+    }),
+    tool_surface_digest: toolSurfaceDigest,
+    runtime_config_digest: runtimeConfigDigest,
+    ...(activeBoundaryDigest ? { active_boundary_digest: activeBoundaryDigest } : {}),
+  };
+}
+
+function askProviderValue(value: unknown): AskProvider {
+  if (value === "openai" || value === "anthropic" || value === "openai_compatible") return value;
+  throw new AskError("ASK_PROVIDER_INVALID", "Choose OpenAI, Anthropic, or an OpenAI-compatible provider.");
+}
+
+function askStringValue(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new AskError("ASK_INPUT_INVALID", "A required Ask field is missing.");
+  }
+  return value.trim();
+}
+
+function askProviderDisplayName(provider: AskProvider): string {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "anthropic") return "Anthropic";
+  return "the configured OpenAI-compatible provider";
+}
+
+function workbenchAskProposalId(result: Record<string, unknown>): string | undefined {
+  if (typeof result.proposal_id === "string") return result.proposal_id;
+  const proposal = asRecord(result.proposal);
+  if (typeof proposal.proposal_id === "string") return proposal.proposal_id;
+  if (typeof proposal.id === "string") return proposal.id;
+  const changeSet = asRecord(result.change_set);
+  return typeof changeSet.proposal_id === "string" ? changeSet.proposal_id : undefined;
+}
+
+function sendAskFailure(response: ServerResponse, error: unknown): void {
+  const failure = error instanceof AskError
+    ? error
+    : new AskError("ASK_INTERNAL", "Ask failed safely without changing the source database.", 500);
+  sendJson(response, failure.httpStatus, {
+    ok: false,
+    error_code: failure.code,
+    error: failure.message,
+    source_database_changed: false,
+    next_action: failure.code === "ASK_AUTHORITY_CHANGED"
+      ? "Reload Ask, inspect the current reviewed tools, and acknowledge provider egress again."
+      : "Correct the reported Ask configuration or use the no-model composer.",
+  });
 }
 
 function sendLifecycleError(response: ServerResponse, error: unknown): void {
@@ -3732,6 +4865,7 @@ function renderBoundaryShell(csrfToken: string): string {
     :root{color-scheme:light dark;--bg:#f4f7f7;--surface:#fff;--text:#172126;--muted:#5d6b70;--line:#d5dfe1;--accent:#087f73;--warn:#9a6700;--bad:#b42318;--good:#137333}
     @media(prefers-color-scheme:dark){:root{--bg:#111718;--surface:#192124;--text:#edf3f2;--muted:#aab7b8;--line:#344247;--accent:#55c9b9;--warn:#f4c86a;--bad:#ff8d84;--good:#70d58c}}
     *{box-sizing:border-box;letter-spacing:0}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,sans-serif}header{background:var(--surface);border-bottom:1px solid var(--line)}header div,main{width:min(1180px,calc(100% - 32px));margin:auto}header div{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:20px;margin:0}h2{font-size:16px;margin:28px 0 10px}h3{font-size:15px;margin:0}main{padding:24px 0 48px}.state{color:var(--warn);font-weight:700}.notice{background:var(--surface);border-left:3px solid var(--warn);padding:12px 14px}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--surface);border:1px solid var(--line)}.metric{padding:14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.metric strong{display:block;font-size:22px}.metric span,.scope{color:var(--muted)}.resource{padding:16px 0;border-top:1px solid var(--line)}.resource-head{display:flex;justify-content:space-between;gap:12px}.resource-toggle,.relationship{display:flex;align-items:center;gap:8px}.relationships{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;padding:10px;background:var(--bg)}.panel{background:var(--surface);border:1px solid var(--line);padding:16px}.posture{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);gap:16px;align-items:start}.posture>*{min-width:0}.posture label{display:flex;flex-direction:column;gap:6px;color:var(--muted)}.posture code{overflow-wrap:anywhere;word-break:break-all}.query{display:block;width:100%;text-align:left;margin:8px 0;background:transparent;color:var(--text);border-color:var(--line)}.query.selected{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{color:var(--muted);font-size:12px}th:first-child{width:30%}code,pre{font:12px ui-monospace,monospace}pre{white-space:pre-wrap;overflow:auto;max-height:360px;background:var(--bg);border:1px solid var(--line);padding:12px}input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}input[type=text],input[type=number],textarea,select{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--text)}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.budgets,.protect-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.budgets label,.protect-fields label{display:flex;flex-direction:column;gap:5px;color:var(--muted)}.literal{margin:10px 0;padding:10px;border:1px solid var(--line)}.literal label:first-child{display:flex;flex-direction:row;align-items:center;gap:8px}.actions{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:24px;padding:14px;background:var(--surface);border:1px solid var(--line)}button{min-height:38px;padding:8px 14px;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:transparent;color:var(--accent)}button:disabled{opacity:.5;cursor:not-allowed}#message,#protect-message{flex:1 1 260px;min-height:20px;color:var(--muted)}.error{color:var(--bad)!important}.success{color:var(--good)!important}
+    ${WORKBENCH_SYNTAX_CSS}
     @media(max-width:760px){.summary,.budgets{grid-template-columns:1fr 1fr}.posture{grid-template-columns:1fr}.actions{position:static}table{font-size:12px}th:first-child{width:38%}}@media(max-width:480px){header div,main{width:calc(100% - 20px)}.summary,.budgets,.protect-fields{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.resource-head{flex-direction:column}}
   </style>
 </head>
@@ -3768,6 +4902,7 @@ function renderBoundaryShell(csrfToken: string): string {
     </div>
   </main>
   <script>
+    ${workbenchSyntaxScript()}
     const csrf="${escapedCsrf}";let original,candidate,digest,reviewReport,reviewDecisions=[],protectQueries=[],selectedProtect=null,protectedDraft=null;
     const msg=document.getElementById("message");
     const permissions=[["raw","selectable_fields"],["filter","filterable_fields"],["sort","sortable_fields"],["group","groupable_fields"],["sum/avg","aggregate_measures"],["count distinct","count_distinct_fields"],["time","time_bucket_fields"]];
@@ -3815,7 +4950,8 @@ function renderBoundaryShell(csrfToken: string): string {
         status.className="";status.textContent="Compiling public DSL and canonical contract…";
         const payload=await post("/api/protect/draft",{query_ref:query.query_ref,capability_name:document.getElementById("protect-name").value.trim(),description:document.getElementById("protect-description").value.trim(),returns_hint:document.getElementById("protect-returns").value.trim(),arguments:selectedArguments(query)});
         protectedDraft=payload.draft;
-        document.getElementById("protect-preview").innerHTML='<h3 style="margin-top:16px">Disabled draft</h3><p><code>'+esc(payload.draft.contract_digest)+'</code></p><pre>'+esc(payload.dsl)+'</pre><div class="protect-fields"><label>Operator identity<input id="protect-actor" type="text" maxlength="128"></label><label>Exact activation confirmation<input id="protect-confirmation" type="text" placeholder="ACTIVATE '+esc(payload.draft.contract_digest)+'"></label></div><label><input id="protect-disable-explore" type="checkbox" checked> Disable temporary Scoped Explore after activation</label><br><button id="activate-protected" type="button">Activate exact digest</button>';
+        document.getElementById("protect-preview").innerHTML='<h3 style="margin-top:16px">Disabled draft</h3><p><code>'+esc(payload.draft.contract_digest)+'</code></p><pre id="legacy-protect-dsl-preview"></pre><div class="protect-fields"><label>Operator identity<input id="protect-actor" type="text" maxlength="128"></label><label>Exact activation confirmation<input id="protect-confirmation" type="text" placeholder="ACTIVATE '+esc(payload.draft.contract_digest)+'"></label></div><label><input id="protect-disable-explore" type="checkbox" checked> Disable temporary Scoped Explore after activation</label><br><button id="activate-protected" type="button">Activate exact digest</button>';
+        renderSyntaxCode("legacy-protect-dsl-preview",payload.dsl,"synapsor-dsl");
         document.getElementById("activate-protected").onclick=activateProtected;
         status.textContent="Draft generated and still disabled. Review the DSL and exact digest.";
       }catch(e){status.className="error";status.textContent=e.message}
@@ -3843,7 +4979,7 @@ function renderShell(csrfToken: string, tour = false, configPath = "synapsor.run
   const escapedConfigPath = escapeScriptString(configPath);
   const escapedStorePath = escapeScriptString(storePath);
   const tourHtml = tour ? `
-    <div class="card full tour">
+    <section class="surface tour">
       <h2>Commit-safe MCP in one loop</h2>
       <div class="tour-grid">
         <section>
@@ -3859,54 +4995,79 @@ function renderShell(csrfToken: string, tour = false, configPath = "synapsor.run
           <ul><li>Checks tenant scope</li><li>Checks allowed columns</li><li>Checks idempotency</li><li>Checks row version</li><li>Stores receipt and replay</li></ul>
         </section>
       </div>
-    </div>` : "";
+    </section>` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Synapsor Runner Local UI</title>
+<title>Synapsor Workbench | Activity</title>
 <style>
-:root { color-scheme: light; --ink:#0f172a; --muted:#475569; --line:#d8e2ee; --blue:#075985; --soft:#f8fbff; --ok:#116b35; --warn:#8a4b00; --bad:#991b1b; }
-* { box-sizing: border-box; }
-body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:#f4f8fb; }
-main { max-width: 1180px; margin: 0 auto; padding: 28px; }
-h1 { margin: 0 0 4px; font-size: 28px; }
-h2 { margin: 0 0 12px; font-size: 18px; }
-p { color: var(--muted); line-height: 1.5; }
+:root { color-scheme:light dark; --bg:#f7f8fa; --surface:#ffffff; --soft:#f1f4f5; --ink:#162024; --muted:#5b696f; --line:#d3dcdf; --line-strong:#aebdc1; --blue:#087f73; --blue-strong:#05665e; --blue-soft:#e5f4f1; --ok:#137333; --ok-soft:#e8f5eb; --warn:#8a5a00; --warn-soft:#fff4d6; --bad:#b42318; --bad-soft:#ffebe8; --shadow:0 8px 28px rgba(22,32,36,.08); }
+@media (prefers-color-scheme:dark) { :root { --bg:#101617; --surface:#182124; --soft:#222c2f; --ink:#edf3f2; --muted:#aab7b8; --line:#35464b; --line-strong:#52666b; --blue:#5bcabb; --blue-strong:#79ddcf; --blue-soft:#173c38; --ok:#70d58c; --ok-soft:#1d3826; --warn:#f4c86a; --warn-soft:#3d3219; --bad:#ff8d84; --bad-soft:#3f2221; --shadow:none; } }
+* { box-sizing:border-box; letter-spacing:0; }
+html { scroll-behavior:smooth; }
+body { margin:0; font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:var(--bg); }
+.app-header { position:sticky; top:0; z-index:20; border-bottom:1px solid var(--line); background:color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter:blur(12px); }
+.app-header > div { width:min(1440px,calc(100% - 40px)); min-height:64px; margin:auto; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.brand { display:flex; align-items:center; gap:11px; min-width:0; }
+.brand-mark { display:grid; place-items:center; width:30px; height:30px; border-radius:7px; background:var(--ink); color:var(--surface); font-size:13px; font-weight:800; }
+.brand h1 { margin:0; font-size:17px; }
+.brand p { margin:0; font-size:12px; }
+.source-state { border:1px solid var(--line); border-radius:999px; padding:4px 9px; color:var(--muted); font-size:12px; white-space:nowrap; }
+main { width:min(1440px,calc(100% - 40px)); margin:auto; padding:24px 0 56px; }
+.ops-layout { display:grid; grid-template-columns:224px minmax(0,1fr); gap:24px; align-items:start; }
+.ops-nav { position:sticky; top:88px; display:flex; flex-direction:column; gap:5px; }
+.ops-nav > p { margin:0 0 7px; color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; }
+.ops-nav a { display:block; padding:9px 10px; border-left:3px solid transparent; color:var(--muted); text-decoration:none; font-weight:650; }
+.ops-nav a:hover,.ops-nav a:focus-visible { color:var(--ink); background:var(--soft); border-left-color:var(--blue); outline:none; }
+.ops-note { margin-top:12px; padding:11px; border:1px solid var(--line); border-radius:7px; background:var(--surface); }
+.ops-note p { margin:4px 0 0; font-size:12px; }
+.ops-workspace { min-width:0; display:flex; flex-direction:column; gap:20px; }
+h1 { margin:0; font-size:17px; }
+h2 { margin:0 0 8px; font-size:20px; }
+h3 { margin:0 0 6px; font-size:15px; }
+p { color:var(--muted); line-height:1.5; }
 .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
 .grid > * { min-width:0; }
 .tour-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; }
-.card { background:white; border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 8px 28px rgba(15,23,42,.05); }
+.surface { padding:18px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--surface); }
+.card,.subsurface { background:var(--surface); border:1px solid var(--line); border-radius:7px; padding:16px; box-shadow:var(--shadow); }
 .full { grid-column: 1 / -1; }
 .pill { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; padding:5px 10px; margin:4px 6px 4px 0; color:var(--muted); background:var(--soft); font-size:12px; }
-.pill.ok { color:var(--ok); background:#eefaf2; border-color:#b7e3c2; }
-.pill.warn { color:var(--warn); background:#fff7ed; border-color:#fed7aa; }
-.pill.bad { color:var(--bad); background:#fef2f2; border-color:#fecaca; }
-button { border:0; border-radius:10px; padding:10px 13px; color:white; background:linear-gradient(135deg,#0b72a8,#0d9488); font-weight:700; cursor:pointer; }
-button.secondary { color:var(--blue); background:#e8f4fb; border:1px solid #acd5ec; }
-button.danger { background:linear-gradient(135deg,#b91c1c,#d97706); }
+.pill.ok { color:var(--ok); background:var(--ok-soft); border-color:color-mix(in srgb,var(--ok) 35%,var(--line)); }
+.pill.warn { color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
+.pill.bad { color:var(--bad); background:var(--bad-soft); border-color:color-mix(in srgb,var(--bad) 35%,var(--line)); }
+button { min-height:38px; border:1px solid var(--blue); border-radius:6px; padding:8px 13px; color:#fff; background:var(--blue); font-weight:700; cursor:pointer; transition:background .15s ease,border-color .15s ease,transform .15s ease; }
+button:not(:disabled):hover { background:var(--blue-strong); border-color:var(--blue-strong); }
+button:not(:disabled):active { transform:translateY(1px); }
+button.secondary { color:var(--blue); background:var(--surface); border-color:var(--line-strong); }
+button.secondary:hover { color:var(--ink); background:var(--soft); }
+button.danger { background:var(--bad); border-color:var(--bad); }
 button:disabled { opacity:.55; cursor:not-allowed; }
-pre { white-space:pre-wrap; overflow:auto; max-height:380px; background:#08111f; color:#d9f7ff; border-radius:12px; padding:14px; }
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible { outline:3px solid color-mix(in srgb,var(--blue) 40%,transparent); outline-offset:2px; }
+pre { white-space:pre-wrap; overflow:auto; max-height:380px; background:#11191b; color:#e7f7f4; border:1px solid var(--line); border-radius:7px; padding:14px; }
 table { width:100%; border-collapse:collapse; }
 td, th { border-bottom:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; }
-input, textarea, select { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; color:var(--ink); background:white; }
+input, textarea, select { width:100%; border:1px solid var(--line-strong); border-radius:6px; padding:10px; color:var(--ink); background:var(--surface); }
 .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
 header h1 { margin-bottom:6px; }
-.console { display:grid; grid-template-columns:300px minmax(0,1fr); gap:16px; align-items:start; }
+.console { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start; }
 .console > *, .detail-head > *, .step-main { min-width:0; }
+#proposals { border:0; border-radius:0; padding:0; box-shadow:none; background:transparent; }
+#proposals .plist { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px; }
+#detail { width:100%; }
 .plist { display:flex; flex-direction:column; gap:8px; }
-.pitem { display:block; width:100%; text-align:left; background:white; color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:12px; cursor:pointer; box-shadow:none; font-weight:400; }
-.pitem:hover { border-color:#9cc6e6; }
-.pitem.sel { border-color:#0b72a8; box-shadow:0 0 0 3px rgba(11,114,168,.12); }
+.pitem { display:block; width:100%; min-height:0; text-align:left; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:12px; cursor:pointer; box-shadow:none; font-weight:400; }
+.pitem:hover { border-color:var(--blue); background:var(--blue-soft); }
+.pitem.sel { border-color:var(--blue); box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 22%,transparent); }
 .pitem-action { font-weight:700; font-size:14px; color:var(--ink); }
 .pitem-target { font-size:12px; color:var(--muted); margin:2px 0 8px; overflow-wrap:anywhere; }
 .chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 9px; font-size:11px; font-weight:600; border:1px solid var(--line); }
-.chip-ok{color:var(--ok);background:#eefaf2;border-color:#b7e3c2;}
-.chip-wait{color:var(--warn);background:#fff7ed;border-color:#fed7aa;}
-.chip-warn{color:#9a3412;background:#fff4ed;border-color:#fdba74;}
-.chip-bad{color:var(--bad);background:#fef2f2;border-color:#fecaca;}
-.chip-info{color:var(--blue);background:#eef6fc;border-color:#bfdcf0;}
+.chip-ok{color:var(--ok);background:var(--ok-soft);border-color:color-mix(in srgb,var(--ok) 35%,var(--line));}
+.chip-wait,.chip-warn{color:var(--warn);background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 35%,var(--line));}
+.chip-bad{color:var(--bad);background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 35%,var(--line));}
+.chip-info{color:var(--blue);background:var(--blue-soft);border-color:color-mix(in srgb,var(--blue) 35%,var(--line));}
 .chip-muted{color:var(--muted);background:var(--soft);border-color:var(--line);}
 .detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
 .detail-head .sub { font-size:13px; color:var(--muted); margin-top:2px; word-break:break-all; }
@@ -3922,18 +5083,18 @@ header h1 { margin-bottom:6px; }
 .step-ok .step-num{background:var(--ok);} .step-wait .step-num{background:#d97706;} .step-warn .step-num{background:#ea580c;} .step-bad .step-num{background:var(--bad);} .step-info .step-num{background:#0b72a8;} .step-muted .step-num{background:#94a3b8;}
 .step-title { font-weight:700; font-size:15px; margin-bottom:4px; }
 .step-main p { margin:2px 0 6px; }
-.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; background:#f1f6fb; border:1px solid var(--line); border-radius:8px; padding:8px 10px; display:inline-block; color:var(--ink); word-break:break-all; }
-.callout { background:#eef6fc; border:1px solid #bfdcf0; border-left:3px solid #0b72a8; border-radius:8px; padding:10px 12px; color:#0c4a6e; font-size:13px; margin:6px 0; }
+.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:8px 10px; display:inline-block; color:var(--ink); word-break:break-all; }
+.callout { background:var(--blue-soft); border-left:3px solid var(--blue); padding:10px 12px; color:var(--ink); font-size:13px; margin:6px 0; }
 .status-line { font-size:13px; margin:4px 0; }
 .diff { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:6px 0; }
 .diff-col { background:#f1f6fb; padding:6px 10px; font-weight:600; border-bottom:1px solid var(--line); color:var(--muted); }
 .diff-line { padding:5px 10px; white-space:pre-wrap; overflow-wrap:anywhere; }
-.diff-line.del { background:#fef2f2; color:#991b1b; }
-.diff-line.add { background:#eefaf2; color:#116b35; }
+.diff-line.del { background:var(--bad-soft); color:var(--bad); }
+.diff-line.add { background:var(--ok-soft); color:var(--ok); }
 .badge-row { display:flex; align-items:center; gap:10px; font-size:14px; margin:6px 0; }
 .badge { border-radius:999px; padding:4px 12px; font-weight:700; font-size:13px; }
-.badge.no { color:var(--ok); background:#eefaf2; border:1px solid #b7e3c2; }
-.badge.yes { color:var(--blue); background:#eef6fc; border:1px solid #bfdcf0; }
+.badge.no { color:var(--ok); background:var(--ok-soft); border:1px solid color-mix(in srgb,var(--ok) 35%,var(--line)); }
+.badge.yes { color:var(--blue); background:var(--blue-soft); border:1px solid color-mix(in srgb,var(--blue) 35%,var(--line)); }
 .timeline { display:flex; flex-direction:column; margin-top:4px; }
 .tl-row { display:grid; grid-template-columns:14px 1fr; gap:10px; padding-bottom:12px; position:relative; }
 .tl-row::before { content:""; position:absolute; left:5px; top:14px; bottom:-2px; width:2px; background:var(--line); }
@@ -3967,57 +5128,76 @@ details.raw > summary { cursor:pointer; color:var(--blue); font-weight:600; font
 .decision-panel .exact-confirmation { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
 .operator-posture { margin:8px 0; color:var(--muted); font-size:12px; }
 .ledger-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0 16px; }
-.ledger-summary > div { border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--soft); }
+.ledger-summary > div { border-left:3px solid var(--blue); padding:8px 10px; background:var(--soft); }
 .ledger-summary strong { display:block; font-size:18px; }
 .attention-console { display:grid; grid-template-columns:minmax(240px, .8fr) minmax(0, 1.6fr); gap:14px; align-items:start; }
 .attention-list { display:flex; flex-direction:column; gap:8px; }
-.attention-item { width:100%; text-align:left; color:var(--ink); background:white; border:1px solid var(--line); border-radius:8px; padding:10px; box-shadow:none; font-weight:400; }
-.attention-item.sel { border-color:var(--blue); box-shadow:0 0 0 2px rgba(7,89,133,.12); }
+.attention-item { width:100%; min-height:0; text-align:left; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:7px; padding:10px; box-shadow:none; font-weight:400; }
+.attention-item.sel { border-color:var(--blue); box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 22%,transparent); }
 .attention-item strong, .attention-item span { display:block; }
 .attention-item span { margin-top:4px; color:var(--muted); font-size:12px; }
+@media (max-width: 960px) { .ops-layout { grid-template-columns:1fr; } .ops-nav { position:static; display:flex; flex-direction:row; overflow:auto; border-bottom:1px solid var(--line); } .ops-nav > p,.ops-note { display:none; } .ops-nav a { white-space:nowrap; border-left:0; border-bottom:3px solid transparent; } .ops-nav a:hover,.ops-nav a:focus-visible { border-left-color:transparent; border-bottom-color:var(--blue); } }
 @media (max-width: 900px) { .console { grid-template-columns:1fr; } }
-@media (max-width: 850px) { .grid, .tour-grid, .activation, .attention-console { grid-template-columns: 1fr; } main { padding:18px; } }
+@media (max-width: 850px) { .grid, .tour-grid, .activation, .attention-console { grid-template-columns: 1fr; } }
 @media (max-width: 600px) {
+  .app-header > div,main { width:min(100% - 24px,1440px); }
+  .app-header > div { min-height:58px; }
+  .source-state { display:none; }
+  main { padding-top:14px; }
   .data-pr-head .kv, .step .kv { grid-template-columns:1fr; gap:2px; }
   .data-pr-head .kv dd { margin-bottom:8px; }
   .step .kv dd { margin-bottom:6px; }
+  .ledger-summary { grid-template-columns:1fr; }
 }
 </style>
 </head>
 <body>
+<header class="app-header"><div>
+  <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><h1>Synapsor Workbench</h1><p>Review and operate agent data changes</p></div></div>
+  <span class="source-state">Source access stays governed</span>
+</div></header>
 <main>
-  <header>
-    <h1>Synapsor Runner Local UI</h1>
-    <p>A local review console for what an agent proposed, what the safety boundary did, and what the trusted runner committed. No raw SQL editor is exposed.</p>
-  </header>
-  ${tourHtml}
-  <section class="card full" id="workbench" style="margin-bottom:16px">
-    <h2>First safe action</h2>
-    <p>Loading reviewed project activation state...</p>
-  </section>
-  <section class="card full" id="attention" style="margin-bottom:16px">
-    <h2>Human Attention Inbox</h2>
-    <p>Loading items that need an operator decision or investigation...</p>
-  </section>
-  <section class="card full" id="worker" style="margin-bottom:16px">
-    <h2>Trusted Worker</h2>
-    <p>Loading exact-digest execution eligibility, queue state, and operator controls...</p>
-  </section>
-  <section class="console">
-    <div class="card" id="proposals"><h2>Activity</h2><p>Loading recent proposal lifecycles...</p></div>
-    <div class="card" id="detail"><h2>Lifecycle review</h2><p>Select recent activity, or look up any known proposal, evidence, replay, job, intent, receipt, or audit handle.</p></div>
-  </section>
-  <section class="card full" id="shadow-report" style="margin-top:14px">
-    <h2>Shadow studies</h2>
-    <p>Loading local agent-versus-authoritative-outcome comparisons...</p>
-  </section>
-  <details class="card config-section">
-    <summary>Runtime configuration &amp; tools</summary>
-    <div class="grid" style="margin-top:14px">
-      <div class="card" id="summary"><h2>Setup summary</h2><p>Loading...</p></div>
-      <div class="card" id="tools"><h2>Tools</h2><p>Loading...</p></div>
+  <div class="ops-layout">
+    <aside class="ops-nav" aria-label="Workbench areas">
+      <p>Operations</p>
+      <a href="#attention">Needs attention</a>
+      <a href="#worker">Automatic apply</a>
+      <a href="#activity">Change history</a>
+      <a href="#shadow-report">Shadow studies</a>
+      <a href="#runtime-tools">Runtime tools</a>
+      <div class="ops-note"><strong>Outside the model</strong><p>Approval, apply, recovery, and worker controls are never MCP tools.</p></div>
+    </aside>
+    <div class="ops-workspace">
+      ${tourHtml}
+      <section class="surface" id="workbench">
+        <h2>First safe action</h2>
+        <p>Loading reviewed project activation state...</p>
+      </section>
+      <section class="surface" id="attention">
+        <h2>Needs attention</h2>
+        <p>Human Attention Inbox: loading decisions and investigations that cannot proceed automatically...</p>
+      </section>
+      <section class="surface" id="worker">
+        <h2>Automatic apply</h2>
+        <p>Loading separately trusted worker eligibility, queue state, and operator controls...</p>
+      </section>
+      <section class="console" id="activity">
+        <div class="card" id="proposals"><h2>Activity</h2><p>Change history is loading...</p></div>
+        <div class="card" id="detail"><h2>Review one change</h2><p><strong>Lifecycle review:</strong> select recent activity, or find evidence, proposals, receipts, replay, jobs, intents, and audit records without copying an opaque ID.</p></div>
+      </section>
+      <section class="surface" id="shadow-report">
+        <h2>Shadow studies</h2>
+        <p>Loading local agent-versus-authoritative-outcome comparisons...</p>
+      </section>
+      <details class="surface config-section" id="runtime-tools">
+        <summary>Runtime configuration and MCP tools</summary>
+        <div class="grid" style="margin-top:14px">
+          <div class="subsurface" id="summary"><h2>Setup summary</h2><p>Loading...</p></div>
+          <div class="subsurface" id="tools"><h2>Tools</h2><p>Loading...</p></div>
+        </div>
+      </details>
     </div>
-  </details>
+  </div>
 </main>
 <script>
 const csrfToken = "${escapedCsrf}";
@@ -5105,15 +6285,19 @@ async function loadDetail(proposalId) {
 
   if (proposal.state === "pending_review") {
     const decision = el("section", { class: "decision-panel" });
+    const approval = proposal.change_set && typeof proposal.change_set.approval === "object"
+      ? proposal.change_set.approval
+      : {};
+    const requiredRole = approval.required_role;
     decision.append(
       el("h3", { text: "1. Approve this exact proposal" }),
       el("div", { class: "callout", text: "Approval records a human decision outside MCP. It does not apply or mutate the source database." }),
-      el("div", { class: "operator-posture", text: "Identity: " + operator.provider + (operator.verified_required ? " (verified)" : " (development, unverified)") + " · required role: " + ((payload.review_view && payload.review_view.required_role) || "reviewer") }),
+      el("div", { class: "operator-posture", text: "Identity: " + operator.provider + (operator.verified_required ? " (verified)" : " (development, unverified)") + " · required role: " + (typeof requiredRole === "string" ? requiredRole : "reviewer") }),
     );
     const freshness = payload.freshness || { required: false, status: "not_required" };
     const freshnessStatus = el("div", { class: "status-line", text: freshness.required
       ? "Freshness: " + String(freshness.status || "not checked").replaceAll("_", " ") + "."
-      : "Freshness: not required for this legacy proposal." });
+      : "Approval-time source freshness is not configured for this capability. Guarded apply still enforces its reviewed conflict and idempotency controls." });
     decision.append(freshnessStatus);
     const check = freshness.required
       ? el("button", { class: "secondary", text: "Check live freshness", onclick: async () => {
@@ -5370,7 +6554,8 @@ function redactSecrets(value: unknown, key = ""): unknown {
     return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, redactSecrets(entryValue, entryKey)]));
   }
   if (typeof value === "string") {
-    if (!key.endsWith("_env") && /(password|secret|token|api[_-]?key|private[_-]?key|cookie|credential|connection[_-]?string|database[_-]?url)/i.test(key)) {
+    const safeMetadataKey = key === "credential_source";
+    if (!safeMetadataKey && !key.endsWith("_env") && /(password|secret|token|api[_-]?key|private[_-]?key|cookie|credential|connection[_-]?string|database[_-]?url)/i.test(key)) {
       return "<redacted>";
     }
     return value
@@ -5538,6 +6723,16 @@ function scopedExploreRemediation(error: unknown): {
 } {
   const code = error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL";
   const preserved = "The reviewed boundary, generated files, and source database were not changed.";
+  const relationshipReview = error instanceof ScopedExploreError
+    && isRecord(error.details?.relationship_review)
+    ? error.details.relationship_review
+    : undefined;
+  if (code === "EXPLORE_RELATIONSHIP_FORBIDDEN" && relationshipReview) {
+    return {
+      action: "Review and add this catalog-proven relationship. Runner will stage only this path for normal human review and exact-digest activation.",
+      preserved,
+    };
+  }
   switch (code) {
     case "EXPLORE_DISABLED":
       return {

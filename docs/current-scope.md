@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.6.3` scope:
+Current `1.6.4` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
 - one-command, resumable, review-by-exception onboarding from
@@ -15,9 +15,17 @@ Current `1.6.3` scope:
   and generation locks; no generated authority activates itself;
 - local development/staging Scoped Explore through exactly two temporary MCP
   tools, using typed row plans or a reviewed PM-style analytical cube;
+- optional secured-loopback Workbench Ask over the exact same active tool
+  registry, with OpenAI, Anthropic, or a configured OpenAI-compatible endpoint,
+  digest-bound direct-egress consent, in-memory credentials/history, bounded
+  provider loops, and proposal-only writes;
 - aggregate `count`, reviewed `count_distinct`, `sum`, `avg`, reviewed
   dimensions and day/week/month buckets, typed filters, bounded top-N, and at
-  most one proven many-to-one relationship;
+  most three activated star/depth-two relationship paths, each containing one
+  or two proven many-to-one links with fan-out one;
+- demand-driven operator review for an exact inactive catalog-proven path,
+  explicit nullable-link semantics, per-relation trusted scope, and fail-closed
+  rejection of one-to-many, many-to-many, stale, or ambiguous paths;
 - cohort suppression plus durable extraction, differencing, rate, query,
   response, and complexity limits;
 - Protect This Query from a successful local plan to public DSL, canonical
@@ -76,6 +84,9 @@ Out of scope:
 
 - raw `execute_sql`, SQL strings, model-generated SQL, or arbitrary identifiers;
 - production Scoped Explore or a general-purpose analytics/query AST;
+- production/shared/remote Ask, model-selected provider configuration,
+  Synapsor-relayed model calls, persisted chat history, or a claim that every
+  OpenAI-compatible server is supported;
 - general join planning, many-to-many exploration, arbitrary formulas,
   functions, windows, `HAVING`, subqueries, or statistical privacy guarantees;
 - model-selected tenant/principal, activation, approval, or commit authority;

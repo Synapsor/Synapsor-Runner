@@ -29,8 +29,8 @@ const TEST_FILE = "synapsor.candidate.contract-tests.json";
 const REVIEW_JSON_FILE = "generation-review.json";
 const REVIEW_FILE = "REVIEW.md";
 
-const TENANT_PATTERN = /^(tenant|tenant_id|tenantid|workspace_id|organization_id|org_id|account_id|project_id)$/i;
-const PRINCIPAL_PATTERN = /^(user_id|userid|owner_id|assignee_id|agent_id|principal_id|customer_id|patient_id)$/i;
+const TENANT_PATTERN = /^(tenant|tenant_id|tenantid|workspace_id|organization_id|org_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|property_id|clinic_id|project_id)$/i;
+const PRINCIPAL_PATTERN = /^(user_id|userid|owner_id|assignee_id|assigned_[a-z0-9_]+_id|agent_id|staff_id|technician_id|manager_id|trainer_id|principal_id|customer_id|patient_id)$/i;
 const CONFLICT_PATTERN = /^(version|row_version|lock_version|updated_at|updatedat|etag|modified_at)$/i;
 const PRIMARY_PATTERN = /^(id|uuid|[a-z0-9_]+_id)$/i;
 const MODEL_AUTHORITY_PATTERN =

@@ -10,7 +10,7 @@ surface.
 ```bash
 export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+npx -y @synapsor/runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \
@@ -30,7 +30,7 @@ model and maps calls back to canonical Synapsor capability names such as
 ## Generate The Snippet
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner mcp client-config \
+npx -y @synapsor/runner mcp client-config \
   --client openai-agents \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \

@@ -1,6 +1,6 @@
 # Auto Boundary, Scoped Explore, And Protect
 
-Runner 1.6.3 provides a deterministic, resumable authoring path for a real
+Runner 1.6.4 provides a deterministic, resumable authoring path for a real
 application:
 
 ```text
@@ -26,7 +26,14 @@ controls underneath Runner. PostgreSQL deployments should use forced row-level
 security (RLS) where possible; MySQL deployments should use restricted views or
 tenant-bound credentials.
 
-Export the connection and trusted context in the process that Cursor will use:
+The shortest first run accepts a hidden URL paste or asks before reading
+`DATABASE_URL` from a regular project `.env`:
+
+```bash
+npx -y @synapsor/runner start
+```
+
+For an explicit environment-driven staging run:
 
 ```bash
 export DATABASE_URL='postgresql://runner_reader:REPLACE_ME@127.0.0.1:5432/app'
@@ -109,13 +116,19 @@ candidates start disabled. Auto Boundary never replaces an active contract.
 No source rows, credentials, tenant values, or principal values are written to
 these files.
 
+Workbench previews generated DSL with a local deterministic highlighter. It
+distinguishes DSL keywords from reviewer-defined names, strings, numbers,
+comments, and punctuation while preserving byte-identical plain/copy text.
+Rendering uses escaped DOM text and no external CDN; if highlighting fails, the
+same safe plain source remains visible.
+
 ## Review The Boundary
 
 The Workbench requires a human to narrow and confirm:
 
 - development or staging deployment profile;
 - trusted tenant and principal bindings supplied outside model arguments;
-- included resources and one-hop relationships;
+- included resources and catalog-proven relationship paths;
 - selectable fields;
 - filterable fields and allowed operators;
 - sortable and groupable fields;
@@ -162,6 +175,36 @@ Cursor, Claude, Codex, and generic stdio are optional clients, not onboarding
 dependencies. The packed FitFlow gate proves Workbench, CLI Try, and an
 official-SDK generic stdio client produce the same bounded result and denial
 behavior.
+
+## Optional Workbench Ask Client
+
+After the no-model composer succeeds, Workbench can optionally send a
+plain-language question to a developer-selected model provider. This adds a
+client, not authority:
+
+```text
+provider request
+  -> exact active Workbench tool registry
+  -> official MCP SDK
+  -> existing Scoped Explore/runtime validator
+  -> reviewed bounded result or refusal
+```
+
+While Explore is active, the provider sees only `app.describe_data` and
+`app.explore_data`. After Protect and Explore shutdown, it sees only activated
+named capabilities. It never receives Protect, activation, approval, apply,
+worker, notification, recovery, credential, or filesystem tools.
+
+Provider/model/origin and the exact authority digest require explicit
+direct-egress acknowledgement. Keys come from the local Runner process
+environment or a session-only masked paste; configuration and history remain
+in memory and are cleared on request or shutdown. Ask is restricted to secured
+loopback Workbench in development/staging and is absent from production and
+shared/remote surfaces.
+
+The no-model composer, CLI Try, and external MCP routes remain fully supported
+when no provider is configured or a provider is unavailable. See [Workbench
+Ask With Your Model](workbench-ask.md).
 
 ## Add The Authoring Tools To Cursor
 
@@ -219,14 +262,23 @@ analytics database tool. It supports:
 - bounded top-N results;
 - at most two reviewed time ranges;
 - one resource by default;
-- at most one inspected, reviewed many-to-one foreign-key path with maximum
-  fan-out one.
+- up to three activated relationship paths in one plan;
+- one or two inspected, reviewed many-to-one foreign-key links per path, each
+  with maximum fan-out one.
 
 It does not support arbitrary `DISTINCT`, `HAVING`, formulas, window functions,
 unions, nested queries, many-to-many joins, system catalogs, user-defined
 functions, or a general join planner. Scope is enforced independently on every
 participating relation. Runner refuses a plan when cardinality, fan-out,
 counted entity, or scope cannot be proven.
+
+Auto Boundary does not activate every discovered path. When a useful question
+needs one inactive but catalog-proven path, Runner refuses the plan and stages
+that exact path for operator review. Workbench shows the foreign-key proof and,
+for optional links, requires an explicit choice between excluding the unmatched
+counted row and keeping it with an empty group value. Activating the new exact
+digest is an operator-plane action; the model cannot perform it. See
+[Reviewed Relationship Paths](reviewed-relationships.md).
 
 Before returning groups, Runner enforces the reviewed minimum cohort size.
 Small groups are suppressed and revealing totals are withheld. Durable
@@ -280,7 +332,7 @@ handles.
 
 Choose the useful query in Workbench. Protect freezes:
 
-- resources and reviewed relationship path;
+- resources and reviewed relationship paths;
 - counted entity, measures, dimensions, and bucket structure;
 - filters, ordering, top-N, and comparison shape;
 - tenant/principal as trusted bindings;

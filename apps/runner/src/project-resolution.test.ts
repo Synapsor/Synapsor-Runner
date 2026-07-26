@@ -40,6 +40,46 @@ describe("Synapsor project resolution", () => {
     });
   });
 
+  it("discovers the conventional synapsor/synapsor.runner.json from a nested working directory", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-project-nested-config-"));
+    try {
+      const nested = path.join(root, "apps/web/src");
+      await fs.mkdir(path.join(root, ".git"));
+      await fs.mkdir(path.join(root, "synapsor"), { recursive: true });
+      await fs.mkdir(nested, { recursive: true });
+      await fs.writeFile(path.join(root, "synapsor/synapsor.runner.json"), JSON.stringify({
+        version: 1,
+        mode: "read_only",
+        storage: { sqlite_path: "./state/local.db" },
+      }));
+
+      await expect(resolveSynapsorProject(nested, {})).resolves.toEqual({
+        source: "discovered",
+        project_root: root,
+        config_path: path.join(root, "synapsor/synapsor.runner.json"),
+        store_path: path.join(root, "synapsor/state/local.db"),
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when root and nested conventional configs are both present", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-project-config-collision-"));
+    try {
+      await fs.mkdir(path.join(root, ".git"));
+      await fs.mkdir(path.join(root, "synapsor"));
+      await fs.writeFile(path.join(root, "synapsor.runner.json"), "{}\n");
+      await fs.writeFile(path.join(root, "synapsor/synapsor.runner.json"), "{}\n");
+
+      await expect(resolveSynapsorProject(root, {})).rejects.toThrow(
+        /Multiple Synapsor projects are valid[\s\S]*Pass --config <path>/i,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not walk above a repository boundary", async () => {
     const parent = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-project-boundary-"));
     try {

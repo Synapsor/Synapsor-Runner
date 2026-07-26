@@ -1,0 +1,239 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Merchant {
+  id             String          @id
+  name           String
+  regions        Region[]
+  stores         Store[]
+  staff          Staff[]
+  customers      Customer[]
+  products       Product[]
+  orders         Order[]
+  supportCases   SupportCase[]
+  salesLineFacts SalesLineFact[]
+
+  @@map("merchants")
+}
+
+model Region {
+  id             String          @id
+  merchantId     String          @map("merchant_id")
+  name           String
+  shippingRegion String          @map("shipping_region")
+  merchant       Merchant        @relation(fields: [merchantId], references: [id])
+  stores         Store[]
+  orders         Order[]
+  salesLineFacts SalesLineFact[]
+
+  @@unique([merchantId, name])
+  @@map("regions")
+}
+
+model Store {
+  id             String          @id
+  merchantId     String          @map("merchant_id")
+  regionId       String          @map("region_id")
+  name           String
+  channel        String
+  merchant       Merchant        @relation(fields: [merchantId], references: [id])
+  region         Region          @relation(fields: [regionId], references: [id])
+  orders         Order[]
+  salesLineFacts SalesLineFact[]
+
+  @@unique([merchantId, name])
+  @@map("stores")
+}
+
+model Staff {
+  id            String        @id
+  merchantId    String        @map("merchant_id")
+  displayName   String        @map("display_name")
+  roleCode      String        @map("role_code")
+  passwordHash  String        @map("password_hash")
+  sessionToken  String        @map("session_token")
+  merchant      Merchant      @relation(fields: [merchantId], references: [id])
+  managedOrders Order[]       @relation("OrderManager")
+  assignedCases SupportCase[] @relation("CaseAgent")
+
+  @@map("staff")
+}
+
+model Customer {
+  id                String  @id
+  merchantId        String  @map("merchant_id")
+  email             String
+  phone             String
+  taxId             String  @map("tax_id")
+  internalRiskScore Int     @map("internal_risk_score")
+  merchant          Merchant @relation(fields: [merchantId], references: [id])
+  orders            Order[]
+  supportCases      SupportCase[]
+
+  @@map("customers")
+}
+
+model ProductCategory {
+  id             String          @id
+  merchantId     String          @map("merchant_id")
+  name           String
+  products       Product[]
+  salesLineFacts SalesLineFact[]
+
+  @@unique([merchantId, name])
+  @@map("product_categories")
+}
+
+model Product {
+  id                String          @id
+  merchantId        String          @map("merchant_id")
+  primaryCategoryId String          @map("primary_category_id")
+  ownerId           String          @map("owner_id")
+  name              String
+  status            String
+  merchant          Merchant        @relation(fields: [merchantId], references: [id])
+  primaryCategory   ProductCategory @relation(fields: [primaryCategoryId], references: [id])
+  variants          ProductVariant[]
+  orderItems        OrderItem[]
+  salesLineFacts    SalesLineFact[]
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id              String      @id
+  merchantId      String      @map("merchant_id")
+  productId       String      @map("product_id")
+  sku             String
+  cardBrandDisplay String     @map("card_brand_display")
+  panSizeCm       Int         @map("pan_size_cm")
+  product         Product     @relation(fields: [productId], references: [id])
+
+  @@unique([merchantId, sku])
+  @@map("product_variants")
+}
+
+model Order {
+  id                String       @id
+  merchantId        String       @map("merchant_id")
+  storeId           String       @map("store_id")
+  regionId          String       @map("region_id")
+  customerId        String       @map("customer_id")
+  assignedManagerId String       @map("assigned_manager_id")
+  channel           String
+  status            String
+  grossRevenueCents Int          @map("gross_revenue_cents")
+  netRevenueCents   Int          @map("net_revenue_cents")
+  placedAt          DateTime     @map("placed_at") @db.Timestamptz(6)
+  version           Int
+  merchant          Merchant     @relation(fields: [merchantId], references: [id])
+  store             Store        @relation(fields: [storeId], references: [id])
+  region            Region       @relation(fields: [regionId], references: [id])
+  customer          Customer     @relation(fields: [customerId], references: [id])
+  assignedManager   Staff        @relation("OrderManager", fields: [assignedManagerId], references: [id])
+  items             OrderItem[]
+  payments          Payment[]
+  refunds           Refund[]
+  returns           Return[]
+
+  @@index([merchantId, assignedManagerId, placedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                    String @id
+  merchantId            String @map("merchant_id")
+  orderId               String @map("order_id")
+  productId             String @map("product_id")
+  productVariantId      String @map("product_variant_id")
+  quantity              Int
+  grossLineRevenueCents Int    @map("gross_line_revenue_cents")
+  netLineRevenueCents   Int    @map("net_line_revenue_cents")
+  order                 Order  @relation(fields: [orderId], references: [id])
+  product               Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model Payment {
+  id            String  @id
+  merchantId    String  @map("merchant_id")
+  orderId       String  @map("order_id")
+  amountCents   Int     @map("amount_cents")
+  paymentStatus String  @map("payment_status")
+  paymentToken  String  @map("payment_token")
+  panLastFour   String  @map("pan_last_four")
+  cvvValue      String  @map("cvv_value")
+  order         Order   @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+model Refund {
+  id          String   @id
+  merchantId  String   @map("merchant_id")
+  orderId     String   @map("order_id")
+  amountCents Int      @map("amount_cents")
+  reasonCode  String   @map("reason_code")
+  createdAt   DateTime @map("created_at") @db.Timestamptz(6)
+  order       Order    @relation(fields: [orderId], references: [id])
+
+  @@map("refunds")
+}
+
+model Return {
+  id           String   @id
+  merchantId   String   @map("merchant_id")
+  orderId      String   @map("order_id")
+  reasonId     String   @map("reason_id")
+  status       String
+  requestedAt  DateTime @map("requested_at") @db.Timestamptz(6)
+  order        Order    @relation(fields: [orderId], references: [id])
+
+  @@map("returns")
+}
+
+model SupportCase {
+  id              String   @id
+  merchantId      String   @map("merchant_id")
+  customerId      String   @map("customer_id")
+  assignedAgentId String   @map("assigned_agent_id")
+  status          String
+  subject         String
+  privateNotes    String   @map("private_support_notes")
+  version         Int
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  customer        Customer @relation(fields: [customerId], references: [id])
+  assignedAgent   Staff    @relation("CaseAgent", fields: [assignedAgentId], references: [id])
+
+  @@index([merchantId, assignedAgentId])
+  @@map("support_cases")
+}
+
+model SalesLineFact {
+  id                String          @id
+  merchantId        String          @map("merchant_id")
+  storeId           String          @map("store_id")
+  regionId          String          @map("region_id")
+  productId         String          @map("product_id")
+  productCategoryId String          @map("product_category_id")
+  assignedManagerId String          @map("assigned_manager_id")
+  orderId           String          @map("order_id")
+  channel           String
+  quantity          Int
+  netRevenueCents   Int             @map("net_revenue_cents")
+  soldAt            DateTime        @map("sold_at") @db.Timestamptz(6)
+  store             Store           @relation(fields: [storeId], references: [id])
+  region            Region          @relation(fields: [regionId], references: [id])
+  product           Product         @relation(fields: [productId], references: [id])
+  productCategory   ProductCategory @relation(fields: [productCategoryId], references: [id])
+
+  @@index([merchantId, assignedManagerId, soldAt])
+  @@map("sales_line_facts")
+}

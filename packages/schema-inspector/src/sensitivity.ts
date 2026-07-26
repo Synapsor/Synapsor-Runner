@@ -29,6 +29,7 @@ type NormalizedEvidence = {
   compact: string;
   tokens: Set<string>;
   descriptionCompact: string;
+  descriptionTokens: Set<string>;
   dataType: string;
 };
 
@@ -65,10 +66,22 @@ const HIGH_CONFIDENCE_RULES: Rule[] = [
       "paymentmethod",
       "paymentinstrument",
       "paymentdetails",
+      "paymentcard",
+      "cardonfile",
+      "cardholder",
+      "cardholdername",
+      "cardexpiry",
+      "cardexpiration",
       "cardnumber",
+      "fullpan",
       "creditcard",
       "debitcard",
       "cardtoken",
+      "card",
+      "cc",
+      "ccnumber",
+      "ccnum",
+      "pan",
       "cvv",
       "cvc",
       "bankaccount",
@@ -123,6 +136,7 @@ const HIGH_CONFIDENCE_RULES: Rule[] = [
       "phone",
       "phonenumber",
       "telephone",
+      "address",
       "streetaddress",
       "homeaddress",
       "mailingaddress",
@@ -238,8 +252,17 @@ function rule(code: string, reason: string, patterns: string[]): Rule {
   return {
     code,
     reason,
-    matches: (value) => patterns.some((pattern) =>
-      value.compact.includes(pattern) || value.descriptionCompact.includes(pattern)),
+    matches: (value) => patterns.some((pattern) => {
+      if (pattern === "pan" || pattern === "cc" || pattern === "card") {
+        return value.compact === pattern || value.descriptionTokens.has(pattern);
+      }
+      if (pattern.length <= 4) {
+        return value.compact === pattern
+          || value.tokens.has(pattern)
+          || value.descriptionTokens.has(pattern);
+      }
+      return value.compact.includes(pattern) || value.descriptionCompact.includes(pattern);
+    }),
   };
 }
 
@@ -250,6 +273,7 @@ function normalizeEvidence(input: SensitivityClassificationInput): NormalizedEvi
     compact: identifier.replaceAll("_", ""),
     tokens: new Set(identifier.split("_").filter(Boolean)),
     descriptionCompact: description.replaceAll("_", ""),
+    descriptionTokens: new Set(description.split("_").filter(Boolean)),
     dataType: String(input.dataType ?? "").trim().toLowerCase(),
   };
 }

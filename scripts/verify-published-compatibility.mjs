@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const baselineNames = ["published-1.5.4", "published-1.6.0"];
+const baselineNames = ["published-1.5.4", "published-1.6.0", "published-1.6.3"];
 
 const spec = await import(pathToFileURL(path.join(root, "packages", "spec", "dist", "index.js")));
 const dsl = await import(pathToFileURL(path.join(root, "packages", "dsl", "dist", "index.js")));

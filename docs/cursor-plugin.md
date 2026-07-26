@@ -6,7 +6,7 @@ The Synapsor Cursor plugin is an official-format Cursor plugin under
 instructions.
 
 Current implementation evidence was checked against Cursor's public plugin,
-plugin-reference, MCP, and deeplink documentation on 2026-07-20:
+plugin-reference, MCP, and deeplink documentation on 2026-07-25:
 
 - <https://cursor.com/docs/plugins>
 - <https://cursor.com/docs/reference/plugins>
@@ -14,12 +14,12 @@ plugin-reference, MCP, and deeplink documentation on 2026-07-20:
 - <https://cursor.com/docs/reference/deeplinks>
 
 The locally installed Cursor version used for validation is recorded in
-`development/runner-1.6.0-progress.md`. Protocol/static validation is not a
+`development/runner-1.6.4-progress.md`. Protocol/static validation is not a
 claim that Cursor Marketplace review has completed.
 
 ## What the plugin installs
 
-- one production stdio MCP server pinned to `@synapsor/runner@1.6.2`;
+- one production stdio MCP server pinned to `@synapsor/runner@1.6.4`;
 - one `/synapsor-protect` agent command;
 - one discoverable Safe Action skill;
 - one file-scoped rule for `synapsor/actions/**/*.ts`;

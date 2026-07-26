@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "mode": "review",
+  "storage": {
+    "sqlite_path": "./.synapsor/view-recipe.db"
+  },
+  "contracts": [
+    "./average-retained-revenue.contract.json"
+  ],
+  "sources": {
+    "retail_postgres": {
+      "engine": "postgres",
+      "read_url_env": "DATABASE_URL",
+      "statement_timeout_ms": 3000,
+      "database_scope": {
+        "mode": "postgres_rls",
+        "tenant_setting": "app.tenant_id",
+        "principal_setting": "app.principal"
+      },
+      "credential_scope": {
+        "mode": "shared"
+      }
+    }
+  }
+}

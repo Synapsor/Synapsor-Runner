@@ -42,7 +42,7 @@ export SYNAPSOR_TENANT_ID="acme"
 export SYNAPSOR_PRINCIPAL="openai_agent_demo"
 export SYNAPSOR_RUNNER_HTTP_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
-npx -y -p @synapsor/runner synapsor-runner mcp serve-streamable-http \
+npx -y @synapsor/runner mcp serve-streamable-http \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db \
   --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN \

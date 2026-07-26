@@ -25,10 +25,7 @@ async def main() -> None:
     params = {
         "command": "npx",
         "args": [
-            "-y",
-            "-p",
-            "@synapsor/runner",
-            "synapsor-runner",
+            "-y", "@synapsor/runner",
             "mcp",
             "serve",
             "--config",

@@ -170,6 +170,44 @@ describe("@synapsor/spec validation", () => {
     });
   });
 
+  it("accepts additive reviewed star paths without rewriting the legacy relationship form", () => {
+    const contract = protectedAggregateContract();
+    const protectedRead = contract.capabilities[0].protected_read;
+    protectedRead.relationships = [
+      protectedPath("store", "store_id", "stores"),
+      protectedPath("category", "category_id", "product_categories"),
+    ];
+    protectedRead.aggregate.dimensions = [
+      { name: "store_name", field: "name", relationship: "store" },
+      { name: "category_name", field: "name", relationship: "category" },
+    ];
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.protected_read).toMatchObject({
+      relationships: [
+        { name: "store", links: [{ cardinality: "many_to_one", max_fan_out: 1 }] },
+        { name: "category", links: [{ cardinality: "many_to_one", max_fan_out: 1 }] },
+      ],
+    });
+
+    const legacy = protectedAggregateContract();
+    legacy.capabilities[0].protected_read.relationship = {
+      name: "store",
+      schema: "public",
+      table: "stores",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      local_key: "store_id",
+      target_key: "id",
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+    };
+    const normalizedLegacy = JSON.stringify(normalizeContract(legacy));
+    expect(normalizedLegacy).toContain('"relationship"');
+    expect(normalizedLegacy).not.toContain('"relationships"');
+    expect(JSON.stringify(normalizeContract(structuredClone(legacy)))).toBe(normalizedLegacy);
+  });
+
   it("rejects widening, unsafe scope fields, unbound arguments, and fan-out in protected reads", () => {
     const contract = protectedAggregateContract();
     const capability = contract.capabilities[0];
@@ -642,4 +680,21 @@ function protectedAggregateContract(): Record<string, any> {
   };
   delete contract.capabilities[0].lookup;
   return contract;
+}
+
+function protectedPath(name: string, localKey: string, table: string): Record<string, unknown> {
+  return {
+    name,
+    links: [{
+      schema: "public",
+      table,
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      local_key: localKey,
+      target_key: "id",
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+      unmatched_rows: "exclude",
+    }],
+  };
 }

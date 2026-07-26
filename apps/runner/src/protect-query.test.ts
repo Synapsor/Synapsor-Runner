@@ -19,6 +19,7 @@ import {
   activateProtectedQuery,
   createProtectedQueryDraft,
   listProtectableQueries,
+  protectedDatabaseScope,
 } from "./protect-query.js";
 
 const temporaryRoots: string[] = [];
@@ -28,6 +29,217 @@ afterEach(async () => {
 });
 
 describe("Protect This Query", () => {
+  it("freezes a reviewed star aggregate into additive multi-path DSL and canonical authority", async () => {
+    const fixture = await activatedFixture(starProtectInspection());
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "Downtown",
+        dimension_1: "Home",
+        time_bucket: "2026-07-06T00:00:00.000Z",
+        measure_0: 45_000,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [
+        { field: "name", relationship: "subscriptions_store_id_fkey" },
+        { field: "name", relationship: "subscriptions_product_category_id_fkey" },
+      ],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "retail.weekly_revenue_by_store_and_category",
+      description: "Show reviewed weekly revenue by store and product category.",
+      returnsHint: "Returns privacy-suppressed reviewed groups.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+    });
+
+    expect(created.dsl).toContain(
+      "PROTECTED RELATIONSHIP subscriptions_store_id_fkey LINK 1 ON store_id REFERENCES public.stores.id",
+    );
+    expect(created.dsl).toContain(
+      "PROTECTED RELATIONSHIP subscriptions_product_category_id_fkey LINK 1 ON product_category_id REFERENCES public.product_categories.id",
+    );
+    expect(created.contract.capabilities[0]?.protected_read?.relationship).toBeUndefined();
+    expect(created.contract.capabilities[0]?.protected_read).toMatchObject({
+      relationships: [
+        {
+          name: "subscriptions_store_id_fkey",
+          links: [{ table: "stores", cardinality: "many_to_one", max_fan_out: 1 }],
+        },
+        {
+          name: "subscriptions_product_category_id_fkey",
+          links: [{ table: "product_categories", cardinality: "many_to_one", max_fan_out: 1 }],
+        },
+      ],
+      aggregate: {
+        counted_entity: "subject",
+        dimensions: [
+          { field: "name", relationship: "subscriptions_store_id_fkey" },
+          { field: "name", relationship: "subscriptions_product_category_id_fkey" },
+        ],
+      },
+    });
+    expect(protectedDatabaseScope(created.contract, fixture.boundary)).toEqual({
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+    });
+  });
+
+  it("requires principal RLS only on participating relations that declare principal scope", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const root = boundary.pack.resources[0]!;
+    root.principal_key = "assigned_operator_id";
+    root.rls_session = {
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal",
+    };
+    const target = structuredClone(root);
+    target.id = "public.regions";
+    target.schema = "public";
+    target.table = "regions";
+    target.primary_key = "id";
+    delete target.principal_key;
+    target.rls_session = { tenant_setting: "app.tenant_id" };
+    boundary.pack.resources.push(target);
+
+    const contract = {
+      capabilities: [{
+        name: "analytics.by_region",
+        kind: "aggregate_read",
+        source: boundary.source,
+        context: "protected_operator",
+        args: {},
+        description: "Reviewed regional aggregate.",
+        returns_hint: "Returns reviewed groups.",
+        subject: {
+          schema: root.schema,
+          table: root.table,
+          primary_key: root.primary_key,
+          tenant_key: root.tenant_key,
+          principal_scope_key: root.principal_key,
+        },
+        visible_fields: [],
+        kept_out_fields: [],
+        evidence: { required: true, query_audit: true },
+        protected_read: {
+          version: "1",
+          mode: "aggregate",
+          boundary_digest: boundary.activation.digest,
+          generation_lock_fingerprint: boundary.generation_lock_fingerprint,
+          relationship: {
+            name: "subscriptions_region_id_fkey",
+            schema: target.schema,
+            table: target.table,
+            local_key: "region_id",
+            target_key: "id",
+            primary_key: "id",
+            tenant_key: target.tenant_key,
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+          },
+          limits: {
+            max_rows: 50,
+            max_groups: 50,
+            max_response_cells: 500,
+            max_response_bytes: 65_536,
+            statement_timeout_ms: 3_000,
+            max_queries_per_session: 40,
+            max_extracted_cells_per_session: 4_000,
+            max_differencing_queries: 6,
+            rate_limit_per_minute: 20,
+          },
+          aggregate: {
+            counted_entity: "subject",
+            measures: [{ name: "row_count", function: "count" }],
+            dimensions: [{
+              name: "region",
+              field: "name",
+              relationship: "subscriptions_region_id_fkey",
+            }],
+            minimum_group_size: 5,
+            top_n: 10,
+          },
+        },
+      }],
+      contexts: [],
+      kind: "SynapsorContract",
+      spec_version: "0.1",
+    } as unknown as import("@synapsor/spec").SynapsorContract;
+
+    expect(protectedDatabaseScope(contract, boundary)).toEqual({
+      mode: "postgres_rls",
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal",
+    });
+
+    target.principal_key = "assigned_operator_id";
+    expect(() => protectedDatabaseScope(contract, boundary)).toThrow(/principal binding is incomplete/i);
+  });
+
+  it("lists the newest successful result first for no-ID Protect flows", async () => {
+    const fixture = await activatedFixture();
+    const rowRuntime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ id: "sub-1", region: "west" }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T11:59:00.000Z"),
+    });
+    const rowResult = await rowRuntime.explore({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["id", "region"],
+      where: [{ field: "id", op: "eq", value: "sub-1" }],
+      limit: 1,
+    });
+    await rowRuntime.close();
+
+    const aggregateRuntime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        dimension_1: "price",
+        time_bucket: "2026-06-02T00:00:00.000Z",
+        measure_0: 8,
+        measure_1: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const aggregateResult = await aggregateRuntime.explore(pmAggregatePlan());
+    await aggregateRuntime.close();
+
+    const protectable = await listProtectableQueries({
+      projectRoot: fixture.root,
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+    });
+    expect(protectable.map((item) => item.token)).toEqual([
+      (aggregateResult.protect as { token: string }).token,
+      (rowResult.protect as { token: string }).token,
+    ]);
+    expect(protectable.map((item) => item.kind)).toEqual(["aggregate", "rows"]);
+  });
+
   it("promotes a successful PM aggregate through public DSL into a disabled canonical draft", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreRuntime({
@@ -202,7 +414,7 @@ function pmAggregatePlan() {
   };
 }
 
-async function activatedFixture(): Promise<{
+async function activatedFixture(inspection = churnInspection()): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
   inspection: SchemaInspection;
@@ -210,7 +422,6 @@ async function activatedFixture(): Promise<{
 }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-query-"));
   temporaryRoots.push(root);
-  const inspection = churnInspection();
   const build = buildAutoBoundary({
     inspection,
     project: {
@@ -320,6 +531,63 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function starProtectInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const root = inspection.tables[0]!;
+  root.columns.push(
+    column("store_id", "uuid", { immutable: true }),
+    column("product_category_id", "uuid", { immutable: true }),
+  );
+  root.foreign_keys = [
+    {
+      name: "subscriptions_store_id_fkey",
+      columns: ["store_id"],
+      referenced_schema: "public",
+      referenced_table: "stores",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    },
+    {
+      name: "subscriptions_product_category_id_fkey",
+      columns: ["product_category_id"],
+      referenced_schema: "public",
+      referenced_table: "product_categories",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    },
+  ];
+  root.suggestions.default_visible_columns.push("store_id", "product_category_id");
+  const relatedTable = (name: string) => {
+    const table = structuredClone(root);
+    table.name = name;
+    table.columns = [
+      column("id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("name", "text"),
+    ];
+    table.primary_key = ["id"];
+    table.unique_constraints = [{ name: `${name}_pkey`, columns: ["id"] }];
+    table.foreign_keys = [];
+    table.indexes = [{ name: `${name}_pkey`, columns: ["id"], unique: true }];
+    table.row_level_security_policies = [{
+      name: `${name}_tenant_read`,
+      command: "SELECT" as const,
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+    }];
+    table.suggestions = {
+      tenant_columns: ["tenant_id"],
+      conflict_columns: [],
+      sensitive_columns: [],
+      default_visible_columns: ["id", "tenant_id", "name"],
+    };
+    return table;
+  };
+  inspection.tables.push(relatedTable("stores"), relatedTable("product_categories"));
+  return inspection;
 }
 
 function column(

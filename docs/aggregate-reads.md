@@ -61,11 +61,20 @@ suppression reduces single-record inference; it does not solve every statistical
 inference risk. Review the underlying view, database role, and aggregation
 policy as well.
 
+For a derived measure, keep formulas and joins out of the model-facing grammar.
+Define them in a reviewed database view and expose only a typed view column
+through the fixed aggregate capability. The complete hardened PostgreSQL
+pattern and runnable retail example are in [Reviewed Database Views For Derived
+Measures](reviewed-database-views.md).
+
 Scoped Aggregate Explore reuses and extends this suppression machinery. Its
 reviewed boundary additionally fixes aggregate-safe measures,
 `count_distinct` identifiers, dimensions, day/week/month buckets, typed
-filters, optional one-hop proven many-to-one relationships, maximum groups,
-response/query/rate limits, and durable extraction/differencing budgets. A
-field may be approved for `count_distinct` while its raw values remain hidden.
-Production receives only the protected named capability; broad Explore is
-absent from production `tools/list`.
+filters, up to three activated relationship paths (one or two proven
+many-to-one links per path), maximum groups, response/query/rate limits, and
+durable extraction/differencing budgets. A field may be approved for
+`count_distinct` while its raw values remain hidden. Relationship paths remain
+catalog-proven, operator-activated authority; the model cannot supply join
+identifiers or activate an inactive path. See [Reviewed Relationship
+Paths](reviewed-relationships.md). Production receives only the protected named
+capability; broad Explore is absent from production `tools/list`.

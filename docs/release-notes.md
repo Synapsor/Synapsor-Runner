@@ -4,18 +4,97 @@ These notes track public Synapsor Runner behavior. Starting with `1.0.0`, the
 documented production-loop compatibility line uses the untagged stable package:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner demo --quick
+npx -y @synapsor/runner demo --quick
 ```
 
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.3 (prepared, not published)
+## 1.6.4 (prepared, not published)
+
+### Review-correct onboarding and reviewed relationship paths
+
+- Generated-boundary review now uses dependency-scoped invalidation and stale
+  revision checks. Editing one resource does not erase unrelated human
+  decisions, while stale browser state cannot overwrite a newer review.
+- Workbench starts with a small useful resource pack, explains current agent
+  authority and source-change status in plain language, keeps advanced
+  permissions behind progressive disclosure, and preserves one recommended
+  next action. Project resume and nested config discovery retain existing work.
+- A fresh `npx -y @synapsor/runner start` can accept the database URL through a
+  hidden terminal prompt, or load only a selected `DATABASE_URL` from an
+  explicitly confirmed local environment file. In the conservative local
+  development fast lane, at most two plain questions and one recorded
+  digest-bound human gesture lead to a real read without exporting the URL,
+  editing generated files, or weakening staging/production review.
+- Deterministic classification is more conservative across unfamiliar domains.
+  Database, Prisma, Drizzle, OpenAPI, and existing Synapsor evidence can improve
+  names and structure but cannot grant authority or resolve ambiguous trusted
+  scope.
+- Protected aggregate reads may contain up to three activated reviewed
+  relationship paths. Each path has one or two catalog-proven many-to-one
+  links with fan-out one. The model can select an activated path by name but
+  cannot provide a table, key, join type, or activation decision.
+- A question needing an inactive proven path fails closed and stages that exact
+  path for operator review. Optional links require an explicit missing-row
+  choice because excluding versus retaining an unmatched counted row can change
+  totals. The reviewed choice and structural proof are digest-bound.
+- Scope is enforced independently on every relation. Cohort suppression runs
+  after final grouping. One-to-many, many-to-many, ambiguous, stale, over-depth,
+  and model-improvised joins remain refused; complex formulas and relationship
+  graphs use reviewed database views.
+- Packed Community Solar and Retail clean-room journeys and live
+  PostgreSQL/MySQL relationship gates cover unfamiliar-domain onboarding,
+  PM-style analysis, demand-driven review, nullable semantics, drift,
+  suppression, scope, and deliberate fan-out rejection.
+- Workbench now offers an optional local **Ask with your model** client over the
+  exact active MCP/runtime tools. OpenAI, Anthropic, and custom
+  OpenAI-compatible adapters use explicit digest-bound direct-egress consent,
+  in-memory credentials/history, bounded tool loops, escaped provider prose,
+  and proposal-only writes. The no-model composer remains the default.
+- Remote provider requests use fixed official origins or an operator-selected
+  HTTPS custom origin, refuse redirects, validate and pin DNS on every
+  connection, block private/special/metadata targets, redact errors, and
+  support Node 22's multi-address lookup contract. Plain HTTP remains
+  loopback-only.
+- Both packed clean-room domains now pass the real Ask UI. The Retail journey
+  shows a kept-out-field refusal; Community Solar shows a source-unchanged
+  proposal. An owner-authorized live OpenAI `gpt-5-mini` acceptance run used
+  the same official-MCP path, matched its aggregate result, and passed exact-key
+  project/ledger/browser/output/evidence scans. Anthropic and generic
+  compatible claims are limited to the documented tested protocol matrix.
+- Human-facing commands now use the shortest true form: direct `npx` for first
+  acquisition and `synapsor-runner <command>` after installation. The optional
+  unscoped `synapsor-runner` npm package contains no runtime or authority logic;
+  it delegates to the exact matching scoped Runner version. Existing explicit
+  package, pinned, CI, and machine-readable invocations remain compatible.
+- Generated DSL previews use one local, escaped, copy-exact syntax highlighter
+  in light and dark themes with no CDN or unsafe HTML fallback. Activity and
+  human review details use the full Workbench width instead of a compressed
+  side column, including mobile layouts.
+- Existing hand-authored and published `1.6.3` projects do not need the new
+  relationship fields, generation review, or Workbench. Legacy contracts keep
+  their exact normalized bytes/digests and existing tool lists remain
+  unchanged unless the feature is adopted.
+
+Prepared package versions: `@synapsor/runner@1.6.4`,
+`@synapsor/spec@1.7.0`, `@synapsor/dsl@1.7.0`, and the optional
+`synapsor-runner@1.6.4` command alias.
+No package is published by this change.
+
+Publish Spec first, then DSL, then the scoped Runner, and finally its exact
+version command alias. Force the final registry-only Runner dependency check
+with
+`VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC=0 ./scripts/verify-packed-runner.sh` after
+Spec 1.7.0 is visible on npm, and verify the alias only after
+`@synapsor/runner@1.6.4` is visible.
+
+## 1.6.3 (published 2026-07-24)
 
 ### Guided adoption without weaker authority
 
 - A fresh interactive
-  `npx -y @synapsor/runner@latest start --from-env DATABASE_URL` now drives one
+  `npx -y @synapsor/runner start --from-env DATABASE_URL` now drives one
   resumable metadata-inspection, review-by-exception, exact-digest activation,
   first safe read, and MCP setup journey. It requires no account, model key,
   Cloud control plane, global install, or manual project files.
@@ -65,14 +144,11 @@ for the Synapsor Cloud CLI.
   advance to `1.6.0` while preserving old contract normalization, digests, and
   generated-lock support.
 
-Prepared package versions: `@synapsor/runner@1.6.3`,
+Published package versions: `@synapsor/runner@1.6.3`,
 `@synapsor/spec@1.6.0`, and `@synapsor/dsl@1.6.0`.
-No package is published by this change.
 
-The pre-release clean-install gate uses the locally packed public Spec until
-Spec 1.6.0 is on npm. After publishing Spec first, force the registry-only
-Runner dependency check with
-`VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC=0 ./scripts/verify-packed-runner.sh`.
+The pre-release clean-install gate used the locally packed public Spec until
+Spec 1.6.0 reached npm, then returned to the registry-only dependency proof.
 
 ## 1.6.2 (published 2026-07-23)
 
@@ -705,7 +781,7 @@ not change and must not be republished for this release.
 ### Public npm DX
 
 - Prepares the spec-ready Runner package for the normal untagged npm path so
-  developers can use `npx -y -p @synapsor/runner synapsor-runner ...` without
+  developers can use `npx -y @synapsor/runner ...` without
   knowing about the temporary `next` release-candidate tag.
 - Keeps the same contract/spec functionality as `0.1.2`; this is a release
   hygiene patch for public install and README/package-page verification.

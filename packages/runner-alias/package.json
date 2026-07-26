@@ -1,0 +1,29 @@
+{
+  "name": "synapsor-runner",
+  "version": "1.6.4",
+  "description": "Short command alias for @synapsor/runner.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "synapsor-runner": "bin/synapsor-runner.mjs"
+  },
+  "files": [
+    "bin/synapsor-runner.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@synapsor/runner": "workspace:1.6.4"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "homepage": "https://synapsor.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Synapsor/Synapsor-Runner.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -41,11 +41,11 @@ cd ./synapsor-runner-bundle
 cp .env.example .env
 set -a && . ./.env && set +a
 
-npx -y -p @synapsor/runner synapsor-runner contract validate ./synapsor.contract.json
-npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json
-npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner synapsor-runner cloud connect --config ./synapsor.cloud.json
-npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner contract validate ./synapsor.contract.json
+npx -y @synapsor/runner config validate --config ./synapsor.runner.json
+npx -y @synapsor/runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner cloud connect --config ./synapsor.cloud.json
+npx -y @synapsor/runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 For proposal contracts, run the trusted worker in a separate
@@ -53,14 +53,14 @@ operator-controlled terminal:
 
 ```bash
 set -a && . ./.env && set +a
-npx -y -p @synapsor/runner synapsor-runner start --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner start --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 After an MCP tool creates a local proposal, sync its reviewed diff and safe
 references to Cloud:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner cloud sync latest \
+npx -y @synapsor/runner cloud sync latest \
   --config ./synapsor.cloud.json \
   --store ./.synapsor/local.db
 ```

@@ -1,6 +1,6 @@
 # RFC 006: Reviewed Reversible Change Sets
 
-Status: implemented and verified for the prepared Runner 1.4 release line
+Status: implemented (originally verified for the Runner 1.4 release line)
 
 ## Problem
 

@@ -313,7 +313,7 @@ describe("local UI", () => {
       expect(landing.url).not.toContain("token=");
       expect(landing.headers.get("referrer-policy")).toBe("no-referrer");
       const html = await landing.text();
-      expect(html).toContain("Synapsor Runner Local UI");
+      expect(html).toContain("Synapsor Workbench");
       expect(html).toContain("Commit-safe MCP in one loop");
       expect(html).toContain("First safe action");
       expect(html).toContain("Add the action to Cursor");
@@ -632,6 +632,12 @@ export default defineCapability({
         schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
         resources: {
           "public.members": {
+            tenant_key: {
+              value: "organization_id",
+              actor: "reviewer@example.test",
+              reason: "The application binds each member to the reviewed gym tenant.",
+              decided_at: "2026-07-24T17:00:00.000Z",
+            },
             principal_key: {
               value: "assigned_trainer_id",
               actor: "reviewer@example.test",
@@ -643,7 +649,7 @@ export default defineCapability({
       },
     });
     const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
-    const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.6.3" });
+    const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.6.4" });
     const boundaryDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
     await activateExplorationBoundary({
       projectRoot: tempDir,
@@ -741,6 +747,12 @@ export default defineCapability({
       });
       expect(JSON.parse(await fs.readFile(guided.config_path, "utf8"))).toMatchObject({
         mode: "review",
+        proposal_freshness: {
+          "membership.set_loyalty_balance": {
+            approval: "required",
+            dependencies: [],
+          },
+        },
         sources: {
           local_postgres: {
             read_only: false,
@@ -750,11 +762,13 @@ export default defineCapability({
         },
       });
       const boundaryLanding = await fetch(`${baseUrl}/`, { headers });
-      expect(await boundaryLanding.text()).toContain("Add a safe action");
+      expect(await boundaryLanding.text()).toContain("5. Add safe action");
       const activityLanding = await fetch(`${baseUrl}/?surface=activity`, { headers });
       const activityHtml = await activityLanding.text();
       expect(activityHtml).toContain("<h2>Activity</h2>");
       expect(activityHtml).toContain("Lifecycle review");
+      expect(activityHtml).toContain("proposal.change_set.approval");
+      expect(activityHtml).not.toContain("asRecord(proposal.change_set.approval)");
       const eventStore = new ProposalStore(guided.store_path);
       try {
         expect(eventStore.listAttentionEvents({ capability: "membership.set_loyalty_balance" }))
@@ -824,8 +838,8 @@ export default defineCapability({
       expect(html).not.toContain("I reviewed every listed scope");
       expect(html).toContain('id="deployment-profile"');
       expect(html).toContain("Exact database role posture");
-      expect(html).toContain("Blocked Objects And Disabled Actions");
-      expect(html).toContain("Protect This Query");
+      expect(html).toContain("Blocked data stays unavailable");
+      expect(html).toContain("Make reusable");
 
       const activation = await fetch(`${baseUrl}/api/boundary/activate`, {
         method: "POST",
@@ -846,6 +860,127 @@ export default defineCapability({
         ok: false,
         error: expect.stringMatching(/every reviewed decision/i),
       });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("activates one conservative development resource and drives a real scoped runtime call in the instant path", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-instant-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.4",
+      instantOnboarding: true,
+    });
+    const plans: unknown[] = [];
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "instant-token",
+      csrfToken: "instant-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+      scopedExploreRuntimeFactory: async () => ({
+        boundary: {} as never,
+        session_fingerprint: `sha256:${"c".repeat(64)}`,
+        describe: () => ({}),
+        explore: async (plan) => {
+          plans.push(plan);
+          return {
+            schema_version: "synapsor.scoped-explore.result.v1",
+            columns: ["count"],
+            rows: [{ count: 12 }],
+          };
+        },
+        close: async () => undefined,
+      }),
+    });
+    const headers = {
+      "x-synapsor-ui-token": "instant-token",
+      "x-synapsor-csrf": "instant-csrf",
+    };
+    try {
+      const boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      expect(boundary.instant_onboarding).toMatchObject({
+        eligible: true,
+        resource: "public.members",
+        candidate: {
+          deployment_profile: "development",
+          pack: { resources: [{ id: "public.members", relationships: [] }] },
+        },
+      });
+
+      const refused = await fetch(`http://${server.host}:${server.port}/api/instant/activate-and-read`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          profile_assertion: "shared_or_production",
+          tenant: "acme",
+          principal: "trainer-7",
+        }),
+      });
+      expect(refused.status).toBe(500);
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+
+      const activated = await postJson(
+        `http://${server.host}:${server.port}/api/instant/activate-and-read`,
+        headers,
+        {
+          profile_assertion: "own_development",
+          tenant: "acme",
+          principal: "trainer-7",
+        },
+      );
+      expect(activated).toMatchObject({
+        ok: true,
+        first_tool: "app.explore_data",
+        resource: "public.members",
+        source_database_changed: false,
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        result: { rows: [{ count: 12 }] },
+      });
+      expect(plans).toEqual([
+        expect.objectContaining({
+          kind: "aggregate",
+          resource: "public.members",
+          measures: [{ function: "count" }],
+        }),
+      ]);
+      const active = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(active).toMatchObject({
+        pack: { resources: [{ id: "public.members", relationships: [] }] },
+        activation: {
+          mode: "instant_development",
+          profile_assertion: "own_development",
+          confirmation_gesture: "activate_and_read",
+        },
+      });
+      expect(JSON.stringify(active)).not.toContain("trainer-7");
+      expect(JSON.stringify(active)).not.toContain("acme");
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -873,7 +1008,7 @@ export default defineCapability({
     const guided = await initializeGuidedProject({
       projectRoot: tempDir,
       build,
-      runnerVersion: "1.6.3",
+      runnerVersion: "1.6.4",
     });
     await fs.writeFile(path.join(tempDir, ".synapsor/exploration-boundary.active.json"), "{}\n", "utf8");
     await fs.mkdir(path.join(tempDir, ".synapsor/active"), { recursive: true });
@@ -1004,6 +1139,290 @@ export default defineCapability({
     }
   });
 
+  it("stages one catalog-proven missing relationship and preserves unrelated review decisions", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-relationship-review-"));
+    const inspection = relationshipReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.4",
+    });
+    const candidate = structuredClone(build.exploration_boundary);
+    const member = candidate.pack.resources.find((resource) => resource.id === "public.members")!;
+    member.relationships = [];
+    const activeDigest = explorationBoundaryCandidateDigest(candidate);
+    const active = await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate,
+      expectedDigest: activeDigest,
+      actor: "initial-reviewer@example.test",
+      confirmation: `ACTIVATE ${activeDigest}`,
+      confirmedDecisions: candidate.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const proof = build.exploration_boundary.pack.resources
+      .find((resource) => resource.id === "public.members")!
+      .relationships.find((relationship) => relationship.id === "members_team_id_fkey")!
+      .proof!;
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "relationship-review-token",
+      csrfToken: "relationship-review-csrf",
+      schemaInspector: async () => inspection,
+    });
+    try {
+      const url = `http://${server.host}:${server.port}`;
+      const withoutCsrf = await fetch(`${url}/api/boundary/review-relationship`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-synapsor-ui-token": "relationship-review-token",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(withoutCsrf.status).toBe(403);
+
+      const staged = await postJson(`${url}/api/boundary/review-relationship`, {
+        "x-synapsor-ui-token": "relationship-review-token",
+        "x-synapsor-csrf": "relationship-review-csrf",
+      }, {
+        resource: "public.members",
+        relationship: "members_team_id_fkey",
+        active_boundary_digest: active.activation.digest,
+        actor: "relationship-reviewer@example.test",
+        confirmation: `REVIEW RELATIONSHIP ${proof.digest}`,
+      });
+      expect(staged).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        relationship_review: {
+          resource: "public.members",
+          relationship: "members_team_id_fkey",
+          target_resource: "public.teams",
+          path_depth: 1,
+          nullable: false,
+          proof: {
+            source: "database_catalog",
+            digest: proof.digest,
+          },
+        },
+      });
+      expect(staged.candidate.pack.resources
+        .find((resource: { id: string }) => resource.id === "public.members")
+        .relationships).toEqual([
+        expect.objectContaining({ id: "members_team_id_fkey" }),
+      ]);
+      const relationshipDecision =
+        "public.members: review relationship members_team_id_fkey cardinality and scope on public.teams";
+      expect(staged.confirmed_decisions).toContain(relationshipDecision);
+      expect(staged.confirmed_decisions).toEqual(expect.arrayContaining(
+        active.activation.reviewed_decisions.map((decision) => decision.decision),
+      ));
+      expect(staged.candidate_digest).not.toBe(active.activation.digest);
+      expect(JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )).activation.digest).toBe(active.activation.digest);
+
+      const activated = await postJson(`${url}/api/boundary/activate`, {
+        "x-synapsor-ui-token": "relationship-review-token",
+        "x-synapsor-csrf": "relationship-review-csrf",
+      }, {
+        candidate: staged.candidate,
+        expected_digest: staged.candidate_digest,
+        actor: "relationship-reviewer@example.test",
+        confirmation: `ACTIVATE ${staged.candidate_digest}`,
+        confirmed_decisions: staged.confirmed_decisions,
+      });
+      expect(activated.active.pack.resources
+        .find((resource: { id: string }) => resource.id === "public.members")
+        .relationships).toEqual([
+        expect.objectContaining({ id: "members_team_id_fkey" }),
+      ]);
+      expect(activated.source_database_changed).toBe(false);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["public.members", "assigned_agent", "public.charges", "reviewer_id"],
+    ["public.charges", "reviewer_id", "public.members", "assigned_agent"],
+  ])(
+    "preserves unrelated review confirmations when %s then %s are regenerated",
+    async (firstResource, firstPrincipal, secondResource, secondPrincipal) => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-review-order-"));
+      const inspection = multiResourceBoundaryReviewInspection();
+      const project = {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      };
+      const build = buildAutoBoundary({
+        inspection,
+        project,
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "public",
+      });
+      const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+      const guided = await initializeGuidedProject({
+        projectRoot: tempDir,
+        build,
+        runnerVersion: "1.6.4",
+      });
+      const server = await startLocalUiServer({
+        projectRoot: tempDir,
+        boundaryRoot: written.root,
+        configPath: guided.config_path,
+        storePath: guided.store_path,
+        token: "review-order-token",
+        csrfToken: "review-order-csrf",
+        schemaInspector: async () => inspection,
+      });
+      const headers = {
+        "x-synapsor-ui-token": "review-order-token",
+        "x-synapsor-csrf": "review-order-csrf",
+      };
+      try {
+        let boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+        const originalDecisions = boundary.review.unresolved_decisions as string[];
+        const saved = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: boundary.candidate,
+          confirmed_decisions: originalDecisions,
+          expected_revision: 0,
+          actor: "reviewer@example.test",
+        });
+        expect(saved.revision).toBe(1);
+        const staleSave = await fetch(`http://${server.host}:${server.port}/api/boundary/progress`, {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            candidate: boundary.candidate,
+            confirmed_decisions: [],
+            expected_revision: 0,
+            actor: "stale-reviewer@example.test",
+          }),
+        });
+        expect(staleSave.status).toBe(409);
+        await expect(staleSave.json()).resolves.toMatchObject({
+          ok: false,
+          current_revision: 1,
+          error: expect.stringMatching(/another Workbench session/i),
+        });
+
+        const first = await postJson(`http://${server.host}:${server.port}/api/boundary/regenerate`, headers, {
+          kind: "principal_key",
+          resource_id: firstResource,
+          value: firstPrincipal,
+          actor: "reviewer@example.test",
+          reason: "This reviewed application ownership column constrains each operator to assigned rows.",
+        });
+        const firstMissing = `${firstResource}: confirm principal scope ${firstPrincipal}`;
+        expect(first.review_progress.outstanding_decisions).toEqual(expect.arrayContaining([
+          expect.objectContaining({ decision: firstMissing, resource_id: firstResource }),
+        ]));
+        expect(first.review_progress.outstanding_decisions).toHaveLength(3);
+        expect(first.review_progress.outstanding_decisions.every(
+          (decision: { resource_id?: string }) => decision.resource_id === firstResource,
+        )).toBe(true);
+        expect(first.confirmed_decisions).toHaveLength(originalDecisions.length - 3);
+        expect(first.review_progress.invalidated_decisions).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            id: `resource.${firstResource}.principal_scope`,
+            reason: "reviewed_input_changed",
+          }),
+        ]));
+
+        boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+        await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: boundary.candidate,
+          confirmed_decisions: boundary.review.unresolved_decisions,
+          expected_revision: boundary.review_progress.revision,
+          actor: "reviewer@example.test",
+        });
+
+        const second = await postJson(`http://${server.host}:${server.port}/api/boundary/regenerate`, headers, {
+          kind: "principal_key",
+          resource_id: secondResource,
+          value: secondPrincipal,
+          actor: "reviewer@example.test",
+          reason: "This reviewed application ownership column constrains each operator to assigned rows.",
+        });
+        const secondMissing = `${secondResource}: confirm principal scope ${secondPrincipal}`;
+        expect(second.review_progress.outstanding_decisions).toEqual(expect.arrayContaining([
+          expect.objectContaining({ decision: secondMissing, resource_id: secondResource }),
+        ]));
+        expect(second.review_progress.outstanding_decisions).toHaveLength(3);
+        expect(second.review_progress.outstanding_decisions.every(
+          (decision: { resource_id?: string }) => decision.resource_id === secondResource,
+        )).toBe(true);
+        expect(second.confirmed_decisions).toContain(firstMissing);
+        expect(second.confirmed_decisions).not.toContain(secondMissing);
+
+        boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+        const complete = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: boundary.candidate,
+          confirmed_decisions: boundary.review.unresolved_decisions,
+          expected_revision: boundary.review_progress.revision,
+          actor: "reviewer@example.test",
+        });
+        const activated = await postJson(`http://${server.host}:${server.port}/api/boundary/activate`, headers, {
+          candidate: boundary.candidate,
+          expected_digest: complete.digest,
+          actor: "reviewer@example.test",
+          confirmation: `ACTIVATE ${complete.digest}`,
+          confirmed_decisions: boundary.review.unresolved_decisions,
+        });
+        expect(activated).toMatchObject({
+          ok: true,
+          active: { activation: { state: "active" } },
+          source_database_changed: false,
+        });
+        const progress = JSON.parse(
+          await fs.readFile(path.join(tempDir, ".synapsor/boundary-review-progress.json"), "utf8"),
+        );
+        expect(progress).toMatchObject({
+          schema_version: "synapsor.boundary-review-progress.v2",
+          confirmations: expect.arrayContaining([
+            expect.objectContaining({
+              id: `resource.${firstResource}.principal_scope`,
+              actor: "reviewer@example.test",
+              status: "confirmed",
+            }),
+            expect.objectContaining({
+              id: `resource.${secondResource}.principal_scope`,
+              actor: "reviewer@example.test",
+              status: "confirmed",
+            }),
+          ]),
+        });
+      } finally {
+        await server.close();
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    },
+    20_000,
+  );
+
   it("keeps Workbench trusted scope in memory and out of responses and project files", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-trusted-scope-"));
     const inspection = boundaryReviewInspection();
@@ -1020,7 +1439,7 @@ export default defineCapability({
       inspectedSchema: "public",
     });
     const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
-    const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.6.3" });
+    const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.6.4" });
     const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
     await activateExplorationBoundary({
       projectRoot: tempDir,
@@ -2109,6 +2528,282 @@ export default defineCapability({
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("runs BYOM Ask only through the reviewed Workbench tool surface without persisting authority or secrets", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-ask-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, ".synapsor/local.db");
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    const secret = "sk-workbench-session-only-canary";
+    const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    let closedGateways = 0;
+    let providerRequests = 0;
+    const tool = {
+      name: "billing.propose_late_fee_waiver",
+      title: "Propose a late-fee waiver",
+      description: "Creates one reviewed proposal and never applies it.",
+      input_schema: {
+        type: "object",
+        properties: {
+          invoice_id: { type: "string" },
+          reason: { type: "string" },
+        },
+        required: ["invoice_id", "reason"],
+        additionalProperties: false,
+      },
+      metadata: {
+        "synapsor.kind": "proposal",
+        "synapsor.approval_tool": false,
+        "synapsor.commit_tool": false,
+      },
+    };
+    const server = await startLocalUiServer({
+      configPath,
+      storePath,
+      projectRoot: tempDir,
+      token: "ask-token",
+      csrfToken: "ask-csrf",
+      deploymentProfile: "development",
+      askGatewayFactory: async () => ({
+        listTools: async () => [tool],
+        callTool: async (name, args) => {
+          toolCalls.push({ name, args });
+          return {
+            ok: true,
+            value: {
+            ok: true,
+            proposal: {
+              proposal_id: "wrp_ask_1",
+              state: "pending_review",
+            },
+            source_database_changed: false,
+            },
+          };
+        },
+        close: async () => {
+          closedGateways += 1;
+        },
+      }),
+      askProviderDependencies: {
+        requestJson: async (input) => {
+          providerRequests += 1;
+          expect(input.headers.authorization).toBe(`Bearer ${secret}`);
+          if (JSON.stringify(input.body).includes("Simulate provider outage")) {
+            throw new Error(`provider unavailable: ${secret}`);
+          }
+          if (providerRequests === 1) {
+            return {
+              status: 200,
+              body: {
+                choices: [{
+                  message: {
+                    role: "assistant",
+                    content: null,
+                    tool_calls: [{
+                      id: "call_workbench_1",
+                      type: "function",
+                      function: {
+                        name: "billing__propose_late_fee_waiver",
+                        arguments: JSON.stringify({
+                          invoice_id: "INV-ASK",
+                          reason: "reviewed customer request",
+                        }),
+                      },
+                    }],
+                  },
+                }],
+              },
+            };
+          }
+          return {
+            status: 200,
+            body: {
+              choices: [{
+                message: {
+                  role: "assistant",
+                  content: "A proposal was created and still requires operator review.",
+                },
+              }],
+            },
+          };
+        },
+      },
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const headers = { "x-synapsor-ui-token": "ask-token" };
+      const mutationHeaders = {
+        ...headers,
+        "x-synapsor-csrf": "ask-csrf",
+        "content-type": "application/json",
+      };
+      const status = await getJson(`${baseUrl}/api/ask/status`, headers);
+      expect(status).toMatchObject({
+        ok: true,
+        available: true,
+        profile: "development",
+        direct_provider_egress: true,
+        synapsor_relay: false,
+        persisted_conversation: false,
+        session: { configured: false, running: false, history_turns: 0 },
+      });
+      expect(status.tools).toEqual([
+        expect.objectContaining({ name: tool.name, kind: "proposal" }),
+      ]);
+
+      const missingCsrf = await fetch(`${baseUrl}/api/ask/configure`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(missingCsrf.status).toBe(403);
+
+      const configured = await postJson(`${baseUrl}/api/ask/configure`, mutationHeaders, {
+        provider: "openai",
+        model: "gpt-5-mini",
+        api_key: secret,
+        authority_digest: status.authority_digest,
+        egress_acknowledged: true,
+      });
+      expect(configured).toMatchObject({
+        ok: true,
+        configuration: {
+          provider: "openai",
+          model: "gpt-5-mini",
+          credential_source: "session_paste",
+          authority_digest: status.authority_digest,
+        },
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(configured)).not.toContain(secret);
+
+      const result = await postJson(`${baseUrl}/api/ask/run`, mutationHeaders, {
+        question: "Waive the reviewed invoice late fee.",
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        answer: "A proposal was created and still requires operator review.",
+        source_database_changed: false,
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+      });
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({
+          tool: tool.name,
+          status: "ok",
+          result: expect.objectContaining({
+            proposal: {
+              proposal_id: "wrp_ask_1",
+              state: "pending_review",
+            },
+            source_database_changed: false,
+          }),
+        }),
+      ]);
+      expect(toolCalls).toEqual([{
+        name: tool.name,
+        args: {
+          invoice_id: "INV-ASK",
+          reason: "reviewed customer request",
+        },
+      }]);
+
+      const outage = await fetch(`${baseUrl}/api/ask/run`, {
+        method: "POST",
+        headers: mutationHeaders,
+        body: JSON.stringify({ question: "Simulate provider outage." }),
+      });
+      expect(outage.status).toBe(500);
+      const outagePayload = await outage.json();
+      expect(outagePayload).toMatchObject({
+        ok: false,
+        error_code: "ASK_INTERNAL",
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(outagePayload)).not.toContain(secret);
+
+      await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "read_only" }), "utf8");
+      const staleConsent = await fetch(`${baseUrl}/api/ask/run`, {
+        method: "POST",
+        headers: mutationHeaders,
+        body: JSON.stringify({ question: "Use the changed authority without a new acknowledgement." }),
+      });
+      expect(staleConsent.status).toBe(409);
+      expect(await staleConsent.json()).toMatchObject({
+        ok: false,
+        error_code: "ASK_AUTHORITY_CHANGED",
+        source_database_changed: false,
+      });
+      expect(providerRequests).toBe(3);
+
+      const cleared = await postJson(`${baseUrl}/api/ask/clear`, mutationHeaders, {});
+      expect(cleared).toMatchObject({
+        ok: true,
+        provider_key_retained: false,
+        conversation_retained: false,
+      });
+      const afterClear = await getJson(`${baseUrl}/api/ask/status`, headers);
+      expect(afterClear.session).toEqual({ configured: false, running: false, history_turns: 0 });
+      const projectEntries = await fs.readdir(tempDir, { recursive: true });
+      const persistedSecretMatches = await Promise.all(projectEntries.map(async (relativePath) => {
+        const absolutePath = path.join(tempDir, relativePath);
+        const stat = await fs.stat(absolutePath);
+        return stat.isFile()
+          ? (await fs.readFile(absolutePath)).includes(Buffer.from(secret))
+          : false;
+      }));
+      expect(persistedSecretMatches).not.toContain(true);
+      expect(providerRequests).toBe(3);
+      expect(closedGateways).toBeGreaterThanOrEqual(4);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { profile: "production" as const, host: "127.0.0.1", allowRemoteBind: false },
+    { profile: "unknown" as const, host: "127.0.0.1", allowRemoteBind: false },
+    { profile: "development" as const, host: "0.0.0.0", allowRemoteBind: true },
+  ])("does not advertise Ask for $profile on $host", async ({ profile, host, allowRemoteBind }) => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-ask-absent-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    let gatewayCalls = 0;
+    const server = await startLocalUiServer({
+      configPath,
+      projectRoot: tempDir,
+      deploymentProfile: profile,
+      host,
+      allowRemoteBind,
+      token: "ask-token",
+      askGatewayFactory: async () => {
+        gatewayCalls += 1;
+        throw new Error("gateway must not be created");
+      },
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.port}/api/ask/status`, {
+        headers: { "x-synapsor-ui-token": "ask-token" },
+      });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        available: false,
+        error_code: "ASK_SURFACE_UNAVAILABLE",
+        source_database_changed: false,
+      });
+      expect(gatewayCalls).toBe(0);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 async function getJson(url: string, headers: Record<string, string>): Promise<any> {
@@ -2220,6 +2915,106 @@ function boundaryReviewInspection(): SchemaInspection {
   };
 }
 
+function relationshipReviewInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const members = inspection.tables[0]!;
+  members.columns.push({
+    name: "team_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: members.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  members.suggestions.default_visible_columns.push("team_id");
+  members.foreign_keys = [{
+    name: "members_team_id_fkey",
+    columns: ["team_id"],
+    referenced_schema: "public",
+    referenced_table: "teams",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  const teams = structuredClone(members);
+  teams.name = "teams";
+  teams.columns = [
+    structuredClone(members.columns.find((column) => column.name === "id")!),
+    structuredClone(members.columns.find((column) => column.name === "tenant_id")!),
+    {
+      name: "name",
+      data_type: "text",
+      nullable: false,
+      generated: false,
+      ordinal_position: 3,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    },
+  ];
+  teams.unique_constraints = [{ name: "teams_pkey", columns: ["id"] }];
+  teams.foreign_keys = [];
+  teams.indexes = [{ name: "teams_pkey", columns: ["id"], unique: true }];
+  teams.suggestions = {
+    tenant_columns: ["tenant_id"],
+    conflict_columns: [],
+    sensitive_columns: [],
+    default_visible_columns: ["id", "tenant_id", "name"],
+  };
+  inspection.tables.push(teams);
+  return inspection;
+}
+
+function multiResourceBoundaryReviewInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const member = inspection.tables[0]!;
+  member.columns.push({
+    name: "assigned_agent",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: member.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: false,
+      large_or_binary: false,
+    },
+  });
+  const charges = structuredClone(member);
+  charges.name = "charges";
+  charges.columns = charges.columns.map((column, index) => ({
+    ...column,
+    name: column.name === "assigned_agent"
+      ? "reviewer_id"
+      : column.name === "membership_status"
+        ? "charge_status"
+        : column.name === "trainer_comments"
+          ? "card_on_file"
+          : column.name,
+    ordinal_position: index + 1,
+  }));
+  charges.row_level_security_policies = [{
+    name: "tenant_read",
+    command: "SELECT",
+    permissive: true,
+    roles: ["app_reader"],
+    using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+  }];
+  inspection.tables.push(charges);
+  return inspection;
+}
+
 function guidedActionInspection(): SchemaInspection {
   const inspection = boundaryReviewInspection();
   const table = inspection.tables[0]!;
@@ -2270,6 +3065,13 @@ function guidedActionInspection(): SchemaInspection {
     sensitive_columns: ["payment_method", "medical_notes"],
     default_visible_columns: ["id", "organization_id", "assigned_trainer_id", "membership_status", "loyalty_balance", "version"],
   };
+  table.row_level_security_policies = [{
+    name: "member_scope",
+    command: "SELECT",
+    permissive: true,
+    roles: ["app_reader"],
+    using_expression: "(organization_id = current_setting('app.organization_id')::uuid AND assigned_trainer_id = current_setting('app.principal')::uuid)",
+  }];
   table.referenced_by = [];
   table.write_triggers = [];
   return inspection;

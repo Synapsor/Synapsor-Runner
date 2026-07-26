@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 export const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const cursorPluginSource = path.join(repositoryRoot, "plugins/cursor/synapsor");
 export const cursorPluginOutput = path.join(repositoryRoot, "dist/cursor-plugin/synapsor");
-export const cursorPluginVersion = "1.6.3";
+export const cursorPluginVersion = "1.6.4";
 
 const allowedManifestKeys = new Set([
   "name", "version", "description", "author", "homepage", "repository",
@@ -52,7 +52,7 @@ export async function validateCursorPlugin(directory = cursorPluginSource, expec
     throw new Error("Cursor plugin MCP entry must not embed environment values, remote endpoints, headers, or auth");
   }
   const expectedArgs = [
-    "-y", "-p", `@synapsor/runner@${expectedVersion}`, "synapsor-runner", "mcp", "serve",
+    "-y", `@synapsor/runner@${expectedVersion}`, "mcp", "serve",
     "--config", "${workspaceFolder}/synapsor.runner.json",
     "--store", "${workspaceFolder}/.synapsor/local.db",
   ];
@@ -64,8 +64,8 @@ export async function validateCursorPlugin(directory = cursorPluginSource, expec
   assertFrontmatter(command, "synapsor-protect", "Cursor command");
   for (const required of [
     `@synapsor/runner@${expectedVersion}`,
-    "synapsor-runner start --action",
-    "synapsor-runner action validate",
+    `npx -y @synapsor/runner@${expectedVersion} start --action`,
+    `npx -y @synapsor/runner@${expectedVersion} action validate`,
     "synapsor/SAFE_ACTION_AGENT.md",
     "There is intentionally no `action activate` CLI or MCP",
   ]) {

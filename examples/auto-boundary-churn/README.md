@@ -1,6 +1,6 @@
 # Auto Boundary Churn Fixture
 
-This synthetic staging fixture is the measured Runner 1.6.0 golden path:
+This synthetic staging fixture is the original Runner 1.6.0 focused path:
 PostgreSQL, Next.js, Prisma, Cursor-compatible local MCP, and the local
 Workbench.
 

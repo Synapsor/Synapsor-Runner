@@ -212,6 +212,24 @@ export type ProtectedReadRelationshipSpec = ExtensionFields & {
   max_fan_out: 1;
 };
 
+export type ProtectedReadRelationshipLinkSpec = ExtensionFields & {
+  schema: string;
+  table: string;
+  primary_key: string;
+  tenant_key: string;
+  principal_scope_key?: string;
+  local_key: string;
+  target_key: string;
+  cardinality: "many_to_one";
+  max_fan_out: 1;
+  unmatched_rows: "exclude" | "keep_null";
+};
+
+export type ProtectedReadRelationshipPathSpec = ExtensionFields & {
+  name: string;
+  links: ProtectedReadRelationshipLinkSpec[];
+};
+
 export type ProtectedReadMeasureSpec = ExtensionFields & {
   name: string;
   function: "count" | "count_distinct" | "sum" | "avg";
@@ -280,7 +298,16 @@ export type ProtectedReadSpec = ExtensionFields & {
   boundary_digest: `sha256:${string}`;
   generation_lock_fingerprint: `sha256:${string}`;
   predicates?: ProtectedReadPredicateSpec[];
+  /**
+   * Legacy one-hop form. It remains canonical when present so existing
+   * protected contracts retain their exact normalized bytes and digest.
+   */
   relationship?: ProtectedReadRelationshipSpec;
+  /**
+   * Additive reviewed star/depth-two form. Every path and link is fixed by
+   * human-reviewed authority; runtime plans may reference names only.
+   */
+  relationships?: ProtectedReadRelationshipPathSpec[];
   row_order_by?: Array<{
     field: string;
     direction: "asc" | "desc";

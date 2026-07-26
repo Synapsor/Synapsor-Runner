@@ -23,7 +23,7 @@ synapsor --help
 For an isolated one-off invocation:
 
 ```bash
-npx -y -p @synapsor/cli synapsor --help
+npx -y @synapsor/cli --help
 ```
 
 ## Human Login

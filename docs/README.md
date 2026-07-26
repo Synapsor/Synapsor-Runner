@@ -22,6 +22,9 @@ no-database demo, wire your database, then read deeper concepts.
   five-minute first read, ten-minute Explore to Protect, fifteen-minute
   proposal, resumable setup, guarded development writeback, and host-neutral
   client handoff.
+- [Workbench Ask With Your Model](workbench-ask.md): optional local OpenAI,
+  Anthropic, and custom-provider chat over the exact reviewed tool surface,
+  with direct-egress consent, session-only credentials, and no added authority.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 
@@ -58,6 +61,9 @@ no-database demo, wire your database, then read deeper concepts.
   whole staging application, review one digest-bound boundary, ask bounded row
   and PM-style aggregate questions in Cursor, and turn a useful query into a
   disabled named production capability.
+- [Workbench Ask With Your Model](workbench-ask.md): use the same reviewed
+  tools from Workbench without requiring Cursor or giving the model activation,
+  approval, or apply authority.
 - [Connect Your Own Database](getting-started-own-database.md): inspect a
   staging Postgres/MySQL database through the new whole-schema path or an
   established one-object/headless route.
@@ -120,9 +126,17 @@ no-database demo, wire your database, then read deeper concepts.
   policy outcomes, tenant handling, and hidden-field behavior.
 - [Bounded Aggregate Reads](aggregate-reads.md): fixed production scalar
   aggregates plus the separate authoring-only reviewed aggregate Explore path.
+- [Reviewed Relationship Paths](reviewed-relationships.md): catalog-proven
+  star/depth-two aggregate paths, demand-driven operator review, nullable-link
+  semantics, per-relation scope, and the permanent no-general-join boundary.
+- [Reviewed Database Views](reviewed-database-views.md): expose a reviewed
+  derived measure without adding formulas or SQL to the model-facing planner.
 
 ## 06 Serve MCP
 
+- [Workbench Ask With Your Model](workbench-ask.md): optional secured-loopback
+  client, provider matrix, key/egress lifecycle, endpoint controls, and exact
+  parity with the normal MCP runtime.
 - [Host Compatibility](host-compatibility.md): exact Tested,
   Protocol-tested, Unsupported, and Unknown claims for Cursor and other MCP
   hosts, including the inline-review fallback.

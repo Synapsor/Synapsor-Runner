@@ -8,6 +8,16 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Pool } from "pg";
+import {
+  captureScreenshot,
+  clickSelector,
+  configurePage,
+  createPage,
+  launchChrome,
+  navigateAndWait,
+  selectOptionByValue,
+  waitForExpression,
+} from "./demo-video/cdp-client.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runnerPackageDir = path.join(root, "apps", "runner");
@@ -15,9 +25,16 @@ const specPackageDir = path.join(root, "packages", "spec");
 const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "synapsor-packed-auto-boundary-"));
 const packRoot = path.join(tempRoot, "pack");
 const installRoot = path.join(tempRoot, "install");
+const baselineInstallRoot = path.join(tempRoot, "baseline-install");
 const warmInstallRoot = path.join(tempRoot, "warm-install");
 const isolatedNpmCache = path.join(tempRoot, "npm-cache");
 const projectRoot = path.join(tempRoot, "project");
+const baselineProjectRoot = path.join(tempRoot, "published-1.6.3-project");
+const relationshipScreenshot = path.join(
+  root,
+  "development",
+  "runner-1.6.4-demand-driven-relationship.png",
+);
 const readUrl = "postgresql://synapsor_churn_reader:synapsor_churn_reader_password@127.0.0.1:55460/synapsor_auto_boundary";
 const adminUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/synapsor_auto_boundary";
 const runtimeEnv = {
@@ -25,6 +42,7 @@ const runtimeEnv = {
   DATABASE_URL: readUrl,
   SYNAPSOR_TENANT_ID: "acme",
   SYNAPSOR_PRINCIPAL: "pm-1",
+  SYNAPSOR_OPERATOR_ID: "packed-golden-reviewer",
 };
 
 let compose;
@@ -38,6 +56,7 @@ const npmInstallEnv = measureIsolatedInstall
 try {
   await fsp.mkdir(packRoot);
   await fsp.mkdir(installRoot);
+  await fsp.mkdir(baselineInstallRoot);
   await fsp.mkdir(warmInstallRoot);
   run("corepack", ["pnpm", "build:runner-package"], { cwd: root });
   const specTarball = packCurrent(packRoot, specPackageDir);
@@ -47,6 +66,22 @@ try {
   run("npm", ["install", "--ignore-scripts", specTarball], { cwd: installRoot, env: npmInstallEnv });
   run("npm", ["install", "--ignore-scripts", tarball], { cwd: installRoot, env: npmInstallEnv });
   timings.fresh_package_install_ms = Date.now() - freshInstallStartedAt;
+
+  run("npm", ["init", "-y"], { cwd: baselineInstallRoot });
+  run("npm", ["install", "--ignore-scripts", "@synapsor/runner@1.6.3"], {
+    cwd: baselineInstallRoot,
+  });
+  const baselinePackageRoot = path.join(
+    baselineInstallRoot,
+    "node_modules",
+    "@synapsor",
+    "runner",
+  );
+  const baselineCli = path.join(baselinePackageRoot, "dist", "cli.js");
+  assert.equal(
+    JSON.parse(await fsp.readFile(path.join(baselinePackageRoot, "package.json"), "utf8")).version,
+    "1.6.3",
+  );
 
   const warmInstallStartedAt = Date.now();
   run("npm", ["init", "-y"], { cwd: warmInstallRoot, env: npmInstallEnv });
@@ -63,6 +98,7 @@ try {
   const packagedFixture = path.join(packageRoot, "examples", "auto-boundary-churn");
   assert.ok(fs.existsSync(path.join(packagedFixture, "docker-compose.yml")), "packed Runner omitted the Auto Boundary churn fixture");
   await fsp.cp(packagedFixture, projectRoot, { recursive: true });
+  await fsp.cp(packagedFixture, baselineProjectRoot, { recursive: true });
   compose = path.join(projectRoot, "docker-compose.yml");
 
   run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres"], {
@@ -72,6 +108,54 @@ try {
   adminPool = new Pool({ connectionString: adminUrl, max: 1 });
   const before = await sourceSnapshot(adminPool);
   const productStartedAt = Date.now();
+
+  const baselineDraft = JSON.parse(run(process.execPath, [
+    baselineCli,
+    "boundary",
+    "draft",
+    "--from-env",
+    "DATABASE_URL",
+    "--project-root",
+    baselineProjectRoot,
+    "--json",
+  ], { cwd: baselineProjectRoot, env: runtimeEnv }).stdout);
+  assert.equal(baselineDraft.ok, true);
+  const baselineWorkbench = await startWorkbench({
+    cli: baselineCli,
+    boundaryRoot: path.resolve(baselineDraft.root),
+    projectRoot: baselineProjectRoot,
+    env: runtimeEnv,
+  });
+  let baselineBoundary;
+  try {
+    baselineBoundary = await baselineWorkbench.json("GET", "/api/boundary");
+    await baselineWorkbench.json("POST", "/api/boundary/progress", {
+      candidate: baselineBoundary.candidate,
+      confirmed_decisions: [],
+      expected_revision: baselineBoundary.review_progress?.revision ?? 0,
+      actor: "published-1.6.3-compatibility",
+    });
+  } finally {
+    await baselineWorkbench.close();
+  }
+  const currentLoadedLegacyBundle = JSON.parse(run(process.execPath, [
+    cli,
+    "boundary",
+    "review",
+    "--project-root",
+    baselineProjectRoot,
+    "--json",
+  ], { cwd: baselineProjectRoot, env: runtimeEnv }).stdout);
+  assert.deepEqual(
+    currentLoadedLegacyBundle.candidate,
+    baselineBoundary.candidate,
+    "current Runner rewrote a published 1.6.3 single-hop boundary",
+  );
+  assert.equal(
+    currentLoadedLegacyBundle.candidate_digest,
+    baselineBoundary.candidate_digest,
+    "current Runner changed a published 1.6.3 single-hop boundary digest",
+  );
 
   const draftResult = run(process.execPath, [
     cli,
@@ -128,7 +212,9 @@ try {
       assert.equal(regenerated.source_database_changed, false);
     }
     boundaryPayload = await activationUi.json("GET", "/api/boundary");
-    const candidate = narrowGoldenBoundary(structuredClone(boundaryPayload.candidate));
+    const candidate = narrowGoldenBoundary(structuredClone(boundaryPayload.candidate), {
+      includeRelationship: false,
+    });
     assert.ok(candidate.pack.resources.every((resource) =>
       resource.principal_key === "owner_id"
       && resource.rls_session?.principal_setting === "app.principal"),
@@ -147,6 +233,98 @@ try {
     assert.equal(activated.active.activation.state, "active");
   } finally {
     await activationUi.close();
+  }
+
+  const relationshipJourneyStartedAt = Date.now();
+  const relationshipUi = await startWorkbench({ cli, boundaryRoot, projectRoot, env: runtimeEnv });
+  let relationshipChrome;
+  try {
+    relationshipChrome = await launchChrome({
+      userDataDir: path.join(tempRoot, "relationship-browser-profile"),
+      width: 1440,
+      height: 1000,
+    });
+    const page = await createPage(relationshipChrome.port);
+    try {
+      await configurePage(page, 1440, 1000);
+      await navigateAndWait(page, relationshipUi.url);
+      await waitForExpression(
+        page,
+        "document.querySelector('#header-state')?.textContent.includes('Active reviewed boundary')",
+      );
+      await clickSelector(page, '[data-view="explore"]');
+      await waitForExpression(page, "document.querySelector('#view-explore')?.classList.contains('active')");
+      if (await evaluate(page, "Boolean(document.querySelector('#run-preflight'))")) {
+        await clickSelector(page, "#run-preflight");
+      }
+      await waitForExpression(
+        page,
+        "document.querySelector('#explorer')?.classList.contains('hidden') === false",
+      );
+      await selectOptionByValue(page, "#aggregate-resource", "public.churn_events");
+      await selectVisibleOption(page, "#aggregate-dimension", /region.*accounts.*human relationship review required/i);
+      await clickSelector(page, "#run-explore");
+      await waitForExpression(
+        page,
+        "document.querySelector('#explore-result')?.textContent.includes('Catalog proof available for human review')",
+      );
+      const refusal = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
+      assert.match(refusal, /churn_events_account_id_fkey/);
+      assert.match(refusal, /many_to_one|many-to-one/i);
+      assert.match(refusal, /max fan-out 1/i);
+      assert.match(refusal, /unique public\.accounts\.id/i);
+      assert.match(refusal, /Source database|not changed|preserved/i);
+      await captureScreenshot(page, relationshipScreenshot);
+
+      let measuredInteractions = 0;
+      await clickSelector(page, "#review-missing-relationship");
+      measuredInteractions += 1;
+      try {
+        await waitForExpression(
+          page,
+          "document.querySelector('#explore-result')?.textContent.includes('Exact relationship staged for activation')",
+        );
+      } catch (error) {
+        const visibleState = await evaluate(page, `({
+          result:document.querySelector("#explore-result")?.textContent,
+          status:document.querySelector("#relationship-review-status")?.textContent,
+          actor:document.querySelector("#relationship-review-actor")?.value
+        })`);
+        throw new Error(`Relationship staging did not reach exact-digest confirmation.\n${JSON.stringify(visibleState, null, 2)}`, {
+          cause: error,
+        });
+      }
+      const staged = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
+      assert.match(staged, /Review fingerprint:\s*sha256:[a-f0-9]{64}/);
+      assert.match(staged, /active boundary has not changed/i);
+
+      await clickSelector(page, "#activate-reviewed-relationship");
+      measuredInteractions += 1;
+      await waitForExpression(
+        page,
+        "document.querySelector('#explore-result')?.textContent.includes('Reviewed relationship active')",
+      );
+      await clickSelector(page, "#retry-reviewed-relationship");
+      measuredInteractions += 1;
+      await waitForExpression(
+        page,
+        "document.querySelector('#explore-result')?.textContent.includes('Your first safe tool is working.')",
+      );
+      const result = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
+      assert.match(result, /Source database changed:\s*no/i);
+      assert.equal(measuredInteractions, 3);
+      timings.demand_driven_relationship_ms = Date.now() - relationshipJourneyStartedAt;
+      timings.demand_driven_relationship_interactions = measuredInteractions;
+      assert.ok(
+        timings.demand_driven_relationship_ms <= 120_000,
+        `demand-driven relationship review exceeded two minutes: ${timings.demand_driven_relationship_ms}ms`,
+      );
+    } finally {
+      page.close();
+    }
+  } finally {
+    await relationshipChrome?.close().catch(() => undefined);
+    await relationshipUi.close();
   }
 
   const authoringInstall = JSON.parse(run(process.execPath, [
@@ -535,7 +713,7 @@ try {
   }
 }
 
-function narrowGoldenBoundary(candidate) {
+function narrowGoldenBoundary(candidate, options = { includeRelationship: true }) {
   candidate.pack.name = "product_churn";
   candidate.budgets.max_rows = 20;
   candidate.budgets.max_groups = 12;
@@ -568,9 +746,11 @@ function narrowGoldenBoundary(candidate) {
     distinct: ["id"],
     time: ["churned_at"],
   });
-  events.relationships = events.relationships.filter((relationship) =>
-    relationship.id === "churn_events_account_id_fkey");
-  assert.equal(events.relationships.length, 1);
+  events.relationships = options.includeRelationship
+    ? events.relationships.filter((relationship) =>
+      relationship.id === "churn_events_account_id_fkey")
+    : [];
+  assert.equal(events.relationships.length, options.includeRelationship ? 1 : 0);
   return candidate;
 }
 
@@ -584,6 +764,26 @@ function narrowResource(resource, input) {
   resource.count_distinct_fields = resource.count_distinct_fields.filter((field) => input.distinct.includes(field));
   resource.time_bucket_fields = Object.fromEntries(Object.entries(resource.time_bucket_fields)
     .filter(([field]) => input.time.includes(field)));
+}
+
+async function selectVisibleOption(page, selector, pattern) {
+  const options = await evaluate(page, `[...document.querySelector(${JSON.stringify(selector)}).options]
+    .map(option=>({value:option.value,text:option.textContent.trim()}))`);
+  const option = options.find((candidate) => pattern.test(candidate.text));
+  assert.ok(option, `${selector} did not expose a visible option matching ${pattern}`);
+  await selectOptionByValue(page, selector, option.value);
+}
+
+async function evaluate(page, expression) {
+  const result = await page.send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+  }
+  return result.result?.value;
 }
 
 async function startWorkbench(input) {
@@ -629,6 +829,7 @@ async function startWorkbench(input) {
   assert.ok(csrf, "Workbench page omitted its CSRF token");
 
   return {
+    url,
     async json(method, pathname, body) {
       const response = await fetch(`${origin}${pathname}`, {
         method,

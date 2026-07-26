@@ -5,6 +5,7 @@ import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { describe, expect, it } from "vitest";
 import type { AutoBoundaryBuild } from "./auto-boundary.js";
 import {
+  consumeGuidedGraduationTip,
   initializeGuidedProject,
   preflightGuidedProjectInitialization,
   readGuidedOnboardingState,
@@ -32,8 +33,8 @@ function buildFixture(): Pick<AutoBoundaryBuild, "graph" | "lock" | "exploration
     },
     lock: {
       schema_version: "synapsor.generation-lock.v1",
-      compiler_version: "1.6.3",
-      spec_version: "1.6.0",
+      compiler_version: "1.6.4",
+      spec_version: "1.7.0",
       engine: "postgres",
       source_env: "DATABASE_URL",
       schema_fingerprint: digest,
@@ -48,8 +49,8 @@ function buildFixture(): Pick<AutoBoundaryBuild, "graph" | "lock" | "exploration
       activation: "disabled_unreviewed",
       deployment_profile: "staging",
       source: "local_postgres",
-      compiler_version: "1.6.3",
-      spec_version: "1.6.0",
+      compiler_version: "1.6.4",
+      spec_version: "1.7.0",
       trusted_context: {
         provider: "environment",
         tenant_env: "SYNAPSOR_TENANT_ID",
@@ -114,7 +115,7 @@ describe("guided onboarding project", () => {
       const first = await initializeGuidedProject({
         projectRoot,
         build: buildFixture(),
-        runnerVersion: "1.6.3",
+        runnerVersion: "1.6.4",
         now: "2026-07-24T17:00:00.000Z",
       });
       expect(first.created).toBe(true);
@@ -125,6 +126,16 @@ describe("guided onboarding project", () => {
       expect(config.capabilities).toEqual([]);
       expect(config.sources.local_postgres.read_url_env).toBe("DATABASE_URL");
       expect(JSON.stringify(config)).not.toContain("postgres://");
+      const cursorConfig = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/mcp/cursor.json"), "utf8"));
+      expect(cursorConfig.mcpServers.synapsor_authoring.args).toEqual([
+        "-y",
+        "@synapsor/runner@1.6.4",
+        "mcp",
+        "serve",
+        "--authoring",
+        "--project-root",
+        ".",
+      ]);
       expect(await fs.stat(first.store_path)).toBeTruthy();
       const configStat = await fs.stat(first.config_path);
       const storeStat = await fs.stat(first.store_path);
@@ -132,7 +143,7 @@ describe("guided onboarding project", () => {
       const resumed = await initializeGuidedProject({
         projectRoot,
         build: buildFixture(),
-        runnerVersion: "1.6.3",
+        runnerVersion: "1.6.4",
         force: true,
         now: "2026-07-24T18:00:00.000Z",
       });
@@ -145,6 +156,40 @@ describe("guided onboarding project", () => {
     }
   });
 
+  it("emits the interactive graduation tip once per project and honors suppression", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-tip-"));
+    const suppressedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-tip-suppressed-"));
+    try {
+      for (const root of [projectRoot, suppressedRoot]) {
+        await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
+        await fs.writeFile(path.join(root, ".synapsor/generation-lock.json"), "{}\n");
+      }
+      await initializeGuidedProject({
+        projectRoot,
+        build: buildFixture(),
+        runnerVersion: "1.6.4",
+        instantOnboarding: true,
+      });
+      await initializeGuidedProject({
+        projectRoot: suppressedRoot,
+        build: buildFixture(),
+        runnerVersion: "1.6.4",
+        instantOnboarding: true,
+        suppressGraduationTip: true,
+      });
+
+      await expect(consumeGuidedGraduationTip({
+        projectRoot,
+        now: "2026-07-25T20:00:00.000Z",
+      })).resolves.toMatch(/npm install -g @synapsor\/runner/);
+      await expect(consumeGuidedGraduationTip({ projectRoot })).resolves.toBeUndefined();
+      await expect(consumeGuidedGraduationTip({ projectRoot: suppressedRoot })).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+      await fs.rm(suppressedRoot, { recursive: true, force: true });
+    }
+  });
+
   it("tracks only non-secret journey state and preserves completed steps", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-state-"));
     try {
@@ -153,7 +198,7 @@ describe("guided onboarding project", () => {
       await initializeGuidedProject({
         projectRoot,
         build: buildFixture(),
-        runnerVersion: "1.6.3",
+        runnerVersion: "1.6.4",
         now: "2026-07-24T17:00:00.000Z",
       });
       const active = await updateGuidedOnboardingState({
@@ -193,7 +238,7 @@ describe("guided onboarding project", () => {
       await initializeGuidedProject({
         projectRoot,
         build: buildFixture(),
-        runnerVersion: "1.6.3",
+        runnerVersion: "1.6.4",
       });
 
       const environment = await fs.readFile(path.join(projectRoot, ".env.example"), "utf8");
@@ -221,7 +266,7 @@ describe("guided onboarding project", () => {
       await expect(initializeGuidedProject({
         projectRoot,
         build: buildFixture(),
-        runnerVersion: "1.6.3",
+        runnerVersion: "1.6.4",
       })).rejects.toThrow(/will not overwrite existing file/i);
 
       await expect(fs.readFile(conflicting, "utf8")).resolves.toContain("owned_by");

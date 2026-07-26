@@ -64,9 +64,12 @@ bound to a required trusted principal and AND-composed with tenant scope. Run
 same-tenant denial and shared-ledger evidence-handle isolation.
 The protected-read parity fixture proves digest- and generation-lock-bound
 named reads, fixed predicates, reviewed measures/dimensions/time buckets,
-one-hop many-to-one limits, suppression, response/query/extraction/
-differencing budgets, and rejection of raw SQL or model-controlled trusted
-scope. `corepack pnpm test:auto-boundary-explore:packed` proves the complete
+catalog-proven one-hop/star/depth-two many-to-one limits, suppression,
+response/query/extraction/differencing budgets, and rejection of raw SQL or
+model-controlled trusted scope. `corepack pnpm test:reviewed-relationships`
+proves direct and depth-two paths, per-relation scope, nullable semantics,
+demand-driven activation, and fan-out refusal on live PostgreSQL/MySQL.
+`corepack pnpm test:auto-boundary-explore:packed` proves the complete
 authoring-to-production behavior through packed public artifacts.
 
 Additional 0.1 parity coverage currently lives in tests and verification

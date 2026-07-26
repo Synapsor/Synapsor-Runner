@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
-import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   assessDirectWritePrerequisites,
@@ -328,10 +328,7 @@ export async function prepareGuidedActionPreview(input: {
     draft,
     boundary,
   });
-  const validation = validateRunnerCapabilityConfig(previewConfig);
-  if (!validation.ok) {
-    throw new Error(`GUIDED_ACTION_PREVIEW_CONFIG_INVALID: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
-  }
+  await validateExpandedGuidedConfig(previewConfig, previewPath, "GUIDED_ACTION_PREVIEW_CONFIG_INVALID");
   await writeAtomic(previewPath, json(previewConfig));
   return {
     config_path: relativeProjectPath(projectRoot, previewPath),
@@ -413,10 +410,10 @@ export async function activateGuidedAction(input: {
     draft,
     boundary,
   });
-  const validation = validateRunnerCapabilityConfig(nextConfig);
-  if (!validation.ok) {
-    throw new Error(`GUIDED_ACTION_CONFIG_INVALID: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
-  }
+  await validateExpandedGuidedConfig(nextConfig, configPath, "GUIDED_ACTION_CONFIG_INVALID", {
+    path: activeContractPath,
+    contents: json(contract),
+  });
   const previousConfig = await fs.readFile(configPath, "utf8");
   const environmentPath = path.join(projectRoot, ".env.example");
   let environmentRollback: { existed: boolean; contents?: string } | undefined;
@@ -845,7 +842,61 @@ function configWithGuidedAction(input: {
     };
   sources[sourceName] = source;
   config.sources = sources;
+  if (input.draft.operation !== "insert") {
+    const proposalFreshness = isRecord(config.proposal_freshness)
+      ? structuredClone(config.proposal_freshness)
+      : {};
+    if (!isRecord(proposalFreshness[input.draft.capability])) {
+      proposalFreshness[input.draft.capability] = {
+        approval: "required",
+        dependencies: [],
+      };
+    }
+    config.proposal_freshness = proposalFreshness;
+  }
   return config;
+}
+
+async function validateExpandedGuidedConfig(
+  config: Record<string, unknown>,
+  outputConfigPath: string,
+  errorCode: string,
+  stagedArtifact?: { path: string; contents: string },
+): Promise<void> {
+  const directory = path.dirname(outputConfigPath);
+  const temporaryPath = path.join(
+    directory,
+    `.synapsor-guided-config-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
+  );
+  const previousArtifact = stagedArtifact
+    ? await fs.readFile(stagedArtifact.path, "utf8").then(
+      (contents) => ({ existed: true, contents }),
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return { existed: false, contents: undefined };
+        throw error;
+      },
+    )
+    : undefined;
+  if (stagedArtifact) {
+    await fs.mkdir(path.dirname(stagedArtifact.path), { recursive: true, mode: 0o700 });
+    await writeAtomic(stagedArtifact.path, stagedArtifact.contents);
+  }
+  await writeAtomic(temporaryPath, json(config));
+  try {
+    loadRuntimeConfigFromFile(temporaryPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${errorCode}: ${message}`);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    if (stagedArtifact && previousArtifact) {
+      if (previousArtifact.existed) {
+        await writeAtomic(stagedArtifact.path, previousArtifact.contents!);
+      } else {
+        await fs.rm(stagedArtifact.path, { force: true }).catch(() => undefined);
+      }
+    }
+  }
 }
 
 function guidedActionDatabaseScope(

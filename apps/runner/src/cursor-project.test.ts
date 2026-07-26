@@ -23,7 +23,7 @@ describe("Cursor project MCP lifecycle", () => {
         synapsor: {
           type: "stdio",
           command: "npx",
-          args: ["-y", "-p", `@synapsor/runner@${runnerPackage.version}`, "synapsor-runner", "mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
+          args: ["-y", `@synapsor/runner@${runnerPackage.version}`, "mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"],
         },
       },
     });
@@ -105,7 +105,7 @@ describe("Cursor project MCP lifecycle", () => {
       type: "stdio",
       command: "npx",
       args: [
-        "-y", "-p", "@synapsor/runner@1.6.0", "synapsor-runner", "mcp", "serve",
+        "-y", "@synapsor/runner@1.6.0", "mcp", "serve",
         "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db",
       ],
     });
@@ -121,9 +121,7 @@ describe("Cursor project MCP lifecycle", () => {
       command: "npx",
       args: [
         "-y",
-        "-p",
         `@synapsor/runner@${runnerPackage.version}`,
-        "synapsor-runner",
         "mcp",
         "serve",
         "--authoring",

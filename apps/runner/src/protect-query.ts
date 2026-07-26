@@ -3,7 +3,10 @@ import path from "node:path";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import type { JsonScalar, SynapsorContract } from "@synapsor/spec";
+import type {
+  JsonScalar,
+  SynapsorContract,
+} from "@synapsor/spec";
 import {
   loadActivatedExplorationBoundary,
   type ActivatedExplorationBoundary,
@@ -23,11 +26,16 @@ const PROTECTED_QUERY_VERSION = "synapsor.protected-query.v1";
 const PROTECTED_DIR = "synapsor/protected";
 
 type BoundaryResource = ActivatedExplorationBoundary["pack"]["resources"][number];
-type ProtectedRelationshipPlan = {
-  name: string;
+type ProtectedRelationshipLinkPlan = {
+  source: BoundaryResource;
+  target: BoundaryResource;
   localKey: string;
   targetKey: string;
-  target: BoundaryResource;
+  unmatchedRows: "exclude" | "keep_null";
+};
+type ProtectedRelationshipPlan = {
+  name: string;
+  links: ProtectedRelationshipLinkPlan[];
 };
 
 export type ProtectLiteralPosition = {
@@ -299,7 +307,7 @@ function emitProtectedQueryDsl(input: {
   selections: Map<string, ProtectArgumentSelection>;
 }): string {
   const root = resourceFor(input.boundary, input.plan.resource);
-  const relationship = relationshipForPlan(input.plan, root, input.boundary);
+  const relationships = relationshipsForPlan(input.plan, root, input.boundary);
   const lines = [
     "CREATE AGENT CONTEXT protected_operator",
     `  BIND tenant_id FROM ENVIRONMENT ${input.boundary.trusted_context.tenant_env} REQUIRED`,
@@ -321,7 +329,7 @@ function emitProtectedQueryDsl(input: {
     `  PROTECTED READ ${input.plan.kind === "rows" ? "ROWS" : "AGGREGATE"}`,
     `  BOUNDARY DIGEST ${input.boundary.activation.digest}`,
     `  GENERATION LOCK ${input.boundary.generation_lock_fingerprint}`,
-    ...(relationship ? [relationshipDsl(relationship)] : []),
+    ...relationshipsDsl(relationships),
     ...predicateDsl(input.plan.where ?? [], input.selections),
   ];
   if (input.plan.kind === "rows") {
@@ -407,11 +415,11 @@ function valueDsl(value: JsonScalar, selection: ProtectArgumentSelection | undef
   return selection ? `ARG ${safeIdentifier(selection.name)}` : `FIXED ${dslLiteral(value)}`;
 }
 
-function relationshipForPlan(
+function relationshipsForPlan(
   plan: ExplorePlan,
   root: BoundaryResource,
   boundary: ActivatedExplorationBoundary,
-): ProtectedRelationshipPlan | undefined {
+): ProtectedRelationshipPlan[] {
   const names = new Set<string>();
   if (plan.kind === "aggregate" && plan.relationship) names.add(plan.relationship);
   for (const filter of plan.where ?? []) if (filter.relationship) names.add(filter.relationship);
@@ -421,25 +429,84 @@ function relationshipForPlan(
     if (plan.time_bucket?.relationship) names.add(plan.time_bucket.relationship);
     if (plan.comparison?.relationship) names.add(plan.comparison.relationship);
   }
-  if (names.size === 0) return undefined;
-  if (names.size !== 1) throw new Error("Protect conversion permits at most one reviewed relationship.");
-  const name = [...names][0]!;
-  const relationship = root.relationships.find((candidate) => candidate.id === name);
-  if (!relationship || relationship.cardinality !== "many_to_one" || relationship.max_fan_out !== 1
-    || relationship.local_columns.length !== 1 || relationship.target_columns.length !== 1) {
-    throw new Error("Protect conversion requires one cardinality-proven many-to-one relationship.");
-  }
-  const target = resourceFor(boundary, relationship.target_resource);
-  return {
-    name,
-    localKey: relationship.local_columns[0]!,
-    targetKey: relationship.target_columns[0]!,
-    target,
-  };
+  if (names.size === 0) return [];
+  if (names.size > 3) throw new Error("Protect conversion permits at most three reviewed relationship paths.");
+  return [...names].map((name) => {
+    const relationship = root.relationships.find((candidate) => candidate.id === name);
+    if (!relationship || relationship.cardinality !== "many_to_one" || relationship.max_fan_out !== 1) {
+      throw new Error(`Protect conversion requires ${name} to remain a cardinality-proven many-to-one relationship.`);
+    }
+    const proofLinks = relationship.proof?.links ?? [{
+      constraint_name: relationship.id,
+      source_resource: root.id,
+      target_resource: relationship.target_resource,
+      source_columns: relationship.local_columns,
+      target_columns: relationship.target_columns,
+      target_uniqueness: {
+        kind: "primary_key" as const,
+        name: `legacy:${relationship.target_resource}`,
+        columns: relationship.target_columns,
+      },
+      nullable: false,
+      cardinality: "many_to_one" as const,
+      max_fan_out: 1 as const,
+    }];
+    if (proofLinks.length < 1 || proofLinks.length > 2) {
+      throw new Error(`Protect conversion requires ${name} to contain one or two reviewed relationship links.`);
+    }
+    if (relationship.proof && (
+      relationship.proof.source !== "database_catalog"
+      || canonicalJsonDigest(proofLinks) !== relationship.proof.digest
+    )) {
+      throw new Error(`Protect conversion refused ${name} because its catalog proof changed after review.`);
+    }
+    let expectedSource = root.id;
+    let preserveUnmatched = false;
+    const links = proofLinks.map((link, index): ProtectedRelationshipLinkPlan => {
+      if (link.source_resource !== expectedSource
+        || link.cardinality !== "many_to_one"
+        || link.max_fan_out !== 1
+        || link.source_columns.length !== 1
+        || link.target_columns.length !== 1
+        || link.target_uniqueness.columns.length !== 1
+        || link.target_uniqueness.columns[0] !== link.target_columns[0]) {
+        throw new Error(`Protect conversion refused ${name} because link ${index + 1} is not a contiguous, uniquely targeted many-to-one link.`);
+      }
+      const source = resourceFor(boundary, link.source_resource);
+      const target = resourceFor(boundary, link.target_resource);
+      const localKey = link.source_columns[0]!;
+      const targetKey = link.target_columns[0]!;
+      if (source.kept_out_fields.includes(localKey) || target.kept_out_fields.includes(targetKey)) {
+        throw new Error(`Protect conversion refused ${name} because a relationship key is kept out.`);
+      }
+      if (link.nullable
+        && relationship.unmatched_rows !== "exclude"
+        && relationship.unmatched_rows !== "keep_null") {
+        throw new Error(`Protect conversion requires an explicit unmatched-row decision for nullable relationship ${name}.`);
+      }
+      if (link.nullable && relationship.unmatched_rows === "keep_null") preserveUnmatched = true;
+      const unmatchedRows = preserveUnmatched ? "keep_null" : "exclude";
+      expectedSource = target.id;
+      return { source, target, localKey, targetKey, unmatchedRows };
+    });
+    if (expectedSource !== relationship.target_resource) {
+      throw new Error(`Protect conversion refused ${name} because its reviewed target no longer matches its proof path.`);
+    }
+    return { name, links };
+  });
 }
 
-function relationshipDsl(relationship: ProtectedRelationshipPlan): string {
-  return `  PROTECTED RELATIONSHIP ${safeIdentifier(relationship.name)} ON ${safeIdentifier(relationship.localKey)} REFERENCES ${safeIdentifier(relationship.target.schema)}.${safeIdentifier(relationship.target.table)}.${safeIdentifier(relationship.targetKey)} PRIMARY KEY ${safeIdentifier(relationship.target.primary_key)} TENANT KEY ${safeIdentifier(relationship.target.tenant_key)}${relationship.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(relationship.target.principal_key)}` : ""}`;
+function relationshipsDsl(relationships: ProtectedRelationshipPlan[]): string[] {
+  if (relationships.length === 0) return [];
+  const only = relationships.length === 1 ? relationships[0] : undefined;
+  if (only?.links.length === 1 && only.links[0]?.unmatchedRows === "exclude") {
+    const link = only.links[0];
+    return [
+      `  PROTECTED RELATIONSHIP ${safeIdentifier(only.name)} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(link.target.tenant_key)}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""}`,
+    ];
+  }
+  return relationships.flatMap((relationship) => relationship.links.map((link, index) =>
+    `  PROTECTED RELATIONSHIP ${safeIdentifier(relationship.name)} LINK ${index + 1} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(link.target.tenant_key)}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""} UNMATCHED ${link.unmatchedRows === "keep_null" ? "KEEP NULL" : "EXCLUDE"}`));
 }
 
 function aggregateAliases(plan: AggregateExplorePlan): {
@@ -658,7 +725,7 @@ async function addProtectedContractToRuntimeConfig(input: {
   await writeAtomic(input.configPath, json(config), 0o600);
 }
 
-function protectedDatabaseScope(
+export function protectedDatabaseScope(
   contract: SynapsorContract,
   boundary: ActivatedExplorationBoundary,
 ): {
@@ -671,14 +738,34 @@ function protectedDatabaseScope(
   const rootSchema = capability.subject.schema;
   const rootTable = capability.subject.table;
   if (!rootSchema || !rootTable) throw new Error("Protected capability must retain an explicit root schema and table.");
-  const resources = [
-    boundary.pack.resources.find((resource) => resource.schema === rootSchema && resource.table === rootTable),
-    ...(capability.protected_read?.relationship
-      ? [boundary.pack.resources.find((resource) =>
-        resource.schema === capability.protected_read!.relationship!.schema
-        && resource.table === capability.protected_read!.relationship!.table)]
-      : []),
-  ];
+  const references = new Map<string, { schema: string; table: string; principalRequired: boolean }>();
+  const addReference = (schema: string, table: string, principalRequired: boolean): void => {
+    const key = `${schema}\u0000${table}`;
+    const existing = references.get(key);
+    references.set(key, {
+      schema,
+      table,
+      principalRequired: principalRequired || Boolean(existing?.principalRequired),
+    });
+  };
+  addReference(rootSchema, rootTable, Boolean(capability.subject.principal_scope_key));
+  const legacyRelationship = capability.protected_read?.relationship;
+  if (legacyRelationship) {
+    addReference(
+      legacyRelationship.schema,
+      legacyRelationship.table,
+      Boolean(legacyRelationship.principal_scope_key),
+    );
+  }
+  for (const relationship of capability.protected_read?.relationships ?? []) {
+    for (const link of relationship.links) {
+      addReference(link.schema, link.table, Boolean(link.principal_scope_key));
+    }
+  }
+  const reviewedReferences = [...references.values()];
+  const resources = reviewedReferences.map((reference) =>
+    boundary.pack.resources.find((resource) =>
+      resource.schema === reference.schema && resource.table === reference.table));
   if (resources.some((resource) => !resource)) {
     throw new Error("Protected capability references a resource outside the activated exploration boundary.");
   }
@@ -690,14 +777,15 @@ function protectedDatabaseScope(
     || scopes.some((scope) => !scope.tenant_setting)) {
     throw new Error("Protected capability cannot preserve the reviewed PostgreSQL RLS session bindings for every participating relation.");
   }
-  const principalSettings = new Set(scopes.flatMap((scope) => scope.principal_setting ? [scope.principal_setting] : []));
-  const requiresPrincipal = principalSettings.size > 0 || Boolean(
-    capability.subject.principal_scope_key
-    || capability.protected_read?.relationship?.principal_scope_key,
-  );
-  if (requiresPrincipal && scopes.some((scope) => !scope.principal_setting)) {
-    throw new Error("Protected capability declares principal scope but its reviewed PostgreSQL RLS session binding is incomplete.");
+  const principalRequired = resources.map((resource, index) => Boolean(
+    resource!.principal_key || reviewedReferences[index]?.principalRequired,
+  ));
+  if (principalRequired.some((required, index) => required && !scopes[index]?.principal_setting)) {
+    throw new Error("Protected capability declares principal scope on a relation whose reviewed PostgreSQL RLS principal binding is incomplete.");
   }
+  const principalSettings = new Set(scopes.flatMap((scope) =>
+    scope.principal_setting ? [scope.principal_setting] : []));
+  const requiresPrincipal = principalRequired.some(Boolean);
   const tenantSettings = new Set(scopes.map((scope) => scope.tenant_setting));
   if (tenantSettings.size !== 1 || (requiresPrincipal && principalSettings.size !== 1)) {
     throw new Error("Protected capability requires one consistent reviewed tenant/principal RLS setting across its relationship path.");

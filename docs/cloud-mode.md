@@ -88,17 +88,17 @@ cp .env.example .env
 # Fill the placeholders in .env, including the one-time Runner token.
 set -a && . ./.env && set +a
 
-npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json
-npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
-npx -y -p @synapsor/runner synapsor-runner cloud connect --config ./synapsor.cloud.json
-npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner config validate --config ./synapsor.runner.json
+npx -y @synapsor/runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner cloud connect --config ./synapsor.cloud.json
+npx -y @synapsor/runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 Run the trusted worker in a second operator-controlled terminal:
 
 ```bash
 set -a && . ./.env && set +a
-npx -y -p @synapsor/runner synapsor-runner runner start --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner runner start --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 For deployment checks or an operator-controlled single claim cycle, use the
@@ -107,13 +107,13 @@ Cloud-approved job and still rechecks the local contract, proposal, tenant,
 version, bounds, and idempotency guards:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
+npx -y @synapsor/runner runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
 ```
 
 When a local proposal exists:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner cloud sync latest --config ./synapsor.cloud.json --store ./.synapsor/local.db
+npx -y @synapsor/runner cloud sync latest --config ./synapsor.cloud.json --store ./.synapsor/local.db
 ```
 
 See [Cloud Push](cloud-push.md) and [Runner Bundles](runner-bundles.md).

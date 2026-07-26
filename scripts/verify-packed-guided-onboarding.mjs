@@ -17,7 +17,7 @@ const packRoot = path.join(tempRoot, "pack");
 const installRoot = path.join(tempRoot, "install");
 const analyticsRoot = path.join(tempRoot, "fitflow-analytics");
 const trainerRoot = path.join(tempRoot, "fitflow-trainer");
-const resultPath = path.join(root, "development", "runner-1.6.3-fitflow-results.json");
+const resultPath = path.join(root, "development", "runner-1.6.4-fitflow-results.json");
 const readUrl = "postgresql://fitflow_analytics_reader:fitflow_analytics_reader_password@127.0.0.1:55463/fitflow";
 const trainerUrl = "postgresql://fitflow_trainer_reader:fitflow_trainer_reader_password@127.0.0.1:55463/fitflow";
 const writerUrl = "postgresql://fitflow_writer:fitflow_writer_password@127.0.0.1:55463/fitflow";
@@ -128,10 +128,15 @@ try {
   assert.match(landing, /Advanced permissions/);
 
   let boundaryPayload = await analyticsUi.json("GET", "/api/boundary");
-  const inspectedResourceCount = boundaryPayload.candidate.pack.resources.length;
+  const inspectedResourceCount = boundaryPayload.draft.pack.resources.length;
+  const starterResourceCount = boundaryPayload.candidate.pack.resources.length;
   assert.ok(
     inspectedResourceCount >= 30 && inspectedResourceCount <= 50,
-    `FitFlow scale fixture exposed ${inspectedResourceCount} reviewed resources instead of 30-50`,
+    `FitFlow scale fixture inspected ${inspectedResourceCount} resources instead of 30-50`,
+  );
+  assert.ok(
+    starterResourceCount >= 1 && starterResourceCount <= 3,
+    `FitFlow first review exposed ${starterResourceCount} resources instead of a bounded 1-3 resource starter pack`,
   );
   const memberReview = boundaryPayload.review.resources.find((resource) => resource.id === "public.members");
   assert.ok(memberReview, "FitFlow member sensitivity review is missing");
@@ -140,23 +145,25 @@ try {
     assert.equal(classification?.sensitive_suggestion, true, `${field} was not kept out`);
     assert.equal(classification?.sensitivity.state, "high_confidence_sensitive", `${field} was not high-confidence sensitive`);
   }
-  const memberDraft = boundaryPayload.candidate.pack.resources.find((resource) => resource.id === "public.members");
+  const memberDraft = boundaryPayload.draft.pack.resources.find((resource) => resource.id === "public.members");
   assert.deepEqual(
     memberDraft.kept_out_fields.filter((field) =>
       ["payment_method", "home_address", "medical_waiver_notes"].includes(field)).sort(),
     ["home_address", "medical_waiver_notes", "payment_method"],
   );
 
-  const analyticsCandidate = narrowAnalyticsBoundary(structuredClone(boundaryPayload.candidate));
+  // This models the operator choosing Show all and narrowing the inspected
+  // catalog to the exact FitFlow resources needed for the reviewed journey.
+  const analyticsCandidate = narrowAnalyticsBoundary(structuredClone(boundaryPayload.draft));
   const preview = await analyticsUi.json("POST", "/api/boundary/preview", {
     candidate: analyticsCandidate,
   });
   await analyticsUi.json("POST", "/api/boundary/activate", {
-    candidate: analyticsCandidate,
+    candidate: preview.candidate,
     expected_digest: preview.digest,
     actor: "fitflow-reviewer@example.test",
     confirmation: `ACTIVATE ${preview.digest}`,
-    confirmed_decisions: analyticsCandidate.unresolved_decisions,
+    confirmed_decisions: preview.candidate.unresolved_decisions,
   });
   timing.boundary_activation_ms = Date.now() - productStarted;
   await analyticsUi.json("POST", "/api/explore/trusted-context", {
@@ -359,11 +366,11 @@ try {
     candidate: trainerCandidate,
   });
   await trainerUi.json("POST", "/api/boundary/activate", {
-    candidate: trainerCandidate,
+    candidate: trainerPreview.candidate,
     expected_digest: trainerPreview.digest,
     actor: "fitflow-reviewer@example.test",
     confirmation: `ACTIVATE ${trainerPreview.digest}`,
-    confirmed_decisions: trainerCandidate.unresolved_decisions,
+    confirmed_decisions: trainerPreview.candidate.unresolved_decisions,
   });
   await trainerUi.json("POST", "/api/explore/trusted-context", {
     tenant: "org-fitflow",
@@ -476,6 +483,7 @@ try {
     package: "@synapsor/runner",
     fixture: "FitFlow",
     inspected_resources: inspectedResourceCount,
+    starter_resources: starterResourceCount,
     packed_artifact: true,
     public_first_command: "npx -y @synapsor/runner@latest start --from-env DATABASE_URL",
     measured_clock_excludes: ["package download", "database startup"],

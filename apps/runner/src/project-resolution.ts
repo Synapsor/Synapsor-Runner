@@ -63,6 +63,8 @@ async function projectConfigCandidates(directory: string): Promise<string[]> {
   const candidates = new Set<string>();
   const conventional = path.join(directory, "synapsor.runner.json");
   if (await isRegularFile(conventional)) candidates.add(conventional);
+  const conventionalNested = path.join(directory, "synapsor/synapsor.runner.json");
+  if (await isRegularFile(conventionalNested)) candidates.add(conventionalNested);
 
   const statePath = path.join(directory, ".synapsor/guided-onboarding.json");
   if (await isRegularFile(statePath)) {

@@ -87,6 +87,10 @@ import {
 } from "@synapsor-runner/worker-core";
 import { compileAgentDslWithWarnings, validateAgentDsl } from "@synapsor/dsl";
 import {
+  boundaryReviewDecisions,
+  createBoundaryReviewProgress,
+  readBoundaryReviewProgress,
+  saveBoundaryReviewProgress,
   startLocalUiServer,
   type LocalUiStoreAccess,
   type WorkbenchDeploymentProfile,
@@ -133,10 +137,13 @@ import type { SchemaCandidateFormat } from "./schema-candidates.js";
 import { compileSafeActionDraft, safeActionStatus, scaffoldSafeAction, SafeActionValidationError } from "./safe-action.js";
 import { buildLifecycleView, formatLifecycleDetails, formatLifecycleFirstLook, formatLifecycleList, listLifecycleSummaries, resolveLifecycleProposal } from "./lifecycle-view.js";
 import {
+  activateExplorationBoundary,
   buildAutoBoundary,
   compareGenerationLock,
+  explorationBoundaryCandidateDigest,
   loadStructuredProjectEvidence,
   writeAutoBoundaryArtifacts,
+  type ExplorationBoundaryDraft,
   type GenerationLock,
 } from "./auto-boundary.js";
 import { serveScopedExploreStdio } from "./authoring-mcp.js";
@@ -154,6 +161,13 @@ import {
   resetGuidedOnboardingForBoundaryReview,
   updateGuidedOnboardingState,
 } from "./guided-project.js";
+import {
+  discoverProjectEnvFiles,
+  readDatabaseUrlFromProjectEnv,
+  readHiddenDatabaseUrl,
+  sessionDatabaseInput,
+  type InstantDatabaseInput,
+} from "./instant-onboarding.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import dslPackage from "../../../packages/dsl/package.json" with { type: "json" };
 import specPackage from "../../../packages/spec/package.json" with { type: "json" };
@@ -744,7 +758,7 @@ export async function runInitWizard(
 
   stdout.write("Step 1: Inspect database metadata\n");
   const engineInput = await askChoice(ask, "Engine", optionalArg(args, "--engine") ?? "auto", ["postgres", "mysql", "auto"]);
-  const databaseInput = databaseInputFromArgs(args);
+  const databaseInput = databaseInputFromArgs(args, { implyDatabaseUrl: true });
   if (databaseInput.inlineUrl) {
     stdout.write("Using the command-line connection string for schema inspection only. The generated config will store an environment-variable name, not the URL.\n");
   }
@@ -2185,7 +2199,7 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 async function inspect(args: string[]): Promise<number> {
-  const databaseInput = databaseInputFromArgs(args);
+  const databaseInput = databaseInputFromArgs(args, { implyDatabaseUrl: true });
   const engine = (optionalArg(args, "--engine") ?? "auto") as InspectEngine;
   if (!["postgres", "mysql", "auto"].includes(engine)) {
     throw new Error("inspect --engine must be postgres, mysql, or auto.");
@@ -3185,24 +3199,24 @@ function bundleReadme(contract: SynapsorContract): string {
     "cp .env.example .env",
     "# edit .env, then export the values in your shell",
     "set -a && . ./.env && set +a",
-    "npx -y -p @synapsor/runner synapsor-runner contract validate ./synapsor.contract.json",
-    "npx -y -p @synapsor/runner synapsor-runner config validate --config ./synapsor.runner.json",
-    "npx -y -p @synapsor/runner synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db",
-    "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db",
+    "npx -y @synapsor/runner contract validate ./synapsor.contract.json",
+    "npx -y @synapsor/runner config validate --config ./synapsor.runner.json",
+    "npx -y @synapsor/runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db",
+    "npx -y @synapsor/runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db",
     "```",
     "",
     "Approval and apply remain outside the model-facing MCP catalog. Inspect local history with:",
     "",
     "```bash",
-    "npx -y -p @synapsor/runner synapsor-runner replay show latest --store ./.synapsor/local.db",
-    "npx -y -p @synapsor/runner synapsor-runner cloud push ./synapsor.contract.json --dry-run",
+    "npx -y @synapsor/runner replay show latest --store ./.synapsor/local.db",
+    "npx -y @synapsor/runner cloud push ./synapsor.contract.json --dry-run",
     "```",
     "",
   ].join("\n");
 }
 
 function bundleMcpClientExamples(): Record<string, string> {
-  const packageArgs = ["-y", "-p", "@synapsor/runner", "synapsor-runner"];
+  const packageArgs = ["-y", "@synapsor/runner"];
   const stdioArgs = [...packageArgs, "mcp", "serve", "--config", "./synapsor.runner.json", "--store", "./.synapsor/local.db"];
   const server = { command: "npx", args: stdioArgs };
   const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
@@ -3225,7 +3239,7 @@ function bundleMcpClientExamples(): Record<string, string> {
       url: "http://127.0.0.1:8766/mcp",
       headers_from_env: { Authorization: "Bearer $SYNAPSOR_RUNNER_HTTP_TOKEN" },
     }),
-    "openai-agents-stdio.ts": `import { Agent, MCPServerStdio, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStdio({\n  name: "Synapsor Runner",\n  fullCommand: "npx -y -p @synapsor/runner synapsor-runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db --alias-mode openai",\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
+    "openai-agents-stdio.ts": `import { Agent, MCPServerStdio, run } from "@openai/agents";\n\nconst synapsor = new MCPServerStdio({\n  name: "Synapsor Runner",\n  fullCommand: "npx -y @synapsor/runner mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db --alias-mode openai",\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
     "openai-agents-streamable-http.ts": `import { Agent, MCPServerStreamableHttp, run } from "@openai/agents";\n\n// Start Runner separately with: synapsor-runner mcp serve --transport streamable-http --alias-mode openai --config ./synapsor.runner.json --store ./.synapsor/local.db\nconst token = process.env.SYNAPSOR_RUNNER_HTTP_TOKEN;\nif (!token) throw new Error("set SYNAPSOR_RUNNER_HTTP_TOKEN in the launching environment");\nconst synapsor = new MCPServerStreamableHttp({\n  name: "Synapsor Runner",\n  url: "http://127.0.0.1:8766/mcp",\n  requestInit: { headers: { Authorization: \`Bearer \${token}\` } },\n});\nawait synapsor.connect();\ntry {\n  const agent = new Agent({ name: "Reviewed database agent", instructions: "Use only Synapsor business tools. Inspect evidence before proposing a change.", mcpServers: [synapsor] });\n  console.log((await run(agent, "Inspect the customer and propose a safe next action.")).finalOutput);\n} finally {\n  await synapsor.close();\n}\n`,
   };
 }
@@ -7199,22 +7213,66 @@ async function start(args: string[] = []): Promise<number> {
     }
   }
   if (args.length === 0) {
-    const project = await detectProjectContext(process.cwd());
-    process.stdout.write(formatProjectDetection(project));
-    const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
-    if (!databaseEnv) {
-      const detected = project.database_env_names.length
-        ? ` Detected names: ${project.database_env_names.join(", ")}, but none is exported in this process.`
-        : "";
-      throw new Error(`No exported database URL environment variable was detected.${detected}\nRun: ${cliCommandName()} start --from-env DATABASE_URL`);
-    }
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      throw new Error(`Detected ${databaseEnv}, but guided start needs an interactive terminal. For automation, pass --from-env ${databaseEnv} --table <table> --tenant-key <column> --mode read_only --yes.`);
+      throw new Error("Guided start needs an interactive terminal. For automation, pass --from-env DATABASE_URL with an established selector such as --table or --answers.");
     }
-    process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
-    return onboard(["db", "--from-env", databaseEnv, "--open-ui"]);
+    const project = await detectProjectContext(process.cwd());
+    const guided = await readGuidedOnboardingState(project.root);
+    const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
+    const establishedManualProject = !guided && (
+      await fileExists(path.join(project.root, "synapsor.runner.json"))
+      || await fileExists(path.join(project.root, "synapsor.contract.json"))
+    );
+    if (establishedManualProject) {
+      if (!databaseEnv) {
+        throw new Error("No exported database URL environment variable was detected for the existing manual project. Run the same established command with --from-env <ENV_NAME>.");
+      }
+      process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
+      return onboard(["db", "--from-env", databaseEnv, "--open-ui"]);
+    }
+    if (databaseEnv) {
+      process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
+      return startAutoBoundary(["--from-env", databaseEnv]);
+    }
+    const input = await promptForInstantDatabaseInput(project.root);
+    const previous = process.env[input.environmentVariable];
+    process.env[input.environmentVariable] = input.value;
+    process.stdout.write(`Using ${input.environmentVariable} from ${input.sourceLabel} for this Runner process only; its value will not be printed or written to generated files.\n`);
+    try {
+      return await startAutoBoundary(["--from-env", input.environmentVariable]);
+    } finally {
+      if (previous === undefined) delete process.env[input.environmentVariable];
+      else process.env[input.environmentVariable] = previous;
+    }
   }
   return startWorker(args);
+}
+
+async function promptForInstantDatabaseInput(projectRoot: string): Promise<InstantDatabaseInput> {
+  const files = await discoverProjectEnvFiles(projectRoot);
+  if (files.length) {
+    const selected = files[0]!;
+    const relative = path.relative(projectRoot, selected) || path.basename(selected);
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    let useFile = false;
+    try {
+      const answer = (await rl.question(`Use a read database URL from ${relative} for this Runner process only? [Y/n] `)).trim().toLowerCase();
+      useFile = answer === "" || answer === "y" || answer === "yes";
+    } finally {
+      rl.close();
+    }
+    if (useFile) {
+      try {
+        return await readDatabaseUrlFromProjectEnv(selected);
+      } catch (error) {
+        process.stderr.write(`${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}\n`);
+        process.stderr.write("Paste a read-only database URL instead. It will be hidden and held only by this Runner process.\n");
+      }
+    }
+  }
+  return sessionDatabaseInput(await readHiddenDatabaseUrl(
+    "Paste a read-only Postgres/MySQL URL (input hidden): ",
+  ));
 }
 
 async function shouldEnterAutoBoundary(args: string[]): Promise<boolean> {
@@ -7247,7 +7305,7 @@ async function shouldEnterAutoBoundary(args: string[]): Promise<boolean> {
 }
 
 async function startAutoBoundary(args: string[]): Promise<number> {
-  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--force", "--rescan"]), "start --from-env Auto Boundary");
+  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--force", "--rescan", "--no-graduation-tip"]), "start --from-env Auto Boundary");
   const sourceEnv = optionalArg(args, "--from-env");
   if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
   const project = await detectProjectContext(process.cwd());
@@ -7283,6 +7341,8 @@ async function startAutoBoundary(args: string[]): Promise<number> {
       path.join(project.root, existingJourney.artifacts.runner_config),
       "--store",
       path.join(project.root, existingJourney.artifacts.local_store),
+      ...(existingJourney.instant_onboarding ? ["--instant-onboarding"] : []),
+      ...(existingJourney.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
     ]);
   }
   await preflightGuidedProjectInitialization(project.root);
@@ -7327,6 +7387,8 @@ async function startAutoBoundary(args: string[]): Promise<number> {
       projectRoot: project.root,
       build,
       runnerVersion: runnerPackage.version,
+      instantOnboarding: true,
+      suppressGraduationTip: args.includes("--no-graduation-tip"),
     });
     if (existingJourney) {
       await resetGuidedOnboardingForBoundaryReview({
@@ -7369,6 +7431,8 @@ async function startAutoBoundary(args: string[]): Promise<number> {
     guided.config_path,
     "--store",
     guided.store_path,
+    "--instant-onboarding",
+    ...(args.includes("--no-graduation-tip") ? ["--no-graduation-tip"] : []),
   ]);
 }
 
@@ -7389,10 +7453,13 @@ async function rollbackFreshAutoBoundaryWrite(
 
 async function boundaryCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "review") return boundaryReviewCommand(rest);
+  if (subcommand === "activate") return boundaryActivateCommand(rest);
   if (subcommand === "draft") {
     assertKnownOptions(rest, new Set(["--from-env", "--engine", "--schema", "--project-root", "--force", "--json"]), "boundary draft");
-    const sourceEnv = optionalArg(rest, "--from-env");
-    if (!sourceEnv) throw new Error("boundary draft requires --from-env <DATABASE_URL_ENV_NAME>.");
+    const sourceEnv = optionalArg(rest, "--from-env")
+      ?? (envValue(process.env, "DATABASE_URL") ? "DATABASE_URL" : undefined);
+    if (!sourceEnv) throw new Error("boundary draft requires an exported DATABASE_URL or --from-env <DATABASE_URL_ENV_NAME>.");
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const project = await detectProjectContext(projectRoot);
     const inspection = await inspectDatabase({
@@ -7439,28 +7506,542 @@ async function boundaryCommand(args: string[]): Promise<number> {
   if (subcommand === "status") {
     assertKnownOptions(rest, new Set(["--project-root", "--json"]), "boundary status");
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
-    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
-    const review = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/review-report.json"), "utf8")) as Record<string, unknown>;
+    const context = await loadBoundaryReviewContext(projectRoot);
+    const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+    const active = await fileExists(activePath)
+      ? await readJsonFileWithLocation<Record<string, unknown>>(activePath, "active exploration boundary")
+      : undefined;
     const payload = {
       ok: true,
-      activation: review.activation,
-      generated_contract_digest: lock.generated_contract_digest,
-      schema_fingerprint: lock.schema_fingerprint,
-      role_posture_fingerprint: lock.role_posture_fingerprint,
-      protected_authority: lock.protected_authority,
+      activation: active ? "active" : "disabled_unreviewed",
+      candidate_digest: context.bundle.candidate_digest,
+      active_digest: active && isRecord(active.activation) ? active.activation.digest : undefined,
+      decisions_confirmed: context.bundle.decisions.length - context.bundle.outstanding_decision_ids.length,
+      decisions_total: context.bundle.decisions.length,
+      outstanding_decision_ids: context.bundle.outstanding_decision_ids,
+      schema_fingerprint: context.lock.schema_fingerprint,
+      role_posture_fingerprint: context.lock.role_posture_fingerprint,
+      protected_authority: context.lock.protected_authority,
+      source_database_changed: false,
     };
     if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
       `Auto Boundary state: ${payload.activation}`,
-      `Candidate digest: ${payload.generated_contract_digest}`,
+      `Candidate digest: ${payload.candidate_digest}`,
+      `Review decisions: ${payload.decisions_confirmed}/${payload.decisions_total}`,
       `Generated resources: ${payload.protected_authority.length}`,
-      "Active Runner tools are unchanged until secured Workbench activation.",
+      active
+        ? "The exact reviewed local authoring boundary is active."
+        : `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)}`,
+      "Source database changed: no.",
       "",
     ].join("\n"));
     return 0;
   }
   usage(["boundary"]);
   return 2;
+}
+
+type BoundaryReviewBundle = {
+  schema_version: "synapsor.boundary-review-bundle.v1";
+  candidate_digest: `sha256:${string}`;
+  bundle_digest: `sha256:${string}`;
+  activation: "disabled_unreviewed";
+  authority: {
+    source: string;
+    deployment_profile: "development" | "staging";
+    compiler_version: string;
+    spec_version: string;
+    generation_lock_fingerprint: `sha256:${string}`;
+    schema_fingerprint: `sha256:${string}`;
+    role_posture_fingerprint: `sha256:${string}`;
+    environment: string;
+    budgets: ExplorationBoundaryDraft["budgets"];
+  };
+  decisions: Array<ReturnType<typeof boundaryReviewDecisions>[number] & { confirmed: boolean }>;
+  outstanding_decision_ids: string[];
+  candidate: ExplorationBoundaryDraft;
+};
+
+export async function boundaryReviewCommand(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--project-root", "--output", "--json", "--confirm", "--actor"]),
+    "boundary review",
+  );
+  if (args.includes("--confirm") && args.includes("--json")) {
+    throw new Error("Interactive boundary review cannot use --json; confirm decisions in a terminal, then export JSON.");
+  }
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  let context = await loadBoundaryReviewContext(projectRoot);
+  if (args.includes("--confirm")) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error(
+        "Interactive boundary review requires a real terminal. For automation, export a review bundle and use boundary activate --headless with a verified signed_key or jwt_oidc identity.",
+      );
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    try {
+      process.stdout.write(formatBoundaryReviewSummary(context.bundle));
+      for (const decision of context.bundle.decisions.filter((item) => !item.confirmed)) {
+        process.stdout.write([
+          "",
+          `Decision: ${decision.decision}`,
+          `Stable ID: ${decision.id}`,
+          `Reviewed-input digest: ${decision.input_digest}`,
+          "",
+        ].join("\n"));
+        const answer = (await rl.question(`Type CONFIRM ${decision.id} to confirm this exact decision: `)).trim();
+        if (answer !== `CONFIRM ${decision.id}`) {
+          throw new Error(`Boundary review stopped before confirming ${decision.id}; no new confirmations were saved.`);
+        }
+      }
+      let actor = optionalArg(args, "--actor")?.trim();
+      if (!actor) actor = (await rl.question("Human reviewer identity (audit label, not a password): ")).trim();
+      if (!actor) throw new Error("Boundary review requires a non-empty human reviewer identity.");
+      const progress = createBoundaryReviewProgress({
+        draft: context.draft,
+        candidate: context.candidate,
+        confirmedDecisions: context.draft.unresolved_decisions,
+        previous: context.progress,
+        actor,
+        revision: (context.progress?.revision ?? 0) + 1,
+      });
+      await saveBoundaryReviewProgress(projectRoot, progress);
+      context = await loadBoundaryReviewContext(projectRoot);
+    } finally {
+      rl.close();
+    }
+  }
+
+  const output = optionalArg(args, "--output");
+  if (output) {
+    const outputPath = path.resolve(output);
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, `${JSON.stringify(context.bundle, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    process.stdout.write(`Wrote deterministic boundary review bundle: ${displayPath(outputPath)}\n`);
+  }
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(context.bundle, null, 2)}\n`);
+  } else if (!output || args.includes("--confirm")) {
+    process.stdout.write(formatBoundaryReviewSummary(context.bundle));
+  }
+  return 0;
+}
+
+export async function boundaryActivateCommand(
+  args: string[],
+  schemaInspector: typeof inspectDatabase = inspectDatabase,
+): Promise<number> {
+  if (args.includes("--yes")) {
+    throw new Error("boundary activate does not accept --yes; activation requires exact digest confirmation and a human or cryptographically verified operator decision.");
+  }
+  assertKnownOptions(
+    args,
+    new Set([
+      "--project-root",
+      "--config",
+      "--review-bundle",
+      "--headless",
+      "--confirm",
+      "--actor",
+      "--identity",
+      "--identity-key",
+      "--required-role",
+      "--reason",
+      "--environment",
+      "--expires-at",
+      "--nonce",
+      "--json",
+    ]),
+    "boundary activate",
+  );
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const context = await loadBoundaryReviewContext(projectRoot);
+  const headless = args.includes("--headless");
+  const expectedConfirmation = `ACTIVATE ${context.bundle.candidate_digest}`;
+  let confirmation = optionalArg(args, "--confirm")?.trim();
+  let actor = optionalArg(args, "--actor")?.trim();
+  let operator: {
+    subject: string;
+    provider: "interactive_terminal" | "signed_key" | "jwt_oidc";
+    verified: boolean;
+    decision_hash?: string;
+    integrity_hash?: string;
+    key_id?: string;
+    roles?: string[];
+    decision_id?: `sha256:${string}`;
+  };
+  let consumedDecision: {
+    store: ProposalStore;
+    key: string;
+    decisionId: `sha256:${string}`;
+    expiresAt: string;
+  } | undefined;
+
+  if (headless) {
+    if (process.stdin.isTTY && !confirmation) {
+      throw new Error(`Headless activation still requires --confirm ${shellQuote(expectedConfirmation)}.`);
+    }
+    if (confirmation !== expectedConfirmation) {
+      throw new Error(`Headless activation requires the exact confirmation ${expectedConfirmation}.`);
+    }
+    const bundlePath = optionalArg(args, "--review-bundle");
+    if (!bundlePath) throw new Error("Headless activation requires --review-bundle <exported-review.json>.");
+    const suppliedBundle = await readJsonFileWithLocation<BoundaryReviewBundle>(bundlePath, "boundary review bundle");
+    assertCurrentBoundaryReviewBundle(suppliedBundle, context.bundle);
+
+    const resolvedProject = await resolveSynapsorProject(projectRoot, process.env);
+    const configPath = optionalArg(args, "--config") ?? resolvedProject?.config_path;
+    if (!configPath) {
+      throw new Error("Headless activation requires a discoverable Runner config or --config <path> with signed_key or jwt_oidc operator identity.");
+    }
+    const config = await readRuntimeConfig(configPath);
+    if (config.operator_identity?.provider !== "signed_key" && config.operator_identity?.provider !== "jwt_oidc") {
+      throw new Error("Headless activation requires a configured signed_key or jwt_oidc operator identity.");
+    }
+    const requiredRole = optionalArg(args, "--required-role")?.trim();
+    if (!requiredRole) throw new Error("Headless activation requires --required-role <reviewed-operator-role>.");
+    const reason = optionalArg(args, "--reason")?.trim();
+    if (!reason) throw new Error("Headless activation requires --reason <human review reason>.");
+    const environment = optionalArg(args, "--environment")?.trim() ?? context.candidate.deployment_profile;
+    if (environment !== context.candidate.deployment_profile) {
+      throw new Error(`Activation environment ${environment} does not match reviewed deployment profile ${context.candidate.deployment_profile}.`);
+    }
+    const now = new Date();
+    const expiresAt = boundaryDecisionExpiry(optionalArg(args, "--expires-at"), now);
+    const nonce = optionalArg(args, "--nonce")?.trim() || crypto.randomBytes(24).toString("base64url");
+    if (!/^[A-Za-z0-9._~-]{16,200}$/.test(nonce)) {
+      throw new Error("Boundary activation nonce must contain 16-200 URL-safe non-secret characters.");
+    }
+    const decisionEnvelope = {
+      schema_version: "synapsor.boundary-activation-decision.v1",
+      review_bundle_digest: context.bundle.bundle_digest,
+      boundary_digest: context.bundle.candidate_digest,
+      confirmed_decision_ids: context.bundle.decisions.map((decision) => decision.id).sort(),
+      schema_fingerprint: context.bundle.authority.schema_fingerprint,
+      generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
+      role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint,
+      compiler_version: context.bundle.authority.compiler_version,
+      spec_version: context.bundle.authority.spec_version,
+      deployment_profile: context.bundle.authority.deployment_profile,
+      environment,
+      budgets: context.bundle.authority.budgets,
+      required_role: requiredRole,
+      issued_at: now.toISOString(),
+      expires_at: expiresAt,
+      nonce,
+    };
+    const decisionId = canonicalJsonDigest(decisionEnvelope);
+    const identity = await resolveOperatorIdentity({
+      config: config.operator_identity as OperatorIdentityConfig,
+      configPath,
+      proposal: {
+        proposal_id: `boundary_${context.bundle.candidate_digest.slice("sha256:".length, "sha256:".length + 24)}`,
+        proposal_version: 1,
+        proposal_hash: decisionId,
+      },
+      action: "boundary_activate",
+      reason,
+      actor,
+      identity: optionalArg(args, "--identity"),
+      privateKeyPath: optionalArg(args, "--identity-key"),
+      requiredRole,
+      now: now.toISOString(),
+    });
+    if (!identity.verified || identity.provider === "dev_env") {
+      throw new Error("Headless boundary activation identity was not cryptographically verified.");
+    }
+    await assertFreshOperatorProof(identity, config.operator_identity as OperatorIdentityConfig, configPath);
+    actor = identity.subject;
+    operator = {
+      subject: identity.subject,
+      provider: identity.provider,
+      verified: true,
+      decision_hash: identity.decision_hash,
+      integrity_hash: identity.integrity_hash,
+      key_id: identity.key_id,
+      roles: identity.roles,
+      decision_id: decisionId,
+    };
+
+    const storePath = resolvedProject?.store_path
+      ?? (config.storage?.sqlite_path ? path.resolve(config.storage.sqlite_path) : path.join(projectRoot, ".synapsor/local.db"));
+    await fs.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
+    const store = new ProposalStore(storePath);
+    const key = `boundary_activation_decision:${decisionId}`;
+    if (store.getRunnerState(key)) {
+      store.close();
+      throw new Error("Boundary activation decision was already consumed; create a fresh short-lived decision with a new nonce.");
+    }
+    store.setRunnerState(key, {
+      status: "consumed_before_activation",
+      decision_id: decisionId,
+      boundary_digest: context.bundle.candidate_digest,
+      subject: identity.subject,
+      provider: identity.provider,
+      decision_hash: identity.decision_hash,
+      integrity_hash: identity.integrity_hash,
+      issued_at: now.toISOString(),
+      expires_at: expiresAt,
+      nonce_digest: canonicalJsonDigest({ nonce }),
+      source_database_changed: false,
+    });
+    consumedDecision = { store, key, decisionId, expiresAt };
+
+    const progress = createBoundaryReviewProgress({
+      draft: context.draft,
+      candidate: context.candidate,
+      confirmedDecisions: context.draft.unresolved_decisions,
+      previous: context.progress,
+      actor: identity.subject,
+      revision: (context.progress?.revision ?? 0) + 1,
+      now: now.toISOString(),
+    });
+    try {
+      await saveBoundaryReviewProgress(projectRoot, progress);
+    } catch (error) {
+      store.setRunnerState(key, {
+        status: "consumed_review_persistence_failed",
+        decision_id: decisionId,
+        boundary_digest: context.bundle.candidate_digest,
+        subject: identity.subject,
+        provider: identity.provider,
+        failed_at: new Date().toISOString(),
+        source_database_changed: false,
+      });
+      store.close();
+      consumedDecision = undefined;
+      throw error;
+    }
+  } else {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error("Noninteractive boundary activation requires --headless and a verified signed_key or jwt_oidc operator identity.");
+    }
+    if (context.bundle.outstanding_decision_ids.length > 0) {
+      throw new Error(
+        `Boundary activation is blocked by ${context.bundle.outstanding_decision_ids.length} unresolved decision(s). Run boundary review --confirm first.`,
+      );
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    try {
+      process.stdout.write(formatBoundaryReviewSummary(context.bundle));
+      if (!confirmation) confirmation = (await rl.question(`Type ${expectedConfirmation} to activate this exact local boundary: `)).trim();
+      if (!actor) actor = (await rl.question("Human operator identity (audit label, not a password): ")).trim();
+    } finally {
+      rl.close();
+    }
+    if (confirmation !== expectedConfirmation) throw new Error(`Activation requires the exact confirmation ${expectedConfirmation}.`);
+    if (!actor) throw new Error("Activation requires a non-empty human operator identity.");
+    operator = { subject: actor, provider: "interactive_terminal", verified: false };
+  }
+
+  try {
+    const inspection = await schemaInspector({
+      engine: context.lock.engine,
+      databaseUrlEnv: context.lock.source_env,
+      schema: context.lock.inspected_schema,
+      env: process.env,
+    });
+    const active = await activateExplorationBoundary({
+      projectRoot,
+      candidate: context.candidate,
+      expectedDigest: context.bundle.candidate_digest,
+      actor: actor!,
+      confirmation: expectedConfirmation,
+      confirmedDecisions: context.draft.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    if (consumedDecision) {
+      consumedDecision.store.setRunnerState(consumedDecision.key, {
+        status: "activated",
+        decision_id: consumedDecision.decisionId,
+        boundary_digest: active.activation.digest,
+        subject: operator.subject,
+        provider: operator.provider,
+        decision_hash: operator.decision_hash ?? "interactive",
+        integrity_hash: operator.integrity_hash ?? "interactive",
+        activated_at: active.activation.activated_at,
+        expires_at: consumedDecision.expiresAt,
+        source_database_changed: false,
+      });
+      consumedDecision.store.recordAttentionEvent({
+        event_type: "capability.activated",
+        severity: "informational",
+        environment: active.deployment_profile,
+        capability: "app.explore_data",
+        contract_digest: active.activation.digest,
+        attention_required: false,
+        immediate_default: false,
+        summary: "Verified operator activated reviewed local authoring authority",
+        workbench_path: "/",
+        details: {
+          authority_type: "scoped_explore",
+          operator_provider: operator.provider,
+          operator_subject_digest: canonicalJsonDigest({ subject: operator.subject }),
+          decision_id: consumedDecision.decisionId,
+          source_database_changed: false,
+        },
+        source_event_key: `boundary-cli-activated:${consumedDecision.decisionId}`,
+        now: active.activation.activated_at,
+      });
+    }
+    const payload = {
+      ok: true,
+      active,
+      operator,
+      source_database_changed: false,
+      model_facing_activation_tool: false,
+    };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : `Activated exact local authoring boundary ${active.activation.digest} for ${operator.subject}.\nSource database changed: no.\n`);
+    return 0;
+  } catch (error) {
+    if (consumedDecision) {
+      consumedDecision.store.setRunnerState(consumedDecision.key, {
+        status: "consumed_activation_failed",
+        decision_id: consumedDecision.decisionId,
+        boundary_digest: context.bundle.candidate_digest,
+        subject: operator.subject,
+        provider: operator.provider,
+        failed_at: new Date().toISOString(),
+        safe_error: redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+        source_database_changed: false,
+      });
+    }
+    throw error;
+  } finally {
+    consumedDecision?.store.close();
+  }
+}
+
+async function loadBoundaryReviewContext(projectRoot: string): Promise<{
+  boundaryRoot: string;
+  draft: ExplorationBoundaryDraft;
+  candidate: ExplorationBoundaryDraft;
+  lock: GenerationLock;
+  progress: Awaited<ReturnType<typeof readBoundaryReviewProgress>>;
+  bundle: BoundaryReviewBundle;
+}> {
+  const journey = await readGuidedOnboardingState(projectRoot);
+  const boundaryRoot = path.resolve(projectRoot, journey?.artifacts.boundary_root ?? "synapsor/generated");
+  const relative = path.relative(projectRoot, boundaryRoot);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Managed boundary root escapes the selected project.");
+  }
+  const draft = await readJsonFileWithLocation<ExplorationBoundaryDraft>(
+    path.join(boundaryRoot, "exploration-boundary.draft.json"),
+    "exploration boundary draft",
+  );
+  const lock = await readJsonFileWithLocation<GenerationLock>(
+    path.join(projectRoot, ".synapsor/generation-lock.json"),
+    "generation lock",
+  );
+  const progress = await readBoundaryReviewProgress(projectRoot, draft);
+  const candidate = progress?.candidate ?? draft;
+  const decisions = boundaryReviewDecisions(candidate).map((decision) => ({
+    ...decision,
+    confirmed: progress?.confirmed_decisions.includes(decision.decision) ?? false,
+  }));
+  const candidateDigest = explorationBoundaryCandidateDigest(candidate);
+  const core = {
+    schema_version: "synapsor.boundary-review-bundle.v1" as const,
+    candidate_digest: candidateDigest,
+    activation: "disabled_unreviewed" as const,
+    authority: {
+      source: candidate.source,
+      deployment_profile: candidate.deployment_profile,
+      compiler_version: candidate.compiler_version,
+      spec_version: candidate.spec_version,
+      generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+      schema_fingerprint: lock.schema_fingerprint,
+      role_posture_fingerprint: candidate.role_posture_fingerprint,
+      environment: candidate.deployment_profile,
+      budgets: candidate.budgets,
+    },
+    decisions,
+    outstanding_decision_ids: decisions.filter((decision) => !decision.confirmed).map((decision) => decision.id),
+    candidate,
+  };
+  const bundle: BoundaryReviewBundle = {
+    ...core,
+    bundle_digest: canonicalJsonDigest(core),
+  };
+  return { boundaryRoot, draft, candidate, lock, progress, bundle };
+}
+
+function formatBoundaryReviewSummary(bundle: BoundaryReviewBundle): string {
+  const confirmed = bundle.decisions.length - bundle.outstanding_decision_ids.length;
+  return [
+    "Scoped Explore boundary review",
+    `  exact digest: ${bundle.candidate_digest}`,
+    `  profile: ${bundle.authority.deployment_profile} (local authoring only)`,
+    `  resources: ${bundle.candidate.pack.resources.length}`,
+    `  decisions confirmed: ${confirmed}/${bundle.decisions.length}`,
+    `  outstanding: ${bundle.outstanding_decision_ids.length}`,
+    `  source database changed: no`,
+    ...(bundle.outstanding_decision_ids.length
+      ? ["  next: review these exact decision IDs:", ...bundle.outstanding_decision_ids.map((id) => `    - ${id}`)]
+      : ["  next: activate this exact digest from the operator plane"]),
+    "",
+  ].join("\n");
+}
+
+function assertCurrentBoundaryReviewBundle(
+  supplied: BoundaryReviewBundle,
+  current: BoundaryReviewBundle,
+): void {
+  if (supplied.schema_version !== "synapsor.boundary-review-bundle.v1") {
+    throw new Error("Unsupported boundary review bundle version.");
+  }
+  const { bundle_digest: suppliedDigest, ...suppliedCore } = supplied;
+  if (canonicalJsonDigest(suppliedCore) !== suppliedDigest) {
+    throw new Error("Boundary review bundle digest does not match its contents.");
+  }
+  if (suppliedDigest !== current.bundle_digest
+    || supplied.candidate_digest !== current.candidate_digest) {
+    throw new Error("Boundary review bundle is stale or belongs to a different candidate; export the current review again.");
+  }
+}
+
+function boundaryDecisionExpiry(value: string | undefined, now: Date): string {
+  const maximumMs = 15 * 60 * 1000;
+  const expires = value ? new Date(value) : new Date(now.getTime() + 5 * 60 * 1000);
+  if (!Number.isFinite(expires.getTime())
+    || expires.getTime() <= now.getTime()
+    || expires.getTime() - now.getTime() > maximumMs) {
+    throw new Error("Boundary activation decision expiry must be in the future and no more than 15 minutes from now.");
+  }
+  return expires.toISOString();
+}
+
+async function assertFreshOperatorProof(
+  proof: Awaited<ReturnType<typeof resolveOperatorIdentity>>,
+  config: OperatorIdentityConfig,
+  configPath: string,
+): Promise<void> {
+  if (proof.provider === "signed_key") {
+    const operator = config.operators?.[proof.subject];
+    if (!operator) throw new Error("Verified operator is no longer configured.");
+    const publicKey = await fs.readFile(
+      path.resolve(path.dirname(path.resolve(configPath)), operator.public_key_path),
+      "utf8",
+    );
+    if (!verifySignedOperatorProof(proof, publicKey)) {
+      throw new Error("Signed boundary activation proof failed independent verification.");
+    }
+    return;
+  }
+  if (proof.provider === "jwt_oidc") {
+    const secretEnv = config.attestation_secret_env ?? "SYNAPSOR_OPERATOR_ATTESTATION_SECRET";
+    const secret = process.env[secretEnv]?.trim();
+    if (!secret || !verifyJwtOperatorProof(proof, secret)) {
+      throw new Error("OIDC boundary activation proof failed independent attestation verification.");
+    }
+    return;
+  }
+  throw new Error("Boundary activation proof must use signed_key or jwt_oidc.");
 }
 
 async function startSafeAction(args: string[]): Promise<number> {
@@ -9698,14 +10279,16 @@ async function demo(args: string[]): Promise<number> {
 }
 
 async function quickDemo(args: string[]): Promise<number> {
-  const allowed = new Set(["--quick", "--guided", "--no-interactive", "--details", "--json", "--yes", "--no-open", "--no-color", "--prove"]);
+  const allowed = new Set(["--quick", "--guided", "--no-interactive", "--details", "--json", "--yes", "--no-open", "--no-color", "--prove", "--state-dir"]);
   assertKnownOptions(args, allowed, "demo --quick");
+  const stateDir = optionalArg(args, "--state-dir");
   const delegated = [
     ...(args.includes("--details") || args.includes("--prove") ? ["--prove"] : []),
     ...(args.includes("--json") ? ["--json"] : []),
     ...(args.includes("--no-color") ? ["--no-color"] : []),
     ...(args.includes("--no-open") || args.includes("--no-interactive") || !process.stdout.isTTY ? ["--no-open"] : []),
     ...(args.includes("--yes") || args.includes("--no-interactive") || args.includes("--json") || !process.stdout.isTTY ? ["--yes"] : []),
+    ...(stateDir ? ["--state-dir", stateDir] : []),
   ];
   return tryCommand(delegated);
 }
@@ -10201,7 +10784,7 @@ function tryInspectCommands(
   proposalId: string,
   evidenceId: string,
 ): Array<{ label: string; command: string; description: string }> {
-  const cmd = useNpx ? "npx -y -p @synapsor/runner synapsor-runner" : cliCommandName();
+  const cmd = useNpx ? "npx -y @synapsor/runner" : cliCommandName();
   return [
     {
       label: "Proposal summary",
@@ -14653,6 +15236,7 @@ async function ui(args: string[]): Promise<number> {
     workerDecision,
     workerReconciliationInspect,
     workerReconciliationResolve,
+    instantOnboarding: args.includes("--instant-onboarding"),
   });
   process.stdout.write(`Synapsor Runner local UI: ${server.url}\n`);
   if (args.includes("--open")) {
@@ -17621,7 +18205,10 @@ function outputArg(args: string[]): string | undefined {
 
 const INLINE_DATABASE_URL_ENV = "SYNAPSOR_RUNNER_INLINE_DATABASE_URL";
 
-function databaseInputFromArgs(args: string[]): {
+export function databaseInputFromArgs(
+  args: string[],
+  options: { implyDatabaseUrl?: boolean } = {},
+): {
   explicit: boolean;
   inlineUrl: boolean;
   inspectionDatabaseUrlEnv: string;
@@ -17637,7 +18224,10 @@ function databaseInputFromArgs(args: string[]): {
   if (inlineUrl && !isDatabaseUrl(inlineUrl)) {
     throw new Error("--from must be a postgres://, postgresql://, or mysql:// URL.");
   }
-  const fromEnv = optionalArg(args, "--from-env") ?? optionalArg(args, "--url-env") ?? optionalArg(args, "--database-url-env");
+  const fromEnv = optionalArg(args, "--from-env")
+    ?? optionalArg(args, "--url-env")
+    ?? optionalArg(args, "--database-url-env")
+    ?? (options.implyDatabaseUrl && envValue(process.env, "DATABASE_URL") ? "DATABASE_URL" : undefined);
   const configDatabaseUrlEnv = fromEnv ?? "SYNAPSOR_DATABASE_READ_URL";
   if (inlineUrl) {
     return {
@@ -19418,17 +20008,25 @@ the local reviewed contract and proposal before writeback.
 `,
     boundary: `Usage:
   ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
+  ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
+  ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
+  ${cmd} boundary activate [--project-root .]
+  ${cmd} boundary activate --headless --review-bundle boundary-review.json --config ./synapsor/synapsor.runner.json --confirm "ACTIVATE sha256:..." --identity reviewer --identity-key ./reviewer.pem --required-role boundary_reviewer --reason "Reviewed staging authority"
   ${cmd} boundary status [--project-root .] [--json]
   ${cmd} boundary diff [--project-root .] [--json]
   ${cmd} mcp install cursor --project --authoring --project-root . --yes
 
 Draft the whole deterministic application boundary without opening a browser,
-inspect its disabled state, and compare the generation lock with the current
-schema and exact database role/grant/RLS posture. Drafting and diffing never
-activate authority or read source rows.
+inspect/export its disabled review state, and compare the generation lock with
+the current schema and exact database role/grant/RLS posture. Interactive review
+requires exact confirmation of each stable decision ID. Interactive activation
+shows and requires the complete digest in a real terminal.
 
-Only the secured local Workbench can activate the exact development/staging
-exploration-boundary digest. After activation, --authoring installs exactly
+Headless activation is accepted only with an exact exported review bundle,
+exact digest confirmation, a short-lived nonce-bound decision, and a configured
+signed_key or jwt_oidc operator identity carrying the required role. --yes and
+an actor string are never sufficient. Workbench and CLI converge on the same
+activation checks. After activation, --authoring installs exactly
 app.describe_data and app.explore_data in the current Cursor project. Scoped
 Explore remains local stdio only and is absent from production and remote HTTP.
 `,

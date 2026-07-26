@@ -29,6 +29,7 @@ import {
   inspectDatabase,
   rolePostureFingerprint,
   schemaFingerprintForInspection,
+  type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import { isNumericProposalField, normalizeContract, type AgentContextSpec, type AggregateReadSpec, type CapabilitySpec, type PolicySpec, type ProposalActionSpec, type ProtectedReadSpec, type ProtectedReadValueSpec, type ResourceSpec, type SynapsorContract } from "@synapsor/spec";
 import mysql from "mysql2/promise";
@@ -1850,16 +1851,47 @@ type GeneratedAuthorityLock = {
   spec_version: string;
   engine: SourceEngine;
   source_env: string;
+  inspected_schema?: string;
   schema_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
   evidence_fingerprint: `sha256:${string}`;
   generated_contract_digest: `sha256:${string}`;
   reviewed_overrides_digest: `sha256:${string}`;
   protected_authority: string[];
+  authority_dependencies?: {
+    schema_version: "synapsor.authority-dependencies.v1";
+    credential_posture_fingerprint: `sha256:${string}`;
+    resources: Record<string, {
+      schema: string;
+      table: string;
+      fields: string[];
+      fingerprint: `sha256:${string}`;
+    }>;
+    relationships: Record<string, {
+      root_resource: string;
+      relationship_id: string;
+      links: Array<{
+        constraint_name: string;
+        source_resource: string;
+        target_resource: string;
+        source_columns: string[];
+        target_columns: string[];
+        target_uniqueness: {
+          kind: "primary_key" | "unique_constraint" | "unique_index";
+          name: string;
+          columns: string[];
+        };
+        nullable: boolean;
+        cardinality: "many_to_one";
+        max_fan_out: 1;
+      }>;
+      proof_digest: `sha256:${string}`;
+    }>;
+  };
 };
 
-const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set(["1.6.0", "1.6.3"]);
-const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0"]);
+const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set(["1.6.0", "1.6.3", "1.6.4"]);
+const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0", "1.7.0"]);
 
 /**
  * Generated protected reads remain executable only while the exact reviewed
@@ -1915,21 +1947,39 @@ export async function preflightGeneratedAuthority(
   const inspection = await inspect({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,
+    ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
     statementTimeoutMs: Math.min(...protectedCapabilities.map((capability) =>
       capability.protected_read!.limits.statement_timeout_ms)),
     env,
   });
-  const schemaFingerprint = schemaFingerprintForInspection(inspection);
-  const postureFingerprint = rolePostureFingerprint(inspection);
-  const changes = [
-    ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata"] : []),
-    ...(postureFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture"] : []),
-  ];
-  if (changes.length > 0) {
-    throw new McpRuntimeError(
-      "GENERATED_AUTHORITY_DRIFT",
-      `Generated protected authority is stale because ${changes.join(" and ")} changed. Rescan, review the semantic diff, regenerate, and activate a new digest.`,
-    );
+  if (lock.authority_dependencies) {
+    if (credentialPostureFingerprintForGeneratedAuthority(inspection)
+      !== lock.authority_dependencies.credential_posture_fingerprint) {
+      throw new McpRuntimeError(
+        "GENERATED_AUTHORITY_DRIFT",
+        "Generated protected authority is stale because the database credential posture changed. Rescan, review, and activate a new digest.",
+      );
+    }
+    for (const capability of protectedCapabilities) {
+      assertProtectedCapabilityDependenciesCurrent(
+        capability,
+        lock.authority_dependencies,
+        inspection,
+      );
+    }
+  } else {
+    const schemaFingerprint = schemaFingerprintForInspection(inspection);
+    const postureFingerprint = rolePostureFingerprint(inspection);
+    const changes = [
+      ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata"] : []),
+      ...(postureFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture"] : []),
+    ];
+    if (changes.length > 0) {
+      throw new McpRuntimeError(
+        "GENERATED_AUTHORITY_DRIFT",
+        `Generated protected authority is stale because ${changes.join(" and ")} changed. Rescan, review the semantic diff, regenerate, and activate a new digest.`,
+      );
+    }
   }
   const role = inspection.role_posture;
   if (!role?.verified || !role.read_only || role.superuser !== false || role.bypass_rls !== false
@@ -1948,18 +1998,280 @@ function assertGeneratedAuthorityLockShape(value: GeneratedAuthorityLock): void 
     || !SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS.has(value.spec_version)
     || (value.engine !== "postgres" && value.engine !== "mysql")
     || !/^[A-Z_][A-Z0-9_]*$/.test(value.source_env)
+    || (value.inspected_schema !== undefined
+      && (typeof value.inspected_schema !== "string" || !value.inspected_schema))
     || !digest.test(value.schema_fingerprint)
     || !digest.test(value.role_posture_fingerprint)
     || !digest.test(value.evidence_fingerprint)
     || !digest.test(value.generated_contract_digest)
     || !digest.test(value.reviewed_overrides_digest)
     || !Array.isArray(value.protected_authority)
-    || value.protected_authority.some((item) => typeof item !== "string")) {
+    || value.protected_authority.some((item) => typeof item !== "string")
+    || (value.authority_dependencies !== undefined
+      && !generatedAuthorityDependenciesValid(value.authority_dependencies, digest))) {
     throw new McpRuntimeError(
       "GENERATION_LOCK_INVALID",
       "The generated-authority lock is malformed or belongs to an unsupported compiler/spec version.",
     );
   }
+}
+
+type GeneratedAuthorityDependencies = NonNullable<GeneratedAuthorityLock["authority_dependencies"]>;
+type GeneratedRelationshipDependency = GeneratedAuthorityDependencies["relationships"][string];
+
+function generatedAuthorityDependenciesValid(
+  value: GeneratedAuthorityDependencies,
+  digest: RegExp,
+): boolean {
+  if (!value || value.schema_version !== "synapsor.authority-dependencies.v1"
+    || !digest.test(value.credential_posture_fingerprint)
+    || !isRecord(value.resources)
+    || !isRecord(value.relationships)) {
+    return false;
+  }
+  for (const dependency of Object.values(value.resources)) {
+    if (!dependency
+      || typeof dependency.schema !== "string"
+      || typeof dependency.table !== "string"
+      || !Array.isArray(dependency.fields)
+      || dependency.fields.some((field) => typeof field !== "string")
+      || !digest.test(dependency.fingerprint)) {
+      return false;
+    }
+  }
+  for (const dependency of Object.values(value.relationships)) {
+    if (!dependency
+      || typeof dependency.root_resource !== "string"
+      || typeof dependency.relationship_id !== "string"
+      || !Array.isArray(dependency.links)
+      || dependency.links.length < 1
+      || dependency.links.length > 2
+      || !digest.test(dependency.proof_digest)
+      || canonicalJsonDigest(dependency.links) !== dependency.proof_digest) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function credentialPostureFingerprintForGeneratedAuthority(
+  inspection: SchemaInspection,
+): `sha256:${string}` {
+  const role = inspection.role_posture;
+  return canonicalJsonDigest({
+    engine: inspection.engine,
+    current_user: inspection.current_user,
+    role: role
+      ? {
+          verified: role.verified,
+          superuser: role.superuser,
+          bypass_rls: role.bypass_rls,
+          read_only: role.read_only,
+          writable_relations: [...role.writable_relations].sort(),
+          owned_relations: [...role.owned_relations].sort(),
+        }
+      : null,
+  });
+}
+
+function assertProtectedCapabilityDependenciesCurrent(
+  capability: RuntimeCapabilityConfig,
+  dependencies: GeneratedAuthorityDependencies,
+  inspection: SchemaInspection,
+): void {
+  const root = `${capability.target.schema}.${capability.target.table}`;
+  const resourceIds = new Set([root]);
+  const protectedRead = capability.protected_read!;
+  const paths = [
+    ...(protectedRead.relationship ? [{
+      name: protectedRead.relationship.name,
+      links: [{
+        schema: protectedRead.relationship.schema,
+        table: protectedRead.relationship.table,
+        local_key: protectedRead.relationship.local_key,
+        target_key: protectedRead.relationship.target_key,
+        cardinality: protectedRead.relationship.cardinality,
+        max_fan_out: protectedRead.relationship.max_fan_out,
+      }],
+    }] : []),
+    ...(protectedRead.relationships ?? []).map((path) => ({
+      name: path.name,
+      links: path.links.map((link) => ({
+        schema: link.schema,
+        table: link.table,
+        local_key: link.local_key,
+        target_key: link.target_key,
+        cardinality: link.cardinality,
+        max_fan_out: link.max_fan_out,
+      })),
+    })),
+  ];
+  for (const path of paths) {
+    const dependency = dependencies.relationships[`${root}::${path.name}`];
+    if (!dependency
+      || dependency.root_resource !== root
+      || dependency.relationship_id !== path.name
+      || path.links.length !== dependency.links.length) {
+      throw generatedDependencyDrift(capability, `relationship ${path.name} is not bound to its generation-lock proof`);
+    }
+    let source = root;
+    for (const [index, link] of path.links.entries()) {
+      const expected = dependency.links[index]!;
+      const target = `${link.schema}.${link.table}`;
+      if (expected.source_resource !== source
+        || expected.target_resource !== target
+        || expected.source_columns.length !== 1
+        || expected.source_columns[0] !== link.local_key
+        || expected.target_columns.length !== 1
+        || expected.target_columns[0] !== link.target_key
+        || link.cardinality !== "many_to_one"
+        || link.max_fan_out !== 1) {
+        throw generatedDependencyDrift(capability, `relationship ${path.name} no longer matches its reviewed structural path`);
+      }
+      resourceIds.add(source);
+      resourceIds.add(target);
+      source = target;
+    }
+    if (relationshipDependencyFingerprintForGeneratedAuthority(dependency, inspection)
+      !== dependency.proof_digest) {
+      throw generatedDependencyDrift(capability, `relationship ${path.name} foreign-key or uniqueness proof changed`);
+    }
+  }
+  for (const resourceId of resourceIds) {
+    const dependency = dependencies.resources[resourceId];
+    if (!dependency
+      || resourceDependencyFingerprintForGeneratedAuthority(dependency, inspection)
+        !== dependency.fingerprint) {
+      throw generatedDependencyDrift(capability, `resource ${resourceId} authority-bearing schema or RLS metadata changed`);
+    }
+  }
+}
+
+function generatedDependencyDrift(
+  capability: RuntimeCapabilityConfig,
+  reason: string,
+): McpRuntimeError {
+  return new McpRuntimeError(
+    "GENERATED_AUTHORITY_DRIFT",
+    `Generated protected capability ${capability.name} is stale because ${reason}. Rescan, review, and activate a new digest.`,
+  );
+}
+
+function resourceDependencyFingerprintForGeneratedAuthority(
+  dependency: GeneratedAuthorityDependencies["resources"][string],
+  inspection: SchemaInspection,
+): `sha256:${string}` | undefined {
+  const table = inspection.tables.find((candidate) =>
+    candidate.schema === dependency.schema && candidate.name === dependency.table);
+  if (!table) return undefined;
+  const columns = new Map(table.columns.map((column) => [column.name, column]));
+  const selectedColumns = dependency.fields.map((name) => {
+    const column = columns.get(name);
+    if (!column) return undefined;
+    return {
+      name: column.name,
+      data_type: column.data_type,
+      nullable: column.nullable,
+      default: column.default ?? null,
+      generated: column.generated,
+      identity: column.identity ?? false,
+      enum_values: [...(column.enum_values ?? [])].sort(),
+    };
+  });
+  if (selectedColumns.some((column) => !column)) return undefined;
+  return canonicalJsonDigest({
+    engine: inspection.engine,
+    schema: table.schema,
+    table: table.name,
+    type: table.type,
+    primary_key: [...table.primary_key],
+    columns: selectedColumns,
+    row_level_security: table.row_level_security ?? "unknown",
+    row_level_security_policies: [...(table.row_level_security_policies ?? [])]
+      .map((policy) => ({
+        name: policy.name,
+        command: policy.command,
+        permissive: policy.permissive,
+        roles: [...policy.roles].sort(),
+        using_expression: policy.using_expression ?? null,
+        check_expression: policy.check_expression ?? null,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name)),
+    role_posture: table.role_posture
+      ? {
+          owner: table.role_posture.owner,
+          current_role_is_owner: table.role_posture.current_role_is_owner,
+          current_role_can_assume_owner: table.role_posture.current_role_can_assume_owner,
+          privileges: table.role_posture.privileges,
+          row_security_forced: table.role_posture.row_security_forced,
+          row_security_effective_for_current_role: table.role_posture.row_security_effective_for_current_role,
+        }
+      : null,
+  });
+}
+
+function relationshipDependencyFingerprintForGeneratedAuthority(
+  dependency: GeneratedRelationshipDependency,
+  inspection: SchemaInspection,
+): `sha256:${string}` | undefined {
+  const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
+  const links: GeneratedRelationshipDependency["links"] = [];
+  for (const expected of dependency.links) {
+    const source = tables.get(expected.source_resource);
+    const target = tables.get(expected.target_resource);
+    if (!source || !target) return undefined;
+    const foreignKey = source.foreign_keys.find((candidate) =>
+      candidate.name === expected.constraint_name
+      && candidate.referenced_schema === target.schema
+      && candidate.referenced_table === target.name
+      && sameGeneratedColumns(candidate.columns, expected.source_columns)
+      && sameGeneratedColumns(candidate.referenced_columns, expected.target_columns));
+    if (!foreignKey) return undefined;
+    const uniqueness = generatedRelationshipTargetUniqueness(target, expected.target_columns);
+    if (!uniqueness
+      || uniqueness.kind !== expected.target_uniqueness.kind
+      || uniqueness.name !== expected.target_uniqueness.name
+      || !sameGeneratedColumns(uniqueness.columns, expected.target_uniqueness.columns)) {
+      return undefined;
+    }
+    links.push({
+      constraint_name: foreignKey.name,
+      source_resource: expected.source_resource,
+      target_resource: expected.target_resource,
+      source_columns: [...foreignKey.columns],
+      target_columns: [...foreignKey.referenced_columns],
+      target_uniqueness: uniqueness,
+      nullable: foreignKey.columns.some((name) =>
+        source.columns.find((column) => column.name === name)?.nullable !== false),
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+    });
+  }
+  return canonicalJsonDigest(links);
+}
+
+function generatedRelationshipTargetUniqueness(
+  target: SchemaInspection["tables"][number],
+  columns: string[],
+): GeneratedRelationshipDependency["links"][number]["target_uniqueness"] | undefined {
+  const same = (candidate: string[]) => sameGeneratedColumns(candidate, columns);
+  if (same(target.primary_key)) {
+    const named = target.unique_constraints.find((constraint) => same(constraint.columns))
+      ?? target.indexes.find((index) => index.unique === true && same(index.columns ?? []));
+    return {
+      kind: "primary_key",
+      name: named?.name ?? `${target.schema}.${target.name}.primary_key`,
+      columns: [...columns],
+    };
+  }
+  const constraint = target.unique_constraints.find((candidate) => same(candidate.columns));
+  if (constraint) return { kind: "unique_constraint", name: constraint.name, columns: [...columns] };
+  const index = target.indexes.find((candidate) => candidate.unique === true && same(candidate.columns ?? []));
+  return index ? { kind: "unique_index", name: index.name, columns: [...columns] } : undefined;
+}
+
+function sameGeneratedColumns(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 export function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): ProposalRuntimeStore {
@@ -6100,14 +6412,16 @@ class RuntimeDatabasePools {
           if (timeoutMs) await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
           if (input.source.database_scope?.mode === "postgres_rls") {
             for (const target of protectedReadTargets(input.capability)) {
-              const preflightKey = `${poolKey}\u0000${target.schema}\u0000${target.table}\u0000SELECT`;
+              const preflightKey = `${poolKey}\u0000${target.schema}\u0000${target.table}\u0000SELECT\u0000${target.principalScoped ? "tenant+principal" : "tenant"}`;
               if (!this.postgresRlsPreflight.has(preflightKey)) {
                 await assertPostgresRlsTarget(client, {
                   schema: target.schema,
                   table: target.table,
                   scope: {
                     tenantSetting: input.source.database_scope.tenant_setting,
-                    principalSetting: input.source.database_scope.principal_setting,
+                    ...(target.principalScoped && input.source.database_scope.principal_setting
+                      ? { principalSetting: input.source.database_scope.principal_setting }
+                      : {}),
                   },
                   operations: ["SELECT"],
                 });
@@ -6268,7 +6582,9 @@ async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promise<{ row
           table: target.table,
           scope: {
             tenantSetting: input.source.database_scope.tenant_setting,
-            principalSetting: input.source.database_scope.principal_setting,
+            ...(target.principalScoped && input.source.database_scope.principal_setting
+              ? { principalSetting: input.source.database_scope.principal_setting }
+              : {}),
           },
           operations: ["SELECT"],
         });
@@ -6375,7 +6691,7 @@ function runtimeReadQuery(
   };
 }
 
-function buildProtectedReadQuery(
+export function buildProtectedReadQuery(
   capability: RuntimeCapabilityConfig,
   placeholderStyle: "$" | "?",
   args: Record<string, unknown>,
@@ -6383,29 +6699,53 @@ function buildProtectedReadQuery(
 ): { sql: string; values: unknown[] } {
   const protectedRead = capability.protected_read;
   if (!protectedRead) throw new McpRuntimeError("PROTECTED_READ_REQUIRED", "Protected read authority is missing.");
-  const relationship = protectedRead.relationship;
+  const relationships = protectedRelationshipPaths(protectedRead);
   const values: unknown[] = [];
   const bind = (value: unknown): string => {
     values.push(value);
     return placeholderStyle === "$" ? `$${values.length}` : "?";
   };
+  const relationshipAliases = new Map<string, string>();
+  for (const [pathIndex, relationship] of relationships.entries()) {
+    relationshipAliases.set(
+      relationship.name,
+      protectedRelationshipAlias(pathIndex, relationship.links.length - 1),
+    );
+  }
   const field = (name: string, relationshipName?: string): string => {
-    if (relationshipName !== undefined && relationshipName !== relationship?.name) {
+    const alias = relationshipName === undefined ? "t0" : relationshipAliases.get(relationshipName);
+    if (!alias) {
       throw new McpRuntimeError("PROTECTED_RELATIONSHIP_INVALID", "Protected field references an unreviewed relationship.");
     }
-    return `${relationshipName ? "t1" : "t0"}.${quoteIdentifier(name, placeholderStyle)}`;
+    return `${alias}.${quoteIdentifier(name, placeholderStyle)}`;
   };
-  const join = relationship
-    ? ` JOIN ${quoteIdentifier(relationship.schema, placeholderStyle)}.${quoteIdentifier(relationship.table, placeholderStyle)} t1 ON t0.${quoteIdentifier(relationship.local_key, placeholderStyle)} = t1.${quoteIdentifier(relationship.target_key, placeholderStyle)}`
-    : "";
+  const fromClause = (): string => {
+    const joins: string[] = [];
+    for (const [pathIndex, relationship] of relationships.entries()) {
+      let sourceAlias = "t0";
+      let preserveUnmatched = false;
+      for (const [linkIndex, link] of relationship.links.entries()) {
+        const alias = protectedRelationshipAlias(pathIndex, linkIndex);
+        preserveUnmatched ||= link.unmatched_rows === "keep_null";
+        const conditions = [
+          `${sourceAlias}.${quoteIdentifier(link.local_key, placeholderStyle)} = ${alias}.${quoteIdentifier(link.target_key, placeholderStyle)}`,
+          `${alias}.${quoteIdentifier(link.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`,
+          ...(link.principal_scope_key
+            ? [`${alias}.${quoteIdentifier(link.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`]
+            : []),
+        ];
+        joins.push(
+          ` ${preserveUnmatched ? "LEFT JOIN" : "JOIN"} ${quoteIdentifier(link.schema, placeholderStyle)}.${quoteIdentifier(link.table, placeholderStyle)} ${alias} ON ${conditions.join(" AND ")}`,
+        );
+        sourceAlias = alias;
+      }
+    }
+    return `${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} t0${joins.join("")}`;
+  };
   const scopedWhere = (): string[] => {
     const where: string[] = [];
     if (capability.target.tenant_key) where.push(`t0.${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`);
     if (capability.target.principal_scope_key) where.push(`t0.${quoteIdentifier(capability.target.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`);
-    if (relationship) {
-      where.push(`t1.${quoteIdentifier(relationship.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`);
-      if (relationship.principal_scope_key) where.push(`t1.${quoteIdentifier(relationship.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`);
-    }
     for (const predicate of protectedRead.predicates ?? []) {
       const reference = field(predicate.field, predicate.relationship);
       if (predicate.operator === "in") {
@@ -6432,9 +6772,9 @@ function buildProtectedReadQuery(
     }
     return where;
   };
-  const from = `${quoteIdentifier(capability.target.schema, placeholderStyle)}.${quoteIdentifier(capability.target.table, placeholderStyle)} t0${join}`;
 
   if (protectedRead.mode === "rows") {
+    const from = fromClause();
     const columns = capability.visible_columns.map((column) =>
       `t0.${quoteIdentifier(column, placeholderStyle)} AS ${quoteIdentifier(column, placeholderStyle)}`);
     const where = scopedWhere();
@@ -6453,6 +6793,7 @@ function buildProtectedReadQuery(
     range?: { start: ProtectedReadValueSpec; end: ProtectedReadValueSpec },
     period?: "period_1" | "period_2",
   ): string => {
+    const from = fromClause();
     const where = scopedWhere();
     if (range && aggregate.comparison) {
       const reference = field(aggregate.comparison.field, aggregate.comparison.relationship);
@@ -6524,11 +6865,76 @@ function protectedStatementTimeout(capability: RuntimeCapabilityConfig, sourceTi
   return sourceTimeout === undefined ? protectedTimeout : Math.min(protectedTimeout, sourceTimeout);
 }
 
-function protectedReadTargets(capability: RuntimeCapabilityConfig): Array<{ schema: string; table: string }> {
-  const targets = [{ schema: capability.target.schema, table: capability.target.table }];
+export function protectedReadTargets(capability: RuntimeCapabilityConfig): Array<{
+  schema: string;
+  table: string;
+  principalScoped: boolean;
+}> {
+  const targets = new Map<string, {
+    schema: string;
+    table: string;
+    principalScoped: boolean;
+  }>();
+  const addTarget = (target: { schema: string; table: string; principalScoped: boolean }): void => {
+    const key = `${target.schema}\u0000${target.table}`;
+    const existing = targets.get(key);
+    targets.set(key, {
+      ...target,
+      principalScoped: target.principalScoped || Boolean(existing?.principalScoped),
+    });
+  };
+  addTarget({
+    schema: capability.target.schema,
+    table: capability.target.table,
+    principalScoped: Boolean(capability.target.principal_scope_key),
+  });
   const relationship = capability.protected_read?.relationship;
-  if (relationship) targets.push({ schema: relationship.schema, table: relationship.table });
-  return targets;
+  if (relationship) {
+    addTarget({
+      schema: relationship.schema,
+      table: relationship.table,
+      principalScoped: Boolean(relationship.principal_scope_key),
+    });
+  }
+  for (const path of capability.protected_read?.relationships ?? []) {
+    for (const link of path.links) {
+      addTarget({
+        schema: link.schema,
+        table: link.table,
+        principalScoped: Boolean(link.principal_scope_key),
+      });
+    }
+  }
+  return [...targets.values()];
+}
+
+function protectedRelationshipPaths(
+  protectedRead: ProtectedReadSpec,
+): NonNullable<ProtectedReadSpec["relationships"]> {
+  if (protectedRead.relationships?.length) return protectedRead.relationships;
+  const relationship = protectedRead.relationship;
+  if (!relationship) return [];
+  return [{
+    name: relationship.name,
+    links: [{
+      schema: relationship.schema,
+      table: relationship.table,
+      primary_key: relationship.primary_key,
+      tenant_key: relationship.tenant_key,
+      ...(relationship.principal_scope_key
+        ? { principal_scope_key: relationship.principal_scope_key }
+        : {}),
+      local_key: relationship.local_key,
+      target_key: relationship.target_key,
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+      unmatched_rows: "exclude",
+    }],
+  }];
+}
+
+function protectedRelationshipAlias(pathIndex: number, linkIndex: number): string {
+  return `r${pathIndex + 1}_${linkIndex + 1}`;
 }
 
 function queryValues(capability: RuntimeCapabilityConfig, args: Record<string, unknown>, context: TrustedContext): unknown[] {

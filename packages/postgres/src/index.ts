@@ -31,10 +31,13 @@ export type PostgresRlsPolicyInspection = {
 export type PostgresRlsInspection = {
   schema: string;
   table: string;
+  target_kind?: "table" | "partitioned_table" | "view";
   role: string;
   table_exists: boolean;
   row_security_enabled: boolean;
   force_row_security: boolean;
+  security_invoker?: boolean;
+  security_barrier?: boolean;
   role_is_superuser: boolean;
   role_has_bypassrls: boolean;
   role_is_table_owner: boolean;
@@ -42,6 +45,13 @@ export type PostgresRlsInspection = {
   principal_setting?: string;
   required_operations: PostgresRlsOperation[];
   policies: PostgresRlsPolicyInspection[];
+  referenced_relations?: Array<{
+    schema: string;
+    table: string;
+    target_kind?: "table" | "partitioned_table" | "view";
+    ok: boolean;
+    errors: string[];
+  }>;
   errors: string[];
   ok: boolean;
 };
@@ -110,10 +120,21 @@ export async function inspectPostgresRlsTarget(
     operations: PostgresRlsOperation[];
   },
 ): Promise<PostgresRlsInspection> {
+  return inspectPostgresRlsTargetInternal(client, input, new Set());
+}
+
+async function inspectPostgresRlsTargetInternal(
+  client: PostgresApplyClient,
+  input: Parameters<typeof inspectPostgresRlsTarget>[1],
+  ancestors: Set<string>,
+): Promise<PostgresRlsInspection> {
+  const targetKey = `${input.schema}.${input.table}`;
   const metadata = await client.query(
     `SELECT
        current_user AS role,
        c.oid::text AS table_oid,
+       c.relkind AS relation_kind,
+       c.reloptions AS relation_options,
        c.relrowsecurity AS row_security_enabled,
        c.relforcerowsecurity AS force_row_security,
        owner.rolname = current_user AS role_is_table_owner,
@@ -123,19 +144,32 @@ export async function inspectPostgresRlsTarget(
      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      JOIN pg_catalog.pg_roles owner ON owner.oid = c.relowner
      JOIN pg_catalog.pg_roles current_role_info ON current_role_info.rolname = current_user
-     WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p')
+     WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p', 'v')
      LIMIT 1`,
     [input.schema, input.table],
   );
   const row = metadata.rows[0];
+  const relationKind = row?.relation_kind === "v"
+    ? "view"
+    : row?.relation_kind === "p"
+      ? "partitioned_table"
+      : "table";
+  const relationOptions = Array.isArray(row?.relation_options)
+    ? row.relation_options.filter((value): value is string => typeof value === "string")
+    : [];
   const requiredOperations = [...new Set(input.operations)].sort() as PostgresRlsOperation[];
   const report: PostgresRlsInspection = {
     schema: input.schema,
     table: input.table,
+    ...(row ? { target_kind: relationKind } : {}),
     role: typeof row?.role === "string" ? row.role : "unknown",
     table_exists: Boolean(row),
     row_security_enabled: row?.row_security_enabled === true,
     force_row_security: row?.force_row_security === true,
+    ...(relationKind === "view" && row ? {
+      security_invoker: relationOptions.includes("security_invoker=true"),
+      security_barrier: relationOptions.includes("security_barrier=true"),
+    } : {}),
     role_is_superuser: row?.role_is_superuser === true,
     role_has_bypassrls: row?.role_has_bypassrls === true,
     role_is_table_owner: row?.role_is_table_owner === true,
@@ -148,6 +182,70 @@ export async function inspectPostgresRlsTarget(
   };
   if (!row) {
     report.errors.push("POSTGRES_RLS_TARGET_NOT_FOUND");
+    return report;
+  }
+  if (relationKind === "view") {
+    if (ancestors.has(targetKey)) {
+      report.errors.push("POSTGRES_RLS_VIEW_DEPENDENCY_CYCLE");
+      return report;
+    }
+    if (requiredOperations.some((operation) => operation !== "SELECT")) {
+      report.errors.push("POSTGRES_RLS_VIEW_READ_ONLY_REQUIRED");
+    }
+    if (!report.security_invoker) report.errors.push("POSTGRES_RLS_VIEW_SECURITY_INVOKER_REQUIRED");
+    if (!report.security_barrier) report.errors.push("POSTGRES_RLS_VIEW_SECURITY_BARRIER_REQUIRED");
+    if (report.role_is_superuser) report.errors.push("POSTGRES_RLS_ROLE_SUPERUSER");
+    if (report.role_has_bypassrls) report.errors.push("POSTGRES_RLS_ROLE_BYPASSRLS");
+    if (report.role_is_table_owner) report.errors.push("POSTGRES_RLS_ROLE_TABLE_OWNER");
+    const dependencies = await client.query(
+      `SELECT DISTINCT
+         dependency_namespace.nspname AS schema_name,
+         dependency_relation.relname AS relation_name,
+         dependency_relation.relkind AS relation_kind
+       FROM pg_catalog.pg_rewrite rewrite
+       JOIN pg_catalog.pg_depend dependency
+         ON dependency.classid = 'pg_rewrite'::regclass
+        AND dependency.objid = rewrite.oid
+        AND dependency.refclassid = 'pg_class'::regclass
+       JOIN pg_catalog.pg_class dependency_relation
+         ON dependency_relation.oid = dependency.refobjid
+       JOIN pg_catalog.pg_namespace dependency_namespace
+         ON dependency_namespace.oid = dependency_relation.relnamespace
+       WHERE rewrite.ev_class = $1::oid
+         AND dependency.deptype = 'n'
+         AND dependency.refobjid <> rewrite.ev_class
+         AND dependency_relation.relkind IN ('r', 'p', 'v')
+       ORDER BY dependency_namespace.nspname, dependency_relation.relname`,
+      [row.table_oid],
+    );
+    if (!dependencies.rows.length) report.errors.push("POSTGRES_RLS_VIEW_DEPENDENCIES_UNVERIFIED");
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(targetKey);
+    report.referenced_relations = [];
+    for (const dependency of dependencies.rows) {
+      if (typeof dependency.schema_name !== "string" || typeof dependency.relation_name !== "string") {
+        report.errors.push("POSTGRES_RLS_VIEW_DEPENDENCIES_UNVERIFIED");
+        continue;
+      }
+      const dependencyReport = await inspectPostgresRlsTargetInternal(client, {
+        schema: dependency.schema_name,
+        table: dependency.relation_name,
+        scope: input.scope,
+        operations: ["SELECT"],
+      }, nextAncestors);
+      report.referenced_relations.push({
+        schema: dependencyReport.schema,
+        table: dependencyReport.table,
+        ...(dependencyReport.target_kind ? { target_kind: dependencyReport.target_kind } : {}),
+        ok: dependencyReport.ok,
+        errors: dependencyReport.errors,
+      });
+      for (const error of dependencyReport.errors) {
+        report.errors.push(`POSTGRES_RLS_VIEW_DEPENDENCY_FAILED:${dependencyReport.schema}.${dependencyReport.table}:${error}`);
+      }
+    }
+    report.errors = [...new Set(report.errors)];
+    report.ok = report.errors.length === 0;
     return report;
   }
   const policies = await client.query(

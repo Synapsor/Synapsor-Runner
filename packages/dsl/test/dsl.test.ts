@@ -828,6 +828,38 @@ END
     expect(compileAgentDsl(formatAgentDsl(protectedAggregateSource()))).toEqual(contract);
   });
 
+  it("compiles reviewed star paths while preserving the legacy one-link syntax", () => {
+    const source = protectedAggregateSource()
+      .replace(
+        "PROTECTED FILTER status EQ FIXED 'churned'",
+        [
+          "PROTECTED RELATIONSHIP store LINK 1 ON store_id REFERENCES public.stores.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
+          "  PROTECTED RELATIONSHIP category LINK 1 ON category_id REFERENCES public.product_categories.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
+          "  PROTECTED FILTER status EQ FIXED 'churned'",
+        ].join("\n  "),
+      )
+      .replace(
+        "GROUP DIMENSION region BY region\n  GROUP DIMENSION reason BY churn_reason",
+        "GROUP DIMENSION store_name BY store.name\n  GROUP DIMENSION category_name BY category.name",
+      );
+    const contract = compileAgentDsl(source);
+
+    expect(contract.capabilities[0]?.protected_read).toMatchObject({
+      relationships: [
+        { name: "store", links: [{ table: "stores", unmatched_rows: "exclude" }] },
+        { name: "category", links: [{ table: "product_categories", unmatched_rows: "exclude" }] },
+      ],
+      aggregate: {
+        dimensions: [
+          { name: "store_name", field: "name", relationship: "store" },
+          { name: "category_name", field: "name", relationship: "category" },
+        ],
+      },
+    });
+    expect(contract.capabilities[0]?.protected_read?.relationship).toBeUndefined();
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
+  });
+
   it("keeps protected-read identifiers and trust scope outside model arguments", () => {
     const invalid = protectedAggregateSource()
       .replace("PROTECTED FILTER status EQ FIXED 'churned'", "PROTECTED FILTER tenant_id EQ ARG tenant_id")

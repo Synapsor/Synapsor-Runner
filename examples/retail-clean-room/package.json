@@ -1,0 +1,9 @@
+{
+  "name": "northstar-commerce-clean-room",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Synthetic PostgreSQL and Prisma fixture for the Synapsor Runner retail clean-room lab",
+  "prisma": {
+    "schema": "./prisma/schema.prisma"
+  }
+}

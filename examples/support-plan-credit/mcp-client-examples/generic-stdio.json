@@ -3,10 +3,7 @@
   "transport": "stdio",
   "command": "npx",
   "args": [
-    "-y",
-    "-p",
-    "@synapsor/runner",
-    "synapsor-runner",
+    "-y", "@synapsor/runner",
     "mcp",
     "serve",
     "--config",

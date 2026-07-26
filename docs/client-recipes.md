@@ -33,7 +33,7 @@ Run from the Runner repository root after supplying your own environment-bound
 staging credentials and trusted scope:
 
 ```bash
-npx -y -p @synapsor/runner synapsor-runner tools preview \
+npx -y @synapsor/runner tools preview \
   --config ./examples/support-plan-credit/synapsor.runner.json \
   --store ./tmp/support-plan-credit/local.db
 ```
