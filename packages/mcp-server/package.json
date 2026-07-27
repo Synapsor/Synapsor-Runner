@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.4",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@synapsor-runner/config": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
@@ -19,14 +19,14 @@
     "@synapsor-runner/protocol": "workspace:*",
     "@synapsor-runner/schema-inspector": "workspace:*",
     "@synapsor/spec": "workspace:*",
-    "jose": "6.2.3",
-    "mysql2": "^3.11.0",
+    "jose": "6.2.4",
+    "mysql2": "^3.23.1",
     "pg": "^8.13.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.7"
   }
 }
