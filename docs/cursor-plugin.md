@@ -14,12 +14,13 @@ plugin-reference, MCP, and deeplink documentation on 2026-07-25:
 - <https://cursor.com/docs/reference/deeplinks>
 
 The locally installed Cursor version used for validation is recorded in
-`development/runner-1.6.4-progress.md`. Protocol/static validation is not a
+`development/runner-1.6.6-safe-analytics-adoption-progress.md`.
+Protocol/static validation is not a
 claim that Cursor Marketplace review has completed.
 
 ## What the plugin installs
 
-- one production stdio MCP server pinned to `@synapsor/runner@1.6.4`;
+- one production stdio MCP server pinned to `@synapsor/runner@1.6.6`;
 - one `/synapsor-protect` agent command;
 - one discoverable Safe Action skill;
 - one file-scoped rule for `synapsor/actions/**/*.ts`;
@@ -80,7 +81,7 @@ Required listing media:
 
 ## Submission checklist
 
-- [ ] Runner 1.6.2 package and plugin version agree.
+- [ ] Runner 1.6.6 package and plugin version agree.
 - [ ] `corepack pnpm verify:cursor-plugin` passes from a clean checkout.
 - [ ] Plugin is manually loaded in current stable Cursor at workspace scope.
 - [ ] `/synapsor-protect` drafts and validates without activation.

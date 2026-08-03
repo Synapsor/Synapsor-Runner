@@ -77,7 +77,8 @@ instead of SQL and the organization needs the same trust mechanics across
 tools or teams:
 
 - trusted tenant and principal values stay outside model arguments;
-- visible and kept-out fields are reviewed in one portable contract;
+- model-visible, model-withheld, and kept-out fields are reviewed in one
+  portable contract;
 - model-facing writes create exact proposals without changing source data;
 - activation, approval, apply, and compensation remain outside MCP;
 - guarded apply rechecks scope, policy, conflict, bounds, and idempotency;

@@ -1,13 +1,14 @@
 # Workbench Ask With Your Model
 
-Workbench Ask is an optional local client for the reviewed Synapsor tools that
-already exist. It lets a developer ask a plain-language question through
+Workbench Ask is the primary post-activation analytics client for the reviewed
+Synapsor tools that already exist. It lets a developer ask a plain-language question through
 OpenAI, Anthropic, or an explicitly configured OpenAI-compatible endpoint
 without installing an external MCP host first.
 
 Ask does not generate or activate authority. It does not replace the no-model
-Workbench composer, which remains the default onboarding path and requires no
-model API key.
+Workbench composer, which remains an optional exact-plan fallback requiring no
+model API key. Developers with an existing model-enabled MCP client can connect
+that client instead of configuring another provider in Workbench.
 
 ```text
 human activates a reviewed boundary or named capability
@@ -28,22 +29,28 @@ change provider configuration.
 Ask appears only when all of these conditions hold:
 
 - Workbench is authenticated and bound to loopback;
-- the deployment profile is explicitly `development` or `staging`;
+- the trusted Runner launch context establishes a `development` or `staging`
+  authoring profile;
 - at least one reviewed model-facing tool is available;
 - generated authority and its generation lock are current when applicable.
 
 It is absent from production, missing/unknown profiles, non-loopback
 Workbench, shared remote HTTP, and model-facing MCP configuration. An MCP
-request cannot enable Ask or select its provider.
+request cannot enable Ask, select its provider, or choose a deployment profile.
+In the fresh `start --from-env` path, the local launch establishes the
+development authoring profile once. Workbench does not ask the developer to
+repeat that declaration.
 
-While Scoped Explore is active, Ask may use:
+While Scoped Explore is active, Ask uses exactly:
 
 ```text
 app.describe_data
 app.explore_data
 ```
 
-After Explore is disabled, Ask may use only the activated named capabilities
+Even when the project contains named read or proposal capabilities, they are
+not combined with those two authoring tools. After Explore is disabled, a new
+Ask session may use only the activated named capabilities
 in `synapsor.runner.json`, such as:
 
 ```text
@@ -52,27 +59,37 @@ retail.propose_order_fulfillment
 ```
 
 The panel displays the exact tool names and an Ask authority digest. That digest
-binds the tool surface, runtime config, deployment profile, and active
-exploration digest when one exists. A material authority change invalidates
-egress consent before another provider call.
+binds the tool surface, runtime config, deployment profile, and complete active
+boundary-set digest. Adding or updating a boundary clears bounded conversation
+history and rebinds provider egress to that new authority. The selected
+provider/model and an in-memory or environment-backed key remain configured;
+the developer is not asked to enter the key again.
 
-## Start Without A Model
+## Activate Once, Then Choose A Model Path
 
 Begin with the normal one-command staging path:
 
 ```bash
-export SYNAPSOR_TENANT_ID='<reviewed tenant>'
-export SYNAPSOR_PRINCIPAL='<reviewed principal>'
 npx -y @synapsor/runner start
 ```
+
+For the first-run fixture and other PostgreSQL credentials already bound to one
+tenant through the reviewed RLS session setting, no tenant or principal value
+is entered in Workbench. Runner verifies the binding from the authenticated
+read-only database session. Shared credentials or principal-scoped boundaries
+still require identity supplied by the application, verified session, or
+operator-owned environment; the model can never supply it.
 
 Paste the SELECT-only database URL into Runner's hidden terminal prompt, or
 explicitly consent to loading only `DATABASE_URL` from a recognized project
 environment file. For an intentionally exported automation path, use
 `start --from-env DATABASE_URL`.
 
-Review and activate the boundary, then run the first safe read or aggregate in
-Workbench. At this point the complete no-model path is already working.
+Review and activate the boundary, then run the first safe read in Workbench.
+The next primary action opens Workbench Ask. Choose the existing-client path
+instead when Cursor, Claude, VS Code, Codex, or another MCP host already
+provides the model. The no-model composer remains available as a secondary
+local-only fallback.
 
 Open **Analyze**, then **Ask with your model**. Workbench shows:
 
@@ -82,6 +99,203 @@ Open **Analyze**, then **Ask with your model**. Workbench shows:
 - that approved visible results may go directly to the provider;
 - that Synapsor does not relay the request;
 - that the source database is unchanged by a read or proposal call.
+
+## Ask From The CLI
+
+CLI Ask uses the same provider adapters, in-memory MCP gateway, tool schemas,
+authority digest, egress decision, and runtime validators as Workbench Ask:
+
+```bash
+synapsor-runner try ask \
+  --provider openai \
+  --model gpt-5-mini
+
+synapsor-runner try ask \
+  --provider openai-compatible \
+  --model local-model \
+  --base-url http://127.0.0.1:11434/v1
+```
+
+Without a positional question, the command opens the conversational
+`Synapsor Analytics` shell. Ask natural-language follow-ups directly. The
+normal answer shows concise model interpretation plus every actual structured
+Explore result used; it does not repeat evidence IDs, mutation state, digests,
+or analysis references after every read.
+
+The terminal separates untrusted model prose from `RUNNER-VERIFIED DATA` with a
+visible rule and terminal styling. Before the first prompt, it summarizes only
+the active boundary's reviewed tables and legal operations and offers a starter
+question validated against that exact active catalog. Successful output hides
+intermediate provider attempts that Runner safely refused before a valid plan;
+use `/attempts` to inspect them. One-shot users can pass `--verbose` for the
+same detail.
+
+When provider prose repeats at least three rows already present in the
+structured result, the human presentation removes only those provably
+duplicated row lines. The interpretation remains visible, Runner still renders
+the complete authoritative table, and Workbench keeps the original provider
+text under **Full model explanation**. Machine-readable output and bounded
+conversation history retain the original provider answer.
+
+If a provider executes a successful reviewed plan but returns no visible final
+explanation, Runner reserves one bounded provider pass with no tools attached.
+That pass may summarize only the Runner results already present in the turn and
+cannot run another query. If it still returns no text, Runner preserves the
+verified structured result and displays a deterministic local explanation
+instead of discarding the answer.
+
+For an unqualified question such as `Which product category is growing
+fastest?`, Ask uses one reviewed two-period comparison: the 28 days ending on
+the current UTC date against the preceding 28 days, ordered by reviewed
+percentage change. `Largest increase` uses signed absolute change; `fastest
+decline` uses ascending percentage change. The rendered interpretation states
+the two ranges. Ask does not request an all-history category-by-week cube.
+Runner validates the complete population against the separately reviewed ranked
+candidate ceiling, suppresses small cohorts, and only then ranks the result.
+This is an Ask interpretation default, not broader authority; both periods, the
+measure, the dimension, the time field, and every relationship still pass the
+exact active boundary.
+
+The shell keeps short project-local references silently for governance:
+
+```text
+/access
+/access-workbench
+/analyses
+/details [last|A2]
+/attempts
+/protect
+/protect A2 as analytics.weekly_churn_by_channel
+/clear
+/exit
+```
+
+Use `/access` whenever a refusal shows that the current Explore boundary is too
+narrow. In CLI Ask it closes the current chat cleanly and opens the terminal
+table/column editor; use `/access-workbench` for the secured visual editor. The
+older `/access workbench` spelling remains accepted for compatibility but is
+not the advertised command.
+Each column has an explicit **Visible to model**, **Withheld from model**, or
+**Kept out** tier. Existing active boundaries remain usable while the selected
+draft is edited. The edit is an operator-plane review decision: it stages new
+disabled authority and a new digest, but the model cannot make the choice or
+activate it. After activation, CLI Ask resumes with the same selected provider,
+model, and in-memory credential. The exact activation review names that model
+destination and renews consent for the new authority in the same human gesture;
+an access change made outside this handoff still blocks the next provider call
+until the operator reviews the new destination and authority.
+
+Several reviewed boundaries may be active in one authoring session. The model
+still receives exactly `app.describe_data` and `app.explore_data`.
+`app.describe_data` supplies boundary names with the reviewed resource catalog;
+each plan selects one boundary. Runner refuses cross-boundary joins/unions and
+requires an explicit boundary when a resource alias overlaps. Adding authority
+does not reset the durable rolling 24-hour privacy or differencing budgets.
+
+CLI and Workbench use the same focused two-step flow: make all table, column,
+and reviewed-path changes in one editor, then inspect and activate one exact
+combined boundary. Routine draft changes do not revoke the currently active
+version. Sensitive widening still asks for reviewer identity and reason, while
+nullable relationships require an explicit unmatched-row choice because that
+choice changes totals. The full `boundary review` route remains available for
+the advanced grouped sign-off and audit workflow.
+
+When a question needs a relationship absent from the active boundary, Runner
+may show a **Human review path** after the provider turn. This is local
+operator-plane metadata, derived from inspected foreign-key proof in the
+disabled draft; it is not sent to the provider and is not an MCP tool. The path
+remains disabled until a human reviews and activates its exact new boundary.
+Kept-out fields do not advertise a widening path. Questions requiring a ratio
+or another derived formula instead point to a reviewed database view or named
+metric because Explore does not grow a model-controlled expression language.
+When no data plan ran and Runner has such a proven path, the normal CLI and
+Workbench view shows a deterministic Runner boundary explanation followed by
+the exact inspected path. This prevents speculative or contradictory provider
+advice from competing with the operator action. JSON retains the original
+provider answer, and Workbench keeps it under **Full model explanation**.
+
+Bare `/protect` selects the sole protectable plan from the current answer. If
+the answer used several plans, Runner shows a readable picker. If it ran no new
+plan, Runner does not silently attach an older analysis. Add a quoted question
+before `--provider` to retain one-shot behavior. For later one-shot promotion,
+use `synapsor-runner try protect --last --name <capability>`; ambiguous latest
+answers require `--from A2`.
+
+## Inspect And Protect Without Leaving The CLI
+
+`/details` is the concise operator evidence view for the latest analysis. It
+shows the original question when Runner received it, the exact typed tool call,
+Runner's normalized plan, selected boundary and digest, reviewed relationships,
+trusted-scope binding mechanism without its value, read-only transaction
+posture, suppression and budget decisions, duration and result-size metadata,
+evidence/query-audit references, and whether a source query or mutation
+occurred. Use `/details A2` to select another recent analysis.
+
+An external MCP host may not provide the human's original question. Evidence
+then says **Original question unavailable; the MCP host supplied this typed
+tool call** rather than reconstructing or inferring the host conversation.
+Refused attempts retain the typed attempted plan, refusal code, rejecting
+boundary, failed rule, and whether a source query executed. Neither evidence
+view exposes chain-of-thought, returned source rows, hidden values, or trusted
+scope values.
+
+`/details A2 --sql` adds an operator-only diagnostic showing the actual
+dialect-specific parameterized statement shape and safe parameter types. Every
+parameter value is redacted. The statement is never sent to a provider or MCP
+client, never becomes an execution input, and is not stored in ordinary
+evidence; the normalized plan remains the portable authority record. Workbench
+provides the equivalent **What the model requested**, **What Runner executed**,
+**What Runner returned**, and **Compiled database statement** disclosures
+inside its secured local operator session.
+
+Interactive `/protect` completes in the same terminal. Runner selects the sole
+eligible plan or opens a readable picker, suggests an editable capability name,
+generates public DSL, canonical JSON, tests, and provenance, and keeps the draft
+disabled while showing the exact review. A separate default-yes human prompt
+then activates only that previewed digest and returns to the same analytics
+session. No Workbench URL, copied analysis ID, typed digest, or `ACTIVATE
+sha256:...` phrase is required. Choosing No or Escape leaves the capability
+disabled.
+
+Workbench is an optional visual equivalent, not a required continuation. Its
+single **Activate this reviewed capability** button binds the currently
+previewed digest internally. Both surfaces recompute the artifact digest at
+activation time and refuse stale or changed authority. The operator identity,
+digest, time, and decision remain recorded. Sensitive widening, lowered cohort
+thresholds, writes, and production effects may require additional
+consequence-focused review, but the model cannot perform any review, Protect,
+or activation action.
+
+Use `--provider anthropic` for the Anthropic Messages/tool-use protocol.
+Provider credentials come from the conventional provider environment variable,
+an explicitly named environment variable, or a hidden interactive prompt.
+`--api-key` and generic `--yes` are refused. JSON automation requires exact
+non-secret consent bound to provider, model, origin, profile, boundary, config,
+and tool surface.
+
+CLI output labels provider prose as untrusted and renders Runner-verified tool
+results separately. A successful Explore call receives an expiring local
+analysis reference, but routine conversational output hides that internal
+handle. Asking a question itself creates no DSL, contract, or named authority.
+
+## Prove The Active Boundary
+
+Workbench's **Prove this boundary** action drives deterministic attacks through
+the same two model-facing authoring tools. It tests raw SQL, model-selected
+scope, kept-out fields, unreviewed relationships, result-bound and suppression
+overrides, plus suppressed-total subtraction. The subtraction check may run a
+bounded grouped aggregate and its complementary scalar total in read-only
+transactions. Probe values are discarded and never written to the proof
+artifact; if a small cohort was suppressed, Runner must refuse release of the
+complementary result. If the current data contains no suppressed cohort, the
+artifact says that the subtraction route was not applicable instead of
+claiming a refusal that did not occur.
+
+This is a rerunnable boundary-enforcement check, not a claim of differential
+privacy or proof against every possible statistical inference technique.
+Successful normal analytics do read scoped source rows and return bounded
+aggregate results; only refused pre-execution attacks truthfully report that no
+source query ran.
 
 ## Provider Credentials
 
@@ -111,7 +325,9 @@ local Runner process and is not returned to the browser.
 
 Alternatively, paste a key into the masked Workbench field. Runner holds that
 value only in server memory for the current local session and clears the field
-after configuration. Do not paste credentials into an agent chat.
+after configuration. Paste only the key value, not a complete
+`OPENAI_API_KEY=...` or `ANTHROPIC_API_KEY=...` assignment and not surrounding
+`.env` quotes. Do not paste credentials into an agent chat.
 
 Keys and authorization headers are not written to:
 
@@ -138,11 +354,22 @@ Consent is bound to the provider, model, endpoint origin, and current Ask
 authority digest. Changing any of those requires a new acknowledgement.
 Consent does not activate or widen database authority.
 
-The question, reviewed tool definitions, and bounded tool results go directly
-from local Runner to the selected provider. A tool result can contain reviewed
-source values, so use a provider and data-handling policy appropriate for that
-data. Kept-out fields are unavailable to selection, filtering, grouping,
-sorting, joins, or returned results.
+The question, reviewed tool definitions, and model-visible portions of bounded
+tool results go directly from local Runner to the selected provider. A tool
+result can contain reviewed source values, so use a provider and data-handling
+policy appropriate for that data. Kept-out fields are unavailable to
+selection, filtering, grouping, sorting, joins, or returned results.
+
+A field reviewed as **withheld from model** remains usable in a plan, but its
+raw returned values, group labels, and enum/value domain stay out of every
+provider request. The catalog retains only the reviewed type and legal
+operations needed to compose typed plans. Returned values are replaced with
+response-local opaque tokens. Reviewed derived results remain available
+without sending the values being counted. Workbench renders actual raw values in the separate local
+Runner-verified result and states that the model cannot name them. The same
+token is reused for the same value only within that one response; a new
+response uses unrelated tokens. Suppression and every other read budget still
+apply because the human result is a disclosure channel.
 
 Runner does not persist the conversation, provider response, or returned tool
 rows by default. Existing normalized query audit still records the boundary
@@ -156,6 +383,7 @@ own policy; Runner cannot erase those external copies.
 Provider tool calls use the official MCP SDK and the same canonical runtime as
 an external client:
 
+- exactly one authoring or named-runtime catalog, never both;
 - typed argument validation;
 - trusted tenant/principal injection outside model arguments;
 - read-only transaction enforcement for Scoped Explore;
@@ -167,6 +395,10 @@ Provider prose, tool names, arguments, and response metadata remain untrusted.
 An unknown or operator-plane tool is refused. A malformed or oversized
 request, repeated tool loop, changed authority, timeout, or provider failure
 stops safely.
+
+Analytical tools advertise structured output schemas. The provider may use
+those schemas to interpret success, empty, suppression, incomplete comparison,
+and refusal outcomes, but output metadata never expands input authority.
 
 A reviewed write tool may create an inert proposal:
 
@@ -225,6 +457,7 @@ The current release enforces:
 | One tool result | 128 KiB |
 | Tool calls | 4 per provider response, 8 per turn |
 | Tool-loop iterations | 6 |
+| Reserved OpenAI-compatible final pass | 4,096 completion tokens, no tools |
 | Conversation history | 4 completed turns, 16 KiB |
 | Final answer | 16 KiB |
 | Provider request timeout | 30 seconds |
@@ -238,28 +471,35 @@ not a monetary spend guarantee.
 
 ## Tested Provider Matrix
 
-Status as of the prepared 1.6.4 source:
+Status as of the prepared 1.6.6 source:
 
 | Provider surface | Verification | Claim |
 | --- | --- | --- |
-| OpenAI `gpt-5-mini` | Live packed-Workbench run against real local PostgreSQL on 2026-07-25 | Live tested |
+| OpenAI `gpt-5-mini` | Live packed Community Solar and TrailPeak runs against real local PostgreSQL; the 2026-08-01 TrailPeak run proved a 12-week aggregate explanation, independently rendered values, and an unavailable relationship review path | Live tested |
 | Anthropic Messages/tool-use protocol | Deterministic mock server, normal/refusal/error paths | Protocol tested; no live Anthropic account run |
-| Custom OpenAI-compatible loopback | Real local HTTP server plus deterministic tool/refusal/proposal paths | Tested against the documented Chat Completions subset |
-| Ollama or another named compatible server | Not installed in the release environment | Unknown until tested; compatibility is not implied by the label |
+| Custom OpenAI-compatible loopback | Deterministic real HTTP server plus tool/refusal/proposal and endpoint-security paths | Protocol tested against the documented Chat Completions subset |
+| Ollama, LM Studio, or another named local server | No engine/model installed or running in the release environment | Real engine not verified; compatibility is not implied by the label |
 
 The live OpenAI run used `app.describe_data` and `app.explore_data`, matched the
 official MCP aggregate result, changed no source rows, and passed exact-key
 artifact scans. See
-`development/runner-1.6.4-community-solar-results.json`.
+`development/runner-1.6.6-community-solar-results.json`.
 
 ## Troubleshooting
 
-**Ask is missing:** confirm loopback Workbench, an explicit development/staging
-profile, and at least one active reviewed tool. Production intentionally omits
-Ask.
+**Ask is missing:** confirm loopback Workbench, a development/staging profile
+established by trusted Runner launch or operator configuration, and at least one
+active reviewed tool. The fresh guided `start` route supplies that profile
+without another Workbench declaration. Production intentionally omits Ask.
 
 **Key required:** export the named variable in the process that launches
 Runner, or use the session-only masked paste. Runner does not load `.env`.
+
+**Provider could not authenticate:** this is a provider credential failure, not
+a Synapsor boundary refusal. Use **Change provider or key**, then paste only the
+key value or select an environment variable that was exported before Workbench
+started. A changed environment value requires a Workbench restart. Runner never
+includes the provider response body or credential in this error.
 
 **Authority changed:** inspect the new tool/digest summary and acknowledge
 egress again. Do not bypass the check.
@@ -277,3 +517,9 @@ reviewed refusal.
 
 **Proposal did not commit:** that is correct. Open the separate operator
 workflow to review, approve, and guardedly apply it.
+
+**CLI Ask refused consent:** interactive CLI use shows the reviewed provider,
+model, and endpoint, then accepts Enter as the default **Yes** response. Type
+`n` to cancel without contacting the provider. Noninteractive or JSON
+automation must supply the exact non-secret authority-bound consent value.
+Never put a provider key in a command argument.

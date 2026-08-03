@@ -418,6 +418,26 @@ function structured(result) {
   return JSON.parse(text);
 }
 
+function structuredOrInputRefusal(result) {
+  try {
+    return structured(result);
+  } catch (error) {
+    const text = result.content?.find?.((item) => item.type === "text")?.text;
+    if (
+      result.isError === true
+      && typeof text === "string"
+      && text.includes("MCP error -32602")
+      && text.includes("Input validation error")
+    ) {
+      return {
+        ok: false,
+        code: "MCP_INPUT_VALIDATION_REJECTED",
+      };
+    }
+    throw error;
+  }
+}
+
 function assert(condition, message, detail) {
   if (!condition) {
     throw new Error(`${message}${detail === undefined ? "" : `\n${JSON.stringify(detail, null, 2)}`}`);
@@ -464,12 +484,16 @@ async function exerciseMcpScenario(scenario) {
       assert(inspected.source_database_mutated === false, "Inspect mutated source", inspected);
       assert(inspected.trusted_context?.tenant_id === "acme", "Trusted tenant context missing", inspected);
 
-      const spoofed = structured(await client.callTool({
+      const spoofed = structuredOrInputRefusal(await client.callTool({
         name: scenario.inspectTool,
         arguments: scenario.spoofArgs,
       }));
       assert(
-        spoofed.ok === false && ["MODEL_CANNOT_OVERRIDE_BINDING", "ROW_NOT_FOUND"].includes(String(spoofed.code)),
+        spoofed.ok === false && [
+          "MODEL_CANNOT_OVERRIDE_BINDING",
+          "ROW_NOT_FOUND",
+          "MCP_INPUT_VALIDATION_REJECTED",
+        ].includes(String(spoofed.code)),
         "Tenant spoof should be rejected or safely scoped to the trusted tenant",
         spoofed,
       );

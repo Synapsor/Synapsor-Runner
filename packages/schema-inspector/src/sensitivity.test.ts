@@ -15,9 +15,23 @@ describe("shared deterministic sensitivity classifier", () => {
     ["fullPan", "prisma", "payment_or_bank_detail"],
     ["medical_waiver_notes", "drizzle", "medical_or_health_information"],
     ["medicalWaiverNotes", "openapi", "medical_or_health_information"],
+    ["medical_record_number", "database", "medical_or_health_information"],
+    ["mrn", "prisma", "medical_or_health_information"],
+    ["patientName", "openapi", "medical_or_health_information"],
+    ["patient_full_name", "drizzle", "medical_or_health_information"],
+    ["insurance_member_id", "database", "medical_or_health_information"],
+    ["insurancePolicyNumber", "prisma", "medical_or_health_information"],
+    ["health_plan_member_id", "openapi", "medical_or_health_information"],
     ["password_hash", "database", "credential_or_secret"],
     ["bank_account_number", "database", "payment_or_bank_detail"],
     ["dateOfBirth", "prisma", "birth_information"],
+    ["full_name", "database", "person_name"],
+    ["firstName", "prisma", "person_name"],
+    ["last_name", "drizzle", "person_name"],
+    ["surname", "openapi", "person_name"],
+    ["given_name", "database", "person_name"],
+    ["customer_name", "database", "person_name"],
+    ["contact_name", "openapi", "person_name"],
     ["home_address", "database", "direct_contact_or_address"],
     ["resident_address", "database", "direct_contact_or_address"],
     ["shippingAddress", "prisma", "direct_contact_or_address"],
@@ -50,6 +64,7 @@ describe("shared deterministic sensitivity classifier", () => {
     ["reviewComment", "varchar"],
     ["event_payload", "text"],
     ["attributes", "jsonb"],
+    ["display_name", "text"],
   ])("holds %s for explicit review", (name, dataType) => {
     expect(classifySensitivity({ name, dataType, source: "database" }).state)
       .toBe("unresolved_free_text");
@@ -69,6 +84,10 @@ describe("shared deterministic sensitivity classifier", () => {
     ["panel_position", "integer"],
     ["pan_size_cm", "numeric"],
     ["cardinality", "integer"],
+    ["name", "text"],
+    ["product_name", "text"],
+    ["category_name", "text"],
+    ["organization_name", "text"],
   ])("does not over-classify ordinary field %s", (name, dataType) => {
     expect(classifySensitivity({ name, dataType, source: "database" }).state)
       .toBe("structurally_low_risk");

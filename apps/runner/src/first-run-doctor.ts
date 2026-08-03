@@ -191,7 +191,9 @@ function firstRunConfigEnvChecks(config: RuntimeConfig): FirstRunCheck[] {
     const values = context.values;
     for (const envName of [
       String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID"),
-      String(values.principal_env ?? "SYNAPSOR_PRINCIPAL"),
+      ...(context.principal_required
+        ? [String(values.principal_env ?? "SYNAPSOR_PRINCIPAL")]
+        : []),
     ]) {
       checks.push(envValue(process.env, envName)
         ? pass(`env-${envName}`, `${envName} is set for ${context.name}.`, "Trusted tenant/principal values must come from the launcher, not the model.", "No action needed.")

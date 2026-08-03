@@ -12,8 +12,10 @@ does not give the agent SQL access.
 
 - Reads return only fields a human reviewed, under tenant and principal scope
   supplied outside model arguments.
-- Scoped Explore is a temporary local development/staging authoring tool.
-- Protect turns one useful analysis into a narrow named capability.
+- Scoped Explore is a temporary local development/staging authoring tool that
+  supports repeated legal question combinations after one boundary review.
+- Protect optionally turns one selected analysis into a narrow named
+  capability for reuse or production.
 - A model-facing write call creates an exact proposal. It does not commit.
 - The model cannot activate authority, approve a proposal, or apply a write.
 - A trusted operator or worker rechecks the effect and records a receipt.
@@ -56,20 +58,101 @@ The command automatically:
 6. validates every generated artifact;
 7. opens one secured loopback Workbench URL.
 
-Before human activation, the agent has no generated authority and no source row
-has been read. On an explicitly asserted personal development database,
-Workbench offers a fast lane:
+## One Command In The Terminal
 
-1. confirm the database is your own development or disposable test data;
-2. provide the trusted tenant/principal scope for this in-memory session;
-3. inspect the one-resource summary and select **Activate this narrow read and
-   show a real result**.
+To keep the same journey browserless, add `--cli`:
+
+```bash
+npx -y @synapsor/runner start --from-env DATABASE_URL --cli
+```
+
+Runner performs the same deterministic inspection and project generation, then
+shows one conservative one-table, zero-relationship Quick Start boundary.
+Pressing Enter once is the human gesture that reviews those exact defaults,
+rechecks the schema and read-only role, activates only that digest, and starts
+the provider and exact model displayed on the same screen. Press `M` to choose
+OpenAI, Anthropic, a loopback OpenAI-compatible model, an existing MCP client,
+or **Later**. Press `E` to open detailed multi-table/column review instead.
+Running the command again resumes review, or goes directly to
+model/client selection when a boundary is already active. `--no-open` remains
+the noninteractive initialize/resume flag; it does not start terminal review.
+
+Before human activation, the agent has no generated authority and no source row
+has been read. The fresh local `start` route establishes a development
+authoring profile for this secured loopback process. Supplying the selected
+database URL is the environment-selection step; Workbench does not ask you to
+declare or sign “development,” “staging,” or “not production” again.
+
+For the configured-model golden path, first value has two human interactions:
+
+1. press Enter to accept the exact conservative local boundary;
+2. type the first natural-language question.
+
+Before the second interaction, Runner displays the exact provider, model,
+origin, and reviewed egress boundary. Submitting that first question confirms
+the disclosure; no provider request occurs before submission. Review and
+activation remain separate digest-bound records under the hood even though the
+single Quick Start gesture authorizes both. The model performs neither action.
+
+After first value, `/access` opens the terminal boundary editor and
+`/access-workbench` opens the visual editor. Quick Start's active boundary is
+saved as the reviewed baseline, so adding a table or changing a column does not
+silently remove existing access. The edited or newly named boundary remains
+disabled until separate human review and exact-fingerprint activation.
+
+Both editors use the same two-step boundary flow:
+
+1. edit included tables, column egress tiers, and reviewed relationship paths
+   in one focused surface;
+2. inspect one complete boundary summary and activate that exact boundary
+   before returning directly to Ask.
+
+Activating a differently named boundary adds it to the same authoring session;
+activating an existing name updates only that boundary. Ask keeps the selected
+provider/model and in-memory key, clears stale conversation history, and binds
+egress to the new active-set digest. The model still sees only
+`app.describe_data` and `app.explore_data`, and every data plan uses one
+boundary rather than combining authority across boundaries.
+
+Routine low-risk edits are staged immediately on the selected disabled boundary; no
+per-table sign-off wall is inserted into this path. The advanced
+`boundary review` workflow still exposes grouped table and boundary sign-offs
+for governance work. Sensitive widening requires reviewer identity and reason.
+Nullable relationships require a direct keep-unmatched or exclude-unmatched
+choice because either answer changes business totals.
+
+Explore may then answer repeated legal question combinations without another
+review and without Protect. Protect is optional: it converts one selected
+analysis into generated public DSL, canonical JSON, and tests, but creates only
+a disabled named capability until a human separately activates its exact
+digest.
+
+Workbench then offers a fast lane:
+
+1. verify the required trusted tenant/principal bindings are already supplied
+   by the operator-owned environment or identity integration, outside
+   Workbench and outside model arguments;
+2. inspect the conservative starter-boundary summary and select **Activate
+   this boundary**.
 
 The single gesture is recorded against the exact boundary digest. Runner
-rechecks schema and read-only role posture, activates one resource with no
-relationships, keeps sensitive and uncertain fields out, and runs one real
-bounded aggregate read. Shared, staging, production-like, remote, widening, and
-write paths do not use this shortcut.
+rechecks schema and read-only role posture, activates only the exact reviewed
+tables, fields, relationships, operations, and limits, and keeps sensitive and
+uncertain fields out before routing to the model-first Ask setup. The request
+cannot select or change the profile.
+Direct `ui`, explicit production/unknown profiles, shared/remote surfaces,
+widening, and write paths do not gain this shortcut. If a required binding is
+absent, Quick Start remains unavailable and points to one operator-owned
+identity setup action; it never asks the developer to type a raw tenant or
+principal ID into the analytics UI.
+
+After that proof, the primary action is **Ask here with a model**. Workbench
+uses an available `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` by environment-variable
+name without returning its value to the browser, or accepts a session-only
+credential or loopback OpenAI-compatible model. A developer whose Cursor,
+Claude, VS Code, Codex, or other MCP client already has a model can instead
+choose **Use my existing AI client**. The exact-plan no-model composer remains
+a secondary fallback.
 
 Running the same command again resumes. Resume and Try do not rescan, rewrite
 files, or change a digest. Rescan and destructive Start over remain explicit
@@ -104,8 +187,9 @@ There is no global “approve everything” control.
 
 For each selected resource, confirm the exact primary/unique row identity,
 trusted scope, visible fields, kept-out fields, and any aggregate-only fields.
-Then sign the displayed digest. Changing a reviewed decision creates a new
-disabled digest.
+Then confirm the displayed review. Runner binds its digest to that human action
+internally; the developer does not copy or type a hash. Changing a reviewed
+decision creates a new disabled digest that must be reviewed again.
 
 Choose **Try first safe read**. Runner calls the real local runtime and shows:
 
@@ -130,16 +214,20 @@ synapsor-runner try call <returned-tool-name> --sample --json
 The second command is for an activated named tool with valid generated sample
 input. It does not invent tenant or principal values.
 
-## Optional: Ask Through Your Own Model
+## Ask Through Your Own Model Or Existing Client
 
-The no-model Workbench composer is already complete; a provider key is never
-required for onboarding. If you want a chat surface before installing Cursor
-or another MCP client, open **Analyze -> Ask with your model**.
+The first interactive analytics path is plain-language model access. After the
+safe-read proof, choose **Ask here with a model** to open Workbench Ask, or
+**Use my existing AI client** to install the same two reviewed authoring tools
+into a host that already has a model. A provider key is never mandatory:
+**Use without a model** opens the exact-plan composer as a fallback.
 
 Workbench shows the exact reviewed tools first. Select OpenAI, Anthropic, or a
 custom OpenAI-compatible endpoint, choose a named environment credential or a
 session-only masked paste, and acknowledge that reviewed visible data may go
-directly to that provider. Synapsor does not relay it.
+directly to that provider. When a conventional provider environment variable
+is already present, Workbench selects its name automatically but never sends
+its value to the browser. Synapsor does not relay the request.
 
 The provider can request only the displayed tools. It cannot choose trusted
 scope, activate or Protect authority, approve or apply a proposal, or configure
@@ -157,7 +245,7 @@ the in-memory provider configuration and conversation. See [Workbench Ask With
 Your Model](workbench-ask.md) for key handling, endpoint security, fixed bounds,
 the tested provider matrix, and the full no-model alternative.
 
-## Ten Minutes: Explore And Protect
+## Ten Minutes: Explore Repeatedly, Protect Optionally
 
 Scoped Explore is available only after its exact local authoring boundary is
 activated. It is absent from production, unknown-profile, remote, shared HTTP,
@@ -173,7 +261,7 @@ The first release supports bounded:
 - `sum` and `avg` over reviewed numeric measures;
 - reviewed categorical dimensions;
 - day, week, and month buckets;
-- typed filters and bounded top-N;
+- typed filters, bounded top/bottom-N, and an exact two-period comparison;
 - up to three activated relationship paths, each containing one or two
   catalog-proven many-to-one links with fan-out one.
 
@@ -194,6 +282,33 @@ CLI fallback for the Workbench-suggested aggregate:
 synapsor-runner try explore --suggested --json
 ```
 
+Keep asking different legal combinations without another human review or a
+Protect step. Workbench composer, Workbench Ask, CLI `try ask`, and authoring
+MCP all use the same boundary, suppression, budgets, and denials:
+
+```bash
+synapsor-runner try ask \
+  --provider openai \
+  --model gpt-5-mini
+```
+
+Interactive CLI review does not stop after activation. It offers OpenAI,
+Anthropic, a loopback OpenAI-compatible model, an existing MCP client, or
+**Later**. Selecting a model enters this same shell in the current process.
+Selecting **Later** leaves the reviewed boundary active, so the explicit command
+above remains available. Automation and JSON output never enter the provider
+picker.
+
+This opens the natural-language terminal shell. Ask follow-ups directly, use
+`/analyses` or `/details` only when advanced metadata is useful, and use bare
+`/protect` to select the sole analysis from the current answer or open a picker
+for a multi-plan answer. Supplying one quoted question before `--provider`
+retains one-shot mode.
+
+Each successful execution has an encrypted, expiring local Protect reference.
+No protected artifact or named authority exists unless the operator chooses one
+of those exact results.
+
 Choose **Protect this analysis** directly on the successful result. Runner
 freezes its reviewed resources, measures, grouping, time bucket, ordering,
 scope, suppression, and limits into:
@@ -204,8 +319,21 @@ synapsor/protected/drafts/<namespace>__<name>/synapsor.contract.json
 synapsor/protected/drafts/<namespace>__<name>/contract-tests.json
 ```
 
-The capability remains disabled until a human activates its exact digest.
-Disabling Scoped Explore does not remove the protected named capability.
+The capability remains disabled while Runner presents a separate exact review.
+In the interactive shell, `/protect` then offers one default-yes human
+activation gesture and returns to the same Ask session. Workbench provides the
+equivalent **Activate this reviewed capability** button. Neither path requires
+copying an analysis reference, opening the other surface, or typing a digest;
+Runner binds and recomputes the previewed digest internally and fails closed if
+the draft changed. Disabling Scoped Explore does not remove the protected named
+capability.
+
+Use `/details` to inspect the question, typed model request, normalized Runner
+plan, boundary, reviewed paths, trusted-scope mechanism, read-only posture,
+suppression, budgets, and execution metadata. `/details A2 --sql` adds a local
+operator-only parameterized statement with every value redacted. That SQL is
+never exposed through MCP or to the provider and is not stored in ordinary
+evidence.
 
 Workbench renders generated `.synapsor.sql` with local deterministic syntax
 highlighting. Keywords, names chosen by the author, strings, numbers, comments,
@@ -213,13 +341,17 @@ and punctuation are visually distinct. The copy/plain-text value remains
 byte-identical to the generated file; highlighting loads no CDN and escaped
 source text never becomes HTML.
 
-CLI fallback, without copying an opaque query handle:
+CLI fallback after a one-shot question, without copying a reference:
 
 ```bash
 synapsor-runner try protect \
+  --last \
   --name analytics.reviewed_weekly_summary \
   --json
 ```
+
+If the latest answer ran several analyses, Runner lists `A1`, `A2`, and their
+plain descriptions and requires an explicit `--from A2`.
 
 ## Fifteen Minutes: First Proposal
 
@@ -382,7 +514,12 @@ The guided path through the first proposal uses:
 - no Cursor requirement.
 
 The packed FitFlow gate records the exact command count, human decisions, and
-timings in `development/runner-1.6.4-fitflow-results.json`.
+timings. Retail and healthcare clean-room gates add repeated Explore,
+provider/CLI/MCP parity, PHI hiding, suppression, optional Protect, and
+production narrowing. See:
+
+- `development/runner-1.6.6-retail-results.json`
+- `development/runner-1.6.6-healthcare-phi-results.json`
 
 ## Visual Reference
 
@@ -390,12 +527,12 @@ Repository screenshots cover desktop, mobile, light, dark, loading, blocked,
 stale, failure, empty Protect, unavailable-action, optional Ask, refusal, and
 proposal-only states:
 
-- [Desktop overview](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.4-visual/workbench-overview-desktop-light.png)
-- [Mobile overview](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.4-visual/workbench-overview-mobile-light.png)
-- [Blocked identity review](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.4-visual/workbench-blocked-identity.png)
-- [Stale/failure recovery](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.4-visual/workbench-keyboard-stale-failure.png)
-- [Ask kept-out-field refusal](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.4-retail-visual/05c-ask-refusal.png)
-- [Ask proposal-only result](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.4-community-solar-visual/13b-ask-proposal-only.png)
+- [Desktop overview](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.6-visual/workbench-overview-desktop-light.png)
+- [Mobile overview](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.6-visual/workbench-overview-mobile-light.png)
+- [All-blocked PHI review](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.6-healthcare-phi-visual/01-all-blocked-desktop.png)
+- [Stale/failure recovery](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.6-visual/workbench-keyboard-stale-failure.png)
+- [Ask kept-out-field refusal](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.6-retail-visual/05c-ask-refusal.png)
+- [PHI-safe bounded result](https://github.com/Synapsor/Synapsor-Runner/blob/main/development/runner-1.6.6-healthcare-phi-visual/05-bounded-care-analytics.png)
 
 For common blocked states and one-action recovery commands, use
 [Troubleshooting First Run](troubleshooting-first-run.md).

@@ -42,7 +42,11 @@ import {
   captureProposalFreshnessAuthority,
 } from "./proposal-freshness.js";
 import {
+  preflightGeneratedCapabilityAuthority,
+} from "./generated-authority.js";
+import {
   enforceProtectedReadBudget,
+  releaseProtectedReadBudget,
   recordAggregateRead,
   recordProtectedRead,
 } from "./protected-read-runtime.js";
@@ -73,6 +77,7 @@ export async function callConfiguredTool(input: {
   cloudClient?: CloudAdapterClient;
   trustedContext?: TrustedContext;
   privacySessionId?: string;
+  generatedAuthorityInspector?: Parameters<typeof preflightGeneratedCapabilityAuthority>[3];
   name: string;
   args: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
@@ -97,34 +102,67 @@ export async function callConfiguredTool(input: {
   const source = input.config.sources?.[capability.source];
   if (!source) throw new McpRuntimeError("SOURCE_NOT_FOUND", `Unknown source: ${capability.source}`);
   const context = resolveTrustedContext(input.config, input.env, capability, input.trustedContext);
+  let protectedBudgetReservation: Awaited<ReturnType<typeof enforceProtectedReadBudget>> | undefined;
   if (capability.protected_read) {
-    await enforceProtectedReadBudget(input.store, capability, context, input.args, input.privacySessionId ?? "direct-call");
+    await preflightGeneratedCapabilityAuthority(
+      input.config,
+      capability,
+      input.env,
+      input.generatedAuthorityInspector,
+    );
+    protectedBudgetReservation = await enforceProtectedReadBudget(
+      input.store,
+      capability,
+      context,
+      input.args,
+      input.privacySessionId ?? "direct-call",
+    );
   }
   const operation = capability.kind === "proposal" ? capability.operation?.kind ?? "update" : "update";
   const setOperation = isSetCapability(capability);
   const batchInsert = setOperation && operation === "insert";
   const batchItems = batchInsert ? batchItemsFromArgs(capability, input.args) : [];
-  const current = capability.kind === "proposal" && operation === "insert"
-    ? { row: {}, rows: [] as Record<string, unknown>[], rowCount: batchItems.length }
-    : await input.readRow({
-      sourceName: capability.source,
-      source,
-      capability,
-      args: input.args,
-      context,
-      env: input.env,
-    });
+  let current: Awaited<ReturnType<DbRowReader>>;
+  try {
+    current = capability.kind === "proposal" && operation === "insert"
+      ? { row: {}, rows: [] as Record<string, unknown>[], rowCount: batchItems.length }
+      : await input.readRow({
+        sourceName: capability.source,
+        source,
+        capability,
+        args: input.args,
+        context,
+        env: input.env,
+      });
+  } catch (error) {
+    if (protectedBudgetReservation) {
+      await releaseProtectedReadBudget(input.store, protectedBudgetReservation);
+    }
+    throw error;
+  }
   if (capability.protected_read) {
-    return recordProtectedRead({
-      capability,
-      sourceName: capability.source,
-      context,
-      current,
-      store: input.store,
-      mode: input.config.mode,
-      privacySessionId: input.privacySessionId ?? "direct-call",
-      args: input.args,
-    });
+    if (!protectedBudgetReservation) {
+      throw new McpRuntimeError("PROTECTED_PRIVACY_LEDGER_REQUIRED", "Protected read budget reservation is missing.");
+    }
+    try {
+      return await recordProtectedRead({
+        capability,
+        sourceName: capability.source,
+        context,
+        current,
+        store: input.store,
+        mode: input.config.mode,
+        privacySessionId: input.privacySessionId ?? "direct-call",
+        args: input.args,
+        budgetReservation: protectedBudgetReservation,
+        ...(input.config.generated_authority?.reporting_timezone
+          ? { reportingTimezone: input.config.generated_authority.reporting_timezone }
+          : {}),
+      });
+    } catch (error) {
+      await releaseProtectedReadBudget(input.store, protectedBudgetReservation);
+      throw error;
+    }
   }
   if (capability.kind === "aggregate_read") {
     return recordAggregateRead({ capability, sourceName: capability.source, context, current, store: input.store, mode: input.config.mode });

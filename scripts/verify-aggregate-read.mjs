@@ -110,6 +110,7 @@ function contract(engine) {
       aggregateCapability("billing.sum_overdue_balance", "sum"),
       aggregateCapability("billing.average_overdue_balance", "avg"),
       aggregateCapability("billing.sum_tiny_balance", "sum", { status: "tiny", minimum: 2 }),
+      aggregateCapability("billing.sum_tiny_balance_owner_override", "sum", { status: "tiny", minimum: 1 }),
       aggregateCapability("billing.slow_overdue_balance", "sum", { slow: true }),
     ],
     workflows: [],
@@ -154,8 +155,25 @@ async function verifyEngine(engine, databaseUrl) {
     const suppressed = await runtime.callTool("billing.sum_tiny_balance", {});
     assert(suppressed.ok === true && suppressed.data?.suppressed === true && suppressed.data?.value === null, `${engine} minimum-group suppression failed`, suppressed);
     assert(!JSON.stringify(suppressed).includes("777"), `${engine} suppressed aggregate leaked its scalar`, suppressed);
+    const ownerOverride = await runtime.callTool("billing.sum_tiny_balance_owner_override", {});
+    assert(
+      ownerOverride.ok === true
+        && ownerOverride.data?.suppressed === false
+        && ownerOverride.data?.value === 777
+        && ownerOverride.data?.member_rows_included === false,
+      `${engine} explicit minimum-group threshold 1 did not return only the reviewed scalar`,
+      ownerOverride,
+    );
+    const ownerOverrideEvidence = await runtime.readResource(
+      `synapsor://evidence/${ownerOverride.evidence.bundle_id}`,
+    );
+    assert(
+      Array.isArray(ownerOverrideEvidence.items) && ownerOverrideEvidence.items.length === 0,
+      `${engine} threshold-1 aggregate evidence included member rows`,
+      ownerOverrideEvidence,
+    );
     const audits = await runtime.store.listQueryAudit({ tenant: "acme", principal: "aggregate_verifier", limit: 100 });
-    assert(audits.length === 4, `${engine} did not record aggregate query audit entries`, audits);
+    assert(audits.length === 5, `${engine} did not record aggregate query audit entries`, audits);
     assert(audits.every((audit) => audit.payload?.raw_sql_included === false && audit.payload?.source_member_count_recorded === false), `${engine} query audit exposed raw SQL/member counts`, audits);
   } finally {
     await runtime.close();
@@ -189,7 +207,7 @@ async function verifyEngine(engine, databaseUrl) {
   } finally {
     await timeout.close();
   }
-  console.log(`${engine} aggregate-read verification passed: trusted tenant + fixed selection + count/sum/avg + suppression + evidence/audit + timeout.`);
+  console.log(`${engine} aggregate-read verification passed: trusted tenant + fixed selection + count/sum/avg + default suppression + explicit threshold 1 + evidence/audit + timeout.`);
 }
 
 run("docker", ["compose", "-f", compose, "up", "-d", "postgres", "mysql"]);

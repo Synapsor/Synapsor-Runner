@@ -546,6 +546,35 @@ describe("runner cli", () => {
     expect(diagnostics.join("")).not.toContain("syn_do_not_echo_this");
   });
 
+  it("does not print raw operational JSON before a normal human CLI error", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-human-error-"));
+    const configPath = path.join(tempDir, "broken.runner.json");
+    await fs.writeFile(configPath, "{ not-json\n", "utf8");
+    const output: string[] = [];
+    const diagnostics: string[] = [];
+    vi.stubEnv("SYNAPSOR_OPERATIONAL_LOG", "");
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      diagnostics.push(String(chunk));
+      return true;
+    });
+
+    await expect(runCliProcess([
+      "config",
+      "validate",
+      "--config",
+      configPath,
+    ])).resolves.toBe(1);
+
+    expect(output.join("")).toBe("");
+    expect(diagnostics.join("")).toContain("Runner config is not valid JSON");
+    expect(diagnostics.join("")).not.toContain('"event":"cli_rejected"');
+    expect(diagnostics.join("")).not.toMatch(/^\s*\{/);
+  });
+
   it("documents invalid config fields and the exact validation retry in JSON mode", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-recovery-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -653,6 +682,9 @@ describe("runner cli", () => {
       process.chdir(tempDir);
       await expect(main(["demo", "--quick", "--no-interactive"])).resolves.toBe(0);
       const text = output.join("");
+      expect(text).toContain("Synapsor isolated commit-safety proof");
+      expect(text).toContain("It does not connect to your project database.");
+      expect(text).toContain("try ask --provider openai --model <model>");
       expect(text).toContain("Synapsor Runner try");
       expect(text).toContain("deterministic simulated agent");
       expect(text).toContain("No execute_sql, approve, apply, or commit tool");
@@ -1721,8 +1753,8 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect(seenRequest.body?.local_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.7.0",
-        "@synapsor/dsl": "1.7.0",
+        "@synapsor/spec": "1.8.0",
+        "@synapsor/dsl": "1.8.0",
         "@synapsor/runner": runnerPackage.version,
       });
       expect(output.join("")).not.toContain("secret-cloud-token");
@@ -3889,6 +3921,35 @@ END
       expect.objectContaining({ name: "config-valid", level: "pass" }),
     ]));
   });
+
+  it("refuses an older proposal when a freshness policy is added before apply", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-freshness-drift-"));
+    const { configPath, storePath } = await writeContractApplyFixture(tempDir);
+    const proposalId = await createApprovedContractProposal({ configPath, storePath });
+    const config = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, any>;
+    config.proposal_freshness = {
+      "billing.propose_late_fee_waiver": {
+        approval: "required",
+        dependencies: [{
+          id: "invoice_eligibility",
+          capability: "billing.inspect_invoice",
+          identity_from_arg: "invoice_id",
+          version_column: "updated_at",
+        }],
+      },
+    };
+    await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    vi.stubEnv("SYNAPSOR_TENANT_ID", "acme");
+    vi.stubEnv("SYNAPSOR_PRINCIPAL", "local_operator");
+    vi.stubEnv("APP_POSTGRES_WRITE_URL", "postgresql://writer:unused@example/app");
+
+    await expect(main([
+      "apply", proposalId,
+      "--config", configPath,
+      "--store", storePath,
+      "--dry-run",
+    ])).rejects.toThrow(/FRESHNESS_POLICY_CHANGED_CREATE_NEW_PROPOSAL/);
+  }, 15_000);
 
   it("fails doctor when a proposal capability references an unresolved approval policy", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-policy-doctor-"));
@@ -7690,8 +7751,13 @@ END
     store.createProposal(changeSet);
     store.approveProposal("wrp_cli", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
     store.enqueueApprovedForWorker({ maxAttempts: 1 });
-    store.claimWorkerItem({ workerId: "worker_a" });
-    store.deadLetterWorkerItem({ proposalId: "wrp_cli", workerId: "worker_a", errorCode: "HANDLER_TIMEOUT" });
+    const firstLease = store.claimWorkerItem({ workerId: "worker_a" });
+    store.deadLetterWorkerItem({
+      proposalId: "wrp_cli",
+      workerId: "worker_a",
+      leaseId: firstLease!.lease_id!,
+      errorCode: "HANDLER_TIMEOUT",
+    });
     store.close();
 
     await expect(main([
@@ -7705,8 +7771,13 @@ END
 
     const requeued = new ProposalStore(storePath);
     expect(requeued.getWorkerQueueItem("wrp_cli")).toMatchObject({ status: "queued", max_attempts: 2 });
-    requeued.claimWorkerItem({ workerId: "worker_b" });
-    requeued.deadLetterWorkerItem({ proposalId: "wrp_cli", workerId: "worker_b", errorCode: "POLICY_REJECTED" });
+    const secondLease = requeued.claimWorkerItem({ workerId: "worker_b" });
+    requeued.deadLetterWorkerItem({
+      proposalId: "wrp_cli",
+      workerId: "worker_b",
+      leaseId: secondLease!.lease_id!,
+      errorCode: "POLICY_REJECTED",
+    });
     requeued.close();
     await expect(main([
       "worker", "dead-letter", "discard", "wrp_cli", "--reason", "operator closed terminal item", "--yes",

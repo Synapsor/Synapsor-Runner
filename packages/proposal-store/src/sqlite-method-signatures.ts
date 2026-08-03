@@ -28,6 +28,7 @@ import {
   type ReconcileWritebackIntentInput,
   type ProposalReplayRecord,
   type StoredEvidenceBundle,
+  type QueryAuditRecordInput,
   type CloudOutboxKind,
   type CloudOutboxStatus,
   type CloudOutboxItem,
@@ -43,6 +44,12 @@ import {
   type ProposalSearchFilters,
   type EvidenceSearchFilters,
   type QueryAuditSearchFilters,
+  type ExplorePrivacyReleaseInput,
+  type ExplorePrivacyReleaseDecision,
+  type ExploreBudgetReservationInput,
+  type ExploreBudgetReservationDecision,
+  type CompleteExploreBudgetReservationInput,
+  type CompleteExploreBudgetReservationDecision,
   type ReceiptSearchFilters,
   type EventSearchFilters,
   type StoredShadowHumanAction,
@@ -102,6 +109,9 @@ export interface ProposalStoreProposalMethods {
   listEvidenceBundles(filters?: EvidenceSearchFilters): StoredEvidenceBundle[];
   listQueryAudit(filters?: QueryAuditSearchFilters): Record<string, unknown>[];
   getQueryAudit(auditId: number): Record<string, unknown> | undefined;
+  claimExplorePrivacyRelease(input: ExplorePrivacyReleaseInput): ExplorePrivacyReleaseDecision;
+  claimExploreBudgetReservation(input: ExploreBudgetReservationInput): ExploreBudgetReservationDecision;
+  completeExploreBudgetReservation(input: CompleteExploreBudgetReservationInput): CompleteExploreBudgetReservationDecision;
   listReceipts(filters?: ReceiptSearchFilters): StoredWritebackReceipt[];
   getReceipt(receiptId: number): StoredWritebackReceipt | undefined;
   getReplayByReplayId(replayId: string): ProposalReplayRecord;
@@ -175,16 +185,9 @@ export interface ProposalStoreWritebackMethods {
       tenant_id: string;
       payload: Record<string, unknown>;
       items?: Record<string, unknown>[];
+      query_audit?: QueryAuditRecordInput[];
     }): void;
-  recordQueryAudit(input: {
-      proposal_id?: string;
-      evidence_bundle_id?: string;
-      source_id: string;
-      query_fingerprint: string;
-      table_name: string;
-      row_count: number;
-      payload: Record<string, unknown>;
-    }): void;
+  recordQueryAudit(input: QueryAuditRecordInput): void;
   getEvidenceBundle(evidenceBundleId: string): StoredEvidenceBundle | undefined;
   events(proposalId: string): ProposalEvent[];
   listEvents(filters?: EventSearchFilters): ProposalEvent[];
@@ -259,14 +262,14 @@ export interface ProposalStoreWorkerMethods {
       workerId: string;
       errorCode: string;
       retryAt: string;
-      leaseId?: string;
+      leaseId: string;
       now?: string;
     }): WorkerQueueItem;
   deadLetterWorkerItem(options: {
       proposalId: string;
       workerId: string;
       errorCode: string;
-      leaseId?: string;
+      leaseId: string;
       now?: string;
     }): WorkerQueueItem;
   blockWorkerItem(options: {

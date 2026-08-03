@@ -132,9 +132,11 @@ worker flows that do not pass a local config.
 
 Set `statement_timeout_ms` on each production source. PostgreSQL direct
 writeback uses it for transaction-local statement and lock limits. MySQL uses
-it for preflight execution and InnoDB lock waits; because MySQL does not apply
-`max_execution_time` to general DML, keep bounded sets small and enforce
-source-side operational query limits too.
+it for preflight execution and InnoDB lock waits, then enforces the same value
+as a client-side pre-commit transaction deadline. On expiry Runner destroys
+the connection before `COMMIT`, causing the open transaction to roll back.
+Keep bounded sets small and retain source-side operational query limits as
+defense in depth.
 
 ## Receipt Authority
 

@@ -19,15 +19,26 @@ import {
   type ParsedSchema,
   type SchemaCandidateFormat,
 } from "./schema-candidates.js";
+import {
+  assertSafeManagedOutputPath,
+  readManagedOutputMarker,
+} from "./managed-output.js";
+import type {
+  BoundaryReviewProgressArtifact,
+} from "./boundary-review-progress-types.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
 export const AUTHORITY_DEPENDENCIES_VERSION = "synapsor.authority-dependencies.v1";
 export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v1";
 export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
-export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.4";
-export const AUTO_BOUNDARY_SPEC_VERSION = "1.7.0";
+export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
+export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.6";
+export const AUTO_BOUNDARY_SPEC_VERSION = "1.8.0";
 export const DEFAULT_GENERATED_DIR = "synapsor/generated";
+export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
+const EXPLORATION_LOCK_SNAPSHOT_DIR = "exploration-locks";
+const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = "exploration-boundaries.active.json";
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
@@ -35,6 +46,7 @@ const MAX_DEPTH_TWO_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 3;
 const DEFAULT_BUDGETS: ExplorationBudgets = {
   max_rows: 50,
   max_groups: 50,
+  max_ranked_groups: 500,
   max_top_n: 25,
   max_measures: 3,
   max_dimensions: 3,
@@ -46,7 +58,9 @@ const DEFAULT_BUDGETS: ExplorationBudgets = {
   max_complexity: 24,
   max_queries_per_session: 40,
   max_extracted_cells_per_session: 4000,
-  max_differencing_queries: 6,
+  // One finite all-shape pool supports the reviewed ten-plan adoption path
+  // without restoring the old per-family differencing reset.
+  max_differencing_queries: 16,
   rate_limit_per_minute: 20,
 };
 
@@ -116,7 +130,7 @@ export type AutoBoundaryField = {
   time_bucket_suggestion: boolean;
   evidence: string[];
   review_override?: {
-    exposure: "keep_out" | "allow_reviewed_use";
+    exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
     actor: string;
     reason: string;
     decided_at: string;
@@ -157,6 +171,7 @@ export type AutoBoundaryResource = {
     write_capable: boolean;
     verified: boolean;
   };
+  minimum_cohort_override?: ReviewedMinimumCohortDecision;
   status: "draft_read" | "blocked_scope" | "blocked_identifier" | "blocked_role";
   blockers: string[];
 };
@@ -189,6 +204,12 @@ export type AutoBoundaryEvidenceGraph = {
 export type ExplorationBudgets = {
   max_rows: number;
   max_groups: number;
+  /**
+   * Maximum underlying groups a reviewed top/bottom query may consider before
+   * suppression and ranking. Optional so pre-1.6.6 boundary artifacts retain
+   * their exact canonical bytes and digest.
+   */
+  max_ranked_groups?: number;
   max_top_n: number;
   max_measures: number;
   max_dimensions: number;
@@ -211,10 +232,25 @@ export type ExplorationBoundaryDraft = {
   source: string;
   compiler_version: string;
   spec_version: string;
+  /**
+   * New generated boundaries bind one reporting timezone into their reviewed
+   * authority. It remains optional solely so pre-1.6.6 active-boundary
+   * artifacts retain their exact canonical digest.
+   */
+  reporting_timezone?: "UTC";
   trusted_context: {
     provider: "environment";
     tenant_env: string;
     principal_env: string;
+    /**
+     * Additive first-run fallback for PostgreSQL credentials whose reviewed
+     * RLS policies use one stable session setting. The value is resolved from
+     * the authenticated database session and is never stored in this object.
+     */
+    database_role_tenant?: {
+      engine: "postgres";
+      setting: string;
+    };
   };
   generation_lock_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
@@ -237,12 +273,18 @@ export type ExplorationBoundaryDraft = {
       count_distinct_fields: string[];
       time_bucket_fields: Record<string, Array<"day" | "week" | "month">>;
       kept_out_fields: string[];
+      /**
+       * Optional so boundaries created before this egress tier retain their
+       * exact canonical representation and digest.
+       */
+      model_withheld_fields?: string[];
       relationships: ExplorationRelationship[];
       rls_session?: {
         tenant_setting?: string;
         principal_setting?: string;
       };
       minimum_cohort_size: number;
+      minimum_cohort_overridden?: true;
       suppression_aware_totals: true;
     }>;
   };
@@ -263,8 +305,20 @@ export type ActivatedExplorationBoundary = Omit<ExplorationBoundaryDraft, "activ
     }>;
     mode?: "full_review" | "instant_development";
     profile_assertion?: "own_development";
-    confirmation_gesture?: "activate_and_read";
+    launch_context?: "start_from_env_local_authoring";
+    confirmation_gesture?:
+      | "activate_and_read"
+      | "activate_for_model"
+      | "activate_for_existing_client"
+      | "activate_for_no_model";
   };
+};
+
+export type ActiveExplorationBoundarySet = {
+  schema_version: typeof ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION;
+  selected_name: string;
+  boundaries: ActivatedExplorationBoundary[];
+  updated_at: string;
 };
 
 export type GenerationLock = {
@@ -280,6 +334,11 @@ export type GenerationLock = {
   generated_contract_digest: `sha256:${string}`;
   reviewed_overrides_digest: `sha256:${string}`;
   protected_authority: string[];
+  /**
+   * New generated analytical authority fixes time buckets to UTC. This is
+   * optional only so published locks retain their exact digest.
+   */
+  reporting_timezone?: "UTC";
   /**
    * Additive dependency records for authority generated by newer Runner
    * versions. Legacy locks omit this field and retain whole-schema drift
@@ -344,8 +403,9 @@ export type AutoBoundaryReviewOverrides = {
     row_identity?: ReviewedValueDecision;
     tenant_key?: ReviewedValueDecision;
     principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
+    minimum_cohort?: ReviewedMinimumCohortDecision;
     fields?: Record<string, {
-      exposure: "keep_out" | "allow_reviewed_use";
+      exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
       actor: string;
       reason: string;
       decided_at: string;
@@ -355,6 +415,13 @@ export type AutoBoundaryReviewOverrides = {
 
 export type ReviewedValueDecision = {
   value: string;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedMinimumCohortDecision = {
+  value: number;
   actor: string;
   reason: string;
   decided_at: string;
@@ -458,14 +525,16 @@ export function pruneAutoBoundaryReviewOverrides(
         removed.push(`${resourceId}: reviewed principal key ${decision.principal_key.value} no longer exists`);
       }
     }
+    if (decision.minimum_cohort) retained.minimum_cohort = decision.minimum_cohort;
     const fields: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["fields"]> = {};
     for (const [fieldName, fieldDecision] of Object.entries(decision.fields ?? {})) {
       const column = columns.get(fieldName);
       if (!column) {
         removed.push(`${resourceId}.${fieldName}: reviewed field no longer exists`);
-      } else if (fieldDecision.exposure === "allow_reviewed_use"
+      } else if ((fieldDecision.exposure === "allow_reviewed_use"
+          || fieldDecision.exposure === "withhold_from_model")
         && (column.suggestions.large_or_binary || isUnsafeRawType(column.data_type))) {
-        removed.push(`${resourceId}.${fieldName}: reviewed visibility was removed because the current type is binary or unsupported`);
+        removed.push(`${resourceId}.${fieldName}: reviewed use was removed because the current type is binary or unsupported`);
       } else {
         fields[fieldName] = fieldDecision;
       }
@@ -504,9 +573,9 @@ export function buildAutoBoundary(input: {
   const contractDigest = canonicalJsonDigest(contract);
   const schemaFingerprint = schemaFingerprintForInspection(input.inspection);
   const roleFingerprint = graph.database_role.fingerprint;
-  const overridesDigest = canonicalJsonDigest(overrides);
+  const overridesDigest = canonicalJsonDigest(reviewOverrideAuthority(overrides));
   const evidenceFingerprint = canonicalJsonDigest({
-    graph: graph.resources,
+    graph: generationEvidenceAuthority(graph.resources),
     structured_actions: graph.structured_actions,
     project: graph.project,
   });
@@ -523,6 +592,7 @@ export function buildAutoBoundary(input: {
     generated_contract_digest: contractDigest,
     reviewed_overrides_digest: overridesDigest,
     protected_authority: graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => resource.id),
+    reporting_timezone: "UTC",
   };
   const provisionalBoundary = buildExplorationBoundaryDraft(graph, sourceName, canonicalJsonDigest(baseLock));
   const lock: GenerationLock = {
@@ -565,24 +635,91 @@ export function buildAutoBoundary(input: {
   };
 }
 
+function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record<string, unknown> {
+  return {
+    schema_version: overrides.schema_version,
+    resources: Object.fromEntries(
+      Object.entries(overrides.resources)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([resourceId, resource]) => [
+          resourceId,
+          {
+            ...(resource.row_identity ? { row_identity: resource.row_identity.value } : {}),
+            ...(resource.tenant_key ? { tenant_key: resource.tenant_key.value } : {}),
+            ...(resource.principal_key ? { principal_key: resource.principal_key.value } : {}),
+            ...(resource.minimum_cohort ? { minimum_cohort: resource.minimum_cohort.value } : {}),
+            ...(resource.fields ? {
+              fields: Object.fromEntries(
+                Object.entries(resource.fields)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, decision.exposure]),
+              ),
+            } : {}),
+          },
+        ]),
+    ),
+  };
+}
+
+function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown[] {
+  return resources.map((resource) => ({
+    ...resource,
+    ...(resource.minimum_cohort_override
+      ? {
+        minimum_cohort_override: {
+          value: resource.minimum_cohort_override.value,
+        },
+      }
+      : {}),
+    fields: resource.fields.map((field) => ({
+      ...field,
+      ...(field.review_override
+        ? { review_override: { exposure: field.review_override.exposure } }
+        : {}),
+    })),
+  }));
+}
+
 export async function writeAutoBoundaryArtifacts(input: {
   projectRoot: string;
   build: AutoBoundaryBuild;
   outputRoot?: string;
   force?: boolean;
   preserveReviewProgress?: boolean;
+  preserveActiveBoundary?: boolean;
+  reviewProgress?: BoundaryReviewProgressArtifact<ExplorationBoundaryDraft>;
 }): Promise<AutoBoundaryWriteResult> {
   const projectRoot = path.resolve(input.projectRoot);
-  const outputRoot = path.resolve(projectRoot, input.outputRoot ?? DEFAULT_GENERATED_DIR);
+  const outputRoot = await assertSafeManagedOutputPath(
+    path.resolve(projectRoot, input.outputRoot ?? DEFAULT_GENERATED_DIR),
+  );
   assertInsideProject(projectRoot, outputRoot);
+  const stateDir = await assertSafeManagedOutputPath(path.join(projectRoot, ".synapsor"));
+  if (outputRoot === stateDir
+    || outputRoot.startsWith(`${stateDir}${path.sep}`)
+    || stateDir.startsWith(`${outputRoot}${path.sep}`)) {
+    throw new Error("Auto Boundary output and private Runner state must use separate project directories.");
+  }
   const existing = await exists(outputRoot);
   if (existing && !input.force) {
     throw new Error(`Auto Boundary output already exists at ${outputRoot}; review it or rerun with --force.`);
   }
   if (existing) await assertManagedBoundaryOutput(outputRoot);
+  if (existing && input.preserveActiveBoundary) {
+    try {
+      const active = await loadActivatedExplorationBoundary(projectRoot);
+      await loadGenerationLockForActivatedBoundary(projectRoot, active);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
 
   await fs.mkdir(path.dirname(outputRoot), { recursive: true });
   const temporary = await fs.mkdtemp(path.join(path.dirname(outputRoot), `.${path.basename(outputRoot)}.tmp-`));
+  await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
+  const transactionRoot = await fs.mkdtemp(path.join(stateDir, ".auto-boundary-write-"));
+  const stagedState = path.join(transactionRoot, "staged-state");
+  const backupRoot = path.join(transactionRoot, "backup");
   const files = [
     "domain.synapsor.sql",
     "read-capabilities.synapsor.sql",
@@ -609,20 +746,41 @@ export async function writeAutoBoundaryArtifacts(input: {
       contract_digest: input.build.contract_digest,
       schema_fingerprint: input.build.lock.schema_fingerprint,
     }), "utf8");
-    if (existing) await fs.rm(outputRoot, { recursive: true, force: true });
-    await fs.mkdir(path.dirname(outputRoot), { recursive: true });
-    await fs.rename(temporary, outputRoot);
-    const stateDir = path.join(projectRoot, ".synapsor");
-    await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
-    await fs.writeFile(path.join(stateDir, "generation-lock.json"), json(input.build.lock), { encoding: "utf8", mode: 0o600 });
-    await fs.writeFile(path.join(stateDir, "review-report.json"), json(input.build.review), { encoding: "utf8", mode: 0o600 });
-    await fs.writeFile(path.join(stateDir, "review-overrides.json"), json(input.build.overrides), { encoding: "utf8", mode: 0o600 });
-    if (existing) {
-      await fs.rm(path.join(stateDir, "exploration-boundary.active.json"), { force: true });
-      if (!input.preserveReviewProgress) {
-        await fs.rm(path.join(stateDir, "boundary-review-progress.json"), { force: true });
-      }
+    await fs.mkdir(stagedState, { recursive: true, mode: 0o700 });
+    await writePrivateStagedFile(stagedState, "generation-lock.json", json(input.build.lock));
+    await writePrivateStagedFile(stagedState, "review-report.json", json(input.build.review));
+    await writePrivateStagedFile(stagedState, "review-overrides.json", json(input.build.overrides));
+    if (input.reviewProgress) {
+      await writePrivateStagedFile(
+        stagedState,
+        "boundary-review-progress.json",
+        json(input.reviewProgress),
+      );
     }
+    await commitManagedAutoBoundaryWrite({
+      outputRoot,
+      stagedOutput: temporary,
+      stateDir,
+      transactionRoot,
+      backupRoot,
+      existingOutput: existing,
+      installStateFiles: [
+        "generation-lock.json",
+        "review-report.json",
+        "review-overrides.json",
+        ...(input.reviewProgress ? ["boundary-review-progress.json"] : []),
+      ],
+      removeStateFiles: existing
+        ? [
+            ...(!input.preserveActiveBoundary
+              ? ["exploration-boundary.active.json", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE]
+              : []),
+            ...(!input.preserveReviewProgress && !input.reviewProgress
+              ? ["boundary-review-progress.json"]
+              : []),
+          ]
+        : [],
+    });
     return {
       root: outputRoot,
       files: [
@@ -639,6 +797,8 @@ export async function writeAutoBoundaryArtifacts(input: {
   } catch (error) {
     await fs.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
     throw error;
+  } finally {
+    await fs.rm(transactionRoot, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -857,10 +1017,16 @@ export async function activateExplorationBoundary(input: {
   confirmation: string;
   confirmedDecisions: string[];
   currentInspection: SchemaInspection;
+  activeSetMode?: "replace" | "add";
   activationAudit?: {
     mode: "full_review" | "instant_development";
     profile_assertion?: "own_development";
-    confirmation_gesture?: "activate_and_read";
+    launch_context?: "start_from_env_local_authoring";
+    confirmation_gesture?:
+      | "activate_and_read"
+      | "activate_for_model"
+      | "activate_for_existing_client"
+      | "activate_for_no_model";
   };
 }): Promise<ActivatedExplorationBoundary> {
   const projectRoot = path.resolve(input.projectRoot);
@@ -870,16 +1036,17 @@ export async function activateExplorationBoundary(input: {
   const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
   const reviewed = reviewExplorationBoundaryCandidate(draft, input.candidate);
   const candidate = reviewed.candidate;
+  assertGenerationLockFingerprint(lock, candidate.generation_lock_fingerprint);
   const reviewedDecisions = assertExactDecisionReview(
     candidate.unresolved_decisions,
     input.confirmedDecisions,
     draft.unresolved_decisions,
   );
-  const comparison = compareGenerationLock(lock, input.currentInspection);
-  if (!comparison.current) {
-    throw new Error(`Generation lock is stale: ${comparison.changes.join("; ")}.`);
-  }
-  assertExploreRolePosture(input.currentInspection, candidate);
+  assertCurrentExplorationBoundaryAuthority({
+    lock,
+    inspection: input.currentInspection,
+    candidate,
+  });
   for (const resource of candidate.pack.resources) {
     const unresolved = resource.relationships.find((relationship) =>
       relationship.unmatched_rows === "review_required");
@@ -901,6 +1068,7 @@ export async function activateExplorationBoundary(input: {
     source: candidate.source,
     compiler_version: candidate.compiler_version,
     spec_version: candidate.spec_version,
+    ...(candidate.reporting_timezone ? { reporting_timezone: candidate.reporting_timezone } : {}),
     trusted_context: candidate.trusted_context,
     generation_lock_fingerprint: candidate.generation_lock_fingerprint,
     role_posture_fingerprint: candidate.role_posture_fingerprint,
@@ -918,21 +1086,31 @@ export async function activateExplorationBoundary(input: {
   };
   const stateDir = path.join(projectRoot, ".synapsor");
   await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
+  await persistGenerationLockSnapshot(projectRoot, candidate.generation_lock_fingerprint, lock);
   const auditKeyPath = path.join(stateDir, "explore-audit.key");
   try {
     await fs.writeFile(auditKeyPath, crypto.randomBytes(32).toString("base64url"), { encoding: "utf8", mode: 0o600, flag: "wx" });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
-  const temporary = path.join(stateDir, `.exploration-boundary.active.${process.pid}.${cryptoRandomSuffix()}.tmp`);
-  try {
-    await fs.writeFile(temporary, json(active), { encoding: "utf8", mode: 0o600, flag: "wx" });
-    await fs.rename(temporary, path.join(stateDir, "exploration-boundary.active.json"));
-  } catch (error) {
-    await fs.rm(temporary, { force: true }).catch(() => undefined);
-    throw error;
-  }
+  await writeActivatedExplorationBoundarySet(
+    projectRoot,
+    active,
+    input.activeSetMode ?? "replace",
+  );
   return active;
+}
+
+export function assertCurrentExplorationBoundaryAuthority(input: {
+  lock: GenerationLock;
+  inspection: SchemaInspection;
+  candidate: ExplorationBoundaryDraft;
+}): void {
+  const comparison = compareGenerationLock(input.lock, input.inspection);
+  if (!comparison.current) {
+    throw new Error(`Generation lock is stale: ${comparison.changes.join("; ")}.`);
+  }
+  assertExploreRolePosture(input.inspection, input.candidate);
 }
 
 export function explorationBoundaryCandidateDigest(candidate: ExplorationBoundaryDraft): `sha256:${string}` {
@@ -951,10 +1129,116 @@ export function reviewExplorationBoundaryCandidate(
   return { digest: explorationBoundaryCandidateDigest(normalized), candidate: normalized };
 }
 
-export async function loadActivatedExplorationBoundary(projectRoot: string): Promise<ActivatedExplorationBoundary> {
-  const resolved = path.join(path.resolve(projectRoot), ".synapsor/exploration-boundary.active.json");
+export async function loadActivatedExplorationBoundary(
+  projectRoot: string,
+  selector?: { name?: string; digest?: `sha256:${string}` },
+): Promise<ActivatedExplorationBoundary> {
+  if (selector?.name || selector?.digest) {
+    const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+    const selected = boundaries.find((boundary) =>
+      (!selector.name || boundary.pack.name === selector.name)
+      && (!selector.digest || boundary.activation.digest === selector.digest));
+    if (!selected) {
+      throw Object.assign(new Error("Requested exploration boundary is not active."), { code: "ENOENT" });
+    }
+    return selected;
+  }
+  const root = path.resolve(projectRoot);
+  try {
+    const set = await readActivatedExplorationBoundarySet(root);
+    const selected = set.boundaries.find((boundary) => boundary.pack.name === set.selected_name);
+    if (!selected) throw new Error("Active exploration-boundary registry does not contain its selected boundary.");
+    return selected;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return readLegacyActivatedExplorationBoundary(root);
+}
+
+export async function loadActivatedExplorationBoundaries(
+  projectRoot: string,
+): Promise<ActivatedExplorationBoundary[]> {
+  const root = path.resolve(projectRoot);
+  try {
+    return (await readActivatedExplorationBoundarySet(root)).boundaries;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return [await readLegacyActivatedExplorationBoundary(root)];
+}
+
+export function activatedExplorationBoundarySetDigest(
+  boundaries: ActivatedExplorationBoundary[],
+): `sha256:${string}` {
+  if (boundaries.length < 1 || boundaries.length > MAX_ACTIVE_EXPLORATION_BOUNDARIES) {
+    throw new Error(`Active Scoped Explore requires 1-${MAX_ACTIVE_EXPLORATION_BOUNDARIES} reviewed boundaries.`);
+  }
+  return canonicalJsonDigest({
+    schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
+    boundaries: boundaries
+      .map((boundary) => ({ name: boundary.pack.name, digest: boundary.activation.digest }))
+      .sort((left, right) => left.name.localeCompare(right.name)),
+  });
+}
+
+export async function deactivateExplorationBoundary(
+  projectRootInput: string,
+  name?: string,
+): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
+  const projectRoot = path.resolve(projectRootInput);
+  let active: ActivatedExplorationBoundary[];
+  try {
+    active = await loadActivatedExplorationBoundaries(projectRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { disabled: [], remaining: [] };
+    throw error;
+  }
+  const disabled = name
+    ? active.filter((boundary) => boundary.pack.name === name)
+    : active;
+  if (name && disabled.length === 0) throw new Error(`Boundary ${name} is not active.`);
+  const remaining = name
+    ? active.filter((boundary) => boundary.pack.name !== name)
+    : [];
+  if (remaining.length === 0) {
+    await Promise.all([
+      fs.rm(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"), { force: true }),
+      fs.rm(path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE), { force: true }),
+    ]);
+  } else {
+    const selected = remaining.at(-1)!;
+    await persistActivatedExplorationBoundarySet(projectRoot, {
+      schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
+      selected_name: selected.pack.name,
+      boundaries: remaining,
+      updated_at: new Date().toISOString(),
+    });
+    await writePrivateJsonAtomic(
+      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+      selected,
+    );
+  }
+  return { disabled: disabled.map((boundary) => boundary.pack.name), remaining };
+}
+
+async function readLegacyActivatedExplorationBoundary(
+  projectRoot: string,
+): Promise<ActivatedExplorationBoundary> {
+  const resolved = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
   const active = JSON.parse(await fs.readFile(resolved, "utf8")) as ActivatedExplorationBoundary;
+  return validateActivatedExplorationBoundary(active);
+}
+
+function validateActivatedExplorationBoundary(
+  active: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
   if (active.activation?.state !== "active") throw new Error("Exploration boundary is not active.");
+  if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(active.pack?.name ?? "")) {
+    throw new Error("Activated exploration boundary has an invalid name.");
+  }
+  if (active.reporting_timezone !== undefined && active.reporting_timezone !== "UTC") {
+    throw new Error("Activated exploration boundary has an unsupported reporting timezone.");
+  }
   const authority = {
     schema_version: active.schema_version,
     activation: "reviewed",
@@ -962,6 +1246,7 @@ export async function loadActivatedExplorationBoundary(projectRoot: string): Pro
     source: active.source,
     compiler_version: active.compiler_version,
     spec_version: active.spec_version,
+    ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
     trusted_context: active.trusted_context,
     generation_lock_fingerprint: active.generation_lock_fingerprint,
     role_posture_fingerprint: active.role_posture_fingerprint,
@@ -972,6 +1257,178 @@ export async function loadActivatedExplorationBoundary(projectRoot: string): Pro
     throw new Error("Activated exploration boundary digest does not match its authority.");
   }
   return active;
+}
+
+async function readActivatedExplorationBoundarySet(
+  projectRoot: string,
+): Promise<ActiveExplorationBoundarySet> {
+  const raw = JSON.parse(await fs.readFile(
+    path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE),
+    "utf8",
+  )) as ActiveExplorationBoundarySet;
+  if (raw.schema_version !== ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION
+    || typeof raw.selected_name !== "string"
+    || !Array.isArray(raw.boundaries)
+    || raw.boundaries.length < 1
+    || raw.boundaries.length > MAX_ACTIVE_EXPLORATION_BOUNDARIES
+    || typeof raw.updated_at !== "string") {
+    throw new Error("Active exploration-boundary registry is invalid.");
+  }
+  const boundaries = raw.boundaries.map(validateActivatedExplorationBoundary);
+  const names = new Set<string>();
+  for (const boundary of boundaries) {
+    if (names.has(boundary.pack.name)) throw new Error("Active exploration-boundary names must be unique.");
+    names.add(boundary.pack.name);
+  }
+  if (!names.has(raw.selected_name)) {
+    throw new Error("Active exploration-boundary registry does not contain its selected boundary.");
+  }
+  activatedExplorationBoundarySetDigest(boundaries);
+  return { ...raw, boundaries };
+}
+
+async function writeActivatedExplorationBoundarySet(
+  projectRoot: string,
+  active: ActivatedExplorationBoundary,
+  mode: "replace" | "add",
+): Promise<void> {
+  let boundaries: ActivatedExplorationBoundary[] = [];
+  if (mode === "add") {
+    try {
+      boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  boundaries = [
+    ...boundaries.filter((boundary) => boundary.pack.name !== active.pack.name),
+    active,
+  ];
+  if (boundaries.length > MAX_ACTIVE_EXPLORATION_BOUNDARIES) {
+    throw new Error(`Scoped Explore supports at most ${MAX_ACTIVE_EXPLORATION_BOUNDARIES} simultaneously active reviewed boundaries.`);
+  }
+  const sources = new Set(boundaries.map((boundary) => boundary.source));
+  const profiles = new Set(boundaries.map((boundary) => boundary.deployment_profile));
+  if (sources.size !== 1 || profiles.size !== 1) {
+    throw new Error("Active Explore boundaries must use the same reviewed source and deployment profile.");
+  }
+  const trustedContexts = new Set(boundaries.map((boundary) => canonicalJsonDigest({
+    tenant_env: boundary.trusted_context.tenant_env,
+    principal_env: boundary.trusted_context.principal_env,
+    database_role_tenant: boundary.trusted_context.database_role_tenant ?? null,
+  })));
+  if (trustedContexts.size !== 1) {
+    throw new Error("Active Explore boundaries must use the same reviewed trusted-context bindings.");
+  }
+  const set: ActiveExplorationBoundarySet = {
+    schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
+    selected_name: active.pack.name,
+    boundaries,
+    updated_at: new Date().toISOString(),
+  };
+  activatedExplorationBoundarySetDigest(boundaries);
+  await persistActivatedExplorationBoundarySet(projectRoot, set);
+  await writePrivateJsonAtomic(
+    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+    active,
+  );
+}
+
+async function persistActivatedExplorationBoundarySet(
+  projectRoot: string,
+  value: ActiveExplorationBoundarySet,
+): Promise<void> {
+  await writePrivateJsonAtomic(
+    path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE),
+    value,
+  );
+}
+
+async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const temporary = `${filePath}.${process.pid}.${cryptoRandomSuffix()}.tmp`;
+  try {
+    await fs.writeFile(temporary, json(value), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(temporary, filePath);
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function loadGenerationLockForActivatedBoundary(
+  projectRootInput: string,
+  boundary: ActivatedExplorationBoundary,
+): Promise<GenerationLock> {
+  const projectRoot = path.resolve(projectRootInput);
+  const snapshotPath = generationLockSnapshotPath(
+    projectRoot,
+    boundary.generation_lock_fingerprint,
+  );
+  try {
+    const snapshot = JSON.parse(await fs.readFile(snapshotPath, "utf8")) as GenerationLock;
+    assertGenerationLockFingerprint(snapshot, boundary.generation_lock_fingerprint);
+    return snapshot;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const current = JSON.parse(
+    await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8"),
+  ) as GenerationLock;
+  assertGenerationLockFingerprint(current, boundary.generation_lock_fingerprint);
+  await persistGenerationLockSnapshot(
+    projectRoot,
+    boundary.generation_lock_fingerprint,
+    current,
+  );
+  return current;
+}
+
+function generationLockSnapshotPath(
+  projectRoot: string,
+  fingerprint: `sha256:${string}`,
+): string {
+  const digest = fingerprint.slice("sha256:".length);
+  if (!/^[a-f0-9]{64}$/.test(digest)) {
+    throw new Error("Exploration generation-lock fingerprint is malformed.");
+  }
+  return path.join(projectRoot, ".synapsor", EXPLORATION_LOCK_SNAPSHOT_DIR, `${digest}.json`);
+}
+
+function assertGenerationLockFingerprint(
+  lock: GenerationLock,
+  expected: `sha256:${string}`,
+): void {
+  if (canonicalJsonDigest(lock) !== expected) {
+    throw new Error("The active exploration boundary is not bound to its generation-lock snapshot.");
+  }
+}
+
+async function persistGenerationLockSnapshot(
+  projectRoot: string,
+  fingerprint: `sha256:${string}`,
+  lock: GenerationLock,
+): Promise<void> {
+  assertGenerationLockFingerprint(lock, fingerprint);
+  const target = generationLockSnapshotPath(projectRoot, fingerprint);
+  try {
+    const existing = JSON.parse(await fs.readFile(target, "utf8")) as GenerationLock;
+    assertGenerationLockFingerprint(existing, fingerprint);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+  const temporary = `${target}.${process.pid}.${cryptoRandomSuffix()}.tmp`;
+  try {
+    await fs.writeFile(temporary, json(lock), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(temporary, target);
+    await fs.chmod(target, 0o600);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export { rolePostureFingerprint, schemaFingerprintForInspection };
@@ -997,7 +1454,11 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
     assertSafeMapKey(resourceId, "reviewed resource");
     const rawResource = input.resources[resourceId];
     if (!isRecord(rawResource)) throw new Error(`Review overrides for ${resourceId} must be an object.`);
-    assertOnlyKeys(rawResource, ["row_identity", "tenant_key", "principal_key", "fields"], `${resourceId} review overrides`);
+    assertOnlyKeys(
+      rawResource,
+      ["row_identity", "tenant_key", "principal_key", "minimum_cohort", "fields"],
+      `${resourceId} review overrides`,
+    );
     const resource: AutoBoundaryReviewOverrides["resources"][string] = {};
     if (rawResource.row_identity !== undefined) {
       resource.row_identity = normalizeReviewedValueDecision(rawResource.row_identity, `${resourceId} row identity`, false) as ReviewedValueDecision;
@@ -1008,6 +1469,12 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
     if (rawResource.principal_key !== undefined) {
       resource.principal_key = normalizeReviewedValueDecision(rawResource.principal_key, `${resourceId} principal key`, true);
     }
+    if (rawResource.minimum_cohort !== undefined) {
+      resource.minimum_cohort = normalizeReviewedMinimumCohortDecision(
+        rawResource.minimum_cohort,
+        `${resourceId} minimum cohort`,
+      );
+    }
     if (rawResource.fields !== undefined) {
       if (!isRecord(rawResource.fields)) throw new Error(`${resourceId} field review overrides must be an object.`);
       const fields: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["fields"]> = {};
@@ -1016,8 +1483,12 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
         const rawField = rawResource.fields[fieldName];
         if (!isRecord(rawField)) throw new Error(`${resourceId}.${fieldName} review override must be an object.`);
         assertOnlyKeys(rawField, ["exposure", "actor", "reason", "decided_at"], `${resourceId}.${fieldName} review override`);
-        if (rawField.exposure !== "keep_out" && rawField.exposure !== "allow_reviewed_use") {
-          throw new Error(`${resourceId}.${fieldName} exposure must be keep_out or allow_reviewed_use.`);
+        if (rawField.exposure !== "keep_out"
+          && rawField.exposure !== "withhold_from_model"
+          && rawField.exposure !== "allow_reviewed_use") {
+          throw new Error(
+            `${resourceId}.${fieldName} exposure must be keep_out, withhold_from_model, or allow_reviewed_use.`,
+          );
         }
         fields[fieldName] = {
           exposure: rawField.exposure,
@@ -1054,6 +1525,23 @@ function normalizeReviewedValueDecision(
   };
 }
 
+function normalizeReviewedMinimumCohortDecision(
+  value: unknown,
+  label: string,
+): ReviewedMinimumCohortDecision {
+  if (!isRecord(value)) throw new Error(`${label} review decision must be an object.`);
+  assertOnlyKeys(value, ["value", "actor", "reason", "decided_at"], `${label} review decision`);
+  if (!Number.isSafeInteger(value.value) || Number(value.value) < 1 || Number(value.value) >= 5) {
+    throw new Error(`${label} override must be an integer from 1 through 4.`);
+  }
+  return {
+    value: Number(value.value),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
 function applyReviewOverrides(
   graph: AutoBoundaryEvidenceGraph,
   overrides: AutoBoundaryReviewOverrides,
@@ -1083,7 +1571,7 @@ function applyReviewOverrides(
       resource.tenant_key.candidates = unique([...resource.tenant_key.candidates, override.tenant_key.value]).sort();
       resource.tenant_key.confidence = "high";
       resource.tenant_key.evidence.push(reviewDecisionEvidence("tenant key", override.tenant_key));
-      markReviewedInference(resource.tenant_key, override.tenant_key.value, `Human review: ${override.tenant_key.reason}`);
+      markReviewedInference(resource.tenant_key, override.tenant_key.value, "Human reviewed this inspected tenant-scope column.");
     }
     if (override.principal_key) {
       if (override.principal_key.value !== null && !columns.has(override.principal_key.value)) {
@@ -1105,25 +1593,31 @@ function applyReviewOverrides(
           .map((alternative) => ({ ...alternative, selected: false }));
         delete resource.principal_key.blocked_reason;
       } else {
-        markReviewedInference(resource.principal_key, override.principal_key.value, `Human review: ${override.principal_key.reason}`);
+        markReviewedInference(resource.principal_key, override.principal_key.value, "Human reviewed this inspected principal-scope column.");
       }
+    }
+    if (override.minimum_cohort) {
+      resource.minimum_cohort_override = { ...override.minimum_cohort };
     }
 
     for (const [fieldName, fieldOverride] of Object.entries(override.fields ?? {})) {
       const field = resource.fields.find((candidate) => candidate.name === fieldName);
       if (!field) throw new Error(`Review override references unknown field ${resourceId}.${fieldName}.`);
-      if (fieldOverride.exposure === "allow_reviewed_use" && isUnsafeRawType(field.data_type)) {
-        throw new Error(`${resourceId}.${fieldName} has a binary or unsupported large-object type and cannot be made model-visible.`);
+      if ((fieldOverride.exposure === "allow_reviewed_use"
+          || fieldOverride.exposure === "withhold_from_model")
+        && isUnsafeRawType(field.data_type)) {
+        throw new Error(`${resourceId}.${fieldName} has a binary or unsupported large-object type and cannot be made available for reviewed use.`);
       }
       field.review_override = { ...fieldOverride };
       field.evidence.push(
-        `human review override: ${fieldOverride.exposure} by ${fieldOverride.actor} at ${fieldOverride.decided_at}; ${fieldOverride.reason}`,
+        `human review override: ${fieldOverride.exposure}`,
       );
-      const allow = fieldOverride.exposure === "allow_reviewed_use";
+      const allow = fieldOverride.exposure === "allow_reviewed_use"
+        || fieldOverride.exposure === "withhold_from_model";
       field.sensitive_suggestion = !allow;
       field.raw_visible_suggestion = allow;
       field.aggregate_measure_suggestion = allow && isNumericType(field.data_type);
-      field.count_distinct_suggestion = allow && resource.primary_key.candidates.includes(field.name);
+      field.count_distinct_suggestion = allow;
       field.groupable_suggestion = allow
         && !field.primary_key
         && !isReferenceIdentifierName(field.name)
@@ -1166,7 +1660,7 @@ function reviewDecisionEvidence(
 ): BoundaryInference<string>["evidence"][number] {
   return {
     source: "synapsor",
-    detail: `human-reviewed ${kind} override by ${decision.actor} at ${decision.decided_at}: ${decision.reason}`,
+    detail: `human-reviewed ${kind} override: ${decision.value ?? "none"}`,
   };
 }
 
@@ -1292,6 +1786,12 @@ function assertBoundaryCandidateNarrowsDraft(
   for (const immutable of ["source", "compiler_version", "spec_version", "generation_lock_fingerprint", "role_posture_fingerprint"] as const) {
     if (candidate[immutable] !== draft[immutable]) throw new Error(`${immutable} cannot change during boundary review.`);
   }
+  if (candidate.reporting_timezone !== draft.reporting_timezone) {
+    throw new Error("reporting_timezone cannot change during boundary review.");
+  }
+  if (candidate.reporting_timezone !== undefined && candidate.reporting_timezone !== "UTC") {
+    throw new Error("Generated Scoped Explore boundaries currently support only the reviewed UTC reporting timezone.");
+  }
   if (JSON.stringify(candidate.trusted_context) !== JSON.stringify(draft.trusted_context)) {
     throw new Error("trusted_context cannot change during boundary review.");
   }
@@ -1319,6 +1819,10 @@ function assertBoundaryCandidateNarrowsDraft(
     assertSubset(resource.count_distinct_fields, original.count_distinct_fields, `${resource.id} count-distinct fields`);
     assertSubset(original.kept_out_fields, resource.kept_out_fields, `${resource.id} generated kept-out fields`);
     assertSubset(resource.kept_out_fields, Object.keys(original.field_types), `${resource.id} kept-out fields`);
+    const originalWithheld = original.model_withheld_fields ?? [];
+    const candidateWithheld = resource.model_withheld_fields ?? [];
+    assertSubset(candidateWithheld, originalWithheld, `${resource.id} model-withheld fields`);
+    assertSubset(candidateWithheld, Object.keys(original.field_types), `${resource.id} model-withheld fields`);
     for (const [field, operators] of Object.entries(resource.filterable_fields)) {
       const originalOperators = original.filterable_fields[field];
       if (!originalOperators) throw new Error(`${resource.id} cannot add filterable field ${field}.`);
@@ -1371,15 +1875,27 @@ function assertBoundaryCandidateNarrowsDraft(
           || link.target_uniqueness.columns.some((field, index) => field !== link.target_columns[index])) {
           throw new Error(`${resource.id} relationship ${relationship.id} is not cardinality-proven many-to-one.`);
         }
-        if (link.source_columns.some((field) => source.kept_out_fields.includes(field))
-          || link.target_columns.some((field) => target.kept_out_fields.includes(field))) {
+        const usesKeptOutJoinKey =
+          link.source_columns.some((field) => source.kept_out_fields.includes(field))
+          || link.target_columns.some((field) => target.kept_out_fields.includes(field));
+        const isTrustedTenantLink = link.source_columns.length === 1
+          && link.target_columns.length === 1
+          && link.source_columns[0] === source.tenant_key
+          && link.target_columns[0] === target.tenant_key;
+        if (usesKeptOutJoinKey && !isTrustedTenantLink) {
           throw new Error(`${resource.id} relationship ${relationship.id} cannot use a kept-out field.`);
         }
       }
     }
     assertKeptOutUnavailable(resource);
-    if (!Number.isSafeInteger(resource.minimum_cohort_size) || resource.minimum_cohort_size < original.minimum_cohort_size) {
+    if (!Number.isSafeInteger(resource.minimum_cohort_size) || resource.minimum_cohort_size < 1) {
+      throw new Error(`${resource.id} minimum cohort size must be an integer of at least 1.`);
+    }
+    if (resource.minimum_cohort_size < original.minimum_cohort_size) {
       throw new Error(`${resource.id} minimum cohort size may only stay the same or increase.`);
+    }
+    if (resource.minimum_cohort_overridden !== original.minimum_cohort_overridden) {
+      throw new Error(`${resource.id} minimum cohort override marker must match the reviewed owner decision.`);
     }
     if (resource.suppression_aware_totals !== true) throw new Error(`${resource.id} suppression-aware totals cannot be disabled.`);
   }
@@ -1443,12 +1959,27 @@ function assertExactDecisionReview(
 }
 
 function assertBudgetsNarrow(draft: ExplorationBudgets, candidate: ExplorationBudgets): void {
+  for (const key of Object.keys(candidate) as Array<keyof ExplorationBudgets>) {
+    if (!Object.hasOwn(draft, key)) {
+      throw new Error(`Exploration budget ${key} cannot be added during review.`);
+    }
+  }
   for (const key of Object.keys(draft) as Array<keyof ExplorationBudgets>) {
     const value = candidate[key];
-    if (!Number.isSafeInteger(value) || value < 1 || value > draft[key]) {
+    const generated = draft[key];
+    if (!Number.isSafeInteger(value) || !Number.isSafeInteger(generated)
+      || Number(value) < 1 || Number(value) > Number(generated)) {
       throw new Error(`Exploration budget ${key} may only stay the same or decrease.`);
     }
   }
+  if (candidate.max_ranked_groups !== undefined
+    && candidate.max_ranked_groups < candidate.max_groups) {
+    throw new Error("Exploration budget max_ranked_groups cannot be lower than max_groups.");
+  }
+}
+
+export function reviewedRankedGroupLimit(budgets: ExplorationBudgets): number {
+  return budgets.max_ranked_groups ?? budgets.max_groups;
 }
 
 function assertExploreRolePosture(inspection: SchemaInspection, candidate: ExplorationBoundaryDraft): void {
@@ -1485,7 +2016,11 @@ function assertSubset<T>(values: T[], allowed: T[], label: string): void {
 function assertKeptOutUnavailable(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
 ): void {
+  const withheld = new Set(resource.model_withheld_fields ?? []);
   for (const field of resource.kept_out_fields) {
+    if (withheld.has(field)) {
+      throw new Error(`${resource.id} field ${field} cannot be both kept out and withheld from the model.`);
+    }
     if (resource.selectable_fields.includes(field)
       || Object.hasOwn(resource.filterable_fields, field)
       || resource.sortable_fields.includes(field)
@@ -1624,6 +2159,7 @@ function rankedScopeInference(input: {
   }
   for (const column of table.columns) {
     const matchingPolicies = (table.row_level_security_policies ?? [])
+      .filter((policy) => policyAppliesToInspectedRole(policy.roles, inspection.current_user))
       .filter((policy) => policy.using_expression && rlsExpressionSupportsScope(policy.using_expression, column.name, kind));
     for (const policy of matchingPolicies) {
       add(
@@ -1641,8 +2177,10 @@ function rankedScopeInference(input: {
       add(
         column,
         35,
-        `foreign key ${foreignKey.name} maps ${column} to ${foreignKey.referenced_schema}.${foreignKey.referenced_table}`,
-        { strong: true, confidence: "medium" },
+        kind === "principal"
+          ? `foreign key ${foreignKey.name} maps ${column} to ${foreignKey.referenced_schema}.${foreignKey.referenced_table}; the relationship suggests identity but does not prove per-principal authorization`
+          : `foreign key ${foreignKey.name} maps ${column} to ${foreignKey.referenced_schema}.${foreignKey.referenced_table}`,
+        { strong: kind === "tenant", confidence: "medium" },
       );
     }
   }
@@ -1675,7 +2213,9 @@ function rankedScopeInference(input: {
       ? `No ${kind} scope candidate was found in reviewed contracts, database enforcement, keys, or supported static schemas.`
       : ranked.some((candidate) => candidate.structurally_supported)
         ? `Multiple structurally plausible ${kind} scope candidates remain; a human must choose one.`
-        : `Only naming or repetition evidence exists for ${kind} scope; names alone cannot grant cross-row authority.`;
+        : kind === "principal"
+          ? "Only descriptive schema evidence exists for principal scope; names and relationships do not prove per-principal authorization."
+          : `Only naming or repetition evidence exists for ${kind} scope; names alone cannot grant cross-row authority.`;
   return inference(
     selected,
     ranked.map((candidate) => candidate.value),
@@ -1695,6 +2235,10 @@ function rankedScopeInference(input: {
       ...(blockedReason ? { blockedReason } : {}),
     },
   );
+}
+
+function policyAppliesToInspectedRole(roles: string[], currentUser: string): boolean {
+  return roles.some((role) => role === "public" || role === currentUser);
 }
 
 function evidenceSource(detail: string): BoundaryInference<string>["evidence"][number]["source"] {
@@ -1806,12 +2350,15 @@ function buildResource(
     tenant_key: tenantInference,
     principal_key: principalInference,
     fields: table.columns.map((column): AutoBoundaryField => {
-      const databaseClassification = column.suggestions.sensitivity ?? classifySensitivity({
+      const deterministicClassification = classifySensitivity({
         name: column.name,
         dataType: column.data_type,
         description: column.comment,
         source: "database",
       });
+      const databaseClassification = column.suggestions.sensitivity
+        ? moreRestrictiveSensitivity(column.suggestions.sensitivity, deterministicClassification)
+        : deterministicClassification;
       const staticClassifications = staticObjects.flatMap((item) =>
         item.object.fields
           .filter((field) => field.name === column.name)
@@ -1932,15 +2479,22 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
     const capabilityName = `${safeNamespace(resource.schema)}.inspect_${safeIdentifier(object)}`;
     const lookupArg = `${safeIdentifier(object)}_id`;
     const trustedScopeFields = new Set([tenantKey, principalKey].filter((field): field is string => Boolean(field)));
+    const trustedScopeReadableFields = reviewedTrustedScopeReadableFields(resource);
     const visible = unique([
-      ...(!trustedScopeFields.has(primaryKey) ? [primaryKey] : []),
+      ...(!trustedScopeFields.has(primaryKey) || trustedScopeReadableFields.has(primaryKey) ? [primaryKey] : []),
       ...resource.fields
-        .filter((field) => field.raw_visible_suggestion && !trustedScopeFields.has(field.name))
+        .filter((field) => field.raw_visible_suggestion
+          && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
         .map((field) => field.name),
     ]);
+    const modelWithheld = resource.fields
+      .filter((field) =>
+        field.review_override?.exposure === "withhold_from_model"
+        && visible.includes(field.name))
+      .map((field) => field.name);
     const keptOut = unique([
       ...resource.fields.filter((field) => field.sensitive_suggestion || !field.raw_visible_suggestion).map((field) => field.name),
-      ...trustedScopeFields,
+      ...[...trustedScopeFields].filter((field) => !trustedScopeReadableFields.has(field)),
     ]);
     lines.push(
       `CREATE CAPABILITY ${capabilityName}`,
@@ -1955,6 +2509,9 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
       `  LOOKUP ${lookupArg} BY ${safeIdentifier(primaryKey)}`,
       `  ARG ${lookupArg} STRING REQUIRED MAX LENGTH 128 DESCRIPTION 'Reviewed ${escapeDslString(humanize(object))} identifier.'`,
       `  ALLOW READ ${visible.map(safeIdentifier).join(", ")}`,
+      ...(modelWithheld.length
+        ? [`  MODEL WITHHELD ${modelWithheld.map(safeIdentifier).join(", ")}`]
+        : []),
       ...(keptOut.length ? [`  KEEP OUT ${keptOut.map(safeIdentifier).join(", ")}`] : []),
       "  REQUIRE EVIDENCE",
       "  MAX ROWS 1",
@@ -1972,25 +2529,43 @@ function buildExplorationBoundaryDraft(
 ): ExplorationBoundaryDraft {
   const resources = graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => {
     const trustedScopeFields = new Set([resource.tenant_key.selected, resource.principal_key.selected].filter((field): field is string => Boolean(field)));
+    const trustedScopeReadableFields = reviewedTrustedScopeReadableFields(resource);
     const keptOut = unique([
       ...resource.fields.filter((field) => field.sensitive_suggestion || !field.raw_visible_suggestion).map((field) => field.name),
-      ...trustedScopeFields,
+      ...[...trustedScopeFields].filter((field) => !trustedScopeReadableFields.has(field)),
     ]);
     const keptOutSet = new Set(keptOut);
-    const selectable = resource.fields.filter((field) => field.raw_visible_suggestion && !trustedScopeFields.has(field.name)).map((field) => field.name);
+    const modelWithheld = resource.fields
+      .filter((field) => field.review_override?.exposure === "withhold_from_model")
+      .map((field) => field.name)
+      .filter((field) => !keptOutSet.has(field));
+    const selectable = resource.fields
+      .filter((field) => field.raw_visible_suggestion
+        && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
+      .map((field) => field.name);
+    const sortable = selectable.filter((field) => !trustedScopeFields.has(field));
     const filterable = Object.fromEntries(resource.fields
       .filter((field) => field.raw_visible_suggestion && !trustedScopeFields.has(field.name))
       .map((field) => [field.name, operatorsForType(field.data_type)]));
     const relationships = resource.relationships
       .filter((relationship) => {
         const target = graph.resources.find((candidate) => candidate.id === relationship.referenced_resource);
+        const trustedTenantRelationship = Boolean(
+          resource.tenant_key.selected
+          && target?.tenant_key.selected
+          && relationship.columns.length === 1
+          && relationship.referenced_columns.length === 1
+          && relationship.columns[0] === resource.tenant_key.selected
+          && relationship.referenced_columns[0] === target.tenant_key.selected,
+        );
         if (!target
           || target.status !== "draft_read"
           || !relationship.cardinality_proven
           || !relationship.target_uniqueness
           || relationship.columns.length !== 1
           || relationship.referenced_columns.length !== 1
-          || relationship.columns.some((field) => keptOutSet.has(field))) {
+          || (relationship.columns.some((field) => keptOutSet.has(field))
+            && !trustedTenantRelationship)) {
           return false;
         }
         const targetTrustedFields = new Set([target.tenant_key.selected, target.principal_key.selected]
@@ -2001,7 +2576,8 @@ function buildExplorationBoundaryDraft(
             .map((field) => field.name),
           ...targetTrustedFields,
         ]);
-        return !relationship.referenced_columns.some((field) => targetKeptOut.has(field));
+        return !relationship.referenced_columns.some((field) => targetKeptOut.has(field))
+          || trustedTenantRelationship;
       })
       .sort((left, right) => {
         const score = (relationship: typeof left) => {
@@ -2061,22 +2637,35 @@ function buildExplorationBoundaryDraft(
         ])),
       selectable_fields: selectable,
       filterable_fields: filterable,
-      sortable_fields: selectable,
-      groupable_fields: resource.fields.filter((field) => field.groupable_suggestion && !keptOutSet.has(field.name)).map((field) => field.name),
-      aggregate_measures: resource.fields.filter((field) => field.aggregate_measure_suggestion && !keptOutSet.has(field.name)).map((field) => field.name),
-      count_distinct_fields: resource.fields.filter((field) => field.count_distinct_suggestion && !keptOutSet.has(field.name)).map((field) => field.name),
-      time_bucket_fields: Object.fromEntries(resource.fields.filter((field) => field.time_bucket_suggestion && !keptOutSet.has(field.name)).map((field) => [
+      sortable_fields: sortable,
+      groupable_fields: resource.fields.filter((field) => field.groupable_suggestion
+        && !keptOutSet.has(field.name)
+        && !trustedScopeFields.has(field.name)).map((field) => field.name),
+      aggregate_measures: resource.fields.filter((field) => field.aggregate_measure_suggestion
+        && !keptOutSet.has(field.name)
+        && !trustedScopeFields.has(field.name)).map((field) => field.name),
+      count_distinct_fields: resource.fields.filter((field) => field.count_distinct_suggestion
+        && !keptOutSet.has(field.name)
+        && !trustedScopeFields.has(field.name)).map((field) => field.name),
+      time_bucket_fields: Object.fromEntries(resource.fields.filter((field) => field.time_bucket_suggestion
+        && !keptOutSet.has(field.name)
+        && !trustedScopeFields.has(field.name)).map((field) => [
         field.name,
         ["day", "week", "month"] as Array<"day" | "week" | "month">,
       ])),
       kept_out_fields: keptOut,
+      ...(modelWithheld.length ? { model_withheld_fields: modelWithheld } : {}),
       relationships,
       ...explorationRlsSession(resource),
-      minimum_cohort_size: 5,
+      minimum_cohort_size: resource.minimum_cohort_override?.value ?? 5,
+      ...(resource.minimum_cohort_override ? { minimum_cohort_overridden: true as const } : {}),
       suppression_aware_totals: true as const,
     };
   });
   addDepthTwoExplorationPaths(resources);
+  const databaseRoleTenantSetting = graph.engine === "postgres"
+    ? commonDatabaseRoleTenantSetting(resources)
+    : undefined;
   const draft: ExplorationBoundaryDraft = {
     schema_version: EXPLORATION_BOUNDARY_VERSION,
     activation: "disabled_unreviewed" as const,
@@ -2084,10 +2673,17 @@ function buildExplorationBoundaryDraft(
     source: sourceName,
     compiler_version: AUTO_BOUNDARY_COMPILER_VERSION,
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
+    reporting_timezone: "UTC",
     trusted_context: {
       provider: "environment" as const,
       tenant_env: "SYNAPSOR_TENANT_ID",
       principal_env: "SYNAPSOR_PRINCIPAL",
+      ...(databaseRoleTenantSetting ? {
+        database_role_tenant: {
+          engine: "postgres" as const,
+          setting: databaseRoleTenantSetting,
+        },
+      } : {}),
     },
     generation_lock_fingerprint: lockFingerprint,
     role_posture_fingerprint: graph.database_role.fingerprint,
@@ -2097,6 +2693,30 @@ function buildExplorationBoundaryDraft(
   };
   draft.unresolved_decisions = unresolvedDecisions(graph, draft);
   return draft;
+}
+
+function reviewedTrustedScopeReadableFields(resource: AutoBoundaryResource): Set<string> {
+  const trustedScopeFields = new Set([
+    resource.tenant_key.selected,
+    resource.principal_key.selected,
+  ].filter((field): field is string => Boolean(field)));
+  return new Set(resource.fields
+    .filter((field) => trustedScopeFields.has(field.name)
+      && (field.review_override?.exposure === "withhold_from_model"
+        || field.review_override?.exposure === "allow_reviewed_use"))
+    .map((field) => field.name));
+}
+
+function commonDatabaseRoleTenantSetting(
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+): string | undefined {
+  if (resources.length === 0) return undefined;
+  const settings = unique(resources.map((resource) => resource.rls_session?.tenant_setting)
+    .filter((setting): setting is string => Boolean(setting)));
+  if (settings.length !== 1) return undefined;
+  return resources.every((resource) => resource.rls_session?.tenant_setting === settings[0])
+    ? settings[0]
+    : undefined;
 }
 
 function addDepthTwoExplorationPaths(
@@ -2192,14 +2812,16 @@ function generatedContractTests(
 
 function unresolvedDecisions(
   graph: AutoBoundaryEvidenceGraph,
-  boundary?: Pick<ExplorationBoundaryDraft, "pack">,
+  boundary?: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context">,
 ): string[] {
   const boundaryResources = new Map(
     (boundary?.pack.resources ?? []).map((resource) => [resource.id, resource]),
   );
   return unique([
     "deployment profile: confirm development or staging authoring-only use",
-    "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments",
+    boundary?.trusted_context.database_role_tenant
+      ? `trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting ${boundary.trusted_context.database_role_tenant.setting} and principal scope remains outside model arguments`
+      : "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments",
     ...(!graph.database_role.verified || !graph.database_role.read_only
       ? ["database role: use and verify a non-owner, non-superuser, non-BYPASSRLS, read-only credential before enabling Scoped Explore"]
       : []),
@@ -2424,8 +3046,123 @@ function assertInsideProject(projectRoot: string, outputRoot: string): void {
 }
 
 async function assertManagedBoundaryOutput(outputRoot: string): Promise<void> {
-  const marker = path.join(outputRoot, ".synapsor-auto-boundary.json");
-  if (!await exists(marker)) throw new Error(`Refusing to replace unmanaged directory ${outputRoot}.`);
+  let marker: Record<string, unknown>;
+  try {
+    marker = await readManagedOutputMarker(outputRoot, ".synapsor-auto-boundary.json");
+  } catch {
+    throw new Error(`Refusing to replace unmanaged directory ${outputRoot}.`);
+  }
+  if (marker.schema_version !== AUTO_BOUNDARY_VERSION
+    || typeof marker.contract_digest !== "string"
+    || typeof marker.schema_fingerprint !== "string") {
+    throw new Error(`Refusing to replace invalid managed Auto Boundary output ${outputRoot}.`);
+  }
+}
+
+async function writePrivateStagedFile(
+  stagedState: string,
+  fileName: string,
+  contents: string,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(stagedState, fileName),
+    contents,
+    { encoding: "utf8", mode: 0o600, flag: "wx" },
+  );
+}
+
+async function commitManagedAutoBoundaryWrite(input: {
+  outputRoot: string;
+  stagedOutput: string;
+  stateDir: string;
+  transactionRoot: string;
+  backupRoot: string;
+  existingOutput: boolean;
+  installStateFiles: string[];
+  removeStateFiles: string[];
+}): Promise<void> {
+  const installFiles = unique(input.installStateFiles);
+  const removeFiles = unique(input.removeStateFiles)
+    .filter((file) => !installFiles.includes(file));
+  await fs.mkdir(input.backupRoot, { recursive: true, mode: 0o700 });
+
+  const state = new Map<string, { target: string; backup: string; existed: boolean }>();
+  for (const file of [...installFiles, ...removeFiles]) {
+    if (file !== path.basename(file)) throw new Error("Managed state file names must not contain paths.");
+    const target = path.join(input.stateDir, file);
+    const backup = path.join(input.backupRoot, `state-${file}`);
+    const existed = await exists(target);
+    if (existed) {
+      const stat = await fs.lstat(target);
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw new Error(`Refusing to replace non-regular managed state file ${target}.`);
+      }
+      if (!input.existingOutput && installFiles.includes(file)) {
+        throw new Error(
+          `Refusing to replace existing state ${target} without a managed Auto Boundary output marker.`,
+        );
+      }
+    }
+    state.set(file, { target, backup, existed });
+  }
+
+  const outputBackup = path.join(input.backupRoot, "generated-output");
+  let outputBackedUp = false;
+  let outputInstalled = false;
+  const stateBackedUp = new Set<string>();
+  const stateInstalled = new Set<string>();
+  try {
+    if (input.existingOutput) {
+      await fs.rename(input.outputRoot, outputBackup);
+      outputBackedUp = true;
+    }
+    await fs.rename(input.stagedOutput, input.outputRoot);
+    outputInstalled = true;
+
+    for (const file of installFiles) {
+      const entry = state.get(file)!;
+      if (entry.existed) {
+        await fs.rename(entry.target, entry.backup);
+        stateBackedUp.add(file);
+      }
+      await fs.rename(path.join(input.transactionRoot, "staged-state", file), entry.target);
+      await fs.chmod(entry.target, 0o600);
+      stateInstalled.add(file);
+    }
+    for (const file of removeFiles) {
+      const entry = state.get(file)!;
+      if (!entry.existed) continue;
+      await fs.rename(entry.target, entry.backup);
+      stateBackedUp.add(file);
+    }
+  } catch (error) {
+    let rollbackError: unknown;
+    try {
+      for (const file of [...stateInstalled].reverse()) {
+        await fs.rm(state.get(file)!.target, { force: true });
+      }
+      for (const file of [...stateBackedUp].reverse()) {
+        const entry = state.get(file)!;
+        await fs.rm(entry.target, { force: true });
+        await fs.rename(entry.backup, entry.target);
+      }
+      if (outputInstalled) {
+        await fs.rm(input.outputRoot, { recursive: true, force: true });
+      }
+      if (outputBackedUp) {
+        await fs.rename(outputBackup, input.outputRoot);
+      }
+    } catch (rollbackFailure) {
+      rollbackError = rollbackFailure;
+    }
+    if (rollbackError) {
+      throw new Error(
+        "Auto Boundary artifact commit failed and its managed rollback could not be completed.",
+        { cause: { commit_error: error, rollback_error: rollbackError } },
+      );
+    }
+    throw error;
+  }
 }
 
 async function exists(filePath: string): Promise<boolean> {

@@ -31,6 +31,22 @@ Set database and trusted-context values in the environment that launches the
 MCP process. Keep real URLs and tokens in your shell or secret manager, not in
 the checked-in client JSON.
 
+For an activated local development/staging Auto Boundary, use the explicit
+authoring mode instead of the named production config:
+
+```bash
+synapsor-runner mcp install claude-code \
+  --project \
+  --authoring \
+  --project-root . \
+  --yes
+```
+
+That entry advertises exactly `app.describe_data` and `app.explore_data`.
+Cursor and VS Code use the same command with `cursor` or `vscode`. Production,
+unknown-profile, remote, and shared HTTP surfaces never advertise those broad
+authoring tools.
+
 ## Stdio
 
 Use stdio for Claude Code, Claude Desktop, Cursor, VS Code, and other local MCP
@@ -185,6 +201,22 @@ synapsor-runner smoke call --config ./synapsor.runner.json --store ./.synapsor/l
 The preview must list semantic capabilities and must not list `execute_sql`,
 approval/apply tools, database URLs, write credentials, or model-controlled
 tenant authority.
+
+Analytical tools advertise a machine-readable MCP `outputSchema`. Named
+production analytics also appear in the versioned
+`synapsor://analytics/catalog/v1` resource and:
+
+```bash
+synapsor-runner tools catalog \
+  --config ./synapsor.runner.json \
+  --json
+```
+
+External clients should validate typed input, consume authoritative
+`structuredContent`, and pin the selected capability to the catalog's exact
+contract digest. See the runnable
+[Host-Neutral TypeScript MCP Client](../examples/host-neutral-typescript-client/)
+for stdio and authenticated Streamable HTTP.
 
 MCP App discovery is automatic from the proposal tool's
 `_meta.ui.resourceUri`; it does not require credentials in the client snippet.

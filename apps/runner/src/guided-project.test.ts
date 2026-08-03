@@ -125,6 +125,11 @@ describe("guided onboarding project", () => {
       expect(validation.warnings.map((issue) => issue.code)).toContain("AUTHORING_PROJECT_HAS_NO_ACTIVE_CAPABILITIES");
       expect(config.capabilities).toEqual([]);
       expect(config.sources.local_postgres.read_url_env).toBe("DATABASE_URL");
+      expect(config.trusted_context).toEqual({
+        provider: "environment",
+        values: { tenant_id_env: "SYNAPSOR_TENANT_ID" },
+        tenant_binding: "tenant_id",
+      });
       expect(JSON.stringify(config)).not.toContain("postgres://");
       const cursorConfig = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/mcp/cursor.json"), "utf8"));
       expect(cursorConfig.mcpServers.synapsor_authoring.args).toEqual([
@@ -247,7 +252,7 @@ describe("guided onboarding project", () => {
       expect(environment).toContain("DATABASE_URL=postgres://placeholder-only");
       expect(environment.match(/^DATABASE_URL=/gm)).toHaveLength(1);
       expect(environment).toContain("SYNAPSOR_TENANT_ID=");
-      expect(environment).toContain("SYNAPSOR_PRINCIPAL=");
+      expect(environment).not.toContain("SYNAPSOR_PRINCIPAL=");
       expect(environment).toContain("SYNAPSOR_OPERATOR_ID=");
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });

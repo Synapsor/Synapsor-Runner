@@ -15,7 +15,6 @@ import {
   createPage,
   launchChrome,
   navigateAndWait,
-  selectOptionByValue,
   waitForExpression,
 } from "./demo-video/cdp-client.mjs";
 
@@ -33,7 +32,7 @@ const baselineProjectRoot = path.join(tempRoot, "published-1.6.3-project");
 const relationshipScreenshot = path.join(
   root,
   "development",
-  "runner-1.6.4-demand-driven-relationship.png",
+  "runner-1.6.6-demand-driven-relationship.png",
 );
 const readUrl = "postgresql://synapsor_churn_reader:synapsor_churn_reader_password@127.0.0.1:55460/synapsor_auto_boundary";
 const adminUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/synapsor_auto_boundary";
@@ -101,6 +100,10 @@ try {
   await fsp.cp(packagedFixture, baselineProjectRoot, { recursive: true });
   compose = path.join(projectRoot, "docker-compose.yml");
 
+  run("docker", ["compose", "-f", compose, "down", "-v", "--remove-orphans"], {
+    cwd: projectRoot,
+    allowFailure: true,
+  });
   run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres"], {
     cwd: projectRoot,
     inherit: true,
@@ -219,15 +222,34 @@ try {
       resource.principal_key === "owner_id"
       && resource.rls_session?.principal_setting === "app.principal"),
     "managed principal review did not preserve the reviewed RLS binding");
-    const preview = await activationUi.json("POST", "/api/boundary/preview", { candidate });
+    const staged = await activationUi.json("POST", "/api/boundary/progress", {
+      candidate,
+      confirmed_decisions: [],
+      expected_revision: boundaryPayload.review_progress.revision,
+      actor: "packed-golden-reviewer",
+    });
+    boundaryPayload = await activationUi.json("GET", "/api/boundary");
+    const reviewedCandidate = boundaryPayload.candidate;
+    const reviewed = await activationUi.json("POST", "/api/boundary/progress", {
+      candidate: reviewedCandidate,
+      confirmed_decisions: reviewedCandidate.unresolved_decisions,
+      expected_revision: staged.revision,
+      actor: "packed-golden-reviewer",
+    });
+    const preview = await activationUi.json("POST", "/api/boundary/preview", {
+      candidate: reviewedCandidate,
+      confirmed_decisions: reviewedCandidate.unresolved_decisions,
+      expected_revision: reviewed.revision,
+      actor: "packed-golden-reviewer",
+    });
     assert.equal(preview.ok, true);
     boundaryDigest = preview.digest;
     const activated = await activationUi.json("POST", "/api/boundary/activate", {
-      candidate,
+      candidate: preview.candidate,
       expected_digest: boundaryDigest,
       actor: "packed-golden-reviewer",
       confirmation: `ACTIVATE ${boundaryDigest}`,
-      confirmed_decisions: candidate.unresolved_decisions,
+      confirmed_decisions: preview.candidate.unresolved_decisions,
     });
     assert.equal(activated.ok, true);
     assert.equal(activated.active.activation.state, "active");
@@ -250,24 +272,48 @@ try {
       await navigateAndWait(page, relationshipUi.url);
       await waitForExpression(
         page,
-        "document.querySelector('#header-state')?.textContent.includes('Active reviewed boundary')",
+        "/active reviewed boundar/i.test(document.querySelector('#header-state')?.textContent||'')",
       );
-      await clickSelector(page, '[data-view="explore"]');
-      await waitForExpression(page, "document.querySelector('#view-explore')?.classList.contains('active')");
-      if (await evaluate(page, "Boolean(document.querySelector('#run-preflight'))")) {
-        await clickSelector(page, "#run-preflight");
-      }
       await waitForExpression(
         page,
-        "document.querySelector('#explorer')?.classList.contains('hidden') === false",
+        "document.querySelector('#view-explore')?.classList.contains('active')"
+          + " && document.body.classList.contains('ask-focus-mode')",
       );
-      await selectOptionByValue(page, "#aggregate-resource", "public.churn_events");
+      await waitForExpression(
+        page,
+        "document.querySelector('#explore-preflight')?.classList.contains('success')"
+          + " && [...(document.querySelector('#aggregate-resource')?.options||[])].some(option=>/churn events/i.test(option.textContent||''))",
+      );
+      await waitForExpression(
+        page,
+        "document.querySelector('#ask-open-no-model')?.offsetParent !== null"
+          + " || document.querySelector('#no-model-content')?.classList.contains('hidden') === false",
+      );
+      if (await evaluate(page, "document.querySelector('#no-model-content')?.classList.contains('hidden') === true")) {
+        await clickSelector(page, "#ask-open-no-model");
+      }
+      await waitForExpression(page, "document.querySelector('#no-model-content')?.classList.contains('hidden') === false");
+      await waitForExpression(page, "document.querySelector('#explore-composer')?.open === true");
+      await selectVisibleOption(page, "#aggregate-resource", /churn events/i);
       await selectVisibleOption(page, "#aggregate-dimension", /region.*accounts.*human relationship review required/i);
       await clickSelector(page, "#run-explore");
-      await waitForExpression(
-        page,
-        "document.querySelector('#explore-result')?.textContent.includes('Catalog proof available for human review')",
-      );
+      try {
+        await waitForExpression(
+          page,
+          "document.querySelector('#explore-result')?.textContent.includes('Catalog proof available for human review')",
+        );
+      } catch (error) {
+        const visibleState = await evaluate(page, `({
+          result:document.querySelector("#explore-result")?.textContent,
+          status:document.querySelector("#explore-status")?.textContent,
+          resource:document.querySelector("#aggregate-resource")?.value,
+          dimension:document.querySelector("#aggregate-dimension")?.value,
+          plan:document.querySelector("#plan-preview")?.textContent
+        })`);
+        throw new Error(`Reviewable relationship refusal did not expose catalog proof.\n${JSON.stringify(visibleState, null, 2)}`, {
+          cause: error,
+        });
+      }
       const refusal = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
       assert.match(refusal, /churn_events_account_id_fkey/);
       assert.match(refusal, /many_to_one|many-to-one/i);
@@ -295,21 +341,43 @@ try {
         });
       }
       const staged = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
-      assert.match(staged, /Review fingerprint:\s*sha256:[a-f0-9]{64}/);
+      assert.match(staged, /Staged review fingerprint:\s*sha256:[a-f0-9]{64}/);
       assert.match(staged, /active boundary has not changed/i);
 
       await clickSelector(page, "#activate-reviewed-relationship");
       measuredInteractions += 1;
-      await waitForExpression(
-        page,
-        "document.querySelector('#explore-result')?.textContent.includes('Reviewed relationship active')",
-      );
+      try {
+        await waitForExpression(
+          page,
+          "document.querySelector('#explore-result')?.textContent.includes('Reviewed relationship active')",
+        );
+      } catch (error) {
+        const visibleState = await evaluate(page, `({
+          result:document.querySelector("#explore-result")?.textContent,
+          status:document.querySelector("#relationship-activation-status")?.textContent,
+          header:document.querySelector("#header-state")?.textContent
+        })`);
+        throw new Error(`Relationship activation did not complete.\n${JSON.stringify(visibleState, null, 2)}`, {
+          cause: error,
+        });
+      }
       await clickSelector(page, "#retry-reviewed-relationship");
       measuredInteractions += 1;
-      await waitForExpression(
-        page,
-        "document.querySelector('#explore-result')?.textContent.includes('Your first safe tool is working.')",
-      );
+      try {
+        await waitForExpression(
+          page,
+          "document.querySelector('#explore-result')?.textContent.includes('Your reviewed question worked.')",
+        );
+      } catch (error) {
+        const visibleState = await evaluate(page, `({
+          result:document.querySelector("#explore-result")?.textContent,
+          status:document.querySelector("#explore-status")?.textContent,
+          header:document.querySelector("#header-state")?.textContent
+        })`);
+        throw new Error(`Reviewed relationship retry did not return a safe result.\n${JSON.stringify(visibleState, null, 2)}`, {
+          cause: error,
+        });
+      }
       const result = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
       assert.match(result, /Source database changed:\s*no/i);
       assert.equal(measuredInteractions, 3);
@@ -325,6 +393,104 @@ try {
   } finally {
     await relationshipChrome?.close().catch(() => undefined);
     await relationshipUi.close();
+  }
+
+  const multiBoundaryUi = await startWorkbench({ cli, boundaryRoot, projectRoot, env: runtimeEnv });
+  let retainedAskAuthorityDigest;
+  try {
+    const askStatus = await multiBoundaryUi.json("GET", "/api/ask/status");
+    const sessionOnlyProviderKey = "packed-session-only-openai-key";
+    const configuredAsk = await multiBoundaryUi.json("POST", "/api/ask/configure", {
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: sessionOnlyProviderKey,
+      authority_digest: askStatus.authority_digest,
+      egress_acknowledged: true,
+    });
+    assert.equal(configuredAsk.configuration.credential_source, "session_paste");
+    assert.doesNotMatch(JSON.stringify(configuredAsk), new RegExp(sessionOnlyProviderKey));
+
+    await withPackedMcp({
+      cli,
+      args: ["mcp", "serve", "--authoring", "--project-root", projectRoot],
+      cwd: projectRoot,
+      env: runtimeEnv,
+      name: "packed-live-boundary-registry",
+    }, async (liveClient) => {
+      const toolsBefore = await liveClient.listTools();
+      assert.deepEqual(toolsBefore.tools.map((tool) => tool.name), ["app.describe_data", "app.explore_data"]);
+      const catalogBefore = resultPayload(await liveClient.callTool({
+        name: "app.describe_data",
+        arguments: { limit: 10 },
+      }));
+      assert.deepEqual(catalogBefore.boundaries.map((boundary) => boundary.name), ["product_churn"]);
+
+    const createdBoundary = await multiBoundaryUi.json("POST", "/api/boundary/library/create", {
+      name: "account_segments",
+      resource_id: "public.accounts",
+      actor: "packed-golden-reviewer",
+    });
+    const accountCandidate = structuredClone(createdBoundary.candidate);
+    accountCandidate.pack.resources = accountCandidate.pack.resources.filter((resource) =>
+      resource.id === "public.accounts");
+    assert.equal(accountCandidate.pack.resources.length, 1);
+    const stagedBoundary = await multiBoundaryUi.json("POST", "/api/boundary/progress", {
+      candidate: accountCandidate,
+      confirmed_decisions: [],
+      expected_revision: createdBoundary.review_progress.revision,
+      actor: "packed-golden-reviewer",
+    });
+    const stagedPayload = await multiBoundaryUi.json("GET", "/api/boundary");
+    const reviewedBoundary = await multiBoundaryUi.json("POST", "/api/boundary/progress", {
+      candidate: stagedPayload.candidate,
+      confirmed_decisions: stagedPayload.candidate.unresolved_decisions,
+      expected_revision: stagedBoundary.revision,
+      actor: "packed-golden-reviewer",
+    });
+    const preview = await multiBoundaryUi.json("POST", "/api/boundary/preview", {
+      candidate: stagedPayload.candidate,
+      expected_revision: reviewedBoundary.revision,
+      actor: "packed-golden-reviewer",
+      confirmed_decisions: stagedPayload.candidate.unresolved_decisions,
+    });
+    const activated = await multiBoundaryUi.json("POST", "/api/boundary/activate", {
+      candidate: preview.candidate,
+      expected_digest: preview.digest,
+      actor: "packed-golden-reviewer",
+      confirmation: `ACTIVATE ${preview.digest}`,
+      confirmed_decisions: preview.candidate.unresolved_decisions,
+    });
+    assert.equal(activated.active_boundary_added, "account_segments");
+    assert.equal(activated.tools_list_changed, false);
+    assert.equal(activated.reconnect_required, false);
+    assert.equal(activated.ask_provider_session_retained, true);
+    assert.equal(activated.ask_conversation_cleared, true);
+    assert.equal(activated.ask_authority_refresh_pending, false);
+    assert.equal(activated.ask_configuration.credential_source, "session_paste");
+    assert.notEqual(activated.ask_configuration.authority_digest, askStatus.authority_digest);
+    assert.doesNotMatch(JSON.stringify(activated), new RegExp(sessionOnlyProviderKey));
+    retainedAskAuthorityDigest = activated.ask_configuration.authority_digest;
+
+    const refreshedAskStatus = await multiBoundaryUi.json("GET", "/api/ask/status");
+    assert.equal(refreshedAskStatus.session.configured, true);
+    assert.equal(refreshedAskStatus.session.configuration.credential_source, "session_paste");
+    assert.equal(refreshedAskStatus.session.configuration.authority_digest, retainedAskAuthorityDigest);
+    assert.equal(refreshedAskStatus.authority_matches_consent, true);
+    assert.doesNotMatch(JSON.stringify(refreshedAskStatus), new RegExp(sessionOnlyProviderKey));
+
+      const toolsAfter = await liveClient.listTools();
+      assert.deepEqual(toolsAfter.tools.map((tool) => tool.name), ["app.describe_data", "app.explore_data"]);
+      const catalogAfter = resultPayload(await liveClient.callTool({
+        name: "app.describe_data",
+        arguments: { limit: 10 },
+      }));
+      assert.deepEqual(
+        catalogAfter.boundaries.map((boundary) => boundary.name).sort(),
+        ["account_segments", "product_churn"],
+      );
+    });
+  } finally {
+    await multiBoundaryUi.close();
   }
 
   const authoringInstall = JSON.parse(run(process.execPath, [
@@ -384,9 +550,23 @@ try {
     order_by: { kind: "measure", index: 0, direction: "desc" },
     top_n: 10,
   };
+  const accountSegmentsPlan = {
+    kind: "aggregate",
+    resource: "public.accounts",
+    measures: [{ function: "count" }],
+    dimensions: [{ field: "region" }],
+    order_by: { kind: "measure", index: 0, direction: "desc" },
+    top_n: 10,
+  };
+  const moverPlan = {
+    ...goldenPlan,
+    order_by: { kind: "comparison_change", index: 0, change: "percentage", direction: "desc" },
+  };
 
   let explored;
+  let moverExplored;
   let authoringTools;
+  let authoringToolMetrics;
   await withPackedMcp({
     cli,
     args: ["mcp", "serve", "--authoring", "--project-root", projectRoot],
@@ -397,9 +577,44 @@ try {
     const listed = await client.listTools();
     authoringTools = listed.tools;
     assert.deepEqual(listed.tools.map((tool) => tool.name), ["app.describe_data", "app.explore_data"]);
-    assertSmallSafeToolSurface(listed.tools);
+    authoringToolMetrics = assertSmallSafeToolSurface(listed.tools);
+    assert.equal(
+      listed.tools.some((tool) =>
+        Object.hasOwn(tool._meta ?? {}, "synapsor.boundary_digest")
+        || Object.hasOwn(tool._meta ?? {}, "synapsor.boundary_set_digest")),
+      false,
+      "stable authoring tool definitions captured a stale boundary digest",
+    );
 
-    const called = await client.callTool({ name: "app.explore_data", arguments: { plan: goldenPlan } });
+    const described = resultPayload(await client.callTool({
+      name: "app.describe_data",
+      arguments: { limit: 10 },
+    }));
+    assert.deepEqual(
+      described.boundaries.map((boundary) => boundary.name).sort(),
+      ["account_segments", "product_churn"],
+    );
+    assert.ok(described.resources.some((resource) =>
+      resource.id === "public.accounts" && resource.boundary_name === "account_segments"));
+    assert.ok(described.resources.some((resource) =>
+      resource.id === "public.accounts" && resource.boundary_name === "product_churn"));
+
+    const ambiguousBoundary = await client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: accountSegmentsPlan },
+    });
+    assert.equal(resultPayload(ambiguousBoundary).error_code, "EXPLORE_BOUNDARY_REQUIRED");
+    const explicitBoundary = resultPayload(await client.callTool({
+      name: "app.explore_data",
+      arguments: { boundary: "account_segments", plan: accountSegmentsPlan },
+    }));
+    assert.equal(explicitBoundary.ok, true, JSON.stringify(explicitBoundary, null, 2));
+    assert.equal(explicitBoundary.boundary_name, "account_segments");
+
+    const called = await client.callTool({
+      name: "app.explore_data",
+      arguments: { boundary: "product_churn", plan: goldenPlan },
+    });
     assert.equal(called.isError, undefined, `packed golden aggregate failed: ${JSON.stringify(called)}`);
     explored = resultPayload(called);
     assert.equal(explored.ok, true);
@@ -410,11 +625,30 @@ try {
       `packed aggregate suppression changed: ${JSON.stringify(explored)}`,
     );
     assert.equal(explored.privacy.totals_returned, false);
-    assert.equal(explored.data.length, 5);
-    assert.match(JSON.stringify(explored), /"measure_0":10/);
-    assert.match(JSON.stringify(explored), /"measure_0":5/);
+    assert.equal(explored.data.length, 2);
+    assert.equal(explored.outcome.result.suppression.incomplete_comparison_groups, 1);
+    assert.equal(explored.data[0].count_distinct_accounts_id_period_1, 5);
+    assert.equal(explored.data[0].count_distinct_accounts_id_period_2, 10);
+    assert.equal(explored.data[0].count_distinct_accounts_id_absolute_change, 5);
     assert.doesNotMatch(
       JSON.stringify(explored),
+      /globex|other-west|@example\.invalid|private kept-out|synthetic kept-out/i,
+    );
+    const moverCall = await client.callTool({
+      name: "app.explore_data",
+      arguments: { boundary: "product_churn", plan: moverPlan },
+    });
+    assert.equal(moverCall.isError, undefined, `packed period mover failed: ${JSON.stringify(moverCall)}`);
+    moverExplored = resultPayload(moverCall);
+    assert.equal(moverExplored.ok, true);
+    assert.equal(moverExplored.source_database_changed, false);
+    assert.equal(moverExplored.privacy.suppressed_groups, 2);
+    assert.equal(moverExplored.data.length, 2);
+    assert.ok(moverExplored.data.every((row) =>
+      Object.hasOwn(row, "count_distinct_accounts_id_absolute_change")
+      && Object.hasOwn(row, "count_distinct_accounts_id_percentage_change")));
+    assert.doesNotMatch(
+      JSON.stringify(moverExplored),
       /globex|other-west|@example\.invalid|private kept-out|synthetic kept-out/i,
     );
     timings.first_useful_answer_ms = Date.now() - productStartedAt;
@@ -429,6 +663,7 @@ try {
       [{ ...goldenPlan, relationship: "accounts_tags_many_to_many" }, "ambiguous fan-out join"],
       [{ ...goldenPlan, top_n: 11 }, "top-N overflow"],
       [{ ...goldenPlan, max_groups: 1_000 }, "group-limit override"],
+      [{ ...goldenPlan, max_ranked_groups: 10_000 }, "ranked candidate-limit override"],
       [{ ...goldenPlan, measures: [...goldenPlan.measures, { function: "count" }] }, "measure overflow"],
       [{ ...goldenPlan, dimensions: [...goldenPlan.dimensions, { field: "churned_at" }] }, "dimension overflow"],
       [{ ...goldenPlan, time_bucket: { field: "churned_at", bucket: "quarter" } }, "bucket overflow"],
@@ -448,7 +683,7 @@ try {
       await expectMcpRefusal(client, plan, label);
     }
 
-    for (const reason of ["price", "service", "product"]) {
+    for (const reason of ["price", "service"]) {
       const result = await client.callTool({
         name: "app.explore_data",
         arguments: {
@@ -458,14 +693,18 @@ try {
           },
         },
       });
-      assert.notEqual(result.isError, true, `reviewed differencing query ${reason} failed unexpectedly`);
+      assert.notEqual(
+        result.isError,
+        true,
+        `reviewed differencing query ${reason} failed unexpectedly: ${JSON.stringify(resultPayload(result))}`,
+      );
     }
     const exhausted = await client.callTool({
       name: "app.explore_data",
       arguments: {
-        plan: {
-          ...goldenPlan,
-          where: [{ field: "reason_category", op: "eq", value: "support" }],
+          plan: {
+            ...goldenPlan,
+            where: [{ field: "reason_category", op: "eq", value: "product" }],
         },
       },
     });
@@ -479,8 +718,14 @@ try {
     assert.equal(recent.ok, true);
     assert.equal(recent.available, true);
     assert.ok(recent.queries.length >= 1, "Workbench did not discover the recent aggregate without copied IDs");
-    const query = recent.queries.find((item) => item.kind === "aggregate" && item.resource === "public.churn_events");
-    assert.ok(query, "Workbench did not surface the packed golden aggregate");
+    const query = recent.queries.find((item) =>
+      item.kind === "aggregate"
+      && item.resource === "public.churn_events"
+      && item.normalized_plan?.measures?.length === 3
+      && item.normalized_plan?.dimensions?.length === 2
+      && item.normalized_plan?.order_by?.kind === "comparison_change"
+      && (item.normalized_plan?.where?.length ?? 0) === 0);
+    assert.ok(query, "Workbench did not surface the packed ranked period mover");
     assert.equal(typeof query.query_ref, "string");
     assert.notEqual(query.query_ref, "<redacted>");
     assert.equal(Object.hasOwn(query, "token"), false);
@@ -495,28 +740,61 @@ try {
     assert.equal(created.ok, true);
     assert.equal(created.source_database_changed, false);
     assert.match(created.dsl, /PROTECTED READ AGGREGATE/);
+    assert.match(created.dsl, /AGGREGATE ORDER BY PERCENTAGE CHANGE count_distinct_churn_events_account_id_fkey_id DESC/);
+    assert.match(created.dsl, /RANKED GROUPS 500/);
     assert.match(created.dsl, /PROTECTED RELATIONSHIP churn_events_account_id_fkey/);
     assert.equal(created.draft.state, "disabled");
     assert.ok(created.contract.capabilities.some((capability) =>
       capability.name === "analytics.churn_contributors_by_week"
-      && capability.protected_read?.mode === "aggregate"));
-    assert.ok(
-      Array.isArray(created.tests.tests) && created.tests.tests.length >= 7,
-      "Protect did not generate the positive, scope, suppression, deny, drift, and boundary tests",
-    );
+      && capability.protected_read?.mode === "aggregate"
+      && capability.protected_read?.aggregate?.order_by?.kind === "comparison_change"
+      && capability.protected_read?.limits?.max_ranked_groups === 500));
+    const protectedTestIds = new Set((created.tests.tests ?? []).map((test) => test.id));
+    for (const requiredTest of [
+      "protected-read-shape-suppression-drift-and-boundaries",
+      "trusted-scope-remains-outside-model-arguments",
+      "kept-out-fields-remain-unavailable",
+      "evidence-and-query-audit-remain-required",
+      "operator-controls-remain-outside-mcp",
+    ]) {
+      assert.ok(protectedTestIds.has(requiredTest), `Protect omitted ${requiredTest}`);
+    }
     protectedDraft = created.draft;
     timings.first_data_pr_ms = Date.now() - productStartedAt;
 
     const activated = await protectUi.json("POST", "/api/protect/activate", {
       capability_name: protectedDraft.capability,
-      expected_digest: protectedDraft.contract_digest,
-      confirmation: `ACTIVATE ${protectedDraft.contract_digest}`,
       actor: "packed-golden-reviewer",
       disable_explore: true,
     });
     assert.equal(activated.ok, true);
     assert.equal(activated.active.state, "active");
     assert.equal(activated.active.exploration_disabled, true);
+    assert.equal(activated.disabled_boundary, "product_churn");
+    assert.deepEqual(activated.remaining_boundaries, ["account_segments"]);
+    assert.match(activated.message, /remaining local Explore boundary: account_segments/i);
+    await withPackedMcp({
+      cli,
+      args: ["mcp", "serve", "--authoring", "--project-root", projectRoot],
+      cwd: projectRoot,
+      env: runtimeEnv,
+      name: "packed-remaining-authoring-boundary",
+    }, async (client) => {
+      const listed = await client.listTools();
+      assert.deepEqual(listed.tools.map((tool) => tool.name), ["app.describe_data", "app.explore_data"]);
+      const described = resultPayload(await client.callTool({
+        name: "app.describe_data",
+        arguments: { limit: 10 },
+      }));
+      assert.deepEqual(described.boundaries.map((boundary) => boundary.name), ["account_segments"]);
+      assert.ok(described.resources.every((resource) => resource.boundary_name === "account_segments"));
+    });
+    const disabledRemaining = await protectUi.json("POST", "/api/explore/disable", {
+      boundary_name: "account_segments",
+    });
+    assert.equal(disabledRemaining.disabled, true);
+    assert.deepEqual(disabledRemaining.disabled_boundaries, ["account_segments"]);
+    assert.deepEqual(disabledRemaining.remaining_boundaries, []);
     timings.first_promoted_capability_ms = Date.now() - productStartedAt;
   } finally {
     await protectUi.close();
@@ -604,9 +882,16 @@ try {
       name: "analytics.churn_contributors_by_week",
       arguments: {},
     }));
-    assert.equal(protectedResult.status, "ok", JSON.stringify(protectedResult, null, 2));
+    assert.equal(protectedResult.ok, true, JSON.stringify(protectedResult, null, 2));
+    assert.equal(protectedResult.kind, "aggregate_read", JSON.stringify(protectedResult, null, 2));
+    assert.equal(protectedResult.proposal, null, JSON.stringify(protectedResult, null, 2));
+    assert.equal(protectedResult.error, null, JSON.stringify(protectedResult, null, 2));
     assert.equal(protectedResult.source_database_changed, false, JSON.stringify(protectedResult, null, 2));
     assert.equal(protectedResult.data.suppression.suppressed_groups, 2);
+    assert.ok(protectedResult.data.groups.every((group) =>
+      Object.hasOwn(group, "count_distinct_churn_events_account_id_fkey_id_absolute_change")
+      && Object.hasOwn(group, "count_distinct_churn_events_account_id_fkey_id_percentage_change")),
+    JSON.stringify(protectedResult, null, 2));
     assert.doesNotMatch(
       JSON.stringify(protectedResult),
       /globex|other-west|@example\.invalid|private kept-out|synthetic kept-out/i,
@@ -661,7 +946,6 @@ try {
   ], { cwd: projectRoot, env: runtimeEnv }).stdout);
   assert.equal(uninstalled.changed, true);
 
-  const toolsBytes = Buffer.byteLength(JSON.stringify(authoringTools), "utf8");
   process.stdout.write(`${JSON.stringify({
     ok: true,
     artifact: path.basename(tarball),
@@ -670,8 +954,17 @@ try {
     protected_contract_digest: protectedDraft.contract_digest,
     authoring_tools: authoringTools.map((tool) => tool.name),
     production_tools: productionTools.map((tool) => tool.name),
-    tools_list_bytes: toolsBytes,
-    estimated_tools_list_tokens: Math.ceil(toolsBytes / 4),
+    tools_list_bytes: authoringToolMetrics.client_discovery_bytes,
+    estimated_tools_list_tokens: Math.ceil(authoringToolMetrics.client_discovery_bytes / 4),
+    model_facing_tools_bytes: authoringToolMetrics.model_facing_bytes,
+    estimated_model_facing_tokens: Math.ceil(authoringToolMetrics.model_facing_bytes / 4),
+    multi_boundary_authoring: {
+      ask_provider_session_retained: Boolean(retainedAskAuthorityDigest),
+      live_mcp_discovery_without_reconnect: true,
+      stable_tool_count: authoringTools.length,
+      overlapping_resource_requires_boundary: true,
+      protect_disables_only_source_boundary: true,
+    },
     returned_groups: explored.data.length,
     suppressed_groups: explored.privacy.suppressed_groups,
     source_database_changed: false,
@@ -687,6 +980,8 @@ try {
       unreviewed_join_rejected: true,
       ambiguous_fanout_rejected: true,
       small_cohort_suppressed: true,
+      ranked_period_mover: moverExplored?.ok === true,
+      ranked_candidate_limit_model_override_rejected: true,
       differencing_budget_enforced: true,
       hard_limits_enforced: true,
       verified_read_only_transaction: true,
@@ -720,8 +1015,11 @@ function narrowGoldenBoundary(candidate, options = { includeRelationship: true }
   candidate.budgets.max_top_n = 10;
   candidate.budgets.max_measures = 3;
   candidate.budgets.max_dimensions = 2;
-  candidate.budgets.max_differencing_queries = 3;
-  candidate.budgets.max_queries_per_session = 12;
+  // The packed journey releases a relationship retry, the golden comparison,
+  // a differently ranked mover, and two filtered variants before proving the
+  // sixth cross-shape release is refused from the shared resource allowance.
+  candidate.budgets.max_differencing_queries = 5;
+  candidate.budgets.max_queries_per_session = 20;
   candidate.budgets.max_extracted_cells_per_session = 1_000;
   candidate.pack.resources = candidate.pack.resources.filter((resource) =>
     resource.id === "public.accounts" || resource.id === "public.churn_events");
@@ -771,7 +1069,21 @@ async function selectVisibleOption(page, selector, pattern) {
     .map(option=>({value:option.value,text:option.textContent.trim()}))`);
   const option = options.find((candidate) => pattern.test(candidate.text));
   assert.ok(option, `${selector} did not expose a visible option matching ${pattern}`);
-  await selectOptionByValue(page, selector, option.value);
+  await selectRebuildingOptionByValue(page, selector, option.value);
+}
+
+async function selectRebuildingOptionByValue(page, selector, value) {
+  const selected = await evaluate(page, `(() => {
+    const element=document.querySelector(${JSON.stringify(selector)});
+    if(!(element instanceof HTMLSelectElement))throw new Error("Missing select: "+${JSON.stringify(selector)});
+    if(![...element.options].some(option=>option.value===${JSON.stringify(value)})){
+      throw new Error("Missing option: "+${JSON.stringify(value)});
+    }
+    element.value=${JSON.stringify(value)};
+    element.dispatchEvent(new Event("change",{bubbles:true}));
+    return document.querySelector(${JSON.stringify(selector)})?.value;
+  })()`);
+  assert.equal(selected, value, `${selector} did not retain ${value} after rebuilding dependent controls`);
 }
 
 async function evaluate(page, expression) {
@@ -926,9 +1238,19 @@ async function expectMcpRefusal(client, plan, label) {
 function assertSmallSafeToolSurface(tools) {
   const serialized = JSON.stringify(tools);
   const bytes = Buffer.byteLength(serialized, "utf8");
-  assert.ok(bytes <= 8_000, `packed authoring tools/list exceeded 8,000 bytes: ${bytes}`);
-  assert.ok(Math.ceil(bytes / 4) <= 2_000, "packed authoring tools/list exceeded the token estimate");
+  assert.ok(bytes <= 24_000, `packed authoring client discovery exceeded 24,000 bytes: ${bytes}`);
+  const modelFacingTools = tools.map(({ outputSchema: _outputSchema, ...tool }) => tool);
+  const modelFacingBytes = Buffer.byteLength(JSON.stringify(modelFacingTools), "utf8");
+  assert.ok(
+    modelFacingBytes <= 8_000,
+    `packed authoring model-facing tool surface exceeded 8,000 bytes: ${modelFacingBytes}`,
+  );
+  assert.ok(
+    Math.ceil(modelFacingBytes / 4) <= 2_000,
+    "packed authoring model-facing tool surface exceeded the token estimate",
+  );
   for (const tool of tools) {
+    assert.equal(typeof tool.outputSchema, "object", `${tool.name} omitted its client-side output schema`);
     assert.doesNotMatch(tool.name, /execute_sql|query_sql|approve|apply|commit/i);
     assert.equal(objectHasKey(tool.inputSchema, new Set([
       "sql",
@@ -945,6 +1267,10 @@ function assertSmallSafeToolSurface(tools) {
     assert.equal(tool._meta?.["synapsor.approval_tool"], false);
     assert.equal(tool._meta?.["synapsor.commit_tool"], false);
   }
+  return {
+    client_discovery_bytes: bytes,
+    model_facing_bytes: modelFacingBytes,
+  };
 }
 
 function objectHasKey(value, forbidden) {

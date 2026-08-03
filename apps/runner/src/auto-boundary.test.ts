@@ -4,21 +4,25 @@ import path from "node:path";
 import { compileAgentDsl } from "@synapsor/dsl";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  AUTO_BOUNDARY_SPEC_VERSION,
   AUTO_BOUNDARY_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   compareGenerationLock,
+  deactivateExplorationBoundary,
   explorationBoundaryCandidateDigest,
   loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
+  loadActivatedExplorationBoundaries,
   pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
   type AutoBoundaryReviewOverrides,
 } from "./auto-boundary.js";
+import { applyManagedBoundaryReviewDecision } from "./boundary-review-domain.js";
 
 describe("Auto Boundary compiler", () => {
   it("emits deterministic disabled DSL-first candidates without source data or secrets", () => {
@@ -39,10 +43,15 @@ describe("Auto Boundary compiler", () => {
     expect(first.dsl).toContain("CREATE CAPABILITY app.inspect_subscription");
     expect(first.review.activation).toBe("blocked_unreviewed");
     expect(first.exploration_boundary.activation).toBe("disabled_unreviewed");
+    expect(first.exploration_boundary.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
+    expect(first.lock.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
+    expect(AUTO_BOUNDARY_SPEC_VERSION).toBe("1.8.0");
     expect(first.contract).toEqual(compileAgentDsl(first.dsl));
     expect(first.contract_digest).toBe(canonicalJsonDigest(first.contract));
     expect(first.contract_digest).toBe(second.contract_digest);
     expect(first.lock.schema_fingerprint).toBe(second.lock.schema_fingerprint);
+    expect(first.exploration_boundary.budgets.max_differencing_queries).toBe(16);
+    expect(second.exploration_boundary.budgets.max_differencing_queries).toBe(16);
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("id");
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("tenant_id");
     expect(JSON.stringify(first)).not.toContain("postgres://");
@@ -270,6 +279,84 @@ describe("Auto Boundary compiler", () => {
     expect(result.contract).toEqual(compileAgentDsl(result.dsl));
   });
 
+  it("proposes trusted tenant-key relationships without exposing their hidden join keys", () => {
+    const checkIns = relationTable("check_ins", [
+      {
+        name: "check_ins_organization_id_fkey",
+        columns: ["organization_id"],
+        referenced_schema: "public",
+        referenced_table: "organizations",
+        referenced_columns: ["id"],
+        delete_rule: "RESTRICT",
+      },
+      {
+        name: "check_ins_private_profile_id_fkey",
+        columns: ["private_profile_id"],
+        referenced_schema: "public",
+        referenced_table: "private_profiles",
+        referenced_columns: ["id"],
+        delete_rule: "RESTRICT",
+      },
+    ]);
+    checkIns.columns = checkIns.columns.filter((field) => field.name !== "tenant_id");
+    checkIns.columns.find((field) => field.name === "organization_id")!.suggestions.tenant = true;
+    checkIns.columns.find((field) => field.name === "private_profile_id")!.suggestions.sensitivity = {
+      state: "high_confidence_sensitive",
+      reason_codes: ["test_sensitive_relationship_key"],
+      reasons: ["The fixture marks this ordinary relationship key as sensitive."],
+      evidence_source: "database",
+    };
+    checkIns.suggestions.tenant_columns = ["organization_id"];
+    checkIns.suggestions.sensitive_columns = ["private_profile_id"];
+    checkIns.suggestions.default_visible_columns = checkIns.suggestions.default_visible_columns
+      .filter((field) => field !== "tenant_id");
+    checkIns.row_level_security_policies![0]!.using_expression =
+      "(organization_id = current_setting('app.organization_id')::uuid)";
+
+    const organizations = relationTable("organizations");
+    organizations.columns = organizations.columns.filter((field) => field.name !== "tenant_id");
+    organizations.columns.find((field) => field.name === "id")!.suggestions.tenant = true;
+    organizations.suggestions.tenant_columns = ["id"];
+    organizations.suggestions.default_visible_columns = ["id", "name"];
+    organizations.row_level_security_policies![0]!.using_expression =
+      "(id = current_setting('app.organization_id')::uuid)";
+
+    const result = buildAutoBoundary({
+      inspection: {
+        ...churnInspection(),
+        tables: [checkIns, organizations, relationTable("private_profiles")],
+      },
+      project: projectSummary("/workspace/tenant-relationship"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const generatedCheckIns = result.exploration_boundary.pack.resources.find(
+      (resource) => resource.id === "public.check_ins",
+    )!;
+    const generatedOrganizations = result.exploration_boundary.pack.resources.find(
+      (resource) => resource.id === "public.organizations",
+    )!;
+
+    expect(generatedCheckIns.relationships).toContainEqual(expect.objectContaining({
+      id: "check_ins_organization_id_fkey",
+      target_resource: "public.organizations",
+      local_columns: ["organization_id"],
+      target_columns: ["id"],
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+    }));
+    expect(generatedCheckIns.relationships).not.toContainEqual(expect.objectContaining({
+      id: "check_ins_private_profile_id_fkey",
+    }));
+    expect(generatedCheckIns.kept_out_fields).toContain("organization_id");
+    expect(generatedCheckIns.selectable_fields).not.toContain("organization_id");
+    expect(generatedOrganizations.kept_out_fields).toContain("id");
+    expect(generatedOrganizations.selectable_fields).not.toContain("id");
+    expect(() => reviewExplorationBoundaryCandidate(
+      result.exploration_boundary,
+      structuredClone(result.exploration_boundary),
+    )).not.toThrow();
+  });
+
   it("keeps ambiguous tenant scope blocked and sensitive fields unavailable", () => {
     const inspection = churnInspection();
     inspection.tables.push({
@@ -319,16 +406,46 @@ describe("Auto Boundary compiler", () => {
     expect(subscriptions?.filterable_fields).not.toHaveProperty("billing_token");
   });
 
-  it("keeps payment, medical, and unresolved free-text fields out of every generated read operation", () => {
+  it("records a PostgreSQL role-session tenant fallback only when every generated resource proves the same RLS setting", () => {
+    const result = buildAutoBoundary({
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/churn-app"),
+      sourceEnv: "DATABASE_URL",
+    });
+
+    expect(result.exploration_boundary.trusted_context.database_role_tenant).toEqual({
+      engine: "postgres",
+      setting: "app.tenant_id",
+    });
+
+    const mixed = churnInspection();
+    const second = structuredClone(mixed.tables[0]!);
+    second.name = "retention_events";
+    second.row_level_security_policies![0]!.name = "other_tenant_read";
+    second.row_level_security_policies![0]!.using_expression = "(tenant_id = current_setting('app.other_tenant')::uuid)";
+    mixed.tables.push(second);
+    const mixedResult = buildAutoBoundary({
+      inspection: mixed,
+      project: projectSummary("/workspace/churn-app"),
+      sourceEnv: "DATABASE_URL",
+    });
+    expect(mixedResult.exploration_boundary.trusted_context.database_role_tenant).toBeUndefined();
+  });
+
+  it("keeps payment, medical, person-name, and unresolved fields out of every generated read operation", () => {
     const inspection = churnInspection();
     inspection.tables[0]!.columns.push(
       column("payment_method", "text"),
       column("medical_waiver_notes", "text"),
+      column("full_name", "text"),
+      column("display_name", "text"),
       column("trainer_comments", "text"),
     );
     inspection.tables[0]!.suggestions.default_visible_columns.push(
       "payment_method",
       "medical_waiver_notes",
+      "full_name",
+      "display_name",
       "trainer_comments",
     );
 
@@ -338,7 +455,7 @@ describe("Auto Boundary compiler", () => {
       sourceEnv: "DATABASE_URL",
     });
     const resource = result.exploration_boundary.pack.resources[0]!;
-    const hidden = ["payment_method", "medical_waiver_notes", "trainer_comments"];
+    const hidden = ["payment_method", "medical_waiver_notes", "full_name", "display_name", "trainer_comments"];
 
     expect(resource.kept_out_fields).toEqual(expect.arrayContaining(hidden));
     for (const field of hidden) {
@@ -354,6 +471,10 @@ describe("Auto Boundary compiler", () => {
       .toBe("high_confidence_sensitive");
     expect(result.review.resources[0]!.fields.find((field) => field.name === "medical_waiver_notes")?.sensitivity.state)
       .toBe("high_confidence_sensitive");
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "full_name")?.sensitivity)
+      .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["person_name"] });
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "display_name")?.sensitivity)
+      .toMatchObject({ state: "unresolved_free_text", reason_codes: ["ambiguous_display_name"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "trainer_comments")?.sensitivity.state)
       .toBe("unresolved_free_text");
   });
@@ -389,9 +510,35 @@ describe("Auto Boundary compiler", () => {
           },
         },
       });
+      const equivalentAuthorityDifferentAudit = buildAutoBoundary({
+        inspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+        overrides: {
+          schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+          resources: {
+            "public.subscriptions": {
+              fields: {
+                trainer_comments: {
+                  exposure: "allow_reviewed_use",
+                  actor: "different-reviewer@example.test",
+                  reason: "A different interface recorded the same reviewed authority.",
+                  decided_at: "2026-07-24T18:00:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      });
 
       expect(reviewed.contract_digest).not.toBe(baseline.contract_digest);
       expect(reviewed.lock.reviewed_overrides_digest).not.toBe(baseline.lock.reviewed_overrides_digest);
+      expect(equivalentAuthorityDifferentAudit.lock.reviewed_overrides_digest)
+        .toBe(reviewed.lock.reviewed_overrides_digest);
+      expect(equivalentAuthorityDifferentAudit.exploration_boundary.generation_lock_fingerprint)
+        .toBe(reviewed.exploration_boundary.generation_lock_fingerprint);
+      expect(explorationBoundaryCandidateDigest(equivalentAuthorityDifferentAudit.exploration_boundary))
+        .toBe(explorationBoundaryCandidateDigest(reviewed.exploration_boundary));
       expect(reviewed.dsl).toMatch(/ALLOW READ[^\n]*trainer_comments/);
       expect(reviewed.dsl).not.toMatch(/KEEP OUT[^\n]*trainer_comments/);
       expect(reviewed.review.activation).toBe("blocked_unreviewed");
@@ -403,6 +550,280 @@ describe("Auto Boundary compiler", () => {
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  it("records a model-withheld field as digest-bound use without provider value egress", () => {
+    const input = {
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const reviewed = buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            fields: {
+              region: {
+                exposure: "withhold_from_model",
+                actor: "owner@example.test",
+                reason: "Allow reviewed grouping while region values remain in the local Runner result.",
+                decided_at: "2026-07-29T00:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const resource = reviewed.exploration_boundary.pack.resources[0]!;
+    const capability = reviewed.contract.capabilities.find((item) =>
+      item.visible_fields.includes("region"));
+
+    expect(baseline.exploration_boundary.pack.resources[0])
+      .not.toHaveProperty("model_withheld_fields");
+    expect(resource.selectable_fields).toContain("region");
+    expect(resource.model_withheld_fields).toEqual(["region"]);
+    expect(resource.kept_out_fields).not.toContain("region");
+    expect(reviewed.dsl).toMatch(/MODEL WITHHELD region/);
+    expect(capability?.model_withheld_fields).toEqual(["region"]);
+    expect(explorationBoundaryCandidateDigest(reviewed.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(baseline.exploration_boundary));
+  });
+
+  it("lets an explicitly reviewed Runner-only scalar support count-distinct without exposing raw values", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.push(column("home_address", "text"));
+    inspection.tables[0]!.columns.push(column("private_balance_cents", "integer"));
+    inspection.tables[0]!.suggestions.default_visible_columns.push("home_address");
+    inspection.tables[0]!.suggestions.default_visible_columns.push("private_balance_cents");
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const reviewed = buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            fields: {
+              home_address: {
+                exposure: "withhold_from_model" as const,
+                actor: "owner@example.test",
+                reason: "Permit bounded unique-address analytics without sending address values to the model.",
+                decided_at: "2026-08-01T00:00:00.000Z",
+              },
+              private_balance_cents: {
+                exposure: "withhold_from_model" as const,
+                actor: "owner@example.test",
+                reason: "Permit bounded balance aggregates without sending individual balances to the model.",
+                decided_at: "2026-08-01T00:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const baselineResource = baseline.exploration_boundary.pack.resources[0]!;
+    const resource = reviewed.exploration_boundary.pack.resources[0]!;
+
+    expect(baselineResource.kept_out_fields).toContain("home_address");
+    expect(baselineResource.count_distinct_fields).not.toContain("home_address");
+    expect(resource.kept_out_fields).not.toContain("home_address");
+    expect(resource.selectable_fields).toContain("home_address");
+    expect(resource.model_withheld_fields).toContain("home_address");
+    expect(resource.count_distinct_fields).toContain("home_address");
+    expect(resource.model_withheld_fields).toContain("private_balance_cents");
+    expect(resource.aggregate_measures).toContain("private_balance_cents");
+    expect(reviewed.dsl).toMatch(/MODEL WITHHELD home_address/);
+    expect(explorationBoundaryCandidateDigest(reviewed.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(baseline.exploration_boundary));
+  });
+
+  it("allows every reviewed output tier for trusted scope without making scope model-controlled", () => {
+    const input = {
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const reviewed = buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            fields: {
+              tenant_id: {
+                exposure: "withhold_from_model" as const,
+                actor: "owner@example.test",
+                reason: "Show the fixed tenant identifier only in Runner's local verified output.",
+                decided_at: "2026-07-29T00:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const baselineResource = baseline.exploration_boundary.pack.resources[0]!;
+    const resource = reviewed.exploration_boundary.pack.resources[0]!;
+    const capability = reviewed.contract.capabilities.find((item) =>
+      item.visible_fields.includes("tenant_id"));
+
+    expect(baselineResource.kept_out_fields).toContain("tenant_id");
+    expect(baselineResource.selectable_fields).not.toContain("tenant_id");
+    expect(resource.kept_out_fields).not.toContain("tenant_id");
+    expect(resource.selectable_fields).toContain("tenant_id");
+    expect(resource.model_withheld_fields).toContain("tenant_id");
+    expect(resource.filterable_fields).not.toHaveProperty("tenant_id");
+    expect(resource.sortable_fields).not.toContain("tenant_id");
+    expect(resource.groupable_fields).not.toContain("tenant_id");
+    expect(resource.aggregate_measures).not.toContain("tenant_id");
+    expect(resource.count_distinct_fields).not.toContain("tenant_id");
+    expect(resource.time_bucket_fields).not.toHaveProperty("tenant_id");
+    expect(reviewed.dsl).toMatch(/ALLOW READ[^\n]*tenant_id/);
+    expect(reviewed.dsl).toMatch(/MODEL WITHHELD tenant_id/);
+    expect(reviewed.dsl).not.toMatch(/KEEP OUT[^\n]*tenant_id/);
+    expect(capability?.model_withheld_fields).toContain("tenant_id");
+    expect(reviewed.contract).toEqual(compileAgentDsl(reviewed.dsl));
+
+    const modelVisible = buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            fields: {
+              tenant_id: {
+                exposure: "allow_reviewed_use",
+                actor: "owner@example.test",
+                reason: "The owner reviewed sending this fixed tenant identifier to the configured model.",
+                decided_at: "2026-07-29T00:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const modelVisibleResource = modelVisible.exploration_boundary.pack.resources[0]!;
+    const modelVisibleCapability = modelVisible.contract.capabilities.find((item) =>
+      item.visible_fields.includes("tenant_id"));
+    expect(modelVisibleResource.selectable_fields).toContain("tenant_id");
+    expect(modelVisibleResource.model_withheld_fields ?? []).not.toContain("tenant_id");
+    expect(modelVisibleResource.kept_out_fields).not.toContain("tenant_id");
+    expect(modelVisibleResource.filterable_fields).not.toHaveProperty("tenant_id");
+    expect(modelVisibleResource.sortable_fields).not.toContain("tenant_id");
+    expect(modelVisibleResource.groupable_fields).not.toContain("tenant_id");
+    expect(modelVisibleResource.aggregate_measures).not.toContain("tenant_id");
+    expect(modelVisibleResource.count_distinct_fields).not.toContain("tenant_id");
+    expect(modelVisibleResource.time_bucket_fields).not.toHaveProperty("tenant_id");
+    expect(modelVisible.dsl).toMatch(/ALLOW READ[^\n]*tenant_id/);
+    expect(modelVisible.dsl).not.toMatch(/MODEL WITHHELD[^\n]*tenant_id/);
+    expect(modelVisible.dsl).not.toMatch(/KEEP OUT[^\n]*tenant_id/);
+    expect(modelVisibleCapability?.model_withheld_fields ?? []).not.toContain("tenant_id");
+    expect(modelVisible.contract).toEqual(compileAgentDsl(modelVisible.dsl));
+    expect(explorationBoundaryCandidateDigest(modelVisible.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(reviewed.exploration_boundary));
+  });
+
+  it("keeps cohort 5 as the byte-stable default and permits only a recorded owner override down to 1", () => {
+    const input = {
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const baselineAgain = buildAutoBoundary(input);
+    const baselineResource = baseline.exploration_boundary.pack.resources[0]!;
+
+    expect(baselineResource.minimum_cohort_size).toBe(5);
+    expect(baselineResource).not.toHaveProperty("minimum_cohort_overridden");
+    expect(explorationBoundaryCandidateDigest(baseline.exploration_boundary))
+      .toBe(explorationBoundaryCandidateDigest(baselineAgain.exploration_boundary));
+
+    const loweredWithoutReview = structuredClone(baseline.exploration_boundary);
+    loweredWithoutReview.pack.resources[0]!.minimum_cohort_size = 1;
+    expect(() => reviewExplorationBoundaryCandidate(
+      baseline.exploration_boundary,
+      loweredWithoutReview,
+    )).toThrow("public.subscriptions minimum cohort size may only stay the same or increase.");
+
+    const override = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.subscriptions": {
+          minimum_cohort: {
+            value: 1,
+            actor: "owner@example.test",
+            reason: "This local staging fixture contains owner-controlled synthetic records.",
+            decided_at: "2026-07-28T00:00:00.000Z",
+          },
+        },
+      },
+    } as const;
+    const reviewed = buildAutoBoundary({ ...input, overrides: override });
+    const reviewedResource = reviewed.exploration_boundary.pack.resources[0]!;
+    expect(reviewedResource).toMatchObject({
+      minimum_cohort_size: 1,
+      minimum_cohort_overridden: true,
+    });
+    expect(reviewed.review.resources[0]?.minimum_cohort_override).toEqual(
+      override.resources["public.subscriptions"].minimum_cohort,
+    );
+    expect(reviewed.lock.reviewed_overrides_digest)
+      .not.toBe(baseline.lock.reviewed_overrides_digest);
+    expect(explorationBoundaryCandidateDigest(reviewed.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(baseline.exploration_boundary));
+    expect(reviewExplorationBoundaryCandidate(
+      reviewed.exploration_boundary,
+      structuredClone(reviewed.exploration_boundary),
+    ).candidate.pack.resources[0]).toMatchObject({
+      minimum_cohort_size: 1,
+      minimum_cohort_overridden: true,
+    });
+
+    expect(() => buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            minimum_cohort: {
+              ...override.resources["public.subscriptions"].minimum_cohort,
+              value: 0,
+            },
+          },
+        },
+      },
+    })).toThrow(/integer from 1 through 4/i);
+
+    const overridden = applyManagedBoundaryReviewDecision(
+      baseline.overrides,
+      {
+        kind: "minimum_cohort",
+        resource_id: "public.subscriptions",
+        value: 1,
+        actor: "owner@example.test",
+        reason: "Reviewed owner-controlled staging records.",
+        decided_at: "2026-07-28T00:00:00.000Z",
+      },
+    );
+    expect(overridden.resources["public.subscriptions"]?.minimum_cohort?.value)
+      .toBe(1);
+    const restored = applyManagedBoundaryReviewDecision(overridden, {
+      kind: "minimum_cohort",
+      resource_id: "public.subscriptions",
+      value: 5,
+      actor: "owner@example.test",
+      reason: "Restore the generated privacy default.",
+      decided_at: "2026-07-28T00:01:00.000Z",
+    });
+    expect(restored.resources["public.subscriptions"]?.minimum_cohort)
+      .toBeUndefined();
   });
 
   it("rejects unproven row identity and secret-bearing review metadata", () => {
@@ -588,6 +1009,160 @@ describe("Auto Boundary compiler", () => {
     }
   });
 
+  it("preserves an active boundary only for an explicitly staged replacement review", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-auto-boundary-preserve-active-"));
+    try {
+      const build = buildAutoBoundary({
+        inspection: churnInspection(),
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+      });
+      await writeAutoBoundaryArtifacts({ projectRoot, build });
+      const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "reviewer@example.test",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: churnInspection(),
+      });
+      const active = await fs.readFile(activePath, "utf8");
+      const lockSnapshot = path.join(
+        projectRoot,
+        ".synapsor/exploration-locks",
+        `${build.exploration_boundary.generation_lock_fingerprint.slice("sha256:".length)}.json`,
+      );
+      await fs.rm(path.dirname(lockSnapshot), { recursive: true, force: true });
+
+      await writeAutoBoundaryArtifacts({
+        projectRoot,
+        build,
+        force: true,
+        preserveActiveBoundary: true,
+      });
+      await expect(fs.readFile(activePath, "utf8")).resolves.toBe(active);
+      await expect(fs.readFile(lockSnapshot, "utf8")).resolves.toBe(
+        await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8"),
+      );
+
+      await writeAutoBoundaryArtifacts({
+        projectRoot,
+        build,
+        force: true,
+      });
+      await expect(fs.access(activePath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses unowned output and state collisions even when force is requested", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-auto-boundary-collision-"));
+    const build = buildAutoBoundary({
+      inspection: churnInspection(),
+      project: projectSummary(projectRoot),
+      sourceEnv: "DATABASE_URL",
+    });
+    try {
+      const outputRoot = path.join(projectRoot, "synapsor/generated");
+      await fs.mkdir(outputRoot, { recursive: true });
+      await fs.writeFile(path.join(outputRoot, "developer-notes.txt"), "keep me\n", "utf8");
+      await expect(writeAutoBoundaryArtifacts({ projectRoot, build, force: true }))
+        .rejects.toThrow(/unmanaged directory/i);
+      await expect(fs.readFile(path.join(outputRoot, "developer-notes.txt"), "utf8"))
+        .resolves.toBe("keep me\n");
+
+      await fs.rm(outputRoot, { recursive: true, force: true });
+      const stateDir = path.join(projectRoot, ".synapsor");
+      await fs.mkdir(stateDir, { recursive: true });
+      const collision = path.join(stateDir, "generation-lock.json");
+      await fs.writeFile(collision, "{\"owner\":\"developer\"}\n", "utf8");
+      await expect(writeAutoBoundaryArtifacts({ projectRoot, build, force: true }))
+        .rejects.toThrow(/without a managed Auto Boundary output marker/i);
+      await expect(fs.readFile(collision, "utf8"))
+        .resolves.toBe("{\"owner\":\"developer\"}\n");
+      await expect(fs.access(outputRoot)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("restores every managed artifact after a mid-commit filesystem failure", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-auto-boundary-atomic-"));
+    try {
+      const initial = buildAutoBoundary({
+        inspection: churnInspection(),
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+      });
+      const written = await writeAutoBoundaryArtifacts({ projectRoot, build: initial });
+      const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+      const progressPath = path.join(projectRoot, ".synapsor/boundary-review-progress.json");
+      await fs.writeFile(activePath, "{\"state\":\"old-active\"}\n", "utf8");
+      await fs.writeFile(progressPath, "{\"state\":\"old-progress\"}\n", "utf8");
+      const protectedFiles = [
+        path.join(written.root, "synapsor.candidate.contract.json"),
+        path.join(projectRoot, ".synapsor/generation-lock.json"),
+        path.join(projectRoot, ".synapsor/review-report.json"),
+        path.join(projectRoot, ".synapsor/review-overrides.json"),
+        activePath,
+        progressPath,
+      ];
+      const before = new Map(await Promise.all(
+        protectedFiles.map(async (file) => [file, await fs.readFile(file, "utf8")] as const),
+      ));
+
+      const changedInspection = churnInspection();
+      changedInspection.tables[0]!.columns.push({
+        name: "new_reviewed_label",
+        data_type: "text",
+        nullable: true,
+        generated: false,
+        ordinal_position: 99,
+        suggestions: {
+          tenant: false,
+          conflict: false,
+          sensitive: false,
+          immutable: false,
+          large_or_binary: false,
+        },
+      });
+      const changed = buildAutoBoundary({
+        inspection: changedInspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+      });
+      const rename = fs.rename.bind(fs);
+      let injected = false;
+      vi.spyOn(fs, "rename").mockImplementation(async (source, destination) => {
+        if (!injected && String(source).endsWith(`${path.sep}staged-state${path.sep}review-report.json`)) {
+          injected = true;
+          throw new Error("injected review-report commit failure");
+        }
+        return rename(source, destination);
+      });
+      await expect(writeAutoBoundaryArtifacts({
+        projectRoot,
+        build: changed,
+        force: true,
+      })).rejects.toThrow(/injected review-report commit failure/i);
+      vi.restoreAllMocks();
+
+      expect(injected).toBe(true);
+      for (const file of protectedFiles) {
+        await expect(fs.readFile(file, "utf8")).resolves.toBe(before.get(file));
+      }
+      const stateEntries = await fs.readdir(path.join(projectRoot, ".synapsor"));
+      expect(stateEntries.some((entry) => entry.startsWith(".auto-boundary-write-"))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("requires exact digest confirmation and reverified read-only posture for activation", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-activation-"));
     try {
@@ -658,6 +1233,54 @@ describe("Auto Boundary compiler", () => {
         confirmedDecisions: candidate.unresolved_decisions,
         currentInspection: privileged,
       })).rejects.toThrow(/generation lock is stale|read-only/i);
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps independently reviewed boundaries active together and deactivates only the selected name", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-set-"));
+    try {
+      const inspection = churnInspection();
+      const build = buildAutoBoundary({
+        inspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+      });
+      await writeAutoBoundaryArtifacts({ projectRoot, build });
+      const activate = async (name: string) => {
+        const candidate = structuredClone(build.exploration_boundary);
+        candidate.pack.name = name;
+        const digest = explorationBoundaryCandidateDigest(candidate);
+        return activateExplorationBoundary({
+          projectRoot,
+          candidate,
+          expectedDigest: digest,
+          actor: "reviewer@example.test",
+          confirmation: `ACTIVATE ${digest}`,
+          confirmedDecisions: candidate.unresolved_decisions,
+          currentInspection: inspection,
+          activeSetMode: "add",
+        });
+      };
+
+      const support = await activate("support_analytics");
+      const finance = await activate("finance_analytics");
+      const active = await loadActivatedExplorationBoundaries(projectRoot);
+      expect(active.map((boundary) => boundary.pack.name)).toEqual([
+        "support_analytics",
+        "finance_analytics",
+      ]);
+      await expect(loadActivatedExplorationBoundary(projectRoot, {
+        name: "support_analytics",
+      })).resolves.toMatchObject({ activation: { digest: support.activation.digest } });
+      await expect(loadActivatedExplorationBoundary(projectRoot)).resolves.toMatchObject({
+        activation: { digest: finance.activation.digest },
+      });
+
+      const disabled = await deactivateExplorationBoundary(projectRoot, "finance_analytics");
+      expect(disabled.disabled).toEqual(["finance_analytics"]);
+      expect(disabled.remaining.map((boundary) => boundary.pack.name)).toEqual(["support_analytics"]);
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }

@@ -12,7 +12,7 @@ export type RunnerConfig = {
   databaseUrl: string;
   engine: "postgres" | "mysql";
   pollIntervalMs: number;
-  /** Operator-controlled upper bound for source write statements and lock waits. */
+  /** Operator-controlled upper bound for pre-commit source work and lock waits. */
   statementTimeoutMs?: number;
   logLevel: "debug" | "info" | "warn" | "error";
   dryRun: boolean;

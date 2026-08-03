@@ -1,9 +1,9 @@
 # Synapsor Runner
 
-Synapsor Runner is the Apache-2.0 MCP runtime that gives AI agents reviewed
-Postgres/MySQL business capabilities instead of raw SQL. Credentials, trusted
-tenant/principal identity, activation, approval, and commit stay outside the
-model-facing tool surface.
+Synapsor Runner is the Apache-2.0 safety layer that lets AI agents query and
+update Postgres/MySQL without giving the model raw SQL, unrestricted schema
+access, or database credentials. Trusted tenant/principal identity, activation,
+approval, and commit stay outside the model-facing MCP surface.
 
 Start here:
 - README: https://github.com/Synapsor/Synapsor-Runner
@@ -15,6 +15,10 @@ Start here:
 - Current limitations: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/limitations.md
 - DSL reference: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/dsl-reference.md
 - MCP audit: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/mcp-audit.md
+- Safe Postgres MCP: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/safe-postgres-mcp.md
+- Prevent arbitrary LLM SQL: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/prevent-llm-arbitrary-sql.md
+- Secure text-to-SQL evidence: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/secure-text-to-sql.md
+- Human approval for agent writes: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/human-approval-ai-database-writes.md
 
 Current adoption loop:
 Connect staging -> deterministic whole-schema draft -> human boundary review ->

@@ -265,6 +265,7 @@ export type ProtectedReadAggregateSpec = ExtensionFields & {
   };
   order_by?: (
     | { kind: "measure"; measure: string; direction: "asc" | "desc" }
+    | { kind: "comparison_change"; measure: string; change: "absolute" | "percentage"; direction: "asc" | "desc" }
     | { kind: "time_bucket"; direction: "asc" | "desc" }
   );
   top_n: number;
@@ -274,6 +275,7 @@ export type ProtectedReadAggregateSpec = ExtensionFields & {
 export type ProtectedReadLimitsSpec = ExtensionFields & {
   max_rows: number;
   max_groups: number;
+  max_ranked_groups?: number;
   max_response_cells: number;
   max_response_bytes: number;
   statement_timeout_ms: number;
@@ -328,6 +330,7 @@ export type CapabilitySpec = ExtensionFields & {
   lookup?: { id_from_arg: string };
   visible_fields: string[];
   kept_out_fields?: string[];
+  model_withheld_fields?: string[];
   evidence?: EvidenceRequirementSpec;
   max_rows?: number;
   proposal?: ProposalActionSpec;

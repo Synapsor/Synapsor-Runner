@@ -112,6 +112,24 @@ const HIGH_CONFIDENCE_RULES: Rule[] = [
     ["dateofbirth", "birthdate", "dob"],
   ),
   rule(
+    "person_name",
+    "The field name or description indicates a person's name.",
+    [
+      "fullname",
+      "firstname",
+      "lastname",
+      "surname",
+      "givenname",
+      "familyname",
+      "personname",
+      "customername",
+      "contactname",
+      "membername",
+      "employeename",
+      "userfullname",
+    ],
+  ),
+  rule(
     "medical_or_health_information",
     "The field name or description indicates medical or health information.",
     [
@@ -125,6 +143,15 @@ const HIGH_CONFIDENCE_RULES: Rule[] = [
       "clinical",
       "patientnote",
       "waivernote",
+      "medicalrecord",
+      "medicalrecordnumber",
+      "healthrecord",
+      "mrn",
+      "patientname",
+      "patientfullname",
+      "insurancemember",
+      "insurancepolicy",
+      "healthplanmember",
     ],
   ),
   rule(
@@ -183,6 +210,12 @@ const UNRESOLVED_NAME_TOKENS = new Set([
   "freeform",
 ]);
 
+const UNRESOLVED_COMPACT_NAMES = new Set([
+  // A display name often identifies a person, but can also name a product or
+  // organization. Hold it for review instead of asserting either conclusion.
+  "displayname",
+]);
+
 const UNRESOLVED_DATA_TYPES = new Set(["json", "jsonb", "xml", "object", "array"]);
 
 export function classifySensitivity(input: SensitivityClassificationInput): SensitivityClassification {
@@ -205,6 +238,12 @@ export function classifySensitivity(input: SensitivityClassificationInput): Sens
   }
 
   const unresolved: Array<{ code: string; reason: string }> = [];
+  if (UNRESOLVED_COMPACT_NAMES.has(evidence.compact)) {
+    unresolved.push({
+      code: "ambiguous_display_name",
+      reason: "The field may contain a person's display name, so its exposure requires explicit review.",
+    });
+  }
   if ([...evidence.tokens].some((token) => UNRESOLVED_NAME_TOKENS.has(token))) {
     unresolved.push({
       code: "unconstrained_free_text_name",

@@ -31,8 +31,8 @@ const viewRecipeRoot = path.join(projectRoot, "view-recipe");
 const viewRecipeDsl = path.join(viewRecipeRoot, "average-retained-revenue.synapsor.sql");
 const viewRecipeContract = path.join(viewRecipeRoot, "average-retained-revenue.contract.json");
 const viewRecipeConfig = path.join(viewRecipeRoot, "synapsor.runner.json");
-const screenshotRoot = path.join(root, "development", "runner-1.6.4-retail-visual");
-const resultPath = path.join(root, "development", "runner-1.6.4-retail-results.json");
+const screenshotRoot = path.join(root, "development", "runner-1.6.6-retail-visual");
+const resultPath = path.join(root, "development", "runner-1.6.6-retail-results.json");
 const readUrl = "postgresql://retail_manager_reader:retail_manager_reader_password@127.0.0.1:55465/northstar_commerce";
 const sharedEnv = {
   ...process.env,
@@ -42,6 +42,7 @@ const sharedEnv = {
   SYNAPSOR_TENANT_ID: "merchant-northstar",
   SYNAPSOR_PRINCIPAL: "staff-manager-alex",
   SYNAPSOR_OPERATOR_ID: "retail-reviewer@example.test",
+  SYNAPSOR_OPERATOR_ROLES: "retail_operations_reviewer",
 };
 
 let compose;
@@ -49,10 +50,8 @@ let ui;
 let chrome;
 let askProvider;
 let askProviderUrl;
-let askProposalTarget;
 let askAggregateResult;
 let askRefusalResult;
-let askProposalResult;
 const startedAt = Date.now();
 const screenshots = [];
 const evidence = {
@@ -69,6 +68,7 @@ const evidence = {
   generated: {},
   first_read: {},
   aggregate: {},
+  continuous_explore: {},
   view_recipe: {},
   protected: {},
   write_lifecycle: {},
@@ -92,6 +92,143 @@ const retailAggregatePlan = {
   order_by: { kind: "measure", index: 0, direction: "desc" },
   top_n: 10,
 };
+const retailExplorePlans = [
+  {
+    label: "weekly_revenue_by_store_and_category",
+    plan: retailAggregatePlan,
+  },
+  {
+    label: "weekly_sales_count_by_channel",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "channel" }],
+      time_bucket: { field: "sold_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 20,
+    },
+  },
+  {
+    label: "distinct_sales_by_channel",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "count_distinct", field: "id" }],
+      dimensions: [{ field: "channel" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    },
+  },
+  {
+    label: "quantity_by_product_category",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "sum", field: "quantity" }],
+      dimensions: [{
+        field: "name",
+        relationship: "sales_line_facts_product_category_id_fkey",
+      }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    },
+  },
+  {
+    label: "average_sale_by_store",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "avg", field: "net_revenue_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "sales_line_facts_store_id_fkey",
+      }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    },
+  },
+  {
+    label: "online_revenue_in_bounded_date_range",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "sum", field: "net_revenue_cents" }],
+      time_bucket: { field: "sold_at", bucket: "week" },
+      where: [
+        { field: "channel", op: "eq", value: "online" },
+        { field: "sold_at", op: "gte", value: "2026-04-08T00:00:00.000Z" },
+        { field: "sold_at", op: "lt", value: "2026-04-15T00:00:00.000Z" },
+      ],
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 10,
+    },
+  },
+  {
+    label: "top_product_categories_by_revenue",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "sum", field: "net_revenue_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "sales_line_facts_product_category_id_fkey",
+      }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 2,
+    },
+  },
+  {
+    label: "bottom_stores_by_average_sale",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "avg", field: "net_revenue_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "sales_line_facts_store_id_fkey",
+      }],
+      order_by: { kind: "measure", index: 0, direction: "asc" },
+      top_n: 2,
+    },
+  },
+  {
+    label: "channel_period_comparison",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "channel" }],
+      time_bucket: { field: "sold_at", bucket: "week" },
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+      comparison: {
+        field: "sold_at",
+        ranges: [
+          { start: "2026-04-01T00:00:00.000Z", end: "2026-04-13T00:00:00.000Z" },
+          { start: "2026-04-13T00:00:00.000Z", end: "2026-04-26T00:00:00.000Z" },
+        ],
+      },
+    },
+  },
+  {
+    label: "store_and_channel_sales_count",
+    plan: {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "count" }],
+      dimensions: [
+        {
+          field: "name",
+          relationship: "sales_line_facts_store_id_fkey",
+        },
+        { field: "channel" },
+      ],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    },
+  },
+];
 
 try {
   await fsp.mkdir(packRoot, { recursive: true });
@@ -152,11 +289,17 @@ try {
     env: sharedEnv,
   });
   evidence.timings_ms.schema_summary = ui.readyAt - startedAt;
+  await waitForValue(
+    () => /Next: review the proposed boundary, then ask your first question in Workbench/.test(ui.output()) || undefined,
+    5_000,
+    () => "guided start did not print its Workbench continuation",
+  );
   assert.ok(evidence.timings_ms.schema_summary <= 60_000, "schema summary exceeded 60 seconds");
-  assert.match(ui.output(), /Objects: 45/);
-  assert.match(ui.output(), /exact-row read drafts: 42/);
-  assert.match(ui.output(), /blocked objects: 3/);
-  assert.match(ui.output(), /source database changed: no/i);
+  assert.match(ui.output(), /✓ Connected/);
+  assert.match(ui.output(), /Inspected 45 tables and views \(metadata only; no rows read\)/);
+  assert.match(ui.output(), /Synapsor Runner local UI: http:\/\/127\.0\.0\.1:/);
+  assert.match(ui.output(), /Next: review the proposed boundary, then ask your first question in Workbench/);
+  await assert.rejects(fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")));
   assert.doesNotMatch(ui.output(), /retail_manager_reader_password|retail_writer_password/);
   const generationReport = JSON.parse(await fsp.readFile(
     path.join(projectRoot, "synapsor", "generated", "generation-review.json"),
@@ -198,6 +341,19 @@ try {
     assert.ok(starterResources.includes("public.sales_line_facts"), "starter pack omitted the strongest analytical fact");
     assert.equal(await evaluate(page, "document.body.textContent.includes('retail_manager_reader_password')"), false);
 
+    if (await evaluate(page, "document.body.classList.contains('quick-start-mode')")) {
+      assert.equal(
+        await evaluate(page, "document.querySelector('#instant-path')?.offsetParent !== null"),
+        true,
+        "Quick Start mode did not expose its narrow first-value decision",
+      );
+      await click(page, "#instant-full-review");
+      await waitForExpression(page, "document.body.classList.contains('quick-start-mode') === false");
+      await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
+      await click(page, "#access-back");
+      await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
+    }
+    await evaluate(page, "document.querySelector('#overview-table-details')?.setAttribute('open','')");
     await click(page, "#show-all");
     await waitForExpression(page, "document.querySelectorAll('[data-resource-toggle]').length >= 42");
     const reviewResources = [
@@ -229,13 +385,38 @@ try {
       await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
       await waitForExpression(page, `document.querySelector("#resource-detail h3")?.textContent === ${JSON.stringify(resourceId)}`);
       const detail = await evaluate(page, "document.querySelector('#resource-detail')?.textContent");
-      assert.match(detail, /Values the agent can see/);
+      assert.match(detail, /Choose one explicit tier per column/);
       if (resourceId === "public.orders") {
         assert.match(detail, /private_customer_note/);
-        assert.match(detail, /Hidden from the agent by default/);
+        assert.match(detail, /Kept out · free text/);
+        assert.match(detail, /Unavailable for selection, filtering, grouping, sorting, or measures/);
       }
-      await click(page, "#resource-signoff");
-      await waitForExpression(page, "document.querySelector('#resource-signoff')?.checked === true");
+      const unresolvedRelationships = await evaluate(page, `[...document.querySelectorAll("[data-relationship-semantics]")]
+        .filter(input=>input.value==="review_required")
+        .map(input=>input.getAttribute("data-relationship-semantics"))`);
+      for (const relationshipId of unresolvedRelationships) {
+        await select(page, `[data-relationship-semantics="${relationshipId}"]`, "exclude");
+        await waitForExpression(
+          page,
+          `document.querySelector('[data-relationship-semantics="${relationshipId}"]')?.value === "exclude"`,
+        );
+      }
+      await waitForExpression(page, "document.querySelector('#resource-signoff')?.disabled === false");
+      if (!await evaluate(page, "document.querySelector('#resource-signoff')?.checked === true")) {
+        await evaluate(page, "document.querySelector('#resource-signoff').click(); true");
+        evidence.interactions.browser_clicks += 1;
+      }
+      await evaluate(page, "new Promise(resolve=>setTimeout(resolve,500))");
+      const resourceSignoff = await evaluate(page, `({
+        checked:document.querySelector("#resource-signoff")?.checked,
+        disabled:document.querySelector("#resource-signoff")?.disabled,
+        resource:document.querySelector("#resource-detail h3")?.textContent
+      })`);
+      assert.deepEqual(
+        resourceSignoff,
+        { checked: true, disabled: false, resource: resourceId },
+        `Resource signoff did not persist for ${resourceId}`,
+      );
       await click(page, "#back-resources");
       await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
     }
@@ -243,52 +424,78 @@ try {
     await click(page, `[data-open-resource="${starterResources[0]}"]`);
     await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
     const globalCount = await evaluate(page, "document.querySelectorAll('[data-global-decision]').length");
-    assert.ok(globalCount >= 2, "Workbench omitted the human-only final safety confirmations");
+    assert.deepEqual(
+      await evaluate(page, `({
+        tag:document.querySelector("#deployment-profile")?.tagName,
+        type:document.querySelector("#deployment-profile")?.type
+      })`),
+      { tag: "INPUT", type: "hidden" },
+      "Fresh guided Workbench must show launch-established profile status without another environment selector",
+    );
     for (let index = 0; index < globalCount; index += 1) {
-      await click(page, `[data-global-decision="${index}"]`);
+      if (!await evaluate(page, `document.querySelector('[data-global-decision="${index}"]')?.checked === true`)) {
+        await click(page, `[data-global-decision="${index}"]`);
+      }
     }
-    await click(page, '[data-view="activate"]');
+    await waitForExpression(page, "document.querySelector('#review-staged-access')?.offsetParent !== null");
+    await click(page, "#review-staged-access");
     await waitForExpression(page, "document.querySelector('#view-activate')?.classList.contains('active') === true");
-    await waitForExpression(page, "!document.querySelector('#signoff-summary')?.textContent.includes('remain')");
+    await waitForExpression(page, "document.querySelector('#signoff-summary')?.textContent.includes('One boundary, one exact confirmation')");
     await type(page, "#actor", "retail-reviewer@example.test");
+    await waitForExpression(page, "document.querySelector('#preview')?.disabled === false");
     await click(page, "#preview");
-    await waitForExpression(page, "Boolean(document.querySelector('#message')?.textContent.trim())");
+    await waitForExpression(
+      page,
+      "document.querySelector('#view-explore')?.classList.contains('active') === true || document.querySelector('#message')?.classList.contains('error')",
+    );
     const previewMessage = await evaluate(page, "document.querySelector('#message').textContent");
-    assert.match(previewMessage, /^Review fingerprint: sha256:/);
-    const boundaryDigest = previewMessage.replace("Review fingerprint: ", "");
+    assert.match(previewMessage, /reviewed boundary is active/i);
+    const boundaryDigest = await evaluate(page, "document.querySelector('#message code')?.textContent");
     assert.match(boundaryDigest, /^sha256:[a-f0-9]{64}$/);
-    await waitForExpression(page, "document.querySelector('#activate')?.disabled === false");
-    await shot(page, "02-ready-to-activate.png");
-    await click(page, "#activate");
-    await waitForExpression(page, "document.querySelector('#view-explore')?.classList.contains('active') === true");
-    await waitForExpression(page, "document.querySelector('#header-state')?.textContent.includes('Active reviewed boundary')");
+    await shot(page, "02-activated-and-ready-to-ask.png");
+    assert.equal(
+      await evaluate(page, "document.querySelector('#view-explore')?.classList.contains('active') === true"),
+      true,
+      `Boundary activation failed: ${await evaluate(page, "document.querySelector('#message')?.textContent")}`,
+    );
+    await waitForExpression(page, "/active reviewed boundar/i.test(document.querySelector('#header-state')?.textContent||'')");
     evidence.timings_ms.boundary_activation = Date.now() - startedAt;
 
     if (await evaluate(page, "Boolean(document.querySelector('#run-preflight'))")) {
       await click(page, "#run-preflight");
     }
-    await waitForExpression(page, `document.querySelector("#explore-preflight")?.textContent.includes("Ready for local bounded exploration")
-      || Boolean(document.querySelector("#bind-trusted-scope"))`);
-    if (await evaluate(page, "Boolean(document.querySelector('#bind-trusted-scope'))")) {
-      await type(page, "#trusted-tenant", "merchant-northstar");
-      await type(page, "#trusted-principal", "staff-manager-alex");
-      await click(page, "#bind-trusted-scope");
-    }
+    await waitForExpression(page, `document.querySelector("#explore-preflight")?.textContent.includes("Reviewed access ready.")`);
+    assert.equal(
+      await evaluate(page, "Boolean(document.querySelector('#bind-trusted-scope,#trusted-tenant,#trusted-principal'))"),
+      false,
+      "Workbench asked the analytics user to type trusted tenant or principal values",
+    );
     await waitForExpression(page, "document.querySelector('#explorer')?.classList.contains('hidden') === false");
+    await waitForExpression(page, "document.querySelector('#ask-open-no-model')?.offsetParent !== null");
+    await click(page, "#ask-open-no-model");
+    await waitForExpression(page, "document.querySelector('#no-model-content')?.classList.contains('hidden') === false");
     const suggestedQuestions = await evaluate(page, "document.querySelector('#suggested-questions')?.textContent");
     assert.doesNotMatch(suggestedQuestions, /which (?:reviewed )?id groups/i);
     await shot(page, "03-explore-ready.png");
 
+    await waitForExpression(page, "document.querySelector('#run-first-question')?.offsetParent !== null");
+    await click(page, "#run-first-question");
+    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your reviewed question worked.')");
+    const firstQuestionResult = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
+    assert.match(firstQuestionResult, /Keep asking legal combinations inside this reviewed boundary/i);
+    assert.doesNotMatch(firstQuestionResult, /synthetic private customer note|other manager private note|rival private note/i);
+    await click(page, "#ask-another-result");
+    await waitForExpression(page, "document.querySelector('#explore-composer')?.open === true");
     await click(page, "#row-tab");
     await waitForExpression(page, "document.querySelector('#row-builder')?.classList.contains('hidden') === false");
-    await select(page, "#row-resource", "public.sales_line_facts");
+    await selectVisibleOption(page, "#row-resource", /sales line facts/i);
     await type(page, "#row-id", "sales-fact-001");
     await click(page, "#run-explore");
-    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your first safe tool is working.')");
+    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your reviewed question worked.')");
     const firstReadText = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
     assert.match(firstReadText, /Source database changed:\s*no/i);
-    assert.match(firstReadText, /Customer scope:\s*supplied by your trusted application environment/i);
-    assert.match(firstReadText, /User scope:\s*supplied by your trusted application environment/i);
+    assert.match(firstReadText, /Trusted scope:\s*supplied outside the question/i);
+    assert.doesNotMatch(firstReadText, /Enter (?:a )?(?:customer|tenant|principal|user)/i);
     assert.doesNotMatch(firstReadText, /synthetic private customer note|other manager private note|rival private note/i);
     evidence.first_read = {
       resource: "public.sales_line_facts",
@@ -302,14 +509,16 @@ try {
     await shot(page, "04-first-safe-read.png");
 
     await click(page, "#aggregate-tab");
-    await select(page, "#aggregate-resource", "public.sales_line_facts");
+    await selectVisibleOption(page, "#aggregate-resource", /sales line facts/i);
     await selectVisibleOption(page, "#aggregate-measure", /total net revenue cents/i);
     await selectVisibleOption(page, "#aggregate-dimension", /name.*stores/i);
+    await click(page, "#aggregate-add-group");
+    await waitForExpression(page, "document.querySelector('#aggregate-dimension-2-wrap')?.classList.contains('hidden') === false");
     await selectVisibleOption(page, "#aggregate-dimension-2", /name.*product categories/i);
     await selectVisibleOption(page, "#aggregate-time", /sold at/i);
     await select(page, "#aggregate-bucket", "week");
     await click(page, "#run-explore");
-    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your first safe tool is working.')");
+    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your reviewed question worked.')");
     const aggregateText = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
     assert.match(aggregateText, /total net revenue cents/i);
     assert.match(aggregateText, /store/i);
@@ -329,8 +538,17 @@ try {
     evidence.timings_ms.first_pm_aggregate = Date.now() - startedAt;
     await evaluate(page, "document.querySelector('#explore-result')?.scrollIntoView({block:'center'})");
     await shot(page, "05-pm-aggregate.png");
+    const workbenchAggregateProtectRef = await evaluate(page, "preferredProtectQueryRef");
+    assert.match(workbenchAggregateProtectRef, /^A[1-9][0-9]*$/);
 
+    const protectedDraftsRoot = path.join(projectRoot, "synapsor", "protected", "drafts");
+    assert.equal(
+      fs.existsSync(protectedDraftsRoot),
+      false,
+      "Scoped Explore created a protected artifact before the operator chose Protect",
+    );
     let mcpAggregate;
+    const repeatedExploreResults = [];
     await withPackedMcp({
       cli,
       args: ["mcp", "serve", "--authoring", "--project-root", projectRoot],
@@ -344,6 +562,43 @@ try {
         ["app.describe_data", "app.explore_data"],
       );
       assertSmallSafeToolSurface(listed.tools);
+      const describeTool = listed.tools.find((tool) => tool.name === "app.describe_data");
+      const exploreTool = listed.tools.find((tool) => tool.name === "app.explore_data");
+      assert.ok(describeTool?.outputSchema, "app.describe_data omitted outputSchema");
+      assert.ok(exploreTool?.outputSchema, "app.explore_data omitted outputSchema");
+
+      const describedCall = await client.callTool({
+        name: "app.describe_data",
+        arguments: { resource: "public.sales_line_facts" },
+      });
+      assertToolOutputShape(describedCall, describeTool.outputSchema, "app.describe_data");
+      const described = resultPayload(describedCall);
+      assert.equal(described.ok, true);
+      assert.equal(described.resources.length, 1);
+      assert.equal(described.resources[0].id, "public.sales_line_facts");
+      assert.ok(described.resources[0].groupable_fields.includes("channel"));
+      assert.deepEqual(
+        described.resources[0].time_bucket_fields.sold_at,
+        ["day", "week", "month"],
+      );
+      assert.ok(
+        described.resources[0].relationships.some(
+          (relationship) => relationship.id === "sales_line_facts_store_id_fkey"
+            && relationship.cardinality === "many_to_one",
+        ),
+        "described analytics catalog omitted the reviewed store relationship",
+      );
+      assert.ok(
+        described.resources[0].relationships.some(
+          (relationship) => relationship.id === "sales_line_facts_product_category_id_fkey"
+            && relationship.cardinality === "many_to_one",
+        ),
+        "described analytics catalog omitted the reviewed product-category relationship",
+      );
+      assert.doesNotMatch(
+        JSON.stringify(described),
+        /assigned_manager_id|merchant_id|private customer note|SELECT\s|JOIN\s/i,
+      );
 
       const assigned = resultPayload(await client.callTool({
         name: "app.explore_data",
@@ -381,10 +636,45 @@ try {
         assert.deepEqual(denied.data, [], `${label} crossed trusted scope`);
       }
 
-      mcpAggregate = resultPayload(await client.callTool({
-        name: "app.explore_data",
-        arguments: { plan: retailAggregatePlan },
-      }));
+      for (const candidate of retailExplorePlans) {
+        const rawResult = await client.callTool({
+          name: "app.explore_data",
+          arguments: { plan: candidate.plan },
+        });
+        assertToolOutputShape(rawResult, exploreTool.outputSchema, candidate.label);
+        const result = resultPayload(rawResult);
+        assert.equal(result.ok, true, `${candidate.label} did not return a verified result`);
+        assert.equal(
+          result.source_database_changed,
+          false,
+          `${candidate.label} reported a source mutation`,
+        );
+        assert.ok(
+          Array.isArray(result.data) && result.data.length > 0,
+          `${candidate.label} returned no privacy-safe groups`,
+        );
+        assert.doesNotMatch(
+          JSON.stringify(result),
+          /sales-fact-other-manager|sales-fact-rival|staff-manager-jordan|staff-rival|synthetic-.*token|private customer note/i,
+          `${candidate.label} leaked data outside the reviewed scope`,
+        );
+        assert.doesNotMatch(
+          JSON.stringify(result.data),
+          /\b(?:measure|dimension)_\d+\b/,
+          `${candidate.label} exposed internal positional aliases`,
+        );
+        repeatedExploreResults.push({
+          label: candidate.label,
+          groups: result.data.length,
+          status: result.outcome?.status ?? "ok",
+          source_database_changed: result.source_database_changed,
+        });
+        if (candidate.label === "weekly_revenue_by_store_and_category") {
+          mcpAggregate = result;
+        }
+      }
+      assert.equal(repeatedExploreResults.length, 10);
+      assert.ok(mcpAggregate, "continuous Explore omitted the reference weekly aggregate");
       assert.equal(mcpAggregate.ok, true);
       assert.equal(mcpAggregate.source_database_changed, false);
       assert.ok(mcpAggregate.data.length > 0, "privacy-safe weekly retail aggregate returned no useful groups");
@@ -446,8 +736,22 @@ try {
         await expectMcpRefusal(client, plan, label);
       }
     });
-  evidence.aggregate.official_mcp_parity = true;
-  evidence.aggregate.mcp_returned_groups = mcpAggregate.data.length;
+    assert.equal(
+      fs.existsSync(protectedDraftsRoot),
+      false,
+      "Repeated legal Explore plans created a protected artifact without human intent",
+    );
+    evidence.aggregate.official_mcp_parity = true;
+    evidence.aggregate.mcp_returned_groups = mcpAggregate.data.length;
+    evidence.continuous_explore = {
+      legal_plans_without_protect: repeatedExploreResults,
+      legal_plan_count: repeatedExploreResults.length,
+      protected_artifacts_created: false,
+      reviewed_measures_dimensions_filters_time_comparison_and_rankings: true,
+      second_reviewed_relationship_used: true,
+      output_schema_checked: true,
+      describe_catalog_checked: true,
+    };
     evidence.security = {
       assigned_read_allowed: true,
       same_tenant_other_principal_hidden: true,
@@ -458,6 +762,11 @@ try {
       authoring_tools: ["app.describe_data", "app.explore_data"],
     };
 
+    // The adversarial MCP battery intentionally consumes the reviewed durable
+    // request-rate budget. Let that one-minute window expire before proving
+    // equivalent first-party Ask surfaces; do not bypass or reset the budget.
+    await new Promise((resolve) => setTimeout(resolve, 61_000));
+
     const packedAskStatus = await evaluate(page, `fetch("/api/ask/status")
       .then(async response=>({status:response.status,payload:await response.json()}))`);
     assert.equal(
@@ -466,7 +775,7 @@ try {
       `Packed Workbench Ask status failed: ${JSON.stringify(packedAskStatus.payload)}`,
     );
     await waitForExpression(page, "document.querySelector('#ask-shell')?.offsetParent !== null");
-    await waitForExpression(page, "document.querySelector('#ask-authority-summary')?.textContent.includes('reviewed tool')");
+    await waitForExpression(page, "document.querySelector('#ask-authority-summary')?.textContent.includes('scoped · read-only')");
     assert.match(
       await evaluate(page, "document.querySelector('#ask-starters')?.textContent"),
       /reviewed question|weekly|revenue/i,
@@ -479,8 +788,18 @@ try {
     );
     await click(page, "#run-ask");
     await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly revenue')");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('app.explore_data')");
-    assert.deepEqual(askAggregateResult?.data, mcpAggregate.data, "Ask and official MCP returned different retail aggregate groups");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Runner verified')");
+    const askTranscriptText = await evaluate(page, "document.querySelector('#ask-transcript')?.textContent");
+    assert.match(
+      askTranscriptText,
+      /No rows or groups passed the reviewed scope and privacy thresholds|Reviewed Runner tool completed|Runner refused this request|Total net revenue|net revenue/i,
+      "Workbench Ask did not render a recognizable authoritative result",
+    );
+    assert.ok(
+      Array.isArray(askAggregateResult?.data),
+      `Ask aggregate result omitted canonical data; refusal: ${String(askAggregateResult?.error_code ?? "none")}; received keys: ${Object.keys(askAggregateResult ?? {}).sort().join(", ") || "(none)"}`,
+    );
+    assert.deepEqual(askAggregateResult.data, mcpAggregate.data, "Ask and official MCP returned different retail aggregate groups");
     assert.equal(askAggregateResult?.source_database_changed, false);
     assert.doesNotMatch(
       JSON.stringify(askAggregateResult),
@@ -491,7 +810,6 @@ try {
 
     await type(page, "#ask-question", "Group orders by the private customer note so I can inspect those notes.");
     await click(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('kept-out field was refused')");
     await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.toLowerCase().includes('refused')");
     assert.equal(askRefusalResult?.source_database_changed, false);
     assert.match(JSON.stringify(askRefusalResult), /refus|review|group|field/i);
@@ -499,18 +817,166 @@ try {
       JSON.stringify(askRefusalResult),
       /synthetic private customer note|other manager private note|rival private note/i,
     );
+    const cliAskArgs = [
+      "try", "ask",
+      "How did reviewed sales counts change by week across channels?",
+      "--project-root", projectRoot,
+      "--config", path.join(projectRoot, "synapsor.runner.json"),
+      "--store", path.join(projectRoot, ".synapsor", "local.db"),
+      "--provider", "openai-compatible",
+      "--model", "retail-local-fixture",
+      "--base-url", askProviderUrl,
+      "--mode", "authoring",
+      "--json",
+    ];
+    const cliAskInvocation = await runAsync(cli, cliAskArgs, {
+      cwd: projectRoot,
+      env: sharedEnv,
+      timeout: 30_000,
+    });
+    assert.doesNotMatch(
+      `${cliAskInvocation.stdout}\n${cliAskInvocation.stderr}`,
+      /ALLOW EGRESS sha256:/,
+      "Loopback CLI Ask incorrectly required hosted-provider egress consent",
+    );
+    const cliAsk = JSON.parse(cliAskInvocation.stdout);
+    assert.equal(cliAsk.ok, true);
+    assert.equal(cliAsk.mode, "authoring");
+    assert.equal(cliAsk.provider, "openai_compatible");
+    assert.equal(cliAsk.runner_verified_analysis.database_result_verified, true);
+    assert.deepEqual(cliAsk.runner_verified_analysis.tools_called, ["app.explore_data"]);
+    assert.equal(cliAsk.runner_verified_analysis.source_database_changed, false);
+    assert.equal(cliAsk.source_database_changed, false);
+    assert.equal(cliAsk.model_can_activate, false);
+    assert.equal(cliAsk.model_can_approve, false);
+    assert.equal(cliAsk.model_can_apply, false);
+    assert.doesNotMatch(
+      JSON.stringify(cliAsk),
+      /retail_manager_reader_password|retail_writer_password|sales-fact-other-manager|sales-fact-rival|private customer note/i,
+    );
+    assert.equal(
+      fs.existsSync(protectedDraftsRoot),
+      false,
+      "CLI Ask created a protected artifact without an explicit Protect command",
+    );
+    const interactiveAsk = await runScriptedInteractive(cli, [
+      "try", "ask",
+      "--project-root", projectRoot,
+      "--config", path.join(projectRoot, "synapsor.runner.json"),
+      "--store", path.join(projectRoot, ".synapsor", "local.db"),
+      "--provider", "openai-compatible",
+      "--model", "retail-local-fixture",
+      "--base-url", askProviderUrl,
+      "--mode", "authoring",
+    ], {
+      cwd: projectRoot,
+      env: sharedEnv,
+      timeout: 90_000,
+      steps: [
+        { waitFor: "synapsor> ", send: "Which reviewed channels had the most distinct sales?" },
+        { waitFor: "The reviewed distinct-sales analysis is complete." },
+        { waitFor: "synapsor> ", send: "Compare those sales by reviewed product category using total quantity." },
+        { waitFor: "The reviewed product-category quantity analysis is complete." },
+        { waitFor: "synapsor> ", send: "/analyses" },
+        { waitFor: "Recent analyses" },
+        { waitFor: "synapsor> ", send: "/protect last as retail.shell_quantity_by_category" },
+        { waitFor: "Activate this reviewed read capability", send: "" },
+        { waitFor: "Protected capability active: retail.shell_quantity_by_category" },
+        { waitFor: "synapsor> ", send: "Run two reviewed analyses: average sale by store and bounded online revenue." },
+        { waitFor: "Both reviewed analyses are complete." },
+        { waitFor: "synapsor> ", send: "/protect" },
+        { waitFor: "Choose an analysis [1-2]: ", send: "2" },
+        { waitFor: "Capability name [", send: "" },
+        { waitFor: "Activate this reviewed read capability", send: "" },
+        { waitFor: "Protected capability active:" },
+        { waitFor: "synapsor> ", send: "/exit" },
+      ],
+    });
+    const interactiveText = interactiveAsk.stdout;
+    assert.match(interactiveText, /Synapsor Analytics/);
+    assert.match(interactiveText, /Scoped Explore active - read-only development access/);
+    assert.match(interactiveText, /Provider: OpenAI-compatible \(local\/loopback\)/);
+    assert.doesNotMatch(
+      interactiveText,
+      /(?:^|\n)(?:Waiting for the provider|Running a reviewed data tool)\.\.\.(?:\n|$)/,
+      "Transient progress text remained in the completed terminal transcript",
+    );
+    assert.match(interactiveText, /model interpretation/i);
+    assert.match(interactiveText, /RUNNER-VERIFIED DATA/);
+    assert.match(interactiveText, /Recent analyses/);
+    assert.match(interactiveText, /PROTECT REVIEW[\s\S]*Capability: retail\.shell_quantity_by_category/);
+    assert.match(interactiveText, /Protected capability active: retail\.shell_quantity_by_category/);
+    assert.match(interactiveText, /This answer used 2 protectable analyses/);
+    assert.match(interactiveText, /Choose an analysis \[1-2\]/);
+    assert.match(interactiveText, /Agent authority activated: no/);
+    assert.doesNotMatch(interactiveText, /ACTIVATE sha256:|Exact activation confirmation|view=protect/i);
+    const beforeAnalysisListing = interactiveText.slice(
+      0,
+      interactiveText.indexOf("Recent analyses"),
+    );
+    assert.doesNotMatch(
+      beforeAnalysisListing,
+      /Database unchanged|Source database changed:\s*no|Evidence recorded|Analysis A[1-9]/i,
+      "Normal interactive answers exposed repetitive governance footers",
+    );
+    const shellDraftRoot = path.join(
+      protectedDraftsRoot,
+      "retail__shell_quantity_by_category",
+    );
+    const shellDraft = JSON.parse(await fsp.readFile(
+      path.join(shellDraftRoot, "draft.json"),
+      "utf8",
+    ));
+    assert.equal(shellDraft.state, "disabled");
+    assert.equal(shellDraft.capability, "retail.shell_quantity_by_category");
+    const shellActivationPath = path.join(
+      projectRoot,
+      "synapsor",
+      "protected",
+      "active",
+      "retail__shell_quantity_by_category.activation.json",
+    );
+    assert.equal(fs.existsSync(shellActivationPath), true, "CLI human activation did not create the canonical activation record");
+    const shellActivation = JSON.parse(await fsp.readFile(shellActivationPath, "utf8"));
+    assert.equal(shellActivation.state, "active");
+    assert.equal(shellActivation.actor, "retail-reviewer@example.test");
+    assert.equal(shellActivation.contract_digest, shellDraft.contract_digest);
+    assert.equal(shellActivation.exploration_disabled, false);
     evidence.ask = {
       provider: "custom_openai_compatible_loopback",
       aggregate_official_mcp_parity: true,
+      cli_ask_official_mcp_parity: true,
+      cli_ask_verified_tool: "app.explore_data",
+      interactive_shell: true,
+      contextual_follow_up: true,
+      analyses_command: true,
+      single_plan_protect: true,
+      multi_plan_picker: true,
+      normal_read_governance_footer: false,
+      shell_draft_state: shellDraft.state,
       aggregate_source_database_changed: false,
       kept_out_field_refused: true,
       refusal_source_database_changed: false,
       provider_key_required: false,
+      loopback_egress_consent_required: false,
       synapsor_relay: false,
     };
     await evaluate(page, "document.querySelector('#ask-transcript .ask-turn:last-child')?.scrollIntoView({block:'center'})");
     await shot(page, "05c-ask-refusal.png");
 
+    const protectSelectionState = await evaluate(page, `(async()=>({
+      preferred:preferredProtectQueryRef,
+      available:(await fetch("/api/protect").then(response=>response.json())).queries.map(query=>query.query_ref)
+    }))()`);
+    assert.equal(
+      protectSelectionState.preferred,
+      workbenchAggregateProtectRef,
+      "A later Ask or shell action replaced the Workbench result selected for Protect",
+    );
+    assert.ok(
+      protectSelectionState.available.includes(workbenchAggregateProtectRef),
+      `The original Workbench analysis ${workbenchAggregateProtectRef} disappeared before Protect`,
+    );
     await click(page, "#protect-result");
     await waitForExpression(page, "document.querySelector('#view-protect')?.classList.contains('active') === true");
     await waitForExpression(page, "Boolean(document.querySelector('#create-protected'))");
@@ -519,15 +985,15 @@ try {
     await click(page, "#create-protected");
     await waitForExpression(
       page,
-      "Boolean(document.querySelector('#protect-confirmation')) || (Boolean(document.querySelector('#protect-message')?.textContent.trim()) && !document.querySelector('#protect-message')?.textContent.includes('Compiling public DSL'))",
+      "Boolean(document.querySelector('#activate-protected')) || (Boolean(document.querySelector('#protect-message')?.textContent.trim()) && !document.querySelector('#protect-message')?.textContent.includes('Compiling public DSL'))",
     );
     const protectMessage = await evaluate(page, "document.querySelector('#protect-message')?.textContent||''");
     assert.ok(
-      await evaluate(page, "Boolean(document.querySelector('#protect-confirmation'))"),
-      `Protect did not create an activation confirmation: ${protectMessage}`,
+      await evaluate(page, "Boolean(document.querySelector('#activate-protected'))"),
+      `Protect did not create the reviewed activation action: ${protectMessage}`,
     );
     await waitForExpression(page, "document.querySelectorAll('#protect-dsl-preview .syntax-token.keyword').length >= 3");
-    const protectedDigest = await evaluate(page, `document.querySelector("#protect-preview code")?.textContent`);
+    const protectedDigest = await evaluate(page, `document.querySelector("#protect-preview details code")?.textContent`);
     assert.match(protectedDigest, /^sha256:[a-f0-9]{64}$/);
     const protectedPreviewDsl = await evaluate(page, "document.querySelector('#protect-dsl-preview code')?.textContent");
     assert.equal(
@@ -546,9 +1012,9 @@ try {
       features: [{ name: "prefers-color-scheme", value: "light" }],
     });
     await type(page, "#protect-actor", "retail-reviewer@example.test");
-    await type(page, "#protect-confirmation", `ACTIVATE ${protectedDigest}`);
     await click(page, "#activate-protected");
     await waitForExpression(page, "document.querySelector('#protect-message')?.textContent.includes('active')");
+    await waitForExpression(page, "document.querySelector('#view-explore')?.classList.contains('active') === true");
     const protectedDraftRoot = path.join(
       projectRoot,
       "synapsor",
@@ -574,7 +1040,15 @@ try {
       path.join(protectedDraftRoot, "contract-tests.json"),
       "utf8",
     ));
-    assert.ok(protectedTests.tests.length >= 10);
+    const protectedTestIds = new Set(protectedTests.tests.map((test) => test.id));
+    for (const requiredTest of [
+      "protected-read-shape-suppression-drift-and-boundaries",
+      "trusted-scope-remains-outside-model-arguments",
+      "evidence-and-query-audit-remain-required",
+      "operator-controls-remain-outside-mcp",
+    ]) {
+      assert.ok(protectedTestIds.has(requiredTest), `Protected draft omitted ${requiredTest}`);
+    }
     evidence.protected = {
       capability: "retail.weekly_revenue_by_store_and_category",
       digest: protectedDigest,
@@ -586,6 +1060,9 @@ try {
     evidence.timings_ms.protected_capability = Date.now() - startedAt;
     await shot(page, "07-next-safe-action.png");
 
+    await waitForExpression(page, "document.querySelector('#leave-ask-focus')?.offsetParent !== null");
+    await click(page, "#leave-ask-focus");
+    await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
     await click(page, '[data-view="action"]');
     await waitForExpression(page, "document.querySelector('#view-action')?.classList.contains('active') === true");
     if (await evaluate(page, "document.querySelector('#action-wizard')?.classList.contains('hidden') === true")) {
@@ -628,11 +1105,10 @@ try {
     await click(page, "#preview-action");
     await waitForExpression(page, "document.querySelector('#action-status')?.textContent.includes('Proposal created')");
     evidence.timings_ms.first_guided_proposal = Date.now() - startedAt;
-    const actionDigest = await evaluate(page, "document.querySelector('#action-draft code')?.textContent");
+    const actionDigest = await evaluate(page, "document.querySelector('[data-action-digest]')?.textContent");
     assert.match(actionDigest, /^sha256:[a-f0-9]{64}$/);
     assert.equal(queryPostgres("SELECT status || ':' || version FROM public.orders WHERE id = 'order-005'"), "processing:1");
     await type(page, "#action-actor", "retail-reviewer@example.test");
-    await type(page, "#action-confirmation", `ACTIVATE ${actionDigest}`);
     await evaluate(page, "document.querySelector('#action-dsl-preview')?.closest('details')?.setAttribute('open','')");
     await evaluate(page, "document.querySelector('#action-draft')?.scrollIntoView({block:'start'})");
     await shot(page, "08-disabled-safe-action.png");
@@ -653,17 +1129,30 @@ try {
     );
     await shot(page, "09-proposal-created.png");
 
-    await click(page, "#finish-authoring");
+    const activeBoundaryPath = path.join(projectRoot, ".synapsor", "exploration-boundary.active.json");
+    const activeBoundaryBeforeProposalReview = await fsp.readFile(activeBoundaryPath, "utf8");
+    await click(page, "#review-proposal");
     await waitForExpression(page, "location.search.includes('surface=activity')");
     await waitForExpression(page, "Boolean(document.querySelector('[aria-label=\"Exact approval confirmation\"]'))");
     assert.equal(queryPostgres("SELECT status || ':' || version FROM public.orders WHERE id = 'order-005'"), "processing:1");
     assert.match(await evaluate(page, "document.querySelector('#detail')?.textContent"), /Source database changed:\s*No/i);
 
+    const connectionsBeforeFreshness = Number(queryPostgres(
+      "SELECT count(*) FROM pg_stat_activity WHERE datname = 'northstar_commerce'",
+    ));
     if (await evaluate(page, `[...document.querySelectorAll("button")]
       .some(button=>button.textContent.trim()==="Check live freshness")`)) {
+      const freshnessEventsBefore = await evaluate(page, `[...document.querySelectorAll("#detail *")]
+        .filter(node=>node.childElementCount===0 && node.textContent.trim()==="Freshness checked against live source").length`);
       await clickText(page, "button", "Check live freshness");
-      await waitForExpression(page, "document.querySelector('#detail')?.textContent.includes('Freshness: fresh')");
+      await waitForExpression(page, `[...document.querySelectorAll("#detail *")]
+        .filter(node=>node.childElementCount===0 && node.textContent.trim()==="Freshness checked against live source").length > ${freshnessEventsBefore}`);
+      await waitForExpression(page, `document.querySelector('#detail')?.textContent.includes('Freshness: fresh')
+        && !document.querySelector('#detail')?.textContent.includes('Checking the current source state')`);
     }
+    const connectionsAfterFreshness = Number(queryPostgres(
+      "SELECT count(*) FROM pg_stat_activity WHERE datname = 'northstar_commerce'",
+    ));
     const proposalHash = await evaluate(page, `document.querySelector('[aria-label="Exact approval confirmation"]')
       ?.placeholder.replace("APPROVE ","")`);
     assert.match(proposalHash, /^sha256:[a-f0-9]{64}$/);
@@ -698,14 +1187,36 @@ try {
       || ![...document.querySelectorAll("#detail .status-line")]
         .some(node=>node.textContent.includes("Type the exact hash-bound confirmation"))`);
     if (!await evaluate(page, `Boolean(document.querySelector('[aria-label="Exact apply confirmation"]'))`)) {
-      throw new Error(`Workbench approval did not advance:\n${await evaluate(page, "document.querySelector('#detail')?.textContent")}`);
+      const connectionsAfterApproval = Number(queryPostgres(
+        "SELECT count(*) FROM pg_stat_activity WHERE datname = 'northstar_commerce'",
+      ));
+      throw new Error(
+        `Workbench approval did not advance (connections before/check/after: `
+        + `${connectionsBeforeFreshness}/${connectionsAfterFreshness}/${connectionsAfterApproval}):\n`
+        + `${await evaluate(page, "document.querySelector('#detail')?.textContent")}\n`
+        + `Workbench process output:\n${ui.output()}`,
+      );
     }
     assert.equal(queryPostgres("SELECT status || ':' || version FROM public.orders WHERE id = 'order-005'"), "processing:1");
     await type(page, '[aria-label="Apply reason"]', "Commit the independently approved order transition.");
     await type(page, '[aria-label="Exact apply confirmation"]', `APPLY ${proposalHash}`);
     await shot(page, "11-approved-awaiting-apply.png");
     await clickText(page, "button", "Apply guarded writeback");
-    await waitForExpression(page, "document.querySelector('#detail')?.textContent.includes('Committed by the trusted runner')");
+    try {
+      await waitForPostgresState(
+        "SELECT status || ':' || version FROM public.orders WHERE id = 'order-005'",
+        "fulfilled:2",
+        60_000,
+      );
+      await waitForExpression(page, "document.querySelector('#detail')?.textContent.includes('Committed by the trusted runner')");
+    } catch (error) {
+      throw new Error(
+        `Workbench guarded apply did not complete; source state is `
+        + `${queryPostgres("SELECT status || ':' || version FROM public.orders WHERE id = 'order-005'")}:\n`
+        + `${await evaluate(page, "document.querySelector('#detail')?.textContent")}`,
+        { cause: error },
+      );
+    }
     assert.equal(queryPostgres("SELECT status || ':' || version FROM public.orders WHERE id = 'order-005'"), "fulfilled:2");
     await shot(page, "12-guarded-apply.png");
 
@@ -717,6 +1228,11 @@ try {
     assert.match(ledgerText, /replay/i);
     assert.doesNotMatch(ledgerText, /retail_writer_password|synthetic private customer note|other manager private note|rival private note/i);
     await shot(page, "13-ledger-timeline.png");
+    assert.equal(
+      await fsp.readFile(activeBoundaryPath, "utf8"),
+      activeBoundaryBeforeProposalReview,
+      "proposal review or guarded apply changed the active Scoped Explore authority",
+    );
 
     evidence.write_lifecycle = {
       capability: "retail.propose_order_fulfillment",
@@ -735,40 +1251,36 @@ try {
     };
     evidence.timings_ms.first_guarded_apply = Date.now() - startedAt;
 
-    askProposalTarget = queryPostgres(
-      "SELECT id FROM public.orders WHERE merchant_id = 'merchant-northstar' AND assigned_manager_id = 'staff-manager-alex' AND status = 'processing' AND id <> 'order-005' ORDER BY id LIMIT 1",
-    );
-    assert.match(askProposalTarget, /^order-/);
-    const escapedAskTarget = askProposalTarget.replaceAll("'", "''");
-    const askBefore = queryPostgres(
-      `SELECT status || ':' || version FROM public.orders WHERE id = '${escapedAskTarget}'`,
-    );
     await navigateAndWait(page, `${new URL(ui.url).origin}/`);
     await waitForExpression(page, "document.querySelector('#header-state')?.textContent !== 'Loading'");
-    await click(page, '[data-view="explore"]');
+    if (!await evaluate(page, "document.querySelector('#ask-shell')?.offsetParent !== null")) {
+      if (await evaluate(page, "document.querySelector('#leave-ask-focus')?.offsetParent !== null")) {
+        await click(page, "#leave-ask-focus");
+      }
+      await waitForExpression(page, "document.querySelector('[data-view=\"explore\"]')?.offsetParent !== null");
+      await click(page, '[data-view="explore"]');
+    }
     await waitForExpression(page, "document.querySelector('#ask-shell')?.offsetParent !== null");
     await configureLocalAsk(page, askProviderUrl, "retail-local-fixture");
-    await type(page, "#ask-question", `Propose fulfilling reviewed order ${askProposalTarget}.`);
+    await type(page, "#ask-question", "How did reviewed net revenue change by week across stores and product categories?");
     await click(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('proposal for operator review')");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Proposal only')");
-    assert.equal(askProposalResult?.source_database_changed, false);
-    assert.match(JSON.stringify(askProposalResult), /proposal|pending_review/i);
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly revenue')");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Runner verified')");
+    assert.equal(askAggregateResult?.source_database_changed, false);
     assert.equal(
-      queryPostgres(`SELECT status || ':' || version FROM public.orders WHERE id = '${escapedAskTarget}'`),
-      askBefore,
-      "Retail Ask proposal mutated the source database",
+      await fsp.readFile(activeBoundaryPath, "utf8"),
+      activeBoundaryBeforeProposalReview,
+      "continued analytics after guarded apply changed the active Scoped Explore authority",
     );
-    evidence.ask.proposal_only = true;
-    evidence.ask.proposal_id = askProposalResult?.proposal_id
-      ?? askProposalResult?.proposal?.proposal_id
-      ?? askProposalResult?.proposal?.id;
-    evidence.ask.proposal_target = askProposalTarget;
+    evidence.ask.explore_survived_write_lifecycle = true;
     evidence.ask.model_can_activate = false;
     evidence.ask.model_can_approve = false;
     evidence.ask.model_can_apply = false;
     await evaluate(page, "window.scrollTo(0,document.querySelector('#ask-shell').getBoundingClientRect().top+window.scrollY-76)");
-    await shot(page, "13b-ask-proposal-only.png");
+    await shot(page, "13b-ask-after-write-lifecycle.png");
+    const disableResult = await evaluate(page, `post("/api/explore/disable", {})`);
+    assert.equal(disableResult.disabled, true, "explicit operator action did not disable Scoped Explore");
+    evidence.ask.explore_explicitly_disabled = true;
   } finally {
     page.close();
   }
@@ -827,7 +1339,9 @@ try {
   assert.deepEqual(
     [...activeTools.active_tools].sort(),
     [
+      "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
       "retail.propose_order_fulfillment",
+      "retail.shell_quantity_by_category",
       "retail.weekly_revenue_by_store_and_category",
     ],
   );
@@ -836,6 +1350,7 @@ try {
   assert.equal(activeTools.model_can_apply, false);
 
   let runtimeTools;
+  let runtimeCatalog;
   let protectedRuntimeResult;
   let proposalOnlyResult;
   await withPackedMcp({
@@ -857,7 +1372,9 @@ try {
     assert.deepEqual(
       listed.tools.map((tool) => tool.name).sort(),
       [
+        "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
         "retail.propose_order_fulfillment",
+        "retail.shell_quantity_by_category",
         "retail.weekly_revenue_by_store_and_category",
       ],
     );
@@ -869,11 +1386,59 @@ try {
       listed.tools.map((tool) => tool.inputSchema),
       new Set(["sql", "tenant", "tenant_id", "principal", "approve", "apply", "commit"]),
     ), false);
+    const protectedTool = listed.tools.find(
+      (tool) => tool.name === "retail.weekly_revenue_by_store_and_category",
+    );
+    assert.ok(protectedTool?.outputSchema, "protected analytical tool omitted outputSchema");
+    const resources = await client.listResources();
+    assert.ok(
+      resources.resources.some((resource) => resource.uri === "synapsor://analytics/catalog/v1"),
+      "production MCP omitted the reviewed analytics catalog resource",
+    );
+    const catalogResponse = await client.readResource({
+      uri: "synapsor://analytics/catalog/v1",
+    });
+    const catalogText = catalogResponse.contents.find(
+      (content) => "text" in content && content.uri === "synapsor://analytics/catalog/v1",
+    )?.text;
+    assert.equal(typeof catalogText, "string", "analytics catalog resource omitted JSON text");
+    runtimeCatalog = JSON.parse(catalogText);
+    assert.equal(runtimeCatalog.schema_version, "synapsor.analytics-catalog.v1");
+    assert.deepEqual(
+      runtimeCatalog.capabilities.map((capability) => capability.capability).sort(),
+      [
+        "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
+        "retail.shell_quantity_by_category",
+        "retail.weekly_revenue_by_store_and_category",
+      ],
+    );
+    const protectedCatalogEntry = runtimeCatalog.capabilities.find(
+      (capability) => capability.capability === "retail.weekly_revenue_by_store_and_category",
+    );
+    assert.ok(protectedCatalogEntry, "analytics catalog omitted the Workbench-protected capability");
+    assert.equal(protectedCatalogEntry.contract.digest, evidence.protected.digest);
+    assert.deepEqual(
+      dereferenceLocalJsonSchema(protectedCatalogEntry.output_schema),
+      dereferenceLocalJsonSchema(protectedTool.outputSchema),
+      "catalog and tools/list published semantically different output schemas",
+    );
+    const pinResponse = await client.readResource({
+      uri: `synapsor://analytics/catalog/v1/retail.weekly_revenue_by_store_and_category/${evidence.protected.digest}`,
+    });
+    const pinText = pinResponse.contents.find((content) => "text" in content)?.text;
+    assert.equal(typeof pinText, "string");
+    assert.equal(JSON.parse(pinText).status, "current");
 
-    protectedRuntimeResult = resultPayload(await client.callTool({
+    const protectedRuntimeCall = await client.callTool({
       name: "retail.weekly_revenue_by_store_and_category",
       arguments: {},
-    }));
+    });
+    assertToolOutputShape(
+      protectedRuntimeCall,
+      protectedTool.outputSchema,
+      "retail.weekly_revenue_by_store_and_category",
+    );
+    protectedRuntimeResult = resultPayload(protectedRuntimeCall);
     assert.equal(protectedRuntimeResult.ok, true);
     assert.equal(protectedRuntimeResult.source_database_changed, false);
     assert.doesNotMatch(
@@ -894,6 +1459,13 @@ try {
       "SELECT status || ':' || version FROM public.orders WHERE id = 'order-010'",
     ), "processing:1");
   });
+  const cliCatalog = JSON.parse(run(cli, [
+    "tools", "catalog",
+    "--config", path.join(projectRoot, "synapsor.runner.json"),
+    "--result-format", "v2",
+    "--json",
+  ], { cwd: projectRoot, env: sharedEnv }).stdout);
+  assert.deepEqual(cliCatalog, runtimeCatalog, "CLI and MCP returned different analytics catalogs");
 
   const lifecycle = JSON.parse(run(cli, [
     "lifecycle", "show", "latest", "--details", "--json",
@@ -903,7 +1475,10 @@ try {
   const audit = JSON.parse(run(cli, [
     "query-audit", "list", "--json",
   ], { cwd: projectRoot, env: sharedEnv }).stdout);
-  assert.ok(audit.query_audit.length >= 4);
+  assert.ok(
+    audit.query_audit.length >= retailExplorePlans.length,
+    "continuous Explore did not leave durable normalized query-audit evidence",
+  );
   assert.doesNotMatch(
     JSON.stringify(audit),
     /retail_manager_reader_password|retail_writer_password|private customer note|order-manager-other|order-rival/i,
@@ -917,6 +1492,9 @@ try {
     proposal_tool_source_changed: proposalOnlyResult.source_database_changed,
     cli_latest_lifecycle_without_id: true,
     redacted_query_audit_without_id: true,
+    normalized_query_audit_entries: audit.query_audit.length,
+    cli_and_mcp_analytics_catalog_match: true,
+    protected_output_schema_checked: true,
   };
 
   const expectedAverageRetention = Number(queryPostgres(
@@ -1053,61 +1631,91 @@ async function startAskProvider() {
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         assert.equal(body.model, "retail-local-fixture");
         const messages = Array.isArray(body.messages) ? body.messages : [];
-        const serialized = JSON.stringify(messages);
-        const proposal = /Propose fulfilling reviewed order/i.test(serialized);
-        const refusal = !proposal && /private customer note/i.test(serialized);
+        const latestQuestion = [...messages].reverse().find(
+          (message) => message?.role === "user" && typeof message.content === "string",
+        )?.content ?? "";
+        const refusal = /private customer note/i.test(latestQuestion);
+        const multiPlan = !refusal
+          && /two reviewed analyses: average sale by store and bounded online revenue/i.test(latestQuestion);
+        const selectedPlan = /sales counts change by week across channels/i.test(latestQuestion)
+          ? retailExplorePlans[1].plan
+          : /distinct sales/i.test(latestQuestion)
+            ? retailExplorePlans[2].plan
+            : /product category using total quantity/i.test(latestQuestion)
+              ? retailExplorePlans[3].plan
+              : retailAggregatePlan;
         const toolResult = [...messages].reverse().find((message) => message?.role === "tool");
         response.setHeader("content-type", "application/json");
         if (toolResult) {
           const result = JSON.parse(toolResult.content);
-          if (proposal) askProposalResult = result;
-          else if (refusal) askRefusalResult = result;
+          if (refusal) askRefusalResult = result;
           else askAggregateResult = result;
+          const successfulAnswer = multiPlan
+            ? "Both reviewed analyses are complete."
+            : /sales counts change by week across channels/i.test(latestQuestion)
+              ? "The reviewed weekly sales-count analysis is complete."
+              : /distinct sales/i.test(latestQuestion)
+                ? "The reviewed distinct-sales analysis is complete."
+                : /product category using total quantity/i.test(latestQuestion)
+                  ? "The reviewed product-category quantity analysis is complete."
+                  : "The reviewed weekly revenue analysis is complete.";
           response.end(JSON.stringify({
             choices: [{
               message: {
                 role: "assistant",
-                content: proposal
-                  ? "I created a proposal for operator review. The source database has not changed."
-                  : refusal
+                content: refusal
                     ? "The request to group by a kept-out field was refused by the reviewed Synapsor boundary."
-                    : "The reviewed weekly revenue analysis is complete.",
+                    : successfulAnswer,
               },
             }],
           }));
           return;
         }
+        const toolCalls = multiPlan
+          ? [
+              {
+                id: "call_retail_multi_average",
+                type: "function",
+                function: {
+                  name: "app__explore_data",
+                  arguments: JSON.stringify({ plan: retailExplorePlans[4].plan }),
+                },
+              },
+              {
+                id: "call_retail_multi_online",
+                type: "function",
+                function: {
+                  name: "app__explore_data",
+                  arguments: JSON.stringify({ plan: retailExplorePlans[5].plan }),
+                },
+              },
+            ]
+          : [{
+              id: refusal
+                  ? "call_retail_refusal"
+                  : "call_retail_aggregate",
+              type: "function",
+              function: {
+                name: "app__explore_data",
+                arguments: JSON.stringify(refusal
+                    ? {
+                        plan: {
+                          kind: "aggregate",
+                          resource: "public.orders",
+                          measures: [{ function: "count" }],
+                          dimensions: [{ field: "private_customer_note" }],
+                          top_n: 10,
+                        },
+                      }
+                    : { plan: selectedPlan }),
+              },
+            }];
         response.end(JSON.stringify({
           choices: [{
             message: {
               role: "assistant",
               content: null,
-              tool_calls: [{
-                id: proposal
-                  ? "call_retail_proposal"
-                  : refusal
-                    ? "call_retail_refusal"
-                    : "call_retail_aggregate",
-                type: "function",
-                function: {
-                  name: proposal
-                    ? "retail__propose_order_fulfillment"
-                    : "app__explore_data",
-                  arguments: JSON.stringify(proposal
-                    ? { order_id: askProposalTarget }
-                    : refusal
-                      ? {
-                          plan: {
-                            kind: "aggregate",
-                            resource: "public.orders",
-                            measures: [{ function: "count" }],
-                            dimensions: [{ field: "private_customer_note" }],
-                            top_n: 10,
-                          },
-                        }
-                      : { plan: retailAggregatePlan }),
-                },
-              }],
+              tool_calls: toolCalls,
             },
           }],
         }));
@@ -1156,6 +1764,11 @@ async function selectVisibleOption(page, selector, pattern) {
 }
 
 async function shot(page, name) {
+  await waitForExpression(
+    page,
+    `document.querySelector(".view.active")?.getAnimations()
+      .every(animation => animation.playState !== "running") !== false`,
+  );
   await captureScreenshot(page, path.join(screenshotRoot, name));
   screenshots.push(name);
 }
@@ -1242,12 +1855,49 @@ function resultPayload(result) {
   return JSON.parse(text);
 }
 
+function assertToolOutputShape(result, schema, label) {
+  assert.notEqual(
+    result.isError,
+    true,
+    `${label} returned an MCP error: ${JSON.stringify(result)}`,
+  );
+  const payload = resultPayload(result);
+  assert.equal(schema?.type, "object", `${label} did not publish an object outputSchema`);
+  assert.ok(schema.properties && typeof schema.properties === "object", `${label} outputSchema omitted properties`);
+  for (const required of schema.required ?? []) {
+    assert.ok(
+      Object.hasOwn(payload, required),
+      `${label} result omitted outputSchema-required property ${required}`,
+    );
+  }
+  for (const [name, property] of Object.entries(schema.properties)) {
+    if (!Object.hasOwn(payload, name) || !property || typeof property !== "object") continue;
+    if (property.type === "array") {
+      assert.ok(Array.isArray(payload[name]), `${label}.${name} did not match outputSchema array type`);
+    } else if (property.type === "object") {
+      assert.ok(
+        payload[name] !== null && typeof payload[name] === "object" && !Array.isArray(payload[name]),
+        `${label}.${name} did not match outputSchema object type`,
+      );
+    } else if (property.type === "boolean") {
+      assert.equal(typeof payload[name], "boolean", `${label}.${name} did not match outputSchema boolean type`);
+    } else if (property.type === "string") {
+      assert.equal(typeof payload[name], "string", `${label}.${name} did not match outputSchema string type`);
+    }
+  }
+}
+
 function assertSmallSafeToolSurface(tools) {
   const serialized = JSON.stringify(tools);
   const bytes = Buffer.byteLength(serialized, "utf8");
-  assert.ok(bytes <= 8_000, `authoring tools/list exceeded 8,000 bytes: ${bytes}`);
-  assert.ok(Math.ceil(bytes / 4) <= 2_000, "authoring tools/list exceeded the 2,000-token estimate");
+  assert.ok(bytes <= 24_000, `authoring client discovery exceeded 24,000 bytes: ${bytes}`);
+  const modelFacingBytes = Buffer.byteLength(JSON.stringify(
+    tools.map(({ outputSchema: _outputSchema, ...tool }) => tool),
+  ), "utf8");
+  assert.ok(modelFacingBytes <= 8_000, `model-facing authoring tools exceeded 8,000 bytes: ${modelFacingBytes}`);
+  assert.ok(Math.ceil(modelFacingBytes / 4) <= 2_000, "model-facing authoring tools exceeded the 2,000-token estimate");
   for (const tool of tools) {
+    assert.equal(typeof tool.outputSchema, "object", `${tool.name} omitted its client-side output schema`);
     assert.doesNotMatch(tool.name, /execute_sql|query_sql|approve|apply|commit/i);
     assert.equal(objectHasKey(tool.inputSchema, new Set([
       "sql",
@@ -1264,6 +1914,38 @@ function assertSmallSafeToolSurface(tools) {
     assert.equal(tool._meta?.["synapsor.approval_tool"], false);
     assert.equal(tool._meta?.["synapsor.commit_tool"], false);
   }
+}
+
+function dereferenceLocalJsonSchema(schema) {
+  const root = structuredClone(schema);
+  const resolvePointer = (reference) => {
+    assert.match(reference, /^#\//, `unsupported non-local JSON Schema reference ${reference}`);
+    return reference
+      .slice(2)
+      .split("/")
+      .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+      .reduce((value, segment) => value?.[segment], root);
+  };
+  const visit = (value, stack = new Set()) => {
+    if (Array.isArray(value)) return value.map((item) => visit(item, stack));
+    if (!value || typeof value !== "object") return value;
+    if (typeof value.$ref === "string") {
+      assert.equal(stack.has(value.$ref), false, `cyclic JSON Schema reference ${value.$ref}`);
+      const target = resolvePointer(value.$ref);
+      assert.ok(target, `unresolved JSON Schema reference ${value.$ref}`);
+      const nextStack = new Set(stack);
+      nextStack.add(value.$ref);
+      const { $ref: _reference, ...siblings } = value;
+      return {
+        ...visit(target, nextStack),
+        ...visit(siblings, nextStack),
+      };
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, visit(item, stack)]),
+    );
+  };
+  return visit(root);
 }
 
 function objectHasKey(value, forbidden) {
@@ -1306,12 +1988,156 @@ function run(command, args, options = {}) {
   return result;
 }
 
+function runAsync(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd ?? root,
+      env: options.env ?? process.env,
+      stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    if (options.input !== undefined) {
+      child.stdin.end(options.input);
+    }
+    const timeout = options.timeout === undefined
+      ? undefined
+      : setTimeout(() => {
+        if (settled) return;
+        child.kill("SIGKILL");
+      }, options.timeout);
+    child.once("error", (error) => {
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("close", (status, signal) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      const result = { status, signal, stdout, stderr };
+      if (!options.allowFailure && status !== 0) {
+        reject(new Error(
+          `${command} ${args.join(" ")} failed (${status ?? signal})\n${stdout}\n${stderr}`,
+        ));
+        return;
+      }
+      resolve(result);
+    });
+  });
+}
+
+async function runScriptedInteractive(command, args, options = {}) {
+  const child = spawn(command, args, {
+    cwd: options.cwd ?? root,
+    env: options.env ?? process.env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  let cursor = 0;
+  let closed;
+  const completion = new Promise((resolve, reject) => {
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (status, signal) => {
+      closed = { status, signal };
+      resolve(closed);
+    });
+  });
+  const deadline = Date.now() + (options.timeout ?? 60_000);
+
+  try {
+    for (const step of options.steps ?? []) {
+      const matchEnd = await waitForScriptedOutput({
+        output: () => stdout,
+        stderr: () => stderr,
+        cursor,
+        expected: step.waitFor,
+        deadline,
+        closed: () => closed,
+      });
+      cursor = matchEnd;
+      if (step.send !== undefined) child.stdin.write(`${step.send}\n`);
+    }
+    const remaining = Math.max(1, deadline - Date.now());
+    const timeout = new Promise((_, reject) => {
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error(`Interactive command did not exit within ${options.timeout ?? 60_000}ms.`));
+      }, remaining);
+      timer.unref();
+    });
+    const result = await Promise.race([completion, timeout]);
+    if (result.status !== 0) {
+      throw new Error(
+        `${command} ${args.join(" ")} failed (${result.status ?? result.signal})\n${stdout}\n${stderr}`,
+      );
+    }
+    return { ...result, stdout, stderr };
+  } catch (error) {
+    if (!closed) child.kill("SIGKILL");
+    throw error;
+  } finally {
+    child.stdin.destroy();
+  }
+}
+
+async function waitForScriptedOutput(input) {
+  while (Date.now() < input.deadline) {
+    const segment = input.output().slice(input.cursor);
+    if (typeof input.expected === "string") {
+      const index = segment.indexOf(input.expected);
+      if (index >= 0) return input.cursor + index + input.expected.length;
+    } else {
+      const match = segment.match(input.expected);
+      if (match?.index !== undefined) return input.cursor + match.index + match[0].length;
+    }
+    if (input.closed()) {
+      throw new Error(
+        `Interactive command exited before ${String(input.expected)}.\n${input.output()}\n${input.stderr()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `Timed out waiting for interactive output ${String(input.expected)}.\n${input.output()}\n${input.stderr()}`,
+  );
+}
+
 function queryPostgres(sql) {
   const result = run("docker", [
     "compose", "-f", compose, "exec", "-T", "postgres",
     "psql", "-U", "retail_admin", "-d", "northstar_commerce", "-Atc", sql,
   ], { cwd: projectRoot });
   return result.stdout.trim();
+}
+
+async function waitForPostgresState(sql, expected, timeoutMs) {
+  const started = Date.now();
+  let actual = "";
+  while (Date.now() - started < timeoutMs) {
+    actual = queryPostgres(sql);
+    if (actual === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Source state did not reach ${expected}; latest value was ${actual}.`);
 }
 
 async function startPublicGuidedCommand(input) {

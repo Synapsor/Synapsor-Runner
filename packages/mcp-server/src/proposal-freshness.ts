@@ -403,6 +403,35 @@ export function validateResolvedFreshnessDependency(
   return undefined;
 }
 
+export function validateFreshnessAuthorityAgainstCurrentConfig(
+  config: RuntimeConfig,
+  proposalCapability: RuntimeCapabilityConfig,
+  authority: FreshnessAuthorityV1,
+): string | undefined {
+  const policy = config.proposal_freshness?.[proposalCapability.name];
+  if (!policy || policy.approval !== "required") return "FRESHNESS_POLICY_AUTHORITY_MISMATCH";
+  const operation = proposalCapability.operation?.kind ?? "update";
+  const expectedTargetMode: FreshnessAuthorityV1["target"]["mode"] = operation === "insert"
+    ? "not_applicable"
+    : proposalCapability.operation?.cardinality === "set"
+      ? "frozen_set"
+      : "exact_guard";
+  if (authority.target.mode !== expectedTargetMode) return "FRESHNESS_TARGET_AUTHORITY_MISMATCH";
+
+  const declared = policy.dependencies ?? [];
+  if (declared.length !== authority.dependencies.length) return "FRESHNESS_DEPENDENCY_SET_MISMATCH";
+  const authorityIds = new Set(authority.dependencies.map((dependency) => dependency.id));
+  if (authorityIds.size !== authority.dependencies.length
+    || declared.some((dependency) => !authorityIds.has(dependency.id))) {
+    return "FRESHNESS_DEPENDENCY_SET_MISMATCH";
+  }
+  for (const dependency of authority.dependencies) {
+    const code = validateResolvedFreshnessDependency(config, proposalCapability, dependency);
+    if (code) return code;
+  }
+  return undefined;
+}
+
 export async function evaluateSupportingFreshness(input: {
   dependency: FreshnessDependencyV1;
   capability: RuntimeCapabilityConfig;

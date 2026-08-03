@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Hospital {
+  id          String @id
+  hospitalId  String @map("hospital_id")
+  careManagerId String @map("care_manager_id")
+  name        String
+  staff       Staff[]
+  units       CareUnit[]
+  reasons     DischargeReason[]
+  patients    Patient[]
+  episodes    CareEpisodeFact[]
+
+  @@map("hospitals")
+}
+
+model Staff {
+  id            String @id
+  hospitalId    String @map("hospital_id")
+  careManagerId String @map("care_manager_id")
+  displayName   String @map("display_name")
+  privateNotes  String @map("private_notes")
+  hospital      Hospital @relation(fields: [hospitalId], references: [id])
+  managedUnits  CareUnit[]
+  reasons       DischargeReason[]
+  patients      Patient[]
+  episodes      CareEpisodeFact[]
+  tasks         CareTask[]
+  claims        InsuranceClaim[]
+  prescriptions Prescription[]
+  labResults    LabResult[]
+
+  @@map("staff")
+}
+
+model CareUnit {
+  id            String @id
+  hospitalId    String @map("hospital_id")
+  careManagerId String @map("care_manager_id")
+  name          String
+  serviceLine   String @map("service_line")
+  hospital      Hospital @relation(fields: [hospitalId], references: [id])
+  careManager   Staff @relation(fields: [careManagerId], references: [id])
+  episodes      CareEpisodeFact[]
+
+  @@unique([hospitalId, name])
+  @@map("care_units")
+}
+
+model DischargeReason {
+  id             String @id
+  hospitalId     String @map("hospital_id")
+  careManagerId  String @map("care_manager_id")
+  name           String
+  reasonCategory String @map("reason_category")
+  hospital       Hospital @relation(fields: [hospitalId], references: [id])
+  careManager    Staff @relation(fields: [careManagerId], references: [id])
+  episodes       CareEpisodeFact[]
+
+  @@unique([hospitalId, name])
+  @@map("discharge_reasons")
+}
+
+model Patient {
+  id                    String @id
+  hospitalId            String @map("hospital_id")
+  careManagerId         String @map("care_manager_id")
+  careStatus             String @map("care_status")
+  patientName            String @map("patient_name")
+  dateOfBirth            DateTime @map("date_of_birth")
+  medicalRecordNumber   String @map("medical_record_number")
+  insuranceMemberId     String @map("insurance_member_id")
+  email                  String
+  phone                  String
+  medicalNotes           String @map("medical_notes")
+  hospital               Hospital @relation(fields: [hospitalId], references: [id])
+  careManager            Staff @relation(fields: [careManagerId], references: [id])
+  episodes               CareEpisodeFact[]
+  tasks                  CareTask[]
+  claims                 InsuranceClaim[]
+  prescriptions          Prescription[]
+  labResults             LabResult[]
+
+  @@map("patients")
+}
+
+model CareEpisodeFact {
+  id                          String @id
+  hospitalId                  String @map("hospital_id")
+  careManagerId               String @map("care_manager_id")
+  patientId                   String @map("patient_id")
+  unitId                      String @map("unit_id")
+  dischargeReasonId           String @map("discharge_reason_id")
+  referralChannel             String @map("referral_channel")
+  outcomeCategory             String @map("outcome_category")
+  publicStatusLabel           String @map("public_status_label")
+  lengthOfStayDays            Int @map("length_of_stay_days")
+  avoidedReadmissionCostCents Int @map("avoided_readmission_cost_cents")
+  dischargedAt                DateTime @map("discharged_at")
+  diagnosisCode               String @map("diagnosis_code")
+  clinicalNotes               String @map("clinical_notes")
+  hospital                    Hospital @relation(fields: [hospitalId], references: [id])
+  careManager                 Staff @relation(fields: [careManagerId], references: [id])
+  patient                     Patient @relation(fields: [patientId], references: [id])
+  unit                        CareUnit @relation(fields: [unitId], references: [id])
+  dischargeReason             DischargeReason @relation(fields: [dischargeReasonId], references: [id])
+
+  @@map("care_episode_facts")
+}
+
+model CareTask {
+  id            String @id
+  hospitalId    String @map("hospital_id")
+  careManagerId String @map("care_manager_id")
+  patientId     String @map("patient_id")
+  taskStatus    String @map("task_status")
+  privateNotes  String @map("private_notes")
+  dueAt         DateTime @map("due_at")
+  careManager   Staff @relation(fields: [careManagerId], references: [id])
+  patient       Patient @relation(fields: [patientId], references: [id])
+
+  @@map("care_tasks")
+}
+
+model InsuranceClaim {
+  id                    String @id
+  hospitalId            String @map("hospital_id")
+  careManagerId         String @map("care_manager_id")
+  patientId             String @map("patient_id")
+  claimStatus            String @map("claim_status")
+  insuranceMemberId     String @map("insurance_member_id")
+  billedAmountCents     Int @map("billed_amount_cents")
+  careManager           Staff @relation(fields: [careManagerId], references: [id])
+  patient               Patient @relation(fields: [patientId], references: [id])
+
+  @@map("insurance_claims")
+}
+
+model Prescription {
+  id             String @id
+  hospitalId     String @map("hospital_id")
+  careManagerId  String @map("care_manager_id")
+  patientId      String @map("patient_id")
+  medicationName String @map("medication_name")
+  dosageNotes    String @map("dosage_notes")
+  prescribedAt   DateTime @map("prescribed_at")
+  careManager    Staff @relation(fields: [careManagerId], references: [id])
+  patient        Patient @relation(fields: [patientId], references: [id])
+
+  @@map("prescriptions")
+}
+
+model LabResult {
+  id              String @id
+  hospitalId      String @map("hospital_id")
+  careManagerId   String @map("care_manager_id")
+  patientId       String @map("patient_id")
+  clinicalTestName String @map("clinical_test_name")
+  resultNotes     String @map("result_notes")
+  collectedAt     DateTime @map("collected_at")
+  careManager     Staff @relation(fields: [careManagerId], references: [id])
+  patient         Patient @relation(fields: [patientId], references: [id])
+
+  @@map("lab_results")
+}

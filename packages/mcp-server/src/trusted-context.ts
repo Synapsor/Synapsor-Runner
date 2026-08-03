@@ -136,23 +136,45 @@ export function resolveTrustedContext(
   }
   const provider = contextConfig.provider;
   const values = contextConfig.values ?? {};
+  const principalRequired = Boolean(
+    contextConfig.principal_binding
+    || capability?.target.principal_scope_key
+    || values.principal_env !== undefined
+    || values.principal_id_env !== undefined
+    || values.principal !== undefined,
+  );
   if (provider === "environment") {
     const tenantEnv = String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(values.principal_env ?? "SYNAPSOR_PRINCIPAL");
     const tenant = envValue(env, tenantEnv);
     const principal = envValue(env, principalEnv);
-    if (!tenant || !principal) throw new McpRuntimeError("TRUSTED_BINDING_MISSING", `${tenantEnv} and ${principalEnv} must be set.`);
-    return { tenant_id: tenant, principal, provenance: "environment" };
+    if (!tenant || (principalRequired && !principal)) {
+      throw new McpRuntimeError(
+        "TRUSTED_BINDING_MISSING",
+        principalRequired ? `${tenantEnv} and ${principalEnv} must be set.` : `${tenantEnv} must be set.`,
+      );
+    }
+    return { tenant_id: tenant, principal: principal ?? "", provenance: "environment" };
   }
   if (provider === "static_dev") {
     const tenant = valueFromEnvOrLiteral(values.tenant_id_env, values.tenant_id, env);
     const principal = valueFromEnvOrLiteral(values.principal_env, values.principal, env);
-    if (!tenant || !principal) throw new McpRuntimeError("TRUSTED_BINDING_MISSING", "static_dev trusted_context requires tenant_id/principal values or env bindings.");
-    return { tenant_id: tenant, principal, provenance: "static_dev" };
+    if (!tenant || (principalRequired && !principal)) {
+      throw new McpRuntimeError(
+        "TRUSTED_BINDING_MISSING",
+        principalRequired
+          ? "static_dev trusted_context requires tenant_id/principal values or env bindings."
+          : "static_dev trusted_context requires a tenant_id value or env binding.",
+      );
+    }
+    return { tenant_id: tenant, principal: principal ?? "", provenance: "static_dev" };
   }
   if (provider === "http_claims" || provider === "cloud_session") {
     if (!sessionContext || sessionContext.provenance !== provider) {
       throw new McpRuntimeError("TRUSTED_BINDING_MISSING", `${provider} trusted context requires a verified per-session binding.`);
+    }
+    if (principalRequired && !sessionContext.principal) {
+      throw new McpRuntimeError("TRUSTED_BINDING_MISSING", `${provider} trusted context requires a verified principal binding.`);
     }
     return sessionContext;
   }

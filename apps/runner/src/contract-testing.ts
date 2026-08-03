@@ -8,7 +8,7 @@ import type { SynapsorContract } from "@synapsor/spec";
 
 export type ContractTestAssertion = {
   id: string;
-  kind: "tool_allow" | "tool_deny" | "cross_principal_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "proposal_effect" | "conflict_guard" | "trusted_scope" | "evidence_requirement" | "approval_boundary" | "source_unchanged_before_approval" | "operator_boundary";
+  kind: "tool_allow" | "tool_deny" | "cross_principal_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "proposal_effect" | "conflict_guard" | "trusted_scope" | "evidence_requirement" | "approval_boundary" | "protected_read_boundary" | "source_unchanged_before_approval" | "operator_boundary";
   capability: string;
   args?: Record<string, unknown>;
   trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" };
@@ -48,7 +48,7 @@ export type ContractTestReport = {
 };
 
 const kinds = new Set<ContractTestAssertion["kind"]>([
-  "tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "proposal_effect", "conflict_guard", "trusted_scope", "evidence_requirement", "approval_boundary", "source_unchanged_before_approval", "operator_boundary",
+  "tool_allow", "tool_deny", "cross_principal_deny", "hide_fields", "argument_constraint", "transition_guard", "set_cap", "proposal_effect", "conflict_guard", "trusted_scope", "evidence_requirement", "approval_boundary", "protected_read_boundary", "source_unchanged_before_approval", "operator_boundary",
 ]);
 
 export async function loadContractTestManifest(filePath: string): Promise<ContractTestManifest> {
@@ -223,6 +223,19 @@ async function runStaticAssertion(test: ContractTestAssertion, config: RuntimeCo
     if (!reviewed?.proposal) throw new ContractAssertionFailure("PROPOSAL_NOT_FOUND", `${test.capability} is not a reviewed proposal capability`);
     if (!isDeepStrictEqual(approvalBoundarySnapshot(reviewed, contract), test.expected ?? {})) {
       throw new ContractAssertionFailure("APPROVAL_BOUNDARY_MISMATCH", "reviewed approval mode, role, rules, or limits differ from the checked-in expectation");
+    }
+    return;
+  }
+  if (test.kind === "protected_read_boundary") {
+    const reviewed = contract.capabilities.find((candidate) => candidate.name === test.capability);
+    if (!reviewed?.protected_read) {
+      throw new ContractAssertionFailure("PROTECTED_READ_NOT_FOUND", `${test.capability} is not a reviewed protected-read capability`);
+    }
+    if (!isDeepStrictEqual(reviewed.protected_read, test.expected ?? {})) {
+      throw new ContractAssertionFailure(
+        "PROTECTED_READ_BOUNDARY_MISMATCH",
+        "reviewed resources, relationships, aggregate shape, suppression, budgets, or generated-authority binding differ from the checked-in expectation",
+      );
     }
     return;
   }

@@ -10,6 +10,9 @@ import {
   StdioServerTransport,
 } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  z,
+} from "zod";
+import {
   registerAppResource,
   registerAppTool,
   RESOURCE_MIME_TYPE,
@@ -56,12 +59,22 @@ import {
   capabilityDescription,
   toolCallResult,
   toolDescriptionWithCanonical,
+} from "./tool-catalog.js";
+import {
   zodInputShape,
   zodInputShapeFromJsonSchema,
-} from "./tool-catalog.js";
+} from "./tool-input-schema.js";
 import {
   toolNameExposureMap,
 } from "./tool-naming.js";
+import {
+  analyticalToolOutputSchema,
+} from "./analytics-output-schema.js";
+import {
+  ANALYTICS_CATALOG_URI,
+  buildAnalyticsCatalog,
+  pinAnalyticsCatalogCapability,
+} from "./analytics-catalog.js";
 
 export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMcpServerOptions = {}): McpServer {
   const server = new McpServer(
@@ -69,6 +82,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     { capabilities: { tools: {}, resources: {} } },
   );
   const toolNameStyle = options.toolNameStyle ?? "canonical";
+  const resultFormat = options.resultFormat ?? runtime.config.result_format ?? 1;
 
   if (runtime.config.mode === "cloud") {
     const tools = runtime.listTools();
@@ -78,7 +92,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
         const toolConfig = {
           title: tool.title,
           description: toolDescriptionWithCanonical(tool.description, tool.name, exposedName),
-          inputSchema: zodInputShapeFromJsonSchema(tool.input_schema),
+          inputSchema: z.object(zodInputShapeFromJsonSchema(tool.input_schema)).strict(),
           annotations: {
             readOnlyHint: Boolean(tool.annotations.readOnlyHint),
             destructiveHint: false,
@@ -115,11 +129,13 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     const capabilities = listedLocalCapabilities(runtime.config);
     const exposedNames = toolNameExposureMap(capabilities.map((capability) => capability.name), toolNameStyle);
     for (const capability of capabilities) {
+      const outputSchema = analyticalToolOutputSchema(capability, resultFormat);
       for (const exposedName of exposedNames.get(capability.name) ?? [capability.name]) {
         const toolConfig = {
           title: capability.name,
           description: capabilityDescription(capability, runtime.config, exposedName),
-          inputSchema: zodInputShape(capability),
+          inputSchema: z.object(zodInputShape(capability)).strict(),
+          ...(outputSchema ? { outputSchema } : {}),
           annotations: {
             readOnlyHint: capability.kind === "read" || capability.kind === "aggregate_read",
             destructiveHint: false,
@@ -135,6 +151,18 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
             "synapsor.tool_name_style": toolNameStyle,
             "synapsor.raw_sql_exposed": false,
             "synapsor.approval_tool": false,
+            ...(capability.model_withheld_fields?.length
+              ? {
+                "synapsor.model_withheld_fields": capability.model_withheld_fields,
+                "synapsor.model_withheld_values_in_model_content": false,
+              }
+              : {}),
+            ...(capability.contract_provenance
+              ? {
+                "synapsor.contract_digest": capability.contract_provenance.digest,
+                "synapsor.contract_version": capability.contract_provenance.version,
+              }
+              : {}),
           },
         };
         const callback = async (args: unknown) =>
@@ -186,6 +214,39 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     }),
   );
 
+  const analyticsCatalog = runtime.config.mode === "cloud"
+    ? undefined
+    : buildAnalyticsCatalog(runtime.config, resultFormat);
+  if (analyticsCatalog?.capabilities.length) {
+    server.registerResource(
+      "synapsor-analytics-catalog-v1",
+      ANALYTICS_CATALOG_URI,
+      {
+        title: "Synapsor reviewed analytics catalog",
+        description: "Safe, digest-pinned metadata for active analytical capabilities in this authenticated deployment.",
+        mimeType: "application/json",
+      },
+      async () => jsonResourceResult(ANALYTICS_CATALOG_URI, analyticsCatalog),
+    );
+    server.registerResource(
+      "synapsor-analytics-capability-pin-v1",
+      new ResourceTemplate(`${ANALYTICS_CATALOG_URI}/{capability}/{digest}`, { list: undefined }),
+      {
+        title: "Synapsor analytical capability digest check",
+        description: "Checks that one analytical capability still has the exact contract digest selected by an external client.",
+        mimeType: "application/json",
+      },
+      async (uri, variables) => jsonResourceResult(
+        uri.toString(),
+        pinAnalyticsCatalogCapability(
+          analyticsCatalog,
+          resourceVariable(variables.capability),
+          resourceVariable(variables.digest),
+        ),
+      ),
+    );
+  }
+
   server.registerResource(
     "synapsor-proposals",
     new ResourceTemplate("synapsor://proposals/{proposal_id}", { list: undefined }),
@@ -208,6 +269,20 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
   return server;
 }
 
+function jsonResourceResult(uri: string, payload: unknown) {
+  return {
+    contents: [{
+      uri,
+      mimeType: "application/json",
+      text: JSON.stringify(payload, null, 2),
+    }],
+  };
+}
+
+function resourceVariable(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat; stdin?: Readable; stdout?: Writable; readRow?: DbRowReader; credentialResolver?: TenantCredentialResolver } = {}): Promise<void> {
   const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
@@ -223,7 +298,10 @@ export async function serveStdio(options: { configPath?: string; storePath?: str
     readRow: options.readRow,
     credentialResolver: options.credentialResolver,
   });
-  const server = createSynapsorMcpServer(runtime, { toolNameStyle: options.toolNameStyle });
+  const server = createSynapsorMcpServer(runtime, {
+    toolNameStyle: options.toolNameStyle,
+    resultFormat: options.resultFormat,
+  });
   const input = options.stdin ?? process.stdin;
   const transport = new StdioServerTransport(input, options.stdout ?? process.stdout);
   await server.connect(transport);

@@ -281,6 +281,49 @@ async function verifyConcurrentApply(engine, admin) {
   }
 }
 
+async function verifyMysqlWriteTimeout(admin) {
+  const timeoutJob = job("mysql", "precreated", "update", "statement_timeout", {
+    id: 1071,
+    value: 7071,
+  });
+  await mysqlQuery(
+    admin,
+    "INSERT INTO guard_crud_items (id, tenant_id, request_id, value_cents, version) VALUES (1071, 'acme', 'statement-timeout', 271, 1)",
+  );
+  await mysqlQuery(
+    admin,
+    "CREATE TRIGGER guard_crud_update_timeout BEFORE UPDATE ON guard_crud_items FOR EACH ROW DO SLEEP(2)",
+  );
+  try {
+    const startedAt = Date.now();
+    const result = await applyMysqlJob(timeoutJob, {
+      ...runnerConfig("mysql", "precreated"),
+      statementTimeoutMs: 100,
+    });
+    const elapsedMs = Date.now() - startedAt;
+    assert(
+      result.status === "failed" && result.error_code === "MYSQL_STATEMENT_TIMEOUT",
+      "MySQL DML deadline did not fail with its stable pre-commit timeout code",
+      result,
+    );
+    assert(elapsedMs < 1_500, "MySQL DML deadline waited for the full server-side trigger", { elapsedMs });
+    const row = await rowFor("mysql", admin, 1071);
+    assert(
+      Number(row?.value_cents) === 271 && Number(row?.version) === 1,
+      "MySQL timed-out UPDATE changed the source row",
+      row,
+    );
+    const receipts = await mysqlQuery(
+      admin,
+      "SELECT idempotency_key FROM synapsor_receipts_precreated WHERE idempotency_key = ?",
+      [timeoutJob.idempotency_key],
+    );
+    assert(receipts.length === 0, "MySQL timed-out UPDATE committed its source receipt", receipts);
+  } finally {
+    await mysqlQuery(admin, "DROP TRIGGER IF EXISTS guard_crud_update_timeout");
+  }
+}
+
 async function verifyDeleteHazards(engine, admin) {
   if (engine === "postgres") {
     await pgQuery(admin, "CREATE FUNCTION public.guard_crud_delete_trigger() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN OLD; END $$");
@@ -339,11 +382,15 @@ async function main() {
       await verifyGuards(engine, admin);
       await verifyCrashWindows(engine, admin);
       await verifyConcurrentApply(engine, admin);
+      if (engine === "mysql") {
+        console.log("== mysql: client-enforced pre-commit DML deadline ==");
+        await verifyMysqlWriteTimeout(admin);
+      }
       console.log(`== ${engine}: DELETE side-effect preflight ==`);
       await verifyDeleteHazards(engine, admin);
     }
     await verifyReceiptBoundaries(pgAdmin, mysqlAdmin);
-    console.log("Guarded CRUD live verification passed: Postgres + MySQL, all receipt modes, retry, crash, concurrency, and DELETE hazards.");
+    console.log("Guarded CRUD live verification passed: Postgres + MySQL, all receipt modes, retry, crash, concurrency, MySQL DML deadline rollback, and DELETE hazards.");
   } finally {
     await mysqlAdmin.end().catch(() => undefined);
     await pgAdmin.end().catch(() => undefined);

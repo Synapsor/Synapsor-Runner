@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.6.4` scope:
+Current `1.6.6` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
 - one-command, resumable, review-by-exception onboarding from
@@ -14,13 +14,24 @@ Current `1.6.4` scope:
 - disabled generated `.synapsor.sql`, canonical JSON, tests, review evidence,
   and generation locks; no generated authority activates itself;
 - local development/staging Scoped Explore through exactly two temporary MCP
-  tools, using typed row plans or a reviewed PM-style analytical cube;
+  tools, using typed row plans or a reviewed analytical cube. Up to eight
+  independently reviewed boundaries may be active; one plan selects one
+  boundary and cannot join/union across them. Activation permits repeated legal
+  combinations without per-question review or Protect;
 - optional secured-loopback Workbench Ask over the exact same active tool
   registry, with OpenAI, Anthropic, or a configured OpenAI-compatible endpoint,
   digest-bound direct-egress consent, in-memory credentials/history, bounded
   provider loops, and proposal-only writes;
+- natural-language CLI `try ask` through the same provider adapters and
+  in-memory MCP gateway, with hidden/environment credentials, exact automation
+  consent, an interactive follow-up shell or one-shot mode, quiet untrusted
+  provider prose, independently rendered Runner results, hidden short analysis
+  references, and operator-only `/protect`;
 - aggregate `count`, reviewed `count_distinct`, `sum`, `avg`, reviewed
-  dimensions and day/week/month buckets, typed filters, bounded top-N, and at
+  dimensions and day/week/month buckets, typed filters, bounded top/bottom-N,
+  ranked high-cardinality candidate populations under a separate reviewed
+  ceiling, signed absolute/percentage movers from an exact two-period
+  comparison in one read-only snapshot, and at
   most three activated star/depth-two relationship paths, each containing one
   or two proven many-to-one links with fan-out one;
 - demand-driven operator review for an exact inactive catalog-proven path,
@@ -29,7 +40,17 @@ Current `1.6.4` scope:
 - cohort suppression plus durable extraction, differencing, rate, query,
   response, and complexity limits;
 - Protect This Query from a successful local plan to public DSL, canonical
-  Spec, tests, and a disabled digest-bound named production capability;
+  Spec, tests, and a disabled digest-bound named production capability.
+  Protect is optional during authoring and freezes only the selected analysis;
+- semantic analytical aliases, reviewed UTC time-bucket authority, explicit
+  empty/fully-suppressed/incomplete-comparison outcomes, and durable redacted
+  analysis references across refresh, tabs, and CLI processes;
+- shared MCP analytical output schemas plus a deterministic
+  `synapsor.analytics-catalog.v1` resource/CLI catalog pinned to exact active
+  contract digests;
+- host-neutral official-MCP conformance over stdio and authenticated
+  Streamable HTTP, including analytical discovery, catalog pinning, semantic
+  reads/proposals, and absence of model-facing operator tools;
 - schema, grant, ownership, RLS, role, compiler, and Spec drift checks for
   generated authority explicitly bound to a generation lock;
 - trusted context from environment, verified HTTP claims, Cloud sessions, or

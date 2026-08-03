@@ -460,7 +460,10 @@ export async function handleStreamableHttpMcpRequest(input: {
       transport.onclose = () => {
         if (initializingSession) disposeStreamableSession(initializingSession, sessions, openSessions);
       };
-      await createSynapsorMcpServer(runtime, { toolNameStyle }).connect(transport);
+      await createSynapsorMcpServer(runtime, {
+        toolNameStyle,
+        resultFormat,
+      }).connect(transport);
       await transport.handleRequest(request, response, parsedBody);
     } catch (error) {
       if (initializingSession) {

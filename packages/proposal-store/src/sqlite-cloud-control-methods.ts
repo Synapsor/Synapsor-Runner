@@ -394,6 +394,7 @@ export const proposalStoreCloudControlMethods: ProposalStoreCloudControlMethods 
         { table: "evidence_bundles", kind: "evidence_bundle", key: "evidence_bundle_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id", capability: "capability" },
         { table: "evidence_items", kind: "evidence_item", key: "evidence_item_id", created: "created_at" },
         { table: "query_audit", kind: "query_audit", key: "audit_id", created: "created_at", proposal: "proposal_id", tenant: "tenant_id", capability: "capability" },
+        { table: "explore_budget_reservations", kind: "explore_budget_reservation", key: "reservation_id", created: "created_at" },
         { table: "replay_records", kind: "replay_record", key: "replay_id", created: "created_at", proposal: "proposal_id" },
         { table: "shadow_human_actions", kind: "shadow_human_action", key: "action_id", created: "created_at", proposal: "proposal_id" },
         { table: "shadow_studies", kind: "shadow_study", key: "study_id", created: "created_at" },

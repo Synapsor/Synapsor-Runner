@@ -27,8 +27,8 @@ const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "synapsor-solar-clean-
 const packRoot = path.join(tempRoot, "pack");
 const installRoot = path.join(tempRoot, "install");
 const projectRoot = path.join(tempRoot, "community-solar-app");
-const screenshotRoot = path.join(root, "development", "runner-1.6.4-community-solar-visual");
-const resultPath = path.join(root, "development", "runner-1.6.4-community-solar-results.json");
+const screenshotRoot = path.join(root, "development", "runner-1.6.6-community-solar-visual");
+const resultPath = path.join(root, "development", "runner-1.6.6-community-solar-results.json");
 const readUrl = "postgresql://solar_technician_reader:solar_technician_reader_password@127.0.0.1:55464/community_solar";
 const liveOpenAiEnabled = process.env.SYNAPSOR_LIVE_OPENAI_ACCEPTANCE === "1";
 const liveOpenAiModel = process.env.SYNAPSOR_LIVE_OPENAI_MODEL?.trim() || "gpt-5-mini";
@@ -147,11 +147,17 @@ try {
     sessionDatabaseUrl: readUrl,
   });
   evidence.timings_ms.schema_summary = ui.readyAt - startedAt;
+  await waitForValue(
+    () => /Next: review the proposed boundary, then ask your first question in Workbench/.test(ui.output()) || undefined,
+    5_000,
+    () => "guided start did not print its Workbench continuation",
+  );
   assert.ok(evidence.timings_ms.schema_summary <= 60_000, "schema summary exceeded 60 seconds");
-  assert.match(ui.output(), /Objects: 40/);
-  assert.match(ui.output(), /exact-row read drafts: 38/);
-  assert.match(ui.output(), /blocked objects: 2/);
-  assert.match(ui.output(), /source database changed: no/i);
+  assert.match(ui.output(), /✓ Connected/);
+  assert.match(ui.output(), /Inspected 40 tables \(metadata only; no rows read\)/);
+  assert.match(ui.output(), /Synapsor Runner local UI: http:\/\/127\.0\.0\.1:/);
+  assert.match(ui.output(), /Next: review the proposed boundary, then ask your first question in Workbench/);
+  await assert.rejects(fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")));
   assert.doesNotMatch(ui.output(), /solar_technician_reader_password|solar_writer_password/);
   assertBytesAbsentFromText(processArguments(), readUrl, "process arguments after hidden database input");
   await assertBytesAbsent(path.join(projectRoot, ".synapsor"), readUrl, "generated .synapsor state");
@@ -168,6 +174,25 @@ try {
     await configurePage(page, 1440, 1100);
     await navigateAndWait(page, ui.url);
     await waitForExpression(page, "document.querySelector('#header-state')?.textContent !== 'Loading'");
+    if (await evaluate(page, "document.body.classList.contains('quick-start-mode')")) {
+      await click(page, "#instant-full-review");
+      await waitForExpression(page, "document.body.classList.contains('quick-start-mode') === false");
+      await waitForValue(() => {
+        try {
+          const progress = JSON.parse(fs.readFileSync(
+            path.join(projectRoot, ".synapsor", "boundary-review-progress.json"),
+            "utf8",
+          ));
+          return progress.revision > 0 ? progress.revision : undefined;
+        } catch {
+          return undefined;
+        }
+      }, 5_000, () => "full-review choice was not persisted");
+      await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
+      await click(page, "#access-back");
+      await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
+    }
+    await evaluate(page, "document.querySelector('#overview-table-details')?.setAttribute('open','')");
     await waitForExpression(page, "document.querySelectorAll('[data-resource-toggle]:checked').length === 3");
     await assertNoPageOverflow(page, "initial review");
     await shot(page, "01-overview.png");
@@ -182,69 +207,101 @@ try {
     ]));
     assert.equal(await evaluate(page, "document.body.textContent.includes('solar_technician_reader_password')"), false);
 
+    await click(page, "#edit-boundary-tables");
+    await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
     for (const resourceId of starterResources) {
-      await click(page, `[data-open-resource="${resourceId}"]`);
-      await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
+      await click(page, `[data-access-resource="${resourceId}"]`);
       await waitForExpression(page, `document.querySelector("#resource-detail h3")?.textContent === ${JSON.stringify(resourceId)}`);
       const detail = await evaluate(page, "document.querySelector('#resource-detail')?.textContent");
-      assert.match(detail, /Values the agent can see/);
+      assert.match(detail, /Choose one explicit tier per column/);
+      assert.match(detail, /Model \+ Runner/);
+      assert.match(detail, /Raw values: Runner only/);
+      assert.match(detail, /Kept out/);
       if (resourceId === "public.work_orders") {
         assert.match(detail, /private_technician_notes/);
-        assert.match(detail, /Hidden from the agent by default/);
+        assert.match(detail, /Kept out · free text/);
       }
-      await click(page, "#resource-signoff");
-      await waitForExpression(page, "document.querySelector('#resource-signoff')?.checked === true");
-      await click(page, "#back-resources");
-      await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
+      assert.match(detail, /One final confirmation, not one checkbox per table/);
+      assert.equal(
+        await evaluate(page, "Boolean(document.querySelector('#resource-signoff'))"),
+        false,
+        "Focused access review restored obsolete per-table sign-off",
+      );
+      const unresolvedRelationships = await evaluate(page, `[...document.querySelectorAll("[data-relationship-semantics]")]
+        .filter(input=>input.value==="review_required")
+        .map(input=>input.getAttribute("data-relationship-semantics"))`);
+      for (const relationshipId of unresolvedRelationships) {
+        await select(page, `[data-relationship-semantics="${relationshipId}"]`, "exclude");
+        await waitForExpression(
+          page,
+          `document.querySelector('[data-relationship-semantics="${relationshipId}"]')?.value === "exclude"`,
+        );
+      }
     }
 
-    await click(page, `[data-open-resource="${starterResources[0]}"]`);
-    await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
+    await click(page, `[data-access-resource="${starterResources[0]}"]`);
     const globalCount = await evaluate(page, "document.querySelectorAll('[data-global-decision]').length");
-    assert.ok(globalCount >= 2, "Workbench omitted the human-only final safety confirmations");
+    assert.deepEqual(
+      await evaluate(page, `({
+        tag:document.querySelector("#deployment-profile")?.tagName,
+        type:document.querySelector("#deployment-profile")?.type
+      })`),
+      { tag: "INPUT", type: "hidden" },
+      "Fresh guided Workbench must not ask for another environment declaration",
+    );
     for (let index = 0; index < globalCount; index += 1) {
-      await click(page, `[data-global-decision="${index}"]`);
+      if (!await evaluate(page, `document.querySelector('[data-global-decision="${index}"]')?.checked === true`)) {
+        await evaluate(page, `document.querySelector('[data-global-decision="${index}"]').click(); true`);
+      }
+      await waitForExpression(page, `document.querySelector('[data-global-decision="${index}"]')?.checked === true`);
     }
-    await click(page, '[data-view="activate"]');
+    await waitForExpression(page, "[...document.querySelectorAll('[data-global-decision]')].every(input=>input.checked)");
+    await waitForExpression(page, "document.querySelector('#review-staged-access')?.offsetParent !== null");
+    await click(page, "#review-staged-access");
     await waitForExpression(page, "document.querySelector('#view-activate')?.classList.contains('active') === true");
     await waitForExpression(page, "!document.querySelector('#signoff-summary')?.textContent.includes('remain')");
     await type(page, "#actor", "solar-reviewer@example.test");
+    await waitForExpression(page, "document.querySelector('#preview')?.disabled === false");
     await click(page, "#preview");
-    await waitForExpression(page, "document.querySelector('#message')?.textContent.startsWith('Review fingerprint: sha256:')");
-    const boundaryDigest = await evaluate(page, "document.querySelector('#message').textContent.replace('Review fingerprint: ','')");
+    await waitForExpression(
+      page,
+      "document.querySelector('#view-explore')?.classList.contains('active') === true || document.querySelector('#message')?.classList.contains('error')",
+    );
+    const previewMessage = await evaluate(page, "document.querySelector('#message')?.textContent");
+    assert.match(previewMessage, /reviewed boundary is active/i);
+    const boundaryDigest = await evaluate(page, "document.querySelector('#message code')?.textContent");
     assert.match(boundaryDigest, /^sha256:[a-f0-9]{64}$/);
-    await waitForExpression(page, "document.querySelector('#activate')?.disabled === false");
-    await shot(page, "02-ready-to-activate.png");
-    await click(page, "#activate");
-    await waitForExpression(page, "document.querySelector('#view-explore')?.classList.contains('active') === true");
-    await waitForExpression(page, "document.querySelector('#header-state')?.textContent.includes('Active reviewed boundary')");
+    await shot(page, "02-activated-and-ready-to-ask.png");
+    await waitForExpression(page, "/active reviewed boundar/i.test(document.querySelector('#header-state')?.textContent||'')");
     evidence.timings_ms.boundary_activation = Date.now() - startedAt;
 
     if (await evaluate(page, "Boolean(document.querySelector('#run-preflight'))")) {
       await click(page, "#run-preflight");
     }
-    await waitForExpression(page, `document.querySelector("#explore-preflight")?.textContent.includes("Ready for local bounded exploration")
-      || Boolean(document.querySelector("#bind-trusted-scope"))`);
-    if (await evaluate(page, "Boolean(document.querySelector('#bind-trusted-scope'))")) {
-      await type(page, "#trusted-tenant", "coop-sunward");
-      await type(page, "#trusted-principal", "tech-alex");
-      await click(page, "#bind-trusted-scope");
-    }
+    await waitForExpression(page, `document.querySelector("#explore-preflight")?.textContent.includes("Reviewed access ready.")`);
+    assert.equal(
+      await evaluate(page, "Boolean(document.querySelector('#bind-trusted-scope,#trusted-tenant,#trusted-principal'))"),
+      false,
+      "Workbench asked the analytics user to type trusted tenant or principal values",
+    );
     await waitForExpression(page, "document.querySelector('#explorer')?.classList.contains('hidden') === false");
+    await waitForExpression(page, "document.querySelector('#ask-open-no-model')?.offsetParent !== null");
+    await click(page, "#ask-open-no-model");
+    await waitForExpression(page, "document.querySelector('#no-model-content')?.classList.contains('hidden') === false");
     const suggestedQuestions = await evaluate(page, "document.querySelector('#suggested-questions')?.textContent");
     assert.doesNotMatch(suggestedQuestions, /which (?:reviewed )?id groups/i);
     await shot(page, "03-explore-ready.png");
 
+    await waitForExpression(page, "document.querySelector('#explore-composer')?.open === true");
     await click(page, "#row-tab");
     await waitForExpression(page, "document.querySelector('#row-builder')?.classList.contains('hidden') === false");
-    await select(page, "#row-resource", "public.work_orders");
+    await selectVisibleOption(page, "#row-resource", /work orders/i);
     await type(page, "#row-id", "wo-001");
     await click(page, "#run-explore");
-    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your first safe tool is working.')");
+    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your reviewed question worked.')");
     const firstReadText = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
     assert.match(firstReadText, /Source database changed:\s*no/i);
-    assert.match(firstReadText, /Customer scope:\s*supplied by your trusted application environment/i);
-    assert.match(firstReadText, /User scope:\s*supplied by your trusted application environment/i);
+    assert.match(firstReadText, /Trusted scope:\s*supplied outside the question/i);
     assert.doesNotMatch(firstReadText, /synthetic private work note|other tenant private work note/i);
     evidence.first_read = {
       resource: "public.work_orders",
@@ -258,13 +315,13 @@ try {
     await shot(page, "04-first-safe-read.png");
 
     await click(page, "#aggregate-tab");
-    await select(page, "#aggregate-resource", "public.work_orders");
+    await selectVisibleOption(page, "#aggregate-resource", /work orders/i);
     await selectVisibleOption(page, "#aggregate-measure", /total downtime minutes/i);
     await selectVisibleOption(page, "#aggregate-dimension", /model name.*inverter models/i);
     await selectVisibleOption(page, "#aggregate-time", /opened at/i);
     await select(page, "#aggregate-bucket", "week");
     await click(page, "#run-explore");
-    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your first safe tool is working.')");
+    await waitForExpression(page, "document.querySelector('#explore-result')?.textContent.includes('Your reviewed question worked.')");
     const aggregateText = await evaluate(page, "document.querySelector('#explore-result')?.textContent");
     assert.match(aggregateText, /total downtime minutes/i);
     assert.match(aggregateText, /model name/i);
@@ -415,7 +472,7 @@ try {
       `Packed Workbench Ask status failed: ${JSON.stringify(packedAskStatus.payload)}`,
     );
     await waitForExpression(page, "document.querySelector('#ask-shell')?.offsetParent !== null");
-    await waitForExpression(page, "document.querySelector('#ask-authority-summary')?.textContent.includes('reviewed tool')");
+    await waitForExpression(page, "document.querySelector('#ask-authority-summary')?.textContent.includes('scoped · read-only')");
     assert.match(
       await evaluate(page, "document.querySelector('#ask-starters')?.textContent"),
       /reviewed question|weekly|downtime/i,
@@ -424,7 +481,11 @@ try {
     await type(page, "#ask-question", "How did total downtime change by week across reviewed inverter models?");
     await click(page, "#run-ask");
     await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly downtime')");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('app.explore_data')");
+    assert.doesNotMatch(
+      await evaluate(page, "document.querySelector('#ask-transcript')?.innerText"),
+      /app\.explore_data|boundary digest|generation lock/i,
+      "Default Workbench Ask transcript exposed internal authoring machinery",
+    );
     assert.deepEqual(askAggregateResult?.data, mcpAggregate.data, "Ask and official MCP returned different aggregate groups");
     assert.equal(askAggregateResult?.source_database_changed, false);
     assert.doesNotMatch(
@@ -444,7 +505,8 @@ try {
     if (liveOpenAiEnabled) {
       assert.ok(liveOpenAiKey, "The live OpenAI gate did not load its authorized key");
       const liveQuestion = [
-        "Use the reviewed aggregate tool with exactly this analysis:",
+        "First call app.describe_data for public.work_orders.",
+        "Then use only the exact reviewed identifiers it returns to call app.explore_data with exactly this analysis:",
         "sum downtime_minutes from public.work_orders,",
         "grouped by the reviewed inverter-model model_name relationship and week(opened_at),",
         "ordered by that sum descending, top 10.",
@@ -479,9 +541,14 @@ try {
       const liveResponse = await evaluate(page, "window.__synapsorLiveAskResponse");
       const liveLatencyMs = Date.now() - liveStartedAt;
       assert.equal(liveResponse?.ok, true, `Live OpenAI Ask failed safely: ${liveResponse?.error_code ?? "unknown"}`);
-      const liveExploreCall = liveResponse.tool_calls?.find((call) => call.tool === "app.explore_data");
-      assert.ok(liveExploreCall, "Live OpenAI did not use the reviewed aggregate tool");
-      assert.equal(liveExploreCall.status, "ok");
+      const liveExploreCalls = liveResponse.tool_calls?.filter((call) => call.tool === "app.explore_data") ?? [];
+      const liveExploreCall = liveExploreCalls.find((call) => call.status === "ok");
+      assert.ok(
+        liveExploreCall,
+        `Live OpenAI did not complete the reviewed aggregate tool: ${liveExploreCalls
+          .map((call) => call.error_code ?? call.result?.error_code ?? "unknown")
+          .join(", ") || "not called"}`,
+      );
       assert.deepEqual(
         liveExploreCall.result?.data,
         mcpAggregate.data,
@@ -539,9 +606,9 @@ try {
     await type(page, "#protect-name", "solar.weekly_downtime_by_inverter_model");
     await type(page, "#protect-description", "Show reviewed weekly downtime by inverter model.");
     await click(page, "#create-protected");
-    await waitForExpression(page, "Boolean(document.querySelector('#protect-confirmation'))");
+    await waitForExpression(page, "Boolean(document.querySelector('#activate-protected'))");
     await waitForExpression(page, "document.querySelectorAll('#protect-dsl-preview .syntax-token.keyword').length >= 3");
-    const protectedDigest = await evaluate(page, `document.querySelector("#protect-preview code")?.textContent`);
+    const protectedDigest = await evaluate(page, `document.querySelector("#protect-preview details code")?.textContent`);
     assert.match(protectedDigest, /^sha256:[a-f0-9]{64}$/);
     const protectedPreviewDsl = await evaluate(page, "document.querySelector('#protect-dsl-preview code')?.textContent");
     assert.equal(
@@ -560,7 +627,6 @@ try {
       features: [{ name: "prefers-color-scheme", value: "light" }],
     });
     await type(page, "#protect-actor", "solar-reviewer@example.test");
-    await type(page, "#protect-confirmation", `ACTIVATE ${protectedDigest}`);
     await click(page, "#activate-protected");
     await waitForExpression(page, "document.querySelector('#protect-message')?.textContent.includes('active')");
     const protectedDraftRoot = path.join(
@@ -587,7 +653,15 @@ try {
       path.join(protectedDraftRoot, "contract-tests.json"),
       "utf8",
     ));
-    assert.ok(protectedTests.tests.length >= 10);
+    const protectedTestIds = new Set(protectedTests.tests.map((test) => test.id));
+    for (const requiredTest of [
+      "protected-read-shape-suppression-drift-and-boundaries",
+      "trusted-scope-remains-outside-model-arguments",
+      "evidence-and-query-audit-remain-required",
+      "operator-controls-remain-outside-mcp",
+    ]) {
+      assert.ok(protectedTestIds.has(requiredTest), `Protected draft omitted ${requiredTest}`);
+    }
     evidence.protected = {
       capability: "solar.weekly_downtime_by_inverter_model",
       digest: protectedDigest,
@@ -599,6 +673,9 @@ try {
     evidence.timings_ms.protected_capability = Date.now() - startedAt;
     await shot(page, "07-next-safe-action.png");
 
+    await waitForExpression(page, "document.querySelector('#leave-ask-focus')?.offsetParent !== null");
+    await click(page, "#leave-ask-focus");
+    await waitForExpression(page, "document.querySelector('#view-overview')?.classList.contains('active') === true");
     await click(page, '[data-view="action"]');
     await waitForExpression(page, "document.querySelector('#view-action')?.classList.contains('active') === true");
     if (await evaluate(page, "document.querySelector('#action-wizard')?.classList.contains('hidden') === true")) {
@@ -641,11 +718,10 @@ try {
     await click(page, "#preview-action");
     await waitForExpression(page, "document.querySelector('#action-status')?.textContent.includes('Proposal created')");
     evidence.timings_ms.first_guided_proposal = Date.now() - startedAt;
-    const actionDigest = await evaluate(page, "document.querySelector('#action-draft code')?.textContent");
+    const actionDigest = await evaluate(page, "document.querySelector('[data-action-digest]')?.textContent");
     assert.match(actionDigest, /^sha256:[a-f0-9]{64}$/);
     assert.equal(queryPostgres("SELECT status || ':' || version FROM public.work_orders WHERE id = 'wo-005'"), "open:1");
     await type(page, "#action-actor", "solar-reviewer@example.test");
-    await type(page, "#action-confirmation", `ACTIVATE ${actionDigest}`);
     await evaluate(page, "document.querySelector('#action-dsl-preview')?.closest('details')?.setAttribute('open','')");
     await evaluate(page, "document.querySelector('#action-draft')?.scrollIntoView({block:'start'})");
     await shot(page, "08-disabled-safe-action.png");
@@ -718,6 +794,11 @@ try {
     await type(page, '[aria-label="Exact apply confirmation"]', `APPLY ${proposalHash}`);
     await shot(page, "11-approved-awaiting-apply.png");
     await clickText(page, "button", "Apply guarded writeback");
+    await waitForPostgresState(
+      "SELECT status || ':' || version FROM public.work_orders WHERE id = 'wo-005'",
+      "in_progress:2",
+      60_000,
+    );
     await waitForExpression(page, "document.querySelector('#detail')?.textContent.includes('Committed by the trusted runner')");
     assert.equal(queryPostgres("SELECT status || ':' || version FROM public.work_orders WHERE id = 'wo-005'"), "in_progress:2");
     await shot(page, "12-guarded-apply.png");
@@ -758,7 +839,13 @@ try {
     );
     await navigateAndWait(page, `${new URL(ui.url).origin}/`);
     await waitForExpression(page, "document.querySelector('#header-state')?.textContent !== 'Loading'");
-    await click(page, '[data-view="explore"]');
+    if (!await evaluate(page, "document.querySelector('#ask-shell')?.offsetParent !== null")) {
+      if (await evaluate(page, "document.querySelector('#leave-ask-focus')?.offsetParent !== null")) {
+        await click(page, "#leave-ask-focus");
+      }
+      await waitForExpression(page, "document.querySelector('[data-view=\"explore\"]')?.offsetParent !== null");
+      await click(page, '[data-view="explore"]');
+    }
     await waitForExpression(page, "document.querySelector('#ask-shell')?.offsetParent !== null");
     await configureLocalAsk(page, askProviderUrl, "solar-local-fixture");
     await type(page, "#ask-question", `Propose starting reviewed work order ${askProposalTarget}.`);
@@ -1107,6 +1194,11 @@ async function selectVisibleOption(page, selector, pattern) {
 }
 
 async function shot(page, name) {
+  await waitForExpression(
+    page,
+    `document.querySelector(".view.active")?.getAnimations()
+      .every(animation => animation.playState !== "running") !== false`,
+  );
   await captureScreenshot(page, path.join(screenshotRoot, name));
   screenshots.push(name);
 }
@@ -1196,9 +1288,14 @@ function resultPayload(result) {
 function assertSmallSafeToolSurface(tools) {
   const serialized = JSON.stringify(tools);
   const bytes = Buffer.byteLength(serialized, "utf8");
-  assert.ok(bytes <= 8_000, `authoring tools/list exceeded 8,000 bytes: ${bytes}`);
-  assert.ok(Math.ceil(bytes / 4) <= 2_000, "authoring tools/list exceeded the 2,000-token estimate");
+  assert.ok(bytes <= 24_000, `authoring client discovery exceeded 24,000 bytes: ${bytes}`);
+  const modelFacingBytes = Buffer.byteLength(JSON.stringify(
+    tools.map(({ outputSchema: _outputSchema, ...tool }) => tool),
+  ), "utf8");
+  assert.ok(modelFacingBytes <= 8_000, `model-facing authoring tools exceeded 8,000 bytes: ${modelFacingBytes}`);
+  assert.ok(Math.ceil(modelFacingBytes / 4) <= 2_000, "model-facing authoring tools exceeded the 2,000-token estimate");
   for (const tool of tools) {
+    assert.equal(typeof tool.outputSchema, "object", `${tool.name} omitted its client-side output schema`);
     assert.doesNotMatch(tool.name, /execute_sql|query_sql|approve|apply|commit/i);
     assert.equal(objectHasKey(tool.inputSchema, new Set([
       "sql",
@@ -1320,6 +1417,17 @@ function queryPostgres(sql) {
     "psql", "-U", "solar_admin", "-d", "community_solar", "-Atc", sql,
   ], { cwd: projectRoot });
   return result.stdout.trim();
+}
+
+async function waitForPostgresState(sql, expected, timeoutMs) {
+  const started = Date.now();
+  let actual = "";
+  while (Date.now() - started < timeoutMs) {
+    actual = queryPostgres(sql);
+    if (actual === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Source state did not reach ${expected}; latest value was ${actual}.`);
 }
 
 async function startPublicGuidedCommand(input) {

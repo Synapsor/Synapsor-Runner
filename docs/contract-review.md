@@ -13,7 +13,7 @@ synapsor-runner contract explain ./synapsor.contract.json --format json
 ```
 
 The explanation lists trusted context bindings, model-facing arguments, fixed
-targets and selections, visible and kept-out fields, evidence requirements,
+targets and selections, model-visible/model-withheld/kept-out fields, evidence requirements,
 proposal/writeback controls, approval, bounds, reversibility, and unresolved
 runtime dependencies. It is derived from normalized canonical contract JSON.
 It never reads environment values or prints database URLs, tokens, keys, or

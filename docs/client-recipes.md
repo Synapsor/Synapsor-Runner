@@ -1,14 +1,66 @@
 # Client And Framework Recipes
 
-Every recipe on this page connects to the same reviewed Runner boundary:
+Every recipe on this page connects to a reviewed Runner boundary. There are two
+client shapes:
+
+- authoring clients discover exactly `app.describe_data` and
+  `app.explore_data` and can repeatedly submit legal typed analytical plans;
+- production clients discover only activated named read/proposal capabilities.
+
+Neither shape receives SQL, database credentials, trusted tenant identity,
+approval, apply, activation, or revert authority.
+
+## Host-Neutral Analytical Client
+
+[`examples/host-neutral-typescript-client/`](../examples/host-neutral-typescript-client/)
+is the reference integration for an application-owned agent or BI product. It
+uses the official MCP TypeScript SDK over local stdio or authenticated
+Streamable HTTP to:
+
+1. discover reviewed input and output schemas;
+2. read the safe `synapsor.analytics-catalog.v1` metadata when available;
+3. pin a capability to its exact contract digest;
+4. give only that reviewed surface to the application's model layer;
+5. validate and forward one typed call;
+6. consume authoritative `structuredContent` and backward-compatible text.
+
+It contains no SQL, database credential, scope argument, chart/dashboard,
+approval/apply tool, or copied Synapsor policy. The packed example includes
+readable TypeScript plus a Node 22 executable and is protocol-tested over both
+transports.
+
+Inspect the same production analytical catalog from CLI:
+
+```bash
+synapsor-runner tools catalog \
+  --config ./synapsor.runner.json \
+  --json
+```
+
+The catalog omits ambiguous analytics, SQL, kept-out fields, trusted-scope
+columns/values, credentials, and generation-lock internals. For local
+development/staging exploration, install the reviewed authoring surface:
+
+```bash
+synapsor-runner mcp install claude-code \
+  --project \
+  --authoring \
+  --project-root . \
+  --yes
+```
+
+Use `cursor` or `vscode` for those managed project clients. Generic clients can
+launch `synapsor-runner mcp serve --authoring --project-root .`.
+
+## Operational Proposal Recipe
+
+The existing cross-framework recipe uses:
 
 - `support.inspect_customer`
 - `support.propose_plan_credit`
 
-The model never receives SQL, database credentials, trusted tenant identity,
-approval, apply, activation, or revert authority. A proposal call returns an
-exact effect with `source_database_changed: false`; a human reviews and applies
-it outside the model-facing client.
+A proposal call returns an exact effect with `source_database_changed: false`;
+a human reviews and applies it outside the model-facing client.
 
 Checked-in files live in
 [`examples/support-plan-credit/mcp-client-examples/`](../examples/support-plan-credit/mcp-client-examples/).
@@ -219,7 +271,8 @@ Official source checked 2026-07-20:
 
 ## Generic MCP Clients
 
-**Status:** protocol-tested through the official TypeScript MCP SDK.
+**Status:** protocol-tested through the official TypeScript MCP SDK for both
+the operational proposal recipe and the host-neutral analytical contract.
 
 Use:
 
@@ -230,6 +283,11 @@ Each script performs MCP initialization, validates `tools/list`, rejects
 model-visible commit authority, and makes the shared proposal call. The HTTP
 script reads its bearer token from `SYNAPSOR_RUNNER_HTTP_TOKEN`; it never embeds
 one.
+
+The packaged host-neutral TypeScript example additionally validates
+`outputSchema`, structured analytical results, digest-pinned catalog resources,
+illegal trusted-scope arguments, and absence of approval/apply tools over stdio
+and secured Streamable HTTP.
 
 Official source checked 2026-07-20:
 [Build an MCP client](https://modelcontextprotocol.io/docs/develop/build-client).

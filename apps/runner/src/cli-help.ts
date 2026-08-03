@@ -15,7 +15,7 @@ Usage:
   ${cmd} <command>
 
 Commands:
-  try          Prove the boundary or drive active project tools and exploration
+  try          Run an isolated proof, or ask/explore/call active project tools
   inspect      Inspect a Postgres/MySQL schema
   start        Start guided own-database setup, or no-arg legacy worker polling
   action       Validate/watch disabled TypeScript Safe Action drafts
@@ -58,9 +58,10 @@ Commands:
   ui           Open the local review UI
 
 Examples:
-  ${cmd} try
   ${cmd} try --prove --yes --no-open
+  ${cmd} try ask --provider openai --model <model> [--verbose]
   ${cmd} start --from-env DATABASE_URL
+  ${cmd} start --from-env DATABASE_URL --cli
   ${cmd} start --action refund_order --description "Propose one reviewed order refund"
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
@@ -106,7 +107,20 @@ Global options:
   ${cmd} try explore --suggested
   ${cmd} try explore --resource public.check_ins --count-distinct member_id --group-by outcome --time-bucket checked_in_at:week
   ${cmd} try explore --plan '{"kind":"aggregate",...}'
-  ${cmd} try protect --name analytics.protected_analysis
+  ${cmd} try ask --provider openai --model <model>
+  ${cmd} try ask --provider anthropic --model <model>
+  ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1
+  ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai --model <model>
+  ${cmd} try protect --last --name analytics.protected_analysis
+  ${cmd} try protect --from A2 --name analytics.protected_analysis
+
+Choose the intended path:
+  ${cmd} try
+    Runs an isolated synthetic commit-safety proof. It does not use your
+    connected project database and may open its separate demo review screen.
+  ${cmd} try ask --provider openai --model <model>
+    Opens the terminal natural-language analytics shell for an already active
+    reviewed project boundary. It does not open the demo UI.
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
@@ -128,9 +142,23 @@ named capabilities through the same runtime used by MCP. try explore
 describes or executes the active local development/staging Scoped Explore
 boundary using reviewed flags or advanced structured plans, never SQL.
 Use field@reviewed_relationship when one reviewed many-to-one path supplies a
-dimension. try protect promotes the
-latest unexpired successful exploration into public DSL, canonical JSON, and
-tests as a disabled named capability. It never activates the result.
+dimension. try ask is the local development/staging analytics surface and
+requires active Scoped Explore. Without a positional question it opens the
+natural-language shell; with one question it runs once. It exposes exactly
+app.describe_data and app.explore_data and never falls back to named reads or
+proposal tools. Provider output is untrusted; Runner renders the authoritative
+structured result separately. It requires exact egress consent, never accepts a
+credential as a command-line value, and cannot activate, approve, or apply.
+Successful verified data hides safely recovered intermediate attempts by
+default. Use /attempts in the shell or --verbose to inspect those attempts.
+Interactive use shows the reviewed provider destination and defaults Continue
+to Yes when the operator presses Enter. Noninteractive automation must still
+provide the exact authority-bound --consent value.
+Inside the shell, /protect selects the sole current analysis or opens a readable
+picker. Outside it, try protect --last promotes only an unambiguous latest
+analysis. Explicit --from A2 remains available. Every Protect result is public
+DSL, canonical JSON, and tests for a disabled named capability; it never
+activates the result.
 	`,
     config: `Usage:
   ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
@@ -268,6 +296,7 @@ Options:
 `,
     start: `Usage:
   ${cmd} start --from-env DATABASE_URL [--schema public]
+  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose]
   ${cmd} start --from-env DATABASE_URL --table invoices [--mode read_only|shadow|review]
   ${cmd} start --from-env DATABASE_URL --answers ./answers.json --yes
   ${cmd} start --action refund_order --description "Propose one reviewed order refund" [--based-on billing.inspect_order]
@@ -279,7 +308,24 @@ A fresh interactive --from-env invocation with no existing config, selector, or
 automation input scans the whole schema, combines deterministic database,
 Prisma, Drizzle, OpenAPI, and existing Synapsor evidence, emits a disabled
 DSL-first Auto Boundary draft, and opens the secured local Workbench. It never
-samples source rows or uses an LLM.
+samples source rows or uses an LLM. This fresh loopback route establishes the
+development authoring profile once; Workbench does not ask for a second
+development/staging declaration. Explicit production, unknown, remote, and
+established manual profiles retain their existing fail-closed behavior.
+
+Add \`--cli\` to keep the complete interactive journey in the terminal. Runner
+drafts or resumes the boundary and, for a fresh conservative candidate, asks
+for one default-yes human Quick Start gesture. That gesture records review,
+rechecks schema and read-only role posture, and activates only the exact
+one-table, zero-relationship local digest. The same screen displays the
+selected provider and exact model. Enter accepts that default without adding a
+step; M chooses OpenAI, Anthropic, a loopback OpenAI-compatible model, an
+existing MCP client, or Later; E opens detailed multi-table/column review.
+Submitting the first question confirms the displayed provider/model/origin
+egress review. In the Analytics shell, \`/access\` opens the terminal boundary
+editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`
+retains its established behavior: initialize or resume
+without opening a browser or starting an interactive review.
 
 Established --table, --answers, onboard db, --mode, noninteractive, JSON, and
 CI routes retain the guided one-object behavior and never unexpectedly prompt
@@ -295,9 +341,20 @@ the local reviewed contract and proposal before writeback.
     boundary: `Usage:
   ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
+  ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
+  ${cmd} boundary review --map [--all] [--project-root .]
   ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
+  ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
+  ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
+  ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
+  ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
+  ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
+  ${cmd} boundary review --apply-decisions boundary-decisions.json [--project-root .] [--json]
+  ${cmd} boundary review --apply-decisions boundary-decisions.json --apply --confirm "APPLY REVIEW sha256:..." --config ./synapsor/synapsor.runner.json --identity reviewer --identity-key ./reviewer.pem --required-role boundary_reviewer
   ${cmd} boundary activate [--project-root .]
   ${cmd} boundary activate --headless --review-bundle boundary-review.json --config ./synapsor/synapsor.runner.json --confirm "ACTIVATE sha256:..." --identity reviewer --identity-key ./reviewer.pem --required-role boundary_reviewer --reason "Reviewed staging authority"
+  ${cmd} boundary disable [--project-root .] [--actor reviewer@example.com]
+  ${cmd} boundary disable --project-root . --confirm "DISABLE sha256:..." --json
   ${cmd} boundary status [--project-root .] [--json]
   ${cmd} boundary diff [--project-root .] [--json]
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --project-root . --yes
@@ -305,8 +362,156 @@ the local reviewed contract and proposal before writeback.
 Draft the whole deterministic application boundary without opening a browser,
 inspect/export its disabled review state, and compare the generation lock with
 the current schema and exact database role/grant/RLS posture. Interactive review
-requires exact confirmation of each stable decision ID. Interactive activation
-shows and requires the complete digest in a real terminal.
+from a fresh directory also prepares the validated local Runner config, SQLite
+ledger, and MCP snippets needed by the eventual Ask handoff; it writes
+environment-variable names but no credential values. An established config is
+never replaced. The review groups the exact digest-bound decisions into one
+sign-off per table plus one
+boundary-wide sign-off. Stable decision IDs remain available in JSON for audit
+and automation. After final sign-off, the interactive flow shows the complete
+reviewed fingerprint and offers activation immediately with a default-yes
+confirmation. A resumed \`boundary activate\` command uses the same prompt.
+After activation, the same terminal offers OpenAI, Anthropic, a loopback
+OpenAI-compatible model, an existing MCP client, or Later. Choosing a model
+enters the existing \`try ask\` analytics shell immediately; it does not create
+another authority path. Existing MCP client setup and Later leave the reviewed
+boundary active without starting a provider. JSON and headless routes never
+show this menu or launch Ask.
+Headless automation still requires the complete digest and a verified signed
+operator decision.
+
+Auto Boundary drafts every deterministically reviewable table/view from the
+selected schema. With no saved review, CLI and Workbench offer the same
+deterministic one-table Quick Start boundary. If Quick Start is activated, that
+exact active boundary becomes the unchanged baseline for later expansion;
+Add tables first shows only tables connected to the current boundary by an
+inspected foreign-key path. The operator can explicitly expand that view to all
+inspected tables when an independent resource is genuinely needed.
+Before Quick Start, detailed review may recommend up to three related tables.
+Run \`${cmd} boundary review --map\` for a
+concise explanation of active access, the disabled multi-table draft, other
+inspected tables, and useful proven paths. Add \`--all\` only when you need the
+complete inspected catalog.
+
+Scoped Explore boundaries are named saved sets. Each boundary may contain many
+tables and reviewed relationship paths; a \`schema.table\` row is a table inside
+the boundary, not a separate boundary. A project may keep several disabled
+boundary drafts for different analytical scopes. One draft is selected for
+editing, and up to eight exact reviewed boundaries may be active together.
+Creating, opening, renaming, or deleting a disabled draft never changes active
+authority. Activating a new name adds that boundary; activating the same name
+updates only that boundary. Runner never unions their relationship graphs.
+The same two tools remain advertised: \`app.describe_data\` catalogs active
+boundaries and one \`app.explore_data\` plan selects exactly one of them.
+
+A boundary is the reviewed set of tables, fields, relationships, trusted row
+scope, privacy limits, and query budgets an agent may use. A disabled draft is
+editable and grants no access.
+
+Run \`${cmd} boundary review --access\`, press E from \`start --cli\`, or use
+\`/access\` in Analytics for the focused two-step editor. First choose every
+table and column tier in one screen. Routine choices save directly to the
+selected disabled boundary while current active boundaries remain available. Then C
+shows one complete boundary summary and one default-yes activation confirmation
+before returning to Ask. The provider/model/key remain in memory; authority
+changes clear conversation state and renew the egress decision. Sensitive-field widening still requires
+a reviewer and reason. A nullable reviewed path asks explicitly whether
+unmatched counted rows remain under an empty group or are excluded; there is no
+default because that choice changes totals.
+
+Run \`${cmd} boundary review\` in a terminal to see only the saved boundaries
+that exist. This is the advanced governance route. A creates another named
+disabled boundary from the selected draft, Enter opens a boundary, and X
+deletes a non-active draft after confirmation. Only then does Runner show its
+member tables. Directly below the TABLES heading, P explains the highlighted
+table's sign-off: field access, operations, trusted scope, privacy, and
+relationships. The default table row says \`table sign-off needed\`, not an
+internal decision count. P exposes those exact audit decisions when wanted;
+one S sign-off records all of them together. Enter on a
+table edits its columns, R stages its removal, and Esc returns to the boundary
+list. Table and guided boundary sign-off prompts use \`[Y/n]\`: Enter records
+the review already shown, while \`n\` declines it. A sign-off still does not
+activate authority.
+A reveals related inspected tables so another can be added; Tab deliberately
+expands to all inspected tables. Choosing a table first saves it in the disabled
+boundary and then opens its columns for review. B returns to the boundary's
+table list, M opens the whole-boundary map, N renames the selected disabled
+boundary, and C **Complete review** guides every remaining sign-off and
+then offers activation. One table sign-off records
+the exact individual decisions for column access, operations, trusted scope,
+privacy limits, and relationships; those decisions remain separately
+digest-bound underneath. They are not separate boundaries or unsaved column
+edits. The column picker then
+stages one of three explicit tiers: V makes values available to Runner and the
+configured model, W keeps real values in Runner's local verified output while
+the model receives response-only tokens for raw output; explicitly reviewed
+derived results remain available. K keeps the field out of every read operation.
+Press the Spacebar key to change the selected column's access; each
+press moves from Model + Runner to Raw values: Runner only to Kept out, then repeats.
+Trusted tenant and principal columns use the same output tiers. Their values
+remain fixed by trusted runtime context in every tier; no tier creates a model
+argument for tenant or principal scope. Changing their disclosure still needs a
+recorded human reason and a new exact boundary fingerprint.
+Press V, W, or K to choose one directly. The footer follows standard terminal
+navigation: Up/Down navigates, Enter continues to review, Esc returns to the
+table list, B is an equivalent visible back action, M opens the selected table's
+access map, and Q quits without saving. Enter with unchanged column access
+continues to one plain-language table sign-off. A changed access tier still
+uses a validated preview in this advanced route; its disabled-draft save prompt
+uses \`[Y/n]\`, so Enter saves immediately and \`n\` discards it. The focused
+\`--access\` route omits repeated actor/reason/save prompts for routine
+low-risk edits because its one final exact-boundary confirmation records the
+human decision. Neither route lets the model edit or activate authority or
+requires rerunning a generated resource command. Use the resource-level
+\`--map\` to print the table map without entering the picker. Both maps are
+inspection-only. Activation remains a separate exact-digest decision under the
+focused one-confirmation presentation.
+
+\`${cmd} boundary disable\` narrows authority by removing active local Scoped
+Explore access. It does not delete saved disabled boundaries, review decisions,
+protected named capabilities, evidence, ledger, or source data. Interactive use
+asks for one confirmation; automation must bind the exact active digest with
+\`--confirm "DISABLE sha256:..."\`.
+
+Resource decision flags:
+  --include | --exclude
+  --row-identity <column>
+  --tenant-key <column>
+  --principal-key <column> | --no-principal
+  --keep-out <column,...>
+  --withhold-from-model <column,...>
+  --allow-reviewed-field <column,...>
+  --visible-fields <column,...>
+  --filter-fields <column,...>
+  --sort-fields <column,...>
+  --group-fields <column,...>
+  --measure-fields <column,...>
+  --count-distinct-fields <column,...>
+  --time-fields <column,...>
+  --minimum-cohort <1-5>
+  --max-ranked-groups <max-groups..generated-maximum>
+  --relationships <relationship-id,...>
+  --nullable-relationship <relationship-id> --unmatched-rows <exclude|keep_null>
+  --actor <human> --reason <review-reason>
+  --apply [--confirm "APPLY REVIEW sha256:..."]
+
+Resource review can resolve only inspected identity/scope candidates and narrow
+fields or relationships. It previews a semantic diff and saves disabled review
+state; it never activates authority. A versioned decision file can apply several
+resource decisions atomically, but the file is not authority: application still
+requires an exact digest gesture or a verified signed-key/OIDC operator proof.
+Auto Boundary keeps the minimum cohort at 5 by default. An owner may lower it
+to 1-4 only through --minimum-cohort with a recorded actor and reason. A value
+of 1 disables small-group suppression and can identify individuals; Protect and
+protected-capability activation require separate explicit re-confirmation.
+
+Ranked top/bottom and two-period mover questions return at most the reviewed
+top-N (25 by default). --max-ranked-groups separately narrows how many
+candidate groups Runner may validate before small-group suppression and ranking.
+New boundaries default to 500; a human may only keep or narrow that generated
+ceiling. Runner refuses an incomplete candidate population, suppresses small
+groups, and only then ranks the remaining groups. The setting is digest-bound
+and operator-owned, and no MCP tool or model plan can set it.
 
 Headless activation is accepted only with an exact exported review bundle,
 exact digest confirmation, a short-lived nonce-bound decision, and a configured
@@ -421,9 +626,12 @@ project settings are preserved, and edited/unowned entries fail closed.
   ${cmd} tools list --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} tools list --aliases --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} tools catalog --config ./synapsor.runner.json [--result-format v1|v2] [--json]
 
 List the model-facing MCP tools generated from a reviewed Runner config.
 Use --aliases to show canonical Synapsor names and OpenAI-safe aliases.
+tools catalog emits the deterministic synapsor.analytics-catalog.v1 metadata
+for active, digest-pinned analytical capabilities. Ambiguous reads are omitted.
 This command never prints database URLs or write credentials.
 `,
     "mcp serve": `Usage:

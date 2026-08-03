@@ -35,6 +35,8 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
         evidence_bundles: this.countTable("evidence_bundles"),
         evidence_items: this.countTable("evidence_items"),
         query_audit: this.countTable("query_audit"),
+        explore_privacy_releases: this.countTable("explore_privacy_releases"),
+        explore_budget_reservations: this.countTable("explore_budget_reservations"),
         writeback_receipts: this.countTable("writeback_receipts"),
         writeback_jobs: this.countTable("writeback_jobs"),
         writeback_intents: this.countTable("writeback_intents"),
@@ -226,6 +228,31 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
           created_at TEXT NOT NULL,
           FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id),
           FOREIGN KEY (evidence_bundle_id) REFERENCES evidence_bundles(evidence_bundle_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS explore_privacy_releases (
+          release_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          scope_fingerprint TEXT NOT NULL,
+          complement_fingerprint TEXT NOT NULL,
+          release_kind TEXT NOT NULL CHECK (release_kind IN ('scalar_total', 'suppressed_grouping')),
+          query_fingerprint TEXT NOT NULL,
+          boundary_digest TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(scope_fingerprint, complement_fingerprint, release_kind, query_fingerprint)
+        );
+
+        CREATE TABLE IF NOT EXISTS explore_budget_reservations (
+          reservation_id TEXT PRIMARY KEY,
+          scope_fingerprint TEXT NOT NULL,
+          resource_id TEXT NOT NULL,
+          variant_fingerprint TEXT NOT NULL,
+          requires_differencing INTEGER NOT NULL CHECK (requires_differencing IN (0, 1)),
+          differencing_counted INTEGER NOT NULL CHECK (differencing_counted IN (0, 1)),
+          reserved_cells INTEGER NOT NULL CHECK (reserved_cells >= 0),
+          accounted_cells INTEGER NOT NULL CHECK (accounted_cells >= 0),
+          status TEXT NOT NULL CHECK (status IN ('pending', 'released', 'not_released')),
+          created_at TEXT NOT NULL,
+          completed_at TEXT
         );
   
         CREATE TABLE IF NOT EXISTS writeback_jobs (
@@ -488,6 +515,12 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
   
         CREATE INDEX IF NOT EXISTS idx_proposal_events_proposal_id ON proposal_events(proposal_id);
         CREATE INDEX IF NOT EXISTS idx_query_audit_proposal_id ON query_audit(proposal_id);
+        CREATE INDEX IF NOT EXISTS idx_explore_privacy_release_lookup
+          ON explore_privacy_releases(scope_fingerprint, complement_fingerprint, release_kind);
+        CREATE INDEX IF NOT EXISTS idx_explore_budget_scope_created
+          ON explore_budget_reservations(scope_fingerprint, created_at);
+        CREATE INDEX IF NOT EXISTS idx_explore_budget_variant
+          ON explore_budget_reservations(scope_fingerprint, resource_id, variant_fingerprint, created_at);
         CREATE INDEX IF NOT EXISTS idx_writeback_receipts_proposal_id ON writeback_receipts(proposal_id);
         CREATE INDEX IF NOT EXISTS idx_writeback_intents_proposal_id ON writeback_intents(proposal_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_writeback_intents_status_updated ON writeback_intents(status, updated_at);

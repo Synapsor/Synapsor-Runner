@@ -16,7 +16,7 @@ import {
 import { audit, fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { defaultBlockedToolSurface, inspectMcpToolBoundary, mcpConfig, mcpConfigure, mcpServe, mcpServeHttp, mcpServeStreamableHttp, mcpSmoke } from "./mcp-runtime.js";
-import { prepareScopedExplore } from "./scoped-explore.js";
+import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 
 
 export async function mcp(args: string[]): Promise<number> {
@@ -57,7 +57,16 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   const storePath = resolvedLocalStorePath(rest);
   let toolNames: string[];
   if (authoring) {
-    await prepareScopedExplore({ projectRoot, transport: "stdio", env: process.env });
+    const runtime = await createScopedExploreBoundarySetRuntime({
+      projectRoot,
+      transport: "stdio",
+      env: process.env,
+    });
+    try {
+      await runtime.describe({ limit: 10 });
+    } finally {
+      await runtime.close();
+    }
     toolNames = ["app.describe_data", "app.explore_data"];
   } else {
     const absoluteConfig = path.resolve(projectRoot, configPath);

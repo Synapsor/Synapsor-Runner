@@ -10,7 +10,103 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.5 (prepared, not published)
+## 1.6.6 (prepared, not published)
+
+### Review Once, Ask Repeatedly
+
+- Workbench now renders useful review evidence even when every generated
+  resource begins blocked. The CLI and Workbench share one boundary-review
+  domain, so source-proven identity/scope and field decisions converge on the
+  same disabled authority digest.
+- A strict versioned decision file supports large-schema review without
+  granting authority. Applying review state and activating it remain separate;
+  headless changes still require exact signed-key or OIDC operator proof.
+- Interactive final review now hands off directly to a default-yes activation
+  prompt. Workbench advances after the last saved sign-off and uses one
+  **Activate and ask** action for fingerprint revalidation plus activation.
+  Both paths still record activation separately against the exact digest;
+  neither asks a person to copy that digest.
+- Successful interactive CLI activation now continues into a host choice:
+  OpenAI, Anthropic, a loopback OpenAI-compatible model, an existing MCP
+  client, or **Later**. Hosted/local choices enter the existing `try ask` shell
+  in the same process with complete provider/model arguments. Provider failure
+  cannot roll back or misreport the already active boundary; headless and JSON
+  activation never launch the chooser.
+- `synapsor-runner try ask` uses the same provider adapters, official-MCP
+  gateway, and runtime validators as Workbench Ask. While Explore is active,
+  Ask receives exactly `app.describe_data` and `app.explore_data`; named
+  read/proposal tools are not mixed into that catalog.
+- Up to eight independently reviewed development/staging boundaries can be
+  active through that same two-tool catalog. Each plan uses one boundary;
+  overlapping resources require the name and cross-boundary joins/unions are
+  refused. Adding a boundary retains the provider/model/key in memory while
+  clearing conversation and rebinding egress to the exact active-set digest.
+  Privacy accounting is atomic and durable across the stable source and trusted
+  scope. Cohort-protected variants share a root-resource pool over a rolling
+  24-hour window, including across restart and UTC midnight, and complementary
+  suppressed grouping/total releases are refused. Asking does not automatically
+  Protect or create named authority.
+- New Auto Boundaries review a finite default of 16 distinct cohort-protected
+  aggregate variants per root resource per rolling 24 hours. This preserves the
+  ten-plan first-use path without restoring per-plan-family budget resets;
+  existing boundaries retain their digest-bound value and reviewers may narrow
+  the generated allowance.
+- Every successful analysis receives an encrypted expiring local reference.
+  An operator may later promote exactly one result with `try protect --from` or
+  Workbench; the generated DSL, canonical JSON, and tests start disabled.
+- Two-period comparisons use one read-only repeatable-read snapshot and return
+  semantic aliases, absolute/percentage changes, reviewed UTC time semantics,
+  and explicit empty/suppressed/incomplete outcomes.
+- Ranked top/bottom and two-period mover questions can evaluate a larger,
+  separately reviewed candidate population while still returning at most the
+  reviewed top-N. Runner bounds the complete population, suppresses small
+  cohorts before ordering, and refuses partial rankings. Absolute and percentage
+  change are closed typed operations; the model cannot set the candidate
+  ceiling or introduce formulas.
+- MCP analytical tools advertise structured output schemas. External clients
+  can discover safe digest-pinned metadata through
+  `synapsor://analytics/catalog/v1` or `tools catalog` without receiving SQL,
+  trusted-scope details, kept-out fields, or credentials.
+- The packaged host-neutral TypeScript example proves official-SDK stdio and
+  authenticated Streamable HTTP integration for analytical discovery/calls and
+  existing semantic reads/proposals, with operator tools absent.
+- Packed Retail and Healthcare/PHI clean rooms exercise actual desktop/mobile
+  Workbench paths, ten legal plans before optional Protect, suppression,
+  tenant/principal isolation, stored prompt-injection inertness, provider/CLI/
+  MCP parity, production narrowing, and source checksums.
+- Auto Boundary still generates minimum cohort 5. A human owner can lower it to
+  1 through 4 only through a reviewer-and-reason-bound decision; 1 plainly
+  disables small-group suppression. Protect and activation separately
+  re-confirm the exact lower threshold, while models cannot set or confirm it.
+- Protected capabilities can bind a reviewed model-withheld field tier. Runner
+  may use those fields for explicitly allowed typed operations and render local
+  verified values, while raw values and enum domains remain outside provider
+  requests. Kept-out fields remain unavailable to every operation.
+- Auto Boundary now classifies qualified person-name fields conservatively and
+  sends ambiguous display names to review. Current classification is reapplied
+  when generating authority, so stale inspection output cannot reopen them.
+- Apply now rejects drift between stored freshness authority and the current
+  reviewed policy. Worker completion/retry/dead-letter paths require an exact
+  fenced lease ID. MySQL uses a client-enforced pre-COMMIT deadline for writes;
+  live PostgreSQL/MySQL gates prove rollback, supporting-dependency rechecks,
+  and zero unintended mutation.
+- OIDC operator identity requires issuer and audience. Webhook receivers can
+  use an atomic durable replay claim, notification lease loss is isolated per
+  item, and interactive CLI failures no longer print raw telemetry JSON.
+- A live owner-authorized OpenAI `gpt-5-mini` acceptance run called the exact
+  two authoring tools and matched the official MCP result without persisting the
+  key or conversation. Anthropic and generic compatible claims remain
+  protocol-tested; no real Ollama/LM Studio runtime was available.
+
+Prepared package versions: `@synapsor/runner@1.6.6`,
+`synapsor-runner@1.6.6`, `@synapsor/spec@1.8.0`, and
+`@synapsor/dsl@1.8.0`. Spec/DSL 1.8.0 add the canonical model-withheld egress
+tier, explicitly reviewed minimum cohort 1, a separate ranked-candidate group
+ceiling, and absolute/percentage comparison-change ordering. Omitted fields
+preserve existing contract normalization and digests. No package is published
+by this change.
+
+## 1.6.5 (published 2026-07-26)
 
 ### Managed Claude Code and VS Code project MCP installs
 
@@ -28,9 +124,8 @@ for the Synapsor Cloud CLI.
   Claude Code, and VS Code as peer project clients. Existing Cursor commands
   and configuration remain compatible.
 
-Prepared package versions: `@synapsor/runner@1.6.5` and
-`synapsor-runner@1.6.5`. Spec 1.7.0 and DSL 1.7.0 are unchanged. No package is
-published by this change.
+Published package versions: `@synapsor/runner@1.6.5` and
+`synapsor-runner@1.6.5`. Spec 1.7.0 and DSL 1.7.0 remained unchanged.
 
 ## 1.6.4 (published 2026-07-25)
 
@@ -69,11 +164,13 @@ published by this change.
   PostgreSQL/MySQL relationship gates cover unfamiliar-domain onboarding,
   PM-style analysis, demand-driven review, nullable semantics, drift,
   suppression, scope, and deliberate fan-out rejection.
-- Workbench now offers an optional local **Ask with your model** client over the
-  exact active MCP/runtime tools. OpenAI, Anthropic, and custom
+- Workbench now leads post-activation analytics with local **Ask with your
+  model** over the exact active MCP/runtime tools, while also presenting
+  existing model-enabled MCP clients as a first-class path. OpenAI, Anthropic, and custom
   OpenAI-compatible adapters use explicit digest-bound direct-egress consent,
   in-memory credentials/history, bounded tool loops, escaped provider prose,
-  and proposal-only writes. The no-model composer remains the default.
+  and proposal-only writes. The no-model composer remains an optional
+  exact-plan fallback.
 - Remote provider requests use fixed official origins or an operator-selected
   HTTPS custom origin, refuse redirects, validate and pin DNS on every
   connection, block private/special/metadata targets, redact errors, and

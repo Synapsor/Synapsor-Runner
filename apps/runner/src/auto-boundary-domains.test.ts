@@ -160,9 +160,11 @@ describe("Auto Boundary cross-domain evidence matrix", () => {
       expect(resource?.status, fixture.name).toBe("draft_read");
       expect(resource?.primary_key.selected, fixture.name).toBe("id");
       expect(resource?.tenant_key.selected, fixture.name).toBe(fixture.tenant);
-      expect(resource?.principal_key.selected, fixture.name).toBe(fixture.principal);
+      expect(resource?.principal_key.selected, fixture.name)
+        .toBe(fixture.engine === "postgres" ? fixture.principal : undefined);
       expect(resource?.tenant_key.confidence, fixture.name).toMatch(/high|medium/);
-      expect(resource?.principal_key.confidence, fixture.name).toMatch(/high|medium/);
+      expect(resource?.principal_key.confidence, fixture.name)
+        .toMatch(fixture.engine === "postgres" ? /high|medium/ : /low|medium/);
       expect(resource?.tenant_key.alternatives_considered, fixture.name)
         .toEqual(expect.arrayContaining([
           expect.objectContaining({
@@ -255,8 +257,6 @@ describe("Auto Boundary cross-domain evidence matrix", () => {
     const target = inspection.tables.find((candidate) => candidate.name === fixture.table)!;
     target.row_level_security_policies = target.row_level_security_policies
       ?.filter((policy) => policy.name === `${fixture.table}_tenant_scope`);
-    target.foreign_keys = target.foreign_keys
-      .filter((foreignKey) => foreignKey.columns[0] !== fixture.principal);
 
     const result = buildAutoBoundary({
       inspection,
@@ -267,13 +267,36 @@ describe("Auto Boundary cross-domain evidence matrix", () => {
 
     expect(resource.tenant_key.selected).toBe(fixture.tenant);
     expect(resource.principal_key.selected).toBeUndefined();
-    expect(resource.principal_key.blocked_reason).toMatch(/names alone/i);
+    expect(resource.principal_key.blocked_reason).toMatch(/relationships do not prove/i);
+    expect(resource.principal_key.candidates).toContain(fixture.principal);
+  });
+
+  it("ignores principal policies that do not apply to the inspected database role", () => {
+    const fixture = domains[0]!;
+    const inspection = domainInspection(fixture);
+    const target = inspection.tables.find((candidate) => candidate.name === fixture.table)!;
+    const principalPolicy = target.row_level_security_policies
+      ?.find((policy) => policy.name === `${fixture.table}_principal_scope`);
+    if (!principalPolicy) throw new Error("principal policy fixture missing");
+    principalPolicy.roles = ["different_reader"];
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: emptyProject(),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = result.graph.resources.find((candidate) => candidate.id === `public.${fixture.table}`)!;
+
+    expect(resource.tenant_key.selected).toBe(fixture.tenant);
+    expect(resource.principal_key.selected).toBeUndefined();
+    expect(resource.principal_key.candidates).toContain(fixture.principal);
+    expect(resource.principal_key.blocked_reason).toMatch(/relationships do not prove/i);
   });
 
   it("uses a reviewed public DSL contract as the highest-ranked scope evidence", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-reviewed-dsl-evidence-"));
     try {
-      const fixture = domains[6]!;
+      const fixture = domains[0]!;
       const inspection = domainInspection(fixture);
       const initial = buildAutoBoundary({
         inspection,

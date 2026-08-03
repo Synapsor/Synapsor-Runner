@@ -51,11 +51,15 @@ node "$ROOT/scripts/check-runner-publish-manifest.mjs" --packed \
 # packed public Spec artifact beside Runner. Once the exact Spec is in npm,
 # this gate keeps its stronger Runner-only registry-resolution check.
 if [[ "$USE_LOCAL_SPEC" == "auto" ]]; then
-  PUBLISHED_SPEC_VERSION="$(npm view "@synapsor/spec@$EXPECTED_SPEC_VERSION" version 2>/dev/null || true)"
-  if [[ "$PUBLISHED_SPEC_VERSION" == "$EXPECTED_SPEC_VERSION" ]]; then
+  SPEC_STATUS="$(node "$ROOT/scripts/check-public-package-version-collisions.mjs" \
+    --package @synapsor/spec --status)"
+  if [[ "$SPEC_STATUS" == "identical" ]]; then
     USE_LOCAL_SPEC="0"
-  else
+  elif [[ "$SPEC_STATUS" == "changed" || "$SPEC_STATUS" == "unpublished" ]]; then
     USE_LOCAL_SPEC="1"
+  else
+    echo "Unexpected public Spec status: $SPEC_STATUS" >&2
+    exit 1
   fi
 fi
 if [[ "$USE_LOCAL_SPEC" != "0" && "$USE_LOCAL_SPEC" != "1" ]]; then

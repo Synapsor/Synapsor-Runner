@@ -1,6 +1,6 @@
 # Reviewed Candidates From Prisma, Drizzle, And OpenAPI
 
-Runner 1.6.4 uses these same bounded static parsers as evidence in the
+Runner 1.6.6 uses these same bounded static parsers as evidence in the
 whole-application [Auto Boundary](auto-boundary-and-scoped-explore.md) flow.
 The database catalog remains authoritative for database structure; Prisma,
 Drizzle, OpenAPI, and existing Synapsor definitions contribute deterministic

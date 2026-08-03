@@ -157,6 +157,42 @@
         },
         "enforcement": {
           "const": "required"
+        },
+        "reporting_timezone": {
+          "description": "Reporting timezone bound into a generated analytical authority lock. New generated analytics currently use UTC.",
+          "const": "UTC"
+        },
+        "minimum_cohort_overrides": {
+          "description": "Exact protected-capability metadata for a separately reviewed owner decision that lowers the default minimum cohort.",
+          "type": "object",
+          "maxProperties": 256,
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "contract_digest",
+              "minimum_cohort_size",
+              "review_digest"
+            ],
+            "properties": {
+              "contract_digest": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              "minimum_cohort_size": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
+              "review_digest": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          }
         }
       }
     },
@@ -950,6 +986,20 @@
             "$ref": "#/$defs/identifier"
           }
         },
+        "kept_out_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "model_withheld_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
         "evidence": {
           "type": "string"
         },
@@ -1259,7 +1309,7 @@
             }
           }
         },
-        "minimum_group_size": { "type": "integer", "minimum": 2, "maximum": 1000000 }
+        "minimum_group_size": { "type": "integer", "minimum": 1, "maximum": 1000000 }
       }
     },
     "numeric_bound": {

@@ -94,6 +94,54 @@ describe("runner capability config validation", () => {
     ]));
   });
 
+  it("accepts only UTC as generated analytical reporting-timezone authority", () => {
+    const generated = {
+      ...structuredClone(safeConfig),
+      generated_authority: {
+        generation_lock_path: "./.synapsor/generation-lock.json",
+        enforcement: "required",
+        reporting_timezone: "UTC",
+      },
+    };
+    expect(validateRunnerCapabilityConfig(generated).ok).toBe(true);
+    expect(validateRunnerCapabilityConfig({
+      ...generated,
+      generated_authority: {
+        ...generated.generated_authority,
+        reporting_timezone: "America/Los_Angeles",
+      },
+    }).errors).toContainEqual(expect.objectContaining({
+      path: "$.generated_authority.reporting_timezone",
+      code: "INVALID_REPORTING_TIMEZONE",
+    }));
+  });
+
+  it("validates exact metadata for a generated minimum-cohort owner override", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const generated = {
+      ...structuredClone(safeConfig),
+      generated_authority: {
+        generation_lock_path: "./.synapsor/generation-lock.json",
+        enforcement: "required",
+        minimum_cohort_overrides: {
+          "analytics.reviewed_counts": {
+            contract_digest: digest,
+            minimum_cohort_size: 1,
+            review_digest: `sha256:${"b".repeat(64)}`,
+          },
+        },
+      },
+    };
+    expect(validateRunnerCapabilityConfig(generated).ok).toBe(true);
+
+    generated.generated_authority.minimum_cohort_overrides["analytics.reviewed_counts"]!
+      .minimum_cohort_size = 0;
+    expect(validateRunnerCapabilityConfig(generated).errors)
+      .toContainEqual(expect.objectContaining({
+        code: "INVALID_MINIMUM_COHORT_OVERRIDE_VALUE",
+      }));
+  });
+
   it("accepts a zero-authority read-only shell and distinguishes lock-bound authoring", () => {
     const authoringShell = {
       version: 1,
@@ -433,6 +481,23 @@ describe("runner capability config validation", () => {
         selection: { all: [{ column: "status", operator: "eq", value: "overdue" }] },
       },
     }];
+    const aggregateReadWithOwnerThreshold = structuredClone(aggregateRead) as any;
+    aggregateReadWithOwnerThreshold.capabilities[0].aggregate.minimum_group_size = 1;
+    aggregateReadWithOwnerThreshold.generated_authority = {
+      generation_lock_path: "./.synapsor/generation-lock.json",
+      enforcement: "required",
+      minimum_cohort_overrides: {
+        "billing.overdue_balance_total": {
+          contract_digest: `sha256:${"a".repeat(64)}`,
+          minimum_cohort_size: 1,
+          review_digest: `sha256:${"b".repeat(64)}`,
+        },
+      },
+    };
+    const aggregateReadBelowMinimum = structuredClone(aggregateRead) as any;
+    aggregateReadBelowMinimum.capabilities[0].aggregate.minimum_group_size = 0;
+    const modelWithheld = structuredClone(safeConfig) as any;
+    modelWithheld.capabilities[0].model_withheld_fields = ["waiver_reason"];
     const graduatedTrust = structuredClone(safeConfig) as any;
     graduatedTrust.graduated_trust = {
       enabled: true,
@@ -468,7 +533,7 @@ describe("runner capability config validation", () => {
     };
     const notifications = notificationConfig();
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, graduatedTrust, freshnessRequired, notifications]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, aggregateReadWithOwnerThreshold, modelWithheld, graduatedTrust, freshnessRequired, notifications]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -476,6 +541,8 @@ describe("runner capability config validation", () => {
     expect(schemaValidate(invalid)).toBe(false);
     expect(validateRunnerCapabilityConfig(emptyWithoutContract).ok).toBe(false);
     expect(schemaValidate(emptyWithoutContract)).toBe(false);
+    expect(validateRunnerCapabilityConfig(aggregateReadBelowMinimum).ok).toBe(false);
+    expect(schemaValidate(aggregateReadBelowMinimum)).toBe(false);
   });
 
   it("accepts reviewed read and proposal capabilities", () => {
@@ -895,6 +962,8 @@ describe("runner capability config validation", () => {
       public_key_env: "SYNAPSOR_OPERATOR_PUBLIC_KEY",
       token_stdin: true,
       attestation_secret_env: "SYNAPSOR_OPERATOR_ATTESTATION_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-operators",
     };
     expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
 
@@ -902,6 +971,28 @@ describe("runner capability config validation", () => {
     const rejected = validateRunnerCapabilityConfig(config);
     expect(rejected.ok).toBe(false);
     expect(rejected.errors.map((error) => error.code)).toContain("OPERATOR_TOKEN_SOURCE_CONFLICT");
+  });
+
+  it("requires exact issuer and audience binding for OIDC operator tokens", () => {
+    const config = mutableConfig();
+    config.operator_identity = {
+      provider: "jwt_oidc",
+      algorithms: ["RS256"],
+      public_key_env: "SYNAPSOR_OPERATOR_PUBLIC_KEY",
+      token_stdin: true,
+      attestation_secret_env: "SYNAPSOR_OPERATOR_ATTESTATION_SECRET",
+    };
+
+    const missing = validateRunnerCapabilityConfig(config);
+    expect(missing.ok).toBe(false);
+    expect(missing.errors.map((error) => error.code)).toEqual(expect.arrayContaining([
+      "OPERATOR_JWT_ISSUER_REQUIRED",
+      "OPERATOR_JWT_AUDIENCE_REQUIRED",
+    ]));
+
+    config.operator_identity.issuer = "https://identity.example";
+    config.operator_identity.audience = "synapsor-operators";
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
   });
 
   it("keeps WRITEBACK NONE distinct from broken direct writeback", () => {

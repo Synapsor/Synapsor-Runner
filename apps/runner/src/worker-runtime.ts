@@ -688,13 +688,14 @@ function finishWorkerFailure(
   retryBaseMs: number,
   retryMaxMs: number,
 ): void {
+  const leaseId = item.lease_id;
+  if (!leaseId) throw workerPolicyError("WORKER_LEASE_REQUIRED", "worker queue lease id is missing");
   const supervised = item.execution_mode === "supervised_worker";
   if (supervised && /^(OUTCOME_UNKNOWN|RECONCILIATION_REQUIRED|RECEIPT_OUTCOME_UNKNOWN)$/.test(errorCode)) {
-    if (!item.lease_id) throw workerPolicyError("WORKER_LEASE_REQUIRED", "worker queue lease id is missing");
     store.requireWorkerReconciliation({
       proposalId: item.proposal_id,
       workerId,
-      leaseId: item.lease_id,
+      leaseId,
       errorCode,
     });
     operationalLog("error", "worker_reconciliation_required", {
@@ -708,11 +709,10 @@ function finishWorkerFailure(
   const retryable = isRetryableWritebackCode(errorCode, item.execution_mode);
   if (!retryable) {
     if (supervised) {
-      if (!item.lease_id) throw workerPolicyError("WORKER_LEASE_REQUIRED", "worker queue lease id is missing");
       store.blockWorkerItem({
         proposalId: item.proposal_id,
         workerId,
-        leaseId: item.lease_id,
+        leaseId,
         errorCode,
       });
       operationalLog("warn", "worker_item_blocked", {
@@ -722,7 +722,7 @@ function finishWorkerFailure(
         attempt: item.attempts,
       });
     } else {
-      store.deadLetterWorkerItem({ proposalId: item.proposal_id, workerId, errorCode, leaseId: item.lease_id });
+      store.deadLetterWorkerItem({ proposalId: item.proposal_id, workerId, errorCode, leaseId });
       operationalLog("error", "worker_item_dead_lettered", { proposal_id: item.proposal_id, worker_id: workerId, error_code: errorCode, attempt: item.attempts });
     }
     return;
@@ -733,7 +733,7 @@ function finishWorkerFailure(
     workerId,
     errorCode,
     retryAt: new Date(Date.now() + delay).toISOString(),
-    leaseId: item.lease_id,
+    leaseId,
   });
   operationalLog(updated.status === "dead_letter" ? "error" : "warn", updated.status === "dead_letter" ? "worker_item_dead_lettered" : "worker_retry_scheduled", {
     proposal_id: item.proposal_id,

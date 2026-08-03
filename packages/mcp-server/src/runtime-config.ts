@@ -269,6 +269,9 @@ export function runtimeCapabilityFromSpec(
     lookup: capability.lookup ?? { id_from_arg: Object.keys(capability.args)[0] ?? "id" },
     visible_columns: capability.visible_fields,
     ...(capability.kept_out_fields ? { kept_out_fields: capability.kept_out_fields } : {}),
+    ...(capability.model_withheld_fields
+      ? { model_withheld_fields: capability.model_withheld_fields }
+      : {}),
     evidence: capability.evidence?.required === false ? "optional" : "required",
     ...(capability.max_rows ? { max_rows: capability.max_rows } : {}),
     ...(capability.aggregate ? { aggregate: capability.aggregate } : {}),

@@ -14,7 +14,7 @@ import {
   type PostgresApplyClient
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
-import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, parseWritebackResult, protocolVersions } from "@synapsor-runner/protocol";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -97,6 +97,7 @@ describe("postgres adapter", () => {
     });
     expect(report.ok).toBe(true);
     expect(report.role_is_table_owner).toBe(false);
+    expect(report.role_can_assume_table_owner).toBe(false);
     expect(report.required_operations).toEqual(["SELECT", "UPDATE"]);
   });
 
@@ -168,6 +169,22 @@ describe("postgres adapter", () => {
     expect(client.sqlLog).toContain("ROLLBACK");
   });
 
+  it("fails hardened apply before mutation when the role can assume table ownership", async () => {
+    const client = new HardenedPostgresClient({ canAssumeOwner: true });
+    await expect(applyPostgresJobWithClient(job, {
+      ...config,
+      databaseScope: {
+        mode: "postgres_rls",
+        tenantSetting: "app.tenant_id",
+        principalSetting: "app.principal_id",
+        tenantId: "acme",
+        principal: "support-agent",
+      },
+    }, client)).rejects.toThrow(/POSTGRES_RLS_ROLE_CAN_ASSUME_TABLE_OWNER/);
+    expect(client.sqlLog.some((sql) => sql.startsWith('UPDATE "public"."tickets"'))).toBe(false);
+    expect(client.sqlLog).toContain("ROLLBACK");
+  });
+
   it("checks hardened prerequisites and binds scope before guarded writeback", async () => {
     const client = new HardenedPostgresClient();
     const result = await applyPostgresJobWithClient(job, {
@@ -214,6 +231,22 @@ describe("postgres adapter", () => {
     expect(() => buildPostgresUpdate({ ...job, allowed_columns: ["id", "status"] })).toThrow(/primary key/i);
     expect(() => buildPostgresUpdate({ ...job, allowed_columns: ["tenant_id", "status"] })).toThrow(/tenant guard/i);
     expect(() => buildPostgresUpdate({ ...job, patch: {} })).toThrow(/must not be empty/i);
+  });
+
+  it("rejects weak row-hash update guards before any source query", async () => {
+    const client = new FakePostgresClient();
+    const weak = {
+      ...job,
+      conflict_guard: { kind: "row_hash" as const, expected_hash: "sha256:reviewed-row" },
+    };
+    expect(() => buildPostgresUpdate(weak)).toThrow(/ROW_HASH_CONFLICT_GUARD_UNSUPPORTED/);
+    await expect(applyPostgresJobWithClient(weak, config, client))
+      .rejects.toThrow(/ROW_HASH_CONFLICT_GUARD_UNSUPPORTED/);
+    expect(client.sqlLog).toEqual([]);
+    expect(() => buildPostgresUpdate({
+      ...job,
+      conflict_guard: { kind: "version_column" as const, column: "__row_hash", expected_value: "sha256:reviewed-row" },
+    })).toThrow(/ROW_HASH_CONFLICT_GUARD_UNSUPPORTED/);
   });
 
   it("builds parameterized v2 INSERT and guarded DELETE statements", () => {
@@ -419,6 +452,48 @@ describe("postgres adapter", () => {
     expect(deleteClient.sqlLog.some((sql) => sql.startsWith('DELETE FROM "public"."credits"'))).toBe(true);
     expect(deleteClient.sqlLog.some((sql) => /SELECT\s+\*/i.test(sql))).toBe(false);
     expect(deleteClient.recordedReceiptStatus).toBe("applied");
+  });
+
+  it("requires source-database reconciliation when COMMIT acknowledgement is lost", async () => {
+    const first = await applyPostgresJobWithClient(v2InsertJob, config, new CommitUnknownCrudPostgresClient());
+    const second = await applyPostgresJobWithClient(v2InsertJob, config, new CommitUnknownCrudPostgresClient());
+
+    expect(first).toMatchObject({
+      protocol_version: "2.0",
+      status: "reconciliation_required",
+      receipt_authority: "source_db",
+      error_code: "OUTCOME_UNKNOWN",
+      affected_rows: 0,
+    });
+    if (first.protocol_version !== "2.0" || second.protocol_version !== "2.0") throw new Error("expected normalized v2 reconciliation results");
+    expect(first.intent_id).toMatch(/^source-db:sha256:/);
+    expect(second.intent_id).toBe(first.intent_id);
+    expect(() => parseWritebackResult(first)).not.toThrow();
+
+    const legacy = await applyPostgresJobWithClient(job, config, new FakePostgresClient({
+      businessRow: { __synapsor_conflict_value: "v1" },
+      businessUpdateRowCount: 1,
+      commitUnknown: true,
+    }));
+    expect(legacy).toMatchObject({
+      protocol_version: "1.0",
+      status: "reconciliation_required",
+      error_code: "OUTCOME_UNKNOWN",
+      affected_rows: 0,
+    });
+    expect(() => parseWritebackResult(legacy)).not.toThrow();
+  });
+
+  it("refuses INSERT when no non-partial unique key proves the reviewed deduplication columns", async () => {
+    const single = new CrudPostgresClient("insert", { uniqueDeduplication: false });
+    await expect(applyPostgresJobWithClient(v2InsertJob, config, single)).rejects.toThrow("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+    expect(single.sqlLog.some((sql) => sql.startsWith('INSERT INTO "public"."credits"'))).toBe(false);
+    expect(single.sqlLog).toContain("ROLLBACK");
+
+    const batch = new SetPostgresClient({ uniqueDeduplication: false });
+    await expect(applyPostgresJobWithClient(v3BatchInsertJob(), config, batch)).rejects.toThrow("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+    expect(batch.sqlLog.some((sql) => sql.startsWith('INSERT INTO "public"."account_credits"'))).toBe(false);
+    expect(batch.sqlLog).toContain("ROLLBACK");
   });
 
   it("atomically applies an exact frozen set and emits per-member effects", async () => {
@@ -828,7 +903,10 @@ class CrudPostgresClient implements PostgresApplyClient {
   readonly sqlLog: string[] = [];
   recordedReceiptStatus?: string;
 
-  constructor(private readonly operation: "insert" | "delete") {}
+  constructor(
+    private readonly operation: "insert" | "delete",
+    private readonly options: { uniqueDeduplication?: boolean } = {},
+  ) {}
 
   async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
     this.sqlLog.push(sql);
@@ -838,6 +916,17 @@ class CrudPostgresClient implements PostgresApplyClient {
       this.recordedReceiptStatus = String(values?.[1]);
       return { rows: [], rowCount: 1 };
     }
+    if (this.operation === "insert" && sql.includes("FROM pg_catalog.pg_index")) {
+      return this.options.uniqueDeduplication === false
+        ? { rows: [], rowCount: 0 }
+        : {
+          rows: [
+            { index_id: "credits_dedup", is_valid: true, is_ready: true, is_non_partial: true, key_count: 2, key_position: 1, column_name: "tenant_id" },
+            { index_id: "credits_dedup", is_valid: true, is_ready: true, is_non_partial: true, key_count: 2, key_position: 2, column_name: "request_id" },
+          ],
+          rowCount: 2,
+        };
+    }
     if (this.operation === "insert" && sql.startsWith('SELECT "id"::text AS "__synapsor_primary_key" FROM')) return { rows: [], rowCount: 0 };
     if (this.operation === "insert" && sql.startsWith('INSERT INTO "public"."credits"')) return { rows: [{ __synapsor_primary_key: "CR-NEW" }], rowCount: 1 };
     if (this.operation === "delete" && sql.startsWith('SELECT "id"::text AS "__synapsor_primary_key"')) {
@@ -846,6 +935,16 @@ class CrudPostgresClient implements PostgresApplyClient {
     if (this.operation === "delete" && sql.startsWith("SELECT EXISTS")) return { rows: [{ has_user_trigger: false, has_widening_fk: false }], rowCount: 1 };
     if (this.operation === "delete" && sql.startsWith('DELETE FROM "public"."credits"')) return { rows: [], rowCount: 1 };
     throw new Error(`unexpected CRUD query: ${sql}`);
+  }
+}
+
+class CommitUnknownCrudPostgresClient extends CrudPostgresClient {
+  constructor() { super("insert"); }
+
+  override async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    const result = await super.query(sql, values);
+    if (sql === "COMMIT") throw new Error("connection lost after COMMIT");
+    return result;
   }
 }
 
@@ -860,6 +959,7 @@ class SetPostgresClient implements PostgresApplyClient {
     failMutationAt?: number;
     duplicateBatchAt?: number;
     deleteTrigger?: boolean;
+    uniqueDeduplication?: boolean;
   } = {}) {}
 
   async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
@@ -868,6 +968,14 @@ class SetPostgresClient implements PostgresApplyClient {
     if (sql.startsWith("SET LOCAL ")) return { rows: [], rowCount: null };
     if (sql.startsWith("INSERT INTO synapsor_writeback_receipts")) return { rows: [{ status: "in_progress" }], rowCount: 1 };
     if (sql.startsWith("UPDATE synapsor_writeback_receipts")) return { rows: [], rowCount: 1 };
+    if (sql.includes("FROM pg_catalog.pg_index")) {
+      return this.options.uniqueDeduplication === false
+        ? { rows: [], rowCount: 0 }
+        : {
+          rows: [{ index_id: "account_credits_pkey", is_valid: true, is_ready: true, is_non_partial: true, key_count: 1, key_position: 1, column_name: "id" }],
+          rowCount: 1,
+        };
+    }
     if (sql.startsWith("SELECT") && sql.includes('FROM "public"."invoices"') && sql.includes("ORDER BY") && sql.includes("FOR UPDATE")) {
       return {
         rows: [
@@ -1020,7 +1128,7 @@ class HardenedPostgresClient implements PostgresApplyClient {
   readonly sqlLog: string[] = [];
   boundValues?: unknown[];
 
-  constructor(private readonly options: { bypass?: boolean; owner?: boolean; force?: boolean } = {}) {}
+  constructor(private readonly options: { bypass?: boolean; owner?: boolean; canAssumeOwner?: boolean; force?: boolean } = {}) {}
 
   async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
     const normalized = sql.trim();
@@ -1034,6 +1142,7 @@ class HardenedPostgresClient implements PostgresApplyClient {
           row_security_enabled: true,
           force_row_security: this.options.force !== false,
           role_is_table_owner: this.options.owner === true,
+          role_can_assume_table_owner: this.options.canAssumeOwner === true,
           role_is_superuser: false,
           role_has_bypassrls: this.options.bypass === true,
         }],
@@ -1137,10 +1246,12 @@ class FakePostgresClient implements PostgresApplyClient {
     businessUpdateRowCount?: number;
     receiptUpdateRowCount?: number;
     freshnessVersion?: string;
+    commitUnknown?: boolean;
   } = {}) {}
 
   async query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
     this.sqlLog.push(sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK" ? sql : sql.trim());
+    if (sql === "COMMIT" && this.options.commitUnknown) throw new Error("connection lost after COMMIT");
     if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: null };
     if (sql.startsWith("CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts")) return { rows: [], rowCount: null };
     if (sql.startsWith("INSERT INTO synapsor_writeback_receipts")) {

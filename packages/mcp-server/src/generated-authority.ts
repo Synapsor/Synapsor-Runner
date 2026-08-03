@@ -30,8 +30,8 @@ import {
   isRecord,
 } from "./safe-values.js";
 
-export const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set(["1.6.0", "1.6.3", "1.6.4"]);
-export const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0", "1.7.0"]);
+export const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set(["1.6.0", "1.6.3", "1.6.4", "1.6.6"]);
+export const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0", "1.7.0", "1.8.0"]);
 
 /**
  * Generated protected reads remain executable only while the exact reviewed
@@ -47,7 +47,47 @@ export async function preflightGeneratedAuthority(
   const config = resolveRuntimeConfig(inputConfig);
   const protectedCapabilities = localCapabilities(config).filter((capability) => capability.protected_read);
   if (protectedCapabilities.length === 0) return;
+  const lock = loadGeneratedAuthorityLock(config, protectedCapabilities);
+  const inspection = await inspect({
+    engine: lock.engine,
+    databaseUrlEnv: lock.source_env,
+    ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
+    statementTimeoutMs: Math.min(...protectedCapabilities.map((capability) =>
+      capability.protected_read!.limits.statement_timeout_ms)),
+    env,
+  });
+  assertGeneratedAuthorityInspection(lock, inspection, protectedCapabilities, false);
+}
 
+/**
+ * Revalidate only the dependencies used by one generated protected read
+ * immediately before source execution. Modern dependency-aware locks let an
+ * unrelated protected capability continue when another reviewed resource
+ * drifts. Legacy locks retain conservative whole-schema validation.
+ */
+export async function preflightGeneratedCapabilityAuthority(
+  inputConfig: RuntimeConfig,
+  capability: RuntimeCapabilityConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  inspect: typeof inspectDatabase = inspectDatabase,
+): Promise<void> {
+  if (!capability.protected_read) return;
+  const config = resolveRuntimeConfig(inputConfig);
+  const lock = loadGeneratedAuthorityLock(config, [capability]);
+  const inspection = await inspect({
+    engine: lock.engine,
+    databaseUrlEnv: lock.source_env,
+    ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
+    statementTimeoutMs: capability.protected_read.limits.statement_timeout_ms,
+    env,
+  });
+  assertGeneratedAuthorityInspection(lock, inspection, [capability], true);
+}
+
+function loadGeneratedAuthorityLock(
+  config: RuntimeConfig,
+  protectedCapabilities: RuntimeCapabilityConfig[],
+): GeneratedAuthorityLock {
   const generatedAuthority = config.generated_authority;
   if (!generatedAuthority || generatedAuthority.enforcement !== "required") {
     throw new McpRuntimeError(
@@ -66,8 +106,13 @@ export async function preflightGeneratedAuthority(
     );
   }
   assertGeneratedAuthorityLockShape(lock);
+  if (lock.reporting_timezone !== generatedAuthority.reporting_timezone) {
+    throw new McpRuntimeError(
+      "GENERATION_LOCK_TIMEZONE_MISMATCH",
+      "Generated protected authority no longer uses the reporting timezone captured by its generation lock.",
+    );
+  }
   const lockFingerprint = canonicalJsonDigest(lock);
-
   for (const capability of protectedCapabilities) {
     if (capability.protected_read!.generation_lock_fingerprint !== lockFingerprint) {
       throw new McpRuntimeError(
@@ -83,15 +128,15 @@ export async function preflightGeneratedAuthority(
       );
     }
   }
+  return lock;
+}
 
-  const inspection = await inspect({
-    engine: lock.engine,
-    databaseUrlEnv: lock.source_env,
-    ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
-    statementTimeoutMs: Math.min(...protectedCapabilities.map((capability) =>
-      capability.protected_read!.limits.statement_timeout_ms)),
-    env,
-  });
+function assertGeneratedAuthorityInspection(
+  lock: GeneratedAuthorityLock,
+  inspection: SchemaInspection,
+  protectedCapabilities: RuntimeCapabilityConfig[],
+  validateCapabilityDependencies: boolean,
+): void {
   if (lock.authority_dependencies) {
     if (credentialPostureFingerprintForGeneratedAuthority(inspection)
       !== lock.authority_dependencies.credential_posture_fingerprint) {
@@ -100,12 +145,14 @@ export async function preflightGeneratedAuthority(
         "Generated protected authority is stale because the database credential posture changed. Rescan, review, and activate a new digest.",
       );
     }
-    for (const capability of protectedCapabilities) {
-      assertProtectedCapabilityDependenciesCurrent(
-        capability,
-        lock.authority_dependencies,
-        inspection,
-      );
+    if (validateCapabilityDependencies) {
+      for (const capability of protectedCapabilities) {
+        assertProtectedCapabilityDependenciesCurrent(
+          capability,
+          lock.authority_dependencies,
+          inspection,
+        );
+      }
     }
   } else {
     const schemaFingerprint = schemaFingerprintForInspection(inspection);
@@ -147,6 +194,7 @@ export function assertGeneratedAuthorityLockShape(value: GeneratedAuthorityLock)
     || !digest.test(value.reviewed_overrides_digest)
     || !Array.isArray(value.protected_authority)
     || value.protected_authority.some((item) => typeof item !== "string")
+    || (value.reporting_timezone !== undefined && value.reporting_timezone !== "UTC")
     || (value.authority_dependencies !== undefined
       && !generatedAuthorityDependenciesValid(value.authority_dependencies, digest))) {
     throw new McpRuntimeError(

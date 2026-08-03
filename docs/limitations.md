@@ -1,7 +1,8 @@
 # Limitations
 
 Synapsor Runner is intentionally narrow. It combines deterministic
-whole-application boundary drafting, local authoring-only Explore -> Protect,
+whole-application boundary drafting, local authoring-only repeated Explore with
+optional Protect,
 guarded writes, opt-in proposal/evidence freshness, verified operator identity,
 default-off supervised execution, and quiet human-attention delivery. Reviewed
 aggregate paths are limited to proven star/depth-two many-to-one relationships,
@@ -63,14 +64,26 @@ enterprise SLA.
   existing Synapsor definitions. Generated authority starts disabled.
 - Local development/staging Scoped Explore through exactly
   `app.describe_data` and `app.explore_data`, with no SQL-string argument.
+  Up to eight independently reviewed active boundaries support repeated legal
+  combinations without per-question review or creation of named authority.
+  Each plan selects one boundary; overlapping resources require its name and
+  cross-boundary joins/unions are unavailable. Session privacy budgets remain
+  shared across boundary changes.
 - Optional development/staging loopback Workbench Ask through OpenAI,
   Anthropic, or a configured OpenAI-compatible endpoint. Provider calls use the
   exact active MCP/runtime surface, explicit direct-egress consent, in-memory
   credential/history state, fixed tool/time/size/token bounds, and
   proposal-only write behavior.
-- Reviewed PM-style aggregate Explore with `count`, `count_distinct`, `sum`,
-  `avg`, categorical dimensions, fixed time buckets, typed filters, bounded
-  top-N, up to three reviewed relationship paths of at most two proven
+- CLI `try ask` through the same provider/MCP engine. It accepts no command-line
+  key, opens a bounded conversational shell when no question is supplied,
+  labels model prose as untrusted, renders Runner-verified results
+  independently, and keeps expiring analysis references out of routine output.
+  `/protect` remains an operator command and never becomes a model tool.
+- Reviewed bounded aggregate Explore with `count`, `count_distinct`, `sum`,
+  `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
+  bounded top/bottom-N over a separately reviewed candidate population,
+  signed absolute/percentage movers from an exact two-range comparison, up to
+  three reviewed relationship paths of at most two proven
   many-to-one links each, cohort suppression, and durable
   extraction/differencing budgets.
 - Demand-driven operator review for an exact catalog-proven relationship,
@@ -79,12 +92,19 @@ enterprise SLA.
   tenant/principal scope.
 - Protect This Query to public DSL, canonical JSON, tests, and a disabled named
   capability that survives Explore shutdown after exact-digest activation.
+  Explore never protects automatically; only one operator-selected unexpired
+  analysis is promoted.
+- Structured MCP analytical output schemas and a safe digest-pinned analytical
+  catalog that omit SQL, trusted-scope values/columns, kept-out fields,
+  credentials, and generation-lock internals.
 - Generation-lock drift detection for generated authority. Manually authored
   projects without a lock retain their previous behavior.
 - Local indexed search for proposals, evidence bundles, query audit, writeback
   receipts, and proposal replay.
 - DSL enum arguments and fixed, tenant-scoped aggregate count/sum/avg tools
-  with mandatory minimum-group suppression and no source-row output.
+  with a mandatory reviewed minimum-group threshold and no source-row output.
+  Runner-generated authority defaults to suppression at 5; an explicitly
+  reviewed threshold of 1 permits groups of one.
 - Contract LSP, explanation, deterministic lint, adopter-owned contract tests,
   and scoped tamper-evident JSON/Markdown/PDF ledger reports.
 - Off-by-default graduated-trust recommendations that require verified operator

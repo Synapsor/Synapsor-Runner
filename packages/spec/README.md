@@ -190,15 +190,24 @@ Current additive safety fields:
 - scalar argument `enum`: 1 through 64 deterministic, same-type string,
   number, or boolean values enforced by every Runner transport;
 - capability `kind = "aggregate_read"` plus a fixed `aggregate` definition for
-  reviewed count/sum/avg, optional contract-fixed equality selection, mandatory
-  minimum-group suppression, required evidence/query audit, and no row-facing
-  arguments or visible fields.
+  reviewed count/sum/avg, optional contract-fixed equality selection, a
+  mandatory reviewed minimum-group threshold from 1 upward, required
+  evidence/query audit, and no row-facing arguments or visible fields. A value
+  of 1 permits groups of one and therefore disables small-group suppression; it
+  is valid only as explicit reviewed authority, not as Runner's generated
+  default.
 - capability `protected_read.relationships`: up to three operator-reviewed
   paths, each containing one or two `many_to_one` links with
   `max_fan_out: 1` and explicit `unmatched_rows = "exclude" | "keep_null"`.
   The legacy singular `protected_read.relationship` field remains canonical
   for unchanged one-hop contracts so their normalized bytes and digest do not
   change.
+- capability `protected_read.limits.max_ranked_groups`: an optional reviewed
+  ceiling for the complete candidate population of ranked aggregate queries.
+  `protected_read.aggregate.order_by.kind = "comparison_change"` may rank
+  exactly two comparison periods by signed absolute or percentage change.
+  Contracts omitting these fields retain their prior group ceiling,
+  normalization, and digest.
 
 Receipt authority, receipt-table provisioning, credentials, and Runner ledger
 topology are deliberately not canonical fields. They remain deployment choices

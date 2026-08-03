@@ -163,7 +163,10 @@ END
 
 Use `COUNT ROWS`, `COUNT NON NULL column`, `SUM column`, or `AVG column`.
 `SELECT WHERE` is the same contract-fixed equality AST used by reviewed set
-operations. `MIN GROUP SIZE` is mandatory and must be 2 through 1,000,000.
+operations. `MIN GROUP SIZE` is mandatory and must be 1 through 1,000,000.
+`1` permits groups of one and therefore disables small-group suppression; use
+it only for explicitly reviewed authority. Auto Boundary continues to generate
+5 unless a human owner records a lower decision.
 Aggregate reads cannot declare model arguments, lookup, visible row fields,
 proposal clauses, joins, grouping, or arbitrary expressions. See [Bounded
 Aggregate Reads](aggregate-reads.md).
@@ -198,12 +201,13 @@ CREATE CAPABILITY analytics.churn_contributors_by_week
   GROUP DIMENSION region BY region
   GROUP DIMENSION reason BY churn_reason
   TIME DIMENSION churn_week BY WEEK OF churned_at
+  MODEL WITHHELD region, reason
   AGGREGATE ORDER BY MEASURE churned_accounts DESC
   TOP 20 GROUPS
   MIN GROUP SIZE 5
   KEEP OUT email, private_notes
   REQUIRE EVIDENCE
-  PROTECTED LIMITS ROWS 50 GROUPS 50 CELLS 500 BYTES 65536 TIMEOUT MS 3000 QUERIES 40 EXTRACTED CELLS 4000 DIFFERENCING 6 RATE PER MINUTE 20
+  PROTECTED LIMITS ROWS 50 GROUPS 50 RANKED GROUPS 500 CELLS 500 BYTES 65536 TIMEOUT MS 3000 QUERIES 40 EXTRACTED CELLS 4000 DIFFERENCING 6 RATE PER MINUTE 20
 END
 ```
 
@@ -232,9 +236,26 @@ The protected clauses mean:
 | `MEASURE alias SUM|AVG field` | Uses an explicitly approved aggregate-safe numeric measure. |
 | `GROUP DIMENSION alias BY field` | Freezes a reviewed categorical grouping. |
 | `TIME DIMENSION alias BY DAY|WEEK|MONTH OF field` | Freezes one reviewed timestamp and bucket. |
+| `MODEL WITHHELD output_alias, ...` | Marks raw row, group-label, or time-value output aliases whose real values stay in Runner's local human presentation. Model-facing text and structured output receive response-local opaque tokens. A reviewed derived aggregate alias such as a distinct count is not marked withheld merely because its source field is withheld. The field remains subject to scope, suppression, and budgets. |
 | `COMPARE RANGE field FROM value TO value` | Freezes at most two bounded reviewed time ranges. |
+| `AGGREGATE ORDER BY MEASURE alias ASC|DESC` | Orders ordinary reviewed aggregates by one returned measure. |
+| `AGGREGATE ORDER BY ABSOLUTE CHANGE alias ASC|DESC` / `PERCENTAGE CHANGE` | With exactly two comparison ranges, orders dimension groups by the signed change between periods. Percentage change is undefined when the earlier value is zero. This is a closed operation, not an expression grammar. |
 | `TOP n GROUPS` / `MIN GROUP SIZE n` | Fixes output breadth and cohort suppression. |
-| `PROTECTED LIMITS ...` | Fixes row/group/response/time/query/extraction/differencing/rate budgets; MCP arguments cannot widen them. |
+| `PROTECTED LIMITS ... GROUPS n RANKED GROUPS n ...` | Fixes the ordinary group ceiling and the separately reviewed complete candidate ceiling for ranked queries, plus response/time/query/extraction/differencing/rate budgets. Runner suppresses small cohorts before ranking; MCP arguments cannot widen either ceiling. The optional ranked clause is omitted for legacy contracts. |
+
+A protected period-mover capability uses exactly two `COMPARE RANGE` clauses
+and one closed change order, for example:
+
+```sql
+  COMPARE RANGE created_at FROM FIXED '2026-06-01T00:00:00.000Z' TO FIXED '2026-07-01T00:00:00.000Z'
+  COMPARE RANGE created_at FROM FIXED '2026-07-01T00:00:00.000Z' TO FIXED '2026-08-01T00:00:00.000Z'
+  AGGREGATE ORDER BY PERCENTAGE CHANGE revenue_cents DESC
+```
+
+Runner validates the complete ranked candidate population, applies the reviewed
+minimum cohort, pairs the two period values, and only then orders and returns
+the reviewed top-N. It refuses an incomplete population instead of silently
+ranking a prefix.
 
 Protect normally generates this verbose authority block so that reviewers do
 not have to transcribe digests or limits. The generated DSL compiles through
@@ -261,14 +282,18 @@ Protect](auto-boundary-and-scoped-explore.md).
 
 ```sql
   ALLOW READ id, tenant_id, status, amount_cents, updated_at
+  MODEL WITHHELD status
   KEEP OUT card_token, private_notes
   REQUIRE EVIDENCE
   MAX ROWS 1
 ```
 
-`ALLOW READ` is required and becomes the visible-field allowlist. `KEEP OUT`
-records fields that must remain outside the model/evidence surface. Keep-out
-fields must not also be visible. `REQUIRE EVIDENCE` records the scoped read and
+`ALLOW READ` is required and becomes the usable-field allowlist. `MODEL
+WITHHELD` is an optional subset of returned output names: Runner may use and
+show those values in its local verified presentation, while model-facing MCP
+content receives response-local opaque tokens. `KEEP OUT` records fields that
+must remain unavailable to the capability. A field cannot be both
+model-withheld and kept out. `REQUIRE EVIDENCE` records the scoped read and
 query audit. For ordinary read/single-row proposal capabilities, `MAX ROWS 1`
 keeps primary-key lookup exact. Bounded set proposals use the separate guarded
 form below.

@@ -22,7 +22,8 @@
     "jose": "6.2.3",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",

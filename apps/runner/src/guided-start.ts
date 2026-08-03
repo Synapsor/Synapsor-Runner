@@ -1,9 +1,10 @@
 import {
   inspectDatabase,
-  summarizeInspection,
   type InspectEngine,
   type SchemaInspection
 } from "@synapsor-runner/schema-inspector";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -15,9 +16,18 @@ import {
   compareGenerationLock,
   loadStructuredProjectEvidence,
   writeAutoBoundaryArtifacts,
+  type ExplorationBudgets,
   type GenerationLock
 } from "./auto-boundary.js";
-import { boundaryActivateCommand, boundaryReviewCommand, loadBoundaryReviewContext, preferredDetectedDatabaseEnv, startSafeAction } from "./boundary-commands.js";
+import {
+  boundaryActivateCommand,
+  boundaryDisableCommand,
+  boundaryReviewCommand,
+  loadBoundaryReviewContext,
+  preferredDetectedDatabaseEnv,
+  startSafeAction,
+  type BoundaryActivationHandoff,
+} from "./boundary-commands.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { isRecord, shellQuote } from "./cli-format.js";
@@ -39,16 +49,90 @@ import {
   sessionDatabaseInput,
   type InstantDatabaseInput,
 } from "./instant-onboarding.js";
+import { buildInstantFirstValue } from "./instant-first-value.js";
+import {
+  instantLocalBoundaryCandidate,
+  recommendedBoundaryReviewCandidate,
+} from "./boundary-candidate.js";
+import {
+  activateInstantCliBoundary,
+  type InstantCliBoundaryActivationInput,
+  type InstantCliBoundaryActivationResult,
+} from "./instant-cli-boundary.js";
+import { createBoundaryReviewInteractiveSession, terminalTheme } from "./boundary-cli-picker.js";
 import { mcpSmoke } from "./mcp-runtime.js";
 import { displayPath, init, isScriptedOnboardingArgs, runInitWizard } from "./onboarding.js";
 import { detectProjectContext, formatProjectDetection } from "./project-detection.js";
+import {
+  runPostActivationAskHandoff,
+  type PostActivationAskSelection,
+} from "./post-activation-ask.js";
+import { resolveSynapsorProject } from "./project-resolution.js";
 import { startWorker } from "./runtime-commands.js";
+import { listProtectedPlans } from "./scoped-explore.js";
 import { ui } from "./ui-command.js";
+import { padTerminalBlock } from "./terminal-layout.js";
 
 
-export async function start(args: string[] = []): Promise<number> {
+export type GuidedStartDependencies = {
+  schemaInspector?: typeof inspectDatabase;
+  runInstantCliBoundary?: (
+    input: Omit<InstantCliBoundaryActivationInput, "session">,
+  ) => Promise<InstantCliBoundaryActivationResult>;
+  runBoundaryReview?: (
+    args: string[],
+    schemaInspector: typeof inspectDatabase,
+    activationHandoff: BoundaryActivationHandoff,
+  ) => Promise<number>;
+  runPostActivationHandoff?: (input: {
+    projectRoot: string;
+    autoStartConfiguredProvider?: boolean;
+    consentOnFirstQuestion?: boolean;
+    selection?: PostActivationAskSelection;
+  }) => Promise<number>;
+  openWorkbench?: (args: string[]) => Promise<number>;
+  interactive?: boolean;
+};
+
+
+export async function start(
+  args: string[] = [],
+  dependencies: GuidedStartDependencies = {},
+): Promise<number> {
   if (args.includes("--action")) return startSafeAction(args);
-  if (await shouldEnterAutoBoundary(args)) return startAutoBoundary(args);
+  const interactive = dependencies.interactive
+    ?? (process.stdin.isTTY === true && process.stdout.isTTY === true);
+  if (args.includes("--cli")) {
+    if (!interactive) {
+      throw new Error(
+        "start --cli requires an interactive terminal. " +
+        "Use --no-open for noninteractive initialization without prompts.",
+      );
+    }
+    if (args.includes("--no-open") || args.includes("--open-ui")) {
+      throw new Error("start --cli cannot be combined with --no-open or --open-ui.");
+    }
+    if (!optionalArg(args, "--from-env")) {
+      const project = await detectProjectContext(process.cwd());
+      const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
+      if (!databaseEnv) {
+        throw new Error(
+          "start --cli needs --from-env <DATABASE_URL_ENV_NAME> or an exported DATABASE_URL.",
+        );
+      }
+      process.stdout.write(
+        `Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`,
+      );
+      return startAutoBoundary(
+        ["--from-env", databaseEnv, ...args],
+        dependencies,
+      );
+    }
+    return startAutoBoundary(args, dependencies);
+  }
+  if (await shouldEnterAutoBoundary(args, interactive)) {
+    return startAutoBoundary(args, dependencies);
+  }
   if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
     if (args.length > 0) {
       if (!process.stdin.isTTY && !isScriptedOnboardingArgs(args)) {
@@ -83,14 +167,17 @@ export async function start(args: string[] = []): Promise<number> {
     }
     if (databaseEnv) {
       process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
-      return startAutoBoundary(["--from-env", databaseEnv]);
+      return startAutoBoundary(["--from-env", databaseEnv], dependencies);
     }
     const input = await promptForInstantDatabaseInput(project.root);
     const previous = process.env[input.environmentVariable];
     process.env[input.environmentVariable] = input.value;
     process.stdout.write(`Using ${input.environmentVariable} from ${input.sourceLabel} for this Runner process only; its value will not be printed or written to generated files.\n`);
     try {
-      return await startAutoBoundary(["--from-env", input.environmentVariable]);
+      return await startAutoBoundary(
+        ["--from-env", input.environmentVariable],
+        dependencies,
+      );
     } finally {
       if (previous === undefined) delete process.env[input.environmentVariable];
       else process.env[input.environmentVariable] = previous;
@@ -128,9 +215,12 @@ async function promptForInstantDatabaseInput(projectRoot: string): Promise<Insta
 }
 
 
-async function shouldEnterAutoBoundary(args: string[]): Promise<boolean> {
+async function shouldEnterAutoBoundary(
+  args: string[],
+  interactive = process.stdin.isTTY === true && process.stdout.isTTY === true,
+): Promise<boolean> {
   if (!optionalArg(args, "--from-env")) return false;
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+  if (!interactive) return false;
   const establishedRoutingFlags = [
     "--table",
     "--answers",
@@ -158,12 +248,40 @@ async function shouldEnterAutoBoundary(args: string[]): Promise<boolean> {
 }
 
 
-async function startAutoBoundary(args: string[]): Promise<number> {
-  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--force", "--rescan", "--no-graduation-tip"]), "start --from-env Auto Boundary");
+async function startAutoBoundary(
+  args: string[],
+  dependencies: GuidedStartDependencies = {},
+): Promise<number> {
+  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose"]), "start --from-env Auto Boundary");
+  const cliMode = args.includes("--cli");
+  const writeGuidedOutput = (value: string) => process.stdout.write(
+    cliMode && process.stdout.isTTY === true ? padTerminalBlock(value) : value,
+  );
+  const schemaInspector = dependencies.schemaInspector ?? inspectDatabase;
+    const runPostActivationHandoff = dependencies.runPostActivationHandoff
+    ?? ((input: {
+      projectRoot: string;
+      autoStartConfiguredProvider?: boolean;
+      consentOnFirstQuestion?: boolean;
+      selection?: PostActivationAskSelection;
+    }) => runPostActivationAskHandoff(input));
+  const activationHandoff: BoundaryActivationHandoff = (input) =>
+    runPostActivationHandoff({ projectRoot: input.projectRoot });
+  const runBoundaryReview = dependencies.runBoundaryReview
+    ?? ((reviewArgs, inspector, handoff) =>
+      boundaryReviewCommand(reviewArgs, inspector, undefined, handoff));
+  const runInstantCliBoundary = dependencies.runInstantCliBoundary
+    ?? ((input: Omit<InstantCliBoundaryActivationInput, "session">) =>
+      activateInstantCliBoundary({
+        ...input,
+        session: createBoundaryReviewInteractiveSession(),
+      }));
+  const openWorkbench = dependencies.openWorkbench ?? ui;
   const sourceEnv = optionalArg(args, "--from-env");
   if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
   const project = await detectProjectContext(process.cwd());
-  process.stdout.write(formatProjectDetection(project));
+  const verbose = args.includes("--verbose");
+  if (verbose) writeGuidedOutput(formatProjectDetection(project));
   const existingJourney = await readGuidedOnboardingState(project.root);
   const shouldRescan = args.includes("--rescan") || args.includes("--force");
   if (shouldRescan && !existingJourney) {
@@ -177,17 +295,54 @@ async function startAutoBoundary(args: string[]): Promise<number> {
       );
     }
     const boundaryRoot = path.join(project.root, existingJourney.artifacts.boundary_root);
-    process.stdout.write([
+    const activeBoundaryPath = path.join(
+      project.root,
+      ".synapsor/exploration-boundary.active.json",
+    );
+    const activeBoundaryExists = await fileExists(activeBoundaryPath);
+    writeGuidedOutput([
       "Existing Synapsor guided project found.",
       `Completed: ${existingJourney.completed_steps.join(", ")}`,
-      `Agent authority active: ${existingJourney.authority_active ? "yes" : "no"}`,
+      `Agent authority active: ${activeBoundaryExists ? "yes" : "no"}`,
       "Source database changed: no",
       "No schema inspection, digest change, or file rewrite was performed.",
-      `Next: ${existingJourney.recommended_next_action}`,
+      ...(cliMode
+        ? [
+          activeBoundaryExists
+            ? "Continuing to model or MCP-client selection in this terminal."
+            : "Continuing the saved boundary review in this terminal.",
+        ]
+        : [`Next: ${existingJourney.recommended_next_action}`]),
       "",
     ].join("\n"));
+    if (cliMode) {
+      if (activeBoundaryExists) {
+        return runPostActivationHandoff({ projectRoot: project.root });
+      }
+      const context = await loadBoundaryReviewContext(project.root);
+      if (!context.progress && existingJourney.status === "review_boundary") {
+        const instant = await runInstantCliBoundary({
+          projectRoot: project.root,
+          draft: context.draft,
+          lock: context.lock,
+          schemaInspector,
+        });
+        if (instant.accepted) {
+          return runPostActivationHandoff({
+            projectRoot: project.root,
+            selection: instant.askSelection,
+            consentOnFirstQuestion: true,
+          });
+        }
+      }
+      return runBoundaryReview(
+        ["--project-root", project.root, "--access"],
+        schemaInspector,
+        activationHandoff,
+      );
+    }
     if (args.includes("--no-open")) return 0;
-    return ui([
+    return openWorkbench([
       "--open",
       "--boundary-root",
       boundaryRoot,
@@ -200,10 +355,14 @@ async function startAutoBoundary(args: string[]): Promise<number> {
     ]);
   }
   await preflightGuidedProjectInitialization(project.root);
-  process.stdout.write("Inspecting the whole selected schema in an enforced read-only metadata transaction. No source rows are sampled.\n");
+  if (verbose) {
+    writeGuidedOutput("Inspecting the whole selected schema in an enforced read-only metadata transaction. No source rows are sampled.\n");
+  } else {
+    writeGuidedOutput("Connecting and inspecting schema metadata...\n");
+  }
   let inspection: SchemaInspection;
   try {
-    inspection = await inspectDatabase({
+    inspection = await schemaInspector({
       engine: (optionalArg(args, "--engine") ?? "auto") as InspectEngine,
       databaseUrlEnv: sourceEnv,
       schema: optionalArg(args, "--schema"),
@@ -219,7 +378,6 @@ async function startAutoBoundary(args: string[]): Promise<number> {
       `Cause: ${cause}`,
     ].join("\n"));
   }
-  process.stdout.write(summarizeInspection(inspection));
   const evidence = await loadStructuredProjectEvidence(project);
   const build = buildAutoBoundary({
     inspection,
@@ -255,29 +413,39 @@ async function startAutoBoundary(args: string[]): Promise<number> {
     if (!existingJourney && result) await rollbackFreshAutoBoundaryWrite(project.root, result);
     throw error;
   }
-  process.stdout.write([
-    "",
-    "Database connected.",
-    `  objects inspected: ${build.review.summary.objects}`,
-    `  exact-row read drafts: ${result.draft_reads}`,
-    `  blocked objects: ${result.blocked_objects}`,
-    `  sensitive fields kept out by suggestion: ${build.review.summary.sensitive_fields_kept_out}`,
-    `  RLS policies found: ${build.review.summary.rls_policies}`,
-    `  candidate contract: ${displayPath(path.join(result.root, "synapsor.candidate.contract.json"))}`,
-    `  valid Runner config: ${displayPath(guided.config_path)}`,
-    `  local ledger: ${displayPath(guided.store_path)}`,
-    "  state: disabled and unreviewed; active Runner tools are unchanged",
-    "  source database changed: no",
-    "",
-    "Next: Review what the agent can see.",
-    "Scoped Explore is never registered on production, shared HTTP, or Streamable HTTP.",
-    "",
-  ].join("\n"));
+  writeGuidedOutput(formatGuidedBoundaryReady(
+    build,
+    result,
+    cliMode ? "terminal" : args.includes("--no-open") ? "deferred" : "workbench",
+    verbose,
+  ));
   if (evidence.warnings.length) {
-    process.stdout.write(`Static evidence warnings:\n${evidence.warnings.map((warning) => `  - ${warning}`).join("\n")}\n`);
+    writeGuidedOutput(`Static evidence warnings:\n${evidence.warnings.map((warning) => `  - ${warning}`).join("\n")}\n`);
+  }
+  if (cliMode) {
+    const instant = await runInstantCliBoundary({
+      projectRoot: project.root,
+      draft: build.exploration_boundary,
+      lock: build.lock,
+      schemaInspector,
+      initialInspection: inspection,
+    });
+    if (instant.accepted) {
+      return runPostActivationHandoff({
+        projectRoot: project.root,
+        selection: instant.askSelection,
+        consentOnFirstQuestion: true,
+      });
+    }
+    if (instant.reason === "operator_cancelled") return 0;
+    return runBoundaryReview(
+      ["--project-root", project.root, "--access"],
+      schemaInspector,
+      activationHandoff,
+    );
   }
   if (args.includes("--no-open")) return 0;
-  return ui([
+  return openWorkbench([
     "--open",
     "--boundary-root",
     result.root,
@@ -288,6 +456,96 @@ async function startAutoBoundary(args: string[]): Promise<number> {
     "--instant-onboarding",
     ...(args.includes("--no-graduation-tip") ? ["--no-graduation-tip"] : []),
   ]);
+}
+
+
+function formatGuidedBoundaryReady(
+  build: ReturnType<typeof buildAutoBoundary>,
+  result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>>,
+  reviewSurface: "workbench" | "terminal" | "deferred" = "workbench",
+  verbose = false,
+): string {
+  const candidate = reviewSurface === "deferred"
+    ? recommendedBoundaryReviewCandidate(build.exploration_boundary)
+    : instantLocalBoundaryCandidate(build.exploration_boundary);
+  const inspectedLabel = build.review.resources.some((resource) => resource.type === "view")
+    ? "tables and views"
+    : "tables";
+  const theme = terminalTheme(process.stdout.isTTY === true && !("NO_COLOR" in process.env));
+  const lines = [
+    "",
+    theme.success("✓ Connected"),
+    theme.success(`✓ Inspected ${build.review.summary.objects} ${inspectedLabel}`) + theme.dim(" (metadata only; no rows read)"),
+    "",
+  ];
+  if (!verbose && (reviewSurface === "terminal" || reviewSurface === "workbench")) {
+    return lines.join("\n");
+  }
+  if (candidate.pack.resources.length === 0) {
+    return [
+      ...lines,
+      "Safe starting boundary needs one human decision",
+      "",
+      `  ${build.review.summary.objects} ${inspectedLabel} inspected`,
+      `  ${result.blocked_objects} remain blocked`,
+      `  ${build.review.summary.sensitive_fields_kept_out} sensitive fields kept out`,
+      "",
+      "Nothing is active.",
+      reviewSurface === "terminal"
+        ? "Quick Start review begins now."
+        : reviewSurface === "workbench"
+          ? "Next: Resolve the first boundary exception in Workbench."
+          : `Next: ${cliCommandName()} boundary review`,
+      "",
+    ].join("\n");
+  }
+  const first = buildInstantFirstValue(candidate);
+  const resource = candidate.pack.resources[0]!;
+  const includedResources = candidate.pack.resources.length;
+  const resourceName = friendlyIdentifier(resource.table);
+  const visible = [...first.agent_can_see_labels, "count"]
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .join(" · ");
+  const tenantScope = candidate.trusted_context.database_role_tenant
+    ? "tenant fixed by the read-only database login"
+    : "tenant from your application";
+  const scope = first.principal_scope.startsWith("not required")
+    ? tenantScope
+    : `${tenantScope}; principal from your application`;
+  return [
+    ...lines,
+    "Safe starting boundary",
+    "",
+    `  Boundary     ${candidate.pack.name}`,
+    `  Included     ${includedResources} of ${build.review.summary.objects} ${inspectedLabel}`,
+    `  First query  ${resourceName} (${first.resource})`,
+    "",
+    `  AI can       ${visible || "reviewed aggregate count"} for this first query`,
+    `  scoped by    ${scope}`,
+    `  kept out     ${Math.max(0, build.review.summary.objects - includedResources)} ${inspectedLabel} · ${build.review.summary.sensitive_fields_kept_out} sensitive fields`,
+    "",
+    "  TRY AFTER ACTIVATION",
+    `  "${first.question}"`,
+    "",
+    "Nothing is active.",
+    reviewSurface === "terminal"
+      ? "Quick Start review begins now."
+      : reviewSurface === "workbench"
+        ? "Next: Review this exact boundary in Workbench."
+        : `Next: ${cliCommandName()} boundary review`,
+    "",
+  ].join("\n");
+}
+
+
+function friendlyIdentifier(value: string): string {
+  return value
+    .split(".")
+    .at(-1)!
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 
@@ -307,10 +565,20 @@ async function rollbackFreshAutoBoundaryWrite(
 }
 
 
-export async function boundaryCommand(args: string[]): Promise<number> {
+export async function boundaryCommand(
+  args: string[],
+  schemaInspector: typeof inspectDatabase = inspectDatabase,
+): Promise<number> {
   const [subcommand, ...rest] = args;
-  if (subcommand === "review") return boundaryReviewCommand(rest);
-  if (subcommand === "activate") return boundaryActivateCommand(rest);
+  const activationHandoff = (input: { projectRoot: string }) =>
+    runPostActivationAskHandoff(input);
+  if (subcommand === "review") {
+    return boundaryReviewCommand(rest, schemaInspector, undefined, activationHandoff);
+  }
+  if (subcommand === "activate") {
+    return boundaryActivateCommand(rest, schemaInspector, undefined, activationHandoff);
+  }
+  if (subcommand === "disable") return boundaryDisableCommand(rest);
   if (subcommand === "draft") {
     assertKnownOptions(rest, new Set(["--from-env", "--engine", "--schema", "--project-root", "--force", "--json"]), "boundary draft");
     const sourceEnv = optionalArg(rest, "--from-env")
@@ -318,7 +586,7 @@ export async function boundaryCommand(args: string[]): Promise<number> {
     if (!sourceEnv) throw new Error("boundary draft requires an exported DATABASE_URL or --from-env <DATABASE_URL_ENV_NAME>.");
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const project = await detectProjectContext(projectRoot);
-    const inspection = await inspectDatabase({
+    const inspection = await schemaInspector({
       engine: (optionalArg(rest, "--engine") ?? "auto") as InspectEngine,
       databaseUrlEnv: sourceEnv,
       schema: optionalArg(rest, "--schema"),
@@ -333,11 +601,83 @@ export async function boundaryCommand(args: string[]): Promise<number> {
       sourceEnv,
       inspectedSchema: optionalArg(rest, "--schema"),
     });
-    const result = await writeAutoBoundaryArtifacts({ projectRoot, build, force: rest.includes("--force") });
+    const existingJourney = await readGuidedOnboardingState(projectRoot);
+    const existingProject = await resolveSynapsorProject(projectRoot, process.env);
+    const shouldInitializeProject = !existingJourney && !existingProject?.config_path;
+    if (shouldInitializeProject) {
+      await preflightGuidedProjectInitialization(projectRoot);
+    }
+    let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
+    let guided: Awaited<ReturnType<typeof initializeGuidedProject>> | undefined;
+    try {
+      result = await writeAutoBoundaryArtifacts({
+        projectRoot,
+        build,
+        force: rest.includes("--force"),
+      });
+      if (shouldInitializeProject || existingJourney) {
+        guided = await initializeGuidedProject({
+          projectRoot,
+          build,
+          runnerVersion: runnerPackage.version,
+          instantOnboarding: true,
+        });
+      }
+      if (existingJourney) {
+        await resetGuidedOnboardingForBoundaryReview({
+          projectRoot,
+          schemaFingerprint: build.lock.schema_fingerprint,
+          rolePostureFingerprint: build.lock.role_posture_fingerprint,
+        });
+      }
+    } catch (error) {
+      if (shouldInitializeProject && result) {
+        await rollbackFreshAutoBoundaryWrite(projectRoot, result);
+      }
+      throw error;
+    }
+    const displayedProjectRoot = displayPath(projectRoot);
+    const reviewCommand = displayedProjectRoot === "."
+      ? `${cliCommandName()} boundary review`
+      : `${cliCommandName()} boundary review --project-root ${shellQuote(displayedProjectRoot)}`;
+    const configPath = guided?.config_path ?? existingProject?.config_path;
+    const storePath = guided?.store_path ?? existingProject?.store_path;
+    const workbenchCommand = [
+      `${cliCommandName()} ui`,
+      `--boundary-root ${shellQuote(displayPath(result.root))}`,
+      ...(configPath ? [`--config ${shellQuote(displayPath(configPath))}`] : []),
+      ...(storePath ? [`--store ${shellQuote(displayPath(storePath))}`] : []),
+      "--open",
+    ].join(" ");
     if (rest.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ ok: true, activation: "disabled_unreviewed", ...result }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({
+        ok: true,
+        activation: "disabled_unreviewed",
+        ...result,
+        guided_project_created: guided?.created ?? false,
+        ...(configPath ? { config_path: configPath } : {}),
+        ...(storePath ? { store_path: storePath } : {}),
+        next_action: reviewCommand,
+        visual_alternative: workbenchCommand,
+      }, null, 2)}\n`);
     } else {
-      process.stdout.write(`Generated disabled Auto Boundary draft at ${displayPath(result.root)}.\nReview it in the local Workbench; active Runner tools are unchanged.\n`);
+      process.stdout.write([
+        `Generated disabled Auto Boundary draft at ${displayPath(result.root)}.`,
+        "State: disabled draft. Active Runner tools are unchanged.",
+        ...(guided?.created
+          ? [
+            "Prepared the local Runner config, ledger, and MCP snippets automatically.",
+            "No credential values were written to project files.",
+          ]
+          : []),
+        "",
+        "Next: review it in this terminal:",
+        `  ${reviewCommand}`,
+        "",
+        "Visual alternative:",
+        `  ${workbenchCommand}`,
+        "",
+      ].join("\n"));
     }
     return 0;
   }
@@ -346,7 +686,7 @@ export async function boundaryCommand(args: string[]): Promise<number> {
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
     const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
-    const inspection = await inspectDatabase({
+    const inspection = await schemaInspector({
       engine: (optionalArg(rest, "--engine") ?? lock.engine) as InspectEngine,
       databaseUrlEnv: lock.source_env,
       schema: optionalArg(rest, "--schema") ?? lock.inspected_schema,
@@ -367,28 +707,72 @@ export async function boundaryCommand(args: string[]): Promise<number> {
     const active = await fileExists(activePath)
       ? await readJsonFileWithLocation<Record<string, unknown>>(activePath, "active exploration boundary")
       : undefined;
+    const operational = await boundaryOperationalStatus(projectRoot, context.bundle, active);
+    const unresolvedResources = [...new Set(context.bundle.decisions
+      .filter((decision) => context.bundle.outstanding_decision_ids.includes(decision.id))
+      .map((decision) => decision.resource_id)
+      .filter((resource): resource is string => Boolean(resource)))].sort();
     const payload = {
       ok: true,
+      project: projectRoot,
+      database_source: {
+        engine: context.lock.engine,
+        environment_reference: context.lock.source_env,
+        schema: context.lock.inspected_schema ?? null,
+        connection_value_returned: false,
+      },
+      config: operational.config,
       activation: active ? "active" : "disabled_unreviewed",
+      candidate_boundary_name: context.bundle.candidate.pack.name,
+      candidate_tables: context.bundle.candidate.pack.resources.map((resource) => resource.id),
+      active_boundary_name: active && isRecord(active.pack)
+        ? (typeof active.pack.name === "string" ? active.pack.name : null)
+        : null,
+      active_tables: active && isRecord(active.pack) && Array.isArray(active.pack.resources)
+        ? active.pack.resources
+          .filter(isRecord)
+          .map((resource) => resource.id)
+          .filter((resource): resource is string => typeof resource === "string")
+        : [],
       candidate_digest: context.bundle.candidate_digest,
       active_digest: active && isRecord(active.activation) ? active.activation.digest : undefined,
       decisions_confirmed: context.bundle.decisions.length - context.bundle.outstanding_decision_ids.length,
       decisions_total: context.bundle.decisions.length,
       outstanding_decision_ids: context.bundle.outstanding_decision_ids,
+      unresolved_resources: unresolvedResources,
       schema_fingerprint: context.lock.schema_fingerprint,
       role_posture_fingerprint: context.lock.role_posture_fingerprint,
       protected_authority: context.lock.protected_authority,
+      explore_budget_state: operational.exploreBudgetState,
+      recent_analysis_references: operational.recentAnalysisReferences,
+      disabled_protected_drafts: operational.disabledProtectedDrafts,
+      active_named_tools: operational.activeNamedTools,
+      production_readiness: operational.productionReadiness,
+      next_action: operational.nextAction,
       source_database_changed: false,
     };
     if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
       `Auto Boundary state: ${payload.activation}`,
+      `Next boundary: ${payload.candidate_boundary_name} (${payload.candidate_tables.length} ${payload.candidate_tables.length === 1 ? "table" : "tables"})`,
+      payload.active_boundary_name
+        ? `Active boundary: ${payload.active_boundary_name} (${payload.active_tables.length} ${payload.active_tables.length === 1 ? "table" : "tables"})`
+        : "Active boundary: none",
       `Candidate digest: ${payload.candidate_digest}`,
       `Review decisions: ${payload.decisions_confirmed}/${payload.decisions_total}`,
       `Generated resources: ${payload.protected_authority.length}`,
+      `Runner config: ${payload.config.state}`,
+      `Explore budget: ${payload.explore_budget_state
+        ? `${payload.explore_budget_state.queries_used}/${payload.explore_budget_state.queries_limit} questions, ${payload.explore_budget_state.extracted_cells_used}/${payload.explore_budget_state.extracted_cells_limit} cells`
+        : "no active-session usage"}`,
+      `Protectable recent analyses: ${payload.recent_analysis_references.length}`,
+      `Disabled protected drafts: ${payload.disabled_protected_drafts.length}`,
+      `Active named tools: ${payload.active_named_tools.length}`,
       active
         ? "The exact reviewed local authoring boundary is active."
-        : `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)}`,
+        : `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)} ` +
+          "(interactive), or use boundary review resource <table> with decision flags for scripts.",
+      `Next action: ${payload.next_action}`,
       "Source database changed: no.",
       "",
     ].join("\n"));
@@ -396,6 +780,160 @@ export async function boundaryCommand(args: string[]): Promise<number> {
   }
   usage(["boundary"]);
   return 2;
+}
+
+async function boundaryOperationalStatus(
+  projectRoot: string,
+  bundle: {
+    candidate: { budgets: ExplorationBudgets };
+    outstanding_decision_ids: string[];
+  },
+  active?: Record<string, unknown>,
+): Promise<{
+  config: { state: "missing" | "valid" | "invalid"; path: string; error?: string };
+  exploreBudgetState: Record<string, unknown> | null;
+  recentAnalysisReferences: Array<Record<string, unknown>>;
+  disabledProtectedDrafts: Array<Record<string, unknown>>;
+  activeNamedTools: string[];
+  productionReadiness: { ready: boolean; blockers: string[] };
+  nextAction: string;
+}> {
+  const configPath = path.join(projectRoot, "synapsor.runner.json");
+  let config: { state: "missing" | "valid" | "invalid"; path: string; error?: string } = {
+    state: "missing",
+    path: configPath,
+  };
+  let activeNamedTools: string[] = [];
+  if (await fileExists(configPath)) {
+    try {
+      const runtime = loadRuntimeConfigFromFile(configPath);
+      activeNamedTools = [...new Set((runtime.capabilities ?? []).map((capability) => capability.name))].sort();
+      config = { state: "valid", path: configPath };
+    } catch (error) {
+      config = {
+        state: "invalid",
+        path: configPath,
+        error: redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+      };
+    }
+  }
+
+  const activeDigest = active && isRecord(active.activation) && typeof active.activation.digest === "string"
+    ? active.activation.digest
+    : undefined;
+  const storePath = path.join(projectRoot, ".synapsor/local.db");
+  let exploreBudgetState: Record<string, unknown> | null = null;
+  if (activeDigest && await fileExists(storePath)) {
+    const store = new ProposalStore(storePath);
+    try {
+      const records = store.listQueryAudit().filter((record) => {
+        const payload = isRecord(record.payload) ? record.payload : {};
+        return payload.scoped_explore_version === "synapsor.scoped-explore.v1"
+          && payload.boundary_digest === activeDigest;
+      });
+      const latestSession = [...records].sort((left, right) => {
+        const timestamp = (record: typeof left) => {
+          const payload = isRecord(record.payload) ? record.payload : {};
+          return Date.parse(typeof payload.recorded_at === "string" ? payload.recorded_at : String(record.created_at));
+        };
+        return timestamp(right) - timestamp(left);
+      }).find((record) => {
+        const payload = isRecord(record.payload) ? record.payload : {};
+        return typeof payload.session_fingerprint === "string";
+      });
+      const latestPayload = latestSession && isRecord(latestSession.payload) ? latestSession.payload : {};
+      const sessionRecords = typeof latestPayload.session_fingerprint === "string"
+        ? records.filter((record) => {
+          const payload = isRecord(record.payload) ? record.payload : {};
+          return payload.session_fingerprint === latestPayload.session_fingerprint;
+        })
+        : [];
+      const extractedCells = sessionRecords.reduce((sum, record) => {
+        const payload = isRecord(record.payload) ? record.payload : {};
+        return sum + (typeof payload.returned_cells === "number" ? payload.returned_cells : 0);
+      }, 0);
+      const minuteAgo = Date.now() - 60_000;
+      const requestsLastMinute = sessionRecords.filter((record) => {
+        const payload = isRecord(record.payload) ? record.payload : {};
+        return Date.parse(typeof payload.recorded_at === "string" ? payload.recorded_at : String(record.created_at)) >= minuteAgo;
+      }).length;
+      const budgets = bundle.candidate.budgets;
+      exploreBudgetState = {
+        scope: "most_recent_local_trusted_session",
+        queries_used: sessionRecords.length,
+        queries_limit: budgets.max_queries_per_session,
+        queries_remaining: Math.max(0, budgets.max_queries_per_session - sessionRecords.length),
+        extracted_cells_used: extractedCells,
+        extracted_cells_limit: budgets.max_extracted_cells_per_session,
+        extracted_cells_remaining: Math.max(0, budgets.max_extracted_cells_per_session - extractedCells),
+        requests_last_minute: requestsLastMinute,
+        requests_per_minute_limit: budgets.rate_limit_per_minute,
+        state_persists_across_tabs_processes_and_provider_sessions: true,
+      };
+    } finally {
+      store.close();
+    }
+  }
+
+  const recentAnalysisReferences = activeDigest
+    ? await listProtectedPlans({ projectRoot }).then((items) => items
+      .filter((item) => item.boundary_digest === activeDigest)
+      .slice(-10)
+      .reverse()
+      .map((item) => ({
+        reference: item.token,
+        kind: item.plan.kind,
+        resource: item.plan.resource,
+        expires_at: item.expires_at,
+        protectable: true,
+      }))).catch(() => [])
+    : [];
+  const disabledProtectedDrafts = await readManagedProtectedDrafts(projectRoot);
+  const blockers = [
+    ...(config.state !== "valid" ? ["Runner config is not valid."] : []),
+    ...(activeNamedTools.length === 0 ? ["No activated named capability is configured for production."] : []),
+  ];
+  const nextAction = bundle.outstanding_decision_ids.length
+    ? `Review ${bundle.outstanding_decision_ids.length} remaining boundary decision(s).`
+    : !activeDigest
+      ? "Activate the exact reviewed local authoring boundary."
+      : !exploreBudgetState || Number(exploreBudgetState.queries_used) === 0
+        ? "Run the first bounded question."
+        : "Ask another bounded question; Protect remains optional.";
+  return {
+    config,
+    exploreBudgetState,
+    recentAnalysisReferences,
+    disabledProtectedDrafts,
+    activeNamedTools,
+    productionReadiness: { ready: blockers.length === 0, blockers },
+    nextAction,
+  };
+}
+
+async function readManagedProtectedDrafts(projectRoot: string): Promise<Array<Record<string, unknown>>> {
+  const root = path.join(projectRoot, "synapsor/protected/drafts");
+  let entries: string[];
+  try {
+    entries = await fs.readdir(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const drafts: Array<Record<string, unknown>> = [];
+  for (const entry of entries.sort()) {
+    const draftPath = path.join(root, entry, "draft.json");
+    if (!await fileExists(draftPath)) continue;
+    const draft = await readJsonFileWithLocation<Record<string, unknown>>(draftPath, "protected query draft");
+    if (draft.state !== "disabled") continue;
+    drafts.push({
+      capability: draft.capability,
+      contract_digest: draft.contract_digest,
+      mode: draft.mode,
+      draft_path: draftPath,
+    });
+  }
+  return drafts;
 }
 
 

@@ -48,8 +48,9 @@ exact receipts, hard-delete side-effect refusal, and human approval. Adapter
 tests and `corepack pnpm test:bounded-set` complete the live PostgreSQL/MySQL
 matrix.
 The aggregate-read fixture proves a reviewer-fixed scalar operation, trusted
-tenant scope, fixed equality selection, minimum-group suppression, and an
-evidence/query-audit surface containing no member rows or identities. The live
+tenant scope, fixed equality selection, the reviewed minimum-group threshold,
+and an evidence/query-audit surface containing no member rows or identities.
+The live
 `corepack pnpm test:aggregate-read` gate runs COUNT/SUM/AVG, suppression,
 timeout, and dependency classification against disposable PostgreSQL and
 MySQL.

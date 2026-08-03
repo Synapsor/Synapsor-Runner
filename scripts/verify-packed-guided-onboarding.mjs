@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -17,15 +18,18 @@ const packRoot = path.join(tempRoot, "pack");
 const installRoot = path.join(tempRoot, "install");
 const analyticsRoot = path.join(tempRoot, "fitflow-analytics");
 const trainerRoot = path.join(tempRoot, "fitflow-trainer");
-const resultPath = path.join(root, "development", "runner-1.6.4-fitflow-results.json");
-const readUrl = "postgresql://fitflow_analytics_reader:fitflow_analytics_reader_password@127.0.0.1:55463/fitflow";
-const trainerUrl = "postgresql://fitflow_trainer_reader:fitflow_trainer_reader_password@127.0.0.1:55463/fitflow";
-const writerUrl = "postgresql://fitflow_writer:fitflow_writer_password@127.0.0.1:55463/fitflow";
-const adminUrl = "postgresql://fitflow_admin:fitflow_admin_password@127.0.0.1:55463/fitflow";
+const resultPath = path.join(root, "development", "runner-1.6.6-fitflow-results.json");
+const postgresPort = await resolveFixturePort();
+const composeEnv = {
+  ...process.env,
+  SYNAPSOR_FITFLOW_POSTGRES_PORT: String(postgresPort),
+};
+const readUrl = `postgresql://fitflow_analytics_reader:fitflow_analytics_reader_password@127.0.0.1:${postgresPort}/fitflow`;
+const trainerUrl = `postgresql://fitflow_trainer_reader:fitflow_trainer_reader_password@127.0.0.1:${postgresPort}/fitflow`;
+const writerUrl = `postgresql://fitflow_writer:fitflow_writer_password@127.0.0.1:${postgresPort}/fitflow`;
+const adminUrl = `postgresql://fitflow_admin:fitflow_admin_password@127.0.0.1:${postgresPort}/fitflow`;
 const sharedEnv = {
   ...process.env,
-  SYNAPSOR_TENANT_ID: "org-fitflow",
-  SYNAPSOR_PRINCIPAL: "trainer-alex",
   SYNAPSOR_OPERATOR_ID: "fitflow-reviewer@example.test",
 };
 
@@ -71,16 +75,20 @@ try {
   // synthetic fixture state so repeated verifier runs always start from seed.
   run("docker", ["compose", "-f", compose, "down", "-v", "--remove-orphans"], {
     cwd: analyticsRoot,
+    env: composeEnv,
     allowFailure: true,
   });
   run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres"], {
     cwd: analyticsRoot,
+    env: composeEnv,
     inherit: true,
   });
   adminPool = new Pool({ connectionString: adminUrl, max: 1 });
   const initialSource = await sourceSnapshot(adminPool);
 
   const analyticsEnv = { ...sharedEnv, DATABASE_URL: readUrl };
+  delete analyticsEnv.SYNAPSOR_TENANT_ID;
+  delete analyticsEnv.SYNAPSOR_PRINCIPAL;
   const productStarted = Date.now();
   analyticsUi = await startPublicGuidedCommand({
     cli,
@@ -89,8 +97,11 @@ try {
   });
   timing.schema_summary_ms = analyticsUi.readyAt - productStarted;
   assert.ok(timing.schema_summary_ms <= 60_000, `schema summary took ${timing.schema_summary_ms}ms`);
-  assert.match(analyticsUi.output(), /Database connected|Existing Synapsor guided project found/);
-  assert.match(analyticsUi.output(), /Next: Review what the agent can see/);
+  assert.match(analyticsUi.output(), /✓ Connected|Existing Synapsor guided project found/);
+  assert.match(
+    analyticsUi.output(),
+    /Next: review the proposed boundary, then ask your first question in Workbench\./,
+  );
   assert.doesNotMatch(analyticsUi.output(), /fitflow_analytics_reader_password/);
 
   const beforeActivation = await sourceSnapshot(adminPool);
@@ -125,7 +136,7 @@ try {
   assert.match(landing, /does not give the agent SQL access/i);
   assert.match(landing, /Writes create proposals and cannot be approved or applied by the model/i);
   assert.match(landing, /Review security exceptions/);
-  assert.match(landing, /Advanced permissions/);
+  assert.match(landing, /Advanced field operations/);
 
   let boundaryPayload = await analyticsUi.json("GET", "/api/boundary");
   const inspectedResourceCount = boundaryPayload.draft.pack.resources.length;
@@ -151,12 +162,42 @@ try {
       ["payment_method", "home_address", "medical_waiver_notes"].includes(field)).sort(),
     ["home_address", "medical_waiver_notes", "payment_method"],
   );
+  const generatedCheckIns = requiredResource(boundaryPayload.draft, "public.check_ins");
+  const generatedOrganizations = requiredResource(boundaryPayload.draft, "public.organizations");
+  assert.ok(
+    generatedCheckIns.relationships.some((relationship) =>
+      relationship.id === "check_ins_organization_id_fkey"
+      && relationship.target_resource === "public.organizations"),
+    "FitFlow omitted the proven check_ins -> organizations tenant relationship",
+  );
+  assert.ok(
+    generatedCheckIns.kept_out_fields.includes("organization_id")
+      && generatedOrganizations.kept_out_fields.includes("id"),
+    "FitFlow exposed a trusted tenant join key while generating the organizations relationship",
+  );
 
   // This models the operator choosing Show all and narrowing the inspected
   // catalog to the exact FitFlow resources needed for the reviewed journey.
   const analyticsCandidate = narrowAnalyticsBoundary(structuredClone(boundaryPayload.draft));
-  const preview = await analyticsUi.json("POST", "/api/boundary/preview", {
+  const analyticsStaged = await analyticsUi.json("POST", "/api/boundary/progress", {
     candidate: analyticsCandidate,
+    confirmed_decisions: [],
+    expected_revision: boundaryPayload.review_progress.revision,
+    actor: "fitflow-reviewer@example.test",
+  });
+  boundaryPayload = await analyticsUi.json("GET", "/api/boundary");
+  const reviewedAnalyticsCandidate = boundaryPayload.candidate;
+  const analyticsProgress = await analyticsUi.json("POST", "/api/boundary/progress", {
+    candidate: reviewedAnalyticsCandidate,
+    confirmed_decisions: reviewedAnalyticsCandidate.unresolved_decisions,
+    expected_revision: analyticsStaged.revision,
+    actor: "fitflow-reviewer@example.test",
+  });
+  const preview = await analyticsUi.json("POST", "/api/boundary/preview", {
+    candidate: reviewedAnalyticsCandidate,
+    expected_revision: analyticsProgress.revision,
+    actor: "fitflow-reviewer@example.test",
+    confirmed_decisions: reviewedAnalyticsCandidate.unresolved_decisions,
   });
   await analyticsUi.json("POST", "/api/boundary/activate", {
     candidate: preview.candidate,
@@ -287,10 +328,15 @@ try {
   );
   timing.pm_aggregate_ms = Date.now() - productStarted;
   assert.ok(timing.pm_aggregate_ms <= 300_000, `PM aggregate took ${timing.pm_aggregate_ms}ms`);
+  const protectReference = pmAggregate.result.protect?.query_ref
+    ?? pmAggregate.result.protect?.token;
+  assert.match(protectReference, /^A\d+$/);
 
   const protectedDraft = JSON.parse(run(cli, [
     "try",
     "protect",
+    "--from",
+    protectReference,
     "--name",
     "analytics.weekly_location_attendance",
     "--description",
@@ -301,10 +347,13 @@ try {
   assert.equal(protectedDraft.model_can_activate, false);
   assert.equal(protectedDraft.source_database_changed, false);
   assert.match(await fsp.readFile(path.resolve(analyticsRoot, protectedDraft.dsl_path), "utf8"), /CREATE CAPABILITY analytics\.weekly_location_attendance/);
+  const reviewedProtectedDraft = await analyticsUi.json(
+    "GET",
+    `/api/protect/draft?capability_name=${encodeURIComponent(protectedDraft.capability)}`,
+  );
+  assert.equal(reviewedProtectedDraft.draft.contract_digest, protectedDraft.contract_digest);
   await analyticsUi.json("POST", "/api/protect/activate", {
     capability_name: protectedDraft.capability,
-    expected_digest: protectedDraft.contract_digest,
-    confirmation: `ACTIVATE ${protectedDraft.contract_digest}`,
     actor: "fitflow-reviewer@example.test",
     disable_explore: true,
   });
@@ -312,9 +361,17 @@ try {
   assert.ok(timing.protected_capability_ms <= 480_000, `Protect took ${timing.protected_capability_ms}ms`);
   assert.equal(fs.existsSync(path.join(analyticsRoot, ".synapsor", "exploration-boundary.active.json")), false);
 
+  // Scoped Explore used the tenant-bound read-only role with no manual scope
+  // entry. The promoted named runtime tool separately receives an operator-owned
+  // service identity, as production capabilities require.
+  const protectedRuntimeEnv = {
+    ...analyticsEnv,
+    SYNAPSOR_TENANT_ID: "org-fitflow",
+    SYNAPSOR_PRINCIPAL: "fitflow-analytics-service",
+  };
   const activeTools = JSON.parse(run(cli, [
     "try", "call", "--list", "--format", "json",
-  ], { cwd: analyticsRoot, env: analyticsEnv }).stdout);
+  ], { cwd: analyticsRoot, env: protectedRuntimeEnv }).stdout);
   assert.deepEqual(activeTools.active_tools, ["analytics.weekly_location_attendance"]);
   assert.equal(activeTools.model_can_activate, false);
   assert.equal(activeTools.model_can_approve, false);
@@ -322,12 +379,12 @@ try {
   assert.doesNotMatch(JSON.stringify(activeTools.active_tools), /app\.explore_data|execute_sql|approve|apply|commit/i);
   const protectedCall = JSON.parse(run(cli, [
     "try", "call", "analytics.weekly_location_attendance", "--sample", "--json",
-  ], { cwd: analyticsRoot, env: analyticsEnv }).stdout);
+  ], { cwd: analyticsRoot, env: protectedRuntimeEnv }).stdout);
   assert.equal(protectedCall.ok, true);
   assert.equal(protectedCall.source_database_changed, false);
   const smokeCall = JSON.parse(run(cli, [
     "smoke", "call", "analytics.weekly_location_attendance", "--json", "{}",
-  ], { cwd: analyticsRoot, env: analyticsEnv }).stdout);
+  ], { cwd: analyticsRoot, env: protectedRuntimeEnv }).stdout);
   assert.equal(smokeCall.ok, true);
   assert.equal(smokeCall.result.source_database_changed, false);
 
@@ -345,6 +402,8 @@ try {
 
   const trainerEnv = {
     ...sharedEnv,
+    SYNAPSOR_TENANT_ID: "org-fitflow",
+    SYNAPSOR_PRINCIPAL: "trainer-alex",
     DATABASE_URL: trainerUrl,
     SYNAPSOR_DATABASE_WRITE_URL: writerUrl,
   };
@@ -362,8 +421,25 @@ try {
   });
   boundaryPayload = await trainerUi.json("GET", "/api/boundary");
   const trainerCandidate = narrowTrainerBoundary(structuredClone(boundaryPayload.candidate));
-  const trainerPreview = await trainerUi.json("POST", "/api/boundary/preview", {
+  const trainerStaged = await trainerUi.json("POST", "/api/boundary/progress", {
     candidate: trainerCandidate,
+    confirmed_decisions: [],
+    expected_revision: boundaryPayload.review_progress.revision,
+    actor: "fitflow-reviewer@example.test",
+  });
+  boundaryPayload = await trainerUi.json("GET", "/api/boundary");
+  const reviewedTrainerCandidate = boundaryPayload.candidate;
+  const trainerProgress = await trainerUi.json("POST", "/api/boundary/progress", {
+    candidate: reviewedTrainerCandidate,
+    confirmed_decisions: reviewedTrainerCandidate.unresolved_decisions,
+    expected_revision: trainerStaged.revision,
+    actor: "fitflow-reviewer@example.test",
+  });
+  const trainerPreview = await trainerUi.json("POST", "/api/boundary/preview", {
+    candidate: reviewedTrainerCandidate,
+    expected_revision: trainerProgress.revision,
+    actor: "fitflow-reviewer@example.test",
+    confirmed_decisions: reviewedTrainerCandidate.unresolved_decisions,
   });
   await trainerUi.json("POST", "/api/boundary/activate", {
     candidate: trainerPreview.candidate,
@@ -522,6 +598,7 @@ try {
   if (compose && process.env.SYNAPSOR_KEEP_FITFLOW_FIXTURE !== "1") {
     run("docker", ["compose", "-f", compose, "down", "-v", "--remove-orphans"], {
       cwd: analyticsRoot,
+      env: composeEnv,
       allowFailure: true,
     });
   }
@@ -542,6 +619,14 @@ function narrowAnalyticsBoundary(candidate) {
   candidate.budgets.max_differencing_queries = 6;
   candidate.pack.resources = candidate.pack.resources.filter((resource) =>
     resource.id === "public.check_ins" || resource.id === "public.locations");
+  const retainedResourceIds = new Set(candidate.pack.resources.map((resource) => resource.id));
+  for (const resource of candidate.pack.resources) {
+    resource.relationships = resource.relationships.filter((relationship) =>
+      retainedResourceIds.has(relationship.target_resource)
+      && (relationship.proof?.links ?? []).every((link) =>
+        retainedResourceIds.has(link.source_resource)
+        && retainedResourceIds.has(link.target_resource)));
+  }
   const checkIns = requiredResource(candidate, "public.check_ins");
   const locations = requiredResource(candidate, "public.locations");
   narrowResource(checkIns, {
@@ -565,6 +650,7 @@ function narrowAnalyticsBoundary(candidate) {
   checkIns.relationships = checkIns.relationships.filter((relationship) =>
     relationship.id === "check_ins_location_id_fkey");
   assert.equal(checkIns.relationships.length, 1, "location relationship was not reviewed");
+  retainCurrentBoundaryDecisions(candidate);
   return candidate;
 }
 
@@ -584,6 +670,7 @@ function narrowTrainerBoundary(candidate) {
     time: [],
   });
   members.relationships = [];
+  retainCurrentBoundaryDecisions(candidate);
   return candidate;
 }
 
@@ -603,6 +690,15 @@ function narrowResource(resource, fields) {
   resource.count_distinct_fields = resource.count_distinct_fields.filter((field) => fields.distinct.includes(field));
   resource.time_bucket_fields = Object.fromEntries(Object.entries(resource.time_bucket_fields)
     .filter(([field]) => fields.time.includes(field)));
+}
+
+function retainCurrentBoundaryDecisions(candidate) {
+  const resourceIds = new Set(candidate.pack.resources.map((resource) => resource.id));
+  candidate.unresolved_decisions = candidate.unresolved_decisions.filter((decision) =>
+    decision.startsWith("deployment profile:")
+    || decision.startsWith("trusted context:")
+    || decision.startsWith("database role:")
+    || [...resourceIds].some((resourceId) => decision.startsWith(`${resourceId}:`)));
 }
 
 async function proveLiveWriteback(input) {
@@ -2118,6 +2214,29 @@ function packCurrent(destination, packageDirectory) {
   const filename = result.stdout.trim().split(/\r?\n/).findLast((line) => line.endsWith(".tgz"));
   assert.ok(filename, `pnpm pack did not report a tarball filename:\n${result.stdout}`);
   return path.join(destination, path.basename(filename));
+}
+
+async function resolveFixturePort() {
+  const configured = process.env.SYNAPSOR_FITFLOW_POSTGRES_PORT?.trim();
+  if (configured) {
+    const parsed = Number(configured);
+    assert.ok(Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535, "invalid SYNAPSOR_FITFLOW_POSTGRES_PORT");
+    return parsed;
+  }
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("could not reserve a loopback port for the FitFlow fixture"));
+        return;
+      }
+      server.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
 }
 
 function run(command, args, options = {}) {

@@ -11,7 +11,7 @@ import {
   type MysqlApplyConnection
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
-import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, protocolVersions } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, parseWritebackResult, protocolVersions } from "@synapsor-runner/protocol";
 
 const job = {
   protocol_version: "1.0" as const,
@@ -81,6 +81,22 @@ describe("mysql adapter", () => {
     expect(() => buildMysqlUpdate({ ...job, allowed_columns: ["id", "status"] })).toThrow(/primary key/i);
     expect(() => buildMysqlUpdate({ ...job, allowed_columns: ["tenant_id", "status"] })).toThrow(/tenant guard/i);
     expect(() => buildMysqlUpdate({ ...job, patch: {} })).toThrow(/must not be empty/i);
+  });
+
+  it("rejects weak row-hash update guards before any source query", async () => {
+    const connection = new FakeMysqlConnection();
+    const weak = {
+      ...job,
+      conflict_guard: { kind: "row_hash" as const, expected_hash: "sha256:reviewed-row" },
+    };
+    expect(() => buildMysqlUpdate(weak)).toThrow(/ROW_HASH_CONFLICT_GUARD_UNSUPPORTED/);
+    await expect(applyMysqlJobWithConnection(weak, config, connection))
+      .rejects.toThrow(/ROW_HASH_CONFLICT_GUARD_UNSUPPORTED/);
+    expect(connection.sqlLog).toEqual([]);
+    expect(() => buildMysqlUpdate({
+      ...job,
+      conflict_guard: { kind: "version_column" as const, column: "__row_hash", expected_value: "sha256:reviewed-row" },
+    })).toThrow(/ROW_HASH_CONFLICT_GUARD_UNSUPPORTED/);
   });
 
   it("builds parameterized v2 INSERT and guarded DELETE statements", () => {
@@ -286,6 +302,48 @@ describe("mysql adapter", () => {
     expect(deleteConnection.recordedReceiptStatus).toBe("applied");
   });
 
+  it("requires source-database reconciliation when COMMIT acknowledgement is lost", async () => {
+    const first = await applyMysqlJobWithConnection(v2InsertJob, config, new CommitUnknownCrudMysqlConnection());
+    const second = await applyMysqlJobWithConnection(v2InsertJob, config, new CommitUnknownCrudMysqlConnection());
+
+    expect(first).toMatchObject({
+      protocol_version: "2.0",
+      status: "reconciliation_required",
+      receipt_authority: "source_db",
+      error_code: "OUTCOME_UNKNOWN",
+      affected_rows: 0,
+    });
+    if (first.protocol_version !== "2.0" || second.protocol_version !== "2.0") throw new Error("expected normalized v2 reconciliation results");
+    expect(first.intent_id).toMatch(/^source-db:sha256:/);
+    expect(second.intent_id).toBe(first.intent_id);
+    expect(() => parseWritebackResult(first)).not.toThrow();
+
+    const legacy = await applyMysqlJobWithConnection(job, config, new FakeMysqlConnection({
+      businessRow: { updated_at: "v1" },
+      businessUpdateAffectedRows: 1,
+      commitUnknown: true,
+    }));
+    expect(legacy).toMatchObject({
+      protocol_version: "1.0",
+      status: "reconciliation_required",
+      error_code: "OUTCOME_UNKNOWN",
+      affected_rows: 0,
+    });
+    expect(() => parseWritebackResult(legacy)).not.toThrow();
+  });
+
+  it("refuses INSERT when no full unique key proves the reviewed deduplication columns", async () => {
+    const single = new CrudMysqlConnection("insert", undefined, { uniqueDeduplication: false });
+    await expect(applyMysqlJobWithConnection(v2InsertJob, config, single)).rejects.toThrow("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+    expect(single.sqlLog.some((sql) => sql.startsWith("INSERT INTO `appdb`.`credits`"))).toBe(false);
+    expect(single.sqlLog).toContain("ROLLBACK");
+
+    const batch = new SetMysqlConnection({ uniqueDeduplication: false });
+    await expect(applyMysqlJobWithConnection(v3BatchInsertJob(), config, batch)).rejects.toThrow("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+    expect(batch.sqlLog.some((sql) => sql.startsWith("INSERT INTO `appdb`.`account_credits`"))).toBe(false);
+    expect(batch.sqlLog).toContain("ROLLBACK");
+  });
+
   it("atomically applies an exact frozen set and emits per-member effects", async () => {
     const connection = new SetMysqlConnection();
     const result = await applyMysqlJobWithConnection(v3SetUpdateJob(), config, connection);
@@ -391,6 +449,41 @@ describe("mysql adapter", () => {
       "BEGIN",
     ]);
     expect(connection.timeoutValues).toEqual([[2500], [3]]);
+  });
+
+  it("destroys the connection before COMMIT when MySQL write work exceeds its deadline", async () => {
+    const connection = new HangingUpdateMysqlConnection();
+    const intents = new FakeIntentStore();
+    const result = await applyMysqlJobWithConnection(job, {
+      ...config,
+      statementTimeoutMs: 20,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: intents,
+    }, connection);
+
+    expect(result).toMatchObject({
+      status: "failed",
+      affected_rows: 0,
+      error_code: "MYSQL_STATEMENT_TIMEOUT",
+    });
+    expect(connection.destroyed).toBe(true);
+    expect(connection.sqlLog).not.toContain("COMMIT");
+    expect(connection.sqlLog).not.toContain("ROLLBACK");
+    expect(intents.calls).toEqual(["claim", "applying", "complete"]);
+  });
+
+  it("does not misclassify duplicate-key failures on UPDATE as INSERT dedup conflicts", async () => {
+    const result = await applyMysqlJobWithConnection(job, {
+      ...config,
+      receipts: { authority: "runner_ledger" },
+      writebackIntentStore: new FakeIntentStore(),
+    }, new DuplicateUpdateMysqlConnection());
+
+    expect(result).toMatchObject({
+      status: "failed",
+      affected_rows: 0,
+      error_code: "TRANSACTION_FAILED",
+    });
   });
 
   it("fails a stale frozen member closed before any set mutation", async () => {
@@ -646,6 +739,7 @@ class CrudMysqlConnection implements MysqlApplyConnection {
   constructor(
     private readonly operation: "insert" | "delete",
     private readonly visibility: { trigger: boolean; foreignKeys: boolean } = { trigger: true, foreignKeys: true },
+    private readonly options: { uniqueDeduplication?: boolean } = {},
   ) {}
 
   async beginTransaction() { this.sqlLog.push("BEGIN"); }
@@ -658,6 +752,12 @@ class CrudMysqlConnection implements MysqlApplyConnection {
     if (sql.startsWith("UPDATE synapsor_writeback_receipts")) {
       this.recordedReceiptStatus = String(values?.[0]);
       return [{ affectedRows: 1 } as T, undefined];
+    }
+    if (this.operation === "insert" && sql.includes("FROM information_schema.STATISTICS")) {
+      return [[...(this.options.uniqueDeduplication === false ? [] : [
+        { index_name: "credits_dedup", key_position: 1, column_name: "tenant_id", prefix_length: null },
+        { index_name: "credits_dedup", key_position: 2, column_name: "request_id", prefix_length: null },
+      ])] as T, undefined];
     }
     if (this.operation === "insert" && sql.startsWith("SELECT `id` AS __synapsor_primary_key FROM")) return [[] as T, undefined];
     if (this.operation === "insert" && sql.startsWith("INSERT INTO `appdb`.`credits`")) return [{ affectedRows: 1, insertId: "CR-NEW" } as T, undefined];
@@ -675,6 +775,15 @@ class CrudMysqlConnection implements MysqlApplyConnection {
   }
 }
 
+class CommitUnknownCrudMysqlConnection extends CrudMysqlConnection {
+  constructor() { super("insert"); }
+
+  override async commit(): Promise<void> {
+    await super.commit();
+    throw new Error("connection lost after COMMIT");
+  }
+}
+
 class SetMysqlConnection implements MysqlApplyConnection {
   readonly sqlLog: string[] = [];
   readonly timeoutValues: unknown[][] = [];
@@ -686,11 +795,13 @@ class SetMysqlConnection implements MysqlApplyConnection {
     failMutationAt?: number;
     duplicateBatchAt?: number;
     deleteTrigger?: boolean;
+    uniqueDeduplication?: boolean;
   } = {}) {}
 
   async beginTransaction() { this.sqlLog.push("BEGIN"); }
   async commit() { this.sqlLog.push("COMMIT"); }
   async rollback() { this.sqlLog.push("ROLLBACK"); }
+  destroy() { this.sqlLog.push("DESTROY"); }
 
   async query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]> {
     this.sqlLog.push(sql.trim());
@@ -700,6 +811,11 @@ class SetMysqlConnection implements MysqlApplyConnection {
     }
     if (sql.startsWith("INSERT IGNORE INTO synapsor_writeback_receipts")) return [{ affectedRows: 1 } as T, undefined];
     if (sql.startsWith("UPDATE synapsor_writeback_receipts")) return [{ affectedRows: 1 } as T, undefined];
+    if (sql.includes("FROM information_schema.STATISTICS")) {
+      return [[...(this.options.uniqueDeduplication === false ? [] : [
+        { index_name: "PRIMARY", key_position: 1, column_name: "id", prefix_length: null },
+      ])] as T, undefined];
+    }
     if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`invoices`") && sql.includes("ORDER BY") && sql.includes("FOR UPDATE")) {
       return [[
         { id: "INV-1", tenant_id: "acme", status: "overdue", balance_cents: 1000, version: 1 },
@@ -845,6 +961,7 @@ class FakeMysqlConnection implements MysqlApplyConnection {
     businessUpdateAffectedRows?: number;
     receiptUpdateAffectedRows?: number;
     freshnessVersion?: string;
+    commitUnknown?: boolean;
   } = {}) {}
 
   async beginTransaction(): Promise<void> {
@@ -853,6 +970,7 @@ class FakeMysqlConnection implements MysqlApplyConnection {
 
   async commit(): Promise<void> {
     this.sqlLog.push("COMMIT");
+    if (this.options.commitUnknown) throw new Error("connection lost after COMMIT");
   }
 
   async rollback(): Promise<void> {
@@ -885,6 +1003,45 @@ class FakeMysqlConnection implements MysqlApplyConnection {
       return [{ affectedRows: this.options.receiptUpdateAffectedRows ?? 1 } as T, undefined];
     }
     throw new Error(`unexpected query: ${sql}`);
+  }
+}
+
+class HangingUpdateMysqlConnection extends FakeMysqlConnection {
+  destroyed = false;
+
+  constructor() {
+    super({ businessRow: { updated_at: "v1" } });
+  }
+
+  override async query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]> {
+    if (sql.startsWith("SET SESSION ")) {
+      this.sqlLog.push(sql.trim());
+      return [{} as T, undefined];
+    }
+    if (sql.startsWith("UPDATE `appdb`.`orders`")) {
+      this.sqlLog.push(sql.trim());
+      return await new Promise<[T, unknown]>(() => undefined);
+    }
+    return await super.query<T>(sql, values);
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.sqlLog.push("DESTROY");
+  }
+}
+
+class DuplicateUpdateMysqlConnection extends FakeMysqlConnection {
+  constructor() {
+    super({ businessRow: { updated_at: "v1" } });
+  }
+
+  override async query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]> {
+    if (sql.startsWith("UPDATE `appdb`.`orders`")) {
+      const error = Object.assign(new Error("duplicate key"), { code: "ER_DUP_ENTRY" });
+      throw error;
+    }
+    return await super.query<T>(sql, values);
   }
 }
 

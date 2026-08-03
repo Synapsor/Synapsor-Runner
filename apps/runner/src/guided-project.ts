@@ -104,6 +104,8 @@ export async function initializeGuidedProject(input: {
 
   const sourceName = input.build.exploration_boundary.source;
   const trustedContext = input.build.exploration_boundary.trusted_context;
+  const principalRequired = input.build.exploration_boundary.pack.resources
+    .some((resource) => Boolean(resource.principal_key));
   const config = {
     version: 1,
     mode: "read_only",
@@ -120,15 +122,18 @@ export async function initializeGuidedProject(input: {
       provider: "environment",
       values: {
         tenant_id_env: trustedContext.tenant_env,
-        principal_env: trustedContext.principal_env,
+        ...(principalRequired ? { principal_env: trustedContext.principal_env } : {}),
       },
       tenant_binding: "tenant_id",
-      principal_binding: "principal",
+      ...(principalRequired ? { principal_binding: "principal" } : {}),
     },
     capabilities: [],
     generated_authority: {
       generation_lock_path: "./.synapsor/generation-lock.json",
       enforcement: "required",
+      ...(input.build.lock.reporting_timezone
+        ? { reporting_timezone: input.build.lock.reporting_timezone }
+        : {}),
     },
     strict: true,
     result_format: 2,
@@ -317,10 +322,12 @@ export async function resetGuidedOnboardingForBoundaryReview(input: {
 
 function environmentExample(build: GuidedBuild): string {
   const trustedContext = build.exploration_boundary.trusted_context;
+  const principalRequired = build.exploration_boundary.pack.resources
+    .some((resource) => Boolean(resource.principal_key));
   const variables = [
     build.lock.source_env,
     trustedContext.tenant_env,
-    trustedContext.principal_env,
+    ...(principalRequired ? [trustedContext.principal_env] : []),
     "SYNAPSOR_OPERATOR_ID",
   ];
   return [

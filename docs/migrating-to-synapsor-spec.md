@@ -150,7 +150,7 @@ use Runner/spec/DSL 1.1 together. Omitted fields preserve 1.0 behavior.
 
 ## 1.6 Generated Authority And Supervised Execution
 
-Runner 1.6.4, Spec 1.7.0, and DSL 1.7.0 are additive. Existing hand-authored
+Runner 1.6.6, Spec 1.8.0, and DSL 1.8.0 are additive. Existing hand-authored
 DSL/JSON/config projects do not need Auto Boundary, Workbench, a generation
 lock, schema rescanning, or supervised execution. Contracts that omit the new
 fields retain their previous canonical normalization and digest.
@@ -158,6 +158,12 @@ fields retain their previous canonical normalization and digest.
 Spec/DSL 1.7.0 add optional reviewed relationship-path fields and `LINK`
 syntax. The legacy one-hop relationship form remains accepted and canonical;
 an unchanged legacy contract retains its exact normalized bytes and digest.
+
+Spec/DSL 1.8.0 add optional `model_withheld_fields` / `MODEL WITHHELD`, an
+explicitly reviewed minimum group size of 1, optional `max_ranked_groups` /
+`RANKED GROUPS`, and absolute or percentage comparison-change ordering over
+exactly two reviewed periods. Omitting these additions retains the 1.7.0
+contract shape and digest.
 
 Auto Boundary writes a generation lock only for authority it generated.
 Drift enforcement applies only when `synapsor.runner.json` explicitly

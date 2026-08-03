@@ -181,6 +181,7 @@ export function buildProtectedReadQuery(
 
   const aggregate = protectedRead.aggregate;
   if (!aggregate) throw new McpRuntimeError("PROTECTED_AGGREGATE_REQUIRED", "Protected aggregate authority is missing.");
+  const periodMover = aggregate.order_by?.kind === "comparison_change";
   const aggregateQuery = (
     range?: { start: ProtectedReadValueSpec; end: ProtectedReadValueSpec },
     period?: "period_1" | "period_2",
@@ -199,7 +200,7 @@ export function buildProtectedReadQuery(
       select.push(`${expression} AS ${quoteIdentifier(dimension.name, placeholderStyle)}`);
       groups.push(expression);
     }
-    if (aggregate.time_bucket) {
+    if (aggregate.time_bucket && (!range || !periodMover)) {
       const expression = protectedTimeBucket(
         field(aggregate.time_bucket.field, aggregate.time_bucket.relationship),
         aggregate.time_bucket.bucket,
@@ -218,15 +219,19 @@ export function buildProtectedReadQuery(
     }
     select.push(`COUNT(*) AS ${quoteIdentifier("__cohort_size", placeholderStyle)}`);
     if (period) select.push(`'${period}' AS ${quoteIdentifier("__period", placeholderStyle)}`);
-    const order = aggregate.order_by
-      ? ` ORDER BY ${quoteIdentifier(
-        aggregate.order_by.kind === "measure" ? aggregate.order_by.measure : aggregate.time_bucket!.name,
-        placeholderStyle,
-      )} ${aggregate.order_by.direction.toUpperCase()}`
-      : groups.length
-        ? ` ORDER BY ${groups.join(", ")}`
-        : "";
-    return `SELECT ${select.join(", ")} FROM ${from}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${groups.length ? ` GROUP BY ${groups.join(", ")}` : ""}${order} LIMIT ${protectedRead.limits.max_groups + 1}`;
+    const order = aggregate.order_by?.kind === "measure"
+      ? ` ORDER BY ${quoteIdentifier(aggregate.order_by.measure, placeholderStyle)} ${aggregate.order_by.direction.toUpperCase()}`
+      : aggregate.order_by?.kind === "time_bucket" && !range
+        ? ` ORDER BY ${quoteIdentifier(aggregate.time_bucket!.name, placeholderStyle)} ${aggregate.order_by.direction.toUpperCase()}`
+        : groups.length
+          ? ` ORDER BY ${groups.join(", ")}`
+          : "";
+    const ranked = aggregate.order_by?.kind === "measure"
+      || aggregate.order_by?.kind === "comparison_change";
+    const maximumGroups = ranked
+      ? protectedRead.limits.max_ranked_groups ?? protectedRead.limits.max_groups
+      : protectedRead.limits.max_groups;
+    return `SELECT ${select.join(", ")} FROM ${from}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${groups.length ? ` GROUP BY ${groups.join(", ")}` : ""}${order} LIMIT ${maximumGroups + 1}`;
   };
   const ranges = aggregate.comparison?.ranges;
   if (!ranges?.length) return { sql: aggregateQuery(), values };

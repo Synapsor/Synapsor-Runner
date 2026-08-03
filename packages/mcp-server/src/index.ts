@@ -51,6 +51,31 @@ export type {
   SafeToolErrorCode,
   ProposalFreshnessEvaluation,
 } from "./runtime-types.js";
+export {
+  analyticalToolOutputSchema,
+  schemaAsJsonSchema,
+  scopedExploreDescribeOutputSchema,
+  scopedExploreQueryOutputSchema,
+  scopedExploreQueryToolOutputSchema,
+} from "./analytics-output-schema.js";
+export type {
+  JsonSchemaObject,
+} from "./analytics-output-schema.js";
+export {
+  ANALYTICS_CATALOG_SCHEMA_VERSION,
+  ANALYTICS_CATALOG_URI,
+  buildAnalyticsCatalog,
+  pinAnalyticsCatalogCapability,
+} from "./analytics-catalog.js";
+export type {
+  AnalyticsCatalogCapability,
+  AnalyticsCatalogDimension,
+  AnalyticsCatalogMeasure,
+  AnalyticsCatalogPinResult,
+  AnalyticsCatalogScalarType,
+  AnalyticsCatalogTimeField,
+  AnalyticsCatalogV1,
+} from "./analytics-catalog.js";
 export { createJwtVerifier } from "./jwt-auth.js";
 export type { JwtAlgorithm, JwtVerifier, JwtVerificationConfig, VerifiedJwt } from "./jwt-auth.js";
 export { PROPOSAL_APP_SPEC_VERSION, PROPOSAL_APP_URI, proposalAppHtml, proposalAppInitializeRequest } from "./proposal-app.js";
@@ -72,6 +97,7 @@ export {
   loadCloudLinkedConnection,
 } from "./cloud-linked.js";
 export {
+  preflightGeneratedCapabilityAuthority,
   preflightGeneratedAuthority,
 } from "./generated-authority.js";
 export {
@@ -80,6 +106,7 @@ export {
 } from "./http-transport.js";
 export {
   evaluateProposalFreshness,
+  validateFreshnessAuthorityAgainstCurrentConfig,
 } from "./proposal-freshness.js";
 export {
   buildProtectedReadQuery,
