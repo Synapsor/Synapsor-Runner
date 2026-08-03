@@ -15,7 +15,7 @@ limits are allowed. The agent can then ask new questions or propose bounded
 changes, but it cannot exceed that reviewed access.
 
 ```text
-Agent sees       reviewed tools, safe aliases, allowed operations, bounded results
+Agent sees       reviewed tools, reviewed data names, allowed operations, bounded results
 Agent never sees database credentials, raw SQL, excluded fields, unrestricted schema
 Runner handles   validation, trusted scope, execution, proposals, evidence
 Human controls   reviewed access, activation, approval, production rollout
@@ -36,6 +36,15 @@ Use a SELECT-only, non-owner development or staging credential:
 npx -y @synapsor/runner start
 ```
 
+The first command needs no install. Later examples use `synapsor-runner`;
+install it once with:
+
+```bash
+npm install --global @synapsor/runner
+```
+
+Without a global install, prefix later commands with `npx -y @synapsor/runner`.
+
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner first
 inspects schema metadata, not source rows. It proposes conservative read access
 that grants the agent nothing until you review and activate it. You do not need
@@ -47,10 +56,10 @@ For a terminal-only journey:
 synapsor-runner start --from-env DATABASE_URL --cli
 ```
 
-Press Enter to accept the safe starting access, `M` to choose OpenAI,
-Anthropic, or a loopback model, and `E` to change tables or field access. Runner
-asks permission before reviewed visible data can leave the machine. Every access
-change remains disabled until a human confirms it.
+Review the conservative starting boundary, then press Enter to activate it. Use
+`M` to choose OpenAI, Anthropic, or a loopback model, and `E` to change tables
+or field access. Runner asks permission before reviewed visible data can leave
+the machine. Every access change remains disabled until a human confirms it.
 
 See [Database To First Safe Tool](docs/guided-onboarding.md).
 
