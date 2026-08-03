@@ -1,4 +1,8 @@
-import { type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import {
+  buildAnalyticsCatalog,
+  type ResultFormat,
+  type RuntimeConfig,
+} from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlReceiptMigration } from "@synapsor-runner/mysql";
 import { createPostgresPool, inspectPostgresWritebackSource, postgresReceiptMigration } from "@synapsor-runner/postgres";
 import {
@@ -40,8 +44,27 @@ export async function tools(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "preview") return toolsPreview(rest);
   if (subcommand === "list") return toolsPreview(rest);
+  if (subcommand === "catalog") return toolsCatalog(rest);
   usage(["tools"]);
   return 2;
+}
+
+async function toolsCatalog(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--result-format", "--json"]), "tools catalog");
+  const requestedFormat = optionalArg(args, "--result-format");
+  if (requestedFormat && requestedFormat !== "v1" && requestedFormat !== "v2") {
+    throw new Error("--result-format must be v1 or v2");
+  }
+  const configPath = runnerConfigPath(args, defaultConfigPath);
+  const config = await readRuntimeConfig(configPath);
+  const resultFormat: ResultFormat = requestedFormat === "v2"
+    ? 2
+    : requestedFormat === "v1"
+      ? 1
+      : config.result_format ?? 1;
+  const catalog = buildAnalyticsCatalog(config, resultFormat);
+  process.stdout.write(`${JSON.stringify(catalog, null, 2)}\n`);
+  return 0;
 }
 
 

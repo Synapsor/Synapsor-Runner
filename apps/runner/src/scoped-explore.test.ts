@@ -6,8 +6,9 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -19,11 +20,13 @@ import {
   createScopedExploreRuntime,
   loadProtectedPlan,
   prepareScopedExplore,
+  projectScopedExploreResultForModel,
   ScopedExploreError,
   validateExplorePlan,
   type ScopedExploreExecutor,
 } from "./scoped-explore.js";
 import { createScopedExploreMcpServer } from "./authoring-mcp.js";
+import { compileOperatorExploreEvidence } from "./explore-operator-evidence.js";
 
 const temporaryRoots: string[] = [];
 
@@ -32,15 +35,322 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
-  it("advertises exactly two local read-only authoring tools through the official MCP client", async () => {
-    const { boundary } = await activatedFixture();
-    const runtime = {
-      boundary,
-      session_fingerprint: "sha256:test" as const,
-      describe: () => ({ ok: true, resources: [] }),
-      explore: async () => ({ ok: true, source_database_changed: false }),
-      close: async () => undefined,
+  it("uses database-role tenant scope without a tenant environment value and rechecks it before execution", async () => {
+    const fixture = await activatedFixture();
+    const env = { ...fixture.env, SYNAPSOR_TENANT_ID: undefined };
+    const executeBatch = vi.fn(async ({ queries }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) =>
+      queries.map(() => [{ region: "west" }]));
+    const scopes = ["tenant-a", "tenant-b"];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      resolveTrustedScopeFn: vi.fn(async () => ({
+        tenant: scopes.shift() ?? "tenant-b",
+        principal: "",
+        tenant_source: "postgres_role_setting" as const,
+        tenant_binding: "app.tenant_id",
+        principal_source: "not_required" as const,
+      })),
+      executor: {
+        execute: async () => [],
+        executeBatch,
+        close: async () => undefined,
+      },
+    });
+    try {
+      expect(runtime.trusted_scope).toEqual({
+        tenant: { source: "postgres_role_setting", binding: "app.tenant_id" },
+        principal: { source: "not_required" },
+      });
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).rejects.toMatchObject({ code: "EXPLORE_SCOPE_FORBIDDEN" });
+      expect(executeBatch).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("projects model-withheld values to response-local opaque tokens without changing human data", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources.find((item) => item.id === "public.subscriptions");
+    if (!resource) throw new Error("fixture resource missing");
+    resource.model_withheld_fields = ["region"];
+    const plan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
     };
+    const full = {
+      ok: true,
+      data: [
+        { region: "west-ignore-previous-instructions", count: 8 },
+        { region: "west-ignore-previous-instructions", count: 5 },
+        { region: "north", count: 7 },
+      ],
+      source_database_changed: false,
+    };
+
+    const first = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: full,
+      boundary,
+    });
+    const second = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: full,
+      boundary,
+    });
+
+    expect(full.data[0]?.region).toContain("ignore-previous");
+    expect(first.withheld).toBe(true);
+    expect(first.value.data).toEqual([
+      { region: expect.stringMatching(/^\[withheld:[a-f0-9]{12}:1\]$/), count: 8 },
+      { region: expect.stringMatching(/^\[withheld:[a-f0-9]{12}:1\]$/), count: 5 },
+      { region: expect.stringMatching(/^\[withheld:[a-f0-9]{12}:2\]$/), count: 7 },
+    ]);
+    expect(JSON.stringify(first.value)).not.toContain("ignore-previous");
+    expect(JSON.stringify(first.value)).not.toContain("north");
+    expect((first.value.data as Array<Record<string, unknown>>)[0]?.region)
+      .not.toBe((second.value.data as Array<Record<string, unknown>>)[0]?.region);
+  });
+
+  it("returns a reviewed count-distinct measure without sending the model any withheld field value", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources.find((item) => item.id === "public.subscriptions");
+    if (!resource) throw new Error("fixture resource missing");
+    resource.kept_out_fields = resource.kept_out_fields.filter((field) => field !== "billing_token");
+    resource.selectable_fields.push("billing_token");
+    resource.count_distinct_fields.push("billing_token");
+    resource.model_withheld_fields = ["billing_token"];
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count_distinct", field: "billing_token" }],
+      top_n: 1,
+    }, boundary);
+    const full = {
+      ok: true,
+      data: [{ count_distinct_billing_token: 30 }],
+      privacy: {
+        minimum_cohort_size: 5,
+        suppressed_groups: 0,
+        totals_returned: false,
+      },
+      source_database_changed: false,
+    };
+
+    const projected = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: full,
+      boundary,
+    });
+
+    expect(projected.withheld).toBe(false);
+    expect(projected.value).toEqual(full);
+    expect(JSON.stringify(projected.value)).not.toContain("billing-token-secret");
+    const [compiled] = compileExplorePlan(plan, boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    expect(compiled?.sql).toContain('COUNT(DISTINCT t0."billing_token")');
+  });
+
+  it("returns reviewed numeric aggregates without sending Runner-only source values to the model", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources.find((item) => item.id === "public.subscriptions");
+    if (!resource) throw new Error("fixture resource missing");
+    resource.model_withheld_fields = ["monthly_revenue_cents"];
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [
+        { function: "sum", field: "monthly_revenue_cents" },
+        { function: "avg", field: "monthly_revenue_cents" },
+      ],
+      top_n: 1,
+    }, boundary);
+    const full = {
+      ok: true,
+      data: [{ sum_monthly_revenue_cents: 125_000, avg_monthly_revenue_cents: 2_500 }],
+      privacy: {
+        minimum_cohort_size: 5,
+        suppressed_groups: 0,
+        totals_returned: false,
+      },
+      source_database_changed: false,
+    };
+
+    const projected = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: full,
+      boundary,
+    });
+
+    expect(projected).toEqual({ value: full, withheld: false });
+    const [compiled] = compileExplorePlan(plan, boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    expect(compiled?.sql).toContain('SUM(t0."monthly_revenue_cents")');
+    expect(compiled?.sql).toContain('AVG(t0."monthly_revenue_cents")');
+  });
+
+  it("keeps a reviewed Runner-only trusted scope value out of model egress and durable evidence", async () => {
+    const fixture = await activatedFixture(undefined, churnInspection(), undefined, "runner_only");
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      executor: fixedExecutor([{ tenant_id: "tenant-acme" }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const plan = {
+      kind: "rows" as const,
+      resource: "public.subscriptions",
+      select: ["tenant_id"],
+      limit: 1,
+    };
+    try {
+      const result = await runtime.explore(plan);
+      expect(result.data).toEqual([{ tenant_id: "tenant-acme" }]);
+
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan },
+        result,
+        boundary: fixture.boundary,
+      });
+      expect(projected.withheld).toBe(true);
+      expect(JSON.stringify(projected.value)).not.toContain("tenant-acme");
+      expect(projected.value.data).toEqual([{
+        tenant_id: expect.stringMatching(/^\[withheld:[a-f0-9]{12}:1\]$/),
+      }]);
+
+      const evidenceId = String(result.evidence_bundle_id);
+      const persisted = JSON.stringify({
+        audit: store.listQueryAudit(),
+        evidence: store.getEvidenceBundle(evidenceId),
+      });
+      expect(persisted).not.toContain("tenant-acme");
+      expect(persisted).toContain('"trusted_scope_values_persisted":false');
+      expect(persisted).toContain('"result_values_persisted":false');
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("may disclose a human-reviewed trusted scope value without accepting model-selected scope", async () => {
+    const fixture = await activatedFixture(undefined, churnInspection(), undefined, "model_visible");
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      executor: fixedExecutor([{ tenant_id: "tenant-acme" }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const plan = {
+      kind: "rows" as const,
+      resource: "public.subscriptions",
+      select: ["tenant_id"],
+      limit: 1,
+    };
+    try {
+      const result = await runtime.explore(plan);
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan },
+        result,
+        boundary: fixture.boundary,
+      });
+      expect(projected.withheld).toBe(false);
+      expect(projected.value.data).toEqual([{ tenant_id: "tenant-acme" }]);
+      await expect(runtime.explore({
+        ...plan,
+        tenant_id: "tenant-other",
+      } as never)).rejects.toThrow(/row plan contains unsupported fields: tenant_id/i);
+
+      const persisted = JSON.stringify({
+        audit: store.listQueryAudit(),
+        evidence: store.getEvidenceBundle(String(result.evidence_bundle_id)),
+      });
+      expect(persisted).not.toContain("tenant-acme");
+      expect(persisted).toContain('"trusted_scope_values_persisted":false');
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("does not restore a suppressed model-withheld group in either rendering", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources.find((item) => item.id === "public.subscriptions");
+    if (!resource) throw new Error("fixture resource missing");
+    resource.model_withheld_fields = ["region"];
+    const plan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    };
+    const humanResult = {
+      ok: true,
+      data: [],
+      privacy: {
+        minimum_cohort_size: 5,
+        suppressed_groups: 1,
+        totals_returned: false,
+      },
+      source_database_changed: false,
+    };
+
+    const projected = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: humanResult,
+      boundary,
+    });
+
+    expect(humanResult.data).toEqual([]);
+    expect(projected.value.data).toEqual([]);
+    expect(projected.value.privacy).toEqual(humanResult.privacy);
+    expect(JSON.stringify(projected.value)).not.toContain("[withheld:");
+  });
+
+  it("advertises exactly two local read-only authoring tools through the official MCP client", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [{ region: "west" }],
+        executeBatch: async ({ queries }) => queries.map(() => [{ region: "west" }]),
+        close: async () => undefined,
+      },
+    });
     const server = createScopedExploreMcpServer(runtime);
     const client = new Client({ name: "scoped-explore-test", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -50,7 +360,44 @@ describe("Scoped Explore", () => {
       const listed = await client.listTools();
       expect(listed.tools.map((tool) => tool.name)).toEqual(["app.describe_data", "app.explore_data"]);
       expect(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+      expect(listed.tools.every((tool) => tool.outputSchema?.type === "object")).toBe(true);
+      expect(listed.tools[0]?.outputSchema?.properties).toMatchObject({
+        ok: expect.any(Object),
+        error_code: expect.any(Object),
+        resources: expect.any(Object),
+      });
+      expect(listed.tools[1]?.outputSchema?.properties).toMatchObject({
+        ok: expect.any(Object),
+        error_code: expect.any(Object),
+        data: expect.any(Object),
+        privacy: expect.any(Object),
+        audit: expect.any(Object),
+      });
       expect(listed.tools.map((tool) => tool.name).join(" ")).not.toMatch(/execute_sql|approve|apply|commit/i);
+      const described = await client.callTool({
+        name: "app.describe_data",
+        arguments: { resource: "public.subscriptions" },
+      });
+      if (described.isError) throw new Error(JSON.stringify(described));
+      expect(described.isError).not.toBe(true);
+      expect(described.structuredContent).toMatchObject({
+        ok: true,
+        resources: [{
+          id: "public.subscriptions",
+          kept_out_field_count: expect.any(Number),
+          minimum_cohort_size: expect.any(Number),
+        }],
+        raw_sql_available: false,
+      });
+      const describedWithEmptyOptionalSelectors = await client.callTool({
+        name: "app.describe_data",
+        arguments: { boundary: "", resource: "", cursor: 0, limit: 10 },
+      });
+      expect(describedWithEmptyOptionalSelectors.isError).not.toBe(true);
+      expect(describedWithEmptyOptionalSelectors.structuredContent).toMatchObject({
+        ok: true,
+        resources: [{ id: "public.subscriptions" }],
+      });
       const called = await client.callTool({
         name: "app.explore_data",
         arguments: {
@@ -67,6 +414,129 @@ describe("Scoped Explore", () => {
     } finally {
       await client.close();
       await server.close();
+      await runtime.close();
+    }
+  });
+
+  it("lets an external MCP client use reviewed Runner-only analytics without receiving raw values", async () => {
+    const fixture = await activatedFixture();
+    await rewriteActiveBoundary(fixture.root, (active) => {
+      const resource = active.pack.resources.find((item: Record<string, unknown>) =>
+        item.id === "public.subscriptions");
+      if (!resource) throw new Error("fixture resource missing");
+      resource.kept_out_fields = resource.kept_out_fields.filter(
+        (field: string) => field !== "billing_token",
+      );
+      resource.selectable_fields.push("billing_token");
+      resource.count_distinct_fields.push("billing_token");
+      resource.model_withheld_fields = ["billing_token"];
+      resource.field_enums.billing_token = ["billing-token-secret", "billing-token-other"];
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{ measure_0: 30, __cohort_size: 30 }]),
+    });
+    const server = createScopedExploreMcpServer(runtime);
+    const client = new Client({ name: "runner-only-external-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const described = await client.callTool({
+        name: "app.describe_data",
+        arguments: { resource: "public.subscriptions" },
+      });
+      expect(described.structuredContent).toMatchObject({
+        resources: [{
+          count_distinct_fields: expect.arrayContaining(["billing_token"]),
+          field_egress: {
+            billing_token: { model_egress: "withheld" },
+          },
+          field_types: {
+            billing_token: expect.any(String),
+          },
+        }],
+      });
+      expect((described.structuredContent as any).resources[0].field_enums)
+        .not.toHaveProperty("billing_token");
+      expect(JSON.stringify(described)).not.toContain("billing-token-secret");
+      expect(JSON.stringify(described)).not.toContain("billing-token-other");
+      const result = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.subscriptions",
+            measures: [{ function: "count_distinct", field: "billing_token" }],
+            top_n: 1,
+          },
+        },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        data: [{ count_distinct_billing_token: 30 }],
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(result)).not.toContain("billing-token-secret");
+      expect(result._meta).toBeUndefined();
+    } finally {
+      await client.close();
+      await server.close();
+      await runtime.close();
+    }
+  });
+
+  it("shows a reviewed cohort override without exposing any model-settable override input", async () => {
+    const fixture = await activatedFixture(undefined, churnInspection(), 1);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([]),
+    });
+    const description = runtime.describe({ resource: "public.subscriptions" });
+    expect(description).toMatchObject({
+      resources: [{
+        minimum_cohort_size: 1,
+        minimum_cohort_overridden: true,
+      }],
+    });
+    const server = createScopedExploreMcpServer(runtime);
+    const client = new Client({ name: "cohort-override-surface-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const listed = await client.listTools();
+      const exploreSchema = JSON.stringify(
+        listed.tools.find((tool) => tool.name === "app.explore_data")?.inputSchema,
+      );
+      expect(exploreSchema).not.toMatch(/minimum_cohort|override|reviewer|reason/i);
+      expect(exploreSchema).toContain("comparison_change");
+      expect(exploreSchema).not.toContain("max_ranked_groups");
+      const refused = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.subscriptions",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "region" }],
+            top_n: 10,
+            minimum_cohort_size: 1,
+          },
+        },
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused)).not.toMatch(/owner override|how to lower|reviewer|reason/i);
+    } finally {
+      await client.close();
+      await server.close();
+      await runtime.close();
     }
   });
 
@@ -103,6 +573,89 @@ describe("Scoped Explore", () => {
     expect(query?.sql).not.toContain("tenant-acme");
     expect(query?.sql).toContain("\"tenant_id\" = $1");
     expect(query?.params).toEqual(["tenant-acme", "west' OR 1=1 --", 10]);
+  });
+
+  it("renders operator-only PostgreSQL and MySQL statements with placeholders and no parameter values", async () => {
+    const { boundary } = await activatedFixture();
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [{ field: "region" }],
+      where: [{ field: "reason_category", op: "eq", value: "private-filter-value" }],
+      top_n: 10,
+    }, boundary);
+
+    const postgres = compileOperatorExploreEvidence({ boundary, engine: "postgres", plan });
+    const mysql = compileOperatorExploreEvidence({ boundary, engine: "mysql", plan });
+    expect(postgres.statements[0]?.statement).toContain("$1");
+    expect(mysql.statements[0]?.statement).toContain("?");
+    for (const diagnostic of [postgres, mysql]) {
+      expect(diagnostic.model_received_sql).toBe(false);
+      expect(diagnostic.persisted).toBe(false);
+      expect(diagnostic.statements[0]).toMatchObject({
+        parameter_values: "redacted",
+        parameter_types: expect.arrayContaining(["string", "integer"]),
+      });
+      const serialized = JSON.stringify(diagnostic);
+      expect(serialized).not.toContain("private-filter-value");
+      expect(serialized).not.toContain("tenant-acme");
+      expect(serialized).not.toContain("pm-1");
+      expect(serialized).not.toContain("<trusted-tenant>");
+      expect(serialized).not.toContain("<trusted-principal>");
+    }
+  });
+
+  it("audits pre-execution refusals without source access, evidence, or rejected input", async () => {
+    const fixture = await activatedFixture();
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
+    let executions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      executor: {
+        execute: async () => {
+          executions += 1;
+          return [];
+        },
+        executeBatch: async () => {
+          executions += 1;
+          return [];
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["billing_token"],
+        limit: 1,
+      })).rejects.toMatchObject({ code: "EXPLORE_FIELD_FORBIDDEN" });
+      expect(executions).toBe(0);
+      expect(store.listEvidenceBundles()).toHaveLength(0);
+      const records = store.listQueryAudit();
+      expect(records).toHaveLength(1);
+      expect(records[0]?.payload).toMatchObject({
+        status: "refused_before_source_execution",
+        refusal_stage: "validation",
+        error_code: "EXPLORE_FIELD_FORBIDDEN",
+        source_execution_started: false,
+        evidence_bundle_created: false,
+        result_values_persisted: false,
+        source_database_changed: false,
+      });
+      const persisted = JSON.stringify(records);
+      expect(persisted).not.toContain("billing_token");
+      expect(persisted).not.toContain("tenant-acme");
+      expect(persisted).not.toContain("pm-1");
+    } finally {
+      await runtime.close();
+      store.close();
+    }
   });
 
   it("compiles bounded PM aggregates without raw SQL or unreviewed dimensions", async () => {
@@ -147,11 +700,308 @@ describe("Scoped Explore", () => {
     for (const query of queries) {
       expect(query.sql).toContain("COUNT(*) AS \"measure_0\"");
       expect(query.sql).toContain("SUM(t0.\"monthly_revenue_cents\") AS \"measure_1\"");
-      expect(query.sql).toContain("date_trunc('week', t0.\"churned_at\")");
+      expect(query.sql).not.toContain("date_trunc(");
+      expect(query.reporting_timezone).toBe("UTC");
       expect(query.sql).toContain("COUNT(*) AS \"__cohort_size\"");
       expect(query.sql).not.toContain("price");
       expect(query.sql).not.toContain("tenant-acme");
-      expect(query.params.at(-1)).toBe(boundary.budgets.max_groups + 1);
+      expect(query.params.at(-1)).toBe(boundary.budgets.max_ranked_groups! + 1);
+    }
+  });
+
+  it("uses a separate reviewed group ceiling for ranked aggregates without exposing it as a plan input", async () => {
+    const { boundary } = await activatedFixture();
+    expect(boundary.budgets).toMatchObject({
+      max_groups: 50,
+      max_ranked_groups: 500,
+      max_top_n: 25,
+    });
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+      max_ranked_groups: 5_000,
+    }, boundary)).toThrow(/unsupported fields: max_ranked_groups/i);
+
+    const ranked = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    }, boundary);
+    const ordinary = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, boundary);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const rankedQuery = compileExplorePlan(ranked, boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine)[0]!;
+      const ordinaryQuery = compileExplorePlan(ordinary, boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine)[0]!;
+      expect(rankedQuery.params.at(-1)).toBe(501);
+      expect(ordinaryQuery.params.at(-1)).toBe(51);
+    }
+
+    const legacy = structuredClone(boundary);
+    delete legacy.budgets.max_ranked_groups;
+    const digestBefore = canonicalJsonDigest(legacy);
+    const legacyQuery = compileExplorePlan(ranked, legacy, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres")[0]!;
+    expect(legacyQuery.params.at(-1)).toBe(legacy.budgets.max_groups + 1);
+    expect(canonicalJsonDigest(legacy)).toBe(digestBefore);
+  });
+
+  it("suppresses before ranking and returns top-N from a larger reviewed candidate set", async () => {
+    const fixture = await activatedFixture();
+    const rows = [
+      { dimension_0: "withheld-winner", measure_0: 10_000, __cohort_size: 2 },
+      ...Array.from({ length: 75 }, (_, index) => ({
+        dimension_0: `region-${String(index).padStart(3, "0")}`,
+        measure_0: 1_000 - index,
+        __cohort_size: 10,
+      })),
+    ];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor(rows),
+    });
+    try {
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        order_by: { kind: "measure", index: 0, direction: "desc" },
+        top_n: 3,
+      });
+      expect(result.data).toEqual([
+        { region: "region-000", count: 1_000 },
+        { region: "region-001", count: 999 },
+        { region: "region-002", count: 998 },
+      ]);
+      expect(result.privacy).toMatchObject({
+        minimum_cohort_size: 5,
+        suppressed_groups: 1,
+      });
+      expect(JSON.stringify(result)).not.toContain("withheld-winner");
+
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 3,
+      })).rejects.toMatchObject({ code: "EXPLORE_RESPONSE_TOO_LARGE" });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when a ranked aggregate exceeds its reviewed underlying group ceiling", async () => {
+    const fixture = await activatedFixture();
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      dimension_0: `region-${index}`,
+      measure_0: 501 - index,
+      __cohort_size: 10,
+    }));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor(rows),
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        order_by: { kind: "measure", index: 0, direction: "desc" },
+        top_n: 25,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_RESPONSE_TOO_LARGE",
+        message: expect.stringContaining("separately reviewed execution boundary"),
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("ranks reviewed two-period movers by percentage or absolute change after suppression", async () => {
+    const fixture = await activatedFixture();
+    const periodRows: Record<"period_1" | "period_2", Array<Record<string, unknown>>> = {
+      period_1: [
+        { dimension_0: "steady-growth", measure_0: 100, __cohort_size: 100 },
+        { dimension_0: "fast-growth", measure_0: 10, __cohort_size: 10 },
+        { dimension_0: "decline", measure_0: 100, __cohort_size: 100 },
+        { dimension_0: "new", measure_0: 0, __cohort_size: 10 },
+        { dimension_0: "private", measure_0: 1, __cohort_size: 1 },
+      ],
+      period_2: [
+        { dimension_0: "steady-growth", measure_0: 120, __cohort_size: 120 },
+        { dimension_0: "fast-growth", measure_0: 20, __cohort_size: 20 },
+        { dimension_0: "decline", measure_0: 50, __cohort_size: 50 },
+        { dimension_0: "new", measure_0: 5, __cohort_size: 10 },
+        { dimension_0: "private", measure_0: 1_000, __cohort_size: 1 },
+      ],
+    };
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map((query) =>
+          structuredClone(periodRows[query.period as keyof typeof periodRows])),
+        close: async () => undefined,
+      },
+    });
+    const base = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [{ field: "region" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      top_n: 4,
+      comparison: {
+        field: "churned_at",
+        ranges: [
+          { start: "2026-07-06T00:00:00.000Z", end: "2026-07-13T00:00:00.000Z" },
+          { start: "2026-07-13T00:00:00.000Z", end: "2026-07-20T00:00:00.000Z" },
+        ],
+      },
+    } as const;
+    try {
+      const percentage = await runtime.explore({
+        ...base,
+        order_by: { kind: "comparison_change", index: 0, change: "percentage", direction: "desc" },
+      });
+      const percentageRows = percentage.data as Array<Record<string, unknown>>;
+      expect(percentageRows.map((row) => row.region)).toEqual([
+        "fast-growth",
+        "steady-growth",
+        "decline",
+        "new",
+      ]);
+      expect(percentageRows[0]).toMatchObject({
+        sum_monthly_revenue_cents_absolute_change: 10,
+        sum_monthly_revenue_cents_percentage_change: 100,
+      });
+      expect(percentageRows[3]).toMatchObject({
+        sum_monthly_revenue_cents_percentage_change: null,
+      });
+      expect(percentage.privacy).toMatchObject({ suppressed_groups: 2 });
+      expect(JSON.stringify(percentage)).not.toContain("private");
+
+      const absolute = await runtime.explore({
+        ...base,
+        top_n: 2,
+        order_by: { kind: "comparison_change", index: 0, change: "absolute", direction: "asc" },
+      });
+      expect((absolute.data as Array<Record<string, unknown>>).map((row) => row.region)).toEqual([
+        "decline",
+        "new",
+      ]);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("compares two reviewed periods in one snapshot with deterministic deltas and suppression", async () => {
+    const fixture = await activatedFixture();
+    const batchSizes: number[] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => {
+          batchSizes.push(queries.length);
+          return queries.map((query) => query.period === "period_1"
+            ? [
+              { dimension_0: "north", measure_0: 10, __cohort_size: 10 },
+              { dimension_0: "south", measure_0: 2, __cohort_size: 2 },
+            ]
+            : [
+              { dimension_0: "north", measure_0: 15, __cohort_size: 15 },
+              { dimension_0: "south", measure_0: 8, __cohort_size: 8 },
+            ]);
+        },
+        close: async () => undefined,
+      },
+      clock: () => Date.parse("2026-07-26T18:30:00.000Z"),
+    });
+    try {
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        time_bucket: { field: "churned_at", bucket: "week" },
+        order_by: { kind: "measure", index: 0, direction: "desc" },
+        top_n: 10,
+        comparison: {
+          field: "churned_at",
+          ranges: [
+            { start: "2026-07-06T00:00:00.000Z", end: "2026-07-13T00:00:00.000Z" },
+            { start: "2026-07-13T00:00:00.000Z", end: "2026-07-20T00:00:00.000Z" },
+          ],
+        },
+      });
+      expect(batchSizes).toEqual([2]);
+      expect(result.data).toEqual([{
+        region: "north",
+        count_period_1: 10,
+        count_period_2: 15,
+        count_absolute_change: 5,
+        count_percentage_change: 50,
+      }]);
+      expect(result.outcome).toMatchObject({
+        type: "success",
+        status: "ok",
+        result: {
+          grain: {
+            kind: "period_comparison",
+            reviewed_time_bucket: "week",
+          },
+          reporting_timezone: {
+            name: "UTC",
+            authority_bound: true,
+          },
+          freshness: {
+            snapshot_consistency: "single_read_only_transaction",
+            upstream_source_freshness: "not_asserted",
+          },
+          suppression: {
+            suppressed_groups: 1,
+            incomplete_comparison_groups: 1,
+          },
+          source_database_changed: false,
+        },
+      });
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -191,6 +1041,16 @@ describe("Scoped Explore", () => {
           },
         }),
       ]));
+      for (const question of resource.suggested_questions.filter((item) =>
+        item.relationship_review_required !== true)) {
+        expect(validateExplorePlan(
+          suggestedQuestionPlan("public.subscriptions", question),
+          fixture.boundary,
+        )).toMatchObject({
+          kind: "aggregate",
+          resource: "public.subscriptions",
+        });
+      }
       expect(JSON.stringify(resource)).not.toMatch(/billing_token|sql/i);
     } finally {
       await runtime.close();
@@ -400,6 +1260,12 @@ describe("Scoped Explore", () => {
             ? [{ dimension_0: "enterprise", measure_0: 8, __cohort_size: 8 }]
             : [{ region: "north" }];
         },
+        executeBatch: async ({ queries }) => Promise.all(queries.map(async ({ sql }) => {
+          executions += 1;
+          return sql.includes('"segments"')
+            ? [{ dimension_0: "enterprise", measure_0: 8, __cohort_size: 8 }]
+            : [{ region: "north" }];
+        })),
         close: async () => undefined,
       },
       inspectDatabaseFn: async () => drifted,
@@ -424,7 +1290,7 @@ describe("Scoped Explore", () => {
         }],
         top_n: 10,
       })).resolves.toMatchObject({
-        data: [{ dimension_0: "enterprise", measure_0: 8 }],
+        data: [{ segments_name: "enterprise", count: 8 }],
         counted_entity: {
           resource: "public.subscriptions",
           primary_key: "id",
@@ -447,6 +1313,154 @@ describe("Scoped Explore", () => {
       expect(executions).toBe(beforeRefusal);
     } finally {
       await runtime.close();
+    }
+  });
+
+  it("ignores unrelated default-deny additions but fails only the reviewed resource whose schema changed", async () => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    const added = structuredClone(fixture.inspection);
+    const subscriptions = added.tables.find((table) => table.name === "subscriptions")!;
+    subscriptions.columns.push(column("new_internal_note", "text", { sensitive: true }));
+    const regions = added.tables.find((table) => table.name === "regions")!;
+    const futureTable = structuredClone(regions);
+    futureTable.name = "future_metrics";
+    futureTable.unique_constraints = [{ name: "future_metrics_pkey", columns: ["id"] }];
+    futureTable.indexes = [{ name: "future_metrics_pkey", columns: ["id"], unique: true }];
+    added.tables.push(futureTable);
+
+    let additiveExecutions = 0;
+    const additiveRuntime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => {
+          additiveExecutions += 1;
+          return [{ region: "north" }];
+        },
+        executeBatch: async ({ queries }) => queries.map(() => {
+          additiveExecutions += 1;
+          return [{ region: "north" }];
+        }),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => added,
+    });
+    try {
+      await expect(additiveRuntime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).resolves.toMatchObject({
+        data: [{ region: "north" }],
+        source_database_changed: false,
+      });
+      await expect(additiveRuntime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["new_internal_note"],
+        limit: 1,
+      })).rejects.toMatchObject({ code: "EXPLORE_FIELD_FORBIDDEN" });
+      await expect(additiveRuntime.explore({
+        kind: "rows",
+        resource: "public.future_metrics",
+        select: ["id"],
+        limit: 1,
+      })).rejects.toMatchObject({ code: "EXPLORE_RESOURCE_FORBIDDEN" });
+      expect(additiveExecutions).toBe(1);
+    } finally {
+      await additiveRuntime.close();
+    }
+
+    const changed = structuredClone(fixture.inspection);
+    const changedSubscriptions = changed.tables.find((table) => table.name === "subscriptions")!;
+    changedSubscriptions.columns.find((item) => item.name === "region")!.data_type = "integer";
+    let changedExecutions = 0;
+    const changedRuntime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async ({ sql }) => {
+          changedExecutions += 1;
+          return sql.includes('"regions"')
+            ? [{ name: "North" }]
+            : [{ region: "north" }];
+        },
+        executeBatch: async ({ queries }) => queries.map(({ sql }) => {
+          changedExecutions += 1;
+          return sql.includes('"regions"')
+            ? [{ name: "North" }]
+            : [{ region: "north" }];
+        }),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => changed,
+    });
+    try {
+      await expect(changedRuntime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringContaining(
+          "Reviewed field public.subscriptions.region changed type from text to integer",
+        ),
+      });
+      expect(changedExecutions).toBe(0);
+      await expect(changedRuntime.explore({
+        kind: "rows",
+        resource: "public.regions",
+        select: ["name"],
+        limit: 1,
+      })).resolves.toMatchObject({
+        data: [{ name: "North" }],
+        source_database_changed: false,
+      });
+      expect(changedExecutions).toBe(1);
+    } finally {
+      await changedRuntime.close();
+    }
+
+    const deleted = structuredClone(fixture.inspection);
+    const deletedSubscriptions = deleted.tables.find((table) => table.name === "subscriptions")!;
+    deletedSubscriptions.columns = deletedSubscriptions.columns.filter((item) => item.name !== "region");
+    let deletedExecutions = 0;
+    const deletedRuntime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => {
+          deletedExecutions += 1;
+          return [];
+        },
+        executeBatch: async ({ queries }) => queries.map(() => {
+          deletedExecutions += 1;
+          return [];
+        }),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => deleted,
+    });
+    try {
+      await expect(deletedRuntime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringContaining(
+          "Reviewed field public.subscriptions.region no longer exists",
+        ),
+      });
+      expect(deletedExecutions).toBe(0);
+    } finally {
+      await deletedRuntime.close();
     }
   });
 
@@ -477,25 +1491,35 @@ describe("Scoped Explore", () => {
         top_n: 10,
       });
       expect(result.data).toEqual([{
-        dimension_0: "north",
+        region: "north",
         time_bucket: "2026-06-02T00:00:00.000Z",
-        measure_0: 8,
+        count: 8,
       }]);
       expect(result).toMatchObject({
         source_database_changed: false,
         untrusted_data: true,
         privacy: { suppressed_groups: 1, totals_returned: false },
+        evidence_bundle_id: expect.stringMatching(/^ev_explore_/),
       });
 
       const auditText = JSON.stringify(store.listQueryAudit());
+      const evidenceId = String(result.evidence_bundle_id);
+      const evidenceText = JSON.stringify(store.getEvidenceBundle(evidenceId));
+      expect(store.listQueryAudit({ evidence: evidenceId })).toHaveLength(1);
       expect(auditText).not.toContain("private-literal");
       expect(auditText).not.toContain("tenant-acme");
       expect(auditText).not.toContain("pm-1");
       expect(auditText).not.toContain("north");
       expect(auditText).not.toContain("rare-secret-region");
       expect(auditText).toContain("keyed_hash");
+      expect(evidenceText).not.toContain("private-literal");
+      expect(evidenceText).not.toContain("tenant-acme");
+      expect(evidenceText).not.toContain("pm-1");
+      expect(evidenceText).not.toContain("north");
+      expect(evidenceText).not.toContain("rare-secret-region");
 
       const protect = result.protect as { token: string };
+      expect(protect.token).toBe("A1");
       const stateText = await fs.readFile(path.join(fixture.root, ".synapsor/protect-state.json"), "utf8");
       expect(stateText).not.toContain("private-literal");
       const recovered = await loadProtectedPlan({
@@ -550,6 +1574,7 @@ describe("Scoped Explore", () => {
     });
     await expect(overflowRuntime.explore(aggregatePlan("one"))).rejects.toMatchObject({
       code: "EXPLORE_RESPONSE_TOO_LARGE",
+      message: expect.stringContaining("one bounded two-period comparison"),
     });
     await overflowRuntime.close();
     const refusalStore = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
@@ -571,12 +1596,402 @@ describe("Scoped Explore", () => {
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
     await budgetRuntime.explore(aggregatePlan("one"));
-    await budgetRuntime.explore(aggregatePlan("two"));
-    await expect(budgetRuntime.explore(aggregatePlan("three"))).rejects.toMatchObject({
+    await budgetRuntime.close();
+    const resumedBudgetRuntime = await createScopedExploreRuntime({
+      projectRoot: budgetFixture.root,
+      transport: "stdio",
+      env: budgetFixture.env,
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      inspectDatabaseFn: async () => budgetFixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    await resumedBudgetRuntime.explore(aggregatePlan("one"));
+    await resumedBudgetRuntime.explore(aggregatePlan("two"));
+    await resumedBudgetRuntime.explore(aggregatePlan("one"));
+    await expect(resumedBudgetRuntime.explore(aggregatePlan("three"))).rejects.toMatchObject({
       code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
     });
-    await budgetRuntime.close();
+    await resumedBudgetRuntime.close();
   }, 15_000);
+
+  it("counts only exact successful plan replays as one differencing variant", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 2;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+    });
+    const failed = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async () => {
+          throw new Error("temporary source failure");
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    await expect(failed.explore(aggregatePlan("north"))).rejects.toMatchObject({
+      code: "EXPLORE_SOURCE_UNAVAILABLE",
+    });
+    await failed.close();
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    await runtime.explore(aggregatePlan("north"));
+    await runtime.explore(aggregatePlan("north"));
+    await runtime.explore({ ...aggregatePlan("north"), top_n: 2 });
+    await expect(runtime.explore(aggregatePlan("south"))).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+    });
+    await runtime.close();
+  });
+
+  it("shares differencing allowance across measure, dimension, and time plan families", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 2;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    await runtime.explore(aggregatePlan("north"));
+    await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [{ field: "reason_category" }],
+      where: [{ field: "region", op: "eq", value: "north" }],
+      top_n: 3,
+    });
+    await expect(runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "avg", field: "monthly_revenue_cents" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      where: [{ field: "region", op: "eq", value: "south" }],
+      top_n: 3,
+    })).rejects.toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+    await runtime.close();
+  });
+
+  it("keeps differencing use across restart and UTC midnight until the rolling window expires", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 1;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+    });
+    let now = Date.parse("2026-07-24T23:59:00.000Z");
+    const createRuntime = () => createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => now,
+    });
+    const beforeMidnight = await createRuntime();
+    const stableSessionFingerprint = beforeMidnight.session_fingerprint;
+    await beforeMidnight.explore(aggregatePlan("north"));
+    await beforeMidnight.close();
+
+    now = Date.parse("2026-07-25T00:01:00.000Z");
+    const afterMidnight = await createRuntime();
+    expect(afterMidnight.session_fingerprint).toBe(stableSessionFingerprint);
+    await expect(afterMidnight.explore(aggregatePlan("south"))).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+    });
+    await afterMidnight.close();
+
+    now = Date.parse("2026-07-26T00:00:01.000Z");
+    const afterWindow = await createRuntime();
+    await expect(afterWindow.explore(aggregatePlan("south"))).resolves.toMatchObject({ ok: true });
+    await afterWindow.close();
+  });
+
+  it("atomically reserves differencing allowance across concurrent runtimes", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 1;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+    });
+    let sourceExecutions = 0;
+    const executor = (): ScopedExploreExecutor => ({
+      execute: async () => [],
+      executeBatch: async ({ queries }) => {
+        sourceExecutions += 1;
+        return queries.map(() => [{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]);
+      },
+      close: async () => undefined,
+    });
+    const createRuntime = () => createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio" as const,
+      env: fixture.env,
+      executor: executor(),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const [first, second] = await Promise.all([createRuntime(), createRuntime()]);
+    try {
+      const outcomes = await Promise.allSettled([
+        first.explore(aggregatePlan("north")),
+        second.explore(aggregatePlan("south")),
+      ]);
+      expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+        reason: { code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" },
+      });
+      expect(sourceExecutions).toBe(1);
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
+
+  it("atomically reserves the rolling query allowance before source execution", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_queries_per_session = 1;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+    });
+    let sourceExecutions = 0;
+    const executor = (): ScopedExploreExecutor => ({
+      execute: async () => [],
+      executeBatch: async ({ queries }) => {
+        sourceExecutions += 1;
+        return queries.map(() => [{ region: "north" }]);
+      },
+      close: async () => undefined,
+    });
+    const createRuntime = () => createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio" as const,
+      env: fixture.env,
+      executor: executor(),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const [first, second] = await Promise.all([createRuntime(), createRuntime()]);
+    const rowPlan = {
+      kind: "rows" as const,
+      resource: "public.subscriptions",
+      select: ["region"],
+      limit: 1,
+    };
+    try {
+      const outcomes = await Promise.allSettled([
+        first.explore(rowPlan),
+        second.explore(rowPlan),
+      ]);
+      expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+        reason: { code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" },
+      });
+      expect(sourceExecutions).toBe(1);
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
+
+  it("does not exhaust differencing protection on ordinary trend replays", async () => {
+    const trendFixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 1;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+    });
+    const trendRuntime = await createScopedExploreRuntime({
+      projectRoot: trendFixture.root,
+      transport: "stdio",
+      env: trendFixture.env,
+      executor: fixedExecutor([{ time_bucket_0: "2026-07-20T00:00:00.000Z", measure_0: 10, __cohort_size: 10 }]),
+      inspectDatabaseFn: async () => trendFixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const weeklyTrend = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      top_n: 3,
+    };
+    for (let index = 0; index < 8; index += 1) {
+      await expect(trendRuntime.explore(weeklyTrend)).resolves.toMatchObject({
+        ok: true,
+        outcome: {
+          result: {
+            remaining_budgets: { differencing_queries: 0 },
+          },
+        },
+      });
+    }
+    await trendRuntime.close();
+  });
+
+  it("does not exhaust differencing protection for an owner-reviewed cohort of one", async () => {
+    const unsuppressedFixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 1;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+    }, churnInspection(), 1);
+    const unsuppressedRuntime = await createScopedExploreRuntime({
+      projectRoot: unsuppressedFixture.root,
+      transport: "stdio",
+      env: unsuppressedFixture.env,
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 1, __cohort_size: 1 }]),
+      inspectDatabaseFn: async () => unsuppressedFixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    for (const value of ["north", "south", "east"]) {
+      await expect(unsuppressedRuntime.explore(aggregatePlan(value))).resolves.toMatchObject({
+        ok: true,
+        privacy: {
+          minimum_cohort_size: 1,
+          minimum_cohort_overridden: true,
+          suppressed_groups: 0,
+        },
+        outcome: {
+          result: {
+            remaining_budgets: { differencing_queries: null },
+          },
+        },
+      });
+    }
+    await unsuppressedRuntime.close();
+  });
+
+  it("never releases both a suppressed grouping and its complementary scalar total", async () => {
+    const groupedPlan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    };
+    const scalarPlan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      top_n: 1,
+    };
+    const executor = complementAttackExecutor();
+
+    const groupedFirst = await activatedFixture();
+    const groupedRuntime = await createScopedExploreRuntime({
+      projectRoot: groupedFirst.root,
+      transport: "stdio",
+      env: groupedFirst.env,
+      executor,
+      inspectDatabaseFn: async () => groupedFirst.inspection,
+      clock: () => Date.parse("2026-07-24T23:59:59.000Z"),
+    });
+    await expect(groupedRuntime.explore(groupedPlan)).resolves.toMatchObject({
+      privacy: { suppressed_groups: 1 },
+    });
+    await groupedRuntime.close();
+    const nextDayRuntime = await createScopedExploreRuntime({
+      projectRoot: groupedFirst.root,
+      transport: "stdio",
+      env: groupedFirst.env,
+      executor,
+      inspectDatabaseFn: async () => groupedFirst.inspection,
+      clock: () => Date.parse("2026-07-25T00:00:01.000Z"),
+    });
+    await expect(nextDayRuntime.explore(scalarPlan)).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      message: expect.stringContaining("complementary aggregate"),
+    });
+    await nextDayRuntime.close();
+
+    const scalarFirst = await activatedFixture();
+    const scalarRuntime = await createScopedExploreRuntime({
+      projectRoot: scalarFirst.root,
+      transport: "stdio",
+      env: scalarFirst.env,
+      executor,
+      inspectDatabaseFn: async () => scalarFirst.inspection,
+    });
+    await expect(scalarRuntime.explore(scalarPlan)).resolves.toMatchObject({
+      privacy: { suppressed_groups: 0 },
+    });
+    await expect(scalarRuntime.explore(groupedPlan)).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      message: expect.stringContaining("complementary aggregate"),
+    });
+    await scalarRuntime.close();
+
+    const auditStore = new ProposalStore(path.join(scalarFirst.root, ".synapsor/local.db"));
+    const complementRefusal = auditStore.listQueryAudit().find((record) =>
+      (record.payload as Record<string, unknown>).status === "refused_privacy_complement");
+    expect(complementRefusal?.payload).toMatchObject({
+      source_execution_started: true,
+      source_rows_returned_to_caller: false,
+      result_values_persisted: false,
+    });
+    auditStore.close();
+  });
+
+  it("atomically permits only one side of a concurrent complementary aggregate release", async () => {
+    const fixture = await activatedFixture();
+    const groupedPlan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    };
+    const scalarPlan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      top_n: 1,
+    };
+    const first = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const second = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const outcomes = await Promise.allSettled([
+        first.explore(groupedPlan),
+        second.explore(scalarPlan),
+      ]);
+      expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+      const refusal = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+      expect(refusal.reason).toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
 
   it("rejects SQL-shaped input, unreviewed identifiers, kept-out uses, scope overrides, and aggregate widening", async () => {
     const { boundary } = await activatedFixture((candidate) => {
@@ -627,6 +2042,16 @@ describe("Scoped Explore", () => {
             { start: "2026-01-01T00:00:00.000Z", end: "2026-02-01T00:00:00.000Z" },
             { start: "2026-02-01T00:00:00.000Z", end: "2026-03-01T00:00:00.000Z" },
             { start: "2026-03-01T00:00:00.000Z", end: "2026-04-01T00:00:00.000Z" },
+          ],
+        },
+      },
+      {
+        ...aggregate,
+        comparison: {
+          field: "churned_at",
+          ranges: [
+            { start: "2026-02-01T00:00:00.000Z", end: "2026-03-01T00:00:00.000Z" },
+            { start: "2026-01-01T00:00:00.000Z", end: "2026-02-01T00:00:00.000Z" },
           ],
         },
       },
@@ -792,6 +2217,9 @@ describe("Scoped Explore", () => {
         execute: async () => {
           throw new Error("postgresql://reader:secret-password@db.internal/app token=raw-secret");
         },
+        executeBatch: async () => {
+          throw new Error("postgresql://reader:secret-password@db.internal/app token=raw-secret");
+        },
         close: async () => undefined,
       },
       inspectDatabaseFn: async () => fixture.inspection,
@@ -813,6 +2241,56 @@ describe("Scoped Explore", () => {
     expect((sourceError as Error).message).not.toMatch(/secret-password|raw-secret|db\.internal/);
     await failed.close();
   }, 20_000);
+
+  it("revalidates dependency drift before every call in a long-running authoring runtime", async () => {
+    const fixture = await activatedFixture();
+    let currentInspection = fixture.inspection;
+    let sourceExecutions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => {
+          sourceExecutions += 1;
+          return [{ region: "north" }];
+        },
+        executeBatch: async ({ queries }) => queries.map(() => {
+          sourceExecutions += 1;
+          return [{ region: "north" }];
+        }),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => currentInspection,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).resolves.toMatchObject({ source_database_changed: false });
+      expect(sourceExecutions).toBe(1);
+
+      const drifted = structuredClone(fixture.inspection);
+      drifted.tables[0]!.columns = drifted.tables[0]!.columns.filter(
+        (column) => column.name !== "region",
+      );
+      currentInspection = drifted;
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringContaining("public.subscriptions.region no longer exists"),
+      });
+      expect(sourceExecutions).toBe(1);
+    } finally {
+      await runtime.close();
+    }
+  });
 });
 
 function aggregatePlan(value: string) {
@@ -826,9 +2304,44 @@ function aggregatePlan(value: string) {
   };
 }
 
+function suggestedQuestionPlan(
+  resource: string,
+  question: Record<string, any>,
+): Record<string, unknown> {
+  const dimensions = (Array.isArray(question.dimensions)
+    ? question.dimensions
+    : [question.dimension])
+    .filter(Boolean)
+    .map((value: string | Record<string, unknown>) =>
+      typeof value === "string" ? { field: value } : value);
+  const time = question.time_field
+    ? typeof question.time_field === "string"
+      ? { field: question.time_field }
+      : question.time_field
+    : undefined;
+  return {
+    kind: "aggregate",
+    resource,
+    measures: [question.measure],
+    ...(dimensions.length ? { dimensions } : {}),
+    ...(time
+      ? {
+          time_bucket: {
+            ...time,
+            bucket: question.time_bucket ?? "week",
+          },
+        }
+      : {}),
+    order_by: { kind: "measure", index: 0, direction: "desc" },
+    top_n: 10,
+  };
+}
+
 async function activatedFixture(
   narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
   inspection = churnInspection(),
+  minimumCohort?: 1 | 2 | 3 | 4,
+  trustedScopeExposure?: "runner_only" | "model_visible",
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -837,6 +2350,34 @@ async function activatedFixture(
 }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-explore-"));
   temporaryRoots.push(root);
+  const reviewedResource = {
+    ...(minimumCohort
+      ? {
+        minimum_cohort: {
+          value: minimumCohort,
+          actor: "owner@example.test",
+          reason: "Reviewed owner-controlled staging fixture.",
+          decided_at: "2026-07-28T00:00:00.000Z",
+        },
+      }
+      : {}),
+    ...(trustedScopeExposure
+      ? {
+        fields: {
+          tenant_id: {
+            exposure: trustedScopeExposure === "runner_only"
+              ? "withhold_from_model" as const
+              : "allow_reviewed_use" as const,
+            actor: "owner@example.test",
+            reason: trustedScopeExposure === "runner_only"
+              ? "Show trusted scope only in Runner's local verified result."
+              : "Show the fixed trusted scope in the reviewed model result.",
+            decided_at: "2026-07-28T00:00:00.000Z",
+          },
+        },
+      }
+      : {}),
+  };
   const build = buildAutoBoundary({
     inspection,
     project: {
@@ -847,6 +2388,16 @@ async function activatedFixture(
       database_env_names: ["DATABASE_URL"],
     },
     sourceEnv: "DATABASE_URL",
+    ...(minimumCohort || trustedScopeExposure
+      ? {
+        overrides: {
+          schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+          resources: {
+            "public.subscriptions": reviewedResource,
+          },
+        },
+      }
+      : {}),
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
@@ -982,6 +2533,21 @@ function principalPolicy(name: string) {
 function fixedExecutor(rows: Record<string, unknown>[]): ScopedExploreExecutor {
   return {
     execute: async () => structuredClone(rows),
+    executeBatch: async ({ queries }) => queries.map(() => structuredClone(rows)),
+    close: async () => undefined,
+  };
+}
+
+function complementAttackExecutor(): ScopedExploreExecutor {
+  return {
+    execute: async () => [],
+    executeBatch: async ({ queries }) => queries.map((query) =>
+      /\bGROUP BY\b/i.test(query.sql)
+        ? [
+            { dimension_0: "visible", measure_0: 10, __cohort_size: 10 },
+            { dimension_0: "withheld", measure_0: 2, __cohort_size: 2 },
+          ]
+        : [{ measure_0: 12, __cohort_size: 12 }]),
     close: async () => undefined,
   };
 }
@@ -1000,6 +2566,7 @@ async function rewriteActiveBoundary(
     source: active.source,
     compiler_version: active.compiler_version,
     spec_version: active.spec_version,
+    ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
     trusted_context: active.trusted_context,
     generation_lock_fingerprint: active.generation_lock_fingerprint,
     role_posture_fingerprint: active.role_posture_fingerprint,
@@ -1007,6 +2574,16 @@ async function rewriteActiveBoundary(
     budgets: active.budgets,
   });
   await fs.writeFile(activePath, `${JSON.stringify(active, null, 2)}\n`, "utf8");
+  const setPath = path.join(root, ".synapsor/exploration-boundaries.active.json");
+  try {
+    const set = JSON.parse(await fs.readFile(setPath, "utf8")) as Record<string, any>;
+    set.boundaries = (set.boundaries as Array<Record<string, any>>).map((boundary) =>
+      boundary.pack?.name === active.pack?.name ? active : boundary);
+    set.selected_name = active.pack.name;
+    await fs.writeFile(setPath, `${JSON.stringify(set, null, 2)}\n`, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }
 
 function churnInspection(): SchemaInspection {

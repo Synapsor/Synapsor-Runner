@@ -1,6 +1,8 @@
 import {
+  enforcePrivacyBudgets,
   parseChangeSet,
   parseFreshnessProof,
+  PrivacyBoundaryError,
   type FreshnessProofV1,
 } from "@synapsor-runner/protocol";
 import {
@@ -15,6 +17,13 @@ import {
   type ProposalSearchFilters,
   type EvidenceSearchFilters,
   type QueryAuditSearchFilters,
+  type ExplorePrivacyReleaseInput,
+  type ExplorePrivacyReleaseDecision,
+  type ExploreBudgetReservationInput,
+  type ExploreBudgetReservationDecision,
+  type ExploreBudgetUsage,
+  type CompleteExploreBudgetReservationInput,
+  type CompleteExploreBudgetReservationDecision,
   type ReceiptSearchFilters,
   type ActiveProposalLookup,
   type PolicyApprovalLimit,
@@ -200,6 +209,180 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
   
   getQueryAudit(auditId: number): Record<string, unknown> | undefined {
       return rowToQueryAudit(this.db.prepare("SELECT * FROM query_audit WHERE audit_id = ?").get(auditId));
+    },
+
+  claimExplorePrivacyRelease(input: ExplorePrivacyReleaseInput): ExplorePrivacyReleaseDecision {
+      const fingerprints = [...new Set(input.complement_fingerprints)].sort();
+      if (fingerprints.length === 0) return { allowed: true };
+      const opposite = input.release_kind === "scalar_total"
+        ? "suppressed_grouping"
+        : "scalar_total";
+      return this.transaction(() => {
+        const placeholders = fingerprints.map(() => "?").join(", ");
+        const conflict = this.db.prepare(`
+          SELECT release_kind
+          FROM explore_privacy_releases
+          WHERE scope_fingerprint = ?
+            AND release_kind = ?
+            AND complement_fingerprint IN (${placeholders})
+          LIMIT 1
+        `).get(input.scope_fingerprint, opposite, ...fingerprints);
+        if (isRecord(conflict)) {
+          return {
+            allowed: false,
+            conflicting_release_kind: opposite,
+          };
+        }
+        const insert = this.db.prepare(`
+          INSERT OR IGNORE INTO explore_privacy_releases (
+            scope_fingerprint,
+            complement_fingerprint,
+            release_kind,
+            query_fingerprint,
+            boundary_digest,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        const now = new Date().toISOString();
+        for (const fingerprint of fingerprints) {
+          insert.run(
+            input.scope_fingerprint,
+            fingerprint,
+            input.release_kind,
+            input.query_fingerprint,
+            input.boundary_digest,
+            now,
+          );
+        }
+        return { allowed: true };
+      });
+    },
+
+  claimExploreBudgetReservation(input: ExploreBudgetReservationInput): ExploreBudgetReservationDecision {
+      const now = parseBudgetTimestamp(input.now, "reservation time");
+      assertBudgetReservationInput(input);
+      return this.transaction(() => {
+        this.db.prepare("DELETE FROM explore_budget_reservations WHERE created_at < ?")
+          .run(new Date(now - EXPLORE_BUDGET_RETENTION_MS).toISOString());
+        const usage = exploreBudgetUsage(this.db, input, now);
+        const variants = exploreDifferencingVariants(this.db, input, now);
+        const variantAlreadyCounted = variants.has(input.variant_fingerprint);
+        try {
+          enforcePrivacyBudgets({
+            limits: input.limits,
+            snapshot: {
+              query_count: usage.query_count,
+              queries_last_minute: usage.queries_last_minute,
+              extracted_cells: usage.extracted_cells,
+              differencing_attempts: variantAlreadyCounted
+                ? Math.max(0, variants.size - 1)
+                : variants.size,
+            },
+            estimated_response_cells: input.estimated_response_cells,
+            aggregate: input.requires_differencing,
+          });
+        } catch (error) {
+          if (!(error instanceof PrivacyBoundaryError)
+            || !isExploreBudgetErrorCode(error.code)) {
+            throw error;
+          }
+          return {
+            allowed: false,
+            code: error.code,
+            message: error.message,
+            usage: {
+              ...usage,
+              differencing_attempts: variants.size,
+            },
+          };
+        }
+        this.db.prepare(`
+          INSERT INTO explore_budget_reservations (
+            reservation_id,
+            scope_fingerprint,
+            resource_id,
+            variant_fingerprint,
+            requires_differencing,
+            differencing_counted,
+            reserved_cells,
+            accounted_cells,
+            status,
+            created_at,
+            completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL)
+        `).run(
+          input.reservation_id,
+          input.scope_fingerprint,
+          input.resource_id,
+          input.variant_fingerprint,
+          input.requires_differencing ? 1 : 0,
+          input.requires_differencing ? 1 : 0,
+          input.estimated_response_cells,
+          input.estimated_response_cells,
+          input.now,
+        );
+        return {
+          allowed: true,
+          usage_after_reservation: {
+            query_count: usage.query_count + 1,
+            queries_last_minute: usage.queries_last_minute + 1,
+            extracted_cells: usage.extracted_cells + input.estimated_response_cells,
+            differencing_attempts: variants.size
+              + (input.requires_differencing && !variantAlreadyCounted ? 1 : 0),
+          },
+          variant_already_counted: variantAlreadyCounted,
+        };
+      });
+    },
+
+  completeExploreBudgetReservation(
+    input: CompleteExploreBudgetReservationInput,
+  ): CompleteExploreBudgetReservationDecision {
+      parseBudgetTimestamp(input.completed_at, "completion time");
+      if (!Number.isSafeInteger(input.returned_cells) || input.returned_cells < 0) {
+        throw new ProposalStoreError(
+          "EXPLORE_BUDGET_RESERVATION_INVALID",
+          "Explore returned-cell accounting must be a non-negative safe integer.",
+        );
+      }
+      return this.transaction(() => {
+        const row = this.db.prepare(`
+          SELECT status, requires_differencing, reserved_cells, accounted_cells
+          FROM explore_budget_reservations
+          WHERE reservation_id = ?
+        `).get(input.reservation_id);
+        if (!isRecord(row)) return { completed: false, reason: "reservation_missing" };
+        const status = String(row.status);
+        if (status !== "pending") {
+          const sameOutcome = (status === "released") === input.result_released;
+          const sameCells = Number(row.accounted_cells) === (input.result_released ? input.returned_cells : 0);
+          return sameOutcome && sameCells
+            ? { completed: true }
+            : { completed: false, reason: "reservation_already_finalized" };
+        }
+        const reservedCells = Number(row.reserved_cells);
+        if (input.result_released && input.returned_cells > reservedCells) {
+          this.db.prepare(`
+            UPDATE explore_budget_reservations
+            SET status = 'not_released', differencing_counted = 0,
+                accounted_cells = 0, completed_at = ?
+            WHERE reservation_id = ? AND status = 'pending'
+          `).run(input.completed_at, input.reservation_id);
+          return { completed: false, reason: "response_exceeded_reservation" };
+        }
+        this.db.prepare(`
+          UPDATE explore_budget_reservations
+          SET status = ?, differencing_counted = ?, accounted_cells = ?, completed_at = ?
+          WHERE reservation_id = ? AND status = 'pending'
+        `).run(
+          input.result_released ? "released" : "not_released",
+          input.result_released && Number(row.requires_differencing) === 1 ? 1 : 0,
+          input.result_released ? input.returned_cells : 0,
+          input.completed_at,
+          input.reservation_id,
+        );
+        return { completed: true };
+      });
     },
   
   listReceipts(filters: ReceiptSearchFilters = {}): StoredWritebackReceipt[] {
@@ -671,3 +854,181 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
       return this.requireProposal(proposalId);
     },
 };
+
+const EXPLORE_BUDGET_WINDOW_MS = 24 * 60 * 60 * 1000;
+const EXPLORE_BUDGET_RETENTION_MS = 30 * EXPLORE_BUDGET_WINDOW_MS;
+
+function parseBudgetTimestamp(value: string, label: string): number {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new ProposalStoreError(
+      "EXPLORE_BUDGET_RESERVATION_INVALID",
+      `Explore ${label} must be a valid ISO timestamp.`,
+    );
+  }
+  return parsed;
+}
+
+function assertBudgetReservationInput(input: ExploreBudgetReservationInput): void {
+  const limits = Object.values(input.limits);
+  if (!input.reservation_id
+    || !input.scope_fingerprint.startsWith("sha256:")
+    || !input.variant_fingerprint.startsWith("sha256:")
+    || !input.resource_id
+    || !Number.isSafeInteger(input.estimated_response_cells)
+    || input.estimated_response_cells < 0
+    || limits.some((value) => !Number.isSafeInteger(value) || value < 1)) {
+    throw new ProposalStoreError(
+      "EXPLORE_BUDGET_RESERVATION_INVALID",
+      "Explore budget reservation input is malformed.",
+    );
+  }
+}
+
+function isExploreBudgetErrorCode(
+  code: string,
+): code is "QUERY_BUDGET_EXHAUSTED" | "RATE_LIMIT_EXHAUSTED" | "EXTRACTION_BUDGET_EXHAUSTED" | "DIFFERENCING_BUDGET_EXHAUSTED" {
+  return code === "QUERY_BUDGET_EXHAUSTED"
+    || code === "RATE_LIMIT_EXHAUSTED"
+    || code === "EXTRACTION_BUDGET_EXHAUSTED"
+    || code === "DIFFERENCING_BUDGET_EXHAUSTED";
+}
+
+function exploreBudgetUsage(
+  db: ProposalStoreMethodContext["db"],
+  input: ExploreBudgetReservationInput,
+  now: number,
+): ExploreBudgetUsage {
+  const windowStart = now - EXPLORE_BUDGET_WINDOW_MS;
+  const minuteStart = now - 60_000;
+  let queryCount = 0;
+  let queriesLastMinute = 0;
+  let extractedCells = 0;
+  const reservations = db.prepare(`
+    SELECT accounted_cells, created_at
+    FROM explore_budget_reservations
+    WHERE scope_fingerprint = ? AND created_at >= ? AND created_at <= ?
+  `).all(input.scope_fingerprint, new Date(windowStart).toISOString(), input.now);
+  for (const row of reservations) {
+    if (!isRecord(row)) continue;
+    queryCount += 1;
+    if (Date.parse(String(row.created_at)) >= minuteStart) queriesLastMinute += 1;
+    extractedCells += Math.max(0, Number(row.accounted_cells) || 0);
+  }
+  for (const audit of legacyExploreBudgetAudits(db, input, windowStart, now)) {
+    queryCount += 1;
+    if (audit.recordedAt >= minuteStart) queriesLastMinute += 1;
+    extractedCells += audit.returnedCells;
+  }
+  return {
+    query_count: queryCount,
+    queries_last_minute: queriesLastMinute,
+    extracted_cells: extractedCells,
+    differencing_attempts: 0,
+  };
+}
+
+function exploreDifferencingVariants(
+  db: ProposalStoreMethodContext["db"],
+  input: ExploreBudgetReservationInput,
+  now: number,
+): Set<string> {
+  const windowStart = now - EXPLORE_BUDGET_WINDOW_MS;
+  const variants = new Set<string>();
+  const rows = db.prepare(`
+    SELECT variant_fingerprint
+    FROM explore_budget_reservations
+    WHERE scope_fingerprint = ? AND resource_id = ?
+      AND created_at >= ? AND created_at <= ? AND differencing_counted = 1
+  `).all(
+    input.scope_fingerprint,
+    input.resource_id,
+    new Date(windowStart).toISOString(),
+    input.now,
+  );
+  for (const row of rows) {
+    if (isRecord(row) && typeof row.variant_fingerprint === "string") {
+      variants.add(row.variant_fingerprint);
+    }
+  }
+  for (const audit of legacyExploreBudgetAudits(db, input, windowStart, now)) {
+    if (audit.informationBearingAggregate && audit.resourceId === input.resource_id) {
+      variants.add(audit.variantFingerprint);
+    }
+  }
+  return variants;
+}
+
+function legacyExploreBudgetAudits(
+  db: ProposalStoreMethodContext["db"],
+  input: ExploreBudgetReservationInput,
+  windowStart: number,
+  now: number,
+): Array<{
+  queryFingerprint: string;
+  variantFingerprint: string;
+  recordedAt: number;
+  returnedCells: number;
+  resourceId?: string;
+  informationBearingAggregate: boolean;
+}> {
+  const legacyFingerprints = new Set(input.legacy_session_fingerprints);
+  const results: Array<{
+    queryFingerprint: string;
+    variantFingerprint: string;
+    recordedAt: number;
+    returnedCells: number;
+    resourceId?: string;
+    informationBearingAggregate: boolean;
+  }> = [];
+  const rows = db.prepare("SELECT query_fingerprint, payload_json, created_at FROM query_audit").all();
+  for (const row of rows) {
+    if (!isRecord(row) || typeof row.payload_json !== "string") continue;
+    let payload: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(row.payload_json);
+      if (!isRecord(parsed)) continue;
+      payload = parsed;
+    } catch {
+      continue;
+    }
+    if (typeof payload.budget_reservation_id === "string") continue;
+    const inScope = payload.budget_scope_fingerprint === input.scope_fingerprint
+      || (typeof payload.session_fingerprint === "string"
+        && legacyFingerprints.has(payload.session_fingerprint as `sha256:${string}`));
+    if (!inScope) continue;
+    const recordedAt = Date.parse(
+      typeof payload.recorded_at === "string" ? payload.recorded_at : String(row.created_at),
+    );
+    if (!Number.isFinite(recordedAt) || recordedAt < windowStart || recordedAt > now) continue;
+    if (payload.source_execution_started === false || payload.source_query_executed === false) continue;
+    const normalizedPlan = isRecord(payload.normalized_plan) ? payload.normalized_plan : undefined;
+    const status = payload.status;
+    results.push({
+      queryFingerprint: String(row.query_fingerprint),
+      variantFingerprint: typeof payload.differencing_variant === "string"
+        ? payload.differencing_variant
+        : typeof payload.argument_fingerprint === "string"
+          ? payload.argument_fingerprint
+          : String(row.query_fingerprint),
+      recordedAt,
+      returnedCells: typeof payload.returned_cells === "number"
+        ? Math.max(0, payload.returned_cells)
+        : 0,
+      ...(typeof normalizedPlan?.resource === "string"
+        ? { resourceId: normalizedPlan.resource }
+        : typeof payload.capability === "string"
+          ? { resourceId: payload.capability }
+          : {}),
+      informationBearingAggregate: (normalizedPlan?.kind === "aggregate"
+        && (status === "ok"
+          || status === "empty"
+          || status === "fully_suppressed"
+          || status === "incomplete_comparison"))
+        || (payload.protected_read_version === "synapsor.protected-read.v1"
+          && payload.mode === "aggregate"
+          && status === "returned"),
+    });
+  }
+  return results;
+}

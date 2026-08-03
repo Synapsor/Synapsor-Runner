@@ -1,0 +1,1761 @@
+import readline from "node:readline";
+import type { ReadStream, WriteStream } from "node:tty";
+import type {
+  BoundaryResourceReviewSummary,
+  BoundaryResourceReviewView,
+} from "./boundary-review-mutation.js";
+import { readTerminalTextWithEscape } from "./terminal-prompt.js";
+import {
+  padTerminalLine,
+  terminalContentWidth,
+} from "./terminal-layout.js";
+
+export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
+export type BoundaryFieldTierEditResult =
+  | Record<string, BoundaryFieldTier>
+  | "back"
+  | "privacy"
+  | undefined;
+
+export type BoundaryResourceSelection =
+  | {
+      resource_id: string;
+      action: "add" | "review" | "remove" | "signoff" | "privacy";
+    }
+  | {
+      action: "create" | "rename" | "confirm" | "limits";
+    }
+  | {
+      action: "switch" | "delete" | "disable";
+      boundary_name: string;
+    };
+
+export type BoundaryReviewOverview = {
+  confirmed_decisions: number;
+  outstanding_decisions: number;
+  outstanding_resource_decisions: number;
+  outstanding_boundary_decisions: number;
+  resources_requiring_signoff: number;
+  boundaries?: Array<{
+    name: string;
+    selected: boolean;
+    active: boolean;
+    matches_active_digest: boolean;
+    table_count: number;
+    outstanding_decisions: number;
+  }>;
+};
+
+export type BoundaryReviewInteractiveSession = {
+  chooseResource(
+    resources: BoundaryResourceReviewSummary[],
+    overview?: BoundaryReviewOverview,
+    options?: {
+      initialView?: "boundaries" | "access";
+      startingBoundaryName?: string;
+      startAtBoundaryList?: boolean;
+    },
+  ): Promise<BoundaryResourceSelection | undefined>;
+  editFieldTiers(
+    view: BoundaryResourceReviewView,
+    options?: { focusedAccess?: boolean },
+  ): Promise<BoundaryFieldTierEditResult>;
+  promptText(prompt: string): Promise<string | undefined>;
+  confirm(prompt: string, options?: { defaultValue?: boolean }): Promise<boolean | undefined>;
+};
+
+type Keypress = {
+  name?: string;
+  ctrl?: boolean;
+  sequence?: string;
+};
+
+type ResourcePickerView = "boundary" | "related" | "all";
+
+type BoundaryRelationshipConnection = {
+  source_resource: string;
+  target_resource: string;
+  relationship_id: string;
+  path_depth: number;
+};
+
+const tierOrder: BoundaryFieldTier[] = ["visible", "withheld_from_model", "kept_out"];
+
+type TerminalTheme = ReturnType<typeof terminalTheme>;
+
+export function createBoundaryReviewInteractiveSession(
+  input: ReadStream = process.stdin,
+  output: WriteStream = process.stderr,
+): BoundaryReviewInteractiveSession {
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
+    throw new Error("Interactive boundary review requires a real terminal.");
+  }
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  return {
+    chooseResource: (resources, overview, options) =>
+      chooseResource(resources, overview, options, input, output),
+    editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),
+    promptText: (prompt) => readTerminalTextWithEscape(
+      formatTextPromptWithBack(prompt, theme),
+      input,
+      output,
+    ),
+    confirm: async (prompt, options = {}) => {
+      const defaultValue = options.defaultValue === true;
+      const answer = await readTerminalTextWithEscape(
+        `${theme.bold(prompt)} ${theme.key(defaultValue ? "[Y/n]" : "[y/N]")} ` +
+          `${theme.key("[Esc Back]")}: `,
+        input,
+        output,
+      );
+      if (answer === undefined) return undefined;
+      if (!answer) return defaultValue;
+      return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
+    },
+  };
+}
+
+async function chooseResource(
+  resources: BoundaryResourceReviewSummary[],
+  overview: BoundaryReviewOverview | undefined,
+  options: {
+    initialView?: "boundaries" | "access";
+    startingBoundaryName?: string;
+    startAtBoundaryList?: boolean;
+  } | undefined,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<BoundaryResourceSelection | undefined> {
+  if (!resources.length) throw new Error("The boundary review contains no inspected tables or views.");
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  let selected = 0;
+  let selectedBoundary = 0;
+  let showMap = false;
+  let showReviewItems = false;
+  const focusedAccess = options?.initialView === "access";
+  const startingBoundaryName = options?.startingBoundaryName;
+  let showBoundaryList = options?.startAtBoundaryList === true || !focusedAccess;
+  let resourceView: ResourcePickerView = resources.some(
+    (resource) => resource.included || resource.active,
+  ) ? "boundary" : "all";
+  let mapOffset = 0;
+  let startingTableNotice: string | undefined;
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      if (startingBoundaryName) {
+        selected = Math.min(selected, resources.length - 1);
+        const start = boundedWindowStart(selected, resources.length, 10);
+        const visible = resources.slice(start, start + 10);
+        const end = start + visible.length;
+        const below = resources.length - end;
+        const highlighted = resources[selected]!;
+        const eligible = resources.filter((resource) => resource.status === "draft_read").length;
+        const unavailable = resources.length - eligible;
+        render([
+          theme.title(`CHOOSE FIRST TABLE - ${safeTerminalText(startingBoundaryName)}`),
+          "A new boundary starts with the table you choose. Nothing is copied from another boundary.",
+          theme.dim("Column access opens immediately after this choice; no authority is active yet."),
+          "",
+          ...visible.map((resource, index) => {
+            const absolute = start + index;
+            const details = resource.status === "draft_read"
+              ? `${resource.model_visible_fields} model · ` +
+                `${resource.runner_output_only_fields} Runner-only · ${resource.kept_out_fields} kept out`
+              : `UNAVAILABLE · ${resource.blockers[0] ?? "structural review required"}`;
+            const line = `${absolute === selected ? ">" : " "} ${safeTerminalText(resource.resource_id)}  ` +
+              `[${safeTerminalText(details)}]`;
+            if (absolute === selected) return theme.focus(line);
+            return resource.status === "draft_read" ? line : theme.dim(line);
+          }),
+          theme.dim(
+            `Inspected tables: ${resources.length} total · ${eligible} eligible · ${unavailable} unavailable.`,
+          ),
+          ...(below > 0 || start > 0
+            ? [theme.dim(
+              `Showing ${start + 1}-${end} of ${resources.length}. ` +
+              (below > 0
+                ? `${theme.key("Down")} shows ${below} more ${plural(below, "table", "tables")} below.`
+                : "Up returns to earlier tables."),
+            )]
+            : []),
+          ...(startingTableNotice ? ["", theme.warning(startingTableNotice)] : []),
+          "",
+          `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Choose this table`,
+          `${theme.key("B/Esc/Q")} Cancel new boundary`,
+        ]);
+        const key = await nextKey();
+        if (isCancel(key) || isBackKey(key) || isEscapeKey(key)) return undefined;
+        if (key.name === "up") {
+          selected = (selected - 1 + resources.length) % resources.length;
+          continue;
+        }
+        if (key.name === "down") {
+          selected = (selected + 1) % resources.length;
+          continue;
+        }
+        if (key.name === "return" || key.name === "enter") {
+          if (highlighted.status !== "draft_read") {
+            startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot start a boundary: ` +
+              safeTerminalText(highlighted.blockers[0] ?? "structural review is required first.");
+            continue;
+          }
+          return { resource_id: highlighted.resource_id, action: "add" };
+        }
+        continue;
+      }
+      if (showReviewItems) {
+        const boundaryResources = resources.filter((resource) => resource.included || resource.active);
+        const listedResources = resourcesForPickerView(resources, boundaryResources, resourceView);
+        selected = Math.min(selected, listedResources.length - 1);
+        const highlighted = listedResources[selected]!;
+        render([
+          theme.title(`TABLE SIGN-OFF DETAILS - ${safeTerminalText(highlighted.resource_id)}`),
+          theme.bold(
+            `This table is one part of boundary "${safeTerminalText(highlighted.candidate_boundary_name)}".`,
+          ),
+          "This one sign-off covers field access, operations, row scope, privacy",
+          "limits, and reviewed relationships. The items below are audit details,",
+          "not separate prompts.",
+          "",
+          ...(highlighted.pending_decisions.length
+            ? highlighted.pending_decisions.flatMap((decision, index) => {
+              const item = reviewItemPresentation(highlighted.resource_id, decision);
+              return [
+                `${index + 1}. ${theme.bold(safeTerminalText(item.label))}`,
+                `   ${theme.dim(safeTerminalText(item.detail))}`,
+              ];
+            })
+            : [theme.success("This table sign-off is complete.")]),
+          ...(highlighted.blockers.length
+            ? ["", theme.danger("Structural blockers:"), ...highlighted.blockers.map((item) =>
+              `- ${safeTerminalText(item)}`)]
+            : []),
+          "",
+          `${theme.key("Enter")} Edit column access   ${theme.key("S")} Sign off table   ` +
+            `${theme.key("M")} View access map`,
+          `${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+          theme.dim(
+            `One S sign-off records all ${highlighted.risk_count} exact ` +
+            `${plural(highlighted.risk_count, "decision", "decisions")} above.`,
+          ),
+          theme.dim(
+            `Advanced edits: synapsor-runner boundary review resource ` +
+            `${safeTerminalText(highlighted.resource_id)} --help`,
+          ),
+        ]);
+        const key = await nextKey();
+        if (isBackKey(key) || key.name === "p") {
+          showReviewItems = false;
+          continue;
+        }
+        if (key.name === "m") {
+          showReviewItems = false;
+          showMap = true;
+          mapOffset = Math.max(0, resources.indexOf(highlighted) - 2);
+          continue;
+        }
+        if (key.name === "return" || key.name === "enter") {
+          return { resource_id: highlighted.resource_id, action: "review" };
+        }
+        if (key.name === "s" && highlighted.included) {
+          return { resource_id: highlighted.resource_id, action: "signoff" };
+        }
+        if (isCancel(key)) return undefined;
+        continue;
+      }
+      if (showMap) {
+        const mapLines = boundaryOverviewMapLines(resources, theme);
+        const pageSize = 15;
+        mapOffset = Math.min(mapOffset, Math.max(0, mapLines.length - pageSize));
+        render([
+          theme.title("WHOLE BOUNDARY MAP"),
+          boundaryOverviewSummary(resources),
+          `${theme.key("Up/Down")} Scroll   ${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+          "",
+          ...mapLines.slice(mapOffset, mapOffset + pageSize),
+          "",
+          theme.dim(
+            mapLines.length > pageSize
+              ? `Showing lines ${mapOffset + 1}-${Math.min(mapLines.length, mapOffset + pageSize)} of ${mapLines.length}.`
+              : "All inspected tables and reviewed relationship candidates are shown.",
+          ),
+        ]);
+        const key = await nextKey();
+        if (key.name === "m" || isBackKey(key) || key.name === "return" || key.name === "enter") {
+          showMap = false;
+          continue;
+        }
+        if (isCancel(key)) return undefined;
+        if (key.name === "up") mapOffset = Math.max(0, mapOffset - 1);
+        if (key.name === "down") {
+          mapOffset = Math.min(Math.max(0, mapLines.length - pageSize), mapOffset + 1);
+        }
+        continue;
+      }
+      if (showBoundaryList) {
+        const includedCount = resources.filter((resource) => resource.included).length;
+        const activeResources = resources.filter((resource) => resource.active);
+        const activeBoundaryName = activeResources[0]?.active_boundary_name;
+        const candidateBoundaryName = resources[0]!.candidate_boundary_name;
+        const reviewLeft = boundaryReviewLeft(resources, overview);
+        const boundaryEntries = overview?.boundaries?.length
+          ? overview.boundaries
+          : [{
+            name: candidateBoundaryName,
+            selected: true,
+            active: activeBoundaryName === candidateBoundaryName,
+            matches_active_digest: activeBoundaryName === candidateBoundaryName,
+            table_count: includedCount,
+            outstanding_decisions: overview?.outstanding_decisions
+              ?? resources.filter((resource) => resource.included)
+                .reduce((total, resource) => total + resource.risk_count, 0),
+          }];
+        selectedBoundary = Math.min(selectedBoundary, boundaryEntries.length - 1);
+        const highlightedBoundary = boundaryEntries[selectedBoundary]!;
+        if (focusedAccess && !activeResources.length && boundaryEntries.length === 1) {
+          render([
+            theme.title("YOUR DATA BOUNDARY"),
+            "A boundary is the reviewed tables, columns, relationships, and limits",
+            "that your AI cannot exceed.",
+            "",
+            theme.bold(firstRunBoundaryRow("NAME", "STATUS", "TABLES", "AI ACCESS")),
+            theme.focus(firstRunBoundaryRow(
+              candidateBoundaryName,
+              "DRAFT",
+              includedCount,
+              "NOT ACTIVE",
+            )),
+            "",
+            theme.bold(
+              `${theme.key("Enter")} Review once, activate, and choose how to ask`,
+            ),
+            ...packTerminalActions([
+              `${theme.key("E")} Edit access`,
+              `${theme.key("A")} New boundary`,
+              `${theme.key("L")} Ranked limit`,
+              `${theme.key("M")} Map`,
+              `${theme.key("N")} Rename`,
+              `${theme.key("Q")} Quit`,
+            ], terminalContentWidth(output.columns)),
+            "",
+            theme.dim(
+              "After one exact confirmation, choose OpenAI, Anthropic, a local model, " +
+              "or an existing MCP client.",
+            ),
+            theme.dim("The draft grants no AI access until you confirm it."),
+          ]);
+          const key = await nextKey();
+          if (key.name === "return" || key.name === "enter" || key.name === "c") {
+            return { action: "confirm" };
+          }
+          if (key.name === "e") {
+            showBoundaryList = false;
+            resourceView = "boundary";
+            selected = 0;
+            continue;
+          }
+          if (key.name === "m") {
+            showMap = true;
+            mapOffset = 0;
+            continue;
+          }
+          if (key.name === "a") return { action: "create" };
+          if (key.name === "l") return { action: "limits" };
+          if (key.name === "n") return { action: "rename" };
+          if (isCancel(key) || isEscapeKey(key)) return undefined;
+          continue;
+        }
+        const rows = boundaryEntries.map((entry, index) => {
+          const isCurrent = entry.selected;
+          const outstanding = isCurrent
+            ? (reviewLeft === "Complete" ? 0 : entry.outstanding_decisions)
+            : entry.outstanding_decisions;
+          const status = entry.active
+            ? (entry.matches_active_digest ? "ACTIVE" : "ACTIVE + DRAFT EDITS")
+            : outstanding > 0
+              ? "DRAFT - NO ACCESS"
+              : "REVIEWED - NOT ACTIVE";
+          const line = savedBoundaryRow(
+            index === selectedBoundary ? ">" : "",
+            entry.name,
+            status,
+            entry.table_count,
+            entry.active ? "ACTIVE" : "NONE",
+          );
+          return index === selectedBoundary ? theme.focus(line) : line;
+        });
+        render([
+          theme.title("BOUNDARIES"),
+          "Each boundary is a saved set of reviewed tables, fields, relationships, and limits.",
+          theme.dim("One boundary is selected for editing; only an explicitly activated boundary grants Explore access."),
+          "",
+          theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "AUTHORITY")),
+          ...rows,
+          "",
+          ...packTerminalActions([
+            `${theme.key("Up/Down")} Select`,
+            `${theme.key("Enter")} ${highlightedBoundary.selected
+              ? (focusedAccess ? "Edit" : "Review")
+              : "Open"}`,
+            `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
+            `${theme.key("A")} New boundary`,
+            `${theme.key("L")} Ranked limit`,
+            `${theme.key("M")} Map`,
+            `${theme.key("N")} Rename`,
+            `${theme.key("X")} Delete`,
+            ...(highlightedBoundary.active ? [`${theme.key("D")} Deactivate`] : []),
+            `${theme.key("Q")} Quit`,
+          ], terminalContentWidth(output.columns)),
+          theme.dim("New boundaries start with a table you choose, then open its column access for review."),
+          theme.dim("Activation adds or updates this reviewed boundary. Each query remains inside one boundary."),
+        ]);
+        const key = await nextKey();
+        if (key.name === "up") {
+          selectedBoundary = (selectedBoundary - 1 + boundaryEntries.length) % boundaryEntries.length;
+          continue;
+        }
+        if (key.name === "down") {
+          selectedBoundary = (selectedBoundary + 1) % boundaryEntries.length;
+          continue;
+        }
+        if (key.name === "return" || key.name === "enter") {
+          if (!highlightedBoundary.selected) {
+            return { action: "switch", boundary_name: highlightedBoundary.name };
+          }
+          showBoundaryList = false;
+          continue;
+        }
+        if (key.name === "m") {
+          showMap = true;
+          mapOffset = 0;
+          continue;
+        }
+        if (key.name === "a") return { action: "create" };
+        if (key.name === "l") return { action: "limits" };
+        if (key.name === "n") {
+          if (!highlightedBoundary.selected) {
+            return { action: "switch", boundary_name: highlightedBoundary.name };
+          }
+          return { action: "rename" };
+        }
+        if (key.name === "x") {
+          return { action: "delete", boundary_name: highlightedBoundary.name };
+        }
+        if (key.name === "c") {
+          if (!highlightedBoundary.selected) {
+            return { action: "switch", boundary_name: highlightedBoundary.name };
+          }
+          return { action: "confirm" };
+        }
+        if (key.name === "d" && highlightedBoundary.active) {
+          return { action: "disable", boundary_name: highlightedBoundary.name };
+        }
+        if (focusedAccess && (isEscapeKey(key) || isBackKey(key))) return undefined;
+        if (isCancel(key)) return undefined;
+        continue;
+      }
+      const boundaryResources = resources.filter((resource) => resource.included || resource.active);
+      const listedResources = resourcesForPickerView(resources, boundaryResources, resourceView);
+      if (!listedResources.length) {
+        render([
+          theme.title(
+            focusedAccess
+              ? `EDIT ACCESS - ${safeTerminalText(resources[0]!.candidate_boundary_name)}`
+              : safeTerminalText(resources[0]!.candidate_boundary_name),
+          ),
+          theme.bold("ADD RELATED TABLES"),
+          "No other inspected table has a proven relationship path to this boundary.",
+          theme.dim(
+            "Runner does not infer joins from similar names. Only inspected foreign-key paths qualify.",
+          ),
+          "",
+          `${theme.key("Tab")} Show all inspected tables   ${theme.key("B/Esc")} Boundary tables`,
+          `${theme.key("M")} Map   ${theme.key("Q")} Quit`,
+          theme.dim("Choosing an unrelated table remains an explicit advanced action."),
+        ]);
+        const key = await nextKey();
+        if (key.name === "tab") {
+          resourceView = "all";
+          selected = 0;
+          continue;
+        }
+        if (isBackKey(key)) {
+          resourceView = "boundary";
+          selected = 0;
+          continue;
+        }
+        if (key.name === "m") {
+          showMap = true;
+          mapOffset = 0;
+          continue;
+        }
+        if (isCancel(key)) return undefined;
+        continue;
+      }
+      selected = Math.min(selected, listedResources.length - 1);
+      const start = boundedWindowStart(selected, listedResources.length, 10);
+      const visible = listedResources.slice(start, start + 10);
+      const end = start + visible.length;
+      const below = listedResources.length - end;
+      const highlighted = listedResources[selected]!;
+      const includedCount = resources.filter((resource) => resource.included).length;
+      const reviewLeft = boundaryReviewLeft(resources, overview);
+      const candidateIsActive = reviewLeft === "Complete"
+        && resources.some((resource) =>
+          resource.active_boundary_name === resource.candidate_boundary_name)
+        && resources.filter((resource) => resource.active).length === includedCount;
+      const candidateStatus = candidateIsActive
+        ? theme.success("ACTIVE")
+        : reviewLeft === "Complete"
+          ? theme.success("REVIEWED - NOT ACTIVE")
+        : theme.warning("DRAFT - NO ACCESS");
+      const displayedReviewLeft = focusedAccess && reviewLeft !== "Complete"
+        ? "FINAL REVIEW PENDING"
+        : safeTerminalText(reviewLeft);
+      render([
+        theme.title(
+          focusedAccess
+            ? `EDIT ACCESS - ${safeTerminalText(highlighted.candidate_boundary_name)}`
+            : safeTerminalText(highlighted.candidate_boundary_name),
+        ),
+        `${candidateStatus}  ${includedCount} ` +
+          `${plural(includedCount, "table", "tables")}  ${displayedReviewLeft}`,
+        ...(focusedAccess
+          ? [
+            theme.bold(
+              resourceView === "related"
+                ? `ADD RELATED TABLES (${listedResources.length})`
+                : resourceView === "all"
+                  ? `ALL INSPECTED TABLES (${listedResources.length} available to add)`
+                : "TABLES IN THIS BOUNDARY",
+            ),
+            theme.dim(
+              resourceView === "related"
+                ? "Only tables connected by inspected foreign-key paths are shown."
+                : resourceView === "all"
+                  ? "This advanced view also includes tables unrelated to the current boundary."
+                  : "Enter edits columns. A shows tables with proven paths into this boundary.",
+            ),
+            theme.bold(`${theme.key("C")} reviews and activates this whole boundary once. No separate table sign-off.`),
+          ]
+          : [
+            theme.bold(
+              resourceView === "related"
+                ? `ADD RELATED TABLES (${listedResources.length})`
+                : resourceView === "all"
+                  ? `ALL INSPECTED TABLES (${listedResources.length} available to add)`
+                : "TABLES",
+            ),
+            `${theme.key("P")} Explain what this table sign-off covers`,
+            theme.dim(
+              `One S sign-off records ${highlighted.risk_count} exact ` +
+              `${plural(highlighted.risk_count, "decision", "decisions")} together.`,
+            ),
+          ]),
+        "",
+        ...visible.map((resource, index) => {
+          const absolute = start + index;
+          const state = focusedAccess
+            ? focusedAccessResourceState(resource, theme)
+            : resourceState(resource, theme);
+          const connection = resourceView === "related"
+            ? bestBoundaryRelationshipConnection(resource, boundaryResources)
+            : undefined;
+          const connectionText = connection
+            ? `  [linked to ${safeTerminalText(boundaryEndpoint(connection, boundaryResources))}]`
+            : "";
+          const line = `${absolute === selected ? ">" : " "} ${safeTerminalText(resource.resource_id)}  ` +
+            `${state.text}${connectionText}`;
+          return absolute === selected
+            ? theme.focus(line)
+            : `${absolute === selected ? ">" : " "} ${safeTerminalText(resource.resource_id)}  ` +
+              `${state.style(state.text)}${theme.dim(connectionText)}`;
+        }),
+        ...(below > 0 || start > 0
+          ? [
+            theme.dim(
+              `Showing ${start + 1}-${end} of ${listedResources.length}. ` +
+              (below > 0
+                ? `${theme.key("Down")} shows ${below} more ${plural(below, "table", "tables")} below.`
+                : "Up returns to earlier tables."),
+            ),
+          ]
+          : []),
+        ...(resourceView === "related"
+          ? relationshipConnectionDetail(highlighted, boundaryResources, theme)
+          : []),
+        "",
+        `${theme.key("Up/Down")} Select   ${theme.key("Enter")} ` +
+          `${resourceView === "boundary" ? "Edit columns" : "Review and add"}` +
+          `${resourceView === "boundary"
+            ? `   ${focusedAccess ? "" : `${theme.key("S")} Sign off table   `}${theme.key("R")} Remove`
+            : ""}`,
+        ...(focusedAccess && resourceView === "boundary"
+          ? [`${theme.key("P")} Privacy for selected table · minimum group ${
+            highlighted.minimum_cohort_size ?? 5
+          }${highlighted.minimum_cohort_overridden ? " · owner override" : ""}`]
+          : []),
+        `${theme.key("B/Esc")} ${resourceView === "boundary"
+          ? (focusedAccess ? "Boundary overview" : "Boundaries")
+          : "Boundary tables"}   ` +
+          `${resourceView === "boundary"
+            ? theme.key("A") + " Add related tables"
+            : theme.key("Tab") + (resourceView === "related"
+              ? " All inspected tables"
+              : " Related tables only")}   ` +
+          `${theme.key("M")} Map`,
+        `${theme.key("N")} Rename boundary   ${theme.key("C")} ${focusedAccess ? "Review and activate" : "Complete review"}   ${theme.key("Q")} Quit`,
+        `${theme.key("L")} Ranked aggregate limit (operator reviewed)`,
+        theme.dim("Edits stay disabled until separate activation."),
+      ]);
+      const key = await nextKey();
+      if (isEscapeKey(key)) {
+        if (resourceView !== "boundary" && boundaryResources.length) {
+          resourceView = "boundary";
+          selected = 0;
+        } else {
+          showBoundaryList = true;
+        }
+        continue;
+      }
+      if (isCancel(key)) return undefined;
+      if (key.name === "m") {
+        showMap = true;
+        mapOffset = Math.max(0, selected - 2);
+        continue;
+      }
+      if (key.name === "p") {
+        if (focusedAccess && resourceView === "boundary") {
+          return { resource_id: highlighted.resource_id, action: "privacy" };
+        }
+        showReviewItems = true;
+        continue;
+      }
+      if (key.name === "n") return { action: "rename" };
+      if (key.name === "l") return { action: "limits" };
+      if (key.name === "c") return { action: "confirm" };
+      if (key.name === "d" && resources.some((resource) => resource.active)) {
+        return { action: "disable", boundary_name: resources[0]!.candidate_boundary_name };
+      }
+      if (key.name === "a" && resourceView === "boundary") {
+        resourceView = "related";
+        selected = 0;
+        continue;
+      }
+      if (key.name === "tab" && resourceView !== "boundary") {
+        resourceView = resourceView === "related" ? "all" : "related";
+        selected = 0;
+        continue;
+      }
+      if (isBackKey(key)) {
+        if (resourceView !== "boundary" && boundaryResources.length) {
+          resourceView = "boundary";
+          selected = 0;
+        } else {
+          showBoundaryList = true;
+        }
+        continue;
+      }
+      if (key.name === "up") {
+        selected = (selected - 1 + listedResources.length) % listedResources.length;
+      }
+      if (key.name === "down") selected = (selected + 1) % listedResources.length;
+      if (key.name === "r" && highlighted.included) {
+        return { resource_id: highlighted.resource_id, action: "remove" };
+      }
+      if (!focusedAccess && key.name === "s" && highlighted.included) {
+        return { resource_id: highlighted.resource_id, action: "signoff" };
+      }
+      if (key.name === "return" || key.name === "enter") {
+        return {
+          resource_id: highlighted.resource_id,
+          action: resourceView === "boundary" ? "review" : "add",
+        };
+      }
+    }
+  });
+}
+
+async function editFieldTiers(
+  view: BoundaryResourceReviewView,
+  options: { focusedAccess?: boolean } | undefined,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<BoundaryFieldTierEditResult> {
+  if (!view.candidate && !view.generated_candidate) {
+    throw new Error(
+      `${view.resource_id} is blocked because its record identity or trusted scope is unresolved. ` +
+      "Resolve only source-proven identity and scope candidates before reviewing column access.",
+    );
+  }
+  const fields = [...view.fields].sort((left, right) => left.name.localeCompare(right.name));
+  if (!fields.length) throw new Error(`${view.resource_id} has no inspected columns.`);
+  const tiers = Object.fromEntries(fields.map((field) => [
+    field.name,
+    currentFieldTier(view, field.name),
+  ])) as Record<string, BoundaryFieldTier>;
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  let selected = 0;
+  let showMap = false;
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      if (showMap) {
+        render([
+          ...boundaryResourceMapLines(view, tiers, theme),
+          "",
+          `${theme.key("B/Esc")} Back to columns   ${theme.key("Q")} Quit`,
+        ]);
+        const key = await nextKey();
+        if (key.name === "backspace" || (key.name === "b" && key.sequence === "b")) return "back";
+        if (key.name === "m" || isBackKey(key) || key.name === "return" || key.name === "enter") {
+          showMap = false;
+          continue;
+        }
+        if (isCancel(key)) return undefined;
+        continue;
+      }
+      const start = boundedWindowStart(selected, fields.length, 12);
+      const visible = fields.slice(start, start + 12);
+      const highlighted = fields[selected]!;
+      const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+      const accessLayout = fieldAccessLayout(tableWidth);
+      render([
+        theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
+        `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Change access   ` +
+          `${theme.key("Enter")} ${options?.focusedAccess ? "Save draft choices" : "Continue to table sign-off"}`,
+        `${theme.key("V/W/K")} Set directly   ${theme.key("M")} View access map   ` +
+          `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to boundary tables" : "Back"}   ` +
+          `${theme.key("Q")} Quit`,
+        `${theme.key("P")} Privacy threshold: minimum group ${
+          (view.candidate ?? view.generated_candidate)!.minimum_cohort_size
+        } (${(view.candidate ?? view.generated_candidate)!.minimum_cohort_size === 1 ? "suppression off" : "small groups withheld"})`,
+        "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
+        "",
+        theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),
+        ...visible.map((field, index) => {
+          const absolute = start + index;
+          const tier = tiers[field.name]!;
+          const tierText = `[${tierLabel(tier)}]`;
+          const line = `${absolute === selected ? ">" : " "} ${fieldAccessRow(
+            safeTerminalText(field.name),
+            safeTerminalText(field.data_type),
+            tierText,
+            compactRiskBadge(view, field),
+            accessLayout,
+          )}`;
+          return absolute === selected
+            ? theme.focus(line)
+            : line.replace(tierText, styleTier(theme, tier, tierText));
+        }),
+        "",
+        theme.bold(`Selected access: ${tierLabel(tiers[highlighted.name]!)}`),
+        theme.dim(
+          `Selected column: ${safeTerminalText(highlighted.name)} · ` +
+          `${safeTerminalText(highlighted.data_type)} · ${compactRiskBadge(view, highlighted)}`,
+        ),
+        isTrustedScopeField(view, highlighted.name)
+          ? theme.scope(trustedScopeTierConsequence(tiers[highlighted.name]!))
+          : styleTierConsequence(theme, tiers[highlighted.name]!),
+        theme.dim(
+          options?.focusedAccess
+            ? "Enter stages these choices in the disabled boundary. Final activation is one separate confirmation."
+            : "Enter continues to one plain-language table sign-off. Nothing activates from this screen.",
+        ),
+      ]);
+      const key = await nextKey();
+      if (isBackToResources(key)) return "back";
+      if (isCancel(key)) return undefined;
+      if (key.name === "m") {
+        showMap = true;
+        continue;
+      }
+      if (key.name === "p") return "privacy";
+      if (key.name === "up") selected = (selected - 1 + fields.length) % fields.length;
+      if (key.name === "down") selected = (selected + 1) % fields.length;
+      if (key.name === "space" || key.name === "right") {
+        tiers[highlighted.name] = cycleTier(tiers[highlighted.name]!, 1);
+      }
+      if (key.name === "left") {
+        tiers[highlighted.name] = cycleTier(tiers[highlighted.name]!, -1);
+      }
+      if (key.name === "v") tiers[highlighted.name] = "visible";
+      if (key.name === "w") tiers[highlighted.name] = "withheld_from_model";
+      if (key.name === "k") tiers[highlighted.name] = "kept_out";
+      if (key.name === "return" || key.name === "enter") return tiers;
+    }
+  });
+}
+
+function currentFieldTier(view: BoundaryResourceReviewView, field: string): BoundaryFieldTier {
+  const candidate = view.candidate ?? view.generated_candidate;
+  if (candidate?.kept_out_fields.includes(field)) return "kept_out";
+  if (candidate?.model_withheld_fields?.includes(field)) return "withheld_from_model";
+  if (candidate?.selectable_fields.includes(field)) return "visible";
+  return "kept_out";
+}
+
+function cycleTier(current: BoundaryFieldTier, direction: 1 | -1): BoundaryFieldTier {
+  const index = tierOrder.indexOf(current);
+  return tierOrder[(index + direction + tierOrder.length) % tierOrder.length]!;
+}
+
+function tierLabel(tier: BoundaryFieldTier): string {
+  if (tier === "withheld_from_model") return "RUNNER ONLY";
+  if (tier === "kept_out") return "KEPT OUT";
+  return "MODEL + RUNNER";
+}
+
+function tierConsequence(tier: BoundaryFieldTier): string {
+  if (tier === "visible") {
+    return "Model + Runner: reviewed values appear locally and may be sent to the configured model.";
+  }
+  if (tier === "withheld_from_model") {
+    return "Raw values: Runner only. Raw values stay local or become response-only tokens; reviewed derived results remain usable.";
+  }
+  return "Kept out: the field cannot be selected, filtered, sorted, grouped, joined, or aggregated.";
+}
+
+function trustedScopeTierConsequence(tier: BoundaryFieldTier): string {
+  if (tier === "visible") {
+    return "Fixed trusted scope. Runner injects it outside model arguments; the reviewed value may be sent to the model.";
+  }
+  if (tier === "withheld_from_model") {
+    return "Fixed trusted scope. Runner shows it locally; the model gets a response-local token.";
+  }
+  return "Fixed trusted scope. The value is unavailable in results, but Runner still injects it into the row predicate.";
+}
+
+export function formatBoundaryResourceMap(
+  view: BoundaryResourceReviewView,
+  options: { color?: boolean } = {},
+): string {
+  const tiers = Object.fromEntries(view.fields.map((field) => [
+    field.name,
+    currentFieldTier(view, field.name),
+  ])) as Record<string, BoundaryFieldTier>;
+  return `${boundaryResourceMapLines(
+    view,
+    tiers,
+    terminalTheme(options.color === true && !("NO_COLOR" in process.env)),
+  ).join("\n")}\n`;
+}
+
+export function formatBoundaryOverviewMap(
+  resources: BoundaryResourceReviewSummary[],
+  options: {
+    color?: boolean;
+    exhaustive?: boolean;
+    commandName?: string;
+  } = {},
+): string {
+  const theme = terminalTheme(options.color === true && !("NO_COLOR" in process.env));
+  if (!options.exhaustive) {
+    return [
+      theme.title("BOUNDARY OVERVIEW"),
+      ...boundaryOverviewFirstRunLines(
+        resources,
+        theme,
+        options.commandName ?? "synapsor-runner",
+      ),
+      "",
+    ].join("\n");
+  }
+  return [
+    theme.title("WHOLE BOUNDARY MAP (ALL TABLES)"),
+    theme.dim("Complete inspected catalog. Use boundary review --map for the concise overview."),
+    boundaryOverviewSummary(resources),
+    "",
+    ...boundaryOverviewMapLines(resources, theme),
+    "",
+  ].join("\n");
+}
+
+function boundaryResourceMapLines(
+  view: BoundaryResourceReviewView,
+  tiers: Record<string, BoundaryFieldTier>,
+  theme: TerminalTheme,
+): string[] {
+  const candidate = view.candidate ?? view.generated_candidate;
+  if (!candidate) {
+    return [
+      theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
+      theme.warning("Blocked: record identity or trusted scope is unresolved."),
+    ];
+  }
+  const hasStagedChanges = view.fields.some(
+    (field) => currentFieldTier(view, field.name) !== tiers[field.name],
+  );
+  const groupedFields = new Map<BoundaryFieldTier, string[]>(tierOrder.map((tier) => [tier, []]));
+  for (const field of [...view.fields].sort((left, right) => left.name.localeCompare(right.name))) {
+    groupedFields.get(tiers[field.name] ?? "kept_out")!.push(field.name);
+  }
+  const lines = [
+    theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
+    theme.dim(hasStagedChanges
+      ? "Preview includes unsaved access choices. This view cannot save or activate authority."
+      : "Current disabled review candidate. This view cannot save or activate authority."),
+    "",
+    theme.bold(safeTerminalText(view.resource_id)),
+    `|-- Record identity: ${safeTerminalText(candidate.primary_key)}`,
+    `|-- Trusted tenant scope: ${safeTerminalText(candidate.tenant_key)} (bound outside model arguments)`,
+    `|-- Trusted principal scope: ${candidate.principal_key
+      ? `${safeTerminalText(candidate.principal_key)} (bound outside model arguments)`
+      : "not configured"}`,
+    ...mapTierLines(view, candidate, "visible", groupedFields.get("visible")!, theme),
+    ...mapTierLines(
+      view,
+      candidate,
+      "withheld_from_model",
+      groupedFields.get("withheld_from_model")!,
+      theme,
+    ),
+    ...mapTierLines(view, candidate, "kept_out", groupedFields.get("kept_out")!, theme),
+    ...mapRelationshipLines(candidate, theme),
+    `\`-- Aggregate guard: minimum cohort ${candidate.minimum_cohort_size}; small groups are suppressed`,
+  ];
+  return lines;
+}
+
+function mapTierLines(
+  view: BoundaryResourceReviewView,
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  tier: BoundaryFieldTier,
+  fields: string[],
+  theme: TerminalTheme,
+): string[] {
+  const heading = tier === "visible"
+    ? "Model + Runner fields"
+    : tier === "withheld_from_model"
+      ? "Runner-output-only fields"
+      : "Kept-out fields";
+  const consequence = tier === "visible"
+    ? "real values may reach the model"
+    : tier === "withheld_from_model"
+      ? "raw values stay local or tokenized; reviewed derived results remain usable"
+      : "unavailable to every read operation";
+  const lines = [`|-- ${styleTier(theme, tier, heading)} (${consequence})`];
+  if (!fields.length) return [...lines, "|   `-- (none)"];
+  fields.forEach((field, index) => {
+    const branch = index === fields.length - 1 ? "`--" : "|--";
+    const operations = tier === "kept_out"
+      ? "no operations"
+      : boundaryFieldOperations(candidate, field);
+    const sourceField = view.fields.find((item) => item.name === field);
+    const risk = sourceField ? riskBadge(view, sourceField) : "";
+    lines.push(
+      `|   ${branch} ${safeTerminalText(field)}: ${operations}${risk ? ` ${risk}` : ""}`,
+    );
+  });
+  return lines;
+}
+
+function boundaryFieldOperations(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  field: string,
+): string {
+  const operations: string[] = [];
+  if (candidate.selectable_fields.includes(field)) operations.push("return");
+  const filters = candidate.filterable_fields[field];
+  if (filters?.length) operations.push(`filter(${filters.join("/")})`);
+  if (candidate.sortable_fields.includes(field)) operations.push("sort");
+  if (candidate.groupable_fields.includes(field)) operations.push("group");
+  if (candidate.aggregate_measures.includes(field)) operations.push("aggregate measure");
+  if (candidate.count_distinct_fields.includes(field)) operations.push("count distinct");
+  const buckets = candidate.time_bucket_fields[field];
+  if (buckets?.length) operations.push(`time(${buckets.join("/")})`);
+  return operations.length ? operations.join(", ") : "no reviewed operation";
+}
+
+function mapRelationshipLines(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  theme: TerminalTheme,
+): string[] {
+  const lines = [`|-- ${theme.relationship("Reviewed relationships")}`];
+  if (!candidate.relationships.length) return [...lines, "|   `-- (none)"];
+  candidate.relationships.forEach((relationship, index) => {
+    const branch = index === candidate.relationships.length - 1 ? "`--" : "|--";
+    lines.push(
+      `|   ${branch} ${safeTerminalText(relationship.local_columns.join(","))} -> ` +
+      `${safeTerminalText(relationship.target_resource)}.` +
+      `${safeTerminalText(relationship.target_columns.join(","))} ` +
+      `[many-to-one, max fan-out 1, path ${relationship.path_depth ?? 1}]`,
+    );
+  });
+  return lines;
+}
+
+function boundaryOverviewSummary(resources: BoundaryResourceReviewSummary[]): string {
+  const included = resources.filter((resource) => resource.included).length;
+  const active = resources.filter((resource) => resource.active).length;
+  const blocked = resources.filter((resource) => resource.status !== "draft_read").length;
+  const includedRelationships = resources.reduce(
+    (total, resource) =>
+      total + resource.relationships.filter((relationship) => relationship.state !== "available").length,
+    0,
+  );
+  const name = resources[0]?.candidate_boundary_name ?? "reviewed_staging";
+  return `Next boundary "${safeTerminalText(name)}": ${included}/${resources.length} tables | ` +
+    `active ${active} | reviewed paths ${includedRelationships} | blocked ${blocked}`;
+}
+
+function boundaryOverviewFirstRunLines(
+  resources: BoundaryResourceReviewSummary[],
+  theme: TerminalTheme,
+  commandName: string,
+): string[] {
+  if (!resources.length) {
+    return [
+      theme.warning("Runner did not find any inspected tables or views in this boundary draft."),
+      "",
+      theme.bold("NEXT"),
+      `Draft the boundary again: ${commandName} boundary draft --from-env DATABASE_URL`,
+    ];
+  }
+
+  const candidate = resources.filter((resource) => resource.included);
+  const active = resources.filter((resource) => resource.active);
+  const available = resources.filter(
+    (resource) => resource.status === "draft_read" && !resource.included,
+  );
+  const blocked = resources.filter((resource) => resource.status !== "draft_read");
+  const boundaryName = resources[0]!.candidate_boundary_name;
+  const lines = [
+    `Runner inspected ${resources.length} ${plural(resources.length, "table", "tables")}.`,
+    `Boundary "${safeTerminalText(boundaryName)}" is one boundary containing ` +
+      `${candidate.length} ${plural(candidate.length, "table", "tables")}.`,
+    "The schema.table entries below are tables inside it, not separate boundaries.",
+    "",
+    theme.bold("ACTIVE NOW"),
+  ];
+
+  if (!active.length) {
+    lines.push(
+      theme.warning(
+        "No Scoped Explore tables are active. The disabled draft below grants no data access.",
+      ),
+    );
+  } else {
+    lines.push(`${active.length} ${plural(active.length, "table is", "tables are")} active:`);
+    lines.push(...resourceNamePreview(active, theme, 6));
+  }
+
+  lines.push(
+    "",
+    theme.bold(`NEXT BOUNDARY "${safeTerminalText(boundaryName)}" (DISABLED DRAFT)`),
+  );
+  if (!candidate.length) {
+    lines.push(theme.warning("No tables are included in the next boundary draft."));
+  } else {
+    lines.push(
+      `Auto Boundary selected ${candidate.length} starting ${plural(candidate.length, "table", "tables")}.`,
+      "You can rename it and add, remove, or edit tables before separate exact-digest activation.",
+      ...candidate.slice(0, 6).flatMap((resource) =>
+        candidateResourceOverviewLines(resource, theme)),
+    );
+    if (candidate.length > 6) {
+      lines.push(theme.dim(`  +${candidate.length - 6} more candidate tables; use --map --all to inspect them.`));
+    }
+  }
+
+  lines.push(
+    "",
+    theme.bold("OTHER INSPECTED TABLES"),
+    `${available.length} reviewable ${plural(available.length, "table is", "tables are")} outside this boundary; ` +
+      `${blocked.length} ${plural(blocked.length, "is", "are")} blocked.`,
+  );
+  if (available.length) {
+    lines.push(theme.dim("Available to add:"));
+    lines.push(...resourceNamePreview(available, theme, 6));
+  }
+  if (blocked.length) {
+    lines.push(theme.danger("Blocked pending structural review:"));
+    lines.push(...resourceNamePreview(blocked, theme, 3));
+  }
+
+  const relationshipSuggestions = availableRelationshipSuggestionLines(available, theme, 3);
+  if (relationshipSuggestions.length) {
+    lines.push(
+      "",
+      theme.bold("PROVEN PATHS WORTH REVIEWING"),
+      ...relationshipSuggestions,
+    );
+  }
+
+  lines.push(
+    "",
+    theme.bold("WHAT THE FIELD COUNTS MEAN"),
+    `${theme.visible("Model")}: real reviewed values may reach the configured model and appear locally.`,
+    `${theme.runnerOnly("Raw values: Runner only")}: reviewed operations may use it; raw values stay out of model requests while derived results remain usable.`,
+    `${theme.keptOut("Kept out")}: unavailable for selection, filtering, grouping, joining, or aggregation.`,
+    "",
+    theme.bold("NEXT"),
+    `Open add/remove/edit/rename and the review checklist: ${commandName} boundary review`,
+    `Inspect one table: ${commandName} boundary review resource <table> --map`,
+    `Show the complete catalog: ${commandName} boundary review --map --all`,
+  );
+  return lines;
+}
+
+function candidateResourceOverviewLines(
+  resource: BoundaryResourceReviewSummary,
+  theme: TerminalTheme,
+): string[] {
+  const state = resource.active ? "ACTIVE + IN DRAFT" : "IN DISABLED DRAFT";
+  const review = resource.risk_count
+    ? `table sign-off needed (${resource.risk_count} exact ` +
+      `${plural(resource.risk_count, "decision", "decisions")})`
+    : "table sign-off complete";
+  const relationships = resource.relationships.filter(
+    (relationship) => relationship.state !== "available",
+  );
+  const lines = [
+    `  ${safeTerminalText(resource.resource_id)} [${theme.warning(state)}; ${review}]`,
+    `    Fields: ${resource.model_visible_fields} model | ` +
+      `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
+  ];
+  for (const relationship of relationships.slice(0, 3)) {
+    lines.push(
+      `    -> ${safeTerminalText(relationship.target_resource)} ` +
+      `(many-to-one, depth ${relationship.path_depth})`,
+    );
+  }
+  if (relationships.length > 3) {
+    lines.push(theme.dim(`    +${relationships.length - 3} more reviewed paths`));
+  }
+  return lines;
+}
+
+function resourceNamePreview(
+  resources: BoundaryResourceReviewSummary[],
+  theme: TerminalTheme,
+  limit: number,
+): string[] {
+  const lines = resources.slice(0, limit).map(
+    (resource) => `  ${safeTerminalText(resource.resource_id)}`,
+  );
+  if (resources.length > limit) {
+    lines.push(theme.dim(`  +${resources.length - limit} more`));
+  }
+  return lines;
+}
+
+function availableRelationshipSuggestionLines(
+  resources: BoundaryResourceReviewSummary[],
+  theme: TerminalTheme,
+  limit: number,
+): string[] {
+  const suggestions = resources
+    .map((resource) => ({
+      resource,
+      relationships: resource.relationships.filter(
+        (relationship) => relationship.state === "available",
+      ),
+    }))
+    .filter(({ relationships }) => relationships.length > 0);
+  const lines = suggestions.slice(0, limit).map(({ resource, relationships }) => {
+    const targets = relationships
+      .slice(0, 4)
+      .map((relationship) => safeTerminalText(relationship.target_resource))
+      .join(", ");
+    const remainder = relationships.length > 4 ? `, +${relationships.length - 4} more` : "";
+    return theme.relationship(
+      `  ${safeTerminalText(resource.resource_id)} -> ${targets}${remainder}`,
+    );
+  });
+  if (suggestions.length > limit) {
+    lines.push(theme.dim(`  +${suggestions.length - limit} more tables with proven paths`));
+  }
+  return lines;
+}
+
+function resourcesForPickerView(
+  resources: BoundaryResourceReviewSummary[],
+  boundaryResources: BoundaryResourceReviewSummary[],
+  view: ResourcePickerView,
+): BoundaryResourceReviewSummary[] {
+  if (view === "boundary") return boundaryResources.length ? boundaryResources : resources;
+  const boundaryIds = new Set(boundaryResources.map((resource) => resource.resource_id));
+  const outsideBoundary = resources.filter((resource) => !boundaryIds.has(resource.resource_id));
+  if (view === "all" || !boundaryResources.length) return outsideBoundary.length
+    ? outsideBoundary
+    : resources;
+  return outsideBoundary.filter(
+    (resource) => bestBoundaryRelationshipConnection(resource, boundaryResources) !== undefined,
+  );
+}
+
+function boundaryRelationshipConnections(
+  candidate: BoundaryResourceReviewSummary,
+  boundaryResources: BoundaryResourceReviewSummary[],
+): BoundaryRelationshipConnection[] {
+  const boundaryIds = new Set(boundaryResources.map((resource) => resource.resource_id));
+  const connections: BoundaryRelationshipConnection[] = [];
+  for (const relationship of candidate.relationships) {
+    if (!boundaryIds.has(relationship.target_resource)) continue;
+    connections.push({
+      source_resource: candidate.resource_id,
+      target_resource: relationship.target_resource,
+      relationship_id: relationship.relationship_id,
+      path_depth: relationship.path_depth,
+    });
+  }
+  for (const boundaryResource of boundaryResources) {
+    for (const relationship of boundaryResource.relationships) {
+      if (relationship.target_resource !== candidate.resource_id) continue;
+      connections.push({
+        source_resource: boundaryResource.resource_id,
+        target_resource: candidate.resource_id,
+        relationship_id: relationship.relationship_id,
+        path_depth: relationship.path_depth,
+      });
+    }
+  }
+  return connections.sort((left, right) =>
+    left.path_depth - right.path_depth
+      || left.source_resource.localeCompare(right.source_resource)
+      || left.target_resource.localeCompare(right.target_resource)
+      || left.relationship_id.localeCompare(right.relationship_id));
+}
+
+function bestBoundaryRelationshipConnection(
+  candidate: BoundaryResourceReviewSummary,
+  boundaryResources: BoundaryResourceReviewSummary[],
+): BoundaryRelationshipConnection | undefined {
+  return boundaryRelationshipConnections(candidate, boundaryResources)[0];
+}
+
+function boundaryEndpoint(
+  connection: BoundaryRelationshipConnection,
+  boundaryResources: BoundaryResourceReviewSummary[],
+): string {
+  const boundaryIds = new Set(boundaryResources.map((resource) => resource.resource_id));
+  return boundaryIds.has(connection.source_resource)
+    ? connection.source_resource
+    : connection.target_resource;
+}
+
+function relationshipConnectionDetail(
+  candidate: BoundaryResourceReviewSummary,
+  boundaryResources: BoundaryResourceReviewSummary[],
+  theme: TerminalTheme,
+): string[] {
+  const connection = bestBoundaryRelationshipConnection(candidate, boundaryResources);
+  if (!connection) return [];
+  return [
+    theme.relationship(
+      `Proven path: ${safeTerminalText(connection.source_resource)} -> ` +
+      `${safeTerminalText(connection.target_resource)}`,
+    ),
+    theme.dim(
+      `${safeTerminalText(connection.relationship_id)}; inspected many-to-one path; ` +
+      `depth ${connection.path_depth}. Human review is still required before use.`,
+    ),
+  ];
+}
+
+function plural(count: number, singular: string, pluralValue: string): string {
+  return count === 1 ? singular : pluralValue;
+}
+
+function boundaryReviewLeft(
+  resources: BoundaryResourceReviewSummary[],
+  overview: BoundaryReviewOverview | undefined,
+): string {
+  const tableSignoffs = overview?.resources_requiring_signoff
+    ?? resources.filter((resource) => resource.included && resource.risk_count > 0).length;
+  const boundarySignoff = (overview?.outstanding_boundary_decisions ?? 0) > 0 ? 1 : 0;
+  if (tableSignoffs === 0 && boundarySignoff === 0) return "Complete";
+  return [
+    ...(tableSignoffs
+      ? [`${tableSignoffs} ${plural(tableSignoffs, "table", "tables")}`]
+      : []),
+    ...(boundarySignoff ? ["boundary"] : []),
+  ].join(" + ");
+}
+
+function savedBoundaryRow(
+  marker: string,
+  name: string,
+  status: string,
+  tables: number | string,
+  authority: string,
+): string {
+  return [
+    fitTerminalCell(marker, 1),
+    fitTerminalCell(safeTerminalText(name), 20),
+    fitTerminalCell(status, 21),
+    fitTerminalCell(String(tables), 6),
+    safeTerminalText(authority),
+  ].join("  ");
+}
+
+function firstRunBoundaryRow(
+  name: string,
+  status: string,
+  tables: number | string,
+  access: string,
+): string {
+  return [
+    fitTerminalCell(safeTerminalText(name), 20),
+    fitTerminalCell(status, 10),
+    fitTerminalCell(String(tables), 7),
+    access,
+  ].join("  ");
+}
+
+function fieldAccessRow(
+  column: string,
+  type: string,
+  access: string,
+  note: string,
+  layout: FieldAccessLayout,
+): string {
+  if (layout.compact) {
+    return [
+      fitTerminalCell(column, layout.column),
+      fitTerminalCell(access, layout.access),
+    ].join("  ");
+  }
+  return [
+    fitTerminalCell(column, layout.column),
+    fitTerminalCell(type, layout.type),
+    fitTerminalCell(access, layout.access),
+    fitTerminalCell(note, layout.note),
+  ].join("  ");
+}
+
+type FieldAccessLayout = {
+  compact: boolean;
+  column: number;
+  type: number;
+  access: number;
+  note: number;
+};
+
+function fieldAccessLayout(width: number): FieldAccessLayout {
+  const content = Math.max(34, width - 2); // leading selection marker and space
+  if (width < 72) {
+    const access = 18;
+    return {
+      compact: true,
+      column: Math.max(12, content - access - 2),
+      type: 0,
+      access,
+      note: 0,
+    };
+  }
+  const access = 18;
+  const note = Math.min(21, Math.max(14, Math.floor(content * 0.22)));
+  const namesAndTypes = content - access - note - 6;
+  const column = Math.min(22, Math.max(12, Math.floor(namesAndTypes * 0.48)));
+  const type = Math.min(25, Math.max(13, namesAndTypes - column));
+  return { compact: false, column, type, access, note };
+}
+
+function compactRiskBadge(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+): string {
+  if (isTrustedScopeField(view, field.name)) return "[trusted scope]";
+  return riskBadge(view, field);
+}
+
+function fitTerminalCell(value: string, width: number): string {
+  const safe = safeTerminalText(value);
+  if (safe.length <= width) return safe.padEnd(width);
+  return `${safe.slice(0, Math.max(1, width - 3))}...`;
+}
+
+function boundaryOverviewMapLines(
+  resources: BoundaryResourceReviewSummary[],
+  theme: TerminalTheme,
+): string[] {
+  if (!resources.length) return [theme.warning("(no inspected tables or views)")];
+  return resources.flatMap((resource) => {
+    const status = resource.status !== "draft_read"
+      ? theme.danger("BLOCKED")
+      : resource.active && resource.included
+        ? theme.success("ACTIVE + NEXT BOUNDARY")
+        : resource.active
+          ? theme.success("ACTIVE")
+          : resource.included
+            ? theme.warning("IN NEXT BOUNDARY")
+            : theme.dim("NOT INCLUDED");
+    const lines = [
+      `${safeTerminalText(resource.resource_id)} [${status}]`,
+      `  fields: ${resource.model_visible_fields} model | ` +
+      `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
+    ];
+    if (resource.status !== "draft_read") {
+      lines.push(`  \`-- ${theme.danger(safeTerminalText(resource.blockers[0] ?? "review blocked"))}`);
+      return lines;
+    }
+    if (!resource.relationships.length) {
+      lines.push(`  \`-- ${theme.dim("no proven relationship candidate")}`);
+      return lines;
+    }
+    resource.relationships.forEach((relationship, index) => {
+      const branch = index === resource.relationships.length - 1 ? "`--" : "|--";
+      const state = relationship.state === "active"
+        ? theme.success("ACTIVE")
+        : relationship.state === "included"
+          ? theme.warning("IN NEXT BOUNDARY")
+          : theme.dim("AVAILABLE");
+      lines.push(`  ${branch} path ${safeTerminalText(relationship.relationship_id)} [${state}]`);
+      lines.push(
+        `      -> ${safeTerminalText(relationship.target_resource)} ` +
+        `(many-to-one, depth ${relationship.path_depth})`,
+      );
+    });
+    return lines;
+  });
+}
+
+function riskBadge(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+): string {
+  if (isTrustedScopeField(view, field.name)) return "[trusted scope fixed; output tier reviewed]";
+  if (field.primary_key) return "[record ID]";
+  if (field.sensitivity.state === "high_confidence_sensitive") return "[sensitive]";
+  if (field.sensitivity.state === "unresolved_free_text") return "[free text]";
+  return "[low structural risk]";
+}
+
+function resourceState(
+  resource: BoundaryResourceReviewSummary,
+  theme: TerminalTheme,
+): { text: string; style: (value: string) => string } {
+  if (resource.status !== "draft_read") {
+    return {
+      text: `[blocked: ${resource.blockers.length} issue${resource.blockers.length === 1 ? "" : "s"}]`,
+      style: theme.danger,
+    };
+  }
+  if (resource.active && !resource.included) {
+    return {
+      text: "[active; removal staged]",
+      style: theme.warning,
+    };
+  }
+  if (resource.active && resource.included) {
+    return resource.risk_count
+      ? {
+        text: "[active + updated sign-off needed]",
+        style: theme.warning,
+      }
+      : { text: "[active + reviewed]", style: theme.success };
+  }
+  if (!resource.included) return { text: "[available]", style: theme.dim };
+  if (resource.risk_count) {
+    return {
+      text: "[table sign-off needed]",
+      style: theme.warning,
+    };
+  }
+  return { text: "[reviewed]", style: theme.success };
+}
+
+function focusedAccessResourceState(
+  resource: BoundaryResourceReviewSummary,
+  theme: TerminalTheme,
+): { text: string; style: (value: string) => string } {
+  if (resource.status !== "draft_read" || !resource.included || resource.active) {
+    return resourceState(resource, theme);
+  }
+  return {
+    text: "[draft changed - activate to use]",
+    style: theme.warning,
+  };
+}
+
+function reviewItemLabel(resourceId: string, decision: string): string {
+  const prefix = `${resourceId}: `;
+  const detail = decision.startsWith(prefix) ? decision.slice(prefix.length) : decision;
+  return detail.charAt(0).toUpperCase() + detail.slice(1);
+}
+
+function reviewItemPresentation(
+  resourceId: string,
+  decision: string,
+): { label: string; detail: string } {
+  const original = reviewItemLabel(resourceId, decision);
+  const normalized = original.toLowerCase();
+  if (normalized.includes("visible and kept-out")) {
+    return {
+      label: "Column access",
+      detail: "Which fields are model-visible, Runner-output-only, or kept out.",
+    };
+  }
+  if (normalized.includes("field permissions")) {
+    return {
+      label: "Allowed operations",
+      detail: "What the agent may filter, sort, group, count, or measure.",
+    };
+  }
+  if (normalized.includes("minimum cohort")) {
+    return {
+      label: "Privacy limits",
+      detail: "Minimum returned group size plus extraction and differencing budgets.",
+    };
+  }
+  if (normalized.includes("principal scope")) {
+    const field = original.match(/principal scope\s+([^\s]+)/i)?.[1];
+    return {
+      label: `User row scope${field ? `: ${field}` : ""}`,
+      detail: "Runner supplies the trusted user value outside AI requests.",
+    };
+  }
+  if (normalized.includes("tenant key")) {
+    const field = original.match(/tenant key\s+([^\s]+)/i)?.[1];
+    return {
+      label: `Customer row scope${field ? `: ${field}` : ""}`,
+      detail: "Runner supplies the trusted customer value outside AI requests.",
+    };
+  }
+  if (normalized.includes("relationship")) {
+    const target = original.match(/\son\s+([^\s]+)/i)?.[1];
+    return {
+      label: `Related-table path${target ? `: ${target}` : ""}`,
+      detail: "Which proven relationship is allowed and how row fan-out is bounded.",
+    };
+  }
+  return {
+    label: original,
+    detail: "Review this exact table setting before signing off the table.",
+  };
+}
+
+function styleTier(
+  theme: TerminalTheme,
+  tier: BoundaryFieldTier,
+  value: string,
+): string {
+  if (tier === "visible") return theme.visible(value);
+  if (tier === "withheld_from_model") return theme.runnerOnly(value);
+  return theme.keptOut(value);
+}
+
+function styleTierConsequence(theme: TerminalTheme, tier: BoundaryFieldTier): string {
+  return styleTier(theme, tier, tierConsequence(tier));
+}
+
+export function terminalTheme(color: boolean) {
+  const style = (codes: string) => (value: string) =>
+    color ? `\u001b[${codes}m${value}\u001b[0m` : value;
+  return {
+    title: style("1;36"),
+    bold: style("1"),
+    italic: style("3"),
+    dim: style("2"),
+    key: style("1;36"),
+    focus: style("1;96"),
+    success: style("1;32"),
+    warning: style("1;33"),
+    danger: style("1;31"),
+    scope: style("1;35"),
+    value: style("36"),
+    relationship: style("1;34"),
+    visible: style("1;32"),
+    runnerOnly: style("1;33"),
+    keptOut: style("2"),
+  };
+}
+
+export function packTerminalActions(actions: string[], width: number): string[] {
+  const gap = "   ";
+  const lines: string[] = [];
+  let current = "";
+  for (const action of actions) {
+    const candidate = current ? `${current}${gap}${action}` : action;
+    if (current && styledTerminalWidth(candidate) > width) {
+      lines.push(current);
+      current = action;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function styledTerminalWidth(value: string): number {
+  return Array.from(value.replace(/\u001b\[[0-9;]*m/g, "")).length;
+}
+
+function formatTextPromptWithBack(prompt: string, theme: TerminalTheme): string {
+  const normalized = prompt.trimEnd();
+  const label = normalized.endsWith(":")
+    ? normalized.slice(0, -1).trimEnd()
+    : normalized;
+  return `${label} ${theme.key("[Esc Back]")}: `;
+}
+
+function isTrustedScopeField(view: BoundaryResourceReviewView, field: string): boolean {
+  const candidate = view.candidate ?? view.generated_candidate;
+  return candidate?.tenant_key === field || candidate?.principal_key === field;
+}
+
+function boundedWindowStart(selected: number, length: number, size: number): number {
+  if (length <= size) return 0;
+  return Math.min(Math.max(0, selected - Math.floor(size / 2)), length - size);
+}
+
+function isCancel(key: Keypress): boolean {
+  return (key.ctrl === true && key.name === "c")
+    || isEscapeKey(key)
+    || (key.name === "q" && key.sequence === "q");
+}
+
+function isBackToResources(key: Keypress): boolean {
+  return key.name === "backspace"
+    || isEscapeKey(key)
+    || (key.name === "b" && key.sequence === "b");
+}
+
+function isBackKey(key: Keypress): boolean {
+  return key.name === "backspace"
+    || isEscapeKey(key)
+    || (key.name === "b" && key.sequence === "b");
+}
+
+function isEscapeKey(key: Keypress): boolean {
+  return key.name === "escape" || key.sequence === "\u001b";
+}
+
+async function withRawKeys<T>(
+  input: ReadStream,
+  output: WriteStream,
+  operation: (
+    nextKey: () => Promise<Keypress>,
+    render: (lines: string[]) => void,
+  ) => Promise<T>,
+): Promise<T> {
+  const wasRaw = input.isRaw;
+  const wasPaused = input.isPaused();
+  let renderedLines = 0;
+  const queuedKeys: Keypress[] = [];
+  const keyWaiters: Array<(key: Keypress) => void> = [];
+  const keyHandler = (_text: string, key: Keypress) => {
+    const waiter = keyWaiters.shift();
+    if (waiter) waiter(key);
+    else queuedKeys.push(key);
+  };
+  readline.emitKeypressEvents(input);
+  input.on("keypress", keyHandler);
+  input.setRawMode(true);
+  input.resume();
+  output.write("\u001b[?25l");
+  const render = (lines: string[]) => {
+    if (renderedLines) output.write(`\u001b[${renderedLines}F`);
+    const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+    const normalized = lines.flatMap((line) =>
+      wrapTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
+    const targetLines = Math.max(renderedLines, normalized.length);
+    for (let index = 0; index < targetLines; index += 1) {
+      output.write(`\u001b[2K${normalized[index] ?? ""}\n`);
+    }
+    renderedLines = targetLines;
+  };
+  const nextKey = () => {
+    const queued = queuedKeys.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise<Keypress>((resolve) => keyWaiters.push(resolve));
+  };
+  try {
+    return await operation(nextKey, render);
+  } finally {
+    input.off("keypress", keyHandler);
+    if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
+    output.write("\u001b[?25h");
+    input.setRawMode(wasRaw);
+    if (wasPaused) input.pause();
+  }
+}
+
+function safeTerminalText(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
+}
+
+function wrapTerminalLine(value: string, width: number): string[] {
+  const safe = sanitizeStyledTerminalLine(value);
+  if (!safe) return [""];
+  const tokens = (safe.match(/\u001b\[[0-9;]*m|./gu) ?? []).map((raw) => ({
+    raw,
+    visible: !raw.startsWith("\u001b["),
+  }));
+  const lines: string[] = [];
+  let current: typeof tokens = [];
+  let visible = 0;
+  for (const token of tokens) {
+    current.push(token);
+    if (token.visible) visible += 1;
+    if (visible <= width) continue;
+
+    const wordBreak = findStyledWordBreak(current, width);
+    const splitAt = wordBreak >= 0
+      ? wordBreak
+      : styledTokenIndexAfterVisibleWidth(current, width);
+    const head = current.slice(0, splitAt);
+    current = current.slice(splitAt + (wordBreak >= 0 ? 1 : 0));
+    lines.push(head.map((item) => item.raw).join("").trimEnd());
+    visible = current.filter((item) => item.visible).length;
+  }
+  lines.push(current.map((item) => item.raw).join("").trimEnd());
+  return lines;
+}
+
+function findStyledWordBreak(
+  tokens: Array<{ raw: string; visible: boolean }>,
+  width: number,
+): number {
+  let visible = 0;
+  let candidate = -1;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (!token.visible) continue;
+    visible += 1;
+    if (visible > width) break;
+    if (/\s/u.test(token.raw) && visible >= Math.max(8, Math.floor(width / 2))) {
+      candidate = index;
+    }
+  }
+  return candidate;
+}
+
+function styledTokenIndexAfterVisibleWidth(
+  tokens: Array<{ raw: string; visible: boolean }>,
+  width: number,
+): number {
+  let visible = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!tokens[index]!.visible) continue;
+    visible += 1;
+    if (visible > width) return index;
+  }
+  return tokens.length;
+}
+
+function sanitizeStyledTerminalLine(value: string): string {
+  let safe = "";
+  for (let index = 0; index < value.length;) {
+    if (value[index] === "\u001b") {
+      const sgr = value.slice(index).match(/^\u001b\[[0-9;]*m/);
+      if (sgr) {
+        safe += sgr[0];
+        index += sgr[0].length;
+        continue;
+      }
+      safe += "?";
+      index += 1;
+      continue;
+    }
+    const codePoint = value.codePointAt(index)!;
+    const character = String.fromCodePoint(codePoint);
+    safe += codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)
+      ? "?"
+      : character;
+    index += character.length;
+  }
+  return safe;
+}

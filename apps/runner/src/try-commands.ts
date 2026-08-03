@@ -6,6 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { cliCommandName } from "./cli-command-meta.js";
+import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { usage } from "./cli-help.js";
 import { assertKnownOptions, firstPositional, optionalArg, repeatedArgs } from "./cli-options.js";
 import { activeProjectResolutionState, prepareReferenceDemo } from "./cli-project.js";
@@ -18,9 +19,19 @@ import {
   startLocalUiServer
 } from "./local-ui.js";
 import { executeRuntimeToolCall, inspectMcpToolBoundary } from "./mcp-runtime.js";
-import { createProtectedQueryDraft, listProtectableQueries } from "./protect-query.js";
-import { createScopedExploreRuntime, type ExplorePlan } from "./scoped-explore.js";
+import {
+  createProtectedQueryDraft,
+  describeProtectableAnalysis,
+  listProtectableQueries,
+  suggestProtectedCapabilityName,
+} from "./protect-query.js";
+import {
+  type ExplorePlan,
+  type InspectDatabaseFn,
+} from "./scoped-explore.js";
+import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
+import { tryAsk } from "./try-ask.js";
 import { resolveReadableTryStateRoot } from "./try-state.js";
 import { openBrowser } from "./ui-command.js";
 
@@ -53,11 +64,15 @@ async function quickDemo(args: string[]): Promise<number> {
 }
 
 
-export async function tryCommand(args: string[]): Promise<number> {
+export async function tryCommand(
+  args: string[],
+  dependencies: { inspectDatabaseFn?: InspectDatabaseFn } = {},
+): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "call") return tryOwnDataCall(rest);
   if (subcommand === "explore") return tryScopedExplore(rest);
-  if (subcommand === "protect") return tryProtectLatest(rest);
+  if (subcommand === "ask") return tryAsk(rest);
+  if (subcommand === "protect") return tryProtectLatest(rest, dependencies);
   if (optionalArg(args, "--from-env")) return tryOwnData(args);
   const allowed = new Set(["--prove", "--yes", "--no-open", "--json", "--no-color", "--state-dir"]);
   assertKnownOptions(args, allowed, "try");
@@ -67,6 +82,15 @@ export async function tryCommand(args: string[]): Promise<number> {
   if (json && !yes) throw new Error("try --json requires --yes because JSON mode cannot wait for an interactive review");
   if (!yes && (!process.stdin.isTTY || !process.stdout.isTTY)) {
     throw new Error("try requires an interactive terminal. Use --yes --no-open only for this isolated demo or CI.");
+  }
+  if (!json) {
+    process.stdout.write([
+      "Synapsor isolated commit-safety proof",
+      "This command uses a synthetic embedded source. It does not connect to your project database.",
+      "Without --no-open, proposal review opens in a separate local demo review screen.",
+      `For your active project's natural-language terminal: ${cliCommandName()} try ask --provider openai --model <model>`,
+      "",
+    ].join("\n"));
   }
 
   const result = await runTryExperience({
@@ -164,6 +188,7 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       "--project-root",
       "--describe",
       "--resource",
+      "--boundary",
       "--cursor",
       "--limit",
       "--plan",
@@ -182,7 +207,7 @@ async function tryScopedExplore(args: string[]): Promise<number> {
     "try explore",
   );
   const projectRoot = resolvedSynapsorProjectRoot(args);
-  const runtime = await createScopedExploreRuntime({
+  const runtime = await createScopedExploreBoundarySetRuntime({
     projectRoot,
     transport: "stdio",
     env: process.env,
@@ -203,7 +228,8 @@ async function tryScopedExplore(args: string[]): Promise<number> {
     if (!inline && !inputPath && !friendly) {
       const cursor = optionalArg(args, "--cursor");
       const limit = optionalArg(args, "--limit");
-      const description = runtime.describe({
+      const description = await runtime.describe({
+        ...(optionalArg(args, "--boundary") ? { boundary: optionalArg(args, "--boundary") } : {}),
         ...(optionalArg(args, "--resource") ? { resource: optionalArg(args, "--resource") } : {}),
         ...(cursor ? { cursor: Number(cursor) } : {}),
         ...(limit ? { limit: Number(limit) } : {}),
@@ -225,7 +251,11 @@ async function tryScopedExplore(args: string[]): Promise<number> {
     }
     const parsed: unknown = inline || inputPath
       ? JSON.parse(inline ?? await fs.readFile(path.resolve(inputPath!), "utf8"))
-      : buildFriendlyAggregatePlan(runtime.boundary, {
+      : buildFriendlyAggregatePlan(selectFriendlyBoundary(
+        runtime.boundaries,
+        optionalArg(args, "--boundary"),
+        optionalArg(args, "--resource"),
+      ), {
         resource: optionalArg(args, "--resource"),
         suggested: args.includes("--suggested"),
         count: args.includes("--count"),
@@ -237,7 +267,10 @@ async function tryScopedExplore(args: string[]): Promise<number> {
         filters: repeatedArgs(args, "--where"),
         ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
       });
-    const result = await runtime.explore(parsed as ExplorePlan);
+    const result = await runtime.explore(
+      parsed as ExplorePlan,
+      optionalArg(args, "--boundary"),
+    );
     await updateGuidedOnboardingState({
       projectRoot,
       status: (parsed as { kind?: unknown }).kind === "aggregate" ? "protect" : "first_value",
@@ -246,7 +279,7 @@ async function tryScopedExplore(args: string[]): Promise<number> {
         : ["first_safe_read"],
       authorityActive: true,
       recommendedNextAction: (parsed as { kind?: unknown }).kind === "aggregate"
-        ? "Protect this analysis."
+        ? "Ask another bounded question; protect an analysis only when it should become a reusable named capability."
         : "Ask a bounded aggregate question.",
     }).catch(() => undefined);
     const payload = {
@@ -254,7 +287,7 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       authoring_only: true,
       source_database_changed: false,
       result,
-      next_action: `${cliCommandName()} try protect --name analytics.protected_analysis`,
+      next_action: `Ask another bounded question, or run ${cliCommandName()} try protect --from <analysis-reference> --name analytics.protected_analysis`,
     };
     process.stdout.write(args.includes("--json")
       ? `${JSON.stringify(payload, null, 2)}\n`
@@ -266,30 +299,102 @@ async function tryScopedExplore(args: string[]): Promise<number> {
 }
 
 
-async function tryProtectLatest(args: string[]): Promise<number> {
+async function tryProtectLatest(
+  args: string[],
+  dependencies: { inspectDatabaseFn?: InspectDatabaseFn },
+): Promise<number> {
   assertKnownOptions(
     args,
-    new Set(["--project-root", "--name", "--description", "--returns", "--json"]),
+    new Set([
+      "--project-root",
+      "--from",
+      "--last",
+      "--name",
+      "--description",
+      "--returns",
+      "--actor",
+      "--cohort-confirmation",
+      "--json",
+    ]),
     "try protect",
   );
   const projectRoot = resolvedSynapsorProjectRoot(args);
   const available = await listProtectableQueries({ projectRoot });
-  const latest = available.at(-1);
-  if (!latest) {
+  const requestedReference = optionalArg(args, "--from");
+  if (requestedReference && args.includes("--last")) {
+    throw new Error("try protect accepts either --from <analysis-reference> or --last, not both.");
+  }
+  let selected = requestedReference
+    ? available.find((item) => item.token === requestedReference)
+    : undefined;
+  if (!requestedReference) {
+    const latest = available[0];
+    const latestAnswer = latest?.answer_id;
+    const candidates = latestAnswer
+      ? available.filter((item) => item.answer_id === latestAnswer)
+      : available;
+    if (candidates.length === 1) {
+      selected = candidates[0];
+    } else if (candidates.length > 1) {
+      throw new Error([
+        "The latest answer contains multiple protectable analyses. Choose one explicitly:",
+        ...candidates.map((item) =>
+          `  ${item.token}  ${describeProtectableAnalysis(item.normalized_plan)}`),
+        `Run ${cliCommandName()} try protect --from <analysis-reference> --name <capability-name>.`,
+      ].join("\n"));
+    }
+  }
+  if (!selected) {
+    if (requestedReference) {
+      throw new Error(
+        "The requested analysis reference is unknown, expired, or belongs to a superseded boundary. Run try ask or try explore again.",
+      );
+    }
     throw new Error("No unexpired successful exploration is available. Run one bounded try explore plan, then protect it.");
   }
-  const capabilityName = optionalArg(args, "--name") ?? "analytics.protected_analysis";
+  const capabilityName = optionalArg(args, "--name")
+    ?? suggestProtectedCapabilityName(selected.normalized_plan);
+  let minimumCohortActor = optionalArg(args, "--actor")?.trim();
+  let minimumCohortConfirmation = optionalArg(args, "--cohort-confirmation")?.trim();
+  if (selected.minimum_cohort_override
+    && (!minimumCohortActor || !minimumCohortConfirmation)
+    && process.stdin.isTTY
+    && process.stdout.isTTY
+    && !args.includes("--json")) {
+    process.stdout.write([
+      `This analysis uses an explicit owner override: minimum cohort ${selected.minimum_cohort_override.minimum_cohort_size}.`,
+      ...(selected.minimum_cohort_override.minimum_cohort_size === 1
+        ? ["A value of 1 disables small-group suppression; groups of one can identify individuals."]
+        : []),
+      "",
+    ].join("\n"));
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    try {
+      minimumCohortActor ||= (await rl.question("Human reviewer: ")).trim();
+      minimumCohortConfirmation ||= (await rl.question(
+        `Type ${selected.minimum_cohort_override.confirmation}: `,
+      )).trim();
+    } finally {
+      rl.close();
+    }
+  }
   const created = await createProtectedQueryDraft({
     projectRoot,
-    token: latest.token,
+    token: selected.token,
     capabilityName,
     description: optionalArg(args, "--description") ?? "Answer one reviewed bounded analysis.",
     returnsHint: optionalArg(args, "--returns") ?? "Returns only the reviewed bounded result shape.",
+    ...(minimumCohortActor ? { minimumCohortActor } : {}),
+    ...(minimumCohortConfirmation ? { minimumCohortConfirmation } : {}),
+    ...(dependencies.inspectDatabaseFn
+      ? { inspectDatabaseFn: dependencies.inspectDatabaseFn }
+      : {}),
   });
   const payload = {
     ok: true,
     state: "disabled",
     capability: capabilityName,
+    analysis_reference: selected.token,
     contract_digest: created.draft.contract_digest,
     dsl_path: created.draft.dsl_path,
     contract_path: created.draft.contract_path,
@@ -310,7 +415,6 @@ async function tryProtectLatest(args: string[]): Promise<number> {
       `Tests: ${payload.tests_path}`,
       `Digest: ${payload.contract_digest}`,
       "State: disabled",
-      "Source database changed: no",
       "The model cannot activate this capability.",
       "",
       `Next: ${payload.next_action}`,
@@ -318,6 +422,28 @@ async function tryProtectLatest(args: string[]): Promise<number> {
     ].join("\n"));
   }
   return 0;
+}
+
+function selectFriendlyBoundary(
+  boundaries: ActivatedExplorationBoundary[],
+  requestedName: string | undefined,
+  requestedResource: string | undefined,
+): ActivatedExplorationBoundary {
+  if (requestedName) {
+    const selected = boundaries.find((boundary) => boundary.pack.name === requestedName);
+    if (!selected) throw new Error(`Boundary ${requestedName} is not active.`);
+    return selected;
+  }
+  if (requestedResource) {
+    const matches = boundaries.filter((boundary) =>
+      boundary.pack.resources.some((resource) => resource.id === requestedResource));
+    if (matches.length === 1) return matches[0]!;
+    if (matches.length > 1) {
+      throw new Error(`Resource ${requestedResource} is in multiple active boundaries; add --boundary <name>.`);
+    }
+  }
+  if (boundaries.length === 1) return boundaries[0]!;
+  throw new Error("Multiple Explore boundaries are active; add --boundary <name> or choose a uniquely owned --resource.");
 }
 
 

@@ -18,6 +18,7 @@ export type MysqlApplyConnection = {
   commit(): Promise<void>;
   rollback(): Promise<void>;
   query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]>;
+  destroy?(): void;
 };
 
 type Operation = NonNullable<WritebackJob["operation"]>;
@@ -62,6 +63,7 @@ export function mysqlReceiptMigrationForConfig(config: RunnerConfig): string {
 
 export function buildMysqlUpdate(job: WritebackJob): { sql: string; values: unknown[] } {
   if (operationOf(job) !== "single_row_update") throw new Error("mysql update builder requires single_row_update");
+  const conflictGuard = exactConflictGuard(job, "mysql update");
   validatePatch(job, "mysql");
   if (job.target.primary_key.value === undefined) throw new Error("mysql update requires primary-key value");
   const values: unknown[] = [];
@@ -82,10 +84,8 @@ export function buildMysqlUpdate(job: WritebackJob): { sql: string; values: unkn
     values.push(scope.value);
     where.push(`${quoteMysqlIdentifier(scope.column)} = ?`);
   }
-  if (job.conflict_guard.kind === "version_column") {
-    values.push(job.conflict_guard.expected_value);
-    where.push(`${quoteMysqlIdentifier(job.conflict_guard.column)} = ?`);
-  }
+  values.push(conflictGuard.expected_value);
+  where.push(`${quoteMysqlIdentifier(conflictGuard.column)} = ?`);
   return { sql: `UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nSET ${setFragments.join(", ")}\nWHERE ${where.join(" AND ")}`, values };
 }
 
@@ -102,14 +102,29 @@ export function buildMysqlInsert(job: WritebackJob): { sql: string; values: unkn
 
 export function buildMysqlDelete(job: WritebackJob): { sql: string; values: unknown[] } {
   if (operationOf(job) !== "single_row_delete") throw new Error("mysql delete builder requires single_row_delete");
-  if (job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") throw new Error("mysql delete requires primary-key and exact version guards");
+  const conflictGuard = exactConflictGuard(job, "mysql delete");
+  if (job.target.primary_key.value === undefined) throw new Error("mysql delete requires primary-key and exact version guards");
   const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
   const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
   const scope = principalScope(job);
   if (scope) { values.push(scope.value); where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); }
-  values.push(job.conflict_guard.expected_value);
-  where.push(`${quoteMysqlIdentifier(job.conflict_guard.column)} = ?`);
+  values.push(conflictGuard.expected_value);
+  where.push(`${quoteMysqlIdentifier(conflictGuard.column)} = ?`);
   return { sql: `DELETE FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}`, values };
+}
+
+function exactConflictGuard(
+  job: WritebackJob,
+  operation: string,
+): Extract<WritebackJob["conflict_guard"], { kind: "version_column" }> {
+  if (job.conflict_guard.kind === "row_hash"
+    || (job.conflict_guard.kind === "version_column" && job.conflict_guard.column === "__row_hash")) {
+    throw new Error("ROW_HASH_CONFLICT_GUARD_UNSUPPORTED");
+  }
+  if (job.conflict_guard.kind !== "version_column") {
+    throw new Error(`${operation} requires an exact version-column guard`);
+  }
+  return job.conflict_guard;
 }
 
 function validatePatch(job: WritebackJob, engine: string): void {
@@ -342,6 +357,40 @@ function pad2(value: number): string { return String(value).padStart(2, "0"); }
 export function versionValuesMatch(actual: unknown, expected: unknown): boolean { return normalizeVersionValue(actual) === normalizeVersionValue(expected); }
 
 class SourceOutcomeUnknownError extends Error { constructor(public readonly cause: unknown) { super("source transaction outcome is unknown"); } }
+class MysqlPrecommitDeadlineError extends Error {
+  constructor() {
+    super("MYSQL_STATEMENT_TIMEOUT");
+  }
+}
+
+async function withMysqlPrecommitDeadline<T>(
+  connection: MysqlApplyConnection,
+  timeoutMs: number | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (timeoutMs === undefined) return await fn();
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1) throw new Error("MYSQL_STATEMENT_TIMEOUT_INVALID");
+  if (!connection.destroy) throw new Error("MYSQL_STATEMENT_TIMEOUT_UNENFORCEABLE");
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      finish(() => {
+        try { connection.destroy?.(); } catch { /* the deadline remains authoritative */ }
+        reject(new MysqlPrecommitDeadlineError());
+      });
+    }, Math.max(1, Math.floor(timeoutMs)));
+    fn().then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+  });
+}
 
 async function sourceTransaction<T>(
   connection: MysqlApplyConnection,
@@ -355,14 +404,17 @@ async function sourceTransaction<T>(
   }
   await connection.beginTransaction();
   try {
-    await hooks.afterBegin?.();
-    const result = await fn();
-    await hooks.afterMutation?.();
-    await hooks.beforeCommit?.();
+    const result = await withMysqlPrecommitDeadline(connection, statementTimeoutMs, async () => {
+      await hooks.afterBegin?.();
+      const value = await fn();
+      await hooks.afterMutation?.();
+      await hooks.beforeCommit?.();
+      return value;
+    });
     try { await connection.commit(); } catch (error) { throw new SourceOutcomeUnknownError(error); }
     return result;
   } catch (error) {
-    if (!(error instanceof SourceOutcomeUnknownError)) {
+    if (!(error instanceof SourceOutcomeUnknownError) && !(error instanceof MysqlPrecommitDeadlineError)) {
       try { await connection.rollback(); }
       catch (rollbackError) { throw new SourceOutcomeUnknownError({ error, rollbackError }); }
     }
@@ -375,22 +427,29 @@ export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Pr
   if (!config.databaseUrl) return failedResult(job, config, "DATABASE_UNAVAILABLE");
   const connection = await mysql.createConnection({ uri: config.databaseUrl, dateStrings: true });
   try { return await applyMysqlJobWithConnection(job, config, connection); }
-  catch (error) { return failedResult(job, config, safeErrorCode(error)); }
-  finally { await connection.end(); }
+  catch (error) { return failedResult(job, config, safeErrorCode(error, operationOf(job))); }
+  finally { await connection.end().catch(() => undefined); }
 }
 
 export async function applyMysqlJobWithConnection(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
   validateOperation(job);
   if (receiptAuthority(config) === "runner_ledger") return await applyWithRunnerLedger(job, config, connection);
   if (config.receipts?.provisioning === "auto_migrate") await connection.query(mysqlReceiptMigrationForConfig(config));
-  return await sourceTransaction(connection, async () => {
-    const existing = await claimSourceReceipt(connection, job, config);
-    if (existing) return existing;
-    const outcome = await mutateMysql(job, connection);
-    const result = resultFromOutcome(job, config, outcome);
-    await recordSourceReceipt(connection, job, config, outcome.status, resultHashFromResult(job, result));
-    return result;
-  }, config.statementTimeoutMs);
+  try {
+    return await sourceTransaction(connection, async () => {
+      const existing = await claimSourceReceipt(connection, job, config);
+      if (existing) return existing;
+      const outcome = await mutateMysql(job, connection);
+      const result = resultFromOutcome(job, config, outcome);
+      await recordSourceReceipt(connection, job, config, outcome.status, resultHashFromResult(job, result));
+      return result;
+    }, config.statementTimeoutMs);
+  } catch (error) {
+    if (error instanceof SourceOutcomeUnknownError) {
+      return reconciliationResult(job, config, sourceReconciliationIntentId(job), "OUTCOME_UNKNOWN");
+    }
+    throw error;
+  }
 }
 
 async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
@@ -419,7 +478,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, co
       await store.requireWritebackReconciliation(claim.intent_id, "database COMMIT acknowledgement was not observed");
       return reconciliationResult(job, config, claim.intent_id);
     }
-    result = failedResult(job, config, safeErrorCode(error));
+    result = failedResult(job, config, safeErrorCode(error, operationOf(job)));
     await store.completeWritebackIntent(claim.intent_id, result);
     return result;
   }
@@ -758,6 +817,11 @@ function validateBatchInsertMember(job: SetWritebackJob, member: SetWritebackJob
 }
 
 async function insertMysqlBatch(job: SetWritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+  await assertMysqlInsertDedupUniqueness(
+    job,
+    job.frozen_set.members.map((member) => member.deduplication!.components),
+    connection,
+  );
   for (const member of job.frozen_set.members) {
     const components = member.deduplication!.components;
     const where = components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`);
@@ -803,6 +867,7 @@ async function lockTargetRow(job: WritebackJob, connection: MysqlApplyConnection
 async function insertMysql(job: WritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
   if (job.protocol_version !== "2.0" || !job.deduplication) throw new Error("INSERT_DEDUP_REQUIRED");
   const components = job.deduplication.components;
+  await assertMysqlInsertDedupUniqueness(job, [components], connection);
   const where = components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`);
   const values: unknown[] = components.map((component) => component.value);
   const scope = principalScope(job);
@@ -815,6 +880,73 @@ async function insertMysql(job: WritebackJob, connection: MysqlApplyConnection):
   if (count !== 1) throw new Error(count === 0 ? "INSERT_CONSTRAINT_FAILED" : "MULTI_ROW_WRITE_BLOCKED");
   const identity = identityForJob(job, inserted.insertId);
   return { status: "applied", affectedRows: 1, targetIdentity: identity, afterDigest: digest({ identity, values: insertValues(job) }) };
+}
+
+type DeduplicationComponent = { column: string; value: string | number | boolean | null };
+
+type MysqlUniqueKey = {
+  columns: Map<number, string | undefined>;
+  prefixColumns: Set<number>;
+};
+
+async function assertMysqlInsertDedupUniqueness(
+  job: WritebackJob,
+  componentSets: DeduplicationComponent[][],
+  connection: MysqlApplyConnection,
+): Promise<void> {
+  const [rows] = await connection.query<Record<string, unknown>[]>(
+    `SELECT INDEX_NAME AS index_name,
+       SEQ_IN_INDEX AS key_position,
+       COLUMN_NAME AS column_name,
+       SUB_PART AS prefix_length
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = ?
+  AND TABLE_NAME = ?
+  AND NON_UNIQUE = 0
+ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
+    [job.target.schema, job.target.table],
+  );
+  const keys = new Map<string, MysqlUniqueKey>();
+  for (const row of rows) {
+    const id = typeof row.index_name === "string" ? row.index_name : String(row.index_name ?? "");
+    if (!id) continue;
+    const key = keys.get(id) ?? { columns: new Map<number, string | undefined>(), prefixColumns: new Set<number>() };
+    const position = Number(row.key_position);
+    if (Number.isInteger(position) && position > 0) {
+      key.columns.set(position, typeof row.column_name === "string" ? row.column_name : undefined);
+      if (row.prefix_length !== null && row.prefix_length !== undefined) key.prefixColumns.add(position);
+    }
+    keys.set(id, key);
+  }
+
+  const scope = principalScope(job);
+  for (const components of componentSets) {
+    const values = deduplicationValues(components, scope);
+    const proven = [...keys.values()].some((key) => {
+      if (key.columns.size < 1 || key.prefixColumns.size > 0) return false;
+      const positions = [...key.columns.keys()].sort((left, right) => left - right);
+      if (positions.some((position, index) => position !== index + 1)) return false;
+      return positions.every((position) => {
+        const column = key.columns.get(position);
+        return Boolean(column) && values.has(column!) && values.get(column!) !== null;
+      });
+    });
+    if (!proven) throw new Error("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+  }
+}
+
+function deduplicationValues(
+  components: DeduplicationComponent[],
+  scope: { column: string; value: string | number | boolean | null } | undefined,
+): Map<string, string | number | boolean | null> {
+  const values = new Map<string, string | number | boolean | null>();
+  for (const component of [...components, ...(scope ? [scope] : [])]) {
+    if (values.has(component.column) && JSON.stringify(values.get(component.column)) !== JSON.stringify(component.value)) {
+      throw new Error("INSERT_DEDUP_COMPONENT_CONFLICT");
+    }
+    values.set(component.column, component.value);
+  }
+  return values;
 }
 
 function affectedRows(result: unknown): number {
@@ -860,23 +992,40 @@ function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: Mut
 }
 function wireResult(result: Record<string, unknown>): WritebackResult { return Object.fromEntries(Object.entries(result).filter(([, value]) => value !== undefined)) as WritebackResult; }
 function failedResult(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult { return resultFromOutcome(job, config, { status: "failed", affectedRows: 0, code, targetIdentity: identityForJob(job) }); }
-function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string): WritebackResult {
-  if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
-  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
-  if (job.protocol_version !== "2.0") return failedResult(job, config, "RECONCILIATION_REQUIRED");
-  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
+function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string, errorCode = "RECONCILIATION_REQUIRED"): WritebackResult {
+  const authority = receiptAuthority(config);
+  if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+  if (job.protocol_version !== "2.0") return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "reconciliation_required", affected_rows: 0, result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+}
+
+function sourceReconciliationIntentId(job: WritebackJob): string {
+  return `source-db:${digest({
+    authority: "source_db",
+    engine: "mysql",
+    source_id: job.source_id,
+    job_id: job.job_id,
+    idempotency_key: job.idempotency_key,
+  })}`;
 }
 function asAlreadyApplied(result: WritebackResult, job: WritebackJob, config: RunnerConfig): WritebackResult {
   if (result.status !== "applied" && result.status !== "already_applied") return result;
   return resultFromOutcome(job, config, { status: "already_applied", affectedRows: 0, targetIdentity: identityForJob(job), resultVersion: "result_version" in result ? result.result_version : undefined }, undefined, result.result_hash as `sha256:${string}` | undefined);
 }
 function resultHashFromResult(job: WritebackJob, result: WritebackResult): `sha256:${string}` { return typeof result.result_hash === "string" && result.result_hash.startsWith("sha256:") ? result.result_hash as `sha256:${string}` : resultHash(job, result.status, "result_version" in result ? result.result_version : undefined); }
-function safeErrorCode(error: unknown): string {
+function safeErrorCode(error: unknown, operation?: Operation): string {
   if (error instanceof SourceOutcomeUnknownError) return "OUTCOME_UNKNOWN";
+  if (error instanceof MysqlPrecommitDeadlineError) return "MYSQL_STATEMENT_TIMEOUT";
   const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   const message = error instanceof Error ? error.message : String(error);
-  if (code === "ER_DUP_ENTRY" || code === "1062") return "INSERT_DEDUP_CONFLICT";
-  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_VISIBILITY_REQUIRED", "COMPENSATION_FK_VISIBILITY_REQUIRED", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
+  if (message.includes("ROW_HASH_CONFLICT_GUARD_UNSUPPORTED")) return "ROW_HASH_CONFLICT_GUARD_UNSUPPORTED";
+  if (code === "ER_DUP_ENTRY" || code === "1062") {
+    return operation === "single_row_insert" || operation === "batch_insert"
+      ? "INSERT_DEDUP_CONFLICT"
+      : "TRANSACTION_FAILED";
+  }
+  for (const known of ["MYSQL_STATEMENT_TIMEOUT", "MYSQL_STATEMENT_TIMEOUT_INVALID", "MYSQL_STATEMENT_TIMEOUT_UNENFORCEABLE", "MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_DEDUP_UNIQUENESS_UNPROVEN", "INSERT_DEDUP_COMPONENT_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_VISIBILITY_REQUIRED", "COMPENSATION_FK_VISIBILITY_REQUIRED", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
   return "TRANSACTION_FAILED";
 }
 

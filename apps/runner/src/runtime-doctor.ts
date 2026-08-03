@@ -101,7 +101,7 @@ export async function localDoctor(args: string[]): Promise<number> {
     }
     const tenantEnv = String(context.values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(context.values.principal_env ?? "SYNAPSOR_PRINCIPAL");
-    for (const envName of [tenantEnv, principalEnv]) {
+    for (const envName of [tenantEnv, ...(context.principal_required ? [principalEnv] : [])]) {
       checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`));
     }
   }

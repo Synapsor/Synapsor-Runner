@@ -1,0 +1,235 @@
+{
+  "domain": "multi-tenant retail operations",
+  "package": {
+    "spec_tarball": "synapsor-spec-1.8.0.tgz",
+    "spec_sha256": "sha256:3694a3b5aa0080aa33ce9252812e94bccf432b7ba8b8f65c92beee74cebbcc8c",
+    "runner_tarball": "synapsor-runner-1.6.6.tgz",
+    "runner_sha256": "sha256:57cc48b626052de982f92e03fcc17a4d2dc48e04f79ea7d9ce34b6631c031850"
+  },
+  "timings_ms": {
+    "schema_summary": 36668,
+    "boundary_activation": 41997,
+    "first_safe_read": 43377,
+    "first_pm_aggregate": 44402,
+    "protected_capability": 172407,
+    "first_guided_proposal": 177760,
+    "first_guarded_apply": 234661
+  },
+  "interactions": {
+    "shell_commands_through_first_value": 1,
+    "browser_clicks": 77,
+    "browser_text_entries": 23,
+    "manual_file_edits": 0
+  },
+  "starter_resources": [
+    "public.sales_line_facts",
+    "public.orders",
+    "public.products"
+  ],
+  "generated": {
+    "dsl": "synapsor/generated/read-capabilities.synapsor.sql",
+    "canonical_contract": "synapsor/generated/synapsor.candidate.contract.json",
+    "generation_lock": ".synapsor/generation-lock.json",
+    "review_report": ".synapsor/review-report.json",
+    "config": "synapsor.runner.json",
+    "store": ".synapsor/local.db"
+  },
+  "first_read": {
+    "resource": "public.sales_line_facts",
+    "object_id": "sales-fact-001",
+    "source_database_changed": false,
+    "tenant_scope": "merchant-northstar",
+    "principal_scope": "staff-manager-alex"
+  },
+  "aggregate": {
+    "question": "How did net revenue change by week across reviewed stores and product categories?",
+    "plan": "Calculate total net revenue cents for sales line facts grouped by Name from Stores, Name from Product categories for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.sales_line_facts\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"net_revenue_cents\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_store_id_fkey\"\n    },\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_product_category_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"sold_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
+    "source_database_changed": false,
+    "official_mcp_parity": true,
+    "mcp_returned_groups": 10
+  },
+  "continuous_explore": {
+    "legal_plans_without_protect": [
+      {
+        "label": "weekly_revenue_by_store_and_category",
+        "groups": 10,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "weekly_sales_count_by_channel",
+        "groups": 8,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "distinct_sales_by_channel",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "quantity_by_product_category",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "average_sale_by_store",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "online_revenue_in_bounded_date_range",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "top_product_categories_by_revenue",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "bottom_stores_by_average_sale",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "channel_period_comparison",
+        "groups": 2,
+        "status": "ok",
+        "source_database_changed": false
+      },
+      {
+        "label": "store_and_channel_sales_count",
+        "groups": 4,
+        "status": "ok",
+        "source_database_changed": false
+      }
+    ],
+    "legal_plan_count": 10,
+    "protected_artifacts_created": false,
+    "reviewed_measures_dimensions_filters_time_comparison_and_rankings": true,
+    "second_reviewed_relationship_used": true,
+    "output_schema_checked": true,
+    "describe_catalog_checked": true
+  },
+  "view_recipe": {
+    "question": "What is the average net-to-gross revenue retention rate for my Pacific orders?",
+    "formula_owner": "reviewed security-invoker PostgreSQL view",
+    "capability": "retail.average_net_revenue_retention_pacific",
+    "value_basis_points": 9000,
+    "cohort_rows_included": false,
+    "trusted_tenant_and_principal_scope": true,
+    "source_database_changed": false,
+    "model_expression_grammar_added": false
+  },
+  "protected": {
+    "capability": "retail.weekly_revenue_by_store_and_category",
+    "digest": "sha256:dd66a716f36f7ddb8d0842cdd882db7143964fe67e7ff56c6f9d29c0578df536",
+    "disabled_before_activation": true,
+    "activated_by_human": true,
+    "mode": "aggregate",
+    "generated_tests": 5
+  },
+  "write_lifecycle": {
+    "capability": "retail.propose_order_fulfillment",
+    "target": "public.orders:order-005",
+    "proposal_hash": "sha256:c49f02e68a8ad91c38b89a3402c17c5725afd2969b3f24334e5a38a98b0d50f3",
+    "action_digest": "sha256:4f6238852ce6d586270d750711cadcb69e5a165ac69c798acc27e4743a9ed078",
+    "before": {
+      "status": "processing",
+      "version": 1
+    },
+    "after": {
+      "status": "fulfilled",
+      "version": 2
+    },
+    "proposal_changed_source": false,
+    "approval_changed_source": false,
+    "apply_changed_source": true,
+    "reversible": true,
+    "model_can_activate": false,
+    "model_can_approve": false,
+    "model_can_apply": false
+  },
+  "ask": {
+    "provider": "custom_openai_compatible_loopback",
+    "aggregate_official_mcp_parity": true,
+    "cli_ask_official_mcp_parity": true,
+    "cli_ask_verified_tool": "app.explore_data",
+    "interactive_shell": true,
+    "contextual_follow_up": true,
+    "analyses_command": true,
+    "single_plan_protect": true,
+    "multi_plan_picker": true,
+    "normal_read_governance_footer": false,
+    "shell_draft_state": "disabled",
+    "aggregate_source_database_changed": false,
+    "kept_out_field_refused": true,
+    "refusal_source_database_changed": false,
+    "provider_key_required": false,
+    "loopback_egress_consent_required": false,
+    "synapsor_relay": false,
+    "explore_survived_write_lifecycle": true,
+    "model_can_activate": false,
+    "model_can_approve": false,
+    "model_can_apply": false,
+    "explore_explicitly_disabled": true
+  },
+  "security": {
+    "assigned_read_allowed": true,
+    "same_tenant_other_principal_hidden": true,
+    "other_tenant_hidden": true,
+    "model_selected_scope_refused": true,
+    "kept_out_plan_positions_refused": true,
+    "raw_sql_refused": true,
+    "authoring_tools": [
+      "app.describe_data",
+      "app.explore_data"
+    ]
+  },
+  "parity": {
+    "generated_dsl_matches_canonical_contract": true,
+    "explore_disabled_after_authoring": true,
+    "protected_capability_survives": true,
+    "runtime_tools": [
+      "retail.shell_quantity_by_category",
+      "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
+      "retail.weekly_revenue_by_store_and_category",
+      "retail.propose_order_fulfillment"
+    ],
+    "protected_result_source_changed": false,
+    "proposal_tool_source_changed": false,
+    "cli_latest_lifecycle_without_id": true,
+    "redacted_query_audit_without_id": true,
+    "normalized_query_audit_entries": 20,
+    "cli_and_mcp_analytics_catalog_match": true,
+    "protected_output_schema_checked": true
+  },
+  "elapsed_ms": 274436,
+  "screenshots": [
+    "01-overview.png",
+    "02-activated-and-ready-to-ask.png",
+    "03-explore-ready.png",
+    "04-first-safe-read.png",
+    "05-pm-aggregate.png",
+    "05b-ask-aggregate.png",
+    "05c-ask-refusal.png",
+    "06-protected-draft.png",
+    "06b-protected-draft-dark.png",
+    "07-next-safe-action.png",
+    "08-disabled-safe-action.png",
+    "08b-disabled-safe-action-dark.png",
+    "09-proposal-created.png",
+    "10-human-review.png",
+    "11-approved-awaiting-apply.png",
+    "12-guarded-apply.png",
+    "13-ledger-timeline.png",
+    "13b-ask-after-write-lifecycle.png"
+  ]
+}

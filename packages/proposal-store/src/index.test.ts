@@ -616,6 +616,114 @@ describe("proposal store", () => {
     }
   }, 15_000);
 
+  it("persists exact-replay privacy reservations through shared-ledger round trips", () => {
+    const store = new ProposalStore();
+    const restored = new ProposalStore();
+    const base = {
+      scope_fingerprint: `sha256:${"1".repeat(64)}` as const,
+      legacy_session_fingerprints: [],
+      resource_id: "public.orders",
+      requires_differencing: true,
+      estimated_response_cells: 4,
+      limits: {
+        max_queries_per_session: 10,
+        rate_limit_per_minute: 10,
+        max_extracted_cells_per_session: 100,
+        max_differencing_queries: 1,
+        max_response_cells: 10,
+      },
+      now: "2026-08-02T12:00:00.000Z",
+    };
+    try {
+      const first = store.claimExploreBudgetReservation({
+        ...base,
+        reservation_id: "budget-1",
+        variant_fingerprint: `sha256:${"2".repeat(64)}`,
+      });
+      expect(first).toMatchObject({ allowed: true });
+      expect(store.completeExploreBudgetReservation({
+        reservation_id: "budget-1",
+        result_released: true,
+        returned_cells: 2,
+        completed_at: "2026-08-02T12:00:01.000Z",
+      })).toEqual({ completed: true });
+
+      expect(store.claimExploreBudgetReservation({
+        ...base,
+        reservation_id: "budget-2",
+        variant_fingerprint: `sha256:${"2".repeat(64)}`,
+      })).toMatchObject({
+        allowed: true,
+        variant_already_counted: true,
+      });
+      expect(store.completeExploreBudgetReservation({
+        reservation_id: "budget-2",
+        result_released: false,
+        returned_cells: 0,
+        completed_at: "2026-08-02T12:00:02.000Z",
+      })).toEqual({ completed: true });
+
+      expect(restored.importSharedLedgerEntries(store.sharedLedgerEntries())).toMatchObject({ skipped: 0 });
+      expect(restored.stats().explore_budget_reservations).toBe(2);
+      expect(restored.claimExploreBudgetReservation({
+        ...base,
+        reservation_id: "budget-3",
+        variant_fingerprint: `sha256:${"3".repeat(64)}`,
+      })).toMatchObject({
+        allowed: false,
+        code: "DIFFERENCING_BUDGET_EXHAUSTED",
+      });
+    } finally {
+      restored.close();
+      store.close();
+    }
+  });
+
+  it("does not charge explicit pre-execution refusals as legacy Explore queries", () => {
+    const store = new ProposalStore();
+    const scopeFingerprint = `sha256:${"4".repeat(64)}` as const;
+    const recordedAt = new Date();
+    try {
+      store.recordQueryAudit({
+        source_id: "src_pg_acme",
+        query_fingerprint: `sha256:${"5".repeat(64)}`,
+        table_name: "public.orders",
+        row_count: 0,
+        payload: {
+          status: "refused_before_source_execution",
+          source_execution_started: false,
+          source_query_executed: false,
+          budget_scope_fingerprint: scopeFingerprint,
+          recorded_at: recordedAt.toISOString(),
+          normalized_plan: {
+            kind: "aggregate",
+            resource: "public.orders",
+          },
+        },
+      });
+
+      expect(store.claimExploreBudgetReservation({
+        reservation_id: "budget-after-refusal",
+        scope_fingerprint: scopeFingerprint,
+        legacy_session_fingerprints: [],
+        resource_id: "public.orders",
+        variant_fingerprint: `sha256:${"6".repeat(64)}`,
+        requires_differencing: true,
+        estimated_response_cells: 1,
+        limits: {
+          max_queries_per_session: 1,
+          rate_limit_per_minute: 1,
+          max_extracted_cells_per_session: 10,
+          max_differencing_queries: 1,
+          max_response_cells: 10,
+        },
+        now: new Date(recordedAt.getTime() + 1_000).toISOString(),
+      })).toMatchObject({ allowed: true });
+    } finally {
+      store.close();
+    }
+  });
+
   it("blocks active duplicates but permits a successor after conflict", () => {
     const store = new ProposalStore();
     try {
@@ -712,6 +820,58 @@ describe("proposal store", () => {
       } finally {
         restored.close();
       }
+    } finally {
+      store.close();
+    }
+  });
+
+  it("records an evidence bundle and its linked query audit atomically", () => {
+    const store = new ProposalStore();
+    try {
+      store.recordEvidenceBundle({
+        evidence_bundle_id: "ev_atomic",
+        tenant_id: "keyed:tenant",
+        payload: {
+          capability: "app.explore_data",
+          source_id: "src_pg",
+          query_fingerprint: "sha256:atomic",
+          result_values_persisted: false,
+        },
+        query_audit: [{
+          source_id: "src_pg",
+          query_fingerprint: "sha256:atomic",
+          table_name: "public.sessions",
+          row_count: 2,
+          payload: {
+            capability: "app.explore_data",
+            returned_cells: 4,
+            result_values_persisted: false,
+          },
+        }],
+      });
+      expect(store.getEvidenceBundle("ev_atomic")).toMatchObject({
+        evidence_bundle_id: "ev_atomic",
+        tenant_id: "keyed:tenant",
+      });
+      expect(store.listQueryAudit({ evidence: "ev_atomic" })).toHaveLength(1);
+
+      expect(() => store.recordEvidenceBundle({
+        evidence_bundle_id: "ev_rollback",
+        tenant_id: "keyed:tenant",
+        payload: { capability: "app.explore_data" },
+        query_audit: [{
+          evidence_bundle_id: "ev_other",
+          source_id: "src_pg",
+          query_fingerprint: "sha256:rollback",
+          table_name: "public.sessions",
+          row_count: 0,
+          payload: { result_values_persisted: false },
+        }],
+      })).toThrowError(expect.objectContaining({
+        code: "EVIDENCE_QUERY_AUDIT_MISMATCH",
+      }));
+      expect(store.getEvidenceBundle("ev_rollback")).toBeUndefined();
+      expect(store.listQueryAudit({ evidence: "ev_rollback" })).toHaveLength(0);
     } finally {
       store.close();
     }
@@ -1608,10 +1768,14 @@ describe("proposal store", () => {
 
       const first = store.claimWorkerItem({ workerId: "worker_a", leaseSeconds: 30, now: "2026-07-12T00:00:01.000Z" });
       expect(first).toMatchObject({ status: "leased", attempts: 1, lease_owner: "worker_a" });
-      expect(() => store.completeWorkerItem("wrp_123", "worker_b", "applied")).toThrow(/does not hold the lease/);
+      expect(() => store.completeWorkerItem("wrp_123", "worker_a", "applied"))
+        .toThrowError(expect.objectContaining({ code: "WORKER_LEASE_ID_REQUIRED" }));
+      expect(() => store.completeWorkerItem("wrp_123", "worker_b", "applied", undefined, first!.lease_id))
+        .toThrow(/does not hold the lease/);
       expect(store.retryWorkerItem({
         proposalId: "wrp_123",
         workerId: "worker_a",
+        leaseId: first!.lease_id!,
         errorCode: "HANDLER_TIMEOUT",
         retryAt: "2026-07-12T00:00:02.000Z",
         now: "2026-07-12T00:00:01.500Z",
@@ -1622,6 +1786,7 @@ describe("proposal store", () => {
       expect(store.retryWorkerItem({
         proposalId: "wrp_123",
         workerId: "worker_b",
+        leaseId: second!.lease_id!,
         errorCode: "HANDLER_TIMEOUT",
         retryAt: "2026-07-12T00:00:04.000Z",
         now: "2026-07-12T00:00:02.500Z",
@@ -1641,7 +1806,12 @@ describe("proposal store", () => {
       })).toMatchObject({ status: "queued", attempts: 0, max_attempts: 3 });
       const reclaimed = store.claimWorkerItem({ workerId: "worker_d", now: "2026-07-12T00:01:02.000Z" });
       expect(reclaimed).toMatchObject({ status: "leased", attempts: 1 });
-      store.deadLetterWorkerItem({ proposalId: "wrp_123", workerId: "worker_d", errorCode: "POLICY_REJECTED" });
+      store.deadLetterWorkerItem({
+        proposalId: "wrp_123",
+        workerId: "worker_d",
+        leaseId: reclaimed!.lease_id!,
+        errorCode: "POLICY_REJECTED",
+      });
       expect(store.discardDeadLetter({
         proposalId: "wrp_123",
         identity: verifiedWorkerIdentity("worker_discard"),
@@ -2385,7 +2555,7 @@ describe("proposal store", () => {
       store.deadLetterWorkerItem({
         proposalId: proposal.proposal_id,
         workerId: "worker_attention",
-        leaseId: claimed!.lease_id,
+        leaseId: claimed!.lease_id!,
         errorCode: "HANDLER_TIMEOUT",
         now: "2026-07-24T00:00:02.000Z",
       });
@@ -2620,9 +2790,14 @@ describe("proposal store", () => {
       store.approveProposal("wrp_123", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
       const job = store.createWritebackJobFromProposal("wrp_123");
       store.enqueueApprovedForWorker({ maxAttempts: 2 });
-      store.claimWorkerItem({ workerId: "worker_a" });
+      const claimed = store.claimWorkerItem({ workerId: "worker_a" });
       store.recordExecutionReceipt({ ...appliedReceipt, writeback_job_id: job.writeback_job_id, idempotency_key: job.idempotency_key });
-      store.deadLetterWorkerItem({ proposalId: "wrp_123", workerId: "worker_a", errorCode: "WORKER_CRASH_AFTER_COMMIT" });
+      store.deadLetterWorkerItem({
+        proposalId: "wrp_123",
+        workerId: "worker_a",
+        leaseId: claimed!.lease_id!,
+        errorCode: "WORKER_CRASH_AFTER_COMMIT",
+      });
 
       expect(() => store.requeueDeadLetter({
         proposalId: "wrp_123",

@@ -1,0 +1,106 @@
+{
+  "ok": true,
+  "package": "@synapsor/runner",
+  "fixture": "FitFlow",
+  "inspected_resources": 40,
+  "starter_resources": 3,
+  "packed_artifact": true,
+  "public_first_command": "npx -y @synapsor/runner@latest start --from-env DATABASE_URL",
+  "measured_clock_excludes": [
+    "package download",
+    "database startup"
+  ],
+  "timing": {
+    "schema_summary_ms": 4328,
+    "boundary_activation_ms": 5076,
+    "first_safe_read_ms": 8144,
+    "pm_aggregate_ms": 12254,
+    "protected_capability_ms": 14875,
+    "first_guided_proposal_ms": 29016,
+    "first_guarded_apply_ms": 192786
+  },
+  "interactions": {
+    "shell_commands_in_human_golden_path_through_first_proposal": 1,
+    "workbench_primary_actions": 11,
+    "distinct_human_authority_decisions": 4,
+    "manual_file_edits": 0,
+    "external_documentation_consulted": false
+  },
+  "clients": {
+    "generated": [
+      "Cursor",
+      "Claude",
+      "Codex",
+      "generic stdio"
+    ],
+    "workbench_same_authority": true,
+    "generic_stdio_same_authority": true,
+    "cli_try_same_authority": true
+  },
+  "live_writeback": {
+    "runner_ledger_source_ddl": false,
+    "human_approved_apply": "applied",
+    "workbench_approval_and_apply": "separate_verified_oidc_decisions",
+    "terminal_retry_duplicate_mutations": 0,
+    "adapter_idempotency_covered_by_guarded_crud_gate": true,
+    "policy_auto_approval": "applied",
+    "policy_auto_approval_manual_execution": "applied",
+    "policy_auto_approval_supervised_execution": "applied_once_by_two_competing_workers",
+    "human_approval_supervised_execution": "applied",
+    "daily_policy_limit": "fell_back_to_human_review",
+    "stale_version": "supervised_worker_conflict",
+    "receipts_and_replay": "verified",
+    "compensation": "new_reviewed_proposal_applied",
+    "notifications": {
+      "packed_artifact": true,
+      "competing_dispatchers": 2,
+      "unique_immediate_events": 2,
+      "review_attention_delivered": true,
+      "successful_activity_immediate_notifications": 0,
+      "duplicate_immediate_deliveries": 0,
+      "ssrf_metadata_destination": "blocked_and_dead_lettered",
+      "verified_operator_replay": "notification_only",
+      "source_database_changed": false
+    },
+    "oidc_approval": {
+      "provider": "jwt_oidc",
+      "exact_role": "accepted",
+      "denied_cases": [
+        "missing_role",
+        "similar_role",
+        "bad_signature",
+        "unknown_key",
+        "expired",
+        "not_yet_valid",
+        "wrong_issuer",
+        "wrong_audience",
+        "unsafe_subject",
+        "malformed_roles",
+        "missing_expiry",
+        "short_attestation_secret",
+        "unavailable_jwks"
+      ],
+      "rejected_source_mutations": 0,
+      "bearer_tokens_persisted": 0,
+      "proposal_binding": "verified",
+      "tamper_detection": "verified",
+      "apply_role_separate": true,
+      "rotated_apply_key": "fitflow-key-2"
+    }
+  },
+  "authority": {
+    "organization_analytics_pack": true,
+    "trainer_member_pack": true,
+    "raw_sql": false,
+    "model_activation": false,
+    "model_approval": false,
+    "model_apply": false,
+    "source_database_changed": false
+  },
+  "comprehension_check": [
+    "no raw SQL",
+    "reviewed fields and trusted tenant/principal scope",
+    "writes create proposals",
+    "the model cannot activate, approve, or apply"
+  ]
+}

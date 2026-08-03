@@ -31,19 +31,71 @@ inspect the whole selected schema and structured application artifacts
 -> review scope, fields, analytics permissions, relationships, and budgets
 -> activate the exact exploration-boundary digest in local Workbench
 -> install exactly app.describe_data and app.explore_data in your project MCP client
--> ask a bounded row or PM-style aggregate question against staging
--> Protect This Query into a disabled named capability
--> activate that exact digest and remove broad Explore
--> serve only the named protected capability in production
+-> repeatedly ask bounded row or aggregate questions against staging
+   |-> continue combining reviewed measures/dimensions/filters without review
+   `-> optionally Protect one selected result into a disabled named capability
+       -> activate that exact digest and remove broad Explore for production
+       -> serve only the named protected capability in production
 ```
 
 It does not print your database URL, put the URL in MCP client config, expose
 `execute_sql`, expose approval/commit tools, or give the model write
 credentials. Before boundary activation it does not read source rows.
 
+Workbench leads with Ask after the one-time safe-read proof. A developer may
+configure OpenAI, Anthropic, or a loopback model there, connect an existing
+model-enabled MCP client, or use CLI `try ask`. The no-model composer remains
+an optional exact-plan fallback. Every path uses the same exact authoring tools
+and validation. Protect is not required for each legal staging question; it is
+the explicit promotion step for a repeatable or production-facing named
+capability.
+
+The browserless route is one continuous command:
+
+```bash
+synapsor-runner start --from-env DATABASE_URL --cli
+```
+
+On a fresh project, Runner first shows one conservative one-table,
+zero-relationship boundary. Pressing Enter once records its human review,
+rechecks schema and read-only role posture, and activates only that exact local
+digest with the provider/model displayed on the same screen. Press `M` to
+choose OpenAI, Anthropic, a loopback OpenAI-compatible model, an existing MCP
+client, or **Later**; press `E` to edit the tables and columns first. Accepting
+the displayed default still takes one gesture. Submitting the first question
+confirms the provider/model/origin egress review. JSON, CI, and headless
+activation remain noninteractive.
+
+Inside `Synapsor Analytics`, use `/access` to leave chat cleanly and edit or add
+a boundary in the terminal, or `/access-workbench` for the visual editor. Active
+boundaries remain available while the draft is edited. Additions and removals
+remain disabled until a human reviews and activates the exact fingerprint.
+Activating a new boundary name adds it to the same two-tool Explore catalog;
+updating an existing name changes only that boundary.
+
+The focused editor is intentionally two steps in both registers: edit tables,
+columns, and reviewed paths; then confirm the complete exact boundary once.
+Routine choices stage directly on the selected disabled boundary while the current
+active boundaries keep working. The final confirmation rechecks schema and role
+posture, updates only that exact named authority, and returns to Ask with the
+same provider and in-memory credential. Conversation history is cleared and
+provider egress is rebound to the new active-set digest. Sensitive-field
+widening and nullable relationship semantics remain explicit human exceptions.
+
+The lower-level `boundary draft` and `boundary review` commands remain
+available for automation and expert workflows. In a fresh directory,
+`boundary draft` also creates the validated local config, ledger, and MCP
+snippets automatically. The developer does not need a separate
+config/init/store command before Ask.
+
 `start` is the shortest public command for first-run onboarding. When
 `DATABASE_URL` is already exported, Runner uses it automatically. Explicit
 `--from-env`, `--schema`, and `--project-root` values always win.
+The fresh secured-loopback route establishes a local development authoring
+profile once. Workbench, Ask, the shell, and MCP display that posture when
+useful but do not ask for or accept a second development/staging declaration.
+Explicit manual, production, unknown, shared, and remote routes retain their
+existing configuration and fail-closed treatment.
 Read [Database To First Safe Tool](guided-onboarding.md) for the timed guided
 journey and [Auto Boundary, Scoped Explore, And
 Protect](auto-boundary-and-scoped-explore.md) for the complete security
@@ -215,7 +267,7 @@ synapsor-runner start \
 
 Runner writes `synapsor/actions/support.propose_plan_credit.ts` and scoped
 agent instructions. The file is an inert scaffold. It contains explicit
-authority questions for trusted scope, visible and kept-out fields, allowed
+authority questions for trusted scope, model-visible/model-withheld/kept-out fields, allowed
 effect, conflict guard, bounds, approval, and executor. Creating or editing it
 does not change the active contract or MCP tool list.
 

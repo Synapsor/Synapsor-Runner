@@ -19,8 +19,10 @@ export type FriendlyExploreOptions = {
   top?: number;
 };
 
+type FriendlyExploreBoundary = Pick<ActivatedExplorationBoundary, "pack" | "budgets">;
+
 export function buildFriendlyAggregatePlan(
-  boundary: ActivatedExplorationBoundary,
+  boundary: FriendlyExploreBoundary,
   options: FriendlyExploreOptions,
 ): AggregateExplorePlan {
   const resource = chooseResource(boundary, options);
@@ -109,9 +111,9 @@ export function buildFriendlyAggregatePlan(
 }
 
 function chooseResource(
-  boundary: ActivatedExplorationBoundary,
+  boundary: FriendlyExploreBoundary,
   options: FriendlyExploreOptions,
-): ActivatedExplorationBoundary["pack"]["resources"][number] {
+): FriendlyExploreBoundary["pack"]["resources"][number] {
   if (options.resource) {
     const found = boundary.pack.resources.find((resource) => resource.id === options.resource);
     if (!found) {

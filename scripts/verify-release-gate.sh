@@ -44,6 +44,7 @@ run corepack pnpm --dir "$ROOT" test:first-run
 run "$ROOT/scripts/verify-public-commands.sh"
 run "$ROOT/scripts/verify-local-runner.sh"
 run node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source
+run node "$ROOT/scripts/check-public-package-version-collisions.mjs"
 run "$ROOT/scripts/verify-packed-runner.sh"
 run "$ROOT/scripts/verify-packed-own-db.sh"
 run node "$ROOT/scripts/check-license-content.mjs"

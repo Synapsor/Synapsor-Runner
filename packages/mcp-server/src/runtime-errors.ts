@@ -53,6 +53,19 @@ export function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["err
       retryable: false,
     };
   }
+  if (runtimeCode && [
+    "GENERATED_AUTHORITY_DRIFT",
+    "GENERATION_LOCK_DIGEST_MISMATCH",
+    "GENERATION_LOCK_SOURCE_MISMATCH",
+    "GENERATION_LOCK_TIMEZONE_MISMATCH",
+    "GENERATED_AUTHORITY_ROLE_UNSAFE",
+  ].includes(runtimeCode)) {
+    return {
+      code: "POLICY_VIOLATION",
+      message: "The protected read was refused because its reviewed schema or database posture changed. Rescan and review the affected table or view.",
+      retryable: false,
+    };
+  }
   if (runtimeCode === "CLOUD_RATE_LIMITED") {
     const retryAfter = error instanceof McpRuntimeError && typeof error.details?.retry_after_ms === "number"
       ? Math.max(1, Math.round(error.details.retry_after_ms))

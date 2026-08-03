@@ -1,5 +1,10 @@
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { capabilityWritebackExecutor, capabilityWritebackMode, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import {
+  capabilityWritebackExecutor,
+  capabilityWritebackMode,
+  validateFreshnessAuthorityAgainstCurrentConfig,
+  type RuntimeConfig,
+} from "@synapsor-runner/mcp-server";
 import { createPostgresPool } from "@synapsor-runner/postgres";
 import {
   PostgresWritebackIntentStore,
@@ -713,6 +718,27 @@ export async function verifyLocalWritebackAuthority(
   if (matching.conflict_guard?.column && job.conflict_guard.kind === "version_column" && matching.conflict_guard.column !== job.conflict_guard.column) {
     throw new Error("writeback conflict guard does not match reviewed capability");
   }
+  const jobFreshness = "freshness" in job && job.freshness
+    ? parseFreshnessAuthority(job.freshness)
+    : undefined;
+  const currentFreshnessPolicy = config.proposal_freshness?.[matching.name];
+  if (Boolean(currentFreshnessPolicy) !== Boolean(jobFreshness)) {
+    throw new Error(
+      "FRESHNESS_POLICY_CHANGED_CREATE_NEW_PROPOSAL: the reviewed freshness policy changed after this proposal was created; create and review a new proposal",
+    );
+  }
+  if (jobFreshness) {
+    const freshnessConfigError = validateFreshnessAuthorityAgainstCurrentConfig(
+      config,
+      matching,
+      jobFreshness,
+    );
+    if (freshnessConfigError) {
+      throw new Error(
+        `FRESHNESS_POLICY_CHANGED_CREATE_NEW_PROPOSAL: ${freshnessConfigError}; create and review a new proposal`,
+      );
+    }
+  }
   if (storePath) {
     const store = new ProposalStore(storePath);
     try {
@@ -729,9 +755,6 @@ export async function verifyLocalWritebackAuthority(
       }
       const proposalFreshness = "freshness" in proposal.change_set && proposal.change_set.freshness
         ? parseFreshnessAuthority(proposal.change_set.freshness)
-        : undefined;
-      const jobFreshness = "freshness" in job && job.freshness
-        ? parseFreshnessAuthority(job.freshness)
         : undefined;
       if (Boolean(proposalFreshness) !== Boolean(jobFreshness)
         || (proposalFreshness && jobFreshness

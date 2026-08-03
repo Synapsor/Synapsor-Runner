@@ -90,7 +90,8 @@ export const writebackTerminalStatusSchema = z.enum([
   "conflict",
   "failed",
   "canceled",
-  "already_applied"
+  "already_applied",
+  "reconciliation_required",
 ]);
 export const writebackTerminalStatusV2Schema = z.enum([
   "applied",
@@ -1103,8 +1104,16 @@ export const executionReceiptV1Schema = z.object({
   source_database_mutated: z.boolean(),
   executed_at: z.string().min(1),
   safe_error_code: z.string().optional(),
-  receipt_hash: sha256
-}).passthrough();
+  receipt_hash: sha256,
+  reconciliation: z.object({
+    intent_id: z.string().min(1),
+    reason: z.string().min(1),
+  }).optional(),
+}).passthrough().superRefine((receipt, ctx) => {
+  if (receipt.status === "reconciliation_required" && !receipt.reconciliation) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "reconciliation_required receipts require reconciliation metadata", path: ["reconciliation"] });
+  }
+});
 
 export const executionReceiptV2Schema = z.object({
   schema_version: z.literal(protocolVersions.executionReceiptV2),
@@ -1230,7 +1239,8 @@ const normalizedExecutionReceiptV1Schema = executionReceiptV1Schema.transform((r
   result_version: receipt.new_version == null ? undefined : String(receipt.new_version),
   result_hash: receipt.receipt_hash,
   completed_at: receipt.executed_at,
-  error_code: receipt.safe_error_code
+  error_code: receipt.safe_error_code,
+  intent_id: receipt.reconciliation?.intent_id,
 }));
 
 export const legacyWritebackResultSchema = z.object({
@@ -1242,7 +1252,12 @@ export const legacyWritebackResultSchema = z.object({
   result_version: z.string().optional(),
   result_hash: z.string().optional(),
   completed_at: z.string().optional(),
-  error_code: z.string().optional()
+  error_code: z.string().optional(),
+  intent_id: z.string().min(1).optional(),
+}).superRefine((result, ctx) => {
+  if (result.status === "reconciliation_required" && !result.intent_id) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "reconciliation_required results require intent_id", path: ["intent_id"] });
+  }
 });
 
 export const normalizedWritebackResultV2Schema = z.object({

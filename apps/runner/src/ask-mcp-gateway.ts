@@ -12,15 +12,18 @@ import {
   createScopedExploreMcpServer,
 } from "./authoring-mcp.js";
 import {
-  createScopedExploreRuntime,
   ScopedExploreError,
-  type ScopedExploreRuntime,
 } from "./scoped-explore.js";
+import {
+  createScopedExploreBoundarySetRuntime,
+  type ScopedExploreBoundarySetRuntime,
+} from "./scoped-explore-boundary-set.js";
 import type {
   AskToolCallResult,
   AskToolDefinition,
   AskToolGateway,
 } from "./model-ask.js";
+import { AskError } from "./model-ask.js";
 
 type ConnectedMcpSurface = {
   kind: "runtime" | "authoring";
@@ -28,6 +31,11 @@ type ConnectedMcpSurface = {
   server: McpServer;
   closeRuntime: () => Promise<void>;
   tools: AskToolDefinition[];
+  projectResultForModel?: (
+    tool: string,
+    args: Record<string, unknown>,
+    result: Record<string, unknown>,
+  ) => { value: Record<string, unknown>; withheld: boolean };
 };
 
 export async function createWorkbenchAskMcpGateway(input: {
@@ -35,20 +43,45 @@ export async function createWorkbenchAskMcpGateway(input: {
   storePath: string;
   projectRoot: string;
   env: NodeJS.ProcessEnv;
+  mode?: "auto" | "authoring" | "runtime";
 }): Promise<AskToolGateway> {
   const surfaces: ConnectedMcpSurface[] = [];
   try {
-    const runtime = await connectRuntimeSurface(input);
-    if (runtime) surfaces.push(runtime);
     const authoring = await connectAuthoringSurface(input);
-    if (authoring) surfaces.push(authoring);
-    const toolSurface = combinedToolSurface(surfaces);
+    const requestedMode = input.mode ?? "auto";
+    let selectedMode: "authoring" | "runtime";
+    if (authoring) {
+      if (requestedMode === "runtime") {
+        await closeSurface(authoring);
+        throw new AskError(
+          "ASK_MODE_CONFLICT",
+          "Runtime Ask is unavailable while Scoped Explore is active. Use authoring mode or disable Explore first.",
+          409,
+        );
+      }
+      surfaces.push(authoring);
+      assertExactAuthoringSurface(authoring.tools);
+      selectedMode = "authoring";
+    } else {
+      if (requestedMode === "authoring") {
+        throw new AskError(
+          "ASK_AUTHORING_UNAVAILABLE",
+          "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.",
+          409,
+        );
+      }
+      const runtime = await connectRuntimeSurface(input);
+      if (runtime) surfaces.push(runtime);
+      selectedMode = "runtime";
+    }
+    const toolSurface = singleToolSurface(surfaces);
     const surfaceByTool = new Map<string, ConnectedMcpSurface>();
     for (const surface of surfaces) {
       for (const tool of surface.tools) surfaceByTool.set(tool.name, surface);
     }
     let closed = false;
     return {
+      mode: selectedMode,
       listTools: () => toolSurface,
       callTool: async (name, args) => {
         const surface = surfaceByTool.get(name);
@@ -66,7 +99,12 @@ export async function createWorkbenchAskMcpGateway(input: {
         }
         try {
           const result = await surface.client.callTool({ name, arguments: args });
-          const value = structuredToolResult(result);
+          const views = askToolResultViews(result);
+          const value = views.local;
+          const providerProjection = surface.projectResultForModel?.(name, args, value)
+            ?? (views.withheld
+              ? { value: views.provider, withheld: true }
+              : undefined);
           const errorCode = typeof value.error_code === "string"
             ? value.error_code
             : result.isError === true
@@ -75,6 +113,8 @@ export async function createWorkbenchAskMcpGateway(input: {
           return {
             ok: result.isError !== true && value.ok !== false,
             value,
+            ...(providerProjection ? { provider_value: providerProjection.value } : {}),
+            ...(providerProjection?.withheld ? { model_withheld_values: true } : {}),
             ...(errorCode ? { error_code: errorCode } : {}),
           };
         } catch {
@@ -129,25 +169,49 @@ async function connectAuthoringSurface(input: {
   projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
-  let runtime: ScopedExploreRuntime | undefined;
+  let runtime: ScopedExploreBoundarySetRuntime | undefined;
   try {
-    runtime = await createScopedExploreRuntime({
+    runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot: input.projectRoot,
       transport: "loopback_workbench",
       env: input.env,
     });
     const server = createScopedExploreMcpServer(runtime);
-    return await connectSurface("authoring", server, () => runtime!.close());
+    const surface = await connectSurface("authoring", server, () => runtime!.close());
+    surface.projectResultForModel = (tool, args, result) =>
+      runtime!.projectResultForModel({
+        tool,
+        arguments: args,
+        result,
+      });
+    return surface;
   } catch (error) {
     await runtime?.close().catch(() => undefined);
-    if (error instanceof ScopedExploreError && [
-      "EXPLORE_DISABLED",
-      "EXPLORE_PROFILE_REFUSED",
-      "EXPLORE_TRANSPORT_REFUSED",
-      "EXPLORE_LOCK_STALE",
-      "EXPLORE_CREDENTIAL_POSTURE_REFUSED",
-    ].includes(error.code)) {
-      return undefined;
+    if (error instanceof ScopedExploreError) {
+      if (error.code === "EXPLORE_DISABLED") return undefined;
+      if (error.code === "EXPLORE_LOCK_STALE"
+        || error.code === "EXPLORE_BOUNDARY_MISMATCH") {
+        throw new AskError(
+          "ASK_AUTHORITY_CHANGED",
+          `Reviewed analytics access changed. ${error.message} No query was executed. Next: rescan and review the affected table or view.`,
+          409,
+        );
+      }
+      if (error.code === "EXPLORE_ROLE_UNSAFE") {
+        throw new AskError(
+          "ASK_AUTHORING_ROLE_UNSAFE",
+          `${error.message} No query was executed. Next: reconnect the reviewed read-only role and rescan.`,
+          409,
+        );
+      }
+      if (error.code === "EXPLORE_PROFILE_FORBIDDEN"
+        || error.code === "EXPLORE_TRANSPORT_FORBIDDEN") {
+        throw new AskError(
+          "ASK_AUTHORING_UNAVAILABLE",
+          `${error.message} No query was executed. Scoped Explore remains local development/staging authority only.`,
+          409,
+        );
+      }
     }
     throw error;
   }
@@ -183,7 +247,14 @@ async function connectSurface(
   }
 }
 
-function combinedToolSurface(surfaces: ConnectedMcpSurface[]): AskToolDefinition[] {
+function singleToolSurface(surfaces: ConnectedMcpSurface[]): AskToolDefinition[] {
+  if (surfaces.length > 1) {
+    throw new AskError(
+      "ASK_MIXED_TOOL_SURFACE_REFUSED",
+      "Ask refuses to combine authoring and runtime tool catalogs.",
+      409,
+    );
+  }
   const byName = new Map<string, AskToolDefinition>();
   for (const surface of surfaces) {
     for (const tool of surface.tools) {
@@ -196,7 +267,45 @@ function combinedToolSurface(surfaces: ConnectedMcpSurface[]): AskToolDefinition
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function structuredToolResult(result: Awaited<ReturnType<Client["callTool"]>>): Record<string, unknown> {
+function assertExactAuthoringSurface(tools: AskToolDefinition[]): void {
+  const expected = ["app.describe_data", "app.explore_data"];
+  const actual = tools.map((tool) => tool.name).sort();
+  if (actual.length !== expected.length
+    || actual.some((name, index) => name !== expected[index])) {
+    throw new AskError(
+      "ASK_AUTHORING_TOOL_SURFACE_INVALID",
+      "Scoped Explore Ask must expose exactly app.describe_data and app.explore_data.",
+      409,
+    );
+  }
+}
+
+async function closeSurface(surface: ConnectedMcpSurface): Promise<void> {
+  await Promise.allSettled([
+    surface.client.close(),
+    surface.server.close(),
+    surface.closeRuntime(),
+  ]);
+}
+
+export function askToolResultViews(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): {
+  local: Record<string, unknown>;
+  provider: Record<string, unknown>;
+  withheld: boolean;
+} {
+  const metadata = isRecord(result._meta) ? result._meta : {};
+  const localFullResult = metadata["synapsor.local_full_result"];
+  const provider = modelFacingToolResult(result);
+  return {
+    local: isRecord(localFullResult) ? localFullResult : provider,
+    provider,
+    withheld: metadata["synapsor.model_withheld_values"] === true,
+  };
+}
+
+function modelFacingToolResult(result: Awaited<ReturnType<Client["callTool"]>>): Record<string, unknown> {
   if (isRecord(result.structuredContent)) return result.structuredContent;
   if (Array.isArray(result.content)) {
     const text = result.content.find((item) => isRecord(item) && item.type === "text" && typeof item.text === "string");

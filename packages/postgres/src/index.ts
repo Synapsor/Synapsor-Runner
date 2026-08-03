@@ -41,6 +41,7 @@ export type PostgresRlsInspection = {
   role_is_superuser: boolean;
   role_has_bypassrls: boolean;
   role_is_table_owner: boolean;
+  role_can_assume_table_owner: boolean;
   tenant_setting: string;
   principal_setting?: string;
   required_operations: PostgresRlsOperation[];
@@ -138,6 +139,9 @@ async function inspectPostgresRlsTargetInternal(
        c.relrowsecurity AS row_security_enabled,
        c.relforcerowsecurity AS force_row_security,
        owner.rolname = current_user AS role_is_table_owner,
+       owner.rolname <> current_user
+         AND pg_catalog.pg_has_role(current_user, c.relowner, 'MEMBER')
+         AS role_can_assume_table_owner,
        current_role_info.rolsuper AS role_is_superuser,
        current_role_info.rolbypassrls AS role_has_bypassrls
      FROM pg_catalog.pg_class c
@@ -173,6 +177,7 @@ async function inspectPostgresRlsTargetInternal(
     role_is_superuser: row?.role_is_superuser === true,
     role_has_bypassrls: row?.role_has_bypassrls === true,
     role_is_table_owner: row?.role_is_table_owner === true,
+    role_can_assume_table_owner: row?.role_can_assume_table_owner === true,
     tenant_setting: input.scope.tenantSetting,
     ...(input.scope.principalSetting ? { principal_setting: input.scope.principalSetting } : {}),
     required_operations: requiredOperations,
@@ -197,6 +202,7 @@ async function inspectPostgresRlsTargetInternal(
     if (report.role_is_superuser) report.errors.push("POSTGRES_RLS_ROLE_SUPERUSER");
     if (report.role_has_bypassrls) report.errors.push("POSTGRES_RLS_ROLE_BYPASSRLS");
     if (report.role_is_table_owner) report.errors.push("POSTGRES_RLS_ROLE_TABLE_OWNER");
+    if (report.role_can_assume_table_owner) report.errors.push("POSTGRES_RLS_ROLE_CAN_ASSUME_TABLE_OWNER");
     const dependencies = await client.query(
       `SELECT DISTINCT
          dependency_namespace.nspname AS schema_name,
@@ -284,6 +290,7 @@ async function inspectPostgresRlsTargetInternal(
   if (report.role_is_superuser) report.errors.push("POSTGRES_RLS_ROLE_SUPERUSER");
   if (report.role_has_bypassrls) report.errors.push("POSTGRES_RLS_ROLE_BYPASSRLS");
   if (report.role_is_table_owner) report.errors.push("POSTGRES_RLS_ROLE_TABLE_OWNER");
+  if (report.role_can_assume_table_owner) report.errors.push("POSTGRES_RLS_ROLE_CAN_ASSUME_TABLE_OWNER");
   for (const operation of requiredOperations) {
     const applicable = report.policies.filter((policy) => policy.command === "ALL" || policy.command === operation);
     if (!applicable.length) {
@@ -358,6 +365,7 @@ export function postgresReceiptMigrationForConfig(config: RunnerConfig): string 
 
 export function buildPostgresUpdate(job: WritebackJob): { sql: string; values: unknown[] } {
   if (operationOf(job) !== "single_row_update") throw new Error("postgres update builder requires single_row_update");
+  const conflictGuard = exactConflictGuard(job, "postgres update");
   validatePatch(job, "postgres");
   if (job.target.primary_key.value === undefined) throw new Error("postgres update requires primary-key value");
   const values: unknown[] = [];
@@ -381,10 +389,8 @@ export function buildPostgresUpdate(job: WritebackJob): { sql: string; values: u
     values.push(scope.value);
     where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`);
   }
-  if (job.conflict_guard.kind === "version_column") {
-    values.push(job.conflict_guard.expected_value);
-    where.push(`${quotePostgresIdentifier(job.conflict_guard.column)} = $${values.length}`);
-  }
+  values.push(conflictGuard.expected_value);
+  where.push(`${quotePostgresIdentifier(conflictGuard.column)} = $${values.length}`);
   const returning = job.protocol_version === "2.0" && job.version_advance
     ? ` RETURNING ${quotePostgresIdentifier(job.version_advance.column)}::text AS "__synapsor_result_version"`
     : "";
@@ -410,7 +416,8 @@ export function buildPostgresInsert(job: WritebackJob): { sql: string; values: u
 
 export function buildPostgresDelete(job: WritebackJob): { sql: string; values: unknown[] } {
   if (operationOf(job) !== "single_row_delete") throw new Error("postgres delete builder requires single_row_delete");
-  if (job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") {
+  const conflictGuard = exactConflictGuard(job, "postgres delete");
+  if (job.target.primary_key.value === undefined) {
     throw new Error("postgres delete requires primary-key and exact version guards");
   }
   const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
@@ -423,9 +430,23 @@ export function buildPostgresDelete(job: WritebackJob): { sql: string; values: u
     values.push(scope.value);
     where.push(`${quotePostgresIdentifier(scope.column)} = $${values.length}`);
   }
-  values.push(job.conflict_guard.expected_value);
-  where.push(`${quotePostgresIdentifier(job.conflict_guard.column)} = $${values.length}`);
+  values.push(conflictGuard.expected_value);
+  where.push(`${quotePostgresIdentifier(conflictGuard.column)} = $${values.length}`);
   return { sql: `DELETE FROM ${quotePostgresIdentifier(job.target.schema)}.${quotePostgresIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}`, values };
+}
+
+function exactConflictGuard(
+  job: WritebackJob,
+  operation: string,
+): Extract<WritebackJob["conflict_guard"], { kind: "version_column" }> {
+  if (job.conflict_guard.kind === "row_hash"
+    || (job.conflict_guard.kind === "version_column" && job.conflict_guard.column === "__row_hash")) {
+    throw new Error("ROW_HASH_CONFLICT_GUARD_UNSUPPORTED");
+  }
+  if (job.conflict_guard.kind !== "version_column") {
+    throw new Error(`${operation} requires an exact version-column guard`);
+  }
+  return job.conflict_guard;
 }
 
 function validatePatch(job: WritebackJob, engine: string): void {
@@ -781,14 +802,21 @@ export async function applyPostgresJobWithClient(job: WritebackJob, config: Runn
   validateOperation(job);
   if (receiptAuthority(config) === "runner_ledger") return await applyWithRunnerLedger(job, config, client);
   if (config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
-  return await sourceTransaction(client, job, config, async () => {
-    const existing = await claimSourceReceipt(client, job, config);
-    if (existing) return existing;
-    const outcome = await mutatePostgres(job, client);
-    const result = resultFromOutcome(job, config, outcome);
-    await recordSourceReceipt(client, job, config, outcome.status, resultHashFromResult(job, result));
-    return result;
-  });
+  try {
+    return await sourceTransaction(client, job, config, async () => {
+      const existing = await claimSourceReceipt(client, job, config);
+      if (existing) return existing;
+      const outcome = await mutatePostgres(job, client);
+      const result = resultFromOutcome(job, config, outcome);
+      await recordSourceReceipt(client, job, config, outcome.status, resultHashFromResult(job, result));
+      return result;
+    });
+  } catch (error) {
+    if (error instanceof SourceOutcomeUnknownError) {
+      return reconciliationResult(job, config, sourceReconciliationIntentId(job), "OUTCOME_UNKNOWN");
+    }
+    throw error;
+  }
 }
 
 async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, client: PostgresApplyClient): Promise<WritebackResult> {
@@ -1166,6 +1194,11 @@ function validateBatchInsertMember(job: SetWritebackJob, member: SetWritebackJob
 }
 
 async function insertPostgresBatch(job: SetWritebackJob, client: PostgresApplyClient): Promise<MutationOutcome> {
+  await assertPostgresInsertDedupUniqueness(
+    job,
+    job.frozen_set.members.map((member) => member.deduplication!.components),
+    client,
+  );
   for (const member of job.frozen_set.members) {
     const components = member.deduplication!.components;
     const values: unknown[] = components.map((component) => component.value);
@@ -1217,6 +1250,7 @@ async function lockTargetRow(job: WritebackJob, client: PostgresApplyClient): Pr
 async function insertPostgres(job: WritebackJob, client: PostgresApplyClient): Promise<MutationOutcome> {
   if (job.protocol_version !== "2.0" || !job.deduplication) throw new Error("INSERT_DEDUP_REQUIRED");
   const components = job.deduplication.components;
+  await assertPostgresInsertDedupUniqueness(job, [components], client);
   const whereValues: unknown[] = components.map((component) => component.value);
   const where = components.map((component, index) => `${quotePostgresIdentifier(component.column)} = $${index + 1}`);
   const scope = principalScope(job);
@@ -1232,6 +1266,91 @@ async function insertPostgres(job: WritebackJob, client: PostgresApplyClient): P
   const primaryKey = inserted.rows[0]?.__synapsor_primary_key;
   const identity = identityForJob(job, primaryKey);
   return { status: "applied", affectedRows: 1, targetIdentity: identity, afterDigest: digest({ identity, values: insertValues(job) }) };
+}
+
+type DeduplicationComponent = { column: string; value: string | number | boolean | null };
+
+type PostgresUniqueKey = {
+  valid: boolean;
+  ready: boolean;
+  nonPartial: boolean;
+  keyCount: number;
+  columns: Map<number, string | undefined>;
+};
+
+async function assertPostgresInsertDedupUniqueness(
+  job: WritebackJob,
+  componentSets: DeduplicationComponent[][],
+  client: PostgresApplyClient,
+): Promise<void> {
+  const metadata = await client.query(
+    `SELECT i.indexrelid::text AS index_id,
+       i.indisvalid AS is_valid,
+       i.indisready AS is_ready,
+       (i.indpred IS NULL) AS is_non_partial,
+       i.indnkeyatts::integer AS key_count,
+       key.ordinality::integer AS key_position,
+       attribute.attname AS column_name
+FROM pg_catalog.pg_index i
+JOIN pg_catalog.pg_class target ON target.oid = i.indrelid
+JOIN pg_catalog.pg_namespace namespace ON namespace.oid = target.relnamespace
+CROSS JOIN LATERAL unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, ordinality)
+LEFT JOIN pg_catalog.pg_attribute attribute
+  ON attribute.attrelid = target.oid
+ AND attribute.attnum = key.attnum
+WHERE namespace.nspname = $1
+  AND target.relname = $2
+  AND i.indisunique
+  AND key.ordinality <= i.indnkeyatts
+ORDER BY i.indexrelid, key.ordinality`,
+    [job.target.schema, job.target.table],
+  );
+  const keys = new Map<string, PostgresUniqueKey>();
+  for (const row of metadata.rows) {
+    const id = typeof row.index_id === "string" ? row.index_id : String(row.index_id ?? "");
+    if (!id) continue;
+    const key = keys.get(id) ?? {
+      valid: row.is_valid === true,
+      ready: row.is_ready === true,
+      nonPartial: row.is_non_partial === true,
+      keyCount: Number(row.key_count),
+      columns: new Map<number, string | undefined>(),
+    };
+    const position = Number(row.key_position);
+    if (Number.isInteger(position) && position > 0) {
+      key.columns.set(position, typeof row.column_name === "string" ? row.column_name : undefined);
+    }
+    keys.set(id, key);
+  }
+
+  const scope = principalScope(job);
+  for (const components of componentSets) {
+    const values = deduplicationValues(components, scope);
+    const proven = [...keys.values()].some((key) => {
+      if (!key.valid || !key.ready || !key.nonPartial || !Number.isInteger(key.keyCount) || key.keyCount < 1) return false;
+      if (key.columns.size !== key.keyCount) return false;
+      for (let position = 1; position <= key.keyCount; position += 1) {
+        const column = key.columns.get(position);
+        if (!column || !values.has(column) || values.get(column) === null) return false;
+      }
+      return true;
+    });
+    if (!proven) throw new Error("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+  }
+}
+
+function deduplicationValues(
+  components: DeduplicationComponent[],
+  scope: { column: string; value: string | number | boolean | null } | undefined,
+): Map<string, string | number | boolean | null> {
+  const values = new Map<string, string | number | boolean | null>();
+  for (const component of [...components, ...(scope ? [scope] : [])]) {
+    if (values.has(component.column) && JSON.stringify(values.get(component.column)) !== JSON.stringify(component.value)) {
+      throw new Error("INSERT_DEDUP_COMPONENT_CONFLICT");
+    }
+    values.set(component.column, component.value);
+  }
+  return values;
 }
 
 function verifyVersionAdvanced(job: WritebackJob, actual: unknown): void {
@@ -1289,11 +1408,22 @@ function failedResult(job: WritebackJob, config: RunnerConfig, code: string): Wr
   return resultFromOutcome(job, config, { status: "failed", affectedRows: 0, code, targetIdentity: identityForJob(job) });
 }
 
-function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string): WritebackResult {
-  if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
-  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
-  if (job.protocol_version !== "2.0") return failedResult(job, config, "RECONCILIATION_REQUIRED");
-  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: "runner_ledger", status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: "RECONCILIATION_REQUIRED", intent_id: intentId, completed_at: new Date().toISOString() };
+function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string, errorCode = "RECONCILIATION_REQUIRED"): WritebackResult {
+  const authority = receiptAuthority(config);
+  if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+  if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+  if (job.protocol_version !== "2.0") return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "reconciliation_required", affected_rows: 0, result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+  return { protocol_version: "2.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identity: identityForJob(job), result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
+}
+
+function sourceReconciliationIntentId(job: WritebackJob): string {
+  return `source-db:${digest({
+    authority: "source_db",
+    engine: "postgres",
+    source_id: job.source_id,
+    job_id: job.job_id,
+    idempotency_key: job.idempotency_key,
+  })}`;
 }
 
 function asAlreadyApplied(result: WritebackResult, job: WritebackJob, config: RunnerConfig): WritebackResult {
@@ -1310,11 +1440,12 @@ function safeErrorCode(error: unknown, operation?: Operation): string {
   const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("POSTGRES_RLS_PREREQUISITE_FAILED")) return "POSTGRES_RLS_PREREQUISITE_FAILED";
+  if (message.includes("ROW_HASH_CONFLICT_GUARD_UNSUPPORTED")) return "ROW_HASH_CONFLICT_GUARD_UNSUPPORTED";
   for (const known of ["POSTGRES_RLS_TENANT_CONTEXT_MISSING", "POSTGRES_RLS_PRINCIPAL_CONTEXT_MISSING", "POSTGRES_RLS_TENANT_CONTEXT_MISMATCH", "POSTGRES_RLS_PRINCIPAL_CONTEXT_MISMATCH"]) {
     if (message.includes(known)) return known;
   }
   if (code === "23505" && (operation === "single_row_insert" || operation === "batch_insert")) return "INSERT_DEDUP_CONFLICT";
-  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
+  for (const known of ["MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_DEDUP_UNIQUENESS_UNPROVEN", "INSERT_DEDUP_COMPONENT_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
   return "TRANSACTION_FAILED";
 }
 

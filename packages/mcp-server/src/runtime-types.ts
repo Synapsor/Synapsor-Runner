@@ -12,6 +12,10 @@ import type {
   FreshnessProofV1,
 } from "@synapsor-runner/protocol";
 import type {
+  InspectOptions,
+  SchemaInspection,
+} from "@synapsor-runner/schema-inspector";
+import type {
   AggregateReadSpec,
   PolicySpec,
   ProposalActionSpec,
@@ -123,6 +127,7 @@ export type RuntimeCapabilityConfig = {
   lookup: { id_from_arg: string };
   visible_columns: string[];
   kept_out_fields?: string[];
+  model_withheld_fields?: string[];
   evidence?: "required" | "optional" | string;
   max_rows?: number;
   aggregate?: AggregateReadSpec;
@@ -390,6 +395,12 @@ export type RuntimeConfig = {
   generated_authority?: {
     generation_lock_path: string;
     enforcement: "required";
+    reporting_timezone?: "UTC";
+    minimum_cohort_overrides?: Record<string, {
+      contract_digest: `sha256:${string}`;
+      minimum_cohort_size: number;
+      review_digest: `sha256:${string}`;
+    }>;
   };
   supervised_worker?: RuntimeSupervisedWorkerConfig;
   notifications?: RuntimeNotificationsConfig;
@@ -471,6 +482,7 @@ export type DbRowReader = (input: {
   context: TrustedContext;
   env: NodeJS.ProcessEnv;
   transaction_mode?: "read_only";
+  reporting_timezone?: "UTC";
 }) => Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }>;
 
 export type McpRuntimeOptions = {
@@ -485,6 +497,7 @@ export type McpRuntimeOptions = {
   trustedContext?: TrustedContext;
   clock?: () => number;
   sharedResources?: McpRuntimeSharedResources;
+  generatedAuthorityInspector?: (input: InspectOptions) => Promise<SchemaInspection>;
 };
 
 export type TenantCredentialResolver = {
@@ -598,6 +611,7 @@ export type StreamableHttpTlsOptions = {
 
 export type SynapsorMcpServerOptions = {
   toolNameStyle?: ToolNameStyle;
+  resultFormat?: ResultFormat;
 };
 
 export type ResultEnvelopeV2 = {
@@ -708,6 +722,7 @@ export type GeneratedAuthorityLock = {
   generated_contract_digest: `sha256:${string}`;
   reviewed_overrides_digest: `sha256:${string}`;
   protected_authority: string[];
+  reporting_timezone?: "UTC";
   authority_dependencies?: {
     schema_version: "synapsor.authority-dependencies.v1";
     credential_posture_fingerprint: `sha256:${string}`;

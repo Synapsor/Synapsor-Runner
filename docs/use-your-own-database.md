@@ -3,9 +3,11 @@
 The canonical guide is [Connect Your Own Database](getting-started-own-database.md).
 
 Use it when you want to point Synapsor Runner at a staging Postgres/MySQL
-database, inspect schemas/tables, generate one reviewed context/capability, and
-serve semantic MCP tools without exposing raw SQL or write credentials to the
-model.
+database, inspect the whole schema without sampling source rows, review a
+disabled boundary by exception, and ask repeated bounded questions without
+exposing raw SQL or write credentials to the model. A selected analysis can
+later be protected as a disabled named capability for explicit production
+activation; protecting every exploratory question is not required.
 
 Short path:
 

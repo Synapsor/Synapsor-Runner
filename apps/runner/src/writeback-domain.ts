@@ -257,5 +257,11 @@ export function toExecutionReceipt(job: WritebackJob, result: WritebackResult, d
     executed_at: result.completed_at ?? new Date().toISOString(),
     safe_error_code: result.error_code,
     receipt_hash: receiptHash,
+    ...(result.status === "reconciliation_required" ? {
+      reconciliation: {
+        intent_id: result.intent_id,
+        reason: "source outcome requires operator reconciliation",
+      },
+    } : {}),
   };
 }

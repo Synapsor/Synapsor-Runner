@@ -23,7 +23,7 @@ const METADATA_KEYS = new Set(["name", "description", "version", "tags"]);
 const RESOURCE_KEYS = new Set(["name", "engine", "schema", "table", "type", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
 const CONTEXT_KEYS = new Set(["name", "description", "bindings", "tenant_binding", "principal_binding"]);
 const BINDING_KEYS = new Set(["name", "source", "key", "required"]);
-const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "evidence", "max_rows", "proposal", "aggregate", "protected_read"]);
+const CAPABILITY_KEYS = new Set(["name", "description", "returns_hint", "kind", "context", "source", "subject", "args", "lookup", "visible_fields", "kept_out_fields", "model_withheld_fields", "evidence", "max_rows", "proposal", "aggregate", "protected_read"]);
 const SUBJECT_KEYS = new Set(["resource", "schema", "table", "primary_key", "tenant_key", "principal_scope_key", "conflict_key", "single_tenant_dev"]);
 const ARG_KEYS = new Set(["type", "description", "required", "max_length", "minimum", "maximum", "enum", "max_items", "fields"]);
 const LOOKUP_KEYS = new Set(["id_from_arg"]);
@@ -102,10 +102,11 @@ const PROTECTED_DIMENSION_KEYS = new Set(["name", "field", "relationship"]);
 const PROTECTED_TIME_BUCKET_KEYS = new Set(["name", "field", "bucket", "relationship"]);
 const PROTECTED_COMPARISON_KEYS = new Set(["field", "relationship", "ranges"]);
 const PROTECTED_RANGE_KEYS = new Set(["start", "end"]);
-const PROTECTED_AGGREGATE_ORDER_KEYS = new Set(["kind", "measure", "direction"]);
+const PROTECTED_AGGREGATE_ORDER_KEYS = new Set(["kind", "measure", "change", "direction"]);
 const PROTECTED_LIMIT_KEYS = new Set([
   "max_rows",
   "max_groups",
+  "max_ranked_groups",
   "max_response_cells",
   "max_response_bytes",
   "statement_timeout_ms",
@@ -293,7 +294,17 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     if (capability.lookup !== undefined) validateLookup(capability.lookup, `${path}.lookup`, capability.args, errors);
     validateFieldList(capability.visible_fields, `${path}.visible_fields`, "VISIBLE_FIELDS_REQUIRED", errors, capability.kind === "aggregate_read");
     if (capability.kept_out_fields !== undefined) validateFieldList(capability.kept_out_fields, `${path}.kept_out_fields`, "INVALID_KEPT_OUT_FIELDS", errors, true);
+    if (capability.model_withheld_fields !== undefined) {
+      validateFieldList(
+        capability.model_withheld_fields,
+        `${path}.model_withheld_fields`,
+        "INVALID_MODEL_WITHHELD_FIELDS",
+        errors,
+        true,
+      );
+    }
     validateKeptOutExclusion(capability.visible_fields, capability.kept_out_fields, path, errors);
+    validateModelWithheldExclusion(capability.kept_out_fields, capability.model_withheld_fields, path, errors);
     if (capability.evidence !== undefined) validateEvidenceRequirement(capability.evidence, `${path}.evidence`, errors);
     if (capability.max_rows !== undefined && !isPositiveInteger(capability.max_rows)) errors.push({ path: `${path}.max_rows`, code: "INVALID_MAX_ROWS", message: "max_rows must be a positive integer." });
     if (capability.kind === "proposal") {
@@ -606,6 +617,9 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
       keptOut,
       trustedScopeFields,
       maxGroups: isRecord(protectedRead.limits) ? protectedRead.limits.max_groups : undefined,
+      maxRankedGroups: isRecord(protectedRead.limits)
+        ? protectedRead.limits.max_ranked_groups
+        : undefined,
       path: `${path}.protected_read.aggregate`,
       errors,
     });
@@ -726,6 +740,7 @@ function validateProtectedAggregate(
     keptOut: Set<string>;
     trustedScopeFields: Set<string>;
     maxGroups: unknown;
+    maxRankedGroups: unknown;
     path: string;
     errors: ValidationIssue[];
   },
@@ -823,19 +838,35 @@ function validateProtectedAggregate(
       if (value.order_by.direction !== "asc" && value.order_by.direction !== "desc") errors.push({ path: `${orderPath}.direction`, code: "INVALID_PROTECTED_ORDER_DIRECTION", message: "order direction must be asc or desc." });
       if (value.order_by.kind === "measure") {
         if (!isSafeIdentifier(value.order_by.measure) || !measureNames.has(String(value.order_by.measure))) errors.push({ path: `${orderPath}.measure`, code: "UNKNOWN_PROTECTED_ORDER_MEASURE", message: "measure ordering must reference a reviewed measure name." });
+        if (value.order_by.change !== undefined) errors.push({ path: `${orderPath}.change`, code: "PROTECTED_MEASURE_ORDER_CHANGE_FORBIDDEN", message: "measure ordering must not declare a comparison-change shape." });
+      } else if (value.order_by.kind === "comparison_change") {
+        if (!isSafeIdentifier(value.order_by.measure) || !measureNames.has(String(value.order_by.measure))) errors.push({ path: `${orderPath}.measure`, code: "UNKNOWN_PROTECTED_ORDER_MEASURE", message: "comparison-change ordering must reference a reviewed measure name." });
+        if (value.order_by.change !== "absolute" && value.order_by.change !== "percentage") errors.push({ path: `${orderPath}.change`, code: "INVALID_PROTECTED_COMPARISON_CHANGE", message: "comparison-change ordering must use absolute or percentage change." });
+        if (!isRecord(value.comparison)
+          || !Array.isArray(value.comparison.ranges)
+          || value.comparison.ranges.length !== 2) {
+          errors.push({ path: orderPath, code: "PROTECTED_CHANGE_ORDER_REQUIRES_COMPARISON", message: "comparison-change ordering requires exactly two reviewed periods." });
+        }
       } else if (value.order_by.kind === "time_bucket") {
         if (value.order_by.measure !== undefined) errors.push({ path: `${orderPath}.measure`, code: "PROTECTED_TIME_ORDER_MEASURE_FORBIDDEN", message: "time-bucket ordering must not declare a measure." });
+        if (value.order_by.change !== undefined) errors.push({ path: `${orderPath}.change`, code: "PROTECTED_TIME_ORDER_CHANGE_FORBIDDEN", message: "time-bucket ordering must not declare a comparison-change shape." });
         if (!isRecord(value.time_bucket)) errors.push({ path: orderPath, code: "PROTECTED_TIME_ORDER_REQUIRES_BUCKET", message: "time-bucket ordering requires a reviewed time bucket." });
+        if (isRecord(value.comparison)) errors.push({ path: orderPath, code: "PROTECTED_COMPARISON_TIME_ORDER_FORBIDDEN", message: "a two-period comparison cannot order by an absolute time bucket." });
       } else {
-        errors.push({ path: `${orderPath}.kind`, code: "INVALID_PROTECTED_AGGREGATE_ORDER", message: "aggregate order kind must be measure or time_bucket." });
+        errors.push({ path: `${orderPath}.kind`, code: "INVALID_PROTECTED_AGGREGATE_ORDER", message: "aggregate order kind must be measure, comparison_change, or time_bucket." });
       }
     }
   }
-  if (!Number.isSafeInteger(value.top_n) || Number(value.top_n) < 1 || Number(value.top_n) > 100 || (Number.isSafeInteger(input.maxGroups) && Number(value.top_n) > Number(input.maxGroups))) {
-    errors.push({ path: `${path}.top_n`, code: "INVALID_PROTECTED_TOP_N", message: "top_n must be positive, at most 100, and no greater than limits.max_groups." });
+  const ranked = isRecord(value.order_by)
+    && (value.order_by.kind === "measure" || value.order_by.kind === "comparison_change");
+  const maximumGroups = ranked && Number.isSafeInteger(input.maxRankedGroups)
+    ? Number(input.maxRankedGroups)
+    : input.maxGroups;
+  if (!Number.isSafeInteger(value.top_n) || Number(value.top_n) < 1 || Number(value.top_n) > 100 || (Number.isSafeInteger(maximumGroups) && Number(value.top_n) > Number(maximumGroups))) {
+    errors.push({ path: `${path}.top_n`, code: "INVALID_PROTECTED_TOP_N", message: "top_n must be positive, at most 100, and no greater than its reviewed group limit." });
   }
-  if (!Number.isSafeInteger(value.minimum_group_size) || Number(value.minimum_group_size) < 2 || Number(value.minimum_group_size) > 1_000_000) {
-    errors.push({ path: `${path}.minimum_group_size`, code: "INVALID_PROTECTED_MINIMUM_GROUP_SIZE", message: "minimum_group_size must be from 2 through 1000000." });
+  if (!Number.isSafeInteger(value.minimum_group_size) || Number(value.minimum_group_size) < 1 || Number(value.minimum_group_size) > 1_000_000) {
+    errors.push({ path: `${path}.minimum_group_size`, code: "INVALID_PROTECTED_MINIMUM_GROUP_SIZE", message: "minimum_group_size must be from 1 through 1000000." });
   }
 }
 
@@ -848,6 +879,7 @@ function validateProtectedReadLimits(value: unknown, path: string, errors: Valid
   const ceilings: Record<string, number> = {
     max_rows: 100,
     max_groups: 100,
+    max_ranked_groups: 10_000,
     max_response_cells: 10_000,
     max_response_bytes: 1_048_576,
     statement_timeout_ms: 30_000,
@@ -857,9 +889,15 @@ function validateProtectedReadLimits(value: unknown, path: string, errors: Valid
     rate_limit_per_minute: 120,
   };
   for (const [key, maximum] of Object.entries(ceilings)) {
+    if (key === "max_ranked_groups" && value[key] === undefined) continue;
     if (!Number.isSafeInteger(value[key]) || Number(value[key]) < 1 || Number(value[key]) > maximum) {
       errors.push({ path: `${path}.${key}`, code: "INVALID_PROTECTED_READ_LIMIT", message: `${key} must be a positive integer no greater than ${maximum}.` });
     }
+  }
+  if (Number.isSafeInteger(value.max_ranked_groups)
+    && Number.isSafeInteger(value.max_groups)
+    && Number(value.max_ranked_groups) < Number(value.max_groups)) {
+    errors.push({ path: `${path}.max_ranked_groups`, code: "INVALID_PROTECTED_RANKED_GROUP_LIMIT", message: "max_ranked_groups cannot be lower than max_groups." });
   }
 }
 
@@ -928,8 +966,8 @@ function validateAggregateRead(capability: JsonRecord, path: string, errors: Val
   checkUnknownKeys(aggregate, AGGREGATE_READ_KEYS, `${path}.aggregate`, errors);
   const fn = String(aggregate.function);
   if (!["count", "sum", "avg"].includes(fn)) errors.push({ path: `${path}.aggregate.function`, code: "INVALID_AGGREGATE_FUNCTION", message: "aggregate function must be count, sum, or avg." });
-  if (!Number.isSafeInteger(aggregate.minimum_group_size) || Number(aggregate.minimum_group_size) < 2 || Number(aggregate.minimum_group_size) > 1_000_000) {
-    errors.push({ path: `${path}.aggregate.minimum_group_size`, code: "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", message: "aggregate reads require minimum_group_size from 2 through 1000000." });
+  if (!Number.isSafeInteger(aggregate.minimum_group_size) || Number(aggregate.minimum_group_size) < 1 || Number(aggregate.minimum_group_size) > 1_000_000) {
+    errors.push({ path: `${path}.aggregate.minimum_group_size`, code: "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", message: "aggregate reads require minimum_group_size from 1 through 1000000." });
   }
   if (fn === "count") {
     if (aggregate.count_mode !== "rows" && aggregate.count_mode !== "non_null") errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_REQUIRED", message: "COUNT requires count_mode rows or non_null." });
@@ -1624,6 +1662,25 @@ function validateKeptOutExclusion(visible: unknown, keptOut: unknown, path: stri
   const visibleSet = new Set(visible);
   for (const field of keptOut) {
     if (visibleSet.has(field)) errors.push({ path: `${path}.kept_out_fields`, code: "KEPT_OUT_FIELD_VISIBLE", message: `kept-out field must not also be visible: ${String(field)}` });
+  }
+}
+
+function validateModelWithheldExclusion(
+  keptOut: unknown,
+  modelWithheld: unknown,
+  path: string,
+  errors: ValidationIssue[],
+): void {
+  if (!Array.isArray(keptOut) || !Array.isArray(modelWithheld)) return;
+  const keptOutSet = new Set(keptOut);
+  for (const field of modelWithheld) {
+    if (keptOutSet.has(field)) {
+      errors.push({
+        path: `${path}.model_withheld_fields`,
+        code: "MODEL_WITHHELD_FIELD_KEPT_OUT",
+        message: `model-withheld field must not also be kept out: ${String(field)}`,
+      });
+    }
   }
 }
 

@@ -8,14 +8,20 @@ import type {
   SynapsorContract,
 } from "@synapsor/spec";
 import {
+  deactivateExplorationBoundary,
+  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
+  loadActivatedExplorationBoundaries,
+  reviewedRankedGroupLimit,
   type ActivatedExplorationBoundary,
   type GenerationLock,
 } from "./auto-boundary.js";
 import {
   listProtectedPlans,
   loadProtectedPlan,
+  modelWithheldExploreOutputColumns,
   prepareScopedExplore,
+  assertPreparedExplorePlanAuthority,
   validateExplorePlan,
   type AggregateExplorePlan,
   type ExploreFilter,
@@ -37,6 +43,15 @@ type ProtectedRelationshipPlan = {
   name: string;
   links: ProtectedRelationshipLinkPlan[];
 };
+type ReviewedMinimumCohortAuthority = {
+  resource: string;
+  minimum_cohort_size: number;
+  review_digest: `sha256:${string}`;
+};
+type ContractMinimumCohortAuthority = Omit<
+  ReviewedMinimumCohortAuthority,
+  "review_digest"
+>;
 
 export type ProtectLiteralPosition = {
   location: string;
@@ -74,6 +89,13 @@ export type ProtectedQueryDraft = {
   review_path: string;
   literal_positions: PersistedProtectLiteralPosition[];
   converted_arguments: ProtectArgumentSelection[];
+  minimum_cohort_override?: {
+    resource: string;
+    minimum_cohort_size: number;
+    review_digest: `sha256:${string}`;
+    reconfirmed_by: string;
+    reconfirmed_at: string;
+  };
 };
 
 export type ProtectedQueryActivation = {
@@ -86,7 +108,50 @@ export type ProtectedQueryActivation = {
   actor: string;
   activated_at: string;
   exploration_disabled: boolean;
+  minimum_cohort_override?: {
+    resource: string;
+    minimum_cohort_size: number;
+    review_digest: `sha256:${string}`;
+    reconfirmed_by: string;
+    reconfirmed_at: string;
+  };
 };
+
+export async function loadProtectedQueryDraft(input: {
+  projectRoot: string;
+  capabilityName: string;
+}): Promise<ProtectedQueryDraft> {
+  const projectRoot = path.resolve(input.projectRoot);
+  assertQualifiedCapabilityName(input.capabilityName);
+  const draft = JSON.parse(
+    await fs.readFile(
+      path.join(draftRoot(projectRoot, input.capabilityName), "draft.json"),
+      "utf8",
+    ),
+  ) as ProtectedQueryDraft;
+  if (draft.schema_version !== PROTECTED_QUERY_VERSION
+    || draft.state !== "disabled"
+    || draft.capability !== input.capabilityName
+    || !/^sha256:[a-f0-9]{64}$/.test(draft.boundary_digest)) {
+    throw new Error("Protected capability draft is invalid or belongs to another capability.");
+  }
+  return draft;
+}
+
+export function protectMinimumCohortConfirmation(
+  resource: string,
+  minimumCohortSize: number,
+): string {
+  return `PROTECT WITH MINIMUM COHORT ${minimumCohortSize} FOR ${resource}`;
+}
+
+export function activateMinimumCohortConfirmation(
+  resource: string,
+  minimumCohortSize: number,
+  contractDigest: string,
+): string {
+  return `ACTIVATE ${contractDigest} WITH MINIMUM COHORT ${minimumCohortSize} FOR ${resource}`;
+}
 
 export async function listProtectableQueries(input: {
   projectRoot: string;
@@ -99,14 +164,43 @@ export async function listProtectableQueries(input: {
   resource: string;
   normalized_plan: ExplorePlan;
   literal_positions: ProtectLiteralPosition[];
+  created_at?: string;
+  answer_id?: string;
+  evidence_bundle_id?: string;
+  query_audit_handle?: string;
+  outcome?: "ok" | "empty" | "fully_suppressed" | "incomplete_comparison";
+  returned_rows_or_groups?: number;
+  returned_cells?: number;
+  suppressed_groups?: number;
+  minimum_cohort_override?: {
+    resource: string;
+    minimum_cohort_size: number;
+    confirmation: string;
+  };
 }>> {
   const projectRoot = path.resolve(input.projectRoot);
-  const boundary = await loadActivatedExplorationBoundary(projectRoot);
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+  const boundaryByDigest = new Map(
+    boundaries.map((boundary) => [boundary.activation.digest, boundary]),
+  );
   const items = await listProtectedPlans({ projectRoot, ...(input.now === undefined ? {} : { now: input.now }) });
   return items
-    .filter((item) => item.boundary_digest === boundary.activation.digest)
+    .filter((item) => boundaryByDigest.has(item.boundary_digest))
     .map((item) => {
+      const boundary = boundaryByDigest.get(item.boundary_digest)!;
       const plan = validateExplorePlan(item.plan, boundary);
+      const resource = boundary.pack.resources.find((candidate) => candidate.id === plan.resource);
+      const minimumCohortOverride = plan.kind === "aggregate"
+        && resource?.minimum_cohort_overridden === true
+        ? {
+          resource: resource.id,
+          minimum_cohort_size: resource.minimum_cohort_size,
+          confirmation: protectMinimumCohortConfirmation(
+            resource.id,
+            resource.minimum_cohort_size,
+          ),
+        }
+        : undefined;
       return {
         token: item.token,
         expires_at: item.expires_at,
@@ -115,8 +209,54 @@ export async function listProtectableQueries(input: {
         resource: plan.resource,
         normalized_plan: plan,
         literal_positions: protectLiteralPositions(plan, boundary),
+        ...(minimumCohortOverride ? { minimum_cohort_override: minimumCohortOverride } : {}),
+        ...item.metadata,
       };
     });
+}
+
+export function describeProtectableAnalysis(plan: ExplorePlan): string {
+  const resource = humanWords(plan.resource.split(".").pop() ?? plan.resource);
+  if (plan.kind === "rows") {
+    return `Reviewed ${resource} rows with ${plan.select.length} visible field${plan.select.length === 1 ? "" : "s"}`;
+  }
+  const measures = plan.measures.map((measure) => {
+    if (measure.function === "count") return resource;
+    const field = humanWords(measure.field ?? "value");
+    return `${measure.function.replace("_", " ")} ${field}`;
+  }).join(" and ");
+  const groups = [
+    ...(plan.dimensions ?? []).map((dimension) => humanWords(dimension.field)),
+    ...(plan.time_bucket ? [`${plan.time_bucket.bucket} ${humanWords(plan.time_bucket.field)}`] : []),
+  ];
+  const comparison = plan.comparison ? " across two reviewed periods" : "";
+  return `${measures || resource}${groups.length ? ` grouped by ${groups.join(" and ")}` : ""}${comparison}`;
+}
+
+export function suggestProtectedCapabilityName(plan: ExplorePlan): string {
+  const resource = safeCapabilitySegment(plan.resource.split(".").pop() ?? "analysis");
+  if (plan.kind === "rows") return `analytics.${resource}_rows`;
+  const measure = plan.measures[0];
+  const measureSegment = measure?.function === "count"
+    ? "count"
+    : safeCapabilitySegment(`${measure?.function ?? "measure"}_${measure?.field ?? "value"}`);
+  const groupSegments = [
+    ...(plan.dimensions ?? []).map((dimension) => safeCapabilitySegment(dimension.field)),
+    ...(plan.time_bucket ? [safeCapabilitySegment(plan.time_bucket.bucket)] : []),
+  ];
+  const candidate = `analytics.${resource}_${measureSegment}${groupSegments.length ? `_by_${groupSegments.join("_and_")}` : ""}`;
+  return candidate.length <= 128 ? candidate : `${candidate.slice(0, 111)}_${canonicalJsonDigest(plan).slice(-16)}`;
+}
+
+function humanWords(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function safeCapabilitySegment(value: string): string {
+  const normalized = value.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "analysis";
 }
 
 export async function createProtectedQueryDraft(input: {
@@ -126,18 +266,63 @@ export async function createProtectedQueryDraft(input: {
   description: string;
   returnsHint: string;
   arguments?: ProtectArgumentSelection[];
+  minimumCohortConfirmation?: string;
+  minimumCohortConfirmed?: true;
+  minimumCohortActor?: string;
   now?: number;
+  env?: NodeJS.ProcessEnv;
+  inspectDatabaseFn?: Parameters<typeof prepareScopedExplore>[0]["inspectDatabaseFn"];
 }): Promise<{ draft: ProtectedQueryDraft; dsl: string; contract: SynapsorContract; tests: Record<string, unknown> }> {
   const projectRoot = path.resolve(input.projectRoot);
   assertQualifiedCapabilityName(input.capabilityName);
   const description = reviewedText(input.description, "description", 500);
   const returnsHint = reviewedText(input.returnsHint, "returns hint", 500);
-  const boundary = await loadActivatedExplorationBoundary(projectRoot);
   const protectedPlan = await loadProtectedPlan({ projectRoot, token: input.token, ...(input.now === undefined ? {} : { now: input.now }) });
+  const boundary = await loadActivatedExplorationBoundary(projectRoot, {
+    digest: protectedPlan.boundary_digest,
+  });
+  const prepared = await prepareScopedExplore({
+    projectRoot,
+    transport: "loopback_workbench",
+    boundaryName: boundary.pack.name,
+    env: input.env ?? process.env,
+    ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
+  });
   if (protectedPlan.boundary_digest !== boundary.activation.digest) throw new Error("Protect token belongs to a different or superseded exploration boundary.");
   const plan = validateExplorePlan(protectedPlan.plan, boundary);
+  assertPreparedExplorePlanAuthority(plan, prepared);
+  const reviewedCohortOverride = await reviewedMinimumCohortOverride({
+    projectRoot,
+    boundary,
+    plan,
+  });
+  let minimumCohortOverride: ProtectedQueryDraft["minimum_cohort_override"];
+  if (reviewedCohortOverride) {
+    const expected = protectMinimumCohortConfirmation(
+      reviewedCohortOverride.resource,
+      reviewedCohortOverride.minimum_cohort_size,
+    );
+    if (input.minimumCohortConfirmed !== true && input.minimumCohortConfirmation !== expected) {
+      throw new Error(
+        "Protect requires an explicit human re-confirmation of the lowered small-group threshold.",
+      );
+    }
+    if (typeof input.minimumCohortActor !== "string") {
+      throw new Error("Protect requires the human identity re-confirming the lowered minimum cohort.");
+    }
+    minimumCohortOverride = {
+      ...reviewedCohortOverride,
+      reconfirmed_by: reviewedText(
+        input.minimumCohortActor,
+        "minimum cohort reviewer",
+        128,
+      ),
+      reconfirmed_at: new Date().toISOString(),
+    };
+  }
   const positions = protectLiteralPositions(plan, boundary);
   const selections = validateArgumentSelections(input.arguments ?? [], positions);
+  const requiresPrincipal = protectedPlanRequiresPrincipal(plan, boundary);
   const dsl = emitProtectedQueryDsl({
     capabilityName: input.capabilityName,
     description,
@@ -146,6 +331,7 @@ export async function createProtectedQueryDraft(input: {
     boundary,
     positions,
     selections,
+    requiresPrincipal,
   });
   const contract = compileAgentDsl(dsl);
   const capability = contract.capabilities.find((candidate) => candidate.name === input.capabilityName);
@@ -156,7 +342,7 @@ export async function createProtectedQueryDraft(input: {
   const contractPath = path.join(outputRoot, "synapsor.contract.json");
   const testsPath = path.join(outputRoot, "contract-tests.json");
   const reviewPath = path.join(outputRoot, "REVIEW.md");
-  const tests = protectedQueryTests(input.capabilityName, plan, capability.protected_read.boundary_digest);
+  const tests = protectedQueryTests(contract, capability);
   const draft: ProtectedQueryDraft = {
     schema_version: PROTECTED_QUERY_VERSION,
     state: "disabled",
@@ -172,6 +358,7 @@ export async function createProtectedQueryDraft(input: {
     review_path: relativeProjectPath(projectRoot, reviewPath),
     literal_positions: positions.map(({ current_value: _currentValue, ...position }) => position),
     converted_arguments: [...selections.values()],
+    ...(minimumCohortOverride ? { minimum_cohort_override: minimumCohortOverride } : {}),
   };
   await writeDraftArtifacts({
     outputRoot,
@@ -188,8 +375,11 @@ export async function activateProtectedQuery(input: {
   projectRoot: string;
   capabilityName: string;
   expectedDigest: string;
-  confirmation: string;
+  confirmation?: string;
+  operatorConfirmed?: true;
   actor: string;
+  minimumCohortConfirmation?: string;
+  minimumCohortConfirmed?: true;
   configPath?: string;
   disableExplore?: boolean;
   env?: NodeJS.ProcessEnv;
@@ -199,21 +389,68 @@ export async function activateProtectedQuery(input: {
   assertQualifiedCapabilityName(input.capabilityName);
   const actor = reviewedText(input.actor, "actor", 128);
   const outputRoot = draftRoot(projectRoot, input.capabilityName);
-  const draft = JSON.parse(await fs.readFile(path.join(outputRoot, "draft.json"), "utf8")) as ProtectedQueryDraft;
+  const draft = await loadProtectedQueryDraft({
+    projectRoot,
+    capabilityName: input.capabilityName,
+  });
   const contract = JSON.parse(await fs.readFile(path.join(outputRoot, "synapsor.contract.json"), "utf8")) as SynapsorContract;
   const digest = canonicalJsonDigest(contract);
+  const contractCohortOverride = protectedContractMinimumCohortOverride(
+    contract,
+    input.capabilityName,
+  );
   if (draft.state !== "disabled" || draft.contract_digest !== digest || input.expectedDigest !== digest) {
     throw new Error("Protected capability changed after review; reload and review the exact draft.");
   }
-  if (input.confirmation !== `ACTIVATE ${digest}`) throw new Error(`Activation requires the exact confirmation ACTIVATE ${digest}.`);
+  if (!sameProtectedMinimumCohortOverride(
+    draft.minimum_cohort_override,
+    contractCohortOverride,
+  )) {
+    throw new Error(
+      "Protected capability minimum-cohort authority does not match its recorded owner review; regenerate and review the draft.",
+    );
+  }
+  const legacyExactConfirmation = input.confirmation === `ACTIVATE ${digest}`;
+  if (input.operatorConfirmed !== true && !legacyExactConfirmation) {
+    throw new Error("Protected capability activation requires an explicit human confirmation of the reviewed preview.");
+  }
+  if (contractCohortOverride) {
+    const expected = activateMinimumCohortConfirmation(
+      contractCohortOverride.resource,
+      contractCohortOverride.minimum_cohort_size,
+      digest,
+    );
+    if (input.minimumCohortConfirmed !== true && input.minimumCohortConfirmation !== expected) {
+      throw new Error(
+        "Protected capability activation requires an explicit human re-confirmation of the lowered small-group threshold.",
+      );
+    }
+  }
   const prepared = await (input.prepareScopedExploreFn ?? prepareScopedExplore)({
     projectRoot,
     transport: "loopback_workbench",
+    boundaryName: (await loadActivatedExplorationBoundary(projectRoot, {
+      digest: draft.boundary_digest,
+    })).pack.name,
     env: input.env ?? process.env,
   });
   if (prepared.boundary.activation.digest !== draft.boundary_digest
     || prepared.boundary.generation_lock_fingerprint !== draft.generation_lock_fingerprint) {
     throw new Error("Protected capability is not bound to the current reviewed boundary and generation lock.");
+  }
+  if (contractCohortOverride) {
+    const currentOverride = await reviewedMinimumCohortOverrideForResource({
+      projectRoot,
+      boundary: prepared.boundary,
+      resourceId: contractCohortOverride.resource,
+    });
+    if (!currentOverride
+      || currentOverride.minimum_cohort_size !== contractCohortOverride.minimum_cohort_size
+      || currentOverride.review_digest !== draft.minimum_cohort_override?.review_digest) {
+      throw new Error(
+        "Protected capability minimum-cohort authority no longer matches the current recorded owner decision.",
+      );
+    }
   }
 
   const activeRoot = path.join(projectRoot, PROTECTED_DIR, "active");
@@ -229,10 +466,13 @@ export async function activateProtectedQuery(input: {
     lock: prepared.lock,
     databaseScope: protectedDatabaseScope(contract, prepared.boundary),
     statementTimeoutMs: contract.capabilities[0]?.protected_read?.limits.statement_timeout_ms ?? 3000,
+    capabilityName: input.capabilityName,
+    contractDigest: digest,
+    minimumCohortOverride: draft.minimum_cohort_override,
   });
   const explorationDisabled = input.disableExplore !== false;
   if (explorationDisabled) {
-    await fs.rm(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"), { force: true });
+    await deactivateExplorationBoundary(projectRoot, prepared.boundary.pack.name);
   }
   const activation: ProtectedQueryActivation = {
     schema_version: PROTECTED_QUERY_VERSION,
@@ -244,20 +484,30 @@ export async function activateProtectedQuery(input: {
     actor,
     activated_at: new Date().toISOString(),
     exploration_disabled: explorationDisabled,
+    ...(draft.minimum_cohort_override
+      ? {
+        minimum_cohort_override: {
+          ...draft.minimum_cohort_override,
+          reconfirmed_by: actor,
+          reconfirmed_at: new Date().toISOString(),
+        },
+      }
+      : {}),
   };
   await writeAtomic(path.join(activeRoot, `${safeCapabilityFileName(input.capabilityName)}.activation.json`), json(activation), 0o600);
   return activation;
 }
 
-export async function disableScopedExplore(projectRoot: string): Promise<{ disabled: boolean }> {
-  const activePath = path.join(path.resolve(projectRoot), ".synapsor/exploration-boundary.active.json");
-  try {
-    await fs.rm(activePath);
-    return { disabled: true };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { disabled: false };
-    throw error;
-  }
+export async function disableScopedExplore(
+  projectRoot: string,
+  boundaryName?: string,
+): Promise<{ disabled: boolean; disabled_boundaries: string[]; remaining_boundaries: string[] }> {
+  const result = await deactivateExplorationBoundary(projectRoot, boundaryName);
+  return {
+    disabled: result.disabled.length > 0,
+    disabled_boundaries: result.disabled,
+    remaining_boundaries: result.remaining.map((boundary) => boundary.pack.name),
+  };
 }
 
 export function protectLiteralPositions(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): ProtectLiteralPosition[] {
@@ -305,15 +555,18 @@ function emitProtectedQueryDsl(input: {
   boundary: ActivatedExplorationBoundary;
   positions: ProtectLiteralPosition[];
   selections: Map<string, ProtectArgumentSelection>;
+  requiresPrincipal: boolean;
 }): string {
   const root = resourceFor(input.boundary, input.plan.resource);
   const relationships = relationshipsForPlan(input.plan, root, input.boundary);
   const lines = [
     "CREATE AGENT CONTEXT protected_operator",
     `  BIND tenant_id FROM ENVIRONMENT ${input.boundary.trusted_context.tenant_env} REQUIRED`,
-    `  BIND principal FROM ENVIRONMENT ${input.boundary.trusted_context.principal_env} REQUIRED`,
+    ...(input.requiresPrincipal
+      ? [`  BIND principal FROM ENVIRONMENT ${input.boundary.trusted_context.principal_env} REQUIRED`]
+      : []),
     "  TENANT BINDING tenant_id",
-    "  PRINCIPAL BINDING principal",
+    ...(input.requiresPrincipal ? ["  PRINCIPAL BINDING principal"] : []),
     "END",
     "",
     `CREATE CAPABILITY ${input.capabilityName}`,
@@ -341,6 +594,10 @@ function emitProtectedQueryDsl(input: {
     lines.push(...aggregateDsl(input.plan, input.selections, root.minimum_cohort_size));
   }
   if (root.kept_out_fields.length) lines.push(`  KEEP OUT ${root.kept_out_fields.map(safeIdentifier).join(", ")}`);
+  const modelWithheldFields = modelWithheldExploreOutputColumns(input.plan, input.boundary);
+  if (modelWithheldFields.length) {
+    lines.push(`  MODEL WITHHELD ${modelWithheldFields.map(safeIdentifier).join(", ")}`);
+  }
   lines.push(
     "  REQUIRE EVIDENCE",
     protectedLimitsDsl(input.plan, input.boundary),
@@ -368,6 +625,8 @@ function aggregateDsl(plan: AggregateExplorePlan, selections: Map<string, Protec
   }
   if (plan.order_by?.kind === "measure") {
     lines.push(`  AGGREGATE ORDER BY MEASURE ${aliases.measures[plan.order_by.index]} ${plan.order_by.direction.toUpperCase()}`);
+  } else if (plan.order_by?.kind === "comparison_change") {
+    lines.push(`  AGGREGATE ORDER BY ${plan.order_by.change.toUpperCase()} CHANGE ${aliases.measures[plan.order_by.index]} ${plan.order_by.direction.toUpperCase()}`);
   } else if (plan.order_by?.kind === "time_bucket") {
     lines.push(`  AGGREGATE ORDER BY TIME BUCKET ${plan.order_by.direction.toUpperCase()}`);
   }
@@ -379,7 +638,12 @@ function aggregateDsl(plan: AggregateExplorePlan, selections: Map<string, Protec
 function protectedLimitsDsl(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): string {
   const budgets = boundary.budgets;
   const rows = plan.kind === "rows" ? plan.limit : budgets.max_rows;
-  return `  PROTECTED LIMITS ROWS ${rows} GROUPS ${budgets.max_groups} CELLS ${budgets.max_response_cells} BYTES ${budgets.max_response_bytes} TIMEOUT MS ${budgets.statement_timeout_ms} QUERIES ${budgets.max_queries_per_session} EXTRACTED CELLS ${budgets.max_extracted_cells_per_session} DIFFERENCING ${budgets.max_differencing_queries} RATE PER MINUTE ${budgets.rate_limit_per_minute}`;
+  const ranked = plan.kind === "aggregate"
+    && (plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change");
+  const rankedGroups = ranked
+    ? ` RANKED GROUPS ${reviewedRankedGroupLimit(budgets)}`
+    : "";
+  return `  PROTECTED LIMITS ROWS ${rows} GROUPS ${budgets.max_groups}${rankedGroups} CELLS ${budgets.max_response_cells} BYTES ${budgets.max_response_bytes} TIMEOUT MS ${budgets.statement_timeout_ms} QUERIES ${budgets.max_queries_per_session} EXTRACTED CELLS ${budgets.max_extracted_cells_per_session} DIFFERENCING ${budgets.max_differencing_queries} RATE PER MINUTE ${budgets.rate_limit_per_minute}`;
 }
 
 function predicateDsl(filters: ExploreFilter[], selections: Map<string, ProtectArgumentSelection>): string[] {
@@ -496,6 +760,16 @@ function relationshipsForPlan(
   });
 }
 
+function protectedPlanRequiresPrincipal(
+  plan: ExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+): boolean {
+  const root = resourceFor(boundary, plan.resource);
+  if (root.principal_key) return true;
+  return relationshipsForPlan(plan, root, boundary).some((relationship) =>
+    relationship.links.some((link) => Boolean(link.source.principal_key || link.target.principal_key)));
+}
+
 function relationshipsDsl(relationships: ProtectedRelationshipPlan[]): string[] {
   if (relationships.length === 0) return [];
   const only = relationships.length === 1 ? relationships[0] : undefined;
@@ -597,25 +871,65 @@ function positionFor(input: {
   };
 }
 
-function protectedQueryTests(capability: string, plan: ExplorePlan, boundaryDigest: string): Record<string, unknown> {
-  const aggregate = plan.kind === "aggregate";
+function protectedQueryTests(
+  contract: SynapsorContract,
+  capability: SynapsorContract["capabilities"][number],
+): Record<string, unknown> {
+  if (!capability.protected_read) {
+    throw new Error("Protected-query tests require canonical protected-read authority.");
+  }
+  const context = contract.contexts.find((candidate) => candidate.name === capability.context);
+  const tenantBinding = context?.bindings.find((binding) => binding.name === context.tenant_binding);
+  const principalBinding = context?.bindings.find((binding) => binding.name === context.principal_binding);
+  const keptOutFields = capability.kept_out_fields ?? [];
+  const scope = JSON.parse(JSON.stringify({
+    context: capability.context,
+    tenant_key: capability.subject.tenant_key,
+    tenant_binding: context?.tenant_binding,
+    tenant_authority: tenantBinding
+      ? { source: tenantBinding.source, key: tenantBinding.key, required: tenantBinding.required === true }
+      : null,
+    principal_binding: context?.principal_binding,
+    principal_authority: principalBinding
+      ? { source: principalBinding.source, key: principalBinding.key, required: principalBinding.required === true }
+      : null,
+  })) as Record<string, unknown>;
   return {
-    schema_version: "synapsor.contract-tests.v1",
-    capability,
-    boundary_digest: boundaryDigest,
+    $schema: "https://schemas.synapsor.ai/synapsor.contract-tests.schema.json",
+    version: 1,
+    name: `${capability.name} protected boundary`,
     tests: [
-      { name: "positive reviewed shape", kind: "positive", expected: aggregate ? "bounded_suppressed_groups" : "bounded_rows" },
-      { name: "trusted tenant required", kind: "scope", expected: "deny_without_trusted_tenant" },
-      { name: "trusted principal required", kind: "scope", expected: "deny_without_trusted_principal" },
-      { name: "model scope override denied", kind: "deny", expected: "tenant_and_principal_absent_from_args" },
-      { name: "kept-out field denied", kind: "redaction", expected: "unavailable_for_all_operations" },
-      { name: "generation lock current", kind: "drift", expected: "exact_lock_digest" },
-      { name: "response boundary", kind: "boundary", expected: "fail_closed_above_reviewed_limits" },
-      ...(aggregate ? [
-        { name: "small cohort suppressed", kind: "suppression", expected: "no_group_values" },
-        { name: "differencing budget", kind: "privacy", expected: "fail_closed_after_budget" },
-        { name: "unreviewed join denied", kind: "join", expected: "no_general_join_planner" },
-      ] : []),
+      {
+        id: "protected-read-shape-suppression-drift-and-boundaries",
+        kind: "protected_read_boundary",
+        capability: capability.name,
+        expected: capability.protected_read,
+      },
+      {
+        id: "trusted-scope-remains-outside-model-arguments",
+        kind: "trusted_scope",
+        capability: capability.name,
+        expected: scope,
+      },
+      ...(keptOutFields.length
+        ? [{
+          id: "kept-out-fields-remain-unavailable",
+          kind: "hide_fields",
+          capability: capability.name,
+          fields: keptOutFields,
+        }]
+        : []),
+      {
+        id: "evidence-and-query-audit-remain-required",
+        kind: "evidence_requirement",
+        capability: capability.name,
+        expected: capability.evidence ?? {},
+      },
+      {
+        id: "operator-controls-remain-outside-mcp",
+        kind: "operator_boundary",
+        capability: capability.name,
+      },
     ],
   };
 }
@@ -647,6 +961,8 @@ async function addProtectedContractToRuntimeConfig(input: {
   configPath: string;
   contractPath: string;
   sourceName: string;
+  capabilityName: string;
+  contractDigest: `sha256:${string}`;
   lock: GenerationLock;
   databaseScope?: {
     mode: "postgres_rls";
@@ -654,6 +970,7 @@ async function addProtectedContractToRuntimeConfig(input: {
     principal_setting?: string;
   };
   statementTimeoutMs: number;
+  minimumCohortOverride?: ProtectedQueryDraft["minimum_cohort_override"];
 }): Promise<void> {
   const existing = await readOptionalJson(input.configPath);
   const relativeContract = relativeConfigPath(path.dirname(input.configPath), input.contractPath);
@@ -676,7 +993,9 @@ async function addProtectedContractToRuntimeConfig(input: {
   if (config.generated_authority !== undefined) {
     if (!isRecord(config.generated_authority)
       || config.generated_authority.generation_lock_path !== generationLockPath
-      || config.generated_authority.enforcement !== "required") {
+      || config.generated_authority.enforcement !== "required"
+      || (config.generated_authority.reporting_timezone !== undefined
+        && config.generated_authority.reporting_timezone !== input.lock.reporting_timezone)) {
       const existingPath = isRecord(config.generated_authority)
         && typeof config.generated_authority.generation_lock_path === "string"
         ? config.generated_authority.generation_lock_path
@@ -689,7 +1008,42 @@ async function addProtectedContractToRuntimeConfig(input: {
     config.generated_authority = {
       generation_lock_path: generationLockPath,
       enforcement: "required",
+      ...(input.lock.reporting_timezone
+        ? { reporting_timezone: input.lock.reporting_timezone }
+        : {}),
     };
+  }
+  if (input.lock.reporting_timezone && isRecord(config.generated_authority)) {
+    config.generated_authority.reporting_timezone = input.lock.reporting_timezone;
+  }
+  if (!isRecord(config.generated_authority)) {
+    throw new Error("Protected capability requires generated_authority configuration.");
+  }
+  if (Array.isArray(config.capabilities)
+    && config.capabilities.length === 0
+    && isRecord(config.trusted_context)
+    && config.trusted_context.provider === "environment") {
+    delete config.trusted_context.principal_binding;
+    if (isRecord(config.trusted_context.values)) {
+      delete config.trusted_context.values.principal_env;
+    }
+  }
+  const currentCohortOverrides = isRecord(config.generated_authority.minimum_cohort_overrides)
+    ? config.generated_authority.minimum_cohort_overrides
+    : {};
+  if (input.minimumCohortOverride) {
+    currentCohortOverrides[input.capabilityName] = {
+      contract_digest: input.contractDigest,
+      minimum_cohort_size: input.minimumCohortOverride.minimum_cohort_size,
+      review_digest: input.minimumCohortOverride.review_digest,
+    };
+  } else {
+    delete currentCohortOverrides[input.capabilityName];
+  }
+  if (Object.keys(currentCohortOverrides).length > 0) {
+    config.generated_authority.minimum_cohort_overrides = currentCohortOverrides;
+  } else {
+    delete config.generated_authority.minimum_cohort_overrides;
   }
   const sources = isRecord(config.sources) ? config.sources : {};
   const existingSource = sources[input.sourceName];
@@ -798,6 +1152,15 @@ export function protectedDatabaseScope(
 }
 
 function protectedReviewMarkdown(draft: ProtectedQueryDraft, plan: ExplorePlan): string {
+  const cohortOverride = draft.minimum_cohort_override
+    ? `
+Minimum cohort: **${draft.minimum_cohort_override.minimum_cohort_size} (explicit owner override)**
+
+Override review digest: \`${draft.minimum_cohort_override.review_digest}\`
+
+This threshold was explicitly re-confirmed for Protect by \`${draft.minimum_cohort_override.reconfirmed_by}\`. A value of 1 disables small-group suppression and permits groups of one, which can identify individuals. Protected-capability activation requires a second explicit confirmation.
+`
+    : "";
   return `# Protected Query Review
 
 State: **DISABLED**
@@ -809,15 +1172,83 @@ Contract digest: \`${draft.contract_digest}\`
 Boundary digest: \`${draft.boundary_digest}\`
 
 Generation lock: \`${draft.generation_lock_fingerprint}\`
+${cohortOverride}
 
-This draft freezes one successful ${plan.kind === "aggregate" ? "privacy-suppressed aggregate" : "bounded row"} exploration plan. It cannot be called until a local operator reviews the generated DSL, tests, arguments, trusted scope, and exact digest in the secured Workbench.
+This draft freezes one successful ${plan.kind === "aggregate" ? "privacy-suppressed aggregate" : "bounded row"} exploration plan. It cannot be called until a local operator reviews the generated DSL, tests, arguments, trusted scope, and exact digest through the secured CLI or Workbench operator surface.
 
-Activation must use:
-
-\`ACTIVATE ${draft.contract_digest}\`
+Activation binds the operator's confirmation to this digest internally. The operator must not copy or type the digest.
 
 Approval, activation, and commit authority are not exposed through MCP.
 `;
+}
+
+async function reviewedMinimumCohortOverride(input: {
+  projectRoot: string;
+  boundary: ActivatedExplorationBoundary;
+  plan: ExplorePlan;
+}): Promise<ReviewedMinimumCohortAuthority | undefined> {
+  if (input.plan.kind !== "aggregate") return undefined;
+  return reviewedMinimumCohortOverrideForResource({
+    projectRoot: input.projectRoot,
+    boundary: input.boundary,
+    resourceId: input.plan.resource,
+  });
+}
+
+async function reviewedMinimumCohortOverrideForResource(input: {
+  projectRoot: string;
+  boundary: ActivatedExplorationBoundary;
+  resourceId: string;
+}): Promise<ReviewedMinimumCohortAuthority | undefined> {
+  const resource = resourceFor(input.boundary, input.resourceId);
+  if (resource.minimum_cohort_overridden !== true) return undefined;
+  const overrides = await loadAutoBoundaryReviewOverrides(input.projectRoot);
+  const decision = overrides.resources[resource.id]?.minimum_cohort;
+  if (!decision || decision.value !== resource.minimum_cohort_size) {
+    throw new Error(
+      "The active minimum-cohort override no longer has matching recorded owner review evidence.",
+    );
+  }
+  return {
+    resource: resource.id,
+    minimum_cohort_size: resource.minimum_cohort_size,
+    review_digest: canonicalJsonDigest({
+      schema_version: "synapsor.minimum-cohort-owner-decision.v1",
+      resource: resource.id,
+      value: decision.value,
+      actor: decision.actor,
+      reason: decision.reason,
+      decided_at: decision.decided_at,
+    }),
+  };
+}
+
+function protectedContractMinimumCohortOverride(
+  contract: SynapsorContract,
+  capabilityName: string,
+): ContractMinimumCohortAuthority | undefined {
+  const capability = contract.capabilities.find((candidate) =>
+    candidate.name === capabilityName);
+  const aggregate = capability?.protected_read?.mode === "aggregate"
+    ? capability.protected_read.aggregate
+    : undefined;
+  if (!capability || !aggregate || aggregate.minimum_group_size >= 5) {
+    return undefined;
+  }
+  return {
+    resource: `${capability.subject.schema}.${capability.subject.table}`,
+    minimum_cohort_size: aggregate.minimum_group_size,
+  };
+}
+
+function sameProtectedMinimumCohortOverride(
+  recorded: ProtectedQueryDraft["minimum_cohort_override"] | undefined,
+  contractDerived: ContractMinimumCohortAuthority | undefined,
+): boolean {
+  return contractDerived === undefined
+    ? recorded === undefined
+    : recorded?.resource === contractDerived.resource
+      && recorded.minimum_cohort_size === contractDerived.minimum_cohort_size;
 }
 
 function resourceFor(boundary: ActivatedExplorationBoundary, id: string): BoundaryResource {

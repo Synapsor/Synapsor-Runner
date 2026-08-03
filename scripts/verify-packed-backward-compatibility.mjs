@@ -13,64 +13,74 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runnerPackageDir = path.join(root, "apps", "runner");
 const specPackageDir = path.join(root, "packages", "spec");
 const dslPackageDir = path.join(root, "packages", "dsl");
-const compatibilityBaseline = "published-1.6.3";
-const manifest = JSON.parse(await fsp.readFile(
-  path.join(root, "fixtures", "compatibility", compatibilityBaseline, "manifest.json"),
-  "utf8",
-));
+const compatibilityBaselines = [
+  "published-1.5.4",
+  "published-1.6.0",
+  "published-1.6.3",
+  "published-1.6.5",
+];
 const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "synapsor-packed-compat-"));
 
 try {
   run("corepack", ["pnpm", "build:runner-package"], { cwd: root });
 
-  const baselinePackDir = path.join(tempRoot, "baseline-pack");
   const currentPackDir = path.join(tempRoot, "current-pack");
-  await fsp.mkdir(baselinePackDir);
   await fsp.mkdir(currentPackDir);
-  const baselineTarballs = packPublishedBaseline(baselinePackDir);
   const currentSpecTarball = packCurrentPackage(specPackageDir, currentPackDir);
   const currentDslTarball = packCurrentPackage(dslPackageDir, currentPackDir);
   const currentTarball = packCurrentPackage(runnerPackageDir, currentPackDir);
-
-  for (const [packageName, tarball] of Object.entries(baselineTarballs)) {
-    const expected = manifest.published_packages[packageName];
-    assert.equal(
-      sha1(fs.readFileSync(tarball)),
-      expected.npm_shasum,
-      `downloaded ${packageName} baseline tarball does not match the pinned npm shasum`,
-    );
-  }
-
-  const expectedBaseline = manifest.published_packages["@synapsor/runner"];
-  const baseline = installTarball(
-    "baseline",
-    baselineTarballs["@synapsor/runner"],
-    [baselineTarballs["@synapsor/spec"], baselineTarballs["@synapsor/dsl"]],
-  );
   const current = installTarball(
     "current",
     currentTarball,
     [currentSpecTarball, currentDslTarball],
   );
-  assert.equal(readPackageVersion(baseline.packageRoot), expectedBaseline.version);
 
-  verifyPackedCanonicalCompatibility(current);
-  await verifyLegacyToolSurface(baseline, current);
-  verifyLegacySingleHopProtectedDsl(baseline, current);
-  verifyCliRouting(baseline, current);
-  await verifyTypeScriptAuthoring(baseline, current);
+  for (const compatibilityBaseline of compatibilityBaselines) {
+    const manifest = JSON.parse(await fsp.readFile(
+      path.join(root, "fixtures", "compatibility", compatibilityBaseline, "manifest.json"),
+      "utf8",
+    ));
+    const baselinePackDir = path.join(tempRoot, `${compatibilityBaseline}-pack`);
+    await fsp.mkdir(baselinePackDir);
+    const baselineTarballs = packPublishedBaseline(manifest, baselinePackDir);
 
-  process.stdout.write(
-    `Packed backward compatibility verified against ` +
-    `@synapsor/runner@${expectedBaseline.version}, ` +
-    `@synapsor/dsl@${manifest.published_packages["@synapsor/dsl"].version}, and ` +
-    `@synapsor/spec@${manifest.published_packages["@synapsor/spec"].version}.\n`,
-  );
+    for (const [packageName, tarball] of Object.entries(baselineTarballs)) {
+      const expected = manifest.published_packages[packageName];
+      assert.equal(
+        sha1(fs.readFileSync(tarball)),
+        expected.npm_shasum,
+        `downloaded ${packageName} baseline tarball does not match the pinned npm shasum`,
+      );
+    }
+
+    const expectedBaseline = manifest.published_packages["@synapsor/runner"];
+    const baseline = installTarball(
+      compatibilityBaseline,
+      baselineTarballs["@synapsor/runner"],
+      [baselineTarballs["@synapsor/spec"], baselineTarballs["@synapsor/dsl"]],
+    );
+    assert.equal(readPackageVersion(baseline.packageRoot), expectedBaseline.version);
+
+    verifyPackedCanonicalCompatibility(current, compatibilityBaseline, manifest);
+    await verifyLegacyToolSurface(baseline, current);
+    await verifyTypeScriptAuthoring(baseline, current, manifest);
+    if (["1.6.3", "1.6.5"].includes(expectedBaseline.version)) {
+      verifyLegacySingleHopProtectedDsl(baseline, current);
+      verifyCliRouting(baseline, current);
+    }
+
+    process.stdout.write(
+      `Packed backward compatibility verified against ` +
+      `@synapsor/runner@${expectedBaseline.version}, ` +
+      `@synapsor/dsl@${manifest.published_packages["@synapsor/dsl"].version}, and ` +
+      `@synapsor/spec@${manifest.published_packages["@synapsor/spec"].version}.\n`,
+    );
+  }
 } finally {
   await fsp.rm(tempRoot, { recursive: true, force: true });
 }
 
-function packPublishedBaseline(destination) {
+function packPublishedBaseline(manifest, destination) {
   return Object.fromEntries(
     Object.entries(manifest.published_packages).map(([packageName, metadata]) => {
       const result = run("npm", [
@@ -115,7 +125,7 @@ function installTarball(label, tarball, localDependencies = []) {
   };
 }
 
-function verifyPackedCanonicalCompatibility(current) {
+function verifyPackedCanonicalCompatibility(current, compatibilityBaseline, manifest) {
   const packedManifestPath = path.join(
     current.packageRoot,
     "fixtures",
@@ -127,7 +137,11 @@ function verifyPackedCanonicalCompatibility(current) {
   assert.deepEqual(packedManifest, manifest, "packed compatibility manifest changed");
 
   for (const fixture of manifest.contracts) {
-    const source = packedCompatibilitySource(current.packageRoot, fixture.path);
+    const source = packedCompatibilitySource(
+      current.packageRoot,
+      compatibilityBaseline,
+      fixture.path,
+    );
     assert.equal(sha256(fs.readFileSync(source)), fixture.source_sha256, `${fixture.path} packed source changed`);
     const output = path.join(tempRoot, `normalized-${sha256(fixture.path).slice(0, 12)}.json`);
     run(process.execPath, [current.cli, "contract", "normalize", source, "--out", output], { cwd: current.installRoot });
@@ -141,7 +155,11 @@ function verifyPackedCanonicalCompatibility(current) {
   }
 
   for (const fixture of manifest.dsl_sources) {
-    const source = packedCompatibilitySource(current.packageRoot, fixture.path);
+    const source = packedCompatibilitySource(
+      current.packageRoot,
+      compatibilityBaseline,
+      fixture.path,
+    );
     assert.equal(sha256(fs.readFileSync(source)), fixture.source_sha256, `${fixture.path} packed DSL source changed`);
     const output = path.join(tempRoot, `compiled-${sha256(fixture.path).slice(0, 12)}.json`);
     run(process.execPath, [current.cli, "dsl", "compile", source, "--out", output], { cwd: current.installRoot });
@@ -158,10 +176,13 @@ function verifyPackedCanonicalCompatibility(current) {
 async function verifyLegacyToolSurface(baseline, current) {
   const baselineTools = await listLegacyTools(baseline);
   const currentTools = await listLegacyTools(current);
+  const alignedCurrentTools = currentTools.map((tool, index) =>
+    alignCurrentToolMetadata(tool, baselineTools[index]));
+  const alignedBaselineTools = baselineTools.map(withoutAdditiveOutputSchema);
   assert.deepEqual(
-    currentTools,
-    baselineTools,
-    "an existing active deployment changed tools/list without adopting new authority",
+    alignedCurrentTools,
+    alignedBaselineTools,
+    `${baseline.label} active deployment changed tools/list beyond additive outputSchema metadata`,
   );
   assert.deepEqual(
     currentTools.map((tool) => tool.name),
@@ -175,7 +196,7 @@ async function verifyLegacyToolSurface(baseline, current) {
 }
 
 function verifyLegacySingleHopProtectedDsl(baseline, current) {
-  const fixtureRoot = path.join(tempRoot, "single-hop-protected");
+  const fixtureRoot = path.join(tempRoot, `single-hop-protected-${baseline.label}`);
   fs.mkdirSync(fixtureRoot);
   const source = path.join(fixtureRoot, "single-hop.synapsor.sql");
   fs.writeFileSync(source, [
@@ -267,7 +288,7 @@ async function listLegacyTools(installed) {
 }
 
 function verifyCliRouting(baseline, current) {
-  const fixtureRoot = path.join(tempRoot, "cli-routing");
+  const fixtureRoot = path.join(tempRoot, `cli-routing-${baseline.label}`);
   fs.mkdirSync(fixtureRoot);
   const answersPath = path.join(fixtureRoot, "answers.json");
   const inspectionPath = path.join(fixtureRoot, "inspection.json");
@@ -311,7 +332,7 @@ function verifyCliRouting(baseline, current) {
   assert.equal(fs.existsSync(path.join(fixtureRoot, ".synapsor", "generation-lock.json")), false);
 }
 
-async function verifyTypeScriptAuthoring(baseline, current) {
+async function verifyTypeScriptAuthoring(baseline, current, manifest) {
   const baselineAuthoring = await import(pathToFileURL(path.join(baseline.packageRoot, "dist", "authoring.mjs")).href);
   const currentAuthoring = await import(pathToFileURL(path.join(current.packageRoot, "dist", "authoring.mjs")).href);
   const legacyContract = JSON.parse(fs.readFileSync(
@@ -391,7 +412,7 @@ function legacyColumn(name, dataType, flags = {}) {
   };
 }
 
-function packedCompatibilitySource(packageRoot, repositoryPath) {
+function packedCompatibilitySource(packageRoot, compatibilityBaseline, repositoryPath) {
   return path.join(
     packageRoot,
     "fixtures",
@@ -400,6 +421,22 @@ function packedCompatibilitySource(packageRoot, repositoryPath) {
     "sources",
     repositoryPath,
   );
+}
+
+function withoutAdditiveOutputSchema(tool) {
+  const { outputSchema: _outputSchema, ...stable } = tool;
+  return stable;
+}
+
+function alignCurrentToolMetadata(currentTool, baselineTool) {
+  const aligned = structuredClone(withoutAdditiveOutputSchema(currentTool));
+  const baselineMeta = baselineTool?._meta ?? {};
+  for (const key of ["synapsor.contract_digest", "synapsor.contract_version"]) {
+    if (!Object.prototype.hasOwnProperty.call(baselineMeta, key)) {
+      delete aligned._meta?.[key];
+    }
+  }
+  return aligned;
 }
 
 function runCli(installed, args, options) {

@@ -207,19 +207,33 @@ disabled `.synapsor.sql`, canonical JSON, tests, review evidence, and a
 generation lock. It does not sample source rows before activation or use an
 LLM.
 
-After a human activates the exact local exploration boundary, Cursor receives
-only `app.describe_data` and `app.explore_data`. A useful typed row or
-aggregate plan can be converted through Protect This Query into a named
-capability. Protect emits public DSL such as `PROTECTED READ ROWS` or
-`PROTECTED READ AGGREGATE`, compiles it to canonical `protected_read`
-authority, and starts it disabled. Exact-digest activation is still outside
-MCP.
+After a human activates the exact local exploration boundary, every supported
+authoring path receives the same two-tool surface: `app.describe_data` and
+`app.explore_data`. That includes the built-in Workbench composer, Workbench
+Ask, CLI Ask, Cursor, Claude clients, VS Code, Codex, and generic MCP clients.
+The model chooses only typed values from the activated safe catalog; it never
+receives SQL strings, physical table names, arbitrary joins, or activation
+authority.
+
+Developers may ask repeated row and aggregate questions inside that boundary
+without creating a named capability for each one. When a selected analysis
+should become durable production authority, **Protect this analysis** emits
+public DSL such as `PROTECTED READ ROWS` or `PROTECTED READ AGGREGATE`,
+compiles it to canonical `protected_read` authority, and starts it disabled.
+Exact-digest activation remains outside MCP. Protect is therefore an explicit
+promotion step, not a prerequisite for continuing to explore in development or
+staging.
 
 The named protected capability freezes resources, optional reviewed
 many-to-one relationship, predicates, projection or aggregate measures,
 dimensions, bucket, ordering, result bounds, suppression, and privacy/query
 budgets. Only explicitly selected typed literal positions become arguments.
 Tenant and principal remain trusted bindings.
+
+Both authoring tools advertise structured output schemas. The bounded safe
+catalog is available through `synapsor-runner tools catalog` and carries the
+active boundary digest so external hosts can pin the same authority without
+embedding the database catalog into every tool schema.
 
 This is additive. Existing DSL, canonical JSON, TypeScript authoring, direct
 Runner config, active contracts, and CI/headless routes do not require Auto

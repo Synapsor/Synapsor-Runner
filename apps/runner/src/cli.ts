@@ -113,8 +113,11 @@ export function boundaryActivateCommand(
   return boundaryActivateCommandImpl(args, schemaInspector);
 }
 
-export function boundaryReviewCommand(args: string[]): Promise<number> {
-  return boundaryReviewCommandImpl(args);
+export function boundaryReviewCommand(
+  args: string[],
+  schemaInspector?: typeof inspectDatabase,
+): Promise<number> {
+  return boundaryReviewCommandImpl(args, schemaInspector);
 }
 
 export function databaseInputFromArgs(
@@ -223,8 +226,14 @@ const projectAwareCommands = new Set([
   "writeback",
 ]);
 
+export type CliMainDependencies = {
+  boundarySchemaInspector?: typeof inspectDatabase;
+};
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(
+  argv: string[],
+  dependencies: CliMainDependencies = {},
+): Promise<number> {
   const [command, ...rest] = normalizeCliArgv(argv);
   if (!command || command === "--help" || command === "-h") {
     usage([]);
@@ -269,7 +278,9 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "propose") return propose(rest);
   if (command === "audit") return audit(rest);
   if (command === "start") return start(rest);
-  if (command === "boundary") return boundaryCommand(rest);
+  if (command === "boundary") {
+    return boundaryCommand(rest, dependencies.boundarySchemaInspector);
+  }
   if (command === "action") return actionCommand(rest);
   if (command === "up") return up(rest);
   if (command === "runner") return runnerCommand(rest);
@@ -334,10 +345,12 @@ export async function runCliProcess(argv: string[]): Promise<number> {
     const rawMessage = error instanceof Error ? error.message : String(error);
     const message = redactCliErrorMessage(rawMessage);
     const errorCode = safeOperationalErrorCode(error);
-    operationalLog("warn", "cli_rejected", {
-      command: normalizeCliArgv(argv)[0] ?? "unknown",
-      error_code: errorCode,
-    });
+    if (requestsJsonOutput(argv) || process.env.SYNAPSOR_OPERATIONAL_LOG === "json") {
+      operationalLog("warn", "cli_rejected", {
+        command: normalizeCliArgv(argv)[0] ?? "unknown",
+        error_code: errorCode,
+      });
+    }
     if (requestsJsonOutput(argv)) {
       process.stdout.write(`${JSON.stringify({
         ok: false,

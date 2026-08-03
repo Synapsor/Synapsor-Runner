@@ -5,6 +5,7 @@ import { parse } from "jsonc-parser";
 import { describe, expect, it } from "vitest";
 import runnerPackage from "../package.json" with { type: "json" };
 import {
+  detectManagedMcpClientCommand,
   installManagedMcpProject,
   managedMcpProjectStatus,
   parseManagedMcpProjectClient,
@@ -151,6 +152,13 @@ describe.each(clients)("managed $client MCP project lifecycle", ({
 });
 
 describe("managed MCP project client names", () => {
+  it("distinguishes a detected client command from configuration-only setup", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-managed-mcp-path-"));
+    await fs.writeFile(path.join(root, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+    expect(await detectManagedMcpClientCommand("claude-code", { PATH: root }, "linux")).toBe("claude");
+    expect(await detectManagedMcpClientCommand("vscode", { PATH: root }, "linux")).toBeUndefined();
+  });
+
   it("accepts documented names and unambiguous convenience aliases", () => {
     expect(parseManagedMcpProjectClient("cursor")).toBe("cursor");
     expect(parseManagedMcpProjectClient("claude-code")).toBe("claude-code");

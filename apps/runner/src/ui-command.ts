@@ -14,6 +14,7 @@ import process from "node:process";
 import { envValue, optionalArg } from "./cli-options.js";
 import { operatorIdentityForDecision, optionalRuntimeConfig, requireLocalProposal, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { applyProposal } from "./guarded-apply.js";
+import { loadActivatedExplorationBoundary } from "./auto-boundary.js";
 import {
   startLocalUiServer,
   type LocalUiStoreAccess,
@@ -340,11 +341,35 @@ export async function ui(args: string[]): Promise<number> {
     openBrowser(server.url);
     process.stdout.write("Opening the local review UI in your browser when a desktop opener is available.\n");
   }
-  process.stdout.write("Approval and guarded apply are separate trusted-operator actions protected by the per-run local session and CSRF token. Press Ctrl+C to stop.\n");
+  const reissueBootstrap = (chunk: Buffer | string) => {
+    if (String(chunk).trim().toLowerCase() !== "r") return;
+    process.stdout.write([
+      "Fresh one-time Workbench URL:",
+      server.reissueBootstrapUrl(),
+      "The previous URL is invalid. This did not restart onboarding or change authority.",
+      "",
+    ].join("\n"));
+  };
+  if (process.stdin.isTTY) process.stdin.on("data", reissueBootstrap);
+  const scopedExploreActive = await loadActivatedExplorationBoundary(projectRoot)
+    .then(() => true)
+    .catch(() => false);
+  process.stdout.write([
+    scopedExploreActive
+      ? "Next: ask your reviewed data in Workbench. Access review remains available when you need to change it."
+      : "Next: review the proposed boundary, then ask your first question in Workbench.",
+    "Approval and guarded apply are separate trusted-operator actions protected by the per-run local session and CSRF token.",
+    ...(process.stdin.isTTY
+      ? ["If the browser tab is lost, type r then Enter here to issue a fresh one-time URL from this same process."]
+      : ["If the browser tab is lost, restart only this UI command to issue a fresh session; the saved onboarding review is preserved."]),
+    "Press Ctrl+C to stop.",
+    "",
+  ].join("\n"));
   await new Promise<void>((resolve) => {
     const stop = async () => {
       process.off("SIGINT", stop);
       process.off("SIGTERM", stop);
+      process.stdin.off("data", reissueBootstrap);
       await server.close();
       resolve();
     };

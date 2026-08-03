@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ProposalStore,
   attentionDecisionSubject,
@@ -17,8 +17,13 @@ import {
   writeAutoBoundaryArtifacts,
 } from "./auto-boundary.js";
 import { initializeGuidedProject } from "./guided-project.js";
-import { startLocalUiServer } from "./local-ui.js";
+import {
+  createBoundaryReviewProgress,
+  saveBoundaryReviewProgress,
+  startLocalUiServer,
+} from "./local-ui.js";
 import { compileSafeActionDraft } from "./safe-action.js";
+import { createScopedExploreRuntime } from "./scoped-explore.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v2",
@@ -157,6 +162,329 @@ function freshnessEvaluation(
 }
 
 describe("local UI", () => {
+  it("loads an exact disabled protected draft for the shell-to-Workbench handoff", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-handoff-"));
+    const capability = "analytics.weekly_revenue";
+    const outputRoot = path.join(tempDir, "synapsor/protected/drafts/analytics__weekly_revenue");
+    const dslPath = path.join(outputRoot, "capability.synapsor.sql");
+    const digest = `sha256:${"a".repeat(64)}`;
+    await fs.mkdir(outputRoot, { recursive: true });
+    await fs.writeFile(dslPath, "CREATE AGENT READ analytics.weekly_revenue\nEND\n", "utf8");
+    await fs.writeFile(path.join(outputRoot, "draft.json"), JSON.stringify({
+      schema_version: "synapsor.protected-query.v1",
+      state: "disabled",
+      capability,
+      source: "app",
+      mode: "aggregate",
+      boundary_digest: digest,
+      generation_lock_fingerprint: digest,
+      contract_digest: digest,
+      dsl_path: path.relative(tempDir, dslPath),
+      contract_path: "synapsor/protected/drafts/analytics__weekly_revenue/synapsor.contract.json",
+      tests_path: "synapsor/protected/drafts/analytics__weekly_revenue/contract-tests.json",
+      review_path: "synapsor/protected/drafts/analytics__weekly_revenue/REVIEW.md",
+      literal_positions: [],
+      converted_arguments: [],
+    }, null, 2), "utf8");
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath: path.join(tempDir, "synapsor.runner.json"),
+      storePath: path.join(tempDir, ".synapsor/local.db"),
+      boundaryRoot: path.join(tempDir, "synapsor/generated"),
+      token: "protect-handoff-token",
+    });
+    try {
+      const response = await fetch(
+        `http://${server.host}:${server.port}/api/protect/draft?capability_name=${encodeURIComponent(capability)}`,
+        { headers: { "x-synapsor-ui-token": "protect-handoff-token" } },
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: true,
+        draft: {
+          state: "disabled",
+          capability,
+          contract_digest: digest,
+        },
+        dsl: expect.stringContaining("CREATE AGENT READ analytics.weekly_revenue"),
+        source_database_changed: false,
+      });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("activates the exact reviewed protected capability without typed digest ceremony", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-button-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.4",
+    });
+    const boundaryDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: boundaryDigest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${boundaryDigest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const capability = "analytics.weekly_members";
+    const outputRoot = path.join(tempDir, "synapsor/protected/drafts/analytics__weekly_members");
+    const dslPath = path.join(outputRoot, "capability.synapsor.sql");
+    const contractDigest = `sha256:${"b".repeat(64)}` as const;
+    const draftPath = path.join(outputRoot, "draft.json");
+    const draft = {
+      schema_version: "synapsor.protected-query.v1",
+      state: "disabled",
+      capability,
+      source: "app",
+      mode: "aggregate",
+      boundary_digest: boundaryDigest,
+      generation_lock_fingerprint: build.exploration_boundary.generation_lock_fingerprint,
+      contract_digest: contractDigest,
+      dsl_path: path.relative(tempDir, dslPath),
+      contract_path: "synapsor/protected/drafts/analytics__weekly_members/synapsor.contract.json",
+      tests_path: "synapsor/protected/drafts/analytics__weekly_members/contract-tests.json",
+      review_path: "synapsor/protected/drafts/analytics__weekly_members/REVIEW.md",
+      literal_positions: [],
+      converted_arguments: [],
+    };
+    await fs.mkdir(outputRoot, { recursive: true });
+    await fs.writeFile(dslPath, "CREATE AGENT READ analytics.weekly_members\nEND\n", "utf8");
+    await fs.writeFile(draftPath, JSON.stringify(draft, null, 2), "utf8");
+    let now = Date.parse("2026-08-02T12:00:00.000Z");
+    const activate = vi.fn(async () => ({
+      schema_version: "synapsor.protected-query.v1" as const,
+      state: "active" as const,
+      capability,
+      contract_digest: contractDigest,
+      contract_path: draft.contract_path,
+      config_path: guided.config_path,
+      actor: "reviewer@example.test",
+      activated_at: "2026-08-02T12:00:01.000Z",
+      exploration_disabled: false,
+    }));
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      boundaryRoot: written.root,
+      token: "protect-button-token",
+      csrfToken: "protect-button-csrf",
+      schemaInspector: async () => inspection,
+      protectedQueryActivator: activate,
+      now: () => now,
+    });
+    const baseUrl = `http://${server.host}:${server.port}`;
+    const headers = { "x-synapsor-ui-token": "protect-button-token" };
+    const mutationHeaders = {
+      ...headers,
+      "x-synapsor-csrf": "protect-button-csrf",
+      "content-type": "application/json",
+    };
+    const activateRequest = (requestedCapability = capability) => fetch(`${baseUrl}/api/protect/activate`, {
+      method: "POST",
+      headers: mutationHeaders,
+      body: JSON.stringify({
+        capability_name: requestedCapability,
+        actor: "reviewer@example.test",
+      }),
+    });
+    const preview = () => fetch(
+      `${baseUrl}/api/protect/draft?capability_name=${encodeURIComponent(capability)}`,
+      { headers },
+    );
+    try {
+      expect((await activateRequest()).status).toBe(409);
+
+      expect((await preview()).status).toBe(200);
+      now += 10 * 60 * 1_000 + 1;
+      const expired = await activateRequest();
+      expect(expired.status).toBe(409);
+      await expect(expired.json()).resolves.toMatchObject({ error_code: "PROTECTED_PREVIEW_EXPIRED" });
+
+      now = Date.parse("2026-08-02T12:00:00.000Z");
+      expect((await preview()).status).toBe(200);
+      const wrongCapability = await activateRequest("analytics.some_other_capability");
+      expect(wrongCapability.status).toBe(409);
+      await expect(wrongCapability.json()).resolves.toMatchObject({ error_code: "PROTECTED_PREVIEW_REQUIRED" });
+
+      expect((await preview()).status).toBe(200);
+      await fs.writeFile(draftPath, JSON.stringify({
+        ...draft,
+        contract_digest: `sha256:${"c".repeat(64)}`,
+      }, null, 2), "utf8");
+      const stale = await activateRequest();
+      expect(stale.status).toBe(409);
+      await expect(stale.json()).resolves.toMatchObject({
+        error_code: "PROTECTED_PREVIEW_STALE",
+        error: "This capability changed after review. Review the updated capability before activating it.",
+      });
+
+      await fs.writeFile(draftPath, JSON.stringify(draft, null, 2), "utf8");
+      expect((await preview()).status).toBe(200);
+      const activated = await activateRequest();
+      expect(activated.status).toBe(200);
+      await expect(activated.json()).resolves.toMatchObject({
+        ok: true,
+        active: { capability, contract_digest: contractDigest },
+        reconnect_required: false,
+        tools_list_changed: false,
+      });
+      expect(activate).toHaveBeenCalledOnce();
+      expect(activate).toHaveBeenCalledWith(expect.objectContaining({
+        capabilityName: capability,
+        expectedDigest: contractDigest,
+        operatorConfirmed: true,
+        actor: "reviewer@example.test",
+      }));
+
+      expect((await activateRequest()).status).toBe(409);
+      expect(activate).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("serves redacted Explore evidence and operator SQL without persisting trusted values", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-explore-evidence-ui-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.6",
+    });
+    const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: digest,
+      actor: "evidence-reviewer@example.test",
+      confirmation: `ACTIVATE ${digest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: tempDir,
+      transport: "loopback_workbench",
+      env: { DATABASE_URL: "postgresql://fixture.invalid/evidence" },
+      inspectDatabaseFn: async () => inspection,
+      resolveTrustedScopeFn: async () => ({
+        tenant: "tenant-secret-value",
+        principal: "",
+        tenant_source: "postgres_role_setting",
+        tenant_binding: "app.tenant_id",
+        principal_source: "not_required",
+      }),
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map(() => [{
+          dimension_0: "active",
+          measure_0: 12,
+          __cohort_size: 12,
+        }]),
+        close: async () => undefined,
+      },
+    });
+    let queryRef: string;
+    try {
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.members",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "membership_status" }],
+        top_n: 10,
+      });
+      const protect = result.protect as { token?: unknown } | undefined;
+      if (typeof protect?.token !== "string") throw new Error("Explore result did not provide a Protect reference.");
+      queryRef = protect.token;
+    } finally {
+      await runtime.close();
+    }
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      boundaryRoot: written.root,
+      token: "explore-evidence-token",
+      schemaInspector: async () => inspection,
+    });
+    try {
+      const response = await fetch(
+        `http://${server.host}:${server.port}/api/explore/evidence?query_ref=${encodeURIComponent(queryRef)}&include_sql=1`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(response.status).toBe(200);
+      const evidence = await response.json();
+      expect(evidence).toMatchObject({
+        ok: true,
+        analysis_reference: queryRef,
+        original_question: null,
+        model_request: { tool: "app.explore_data" },
+        runner_execution: {
+          boundary_name: build.exploration_boundary.pack.name,
+          boundary_digest: digest,
+          role_posture: { status: "verified_before_execution" },
+          transaction: "single_read_only_transaction",
+        },
+        runner_returned: {
+          rows_or_groups: 1,
+          cells: 2,
+          source_database_changed: false,
+        },
+        compiled_statement: {
+          engine: "postgres",
+          model_received_sql: false,
+          persisted: false,
+          statements: [{
+            statement: expect.stringContaining("$1"),
+            parameter_values: "redacted",
+          }],
+        },
+      });
+      const serialized = JSON.stringify(evidence);
+      expect(serialized).not.toContain("tenant-secret-value");
+      expect(serialized).not.toContain("postgresql://fixture.invalid");
+      expect(serialized).not.toContain("<trusted-tenant>");
+      expect(serialized).not.toContain("<trusted-principal>");
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("serves a token-protected local approval UI without exposing secrets", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");
@@ -314,12 +642,15 @@ describe("local UI", () => {
       expect(landing.headers.get("referrer-policy")).toBe("no-referrer");
       const html = await landing.text();
       expect(html).toContain("Synapsor Workbench");
+      expect(html).not.toMatch(/data[- ]areas?/i);
       expect(html).toContain("Commit-safe MCP in one loop");
       expect(html).toContain("First safe action");
-      expect(html).toContain("Add the action to Cursor");
+      expect(html).toContain("Connect your agent");
+      expect(html).toContain("Cursor, Claude Code, and VS Code");
+      expect(html).toContain("Optional Cursor Safe Action helper");
       expect(html).toContain("Copy Cursor prompt");
       expect(html).toContain("Open in Cursor");
-      expect(html).toContain("Waiting for Cursor to create the first exact proposal");
+      expect(html).toContain("Waiting for a connected MCP client to create the first exact proposal");
       expect(html).toContain("window.setInterval");
       expect(html).toContain("Data PR");
       expect(html).toContain("Agent requested a change");
@@ -329,6 +660,9 @@ describe("local UI", () => {
       expect(html).toContain("Reviewed compensation");
       expect(html).toContain("Apply guarded writeback");
       expect(html).toContain("This is a separate trusted-operator decision");
+      expect(html).toContain("detailRequestRevision");
+      expect(html).toContain("if (requestRevision !== state.detailRequestRevision) return");
+      expect(html).toContain("loadDetail(proposalId, result)");
       expect(html).toContain("Ledger timeline");
       expect(html).toContain("synapsor-runner apply ");
       expect(html).toContain("Safe JSON");
@@ -344,8 +678,24 @@ describe("local UI", () => {
 
       const reusedBootstrap = await fetch(`${baseUrl}/?token=ui-token`, { redirect: "manual" });
       expect(reusedBootstrap.status).toBe(401);
-
-      const headers = { "x-synapsor-ui-token": "ui-token" };
+      const reopenedBootstrap = await fetch(`${baseUrl}/?token=ui-token`, {
+        redirect: "manual",
+        headers: { cookie: setCookie.split(";", 1)[0] ?? "" },
+      });
+      expect(reopenedBootstrap.status).toBe(303);
+      expect(reopenedBootstrap.headers.get("location")).toBe("/");
+      const protectedBootstrap = await fetch(
+        `${baseUrl}/?token=ui-token&view=protect&query_ref=A2&capability=analytics.weekly_orders`,
+        {
+          redirect: "manual",
+          headers: { cookie: setCookie.split(";", 1)[0] ?? "" },
+        },
+      );
+      expect(protectedBootstrap.status).toBe(303);
+      expect(protectedBootstrap.headers.get("location")).toBe(
+        "/#protect?query_ref=A2&capability=analytics.weekly_orders",
+      );
+	      const headers = { "x-synapsor-ui-token": "ui-token" };
       const workbench = await getJson(`${baseUrl}/api/workbench`, headers);
       expect(workbench.stages.map((stage: { name: string }) => stage.name)).toEqual([
         "Project", "Data source", "Trust scope", "Action", "Agent", "Test", "Review",
@@ -451,13 +801,112 @@ describe("local UI", () => {
       }, { confirm: "approve", actor: "support_lead_1", reason: "reviewed in local UI" });
       expect(approved.proposal.state).toBe("approved");
 
-      const replay = await getJson(`${baseUrl}/api/replay/wrp_ui`, headers);
-      expect(replay.replay.replay_id).toBe("replay_wrp_ui");
-      expect(replay.replay.events.map((event: { kind: string }) => event.kind)).toContain("proposal_approved");
+	      const replay = await getJson(`${baseUrl}/api/replay/wrp_ui`, headers);
+	      expect(replay.replay.replay_id).toBe("replay_wrp_ui");
+	      expect(replay.replay.events.map((event: { kind: string }) => event.kind)).toContain("proposal_approved");
+
+	      const recoveryUrl = server.reissueBootstrapUrl();
+	      expect(recoveryUrl).not.toContain("token=ui-token");
+	      const oldHeaderAfterRotation = await fetch(`${baseUrl}/api/summary`, { headers });
+	      expect(oldHeaderAfterRotation.status).toBe(401);
+	      await expect(oldHeaderAfterRotation.json()).resolves.toMatchObject({
+	        error_code: "WORKBENCH_SESSION_INVALID",
+	      });
+	      const oldCookieAfterRotation = await fetch(`${baseUrl}/api/summary`, {
+	        headers: { cookie },
+	      });
+	      expect(oldCookieAfterRotation.status).toBe(401);
+	      const recoveredBootstrap = await fetch(recoveryUrl, { redirect: "manual" });
+	      expect(recoveredBootstrap.status).toBe(303);
+	      expect(recoveredBootstrap.headers.get("location")).toBe("/");
+	      expect(recoveredBootstrap.headers.get("set-cookie")).toContain("HttpOnly");
+	      const reusedRecovery = await fetch(recoveryUrl, { redirect: "manual" });
+	      expect(reusedRecovery.status).toBe(401);
     } finally {
       await server.close();
     }
   }, 15_000);
+
+  it("renews active Workbench sessions beyond fifteen minutes and reports idle expiry", async () => {
+    let nowMs = Date.parse("2026-07-27T10:00:00Z");
+    const server = await startLocalUiServer({
+      token: "session-idle-token",
+      csrfToken: "session-idle-csrf",
+      now: () => nowMs,
+    });
+    const baseUrl = `http://${server.host}:${server.port}`;
+    try {
+      const bootstrap = await fetch(`${baseUrl}/?token=session-idle-token`, { redirect: "manual" });
+      const cookie = bootstrap.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+      expect(bootstrap.headers.get("set-cookie")).toContain("Max-Age=28800");
+
+      nowMs += 16 * 60 * 1_000;
+      const activeAfterOldLimit = await fetch(`${baseUrl}/api/session`, { headers: { cookie } });
+      expect(activeAfterOldLimit.status).toBe(200);
+      await expect(activeAfterOldLimit.json()).resolves.toMatchObject({
+        ok: true,
+        status: "active",
+        idle_timeout_seconds: 7_200,
+        absolute_timeout_seconds: 28_800,
+      });
+
+      nowMs += (2 * 60 * 60 * 1_000) - 1;
+      expect((await fetch(`${baseUrl}/api/session`, { headers: { cookie } })).status).toBe(200);
+
+      nowMs += 2 * 60 * 60 * 1_000;
+      const expired = await fetch(`${baseUrl}/api/session`, { headers: { cookie } });
+      expect(expired.status).toBe(401);
+      await expect(expired.json()).resolves.toMatchObject({
+        ok: false,
+        error_code: "WORKBENCH_SESSION_EXPIRED",
+        saved_review_progress_preserved: true,
+        authority_changed: false,
+        source_database_changed: false,
+        recovery_action: expect.stringContaining("type `r`"),
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("enforces the Workbench absolute lifetime despite active requests and rotates recovery credentials", async () => {
+    const issuedAt = Date.parse("2026-07-27T10:00:00Z");
+    let nowMs = issuedAt;
+    const server = await startLocalUiServer({
+      token: "session-hard-token",
+      csrfToken: "session-hard-csrf",
+      now: () => nowMs,
+    });
+    const baseUrl = `http://${server.host}:${server.port}`;
+    try {
+      const bootstrap = await fetch(`${baseUrl}/?token=session-hard-token`, { redirect: "manual" });
+      const oldCookie = bootstrap.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+      for (let hour = 1; hour < 8; hour += 1) {
+        nowMs = issuedAt + hour * 60 * 60 * 1_000;
+        expect((await fetch(`${baseUrl}/api/session`, { headers: { cookie: oldCookie } })).status).toBe(200);
+      }
+      nowMs = issuedAt + 8 * 60 * 60 * 1_000;
+      const expired = await fetch(`${baseUrl}/api/session`, { headers: { cookie: oldCookie } });
+      expect(expired.status).toBe(401);
+      await expect(expired.json()).resolves.toMatchObject({
+        error_code: "WORKBENCH_SESSION_EXPIRED",
+      });
+
+      const recoveryUrl = server.reissueBootstrapUrl();
+      const oldSession = await fetch(`${baseUrl}/api/session`, { headers: { cookie: oldCookie } });
+      expect(oldSession.status).toBe(401);
+      await expect(oldSession.json()).resolves.toMatchObject({
+        error_code: "WORKBENCH_SESSION_INVALID",
+      });
+      const recovered = await fetch(recoveryUrl, { redirect: "manual" });
+      expect(recovered.status).toBe(303);
+      const newCookie = recovered.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+      expect(newCookie).not.toBe(oldCookie);
+      expect((await fetch(`${baseUrl}/api/session`, { headers: { cookie: newCookie } })).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
 
   it("resolves canonical contract capabilities in the workbench and tools API", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-contract-"));
@@ -563,7 +1012,8 @@ export default defineCapability({
       expect(html).toContain("Disabled Safe Action draft");
       expect(html).toContain("Preview exact staging Data PR");
       expect(html).toContain("Activate reviewed immutable artifact");
-      expect(html).toContain("Activation is not available through MCP or CLI");
+      expect(html).toContain("Runner binds this button to the exact reviewed artifact");
+      expect(html).not.toContain("Safe Action activation confirmation");
 
       const workbench = await getJson(`${baseUrl}/api/workbench`, headers);
       expect(workbench.safe_action).toMatchObject({
@@ -762,7 +1212,7 @@ export default defineCapability({
         },
       });
       const boundaryLanding = await fetch(`${baseUrl}/`, { headers });
-      expect(await boundaryLanding.text()).toContain("5. Add safe action");
+      expect(await boundaryLanding.text()).toContain("Add safe action");
       const activityLanding = await fetch(`${baseUrl}/?surface=activity`, { headers });
       const activityHtml = await activityLanding.text();
       expect(activityHtml).toContain("<h2>Activity</h2>");
@@ -838,7 +1288,7 @@ export default defineCapability({
       expect(html).not.toContain("I reviewed every listed scope");
       expect(html).toContain('id="deployment-profile"');
       expect(html).toContain("Exact database role posture");
-      expect(html).toContain("Blocked data stays unavailable");
+      expect(html).toContain("Anything uncertain stays unavailable");
       expect(html).toContain("Make reusable");
 
       const activation = await fetch(`${baseUrl}/api/boundary/activate`, {
@@ -889,6 +1339,10 @@ export default defineCapability({
       instantOnboarding: true,
     });
     const plans: unknown[] = [];
+    const previousTenant = process.env.SYNAPSOR_TENANT_ID;
+    const previousPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    process.env.SYNAPSOR_TENANT_ID = "acme";
+    delete process.env.SYNAPSOR_PRINCIPAL;
     const server = await startLocalUiServer({
       projectRoot: tempDir,
       boundaryRoot: written.root,
@@ -902,12 +1356,16 @@ export default defineCapability({
         boundary: {} as never,
         session_fingerprint: `sha256:${"c".repeat(64)}`,
         describe: () => ({}),
-        explore: async (plan) => {
+        explore: async (plan: unknown) => {
           plans.push(plan);
           return {
             schema_version: "synapsor.scoped-explore.result.v1",
             columns: ["count"],
             rows: [{ count: 12 }],
+            protect: {
+              token: "A2",
+              expires_at: "2099-01-01T00:00:00.000Z",
+            },
           };
         },
         close: async () => undefined,
@@ -920,38 +1378,51 @@ export default defineCapability({
     try {
       const boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
       expect(boundary.instant_onboarding).toMatchObject({
+        available: true,
         eligible: true,
         resource: "public.members",
+        requires_principal: false,
+        missing_bindings: [],
+        first_value: {
+          resource: "public.members",
+          question: expect.any(String),
+          operation: expect.any(String),
+          plan: {
+            kind: "aggregate",
+            resource: "public.members",
+            measures: [{ function: "count" }],
+          },
+        },
         candidate: {
           deployment_profile: "development",
           pack: { resources: [{ id: "public.members", relationships: [] }] },
         },
       });
 
-      const refused = await fetch(`http://${server.host}:${server.port}/api/instant/activate-and-read`, {
+      const profileOverride = await fetch(`http://${server.host}:${server.port}/api/instant/activate-and-read`, {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({
-          profile_assertion: "shared_or_production",
-          tenant: "acme",
-          principal: "trainer-7",
-        }),
+        body: JSON.stringify({ deployment_profile: "production" }),
       });
-      expect(refused.status).toBe(500);
+      expect(profileOverride.status).toBe(400);
+      await expect(profileOverride.json()).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/established by synapsor-runner start/i),
+        source_database_changed: false,
+      });
       await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
 
       const activated = await postJson(
         `http://${server.host}:${server.port}/api/instant/activate-and-read`,
         headers,
-        {
-          profile_assertion: "own_development",
-          tenant: "acme",
-          principal: "trainer-7",
-        },
+        {},
       );
       expect(activated).toMatchObject({
         ok: true,
+        question: boundary.instant_onboarding.first_value.question,
+        operation: boundary.instant_onboarding.first_value.operation,
+        plan: boundary.instant_onboarding.first_value.plan,
         first_tool: "app.explore_data",
         resource: "public.members",
         source_database_changed: false,
@@ -975,12 +1446,457 @@ export default defineCapability({
         pack: { resources: [{ id: "public.members", relationships: [] }] },
         activation: {
           mode: "instant_development",
-          profile_assertion: "own_development",
+          launch_context: "start_from_env_local_authoring",
           confirmation_gesture: "activate_and_read",
         },
       });
+      expect(active.activation).not.toHaveProperty("profile_assertion");
       expect(JSON.stringify(active)).not.toContain("trainer-7");
       expect(JSON.stringify(active)).not.toContain("acme");
+      const reviewBaseline = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(reviewBaseline).toMatchObject({
+        candidate: {
+          pack: {
+            resources: [{ id: "public.members", relationships: [] }],
+          },
+        },
+      });
+      expect(reviewBaseline.confirmed_decisions).toHaveLength(
+        reviewBaseline.confirmations.length,
+      );
+      const followUp = await postJson(
+        `http://${server.host}:${server.port}/api/explore/run`,
+        headers,
+        {
+          plan: {
+            kind: "aggregate",
+            resource: "public.members",
+            measures: [{ function: "count" }],
+            top_n: 5,
+          },
+        },
+      );
+      expect(followUp).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        protected_artifact_created: false,
+        next_action: expect.stringMatching(/^Ask another bounded question/),
+        result: {
+          protect: {
+            token: "<redacted>",
+            query_ref: "A2",
+          },
+        },
+      });
+      expect(plans).toHaveLength(2);
+      await expect(fs.access(path.join(tempDir, "synapsor/protected")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+	    } finally {
+	      await server.close();
+	      if (previousTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID;
+	      else process.env.SYNAPSOR_TENANT_ID = previousTenant;
+	      if (previousPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL;
+	      else process.env.SYNAPSOR_PRINCIPAL = previousPrincipal;
+	      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("activates the model-first Quick Start boundary without reading source rows", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-model-first-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.6",
+      instantOnboarding: true,
+    });
+    const previousTenant = process.env.SYNAPSOR_TENANT_ID;
+    const previousPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    delete process.env.SYNAPSOR_TENANT_ID;
+    delete process.env.SYNAPSOR_PRINCIPAL;
+    let runtimeCreations = 0;
+    let proofGatewayCloses = 0;
+    let proofSuppressedGroupingReleased = false;
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "model-first-token",
+      csrfToken: "model-first-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+      resolveTrustedScopeFn: async () => ({
+        tenant: "tenant-from-database-role",
+        principal: "",
+        tenant_source: "postgres_role_setting",
+        tenant_binding: "app.tenant_id",
+        principal_source: "not_required",
+      }),
+      scopedExploreRuntimeFactory: async () => {
+        runtimeCreations += 1;
+        throw new Error("Activation-only Quick Start must not create an Explore runtime.");
+      },
+      askGatewayFactory: async () => ({
+        mode: "authoring",
+        listTools: async () => [
+          { name: "app.describe_data", description: "Describe", input_schema: {} },
+          { name: "app.explore_data", description: "Explore", input_schema: {} },
+        ],
+        callTool: async (_name, args) => {
+          const plan = args.plan as Record<string, unknown>;
+          if (Array.isArray(plan.dimensions) && plan.dimensions.length > 0) {
+            proofSuppressedGroupingReleased = true;
+            return {
+              ok: true,
+              value: {
+                ok: true,
+                data: [{ membership_status: "discarded", count: 8 }],
+                privacy: { suppressed_groups: 1 },
+                source_database_changed: false,
+              },
+            };
+          }
+          if (proofSuppressedGroupingReleased && plan.kind === "aggregate") {
+            return {
+              ok: false,
+              value: {
+                ok: false,
+                error_code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+                details: {
+                  reason: "complementary_aggregate_release",
+                  source_query_executed: true,
+                },
+                source_database_changed: false,
+              },
+              error_code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+            };
+          }
+          const code = Object.hasOwn(args, "sql")
+            || Object.hasOwn(plan, "tenant")
+            || Object.hasOwn(plan, "principal")
+            || Object.hasOwn(plan, "minimum_cohort_size")
+            ? "MCP_TOOL_ARGUMENTS_INVALID"
+            : plan.relationship
+              ? "EXPLORE_RELATIONSHIP_FORBIDDEN"
+              : Array.isArray(plan.select) && plan.select.some((field) =>
+                field !== "id" && field !== "membership_status")
+                ? "EXPLORE_SCOPE_FORBIDDEN"
+                : Number(plan.top_n) > 1
+                  ? "EXPLORE_PLAN_INVALID"
+                  : "UNEXPECTED_SUCCESS";
+          return {
+            ok: false,
+            value: { ok: false, error_code: code, source_database_changed: false },
+            error_code: code,
+          };
+        },
+        close: async () => {
+          proofGatewayCloses += 1;
+        },
+      }),
+    });
+    const headers = {
+      "x-synapsor-ui-token": "model-first-token",
+      "x-synapsor-csrf": "model-first-csrf",
+    };
+    try {
+      const activated = await postJson(
+        `http://${server.host}:${server.port}/api/instant/activate`,
+        headers,
+        {
+          next_surface: "model",
+        },
+      );
+      expect(activated).toMatchObject({
+        ok: true,
+        next_surface: "model",
+        suggested_question: expect.any(String),
+        first_tool: "app.explore_data",
+        resource: "public.members",
+        source_rows_read: false,
+        source_database_changed: false,
+        tenant_scope_source: "postgres_role_setting",
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        next_action: expect.stringContaining("model"),
+      });
+      expect(runtimeCreations).toBe(0);
+      expect(activated).not.toHaveProperty("result");
+      const active = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(active).toMatchObject({
+        pack: { resources: [{ id: "public.members", relationships: [] }] },
+        activation: {
+          mode: "instant_development",
+          launch_context: "start_from_env_local_authoring",
+          confirmation_gesture: "activate_for_model",
+        },
+      });
+      expect(active.activation).not.toHaveProperty("profile_assertion");
+      expect(JSON.stringify(active)).not.toContain("acme");
+      const proof = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/prove`,
+        headers,
+        {},
+      );
+      expect(proof).toMatchObject({
+        ok: true,
+        proof: {
+          passed: true,
+          source_rows_returned: 0,
+          source_database_changed: false,
+          attacks: expect.arrayContaining([
+            expect.objectContaining({ id: "raw_sql", passed: true }),
+            expect.objectContaining({ id: "kept_out_field", passed: true }),
+            expect.objectContaining({ id: "unreviewed_relationship", passed: true }),
+            expect.objectContaining({ id: "suppressed_total_subtraction", passed: true }),
+          ]),
+        },
+        model_can_run_proof: false,
+        source_database_changed: false,
+      });
+      expect(proofGatewayCloses).toBe(1);
+      await expect(fs.readFile(path.join(tempDir, String(proof.artifact_path)), "utf8"))
+        .resolves.toContain("synapsor.boundary-proof.v1");
+      const installed = await postJson(
+        `http://${server.host}:${server.port}/api/mcp/install`,
+        headers,
+        { client: "cursor" },
+      );
+      expect(installed).toMatchObject({
+        ok: true,
+        client: "cursor",
+        client_name: "Cursor",
+        destination: ".cursor/mcp.json",
+        tools: ["app.describe_data", "app.explore_data"],
+        credentials_in_client_config: false,
+        model_can_install: false,
+        client_command_detected: expect.any(Boolean),
+        tool_boundary_verified: true,
+        live_client_session_verified: false,
+        connection_state: "configured_not_connected",
+        transport_lifecycle: "client_started_stdio",
+        source_database_changed: false,
+      });
+      expect(proofGatewayCloses).toBe(2);
+      const cursorConfig = await fs.readFile(path.join(tempDir, ".cursor/mcp.json"), "utf8");
+      expect(cursorConfig).not.toContain('"app.describe_data"');
+      expect(cursorConfig).toContain("--authoring");
+      expect(cursorConfig).not.toContain("DATABASE_URL");
+      expect(cursorConfig).not.toContain("tenant-from-database-role");
+      await fs.mkdir(path.join(tempDir, ".synapsor/protected"), { recursive: true });
+      await fs.writeFile(
+        path.join(tempDir, ".synapsor/protected/preserved.txt"),
+        "protected capability sentinel\n",
+        "utf8",
+      );
+      const disabled = await postJson(
+        `http://${server.host}:${server.port}/api/explore/disable`,
+        headers,
+        {},
+      );
+      expect(disabled).toMatchObject({
+        ok: true,
+        disabled: true,
+        protected_capabilities_changed: false,
+        message: expect.stringMatching(/Scoped Explore is disabled/i),
+      });
+      await expect(fs.access(path.join(
+        tempDir,
+        ".synapsor/exploration-boundary.active.json",
+      ))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.readFile(
+        path.join(tempDir, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      )).resolves.toContain(build.exploration_boundary.pack.name);
+      await expect(fs.readFile(
+        path.join(tempDir, ".synapsor/protected/preserved.txt"),
+        "utf8",
+      )).resolves.toBe("protected capability sentinel\n");
+    } finally {
+      await server.close();
+      if (previousTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID;
+      else process.env.SYNAPSOR_TENANT_ID = previousTenant;
+      if (previousPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL;
+      else process.env.SYNAPSOR_PRINCIPAL = previousPrincipal;
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes persisted full review without re-offering or accepting Quick Start", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-instant-resume-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.4",
+      instantOnboarding: true,
+    });
+    await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate: build.exploration_boundary,
+      confirmedDecisions: [],
+      actor: "reviewer@example.test",
+      revision: 1,
+    }));
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "instant-resume-token",
+      csrfToken: "instant-resume-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "instant-resume-token",
+      "x-synapsor-csrf": "instant-resume-csrf",
+    };
+    try {
+      const boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      expect(boundary).toMatchObject({
+        review_progress: { revision: 1 },
+        instant_onboarding: {
+          available: false,
+          eligible: false,
+        },
+      });
+      const instant = await fetch(`http://${server.host}:${server.port}/api/instant/activate-and-read`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(instant.status).toBe(409);
+      await expect(instant.json()).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/full boundary review has begun/i),
+        source_database_changed: false,
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("renders an all-blocked Auto Boundary as review-required without offering instant data access", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-all-blocked-"));
+    const inspection = boundaryReviewInspection();
+    inspection.tables[0]!.primary_key = [];
+    inspection.tables[0]!.unique_constraints = [];
+    inspection.tables[0]!.indexes = [];
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources).toEqual([]);
+    expect(build.review.resources).toEqual([
+      expect.objectContaining({
+        id: "public.members",
+        status: "blocked_identifier",
+      }),
+    ]);
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.5",
+      instantOnboarding: true,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "all-blocked-token",
+      csrfToken: "all-blocked-csrf",
+      instantOnboarding: true,
+    });
+    const headers = { "x-synapsor-ui-token": "all-blocked-token" };
+    try {
+      const landing = await fetch(`http://${server.host}:${server.port}/`, { headers });
+      expect(landing.status).toBe(200);
+      expect(await landing.text()).toContain("Review security exceptions");
+
+      const boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      expect(boundary).toMatchObject({
+        ok: true,
+        draft: { pack: { resources: [] } },
+        candidate: { pack: { resources: [] } },
+        review: {
+          summary: { objects: 1, draft_reads: 0, blocked_objects: 1 },
+          resources: [{
+            id: "public.members",
+            status: "blocked_identifier",
+          }],
+        },
+        instant_onboarding: {
+          eligible: false,
+          candidate: null,
+          candidate_digest: null,
+          resource: null,
+        },
+      });
+
+      const instant = await fetch(`http://${server.host}:${server.port}/api/instant/activate-and-read`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+          "x-synapsor-csrf": "all-blocked-csrf",
+        },
+        body: JSON.stringify({ tenant: "acme" }),
+      });
+      expect(instant.status).toBe(409);
+      await expect(instant.json()).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/every inspected resource is blocked/i),
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -1010,7 +1926,20 @@ export default defineCapability({
       build,
       runnerVersion: "1.6.4",
     });
-    await fs.writeFile(path.join(tempDir, ".synapsor/exploration-boundary.active.json"), "{}\n", "utf8");
+    const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    const activeBeforeReview = await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: activeDigest,
+      actor: "initial-reviewer@example.test",
+      confirmation: `ACTIVATE ${activeDigest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    await fs.rm(path.join(tempDir, ".synapsor/exploration-locks"), {
+      recursive: true,
+      force: true,
+    });
     await fs.mkdir(path.join(tempDir, ".synapsor/active"), { recursive: true });
     await fs.writeFile(path.join(tempDir, ".synapsor/active/protected.contract.json"), "{\"protected\":true}\n", "utf8");
     const server = await startLocalUiServer({
@@ -1042,25 +1971,71 @@ export default defineCapability({
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
         ok: true,
-        active: null,
+        active: activeBeforeReview,
         source_database_changed: false,
         journey: {
-          status: "review_boundary",
-          authority_active: false,
-          recommended_next_action: "Review the changed boundary.",
+          status: "boundary_active",
+          authority_active: true,
+          recommended_next_action: "Review and activate the disabled boundary revision when ready.",
         },
       });
       await expect(fs.readFile(path.join(written.root, "read-capabilities.synapsor.sql"), "utf8"))
         .resolves.toMatch(/ALLOW READ[^\n]*trainer_comments/);
       await expect(fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"))
         .resolves.toContain("reviewer@example.test");
-      await expect(fs.stat(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
-        .rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )).resolves.toBe(`${JSON.stringify(activeBeforeReview, null, 2)}\n`);
 
       const mutationHeaders = {
         "x-synapsor-ui-token": "boundary-regenerate-token",
         "x-synapsor-csrf": "boundary-regenerate-csrf",
       };
+      const cohort = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "minimum_cohort",
+          resource_id: "public.members",
+          value: 1,
+          actor: "owner@example.test",
+          reason: "This owner-controlled staging fixture may return groups of one.",
+        },
+      );
+      expect(cohort).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              minimum_cohort_size: 1,
+              minimum_cohort_overridden: true,
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            minimum_cohort: {
+              value: 1,
+              actor: "owner@example.test",
+            },
+          },
+        },
+      });
+      const boundaryResponse = await fetch(`http://${server.host}:${server.port}/api/boundary`, {
+        headers: { "x-synapsor-ui-token": "boundary-regenerate-token" },
+      });
+      expect(boundaryResponse.status).toBe(200);
+      await expect(boundaryResponse.json()).resolves.toMatchObject({
+        instant_onboarding: { available: false, eligible: false },
+      });
+
       currentInspection = structuredClone(inspection);
       currentInspection.tables[0]!.columns.push({
         name: "member_since",
@@ -1139,6 +2114,117 @@ export default defineCapability({
     }
   });
 
+  it("creates, opens, and deletes named Workbench boundary drafts without changing authority", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-library-"));
+    const inspection = relationshipReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.6",
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "boundary-library-token",
+      csrfToken: "boundary-library-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "boundary-library-token",
+      "x-synapsor-csrf": "boundary-library-csrf",
+    };
+    try {
+      const initial = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      const originalName = initial.candidate.pack.name as string;
+      expect(initial.boundary_library).toMatchObject({
+        selected_name: originalName,
+        entries: [{ name: originalName, selected: true, active: false }],
+      });
+
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "support_analytics",
+          resource_id: "public.teams",
+          actor: "reviewer@example.test",
+        },
+      );
+      expect(created).toMatchObject({
+        candidate: {
+          pack: {
+            name: "support_analytics",
+            resources: [{ id: "public.teams", relationships: [] }],
+          },
+        },
+        boundary_library: {
+          selected_name: "support_analytics",
+          entries: expect.arrayContaining([
+            expect.objectContaining({ name: originalName, selected: false, active: false }),
+            expect.objectContaining({ name: "support_analytics", selected: true, active: false }),
+          ]),
+        },
+        authority_changed: false,
+        source_database_changed: false,
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+
+      const opened = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/switch`,
+        headers,
+        { name: originalName },
+      );
+      expect(opened).toMatchObject({
+        candidate: { pack: { name: originalName } },
+        boundary_library: { selected_name: originalName },
+        authority_changed: false,
+      });
+
+      const missingConfirmation = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/library/delete`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ name: "support_analytics" }),
+        },
+      );
+      expect(missingConfirmation.status).toBe(409);
+
+      const deleted = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/delete`,
+        headers,
+        { name: "support_analytics", confirmation: "DELETE support_analytics" },
+      );
+      expect(deleted).toMatchObject({
+        boundary_library: {
+          selected_name: originalName,
+          entries: [{ name: originalName, selected: true, active: false }],
+        },
+        authority_changed: false,
+        source_database_changed: false,
+      });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("stages one catalog-proven missing relationship and preserves unrelated review decisions", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-relationship-review-"));
     const inspection = relationshipReviewInspection();
@@ -1163,6 +2249,14 @@ export default defineCapability({
     const candidate = structuredClone(build.exploration_boundary);
     const member = candidate.pack.resources.find((resource) => resource.id === "public.members")!;
     member.relationships = [];
+    const staleProgress = createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate: build.exploration_boundary,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions.slice(0, 1),
+      actor: "pre-activation-reviewer@example.test",
+      revision: 1,
+    });
+    await saveBoundaryReviewProgress(tempDir, staleProgress);
     const activeDigest = explorationBoundaryCandidateDigest(candidate);
     const active = await activateExplorationBoundary({
       projectRoot: tempDir,
@@ -1177,6 +2271,29 @@ export default defineCapability({
       .find((resource) => resource.id === "public.members")!
       .relationships.find((relationship) => relationship.id === "members_team_id_fkey")!
       .proof!;
+    const retainedProviderKey = "sk-workbench-retained-after-boundary-activation";
+    let providerRequests = 0;
+    const askTools = [
+      {
+        name: "app.describe_data",
+        description: "Describe active reviewed boundaries.",
+        input_schema: {
+          type: "object" as const,
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "app.explore_data",
+        description: "Run one reviewed plan in one active boundary.",
+        input_schema: {
+          type: "object" as const,
+          properties: { plan: { type: "object" } },
+          required: ["plan"],
+          additionalProperties: false,
+        },
+      },
+    ];
     const server = await startLocalUiServer({
       projectRoot: tempDir,
       boundaryRoot: written.root,
@@ -1185,9 +2302,44 @@ export default defineCapability({
       token: "relationship-review-token",
       csrfToken: "relationship-review-csrf",
       schemaInspector: async () => inspection,
+      askGatewayFactory: async () => ({
+        mode: "authoring",
+        listTools: async () => structuredClone(askTools),
+        callTool: async () => ({ ok: true, value: { ok: true, source_database_changed: false } }),
+        close: async () => undefined,
+      }),
+      askProviderDependencies: {
+        requestJson: async (request) => {
+          providerRequests += 1;
+          expect(request.headers.authorization).toBe(`Bearer ${retainedProviderKey}`);
+          return {
+            status: 200,
+            body: {
+              choices: [{ message: { role: "assistant", content: "The updated reviewed boundaries are available." } }],
+            },
+          };
+        },
+      },
     });
     try {
       const url = `http://${server.host}:${server.port}`;
+      const mutationHeaders = {
+        "x-synapsor-ui-token": "relationship-review-token",
+        "x-synapsor-csrf": "relationship-review-csrf",
+      };
+      const initialAskStatus = await getJson(`${url}/api/ask/status`, mutationHeaders);
+      const configuredAsk = await postJson(`${url}/api/ask/configure`, mutationHeaders, {
+        provider: "openai",
+        model: "gpt-5-mini",
+        api_key: retainedProviderKey,
+        authority_digest: initialAskStatus.authority_digest,
+        egress_acknowledged: true,
+      });
+      expect(configuredAsk.configuration).toMatchObject({
+        credential_source: "session_paste",
+        authority_digest: initialAskStatus.authority_digest,
+      });
+      expect(JSON.stringify(configuredAsk)).not.toContain(retainedProviderKey);
       const withoutCsrf = await fetch(`${url}/api/boundary/review-relationship`, {
         method: "POST",
         headers: {
@@ -1235,26 +2387,58 @@ export default defineCapability({
         active.activation.reviewed_decisions.map((decision) => decision.decision),
       ));
       expect(staged.candidate_digest).not.toBe(active.activation.digest);
-      expect(JSON.parse(await fs.readFile(
-        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
-        "utf8",
-      )).activation.digest).toBe(active.activation.digest);
+	      expect(JSON.parse(await fs.readFile(
+	        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+	        "utf8",
+	      )).activation.digest).toBe(active.activation.digest);
 
-      const activated = await postJson(`${url}/api/boundary/activate`, {
-        "x-synapsor-ui-token": "relationship-review-token",
-        "x-synapsor-csrf": "relationship-review-csrf",
-      }, {
-        candidate: staged.candidate,
-        expected_digest: staged.candidate_digest,
-        actor: "relationship-reviewer@example.test",
-        confirmation: `ACTIVATE ${staged.candidate_digest}`,
-        confirmed_decisions: staged.confirmed_decisions,
-      });
+	      const preview = await postJson(`${url}/api/boundary/preview`, {
+	        "x-synapsor-ui-token": "relationship-review-token",
+	        "x-synapsor-csrf": "relationship-review-csrf",
+	      }, {
+	        candidate: staged.candidate,
+	        expected_revision: staged.revision,
+	        actor: "relationship-reviewer@example.test",
+	        confirmed_decisions: staged.confirmed_decisions,
+	      });
+	      const activated = await postJson(`${url}/api/boundary/activate`, {
+	        "x-synapsor-ui-token": "relationship-review-token",
+	        "x-synapsor-csrf": "relationship-review-csrf",
+	      }, {
+	        candidate: staged.candidate,
+	        expected_digest: preview.digest,
+	        actor: "relationship-reviewer@example.test",
+	        confirmation: `ACTIVATE ${preview.digest}`,
+	        confirmed_decisions: staged.confirmed_decisions,
+	      });
       expect(activated.active.pack.resources
         .find((resource: { id: string }) => resource.id === "public.members")
         .relationships).toEqual([
         expect.objectContaining({ id: "members_team_id_fkey" }),
       ]);
+      expect(activated).toMatchObject({
+        ask_provider_session_retained: true,
+        ask_conversation_cleared: true,
+        ask_authority_refresh_pending: false,
+        ask_configuration: {
+          provider: "openai",
+          model: "gpt-5-mini",
+          credential_source: "session_paste",
+        },
+      });
+      expect(activated.ask_configuration.authority_digest)
+        .not.toBe(initialAskStatus.authority_digest);
+      expect(JSON.stringify(activated)).not.toContain(retainedProviderKey);
+
+      const askResult = await postJson(`${url}/api/ask/run`, mutationHeaders, {
+        question: "What access is reviewed now?",
+      });
+      expect(askResult).toMatchObject({
+        ok: true,
+        answer: "The updated reviewed boundaries are available.",
+        display_answer: "The updated reviewed boundaries are available.",
+      });
+      expect(providerRequests).toBe(1);
       expect(activated.source_database_changed).toBe(false);
     } finally {
       await server.close();
@@ -1305,6 +2489,8 @@ export default defineCapability({
       try {
         let boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
         const originalDecisions = boundary.review.unresolved_decisions as string[];
+        boundary.candidate.pack.name = "service_analytics";
+        boundary.candidate.budgets.max_ranked_groups = 200;
         const saved = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
           candidate: boundary.candidate,
           confirmed_decisions: originalDecisions,
@@ -1312,6 +2498,9 @@ export default defineCapability({
           actor: "reviewer@example.test",
         });
         expect(saved.revision).toBe(1);
+        boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+        expect(boundary.candidate.pack.name).toBe("service_analytics");
+        expect(boundary.candidate.budgets.max_ranked_groups).toBe(200);
         const staleSave = await fetch(`http://${server.host}:${server.port}/api/boundary/progress`, {
           method: "POST",
           headers: { ...headers, "content-type": "application/json" },
@@ -1379,19 +2568,36 @@ export default defineCapability({
         expect(second.confirmed_decisions).not.toContain(secondMissing);
 
         boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
-        const complete = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
-          candidate: boundary.candidate,
-          confirmed_decisions: boundary.review.unresolved_decisions,
-          expected_revision: boundary.review_progress.revision,
-          actor: "reviewer@example.test",
-        });
-        const activated = await postJson(`http://${server.host}:${server.port}/api/boundary/activate`, headers, {
-          candidate: boundary.candidate,
-          expected_digest: complete.digest,
-          actor: "reviewer@example.test",
-          confirmation: `ACTIVATE ${complete.digest}`,
-          confirmed_decisions: boundary.review.unresolved_decisions,
-        });
+	        const complete = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+	          candidate: boundary.candidate,
+	          confirmed_decisions: boundary.review.unresolved_decisions,
+	          expected_revision: boundary.review_progress.revision,
+	          actor: "reviewer@example.test",
+	        });
+	        const preview = await postJson(`http://${server.host}:${server.port}/api/boundary/preview`, headers, {
+	          candidate: boundary.candidate,
+	          expected_revision: complete.revision,
+	          actor: "reviewer@example.test",
+	          confirmed_decisions: boundary.review.unresolved_decisions,
+	        });
+	        const unchanged = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+	          candidate: boundary.candidate,
+	          confirmed_decisions: boundary.review.unresolved_decisions,
+	          expected_revision: complete.revision,
+	          actor: "reviewer@example.test",
+	        });
+	        expect(unchanged).toMatchObject({
+	          revision: complete.revision,
+	          unchanged: true,
+	          source_database_changed: false,
+	        });
+	        const activated = await postJson(`http://${server.host}:${server.port}/api/boundary/activate`, headers, {
+	          candidate: boundary.candidate,
+	          expected_digest: preview.digest,
+	          actor: "reviewer@example.test",
+	          confirmation: `ACTIVATE ${preview.digest}`,
+	          confirmed_decisions: boundary.review.unresolved_decisions,
+	        });
         expect(activated).toMatchObject({
           ok: true,
           active: { activation: { state: "active" } },
@@ -2384,6 +3590,8 @@ export default defineCapability({
       expect(applied).toMatchObject({
         ok: true,
         proposal: { state: "applied" },
+        data_pr: { apply_result: { receipt: { receipt_hash: "sha256:workbench-receipt" } } },
+        deployment_profile: "staging",
         source_database_changed: true,
       });
       expect(decisions).toEqual([
@@ -2422,6 +3630,7 @@ export default defineCapability({
       const shell = await fetch(baseUrl, { headers });
       const shellText = await shell.text();
       expect(shellText).toContain("Check live freshness");
+      expect(shellText).toContain("Checking the current source state");
       expect(shellText).toContain("Approval rechecks live freshness before recording the decision");
 
       const check = await fetch(`${baseUrl}/api/proposals/${input.proposal_id}/check-freshness`, {
@@ -2467,6 +3676,55 @@ export default defineCapability({
         ]));
       } finally {
         verified.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("explains a trusted approval command freshness failure without changing proposal state", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-approval-freshness-exit-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
+    const store = new ProposalStore(storePath);
+    store.createProposal(changeSet);
+    store.close();
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "staging",
+      proposalApprove: async () => ({ code: 4 }),
+    });
+    try {
+      const response = await fetch(`${`http://${server.host}:${server.port}`}/api/proposals/wrp_ui/approve`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-synapsor-ui-token": "ui-token",
+          "x-synapsor-csrf": "csrf-token",
+        },
+        body: JSON.stringify({
+          actor: "reviewer_1",
+          confirm: `APPROVE ${changeSet.integrity.proposal_hash}`,
+        }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error_code: "APPROVAL_FRESHNESS_UNAVAILABLE",
+        source_database_changed: false,
+      });
+      const persisted = new ProposalStore(storePath);
+      try {
+        expect(persisted.getProposal("wrp_ui")?.state).toBe("pending_review");
+        expect(persisted.approvals("wrp_ui")).toEqual([]);
+      } finally {
+        persisted.close();
       }
     } finally {
       await server.close();
@@ -2536,6 +3794,9 @@ export default defineCapability({
     await fs.mkdir(path.dirname(storePath), { recursive: true });
     await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review" }), "utf8");
     const secret = "sk-workbench-session-only-canary";
+    const environmentSecret = "sk-workbench-environment-canary";
+    const previousOpenAIKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = environmentSecret;
     const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
     let closedGateways = 0;
     let providerRequests = 0;
@@ -2643,11 +3904,16 @@ export default defineCapability({
         ok: true,
         available: true,
         profile: "development",
+        credential_environment: {
+          openai: true,
+          anthropic: expect.any(Boolean),
+        },
         direct_provider_egress: true,
         synapsor_relay: false,
         persisted_conversation: false,
         session: { configured: false, running: false, history_turns: 0 },
       });
+      expect(JSON.stringify(status)).not.toContain(environmentSecret);
       expect(status.tools).toEqual([
         expect.objectContaining({ name: tool.name, kind: "proposal" }),
       ]);
@@ -2687,6 +3953,7 @@ export default defineCapability({
       expect(result).toMatchObject({
         ok: true,
         answer: "A proposal was created and still requires operator review.",
+        display_answer: "A proposal was created and still requires operator review.",
         source_database_changed: false,
         model_can_activate: false,
         model_can_approve: false,
@@ -2763,6 +4030,8 @@ export default defineCapability({
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
+      if (previousOpenAIKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAIKey;
     }
   });
 

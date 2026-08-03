@@ -56,6 +56,32 @@ Unknown keys fail when `strict` is true (the default).
 - Executor paths/URLs come from environment variables, not relative contract
   content.
 
+## Generated analytical authority
+
+Auto Boundary and Protect projects opt into generation-lock enforcement:
+
+```json
+{
+  "generated_authority": {
+    "generation_lock_path": "../.synapsor/generation-lock.json",
+    "enforcement": "required",
+    "reporting_timezone": "UTC"
+  }
+}
+```
+
+`generation_lock_path` resolves relative to the config file. `enforcement`
+must be `required`; generated authority fails closed when its reviewed schema,
+role/grant/RLS posture, compiler, Spec, or dependency fingerprints drift.
+`reporting_timezone` is optional for backward compatibility. Newly generated
+analytical authority binds `UTC` into its lock and config so day/week/month
+buckets and exact two-period comparisons keep the same semantics after
+promotion.
+
+Manual and legacy projects omit `generated_authority`. Runner does not create
+an implicit lock, rescan their database, change their startup path, or alter
+their existing contract digest merely because they upgrade.
+
 ## Storage
 
 ```json
@@ -143,10 +169,13 @@ writeback must apply; it should name a separate restricted writer. `read_only:
 true` forbids direct SQL writeback. `statement_timeout_ms` is an
 operator-controlled positive timeout used for reads and direct SQL writeback.
 PostgreSQL applies it as transaction-local `statement_timeout` and
-`lock_timeout`. MySQL applies it to read/preflight execution and rounds it up
-to whole seconds for `innodb_lock_wait_timeout`; MySQL does not provide the
-same general DML statement-timeout guarantee as PostgreSQL. `ssl` carries
-adapter-specific reviewed SSL options when used.
+`lock_timeout`. MySQL applies it to read/preflight execution, rounds it up to
+whole seconds for `innodb_lock_wait_timeout`, and enforces a client-side
+pre-commit transaction deadline for DML. If that deadline expires, Runner
+destroys the connection before sending `COMMIT`, so MySQL rolls back the open
+transaction. A lost acknowledgement after `COMMIT` remains an unknown outcome
+that requires reconciliation. `ssl` carries adapter-specific reviewed SSL
+options when used.
 
 A contract's `SOURCE billing_postgres` must exactly match a `sources` key.
 

@@ -252,9 +252,11 @@ one database error rolls back the whole set.
 
 Set `sources.<name>.statement_timeout_ms` to bound source waits. PostgreSQL
 uses transaction-local statement and lock timeouts. MySQL applies the value to
-read/preflight execution and rounds it up to whole seconds for InnoDB lock
-waits; MySQL does not offer the same general DML statement timeout as
-PostgreSQL.
+read/preflight execution, rounds it up to whole seconds for InnoDB lock waits,
+and closes the connection before `COMMIT` when the bounded pre-commit
+transaction work exceeds the deadline. The open transaction then rolls back;
+a failure after `COMMIT` is still treated as an unknown outcome requiring
+reconciliation.
 
 The protocol-v3 receipt and replay include every primary key plus the bounded
 before/after or tombstone digests. Kept-out fields are never added merely to

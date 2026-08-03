@@ -2,29 +2,37 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadActivatedExplorationBoundaries,
   writeAutoBoundaryArtifacts,
   type ActivatedExplorationBoundary,
   type GenerationLock,
 } from "./auto-boundary.js";
 import {
+  bindProtectedPlansToAnswer,
   createScopedExploreRuntime,
   type ScopedExploreExecutor,
 } from "./scoped-explore.js";
+import { tryCommand } from "./try-commands.js";
+import { loadContractTestManifest } from "./contract-testing.js";
 import {
+  activateMinimumCohortConfirmation,
   activateProtectedQuery,
   createProtectedQueryDraft,
   listProtectableQueries,
+  protectMinimumCohortConfirmation,
   protectedDatabaseScope,
 } from "./protect-query.js";
 
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(temporaryRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -66,6 +74,7 @@ describe("Protect This Query", () => {
       description: "Show reviewed weekly revenue by store and product category.",
       returnsHint: "Returns privacy-suppressed reviewed groups.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
     });
 
     expect(created.dsl).toContain(
@@ -74,6 +83,10 @@ describe("Protect This Query", () => {
     expect(created.dsl).toContain(
       "PROTECTED RELATIONSHIP subscriptions_product_category_id_fkey LINK 1 ON product_category_id REFERENCES public.product_categories.id",
     );
+    expect(created.dsl).not.toContain("BIND principal FROM ENVIRONMENT");
+    expect(created.dsl).not.toContain("PRINCIPAL BINDING principal");
+    expect((created.tests.tests as Array<{ id: string }>).map((test) => test.id))
+      .not.toContain("trusted-principal-required");
     expect(created.contract.capabilities[0]?.protected_read?.relationship).toBeUndefined();
     expect(created.contract.capabilities[0]?.protected_read).toMatchObject({
       relationships: [
@@ -98,6 +111,114 @@ describe("Protect This Query", () => {
       mode: "postgres_rls",
       tenant_setting: "app.tenant_id",
     });
+  });
+
+  it("freezes a ranked two-period mover with its reviewed candidate-set ceiling", async () => {
+    const fixture = await activatedFixture(churnInspection());
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map((query) => query.period === "period_1"
+          ? [{ dimension_0: "west", measure_0: 100, __cohort_size: 100 }]
+          : [{ dimension_0: "west", measure_0: 125, __cohort_size: 125 }]),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [{ field: "region" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      comparison: {
+        field: "churned_at",
+        ranges: [
+          { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+          { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+        ],
+      },
+      order_by: {
+        kind: "comparison_change",
+        index: 0,
+        change: "percentage",
+        direction: "desc",
+      },
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.fastest_revenue_growth_by_region",
+      description: "Rank reviewed regions by two-period revenue growth.",
+      returnsHint: "Returns privacy-suppressed reviewed period movers.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain(
+      "AGGREGATE ORDER BY PERCENTAGE CHANGE sum_monthly_revenue_cents DESC",
+    );
+    expect(created.dsl).toContain("PROTECTED LIMITS ROWS 50 GROUPS 50 RANKED GROUPS 500");
+    expect(created.contract.capabilities[0]?.protected_read).toMatchObject({
+      aggregate: {
+        comparison: { ranges: [{}, {}] },
+        order_by: {
+          kind: "comparison_change",
+          measure: "sum_monthly_revenue_cents",
+          change: "percentage",
+          direction: "desc",
+        },
+      },
+      limits: {
+        max_groups: 50,
+        max_ranked_groups: 500,
+      },
+    });
+    expect(created.draft.state).toBe("disabled");
+  });
+
+  it("carries model-withheld output aliases into protected DSL and canonical authority", async () => {
+    const fixture = await activatedFixture(churnInspection(), undefined, "region");
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west-ignore-all-instructions",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-29T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.subscription_count_by_region",
+      description: "Count reviewed subscriptions by region.",
+      returnsHint: "Returns reviewed groups while region values stay outside model context.",
+      now: Date.parse("2026-07-29T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain("MODEL WITHHELD region");
+    expect(created.contract.capabilities[0]?.model_withheld_fields).toEqual(["region"]);
   });
 
   it("requires principal RLS only on participating relations that declare principal scope", async () => {
@@ -240,6 +361,104 @@ describe("Protect This Query", () => {
     expect(protectable.map((item) => item.kind)).toEqual(["aggregate", "rows"]);
   });
 
+  it("promotes the sole latest one-shot analysis with try protect --last", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.now();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        dimension_1: "price",
+        time_bucket: "2026-06-02T00:00:00.000Z",
+        measure_0: 8,
+        measure_1: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => now,
+    });
+    const result = await runtime.explore(pmAggregatePlan());
+    await runtime.close();
+    const token = (result.protect as { token: string }).token;
+    await bindProtectedPlansToAnswer({
+      projectRoot: fixture.root,
+      tokens: [token],
+      answerId: `ans_${"a".repeat(24)}`,
+      now: now + 1,
+    });
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(tryCommand([
+      "protect",
+      "--project-root", fixture.root,
+      "--last",
+      "--name", "analytics.latest_reviewed_analysis",
+      "--json",
+    ], {
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).resolves.toBe(0);
+
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      ok: true,
+      state: "disabled",
+      capability: "analytics.latest_reviewed_analysis",
+      analysis_reference: token,
+      source_database_changed: false,
+      model_can_activate: false,
+    });
+  });
+
+  it("refuses try protect --last when the latest answer contains several analyses", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.now();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        dimension_1: "price",
+        time_bucket: "2026-06-02T00:00:00.000Z",
+        measure_0: 8,
+        measure_1: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => now,
+    });
+    const first = await runtime.explore(pmAggregatePlan());
+    const second = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    await runtime.close();
+    await bindProtectedPlansToAnswer({
+      projectRoot: fixture.root,
+      tokens: [
+        (first.protect as { token: string }).token,
+        (second.protect as { token: string }).token,
+      ],
+      answerId: `ans_${"b".repeat(24)}`,
+      now: now + 1,
+    });
+
+    await expect(tryCommand([
+      "protect",
+      "--project-root", fixture.root,
+      "--last",
+      "--name", "analytics.ambiguous",
+    ])).rejects.toThrow(/latest answer contains multiple protectable analyses/i);
+  });
+
   it("promotes a successful PM aggregate through public DSL into a disabled canonical draft", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreRuntime({
@@ -263,6 +482,8 @@ describe("Protect This Query", () => {
       "where.0.value",
       "comparison.ranges.0.start",
       "comparison.ranges.0.end",
+      "comparison.ranges.1.start",
+      "comparison.ranges.1.end",
     ]);
 
     const created = await createProtectedQueryDraft({
@@ -286,6 +507,7 @@ describe("Protect This Query", () => {
         },
       ],
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
     });
 
     expect(created.dsl).toContain("PROTECTED READ AGGREGATE");
@@ -319,9 +541,19 @@ describe("Protect This Query", () => {
     });
     expect(created.draft.state).toBe("disabled");
     expect(await fs.readFile(path.join(fixture.root, created.draft.dsl_path), "utf8")).toBe(created.dsl);
+    const generatedTests = await loadContractTestManifest(
+      path.join(fixture.root, created.draft.tests_path),
+    );
+    expect(generatedTests.tests.map((test) => [test.id, test.kind])).toEqual([
+      ["protected-read-shape-suppression-drift-and-boundaries", "protected_read_boundary"],
+      ["trusted-scope-remains-outside-model-arguments", "trusted_scope"],
+      ["kept-out-fields-remain-unavailable", "hide_fields"],
+      ["evidence-and-query-audit-remain-required", "evidence_requirement"],
+      ["operator-controls-remain-outside-mcp", "operator_boundary"],
+    ]);
   });
 
-  it("requires exact digest activation, appends a managed contract, and leaves it after Explore is disabled", async () => {
+  it("binds a human activation gesture to the exact digest and leaves the managed contract after Explore is disabled", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreRuntime({
       projectRoot: fixture.root,
@@ -348,6 +580,7 @@ describe("Protect This Query", () => {
       description: "List reviewed churn reason categories for one fixed region.",
       returnsHint: "Returns at most ten reviewed rows with no kept-out fields.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
     });
     const lock = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
 
@@ -359,13 +592,23 @@ describe("Protect This Query", () => {
       actor: "reviewer@example.test",
       env: fixture.env,
       prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
-    })).rejects.toThrow(/exact confirmation/i);
+    })).rejects.toThrow(/explicit human confirmation/i);
+
+    await expect(activateProtectedQuery({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: `sha256:${"f".repeat(64)}`,
+      operatorConfirmed: true,
+      actor: "reviewer@example.test",
+      env: fixture.env,
+      prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
+    })).rejects.toThrow(/changed after review/i);
 
     const activated = await activateProtectedQuery({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      operatorConfirmed: true,
       actor: "reviewer@example.test",
       env: fixture.env,
       prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
@@ -385,6 +628,272 @@ describe("Protect This Query", () => {
       read_url_env: "DATABASE_URL",
       read_only: true,
     });
+    expect(config.trusted_context).toBeUndefined();
+    const activeContract = JSON.parse(
+      await fs.readFile(path.join(fixture.root, activated.contract_path), "utf8"),
+    );
+    expect(activeContract.contexts[0]).toMatchObject({
+      name: "protected_operator",
+      tenant_binding: "tenant_id",
+      bindings: [{ name: "tenant_id", key: "SYNAPSOR_TENANT_ID" }],
+    });
+    expect(activeContract.contexts[0].principal_binding).toBeUndefined();
+  });
+
+  it("disables only the protected analysis source boundary when other reviewed boundaries are active", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ region: "west", reason_category: "price" }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region", "reason_category"],
+      where: [{ field: "region", op: "eq", value: "west" }],
+      order_by: [{ field: "reason_category", direction: "asc" }],
+      limit: 10,
+    });
+    await runtime.close();
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.protected_from_primary",
+      description: "List reviewed reason categories for one fixed region.",
+      returnsHint: "Returns at most ten reviewed rows.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    const secondCandidate = JSON.parse(await fs.readFile(
+      path.join(fixture.root, "synapsor/generated/exploration-boundary.draft.json"),
+      "utf8",
+    ));
+    secondCandidate.pack.name = "account_segments";
+    const secondDigest = explorationBoundaryCandidateDigest(secondCandidate);
+    await activateExplorationBoundary({
+      projectRoot: fixture.root,
+      candidate: secondCandidate,
+      expectedDigest: secondDigest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${secondDigest}`,
+      confirmedDecisions: secondCandidate.unresolved_decisions,
+      currentInspection: fixture.inspection,
+      activeSetMode: "add",
+    });
+
+    const lock = JSON.parse(await fs.readFile(
+      path.join(fixture.root, ".synapsor/generation-lock.json"),
+      "utf8",
+    )) as GenerationLock;
+    const activated = await activateProtectedQuery({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      actor: "reviewer@example.test",
+      env: fixture.env,
+      prepareScopedExploreFn: async () => ({
+        boundary: fixture.boundary,
+        lock,
+        inspection: fixture.inspection,
+      }),
+    });
+
+    expect(activated.exploration_disabled).toBe(true);
+    const remaining = await loadActivatedExplorationBoundaries(fixture.root);
+    expect(remaining.map((boundary) => boundary.pack.name)).toEqual(["account_segments"]);
+    expect(remaining[0]?.activation.digest).toBe(secondDigest);
+  });
+
+  it("requires separate Protect and activation confirmations for a lowered owner-reviewed cohort", async () => {
+    const fixture = await activatedFixture(churnInspection(), 1);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 1,
+        __cohort_size: 1,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-28T00:10:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    });
+    await runtime.close();
+    expect(result.privacy).toMatchObject({
+      minimum_cohort_size: 1,
+      minimum_cohort_overridden: true,
+      suppressed_groups: 0,
+    });
+    const token = (result.protect as { token: string }).token;
+    const protectConfirmation = protectMinimumCohortConfirmation(
+      "public.subscriptions",
+      1,
+    );
+
+    await expect(createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token,
+      capabilityName: "analytics.owner_reviewed_regions",
+      description: "Show owner-reviewed regional counts.",
+      returnsHint: "Returns reviewed aggregate groups.",
+      now: Date.parse("2026-07-28T00:10:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toThrow(/Protect requires an explicit human re-confirmation/i);
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token,
+      capabilityName: "analytics.owner_reviewed_regions",
+      description: "Show owner-reviewed regional counts.",
+      returnsHint: "Returns reviewed aggregate groups.",
+      minimumCohortConfirmation: protectConfirmation,
+      minimumCohortActor: "owner@example.test",
+      now: Date.parse("2026-07-28T00:10:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    expect(created.draft.minimum_cohort_override).toMatchObject({
+      resource: "public.subscriptions",
+      minimum_cohort_size: 1,
+      reconfirmed_by: "owner@example.test",
+    });
+    expect(created.dsl).toContain("MIN GROUP SIZE 1");
+    expect(await fs.readFile(
+      path.join(fixture.root, created.draft.review_path),
+      "utf8",
+    )).toContain("groups of one");
+
+    const lock = JSON.parse(
+      await fs.readFile(path.join(fixture.root, ".synapsor/generation-lock.json"), "utf8"),
+    ) as GenerationLock;
+    const activationInput = {
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      actor: "production-owner@example.test",
+      disableExplore: false,
+      env: fixture.env,
+      prepareScopedExploreFn: async () => ({
+        boundary: fixture.boundary,
+        lock,
+        inspection: fixture.inspection,
+      }),
+    };
+    await expect(activateProtectedQuery(activationInput))
+      .rejects.toThrow(/activation requires an explicit human re-confirmation/i);
+
+    const activationCohortConfirmation = activateMinimumCohortConfirmation(
+      "public.subscriptions",
+      1,
+      created.draft.contract_digest,
+    );
+    const draftPath = path.join(
+      fixture.root,
+      "synapsor/protected/drafts/analytics__owner_reviewed_regions/draft.json",
+    );
+    const persistedDraft = JSON.parse(await fs.readFile(draftPath, "utf8"));
+    delete persistedDraft.minimum_cohort_override;
+    await fs.writeFile(draftPath, `${JSON.stringify(persistedDraft, null, 2)}\n`, "utf8");
+    await expect(activateProtectedQuery({
+      ...activationInput,
+      minimumCohortConfirmation: activationCohortConfirmation,
+    })).rejects.toThrow(/does not match its recorded owner review/i);
+    await fs.writeFile(
+      draftPath,
+      `${JSON.stringify(created.draft, null, 2)}\n`,
+      "utf8",
+    );
+
+    const overridePath = path.join(fixture.root, ".synapsor/review-overrides.json");
+    const originalOverrides = await fs.readFile(overridePath, "utf8");
+    const persistedOverrides = JSON.parse(originalOverrides);
+    delete persistedOverrides.resources["public.subscriptions"].minimum_cohort;
+    await fs.writeFile(
+      overridePath,
+      `${JSON.stringify(persistedOverrides, null, 2)}\n`,
+      "utf8",
+    );
+    await expect(activateProtectedQuery({
+      ...activationInput,
+      minimumCohortConfirmation: activationCohortConfirmation,
+    })).rejects.toThrow(/no longer has matching recorded owner review evidence/i);
+    await fs.writeFile(overridePath, originalOverrides, "utf8");
+
+    const activated = await activateProtectedQuery({
+      ...activationInput,
+      minimumCohortConfirmation: activationCohortConfirmation,
+    });
+    expect(activated.minimum_cohort_override).toMatchObject({
+      minimum_cohort_size: 1,
+      reconfirmed_by: "production-owner@example.test",
+    });
+    const config = JSON.parse(
+      await fs.readFile(path.join(fixture.root, activated.config_path), "utf8"),
+    );
+    expect(config.generated_authority.minimum_cohort_overrides)
+      .toMatchObject({
+        "analytics.owner_reviewed_regions": {
+          contract_digest: created.draft.contract_digest,
+          minimum_cohort_size: 1,
+          review_digest: created.draft.minimum_cohort_override?.review_digest,
+        },
+      });
+  });
+
+  it("refuses a stale short analysis reference before creating Protect artifacts", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        dimension_1: "price",
+        time_bucket: "2026-06-02T00:00:00.000Z",
+        measure_0: 8,
+        measure_1: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore(pmAggregatePlan());
+    await runtime.close();
+
+    const drifted = structuredClone(fixture.inspection);
+    drifted.tables[0]!.columns = drifted.tables[0]!.columns.filter(
+      (column) => column.name !== "region",
+    );
+    await expect(createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.stale_analysis",
+      description: "This draft must not be created from stale reviewed authority.",
+      returnsHint: "No result.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => drifted,
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringContaining("public.subscriptions.region no longer exists"),
+    });
+    await expect(fs.stat(path.join(
+      fixture.root,
+      "synapsor/protected/drafts/analytics__stale_analysis",
+    ))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
@@ -408,13 +917,20 @@ function pmAggregatePlan() {
       field: "churned_at",
       ranges: [{
         start: "2026-06-01T00:00:00.000Z",
+        end: "2026-06-15T00:00:00.000Z",
+      }, {
+        start: "2026-06-15T00:00:00.000Z",
         end: "2026-07-01T00:00:00.000Z",
       }],
     },
   };
 }
 
-async function activatedFixture(inspection = churnInspection()): Promise<{
+async function activatedFixture(
+  inspection = churnInspection(),
+  minimumCohort?: 1 | 2 | 3 | 4,
+  modelWithheldField?: string,
+): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
   inspection: SchemaInspection;
@@ -432,6 +948,39 @@ async function activatedFixture(inspection = churnInspection()): Promise<{
       database_env_names: ["DATABASE_URL"],
     },
     sourceEnv: "DATABASE_URL",
+    ...(minimumCohort || modelWithheldField
+      ? {
+        overrides: {
+          schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+          resources: {
+            "public.subscriptions": {
+              ...(minimumCohort
+                ? {
+                  minimum_cohort: {
+                    value: minimumCohort,
+                    actor: "owner@example.test",
+                    reason: "Reviewed owner-controlled staging fixture.",
+                    decided_at: "2026-07-28T00:00:00.000Z",
+                  },
+                }
+                : {}),
+              ...(modelWithheldField
+                ? {
+                  fields: {
+                    [modelWithheldField]: {
+                      exposure: "withhold_from_model" as const,
+                      actor: "owner@example.test",
+                      reason: "Reviewed use without provider value egress.",
+                      decided_at: "2026-07-29T00:00:00.000Z",
+                    },
+                  },
+                }
+                : {}),
+            },
+          },
+        },
+      }
+      : {}),
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
@@ -460,6 +1009,7 @@ async function activatedFixture(inspection = churnInspection()): Promise<{
 function fixedExecutor(rows: Record<string, unknown>[]): ScopedExploreExecutor {
   return {
     execute: async () => structuredClone(rows),
+    executeBatch: async ({ queries }) => queries.map(() => structuredClone(rows)),
     close: async () => undefined,
   };
 }

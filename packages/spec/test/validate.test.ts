@@ -125,17 +125,34 @@ describe("@synapsor/spec validation", () => {
     });
   });
 
-  it("rejects aggregate reads that expose member rows, model predicates, or weak suppression", () => {
+  it("accepts an explicit minimum group size of one", () => {
+    const aggregate = aggregateReadContract();
+    aggregate.capabilities[0].aggregate.minimum_group_size = 1;
+    expect(validateContract(aggregate)).toMatchObject({ ok: true, errors: [] });
+
+    const protectedAggregate = protectedAggregateContract();
+    protectedAggregate.capabilities[0].protected_read.aggregate.minimum_group_size = 1;
+    expect(validateContract(protectedAggregate)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("rejects aggregate reads that expose member rows, model predicates, or invalid suppression", () => {
     const contract = aggregateReadContract();
     const capability = contract.capabilities[0];
     capability.args.minimum_balance = { type: "number", required: true };
     capability.visible_fields = ["id"];
-    capability.aggregate.minimum_group_size = 1;
+    capability.aggregate.minimum_group_size = 0;
 
     const codes = validateContract(contract).errors.map((error) => error.code);
     expect(codes).toContain("AGGREGATE_MODEL_ARGS_FORBIDDEN");
     expect(codes).toContain("AGGREGATE_VISIBLE_ROWS_FORBIDDEN");
     expect(codes).toContain("AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED");
+  });
+
+  it("rejects a protected aggregate minimum group size below one", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.aggregate.minimum_group_size = 0;
+    expect(validateContract(contract).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_MINIMUM_GROUP_SIZE");
   });
 
   it("accepts a digest-bound protected PM aggregate with reviewed dimensions and bounded arguments", () => {
@@ -168,6 +185,42 @@ describe("@synapsor/spec validation", () => {
         },
       },
     });
+  });
+
+  it("accepts only digest-bound ranked period movers with a reviewed underlying-group limit", () => {
+    const contract = protectedAggregateContract();
+    const protectedRead = contract.capabilities[0].protected_read;
+    protectedRead.aggregate.comparison = {
+      field: "churned_at",
+      ranges: [
+        { start: { fixed: "2026-06-01T00:00:00.000Z" }, end: { fixed: "2026-07-01T00:00:00.000Z" } },
+        { start: { fixed: "2026-07-01T00:00:00.000Z" }, end: { fixed: "2026-08-01T00:00:00.000Z" } },
+      ],
+    };
+    protectedRead.aggregate.order_by = {
+      kind: "comparison_change",
+      measure: "churned_accounts",
+      change: "absolute",
+      direction: "desc",
+    };
+    protectedRead.limits.max_ranked_groups = 500;
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.protected_read).toMatchObject({
+      aggregate: {
+        order_by: { kind: "comparison_change", change: "absolute" },
+      },
+      limits: { max_groups: 50, max_ranked_groups: 500 },
+    });
+
+    const missingComparison = structuredClone(contract);
+    delete missingComparison.capabilities[0].protected_read.aggregate.comparison;
+    expect(validateContract(missingComparison).errors.map((error) => error.code))
+      .toContain("PROTECTED_CHANGE_ORDER_REQUIRES_COMPARISON");
+
+    const invalidLimit = structuredClone(contract);
+    invalidLimit.capabilities[0].protected_read.limits.max_ranked_groups = 49;
+    expect(validateContract(invalidLimit).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_RANKED_GROUP_LIMIT");
   });
 
   it("accepts additive reviewed star paths without rewriting the legacy relationship form", () => {
@@ -245,6 +298,15 @@ describe("@synapsor/spec validation", () => {
 
     expect(normalized).toEqual(JSON.parse(JSON.stringify(normalized)));
     expect(normalized.capabilities.every((capability) => capability.protected_read === undefined)).toBe(true);
+    expect(normalized.capabilities.every((capability) =>
+      capability.model_withheld_fields === undefined)).toBe(true);
+
+    const withEgressTier = structuredClone(normalized);
+    withEgressTier.capabilities[0]!.model_withheld_fields = ["status"];
+    expect(validateContract(withEgressTier)).toMatchObject({ ok: true, errors: [] });
+    expect(JSON.stringify(normalizeContract(withEgressTier))).toContain(
+      '"model_withheld_fields":["status"]',
+    );
   });
 
   it("accepts typed argument enums and rejects non-canonical enum values", () => {
@@ -270,6 +332,15 @@ describe("@synapsor/spec validation", () => {
     const result = validateContract(readJson("fixtures/invalid/kept-out-visible.contract.json"));
     expect(result.ok).toBe(false);
     expect(result.errors.map((error) => error.code)).toContain("KEPT_OUT_FIELD_VISIBLE");
+  });
+
+  it("rejects fields that are both model-withheld and kept out", () => {
+    const contract = readJson("fixtures/valid/basic-read.contract.json") as Record<string, any>;
+    contract.capabilities[0].model_withheld_fields = ["card_token"];
+
+    const result = validateContract(contract);
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.code)).toContain("MODEL_WITHHELD_FIELD_KEPT_OUT");
   });
 
   it("accepts a tenant-additive principal scope backed by a required trusted binding", () => {

@@ -105,6 +105,21 @@ END
     expect(contract.capabilities[0]?.kept_out_fields).toContain("card_token");
   });
 
+  it("compiles MODEL WITHHELD as additive digest-bound egress metadata", () => {
+    const source = fs.readFileSync(
+      path.join(packageRoot, "examples/billing-late-fee.synapsor.sql"),
+      "utf8",
+    ).replace(
+      /(\s+ALLOW READ [^\n]*status[^\n]*)/,
+      "$1\n  MODEL WITHHELD status",
+    );
+    const contract = compileAgentDsl(source);
+
+    expect(contract.capabilities[0]?.visible_fields).toContain("status");
+    expect(contract.capabilities[0]?.model_withheld_fields).toEqual(["status"]);
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("compiles reviewed model-facing metadata and patch guards", () => {
     const contract = compileAgentDsl(`
 CREATE AGENT CONTEXT local_operator
@@ -780,8 +795,21 @@ END
     expect(validateContract(contract).errors).toEqual([]);
   });
 
-  it("rejects aggregate reads without suppression or with model-controlled predicates", () => {
+  it("compiles explicitly reviewed minimum group size one for aggregate and protected reads", () => {
+    const aggregate = compileAgentDsl(
+      aggregateReadSource("AGGREGATE READ COUNT ROWS", "", true, 1),
+    );
+    expect(aggregate.capabilities[0]?.aggregate?.minimum_group_size).toBe(1);
+
+    const protectedAggregate = compileAgentDsl(protectedAggregateSource(1));
+    expect(protectedAggregate.capabilities[0]?.protected_read?.aggregate?.minimum_group_size)
+      .toBe(1);
+  });
+
+  it("rejects aggregate reads without suppression, below one, or with model-controlled predicates", () => {
     expect(() => compileAgentDsl(aggregateReadSource("AGGREGATE READ COUNT ROWS", "", false))).toThrow(/AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED/);
+    expect(() => compileAgentDsl(aggregateReadSource("AGGREGATE READ COUNT ROWS", "", true, 0))).toThrow(/AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED/);
+    expect(() => compileAgentDsl(protectedAggregateSource(0))).toThrow(/AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED/);
     expect(() => compileAgentDsl(aggregateReadSource("AGGREGATE READ AVG balance_cents", "ARG minimum NUMBER REQUIRED MIN 0"))).toThrow(/AGGREGATE_MODEL_ARGS_FORBIDDEN/);
   });
 
@@ -826,6 +854,45 @@ END
     });
     expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
     expect(compileAgentDsl(formatAgentDsl(protectedAggregateSource()))).toEqual(contract);
+  });
+
+  it("compiles a reviewed ranked period mover and its separate underlying-group limit", () => {
+    const source = protectedAggregateSource()
+      .replace(
+        "TIME DIMENSION churn_week BY WEEK OF churned_at",
+        [
+          "TIME DIMENSION churn_week BY WEEK OF churned_at",
+          "  COMPARE RANGE churned_at FROM FIXED '2026-06-01T00:00:00.000Z' TO FIXED '2026-07-01T00:00:00.000Z'",
+          "  COMPARE RANGE churned_at FROM FIXED '2026-07-01T00:00:00.000Z' TO FIXED '2026-08-01T00:00:00.000Z'",
+        ].join("\n"),
+      )
+      .replace(
+        "AGGREGATE ORDER BY MEASURE churned_accounts DESC",
+        "AGGREGATE ORDER BY PERCENTAGE CHANGE churned_accounts DESC",
+      )
+      .replace(
+        "PROTECTED LIMITS ROWS 50 GROUPS 50",
+        "PROTECTED LIMITS ROWS 50 GROUPS 50 RANKED GROUPS 500",
+      );
+    const contract = compileAgentDsl(source);
+
+    expect(contract.capabilities[0]?.protected_read).toMatchObject({
+      aggregate: {
+        comparison: { ranges: [{}, {}] },
+        order_by: {
+          kind: "comparison_change",
+          measure: "churned_accounts",
+          change: "percentage",
+          direction: "desc",
+        },
+      },
+      limits: {
+        max_groups: 50,
+        max_ranked_groups: 500,
+      },
+    });
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
   });
 
   it("compiles reviewed star paths while preserving the legacy one-link syntax", () => {
@@ -940,7 +1007,12 @@ END
 `;
 }
 
-function aggregateReadSource(aggregateClause: string, extraClause: string, includeMinimum = true): string {
+function aggregateReadSource(
+  aggregateClause: string,
+  extraClause: string,
+  includeMinimum = true,
+  minimumGroupSize = 5,
+): string {
   return `
 CREATE AGENT CONTEXT finance_operator
   BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
@@ -959,14 +1031,14 @@ CREATE CAPABILITY billing.aggregate_overdue
   TENANT KEY tenant_id
   ${aggregateClause}
   ${extraClause}
-  ${includeMinimum ? "MIN GROUP SIZE 5" : ""}
+  ${includeMinimum ? `MIN GROUP SIZE ${minimumGroupSize}` : ""}
   KEEP OUT customer_email, private_notes
   REQUIRE EVIDENCE
 END
 `;
 }
 
-function protectedAggregateSource(): string {
+function protectedAggregateSource(minimumGroupSize = 5): string {
   return `
 CREATE AGENT CONTEXT analytics_operator
   BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED
@@ -998,7 +1070,7 @@ CREATE CAPABILITY analytics.churn_contributors_by_week
   TIME DIMENSION churn_week BY WEEK OF churned_at
   AGGREGATE ORDER BY MEASURE churned_accounts DESC
   TOP 20 GROUPS
-  MIN GROUP SIZE 5
+  MIN GROUP SIZE ${minimumGroupSize}
   KEEP OUT email, notes
   REQUIRE EVIDENCE
   PROTECTED LIMITS ROWS 50 GROUPS 50 CELLS 500 BYTES 65536 TIMEOUT MS 3000 QUERIES 40 EXTRACTED CELLS 4000 DIFFERENCING 6 RATE PER MINUTE 20

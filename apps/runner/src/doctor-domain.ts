@@ -16,16 +16,24 @@ type TrustedContextDoctorEntry = {
   name: string;
   provider: ContextProvider;
   values: Record<string, unknown>;
+  principal_required: boolean;
 };
 
 
 export function trustedContextsForDoctor(config: RuntimeConfig): TrustedContextDoctorEntry[] {
   const contexts: TrustedContextDoctorEntry[] = [];
-  if (config.trusted_context) {
+  const capabilities = config.capabilities ?? [];
+  const globalCapabilities = capabilities.filter((capability) => !capability.context);
+  if (config.trusted_context && (globalCapabilities.length > 0 || Object.keys(config.contexts ?? {}).length === 0)) {
     contexts.push({
       name: "trusted_context",
       provider: config.trusted_context.provider,
       values: config.trusted_context.values ?? {},
+      principal_required: Boolean(
+        config.trusted_context.principal_binding
+        || config.trusted_context.values?.principal_env !== undefined
+        || globalCapabilities.some((capability) => Boolean(capability.target.principal_scope_key)),
+      ),
     });
   }
   for (const [name, context] of Object.entries(config.contexts ?? {})) {
@@ -33,6 +41,11 @@ export function trustedContextsForDoctor(config: RuntimeConfig): TrustedContextD
       name: `contexts.${name}`,
       provider: context.provider,
       values: context.values ?? {},
+      principal_required: Boolean(
+        context.principal_binding
+        || context.values?.principal_env !== undefined
+        || capabilities.some((capability) => capability.context === name && Boolean(capability.target.principal_scope_key)),
+      ),
     });
   }
   return contexts;

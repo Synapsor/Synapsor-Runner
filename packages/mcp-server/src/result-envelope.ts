@@ -10,6 +10,9 @@ import type {
   ResultEnvelopeV2,
   CloudAdapterClient,
 } from "./runtime-types.js";
+import type {
+  preflightGeneratedCapabilityAuthority,
+} from "./generated-authority.js";
 import {
   evidenceHandle,
 } from "./approval-policy.js";
@@ -34,6 +37,7 @@ export async function callConfiguredToolV2(input: {
   cloudClient?: CloudAdapterClient;
   trustedContext?: TrustedContext;
   privacySessionId?: string;
+  generatedAuthorityInspector?: Parameters<typeof preflightGeneratedCapabilityAuthority>[3];
   name: string;
   args: Record<string, unknown>;
 }): Promise<ResultEnvelopeV2> {
@@ -128,6 +132,9 @@ export function resultEnvelopeFromLegacy(
       principal: typeof context?.principal === "string" ? context.principal : undefined,
       provenance: typeof context?.provenance === "string" ? context.provenance : undefined,
       canonical_capability: action,
+      ...(legacy.reporting_timezone === "UTC"
+        ? { reporting_timezone: "UTC" as const }
+        : {}),
     },
   };
 }

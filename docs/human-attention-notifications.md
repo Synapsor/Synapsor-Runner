@@ -242,7 +242,7 @@ The HMAC-SHA-256 input is the UTF-8 string
 1. Require signature version `v1`.
 2. Reject timestamps outside the configured replay window.
 3. Verify the HMAC with a timing-safe comparison.
-4. Deduplicate the stable event ID.
+4. Atomically claim the stable event ID in durable shared storage.
 5. Return only a bounded transport acknowledgement.
 
 Runner ignores response content. A receiver cannot return a command.
@@ -278,7 +278,13 @@ export function verifySynapsorWebhook(rawBody, headers, secret, now = Date.now()
 
 Read the request as raw UTF-8 bytes for verification; reserializing parsed JSON
 changes the signed body. Store the event ID for at least the replay window and
-reject a duplicate before processing it.
+reject a duplicate before processing it. A process-local `Set` is suitable only
+for a single-process test or demo; it does not survive restarts and does not
+coordinate multiple receivers. Embedded Node receivers can use
+`verifyNotificationWebhookDurably(...)` with an atomic insert-if-absent
+`claim_event_id` callback backed by their database or shared cache. The callback
+runs only after the signature and timestamp pass and receives the event ID plus
+its minimum retention deadline.
 
 The structured body resembles:
 

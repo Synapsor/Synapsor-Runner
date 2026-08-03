@@ -9,8 +9,10 @@ import {
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
 import { initializeGuidedProject } from "../apps/runner/dist/guided-project.js";
+import { saveInstantBoundaryReviewBaseline } from "../apps/runner/dist/boundary-review-domain.js";
 import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
 import { AskError } from "../apps/runner/dist/model-ask.js";
+import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
 import {
   captureScreenshot,
   clickSelector,
@@ -28,14 +30,22 @@ const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-
 const chromeProfile = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-ask-chrome-"));
 const outputRoot = path.resolve(
   process.env.SYNAPSOR_WORKBENCH_ASK_OUTPUT
-    ?? path.join(root, "development", "runner-1.6.4-ask-visual"),
+    ?? path.join(root, "development", "runner-1.6.6-ask-visual"),
 );
 const sessionKey = "sk-workbench-browser-canary-never-persist";
+const priorDatabaseUrl = process.env.DATABASE_URL;
+const priorTenant = process.env.SYNAPSOR_TENANT_ID;
+process.env.DATABASE_URL = "postgresql://fixture.invalid/synapsor";
+process.env.SYNAPSOR_TENANT_ID = "tenant-browser";
 const screenshots = [];
 let localUi;
 let chrome;
 let providerRequests = 0;
+let providerAuthenticationFailures = 0;
 let toolCalls = 0;
+let refusalCalls = 0;
+const providerRequestBodies = [];
+const withheldRegions = ["withheld-region-alpha", "withheld-region-beta"];
 
 try {
   await fs.rm(outputRoot, { recursive: true, force: true });
@@ -56,7 +66,13 @@ try {
   const guided = await initializeGuidedProject({
     projectRoot,
     build,
-    runnerVersion: "1.6.4",
+    runnerVersion: "1.6.6",
+  });
+  await saveInstantBoundaryReviewBaseline({
+    projectRoot,
+    draft: build.exploration_boundary,
+    candidate: build.exploration_boundary,
+    actor: "browser-reviewer@example.test",
   });
   const boundaryDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
   await activateExplorationBoundary({
@@ -69,25 +85,66 @@ try {
     currentInspection: inspection,
   });
 
-  const tool = {
-    name: "billing.propose_account_credit",
-    title: "Propose account credit",
-    description: "Creates one bounded account-credit proposal without changing the source database.",
+  const exploreArguments = {
+    plan: {
+      kind: "aggregate",
+      resource: "public.accounts",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    },
+  };
+  const tools = [{
+    name: "app.describe_data",
+    title: "Describe reviewed data",
+    description: "Lists the exact reviewed local authoring catalog without reading source rows.",
     input_schema: {
       type: "object",
       properties: {
-        account_id: { type: "string", maxLength: 128 },
-        amount_cents: { type: "integer", minimum: 1, maximum: 2500 },
+        resource: { type: "string", maxLength: 256 },
+        cursor: { type: "integer", minimum: 0 },
+        limit: { type: "integer", minimum: 1, maximum: 10 },
       },
-      required: ["account_id", "amount_cents"],
       additionalProperties: false,
     },
     metadata: {
-      "synapsor.kind": "proposal",
+      "synapsor.kind": "scoped_explore_description",
+      "synapsor.authoring_only": true,
+      "synapsor.raw_sql_exposed": false,
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  };
+  }, {
+    name: "app.explore_data",
+    title: "Explore reviewed data",
+    description: "Runs one typed bounded plan against the exact reviewed local authoring boundary.",
+    input_schema: {
+      type: "object",
+      properties: {
+        plan: {
+          type: "object",
+          properties: {
+            kind: { const: "aggregate" },
+            resource: { type: "string", maxLength: 256 },
+            measures: { type: "array", maxItems: 3 },
+            dimensions: { type: "array", maxItems: 3 },
+            top_n: { type: "integer", minimum: 1, maximum: 100 },
+          },
+          required: ["kind", "resource", "measures", "dimensions", "top_n"],
+          additionalProperties: false,
+        },
+      },
+      required: ["plan"],
+      additionalProperties: false,
+    },
+    metadata: {
+      "synapsor.kind": "scoped_explore",
+      "synapsor.authoring_only": true,
+      "synapsor.raw_sql_exposed": false,
+      "synapsor.approval_tool": false,
+      "synapsor.commit_tool": false,
+    },
+  }];
   localUi = await startLocalUiServer({
     projectRoot,
     boundaryRoot: written.root,
@@ -95,33 +152,139 @@ try {
     storePath: guided.store_path,
     token: "ask-browser-token",
     csrfToken: "ask-browser-csrf",
-    deploymentProfile: "staging",
+    deploymentProfile: build.exploration_boundary.deployment_profile,
     schemaInspector: async () => inspection,
+    scopedExploreRuntimeFactory: (input) => createScopedExploreRuntime({
+      ...input,
+      inspectDatabaseFn: async () => inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map(() => []),
+        close: async () => undefined,
+      },
+    }),
     askGatewayFactory: async () => ({
-      listTools: async () => [tool],
+      mode: "authoring",
+      listTools: async () => tools,
       callTool: async (name, args) => {
-        assert(name === tool.name, "Ask called a tool outside the reviewed surface", { name });
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.accounts",
+                label: "Accounts",
+                field_labels: {
+                  id: "ID",
+                  region: "Region",
+                  created_at: "Created at",
+                },
+                field_egress: {
+                  id: "visible",
+                  region: "withheld",
+                  created_at: "visible",
+                },
+                groupable_fields: ["region"],
+                count_distinct_fields: ["id"],
+                time_bucket_fields: {
+                  created_at: ["day", "week", "month"],
+                },
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        assert(name === "app.explore_data", "Ask called a tool outside the reviewed analytical surface", { name });
+        if (args?.plan?.resource === "public.accounts"
+          && args.plan.dimensions?.some((dimension) => dimension.field === "payment_token")) {
+          refusalCalls += 1;
+          return {
+            ok: false,
+            error_code: "EXPLORE_FIELD_FORBIDDEN",
+            value: {
+              ok: false,
+              error_code: "EXPLORE_FIELD_FORBIDDEN",
+              message: "public.accounts.payment_token is kept out of the activated reviewed boundary.",
+              details: {
+                resource: "public.accounts",
+                field: "payment_token",
+              },
+              source_database_changed: false,
+            },
+          };
+        }
         assert(
-          JSON.stringify(args) === JSON.stringify({ account_id: "ACC-104", amount_cents: 1500 }),
-          "Ask changed the bounded provider arguments",
+          JSON.stringify(args) === JSON.stringify(exploreArguments),
+          "Ask changed the reviewed aggregate plan",
           { args },
         );
         toolCalls += 1;
+        const value = {
+          ok: true,
+          outcome: {
+            type: "success",
+            status: "ok",
+            result: {
+              counted_entity: "accounts",
+              grain: "one group per reviewed region",
+            },
+          },
+          data: [
+            { region: withheldRegions[0], count_accounts: 7 },
+            { region: withheldRegions[1], count_accounts: 4 },
+          ],
+          audit: {
+            query_fingerprint: `sha256:${String(toolCalls).padStart(64, "0")}`,
+            returned_rows_or_groups: 2,
+            returned_cells: 4,
+            persisted_result_values: false,
+          },
+          privacy: {
+            minimum_cohort_size: 5,
+            suppressed_groups: 0,
+            totals_returned: false,
+          },
+          evidence_bundle_id: `ev_browser_ask_${toolCalls}`,
+          evidence_resource: `synapsor://evidence/ev_browser_ask_${toolCalls}`,
+          protect: {
+            token: `A${toolCalls}`,
+            expires_at: "2026-07-27T23:00:00.000Z",
+          },
+          source_database_changed: false,
+        };
         return {
           ok: true,
-          value: {
-            ok: true,
-            proposal_id: "wrp_browser_ask",
-            state: "pending_review",
-            source_database_changed: false,
+          value,
+          provider_value: {
+            ...value,
+            data: [
+              { region: "[withheld:visual:1]", count_accounts: 7 },
+              { region: "[withheld:visual:2]", count_accounts: 4 },
+            ],
           },
+          model_withheld_values: true,
         };
       },
       close: async () => undefined,
     }),
     askProviderDependencies: {
       requestJson: async (input) => {
+        if (JSON.stringify(input.body).includes("Simulate a rejected provider credential.")) {
+          providerAuthenticationFailures += 1;
+          throw new AskError(
+            "ASK_PROVIDER_AUTHENTICATION_FAILED",
+            "The selected provider rejected the configured API key.",
+            502,
+          );
+        }
         providerRequests += 1;
+        providerRequestBodies.push(JSON.stringify(input.body));
+        assert(
+          providerRequestBodies.every((body) => withheldRegions.every((value) => !body.includes(value))),
+          "A model-withheld value entered a provider request",
+          { providerRequestBodies },
+        );
         assert(
           input.headers.authorization === `Bearer ${sessionKey}`,
           "Workbench did not keep the session credential isolated to the provider request",
@@ -135,7 +298,7 @@ try {
             );
           });
         }
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        await new Promise((resolve) => setTimeout(resolve, 240));
         if (providerRequests === 1 || providerRequests === 4) {
           return {
             status: 200,
@@ -148,13 +311,65 @@ try {
                       id: `call_browser_ask_${providerRequests}`,
                     type: "function",
                     function: {
-                      name: "billing__propose_account_credit",
+                      name: "app__explore_data",
+                      arguments: JSON.stringify(exploreArguments),
+                    },
+                  }],
+                },
+              }],
+            },
+          };
+        }
+        if (providerRequests === 6) {
+          return {
+            status: 200,
+            body: {
+              choices: [{
+                message: {
+                  role: "assistant",
+                  content: null,
+                  tool_calls: [{
+                    id: "call_browser_refused_payment_token",
+                    type: "function",
+                    function: {
+                      name: "app__explore_data",
                       arguments: JSON.stringify({
-                        account_id: "ACC-104",
-                        amount_cents: 1500,
+                        plan: {
+                          kind: "aggregate",
+                          resource: "public.accounts",
+                          measures: [{ function: "count" }],
+                          dimensions: [{ field: "payment_token" }],
+                          top_n: 10,
+                        },
                       }),
                     },
                   }],
+                },
+              }],
+            },
+          };
+        }
+        if (providerRequests === 7) {
+          return {
+            status: 200,
+            body: {
+              choices: [{
+                message: {
+                  role: "assistant",
+                  content: null,
+                },
+              }],
+            },
+          };
+        }
+        if (providerRequests === 8) {
+          return {
+            status: 200,
+            body: {
+              choices: [{
+                message: {
+                  role: "assistant",
+                  content: "Payment token is outside the active reviewed boundary, so Runner did not execute that analysis.",
                 },
               }],
             },
@@ -166,7 +381,7 @@ try {
             choices: [{
               message: {
                 role: "assistant",
-                content: "I created a bounded proposal for operator review. The database has not changed.",
+                content: "The first withheld region token has the larger reviewed account count.",
               },
             }],
           },
@@ -185,10 +400,59 @@ try {
     await configurePage(page, 1440, 1100);
     await navigateAndWait(page, localUi.url);
     await waitForExpression(page, "document.querySelector('#header-state')?.textContent !== 'Loading'");
-    await clickSelector(page, '[data-view="explore"]');
     await waitForExpression(page, "document.querySelector('#ask-shell')?.offsetParent !== null");
-    await waitForExpression(page, "document.querySelector('#ask-authority-summary')?.textContent.includes('1 reviewed tool')");
+    const initialDestination = await evaluate(page, `({
+      hash:location.hash,
+      askActive:document.querySelector('[data-view="explore"]')?.classList.contains("active"),
+      reviewActive:document.querySelector('[data-view="overview"]')?.classList.contains("active")
+    })`);
+    assert(
+      initialDestination.askActive && !initialDestination.reviewActive,
+      "An active local analytics project did not reopen directly in Ask",
+      initialDestination,
+    );
+    await waitForExpression(page, "document.querySelector('#ask-authority-summary')?.textContent.includes('scoped · read-only')");
+    await waitForExpression(page, "document.querySelector('#explore-preflight')?.textContent.includes('Reviewed access ready') || document.querySelector('#explore-preflight')?.textContent.includes('Explore is not ready') || document.querySelector('#explore-preflight')?.textContent.includes('is missing')");
+    const preflightText = await evaluate(page, "document.querySelector('#explore-preflight')?.textContent");
+    assert(
+      String(preflightText).includes("Reviewed access ready"),
+      "The browser Ask fixture did not reach the exact active-boundary catalog",
+      { preflightText },
+    );
+    await waitForExpression(page, "document.querySelectorAll('#ask-starters [data-ask-starter]').length > 0");
+    const initialQuestionSurface = await evaluate(page, `({
+      placeholder:document.querySelector("#ask-question")?.placeholder,
+      starters:document.querySelector("#ask-starters")?.textContent
+    })`);
+    assert(
+      !String(initialQuestionSurface.placeholder).includes("reviewed regions contributed most"),
+      "Ask retained the canned region placeholder",
+      initialQuestionSurface,
+    );
+    assert(
+      String(initialQuestionSurface.placeholder).toLowerCase().includes("account")
+        || String(initialQuestionSurface.starters).toLowerCase().includes("account"),
+      "Ask did not advertise a question derived from the active accounts boundary",
+      initialQuestionSurface,
+    );
     await assertAskDom(page, "unconfigured desktop", false);
+
+    await evaluate(page, "document.querySelector('#external-client-setup').open=true");
+    await clickSelector(page, '[data-install-mcp="claude-code"]');
+    await waitForExpression(page, "document.querySelector('#mcp-install-status')?.textContent.includes('No live client session is connected yet')");
+    const managedClientSetup = await evaluate(page, `({
+      button:document.querySelector('[data-install-mcp="claude-code"]')?.textContent,
+      status:document.querySelector('#mcp-install-status')?.textContent
+    })`);
+    assert(
+      managedClientSetup.button === "Prepared"
+        && /project config is prepared/i.test(String(managedClientSetup.status))
+        && /no live client session is connected yet/i.test(String(managedClientSetup.status))
+        && !/claude code is connected/i.test(String(managedClientSetup.status)),
+      "Managed MCP setup claimed a live client connection after writing only project configuration",
+      managedClientSetup,
+    );
+    await evaluate(page, "document.querySelector('#external-client-setup').open=false");
 
     await selectOptionByValue(page, "#ask-provider", "anthropic");
     await waitForExpression(page, "document.querySelector('#ask-model')?.value.includes('claude')");
@@ -198,34 +462,271 @@ try {
     await waitForExpression(page, "document.querySelector('#ask-base-url-wrap')?.classList.contains('hidden') === true");
     await typeIntoSelector(page, "#ask-key", sessionKey);
     await clickSelector(page, "#configure-ask");
-    await waitForExpression(page, "document.querySelector('#ask-config-status')?.textContent.includes('Acknowledge')");
+    await waitForExpression(page, "document.querySelector('#ask-config-status')?.textContent.includes('provider-egress checkbox')");
+    await waitForExpression(page, "document.activeElement===document.querySelector('#ask-egress')");
     const requestsBeforeConsent = providerRequests;
     assert(requestsBeforeConsent === 0, "Provider was contacted before egress acknowledgement");
-    await typeIntoSelector(page, "#ask-key", sessionKey);
+    const missingConsent = await evaluate(page, `({
+      visible:document.querySelector("#ask-egress-review")?.offsetParent!==null,
+      highlighted:document.querySelector("#ask-egress-review")?.classList.contains("needs-attention"),
+      focused:document.activeElement===document.querySelector("#ask-egress"),
+      keyRetained:document.querySelector("#ask-key")?.value===${JSON.stringify(sessionKey)}
+    })`);
+    assert(
+      missingConsent.visible && missingConsent.highlighted && missingConsent.focused && missingConsent.keyRetained,
+      "Missing provider consent did not reveal and focus the retained-key egress review",
+      missingConsent,
+    );
+    await screenshot(page, "workbench-ask-egress-review-desktop.png");
     await evaluate(page, "document.querySelector('#ask-egress').click()");
     await clickSelector(page, "#configure-ask");
     await waitForExpression(page, "document.querySelector('#ask-chat')?.offsetParent !== null");
     await waitForExpression(page, "document.querySelector('#ask-provider-state')?.textContent.includes('ready')");
+    await waitForExpression(page, "document.querySelector('#ask-boundary-summary')?.textContent.includes('7 tables')");
+    assert(
+      await evaluate(page, "!/data[- ]areas?/i.test(document.body.textContent||'')"),
+      "Workbench Ask still exposed the retired generic resource terminology",
+    );
+    await evaluate(page, "document.querySelector('#ask-boundary-guide').open=true");
+    const boundaryGuide = await evaluate(page, `({
+      text:document.querySelector("#ask-boundary-body")?.textContent,
+      editLabel:document.querySelector("[data-edit-ask-boundary]")?.textContent,
+      editVisible:document.querySelector("[data-edit-ask-boundary]")?.offsetParent!==null
+    })`);
+    assert(
+      /accounts/i.test(String(boundaryGuide.text))
+        && /region/i.test(String(boundaryGuide.text))
+        && /credit balance/i.test(String(boundaryGuide.text))
+        && !/payment token/i.test(String(boundaryGuide.text))
+        && !/filter by\s*0\b/i.test(String(boundaryGuide.text)),
+      "Ask did not explain the exact active boundary in plain language",
+      boundaryGuide,
+    );
+    assert(
+      boundaryGuide.editVisible && /review or expand access/i.test(String(boundaryGuide.editLabel)),
+      "Ask did not offer an operator path to review or expand the boundary",
+      boundaryGuide,
+    );
+    const firstBoundaryPage = await evaluate(page, `({
+      status:document.querySelector(".ask-boundary-pagination-status")?.textContent,
+      headings:[...document.querySelectorAll("#ask-boundary-body .ask-boundary-resource h4")].map(node=>node.textContent),
+      nextDisabled:document.querySelector("#ask-boundary-next")?.disabled
+    })`);
+    assert(
+      /showing 1.{1,3}6 of 7/i.test(String(firstBoundaryPage.status))
+        && firstBoundaryPage.headings.length === 6
+        && firstBoundaryPage.nextDisabled === false,
+      "Ask did not paginate the first six reviewed tables",
+      firstBoundaryPage,
+    );
+    await clickSelector(page, "#ask-boundary-next");
+    await waitForExpression(page, "document.querySelector('.ask-boundary-pagination-status')?.textContent.includes('7 of 7')");
+    const secondBoundaryPage = await evaluate(page, `({
+      status:document.querySelector(".ask-boundary-pagination-status")?.textContent,
+      headings:[...document.querySelectorAll("#ask-boundary-body .ask-boundary-resource h4")].map(node=>node.textContent),
+      previousDisabled:document.querySelector("#ask-boundary-previous")?.disabled,
+      nextDisabled:document.querySelector("#ask-boundary-next")?.disabled
+    })`);
+    assert(
+      secondBoundaryPage.headings.length === 1
+        && /support tickets/i.test(String(secondBoundaryPage.headings[0]))
+        && secondBoundaryPage.previousDisabled === false
+        && secondBoundaryPage.nextDisabled === true,
+      "Ask pagination did not reveal the seventh reviewed table",
+      secondBoundaryPage,
+    );
+    await evaluate(page, "document.querySelector('#ask-boundary-body')?.scrollIntoView({behavior:'auto',block:'start'})");
+    await screenshot(page, "workbench-ask-boundary-pagination-desktop.png");
+    await clickSelector(page, "#ask-boundary-previous");
+    await waitForExpression(page, "document.querySelector('.ask-boundary-pagination-status')?.textContent.includes('1–6 of 7')");
+    await clickSelector(page, "[data-edit-ask-boundary]");
+    await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active')");
+    await waitForExpression(page, "document.querySelector('#resource-search')?.offsetParent !== null");
+    await clickSelector(page, "#access-back");
+    await waitForExpression(page, "document.querySelector('#ask-chat')?.offsetParent !== null");
+    await evaluate(page, "document.querySelector('#ask-boundary-guide').open=false");
     const keyAfterConfigure = await evaluate(page, "document.querySelector('#ask-key').value");
     assert(keyAfterConfigure === "", "Pasted provider key remained in the browser field");
     const bodyContainsSecret = await evaluate(page, `document.body.textContent.includes(${JSON.stringify(sessionKey)})`);
     assert(bodyContainsSecret === false, "Pasted provider key appeared in rendered Workbench text");
 
-    await typeIntoSelector(page, "#ask-question", "Propose a $15 credit for account ACC-104.");
+    await typeIntoSelector(page, "#ask-question", "Simulate a rejected provider credential.");
     await clickSelector(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Proposal only')");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('wrp_browser_ask')");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('OpenAI could not authenticate')");
+    const authenticationFailure = await evaluate(page, `({
+      transcript:document.querySelector("#ask-transcript")?.textContent,
+      action:document.querySelector("[data-ask-error-action]")?.textContent
+    })`);
+    assert(
+      !String(authenticationFailure.transcript).includes("Request refused safely")
+        && /change provider or key/i.test(String(authenticationFailure.action)),
+      "Provider authentication failure was presented as a Synapsor boundary refusal",
+      authenticationFailure,
+    );
+    await clickSelector(page, "[data-ask-error-action]");
+    await waitForExpression(page, "document.querySelector('#ask-configuration-form')?.classList.contains('hidden') === false");
+    const recoveryState = await evaluate(page, `({
+      credentialOptionsOpen:document.querySelector("#ask-credential-details")?.open,
+      recoveryText:document.querySelector("#ask-config-status")?.textContent
+    })`);
+    assert(
+      recoveryState.credentialOptionsOpen
+        && /paste only the api key value/i.test(String(recoveryState.recoveryText)),
+      "Provider authentication recovery did not reopen credential setup with an actionable explanation",
+      recoveryState,
+    );
+    await typeIntoSelector(page, "#ask-key", sessionKey);
+    await evaluate(page, "document.querySelector('#ask-egress').click()");
+    await clickSelector(page, "#configure-ask");
+    await waitForExpression(
+      page,
+      "document.querySelector('#ask-chat')?.offsetParent !== null" +
+      " && document.querySelector('#ask-configuration-form')?.classList.contains('hidden') === true" +
+      " && document.querySelector('#ask-provider-state')?.textContent.includes('ready')",
+    );
+
+    await typeIntoSelector(page, "#ask-question", "Count reviewed accounts by region.");
+    await clickSelector(page, "#run-ask");
+    await waitForExpression(page, "document.querySelector('.ask-composer')?.classList.contains('is-running')");
+    const loadingState = await evaluate(page, `({
+      running:document.querySelector(".ask-composer")?.classList.contains("is-running"),
+      button:document.querySelector("#run-ask")?.textContent,
+      buttonDisabled:document.querySelector("#run-ask")?.disabled,
+      cancelDisabled:document.querySelector("#cancel-ask")?.disabled,
+      status:document.querySelector("#ask-run-status")?.textContent,
+      ariaBusy:document.querySelector(".ask-composer")?.getAttribute("aria-busy")
+    })`);
+    assert(
+      loadingState.running
+        && loadingState.button === "Asking..."
+        && loadingState.buttonDisabled
+        && !loadingState.cancelDisabled
+        && loadingState.ariaBusy === "true"
+        && /reviewed data boundary/i.test(String(loadingState.status)),
+      "Ask did not expose a clear cancellable loading state",
+      loadingState,
+    );
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Runner verified')");
+    await waitForExpression(page, `document.querySelector('#ask-transcript')?.textContent.includes(${JSON.stringify(withheldRegions[0])})`);
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Some values were shown only to you')");
+    assert(
+      providerRequestBodies.every((body) => withheldRegions.every((value) => !body.includes(value))),
+      "Workbench rendered a local withheld value only after leaking it to the provider",
+      { providerRequestBodies },
+    );
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Protect as reusable capability')");
+    const desktopAnswerLayout = await evaluate(page, `(() => {
+      const grid=document.querySelector(".ask-answer-grid");
+      const model=grid?.querySelector(".ask-model-panel")?.getBoundingClientRect();
+      const verified=grid?.querySelector("details.ask-verified");
+      const vrect=verified?.getBoundingClientRect();
+      const composer=document.querySelector(".ask-composer");
+      return {
+        stacked:Boolean(model&&vrect&&vrect.top>=model.bottom-2),
+        modelPrimary:Boolean(model&&vrect&&model.width>=vrect.width-2),
+        verifiedCollapsed:Boolean(verified&&!verified.open),
+        summary:verified?.querySelector("summary")?.textContent||"",
+        composerPosition:composer?getComputedStyle(composer).position:""
+      };
+    })()`);
+    assert(
+      desktopAnswerLayout.stacked && desktopAnswerLayout.modelPrimary,
+      "The model answer was not the primary chat reply above the verified result",
+      desktopAnswerLayout,
+    );
+    assert(
+      desktopAnswerLayout.composerPosition === "sticky",
+      "The chat composer was not kept available for the next question",
+      desktopAnswerLayout,
+    );
+    assert(
+      desktopAnswerLayout.verifiedCollapsed
+        && /runner verified/i.test(String(desktopAnswerLayout.summary)),
+      "The verified result was not a labeled collapsed disclosure by default",
+      desktopAnswerLayout,
+    );
+    await clickSelector(page, "details.ask-verified > summary");
+    await waitForExpression(page, "document.querySelector('details.ask-verified')?.open === true");
+    await clickSelector(page, ".verified-data-details > summary");
+    await waitForExpression(page, "document.querySelector('.verified-data-details')?.open && document.querySelector('.verified-data-details table')?.getClientRects().length > 0");
+    const withheldVerifiedTable = await evaluate(page, "document.querySelector('.verified-data-details table')?.textContent");
+    assert(
+      withheldRegions.every((value) => String(withheldVerifiedTable).includes(value))
+        && !String(withheldVerifiedTable).includes("[withheld:"),
+      "The local verified table did not show the full withheld values",
+      { withheldVerifiedTable },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await screenshot(page, "workbench-ask-withheld-verified-desktop.png");
+    await clickSelector(page, ".verified-data-details > summary");
+    await clickSelector(page, "details.ask-verified > summary");
     await assertAskDom(page, "completed desktop", true);
+    await evaluate(page, "window.scrollTo(0,document.querySelector('#ask-shell').getBoundingClientRect().top+window.scrollY-76)");
+    await screenshot(page, "workbench-ask-first-result-desktop.png");
 
     await typeIntoSelector(page, "#ask-question", "Cancel this model request.");
     await clickSelector(page, "#run-ask");
     await waitForExpression(page, "document.querySelector('#cancel-ask')?.disabled === false");
     await clickSelector(page, "#cancel-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Request refused safely')");
-    await typeIntoSelector(page, "#ask-question", "Retry the reviewed credit proposal.");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Request cancelled')");
+    await typeIntoSelector(page, "#ask-question", "Run the reviewed regional count again.");
     await clickSelector(page, "#run-ask");
     await waitForExpression(page, "document.querySelectorAll('#ask-transcript .ask-turn.answer').length === 2");
+    await typeIntoSelector(page, "#ask-question", "Group accounts by payment token.");
+    await clickSelector(page, "#run-ask");
+    await waitForExpression(page, "document.querySelector('#ask-transcript .ask-refused')?.textContent.includes('Nothing ran')");
+    await waitForExpression(page, "document.querySelector('#ask-transcript .ask-refused')?.textContent.includes('That question needs data outside this boundary')");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('EXPLORE_FIELD_FORBIDDEN')");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Attempted plan')");
+    const refusedTranscript = await evaluate(page, "document.querySelector('#ask-transcript')?.textContent");
+    assert(
+      !String(refusedTranscript).includes("The provider returned no final answer."),
+      "All-refused Ask retained the cryptic missing-answer terminal state",
+    );
+    await clickSelector(page, ".ask-refused > .actions [data-review-another-question]");
+    await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active')");
+    await waitForExpression(page, "document.querySelector('[data-access-resource=\"public.accounts\"]')?.classList.contains('selected')");
+    await waitForExpression(page, "document.querySelector('[data-access-column=\"payment_token\"]')?.getAttribute('data-access-highlighted') === 'true'");
+    await waitForExpression(page, "document.activeElement?.getAttribute('data-field-name') === 'payment_token'");
+    const refusalEditorTarget = await evaluate(page, `({
+      selected:document.querySelector('[data-access-resource="public.accounts"]')?.classList.contains("selected"),
+      highlighted:document.querySelector('[data-access-column="payment_token"]')?.getAttribute("data-access-highlighted"),
+      focused:document.activeElement?.getAttribute("data-field-name")
+    })`);
+    assert(
+      refusalEditorTarget.selected
+        && refusalEditorTarget.highlighted === "true"
+        && refusalEditorTarget.focused === "payment_token",
+      "Ask refusal did not deep-link to the exact reviewed table and kept-out field",
+      refusalEditorTarget,
+    );
+    await clickSelector(page, "#access-back");
+    await waitForExpression(
+      page,
+      "document.querySelector('#ask-chat')?.offsetParent !== null"
+        + " && !document.body.classList.contains('access-focus-mode')"
+        + " && !document.querySelector('#view-exceptions')?.classList.contains('active')",
+    );
+    await evaluate(page, "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+    const returnedFromAccessEditor = await evaluate(page, `({
+      bodyClass:document.body.className,
+      activeView:document.querySelector(".view.active")?.id,
+      bodyOpacity:getComputedStyle(document.body).opacity,
+      bodyFilter:getComputedStyle(document.body).filter,
+      askOpacity:getComputedStyle(document.querySelector("#ask-shell")).opacity,
+      askFilter:getComputedStyle(document.querySelector("#ask-shell")).filter
+    })`);
+    assert(
+      returnedFromAccessEditor.activeView === "view-explore"
+        && returnedFromAccessEditor.bodyOpacity === "1"
+        && returnedFromAccessEditor.bodyFilter === "none"
+        && returnedFromAccessEditor.askOpacity === "1"
+        && returnedFromAccessEditor.askFilter === "none",
+      "Returning from the access editor left Ask visually obscured",
+      returnedFromAccessEditor,
+    );
     await evaluate(page, "window.scrollTo(0,document.querySelector('#ask-shell').getBoundingClientRect().top+window.scrollY-76)");
+    await new Promise((resolve) => setTimeout(resolve, 150));
     await screenshot(page, "workbench-ask-completed-desktop.png");
 
     await page.send("Emulation.setDeviceMetricsOverride", {
@@ -236,20 +737,59 @@ try {
       screenWidth: 390,
       screenHeight: 844,
     });
+    const mobileAnswerLayout = await evaluate(page, `(() => {
+      const grid=document.querySelector(".ask-answer-grid");
+      const model=grid?.querySelector(".ask-model-panel")?.getBoundingClientRect();
+      const verified=grid?.querySelector(".ask-verified")?.getBoundingClientRect();
+      const brand=document.querySelector(".brand")?.getBoundingClientRect();
+      const brandTitle=document.querySelector(".brand-copy h1");
+      const brandTitleRect=brandTitle?.getBoundingClientRect();
+      const brandLineHeight=brandTitle?parseFloat(getComputedStyle(brandTitle).lineHeight):0;
+      const headerStatus=document.querySelector(".header-status")?.getBoundingClientRect();
+      return {
+        columns:grid?getComputedStyle(grid).gridTemplateColumns:"",
+        stacked:Boolean(model&&verified&&verified.top>model.bottom),
+        brandSingleLine:Boolean(brandTitleRect&&brandLineHeight&&brandTitleRect.height<=brandLineHeight*1.25),
+        headerNoOverlap:Boolean(brand&&headerStatus&&brand.right<=headerStatus.left-4),
+        headerFits:document.querySelector("header")?.scrollWidth<=window.innerWidth
+      };
+    })()`);
+    assert(
+      mobileAnswerLayout.stacked,
+      "Model interpretation and verified Runner result did not stack on mobile",
+      mobileAnswerLayout,
+    );
+    assert(
+      mobileAnswerLayout.brandSingleLine
+        && mobileAnswerLayout.headerNoOverlap
+        && mobileAnswerLayout.headerFits,
+      "The mobile Workbench brand wrapped, overlapped authority status, or overflowed the viewport",
+      mobileAnswerLayout,
+    );
     await evaluate(page, "window.scrollTo(0,document.querySelector('#ask-shell').getBoundingClientRect().top+window.scrollY-70)");
     await assertAskDom(page, "completed mobile", true);
     await screenshot(page, "workbench-ask-summary-mobile.png");
     await evaluate(page, "window.scrollTo(0,document.querySelector('#ask-transcript').getBoundingClientRect().top+window.scrollY-70)");
     await screenshot(page, "workbench-ask-completed-mobile.png");
 
-    const activePath = path.join(projectRoot, ".synapsor", "exploration-boundary.active.json");
-    const changedBoundary = JSON.parse(await fs.readFile(activePath, "utf8"));
-    changedBoundary.activation.digest = `sha256:${"b".repeat(64)}`;
-    await fs.writeFile(activePath, `${JSON.stringify(changedBoundary, null, 2)}\n`, "utf8");
+    const changedCandidate = structuredClone(build.exploration_boundary);
+    changedCandidate.pack.name = "changed_reviewed";
+    const changedDigest = explorationBoundaryCandidateDigest(changedCandidate);
+    await activateExplorationBoundary({
+      projectRoot,
+      candidate: changedCandidate,
+      expectedDigest: changedDigest,
+      actor: "second-browser-reviewer@example.test",
+      confirmation: `ACTIVATE ${changedDigest}`,
+      confirmedDecisions: changedCandidate.unresolved_decisions,
+      currentInspection: inspection,
+      activeSetMode: "add",
+    });
     await typeIntoSelector(page, "#ask-question", "Use the changed boundary without a new acknowledgement.");
     await clickSelector(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-run-status')?.textContent.includes('reviewed tool surface changed')");
-    assert(providerRequests === 5, "Changed boundary reached the provider without renewed egress consent");
+    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Reviewed access changed')");
+    await waitForExpression(page, "document.querySelector('#ask-run-status')?.textContent.includes('Reload Ask')");
+    assert(providerRequests === 8, "Changed boundary reached the provider without renewed egress consent");
 
     await clickSelector(page, "#clear-ask");
     await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.length === 0");
@@ -264,14 +804,20 @@ try {
     page.close();
   }
 
-  assert(providerRequests === 5, "Expected two complete provider turns and one cancelled request", { providerRequests });
-  assert(toolCalls === 2, "Expected two reviewed proposal tool calls", { toolCalls });
+  assert(providerRequests === 8, "Expected two complete turns, one cancelled request, and one all-refused turn with a bounded final explanation pass", { providerRequests });
+  assert(providerAuthenticationFailures === 1, "Expected one recoverable provider authentication failure", {
+    providerAuthenticationFailures,
+  });
+  assert(toolCalls === 2, "Expected two reviewed Explore tool calls", { toolCalls });
+  assert(refusalCalls === 1, "Expected one refused out-of-boundary Explore tool call", { refusalCalls });
   await assertSecretAbsent(projectRoot, sessionKey);
   process.stdout.write(`${JSON.stringify({
     ok: true,
     screenshots,
     provider_requests: providerRequests,
+    provider_authentication_failures: providerAuthenticationFailures,
     reviewed_tool_calls: toolCalls,
+    refused_tool_calls: refusalCalls,
     source_database_changed: false,
     provider_key_persisted: false,
     browser_storage_entries: 0,
@@ -281,6 +827,10 @@ try {
   await chrome?.close().catch(() => undefined);
   await fs.rm(projectRoot, { recursive: true, force: true });
   await fs.rm(chromeProfile, { recursive: true, force: true });
+  if (priorDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+  else process.env.DATABASE_URL = priorDatabaseUrl;
+  if (priorTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID;
+  else process.env.SYNAPSOR_TENANT_ID = priorTenant;
 }
 
 async function assertAskDom(page, label, completed) {
@@ -291,12 +841,21 @@ async function assertAskDom(page, label, completed) {
       visible:shell.offsetParent!==null,
       horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
       shellOverflow:shell.scrollWidth>shell.clientWidth+1,
+      overflowElements:[...shell.querySelectorAll("*")].filter(node=>node.scrollWidth>node.clientWidth+1).slice(0,12).map(node=>({
+        tag:node.tagName,
+        id:node.id,
+        className:String(node.className||""),
+        clientWidth:node.clientWidth,
+        scrollWidth:node.scrollWidth,
+        text:String(node.textContent||"").trim().slice(0,120),
+      })),
       unlabeled:controls.filter(control=>!control.getAttribute("aria-label")&&!control.closest("label")).map(control=>control.id),
       duplicateIds:[...document.querySelectorAll("[id]")].map(node=>node.id).filter((id,index,all)=>all.indexOf(id)!==index),
-      disclosure:/approved visible fields/i.test(shell.textContent)&&/does not relay/i.test(shell.textContent),
-      authority:/activation, approval, apply/i.test(shell.textContent),
-      proposalOnly:/proposal only/i.test(shell.textContent),
-      sourceUnchanged:/source database (?:did not change|unchanged)/i.test(shell.textContent),
+      disclosure:/approved (?:model-)?visible fields/i.test(shell.textContent)&&/does not relay/i.test(shell.textContent),
+	      authority:/activation, approval, (?:and )?apply/i.test(shell.textContent),
+	      verifiedAnalysis:/runner verified/i.test(shell.textContent),
+      sourceUnchanged:/source database (?:did not change|unchanged|changed: *no)/i.test(shell.textContent),
+      analysisNumber:/analysis\\s+[0-9]+/i.test(shell.textContent),
       secretFieldType:document.querySelector("#ask-key")?.type,
     };
   })()`);
@@ -308,8 +867,9 @@ async function assertAskDom(page, label, completed) {
   assert(report.authority, `${label}: operator authority separation missing`, report);
   assert(report.secretFieldType === "password", `${label}: provider key is not masked`, report);
   if (completed) {
-    assert(report.proposalOnly, `${label}: proposal-only result message missing`, report);
-    assert(report.sourceUnchanged, `${label}: source mutation status missing`, report);
+    assert(report.verifiedAnalysis, `${label}: verified Runner result is missing`, report);
+    assert(!report.sourceUnchanged, `${label}: repetitive source-mutation text is visible`, report);
+    assert(!report.analysisNumber, `${label}: internal analysis numbering is visible`, report);
   }
 }
 
@@ -408,7 +968,63 @@ function askInspection() {
         sensitive_columns: ["payment_token"],
         default_visible_columns: ["id", "tenant_id", "status", "region", "credit_balance_cents"],
       },
+    }, ...[
+      "campaigns",
+      "invoices",
+      "orders",
+      "payments",
+      "subscriptions",
+      "support_tickets",
+    ].map(supportingAnalyticsTable)],
+  };
+}
+
+function supportingAnalyticsTable(name) {
+  return {
+    schema: "public",
+    name,
+    type: "table",
+    writable: false,
+    columns: [
+      column("id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("status", "text"),
+      column("created_at", "timestamp with time zone"),
+    ],
+    primary_key: ["id"],
+    unique_constraints: [{ name: `${name}_pkey`, columns: ["id"] }],
+    foreign_keys: [],
+    indexes: [{ name: `${name}_pkey`, columns: ["id"], unique: true }],
+    row_level_security: true,
+    row_level_security_policies: [{
+      name: `${name}_tenant_scope`,
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
     }],
+    role_posture: {
+      owner: "app_owner",
+      current_role_is_owner: false,
+      current_role_can_assume_owner: false,
+      privileges: {
+        select: true,
+        insert: false,
+        update: false,
+        delete: false,
+        truncate: false,
+        references: false,
+        trigger: false,
+      },
+      row_security_forced: false,
+      row_security_effective_for_current_role: true,
+    },
+    suggestions: {
+      tenant_columns: ["tenant_id"],
+      conflict_columns: [],
+      sensitive_columns: [],
+      default_visible_columns: ["id", "tenant_id", "status", "created_at"],
+    },
   };
 }
 

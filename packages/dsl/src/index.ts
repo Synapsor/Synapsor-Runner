@@ -53,6 +53,7 @@ export type AgentDslCapabilityAst = {
   )>;
   visibleFields: string[];
   keptOutFields: string[];
+  modelWithheldFields: string[];
   evidenceRequired?: boolean;
   maxRows?: number;
   aggregate?: {
@@ -211,6 +212,9 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
       ...(capability.lookup ? { lookup: { id_from_arg: capability.lookup.arg } } : {}),
       visible_fields: capability.visibleFields,
       ...(capability.keptOutFields.length ? { kept_out_fields: capability.keptOutFields } : {}),
+      ...(capability.modelWithheldFields.length
+        ? { model_withheld_fields: capability.modelWithheldFields }
+        : {}),
       ...(capability.evidenceRequired !== undefined ? { evidence: { required: capability.evidenceRequired, query_audit: true } } : {}),
       ...(capability.maxRows ? { max_rows: capability.maxRows } : {}),
       ...(capability.aggregate ? { aggregate: {
@@ -442,6 +446,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     args: {},
     visibleFields: [],
     keptOutFields: [],
+    modelWithheldFields: [],
   };
   for (const item of block.body) {
     const description = item.text.match(/^DESCRIPTION\s+'(.*)'$/i);
@@ -540,6 +545,11 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
     const keptOut = item.text.match(/^KEEP\s+OUT\s+(.+)$/i);
     if (keptOut?.[1]) {
       capability.keptOutFields = parseList(keptOut[1]);
+      continue;
+    }
+    const modelWithheld = item.text.match(/^MODEL\s+WITHHELD\s+(.+)$/i);
+    if (modelWithheld?.[1]) {
+      capability.modelWithheldFields = parseList(modelWithheld[1]);
       continue;
     }
     if (/^REQUIRE\s+EVIDENCE$/i.test(item.text)) {
@@ -714,25 +724,37 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
         : { kind: "time_bucket", direction: aggregateOrder[2].toLowerCase() as "asc" | "desc" };
       continue;
     }
+    const comparisonOrder = item.text.match(/^AGGREGATE\s+ORDER\s+BY\s+(ABSOLUTE|PERCENTAGE)\s+CHANGE\s+([A-Za-z_][A-Za-z0-9_]*)\s+(ASC|DESC)$/i);
+    if (comparisonOrder?.[1] && comparisonOrder[2] && comparisonOrder[3]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.order_by = {
+        kind: "comparison_change",
+        measure: comparisonOrder[2],
+        change: comparisonOrder[1].toLowerCase() as "absolute" | "percentage",
+        direction: comparisonOrder[3].toLowerCase() as "asc" | "desc",
+      };
+      continue;
+    }
     const topGroups = item.text.match(/^TOP\s+(\d+)\s+GROUPS$/i);
     if (topGroups?.[1]) {
       const aggregate = requireProtectedAggregate(capability, item);
       aggregate.top_n = Number(topGroups[1]);
       continue;
     }
-    const protectedLimits = item.text.match(/^PROTECTED\s+LIMITS\s+ROWS\s+(\d+)\s+GROUPS\s+(\d+)\s+CELLS\s+(\d+)\s+BYTES\s+(\d+)\s+TIMEOUT\s+MS\s+(\d+)\s+QUERIES\s+(\d+)\s+EXTRACTED\s+CELLS\s+(\d+)\s+DIFFERENCING\s+(\d+)\s+RATE\s+PER\s+MINUTE\s+(\d+)$/i);
+    const protectedLimits = item.text.match(/^PROTECTED\s+LIMITS\s+ROWS\s+(\d+)\s+GROUPS\s+(\d+)(?:\s+RANKED\s+GROUPS\s+(\d+))?\s+CELLS\s+(\d+)\s+BYTES\s+(\d+)\s+TIMEOUT\s+MS\s+(\d+)\s+QUERIES\s+(\d+)\s+EXTRACTED\s+CELLS\s+(\d+)\s+DIFFERENCING\s+(\d+)\s+RATE\s+PER\s+MINUTE\s+(\d+)$/i);
     if (protectedLimits) {
       const reviewed = requireProtectedRead(capability, item);
       reviewed.limits = {
         max_rows: Number(protectedLimits[1]),
         max_groups: Number(protectedLimits[2]),
-        max_response_cells: Number(protectedLimits[3]),
-        max_response_bytes: Number(protectedLimits[4]),
-        statement_timeout_ms: Number(protectedLimits[5]),
-        max_queries_per_session: Number(protectedLimits[6]),
-        max_extracted_cells_per_session: Number(protectedLimits[7]),
-        max_differencing_queries: Number(protectedLimits[8]),
-        rate_limit_per_minute: Number(protectedLimits[9]),
+        ...(protectedLimits[3] ? { max_ranked_groups: Number(protectedLimits[3]) } : {}),
+        max_response_cells: Number(protectedLimits[4]),
+        max_response_bytes: Number(protectedLimits[5]),
+        statement_timeout_ms: Number(protectedLimits[6]),
+        max_queries_per_session: Number(protectedLimits[7]),
+        max_extracted_cells_per_session: Number(protectedLimits[8]),
+        max_differencing_queries: Number(protectedLimits[9]),
+        rate_limit_per_minute: Number(protectedLimits[10]),
       };
       if (reviewed.mode === "rows") capability.maxRows = reviewed.limits.max_rows;
       continue;
@@ -935,10 +957,10 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       if (capability.protectedRead.mode !== "aggregate" || !protectedAggregate) throw dslError(block.line, 1, "PROTECTED_AGGREGATE_REQUIRED", `${block.name} requires PROTECTED READ AGGREGATE`);
       if (!protectedAggregate.measures?.length) throw dslError(block.line, 1, "PROTECTED_MEASURE_REQUIRED", `${block.name} requires at least one MEASURE`);
       if (!protectedAggregate.top_n) throw dslError(block.line, 1, "PROTECTED_TOP_GROUPS_REQUIRED", `${block.name} requires TOP n GROUPS`);
-      if (!protectedAggregate.minimum_group_size || protectedAggregate.minimum_group_size < 2) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 2 or greater`);
+      if (!protectedAggregate.minimum_group_size || protectedAggregate.minimum_group_size < 1) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 1 or greater`);
     } else {
       if (!capability.aggregate) throw dslError(block.line, 1, "AGGREGATE_READ_REQUIRED", `${block.name} requires AGGREGATE READ`);
-      if (!capability.aggregate.minimum_group_size || capability.aggregate.minimum_group_size < 2) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 2 or greater`);
+      if (!capability.aggregate.minimum_group_size || capability.aggregate.minimum_group_size < 1) throw dslError(block.line, 1, "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", `${block.name} requires MIN GROUP SIZE 1 or greater`);
       if (Object.keys(capability.args).length > 0) throw dslError(block.line, 1, "AGGREGATE_MODEL_ARGS_FORBIDDEN", `${block.name} legacy aggregate reads cannot use model-controlled ARG predicates`);
     }
   }

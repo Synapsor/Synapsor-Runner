@@ -46,10 +46,13 @@ The model does not receive:
 
 Workbench Ask is a local client of that same reviewed surface, not another
 policy engine. It is available only from authenticated loopback Workbench in an
-explicit development/staging profile. Its provider may request only the exact
-active named capabilities plus valid local authoring tools. The request is
+explicit development/staging profile. Its provider may request one exact
+catalog at a time: either `app.describe_data` plus `app.explore_data` while
+local authoring Explore is active, or the activated named runtime capabilities
+after Explore is disabled. The two surfaces are never combined. The request is
 dispatched through the official MCP SDK and the existing typed-plan/runtime
-validators; there is no parallel query or mutation executor.
+validators; there is no parallel query or mutation executor. CLI `try ask`
+reuses this same gateway and provider loop.
 
 The operator chooses provider, model, endpoint, and credential source and
 acknowledges direct egress for the current authority digest. No model output can
@@ -102,11 +105,18 @@ authorizes semantic capabilities; database roles/RLS constrain the connection;
 operator identity authorizes activation, approval, apply, reconcile, and
 revert. See [HTTP MCP](http-mcp.md).
 
-Reviewed aggregate tools expose one scalar only. Their function, column,
-tenant key, optional equality selection, and minimum-group threshold are fixed
-in the contract; the model receives no predicate arguments or member rows.
-Suppression reduces single-record inference but does not replace statistical
-privacy review. See [Bounded Aggregate Reads](aggregate-reads.md).
+Fixed named aggregate capabilities expose their contract-defined scalar.
+Authoring-only Scoped Explore separately accepts a typed, reviewed analytical
+plan over activated measures, dimensions, time grains, filters, comparisons,
+ordering, and proven many-to-one paths. It still accepts no SQL, arbitrary
+identifier, model-supplied scope, formula, or general join. Both paths enforce
+cohort and response bounds. Suppression reduces single-record inference but is
+not differential privacy or a complete privacy guarantee. Atomic rolling
+privacy reservations and a complementary-total release guard bound repeated
+subtraction attempts; they are not described as formal differential privacy.
+See [Bounded
+Aggregate Reads](aggregate-reads.md) and [Auto Boundary, Scoped Explore, And
+Protect](auto-boundary-and-scoped-explore.md).
 
 Trusted context comes from operator-controlled process bindings for local or
 explicitly single-tenant use, verified signed HTTP claims for a shared service,

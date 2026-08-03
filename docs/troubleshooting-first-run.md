@@ -14,7 +14,7 @@ npx -y @synapsor/runner doctor --first-run --json
 
 ## Guided Recovery Contract
 
-Runner 1.6.4 failures should tell you what failed, why the boundary stopped,
+Runner 1.6.6 failures should tell you what failed, why the boundary stopped,
 what state remains, and one next action. Do not delete the project or add
 `--force` merely to recover.
 
@@ -134,6 +134,23 @@ Select **Clear** after a session to cancel active work and discard in-memory
 provider configuration/history. See [Workbench Ask With Your
 Model](workbench-ask.md).
 
+The same provider path is available without a browser:
+
+```bash
+synapsor-runner try ask \
+  --provider openai \
+  --model gpt-5-mini
+```
+
+CLI Ask refuses provider keys on the command line. Use the conventional or an
+explicitly named environment variable, or the hidden interactive prompt. While
+Explore is active it receives exactly `app.describe_data` and
+`app.explore_data`; named proposal/read tools are not mixed into that catalog.
+This form opens the interactive shell. Add a quoted question before
+`--provider` for one-shot mode. If no active reviewed authoring boundary exists,
+the command tells you to run `synapsor-runner start`; it never falls back to
+runtime proposal tools.
+
 ## A Project Client Has Production Tools Instead Of Authoring Tools
 
 Install the managed local authoring entry only after boundary activation:
@@ -182,9 +199,23 @@ Workbench shows the reviewed minimum cohort, maximum groups, response limits,
 and durable extraction/differencing budgets. You cannot widen them in a model
 argument.
 
-Use a larger legitimate cohort or protect a narrower reviewed question. Do not
-work around suppression with repeated slightly different filters: Runner
-records normalized redacted plan metadata and exhausts the differencing budget.
+Every cohort-protected aggregate, including an unfiltered total or time trend,
+uses the durable rolling 24-hour privacy pool for that reviewed source, trusted
+scope, and root resource. Only an exact normalized-plan replay reuses a
+differencing variant; changing filters, dates, measures, dimensions, time
+grains, ordering, or limits does not open a new pool. Invalid plans and source
+failures release extraction and differencing allowance. Runner also refuses a
+complementary total/grouping pair that could reconstruct a suppressed
+aggregate. Do not attempt to work around suppression with repeated variants.
+
+Ordinary unranked results must fit `max_groups`. Ranked top/bottom and two-period
+mover queries may use the separately reviewed `max_ranked_groups` candidate
+ceiling. Runner checks that the complete candidate population fits, applies
+small-group suppression, and only then ranks and returns `top_n`. Lowering
+`top_n` cannot bypass either ceiling. If the relevant ceiling is exceeded,
+reduce reviewed dimensions, narrow the date range, choose a coarser reviewed
+time bucket, or have an operator review a narrower `max_ranked_groups` setting
+appropriate to the known population.
 Returned rows/groups, trusted tenant/principal values, credentials, and raw
 sensitive literals are not stored in the query audit.
 

@@ -28,6 +28,7 @@ import {
   type WorkerQueueStatus,
   type CreateWritebackJobOptions,
   type RecordHandlerWritebackJobInput,
+  type QueryAuditRecordInput,
 } from "./domain-types.js";
 import {
   isRecord,
@@ -552,8 +553,13 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       tenant_id: string;
       payload: Record<string, unknown>;
       items?: Record<string, unknown>[];
+      query_audit?: QueryAuditRecordInput[];
     }): void {
-      assertNoSecretMaterial({ payload: input.payload, items: input.items ?? [] }, "evidence_bundle");
+      assertNoSecretMaterial({
+        payload: input.payload,
+        items: input.items ?? [],
+        query_audit: input.query_audit ?? [],
+      }, "evidence_bundle");
       const now = new Date().toISOString();
       const proposal = input.proposal_id ? this.requireProposal(input.proposal_id) : undefined;
       const metadata = this.evidenceMetadata({ proposal, payload: input.payload, items: input.items ?? [] });
@@ -599,18 +605,22 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
             item_count: input.items?.length ?? 0,
           });
         }
+        for (const audit of input.query_audit ?? []) {
+          if (audit.evidence_bundle_id && audit.evidence_bundle_id !== input.evidence_bundle_id) {
+            throw new ProposalStoreError(
+              "EVIDENCE_QUERY_AUDIT_MISMATCH",
+              `query audit evidence bundle ${audit.evidence_bundle_id} does not match ${input.evidence_bundle_id}`,
+            );
+          }
+          this.recordQueryAudit({
+            ...audit,
+            evidence_bundle_id: input.evidence_bundle_id,
+          });
+        }
       });
     },
   
-  recordQueryAudit(input: {
-      proposal_id?: string;
-      evidence_bundle_id?: string;
-      source_id: string;
-      query_fingerprint: string;
-      table_name: string;
-      row_count: number;
-      payload: Record<string, unknown>;
-    }): void {
+  recordQueryAudit(input: QueryAuditRecordInput): void {
       assertNoSecretMaterial(input.payload, "query_audit");
       const now = new Date().toISOString();
       const proposal = input.proposal_id ? this.requireProposal(input.proposal_id) : undefined;

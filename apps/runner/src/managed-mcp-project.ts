@@ -50,6 +50,12 @@ const managedClients: Record<ManagedMcpProjectClient, ManagedMcpProjectDefinitio
   },
 };
 
+const managedClientCommands: Record<ManagedMcpProjectClient, string[]> = {
+  cursor: ["cursor"],
+  "claude-code": ["claude"],
+  vscode: ["code", "code-insiders"],
+};
+
 export type ManagedMcpProjectPaths = {
   client: ManagedMcpProjectClient;
   projectRoot: string;
@@ -96,6 +102,32 @@ export function parseManagedMcpProjectClient(value: string | undefined): Managed
 
 export function managedMcpProjectDefinition(client: ManagedMcpProjectClient): Readonly<ManagedMcpProjectDefinition> {
   return managedClients[client];
+}
+
+export async function detectManagedMcpClientCommand(
+  client: ManagedMcpProjectClient,
+  environment: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | undefined> {
+  const pathValue = environment.PATH ?? environment.Path ?? environment.path ?? "";
+  const directories = pathValue.split(platform === "win32" ? ";" : path.delimiter).filter(Boolean);
+  const extensions = platform === "win32"
+    ? (environment.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+  for (const command of managedClientCommands[client]) {
+    for (const directory of directories) {
+      for (const extension of extensions) {
+        const candidate = path.join(directory, `${command}${extension}`);
+        try {
+          const stat = await fs.stat(candidate);
+          if (stat.isFile() && (platform === "win32" || (stat.mode & 0o111) !== 0)) return command;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 export async function previewManagedMcpProjectInstall(input: {

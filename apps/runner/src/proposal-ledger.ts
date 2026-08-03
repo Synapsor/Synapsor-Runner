@@ -149,6 +149,7 @@ async function evaluateAndRecordProposalFreshness(input: {
   config: RuntimeConfig | undefined;
   configPath: string;
   store: ProposalStore;
+  unavailableAttempts?: number;
 }): Promise<ProposalFreshnessEvaluation> {
   const required = "freshness" in input.proposal.change_set && input.proposal.change_set.freshness !== undefined;
   if (!required) {
@@ -163,13 +164,19 @@ async function evaluateAndRecordProposalFreshness(input: {
   if (!input.config) {
     throw new Error(`freshness-required proposal needs an existing --config file; not found: ${path.resolve(input.configPath)}`);
   }
-  const result = await evaluateProposalFreshness({
-    config: input.config,
-    proposal: input.proposal,
-    env: process.env,
-  });
-  if (result.required) input.store.recordFreshnessProof(result.proof);
-  return result;
+  const attempts = Math.max(1, Math.min(input.unavailableAttempts ?? 1, 2));
+  let result: ProposalFreshnessEvaluation | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    result = await evaluateProposalFreshness({
+      config: input.config,
+      proposal: input.proposal,
+      env: process.env,
+    });
+    if (result.required) input.store.recordFreshnessProof(result.proof);
+    if (result.status !== "unavailable" || attempt === attempts) return result;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return result!;
 }
 
 
@@ -250,7 +257,13 @@ export async function proposalsApprove(
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
-    const freshness = await evaluateAndRecordProposalFreshness({ proposal, config, configPath, store });
+    const freshness = await evaluateAndRecordProposalFreshness({
+      proposal,
+      config,
+      configPath,
+      store,
+      unavailableAttempts: 2,
+    });
     if (!invocation.quiet && !args.includes("--json")) process.stdout.write(formatFreshnessResult(freshness, args.includes("--details")));
     if (freshness.status !== "fresh" && freshness.status !== "not_required") {
       if (freshness.required) {

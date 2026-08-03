@@ -3,6 +3,8 @@ import {
   EXPLORATION_BOUNDARY_VERSION,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
+import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
+import { buildInstantFirstValue } from "./instant-first-value.js";
 import { instantWorkbenchCandidate, recommendedWorkbenchCandidate } from "./local-ui.js";
 
 describe("recommended Workbench starter pack", () => {
@@ -38,6 +40,14 @@ describe("recommended Workbench starter pack", () => {
       expect.stringContaining("incidents_region"),
       expect.stringContaining("incidents_model"),
     ]));
+    expect(candidate).toEqual(recommendedBoundaryReviewCandidate(draft));
+  });
+
+  it("keeps a blocked-only draft inspectable without inventing activatable authority", () => {
+    const draft = boundary([]);
+
+    expect(recommendedBoundaryReviewCandidate(draft)).toEqual(draft);
+    expect(recommendedWorkbenchCandidate(draft)).toEqual(draft);
   });
 
   it("never widens the requested starter-pack bound", () => {
@@ -88,7 +98,42 @@ describe("recommended Workbench starter pack", () => {
     }
   });
 
-  it("makes the instant-development candidate one-resource and relationship-free without widening fields", () => {
+  it("drops a depth-two path when its bridge is outside the selected starter pack", () => {
+    const draft = boundary([
+      resource("refunds", {
+        principal: true,
+        measures: ["amount_cents"],
+        relationships: [depthTwoRelationship(
+          "refunds_order__orders_customer",
+          "refunds",
+          "orders",
+          "customers",
+        )],
+      }),
+      resource("customers", { groups: ["region"] }),
+      resource("orders", { groups: [] }),
+      resource("unrelated", { groups: [] }),
+    ]);
+    draft.budgets.max_relationship_hops = 2;
+
+    const recommended = recommendedWorkbenchCandidate(draft, 2);
+    const instant = instantWorkbenchCandidate(draft);
+
+    expect(recommended.pack.resources.map((item) => item.id)).not.toContain("public.orders");
+    expect(recommended.pack.resources.find((item) => item.id === "public.refunds")?.relationships)
+      .toEqual([]);
+    expect(instant.pack.resources.map((item) => item.id)).not.toContain("public.orders");
+    const instantResources = new Set(instant.pack.resources.map((item) => item.id));
+    for (const item of instant.pack.resources) {
+      for (const relationship of item.relationships) {
+        expect(relationship.proof?.links.every((link) =>
+          instantResources.has(link.source_resource)
+          && instantResources.has(link.target_resource))).not.toBe(false);
+      }
+    }
+  });
+
+  it("makes the instant-development candidate a bounded connected pack without widening fields", () => {
     const draft = boundary([
       resource("events", {
         relationships: [
@@ -103,12 +148,131 @@ describe("recommended Workbench starter pack", () => {
     const candidate = instantWorkbenchCandidate(draft);
 
     expect(candidate.deployment_profile).toBe("development");
+    expect(candidate.pack.resources).toHaveLength(3);
+    expect(candidate.pack.resources[0]).toMatchObject({
+      id: "public.events",
+      relationships: expect.arrayContaining([
+        expect.objectContaining({ id: "events_region" }),
+        expect.objectContaining({ id: "events_category" }),
+      ]),
+    });
+    for (const selected of candidate.pack.resources) {
+      const original = draft.pack.resources.find((item) => item.id === selected.id)!;
+      expect(selected.selectable_fields.every(
+        (field) => original.selectable_fields.includes(field),
+      )).toBe(true);
+    }
+    const firstValue = buildInstantFirstValue(candidate);
+    expect(firstValue).toMatchObject({
+      question: "Which statuses have the most events?",
+      operation: "Count events and group them by reviewed status",
+      plan: {
+        kind: "aggregate",
+        resource: "public.events",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "status" }],
+        top_n: 10,
+      },
+      maximum_groups: 10,
+      minimum_cohort_size: 3,
+    });
+    expect(firstValue.plan).not.toHaveProperty("time_bucket");
+    expect(firstValue.plan).not.toHaveProperty("where");
+    expect(firstValue.plan).not.toHaveProperty("comparison");
+  });
+
+  it("selects a useful fact, bridge, and reviewed dimensions without pulling an unrelated table", () => {
+    const draft = boundary([
+      resource("customers", { groups: ["region"] }),
+      resource("order_items", {
+        measures: ["quantity"],
+        groups: [],
+        relationships: [
+          relationship("items_order", "orders"),
+          relationship("items_product", "products"),
+        ],
+      }),
+      resource("orders", {
+        measures: ["total_cents"],
+        groups: ["channel"],
+        relationships: [
+          relationship("orders_customer", "customers"),
+          relationship("orders_organization", "organizations"),
+        ],
+      }),
+      resource("products", { groups: ["category"] }),
+      resource("refunds", {
+        measures: ["amount_cents"],
+        groups: ["reason"],
+        relationships: [
+          relationship("refunds_order", "orders"),
+          relationship("refunds_organization", "organizations"),
+        ],
+      }),
+      resource("organizations", { groups: [] }),
+      resource("unrelated_admin_log", { groups: ["action"] }),
+    ]);
+
+    const candidate = instantWorkbenchCandidate(draft);
+    expect(candidate.pack.resources.map((item) => item.id)).toEqual([
+      "public.orders",
+      "public.refunds",
+      "public.order_items",
+      "public.customers",
+      "public.products",
+    ]);
+    expect(candidate.pack.resources.map((item) => item.id))
+      .not.toContain("public.unrelated_admin_log");
+    expect(candidate.pack.resources.map((item) => item.id))
+      .not.toContain("public.organizations");
+    expect(candidate.pack.resources.flatMap((item) => item.relationships).every((relationship) =>
+      candidate.pack.resources.some((item) => item.id === relationship.target_resource)))
+      .toBe(true);
+    expect(buildInstantFirstValue(candidate)).toMatchObject({
+      resource: "public.orders",
+      question: "How did order totals change by week?",
+      plan: {
+        measures: [{ function: "sum", field: "total_cents" }],
+        time_bucket: { field: "occurred_at", bucket: "week" },
+      },
+    });
+  });
+
+  it("prefers an executable tenant-only first value over a principal-scoped resource", () => {
+    const draft = boundary([
+      resource("trainer_members", {
+        principal: true,
+        measures: ["lifetime_value_cents"],
+        relationships: [relationship("members_region", "regions")],
+      }),
+      resource("check_ins", {
+        groups: ["status"],
+      }),
+      resource("regions", {
+        groups: ["name"],
+      }),
+    ]);
+
+    const candidate = instantWorkbenchCandidate(draft);
+
     expect(candidate.pack.resources).toHaveLength(1);
-    expect(candidate.pack.resources[0]?.relationships).toEqual([]);
-    const original = draft.pack.resources.find((item) => item.id === candidate.pack.resources[0]?.id)!;
-    expect(candidate.pack.resources[0]?.selectable_fields.every(
-      (field) => original.selectable_fields.includes(field),
-    )).toBe(true);
+    expect(candidate.pack.resources[0]).toMatchObject({
+      id: "public.check_ins",
+      tenant_key: "tenant_id",
+      relationships: [],
+    });
+    expect(candidate.pack.resources[0]).not.toHaveProperty("principal_key");
+    expect(buildInstantFirstValue(candidate).principal_scope)
+      .toBe("not required for this reviewed table");
+  });
+
+  it("does not duplicate monetary words in a generated starter question", () => {
+    const candidate = instantWorkbenchCandidate(boundary([
+      resource("payments", { measures: ["amount_cents"] }),
+    ]));
+
+    expect(buildInstantFirstValue(candidate).question)
+      .toBe("How did payment amount change by week?");
   });
 });
 
@@ -223,5 +387,46 @@ function relationship(
     counted_entity: "event",
     cardinality: "many_to_one",
     max_fan_out: 1,
+  };
+}
+
+function depthTwoRelationship(
+  id: string,
+  sourceTable: string,
+  bridgeTable: string,
+  targetTable: string,
+): ExplorationBoundaryDraft["pack"]["resources"][number]["relationships"][number] {
+  const link = (source: string, target: string, constraint: string) => ({
+    constraint_name: constraint,
+    source_resource: `public.${source}`,
+    target_resource: `public.${target}`,
+    source_columns: [`${target.replace(/s$/, "")}_id`],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: `${target}_pkey`,
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  });
+  return {
+    id,
+    target_resource: `public.${targetTable}`,
+    local_columns: [`${bridgeTable.replace(/s$/, "")}_id`],
+    target_columns: ["id"],
+    counted_entity: sourceTable.replace(/s$/, ""),
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+    path_depth: 2,
+    proof: {
+      source: "database_catalog",
+      digest: `sha256:${"d".repeat(64)}`,
+      links: [
+        link(sourceTable, bridgeTable, `${sourceTable}_${bridgeTable}_fkey`),
+        link(bridgeTable, targetTable, `${bridgeTable}_${targetTable}_fkey`),
+      ],
+    },
   };
 }

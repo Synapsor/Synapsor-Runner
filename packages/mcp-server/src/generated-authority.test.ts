@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   rolePostureFingerprint,
@@ -9,6 +10,8 @@ import {
   type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import {
+  createMcpRuntime,
+  preflightGeneratedCapabilityAuthority,
   preflightGeneratedAuthority,
   type RuntimeConfig,
 } from "./index.js";
@@ -35,6 +38,8 @@ describe("generated protected-authority preflight", () => {
     ["1.6.3", "1.5.1"],
     ["1.6.3", "1.6.0"],
     ["1.6.4", "1.7.0"],
+    ["1.6.6", "1.7.0"],
+    ["1.6.6", "1.8.0"],
   ])("accepts supported compiler/spec lock %s/%s and fails closed on schema drift", async (compilerVersion, specVersion) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-lock-"));
     try {
@@ -85,15 +90,14 @@ describe("generated protected-authority preflight", () => {
     }
   });
 
-  it("keeps protected authority current across unrelated schema drift but rejects a dependent resource change", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-dependencies-"));
+  it("binds a new protected capability to the exact generation-lock reporting timezone", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-timezone-"));
     try {
       const current = inspection();
-      const authorityDependencies = authorityDependenciesFor(current);
       const lock = {
         schema_version: "synapsor.generation-lock.v1",
-        compiler_version: "1.6.4",
-        spec_version: "1.7.0",
+        compiler_version: "1.6.6",
+        spec_version: "1.8.0",
         engine: "postgres",
         source_env: "DATABASE_URL",
         schema_fingerprint: schemaFingerprintForInspection(current),
@@ -102,6 +106,53 @@ describe("generated protected-authority preflight", () => {
         generated_contract_digest: `sha256:${"c".repeat(64)}`,
         reviewed_overrides_digest: `sha256:${"d".repeat(64)}`,
         protected_authority: ["public.subscriptions"],
+        reporting_timezone: "UTC",
+      } as const;
+      const lockPath = path.join(root, "generation-lock.json");
+      await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
+      const config = protectedConfig(canonicalJsonDigest(lock));
+      config.generated_authority = {
+        generation_lock_path: lockPath,
+        enforcement: "required",
+        reporting_timezone: "UTC",
+      };
+      await expect(preflightGeneratedAuthority(
+        config,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => current,
+      )).resolves.toBeUndefined();
+
+      delete config.generated_authority.reporting_timezone;
+      await expect(preflightGeneratedAuthority(
+        config,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => current,
+      )).rejects.toMatchObject({ code: "GENERATION_LOCK_TIMEZONE_MISMATCH" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps protected authority current across unrelated schema drift but rejects a dependent resource change", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-dependencies-"));
+    try {
+      const current = inspection();
+      const accounts = structuredClone(current.tables[0]!);
+      accounts.name = "accounts";
+      current.tables.push(accounts);
+      const authorityDependencies = authorityDependenciesFor(current);
+      const lock = {
+        schema_version: "synapsor.generation-lock.v1",
+        compiler_version: "1.6.4",
+        spec_version: "1.8.0",
+        engine: "postgres",
+        source_env: "DATABASE_URL",
+        schema_fingerprint: schemaFingerprintForInspection(current),
+        role_posture_fingerprint: rolePostureFingerprint(current),
+        evidence_fingerprint: `sha256:${"b".repeat(64)}`,
+        generated_contract_digest: `sha256:${"c".repeat(64)}`,
+        reviewed_overrides_digest: `sha256:${"d".repeat(64)}`,
+        protected_authority: ["public.accounts", "public.subscriptions"],
         authority_dependencies: authorityDependencies,
       } as const;
       const lockPath = path.join(root, "generation-lock.json");
@@ -111,6 +162,10 @@ describe("generated protected-authority preflight", () => {
         generation_lock_path: lockPath,
         enforcement: "required",
       };
+      const accountsCapability = structuredClone(config.capabilities![0]!);
+      accountsCapability.name = "analytics.accounts_by_region";
+      accountsCapability.target.table = "accounts";
+      config.capabilities!.push(accountsCapability);
 
       const unrelatedDrift = structuredClone(current);
       const unrelated = structuredClone(unrelatedDrift.tables[0]!);
@@ -131,10 +186,55 @@ describe("generated protected-authority preflight", () => {
         config,
         { DATABASE_URL: "postgres://redacted" },
         async () => dependentDrift,
+      )).resolves.toBeUndefined();
+      await expect(preflightGeneratedCapabilityAuthority(
+        config,
+        config.capabilities![0]!,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => dependentDrift,
       )).rejects.toMatchObject({
         code: "GENERATED_AUTHORITY_DRIFT",
         message: expect.stringContaining("public.subscriptions"),
       });
+      await expect(preflightGeneratedCapabilityAuthority(
+        config,
+        accountsCapability,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => dependentDrift,
+      )).resolves.toBeUndefined();
+
+      const store = new ProposalStore(":memory:");
+      let sourceReads = 0;
+      const runtime = createMcpRuntime(config, {
+        store,
+        env: {
+          DATABASE_URL: "postgres://redacted",
+          TENANT_ID: "tenant-acme",
+          PRINCIPAL: "analyst-1",
+        },
+        generatedAuthorityInspector: async () => dependentDrift,
+        readRow: async () => {
+          sourceReads += 1;
+          return {
+            row: { region: "west", churned_accounts: 8, __cohort_size: 8 },
+            rows: [{ region: "west", churned_accounts: 8, __cohort_size: 8 }],
+            rowCount: 1,
+          };
+        },
+      });
+      try {
+        await expect(runtime.callTool("analytics.churn_by_region", {})).rejects.toMatchObject({
+          code: "GENERATED_AUTHORITY_DRIFT",
+        });
+        expect(sourceReads).toBe(0);
+        await expect(runtime.callTool("analytics.accounts_by_region", {})).resolves.toMatchObject({
+          source_database_changed: false,
+        });
+        expect(sourceReads).toBe(1);
+      } finally {
+        await runtime.close();
+        store.close();
+      }
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -335,20 +435,6 @@ function column(name: string, dataType: string, ordinalPosition: number) {
 }
 
 function authorityDependenciesFor(current: SchemaInspection) {
-  const table = current.tables[0]!;
-  const fields = ["id", "region", "status", "tenant_id"];
-  const selectedColumns = fields.map((name) => {
-    const item = table.columns.find((candidate) => candidate.name === name)!;
-    return {
-      name: item.name,
-      data_type: item.data_type,
-      nullable: item.nullable,
-      default: item.default ?? null,
-      generated: item.generated,
-      identity: item.identity ?? false,
-      enum_values: [...(item.enum_values ?? [])].sort(),
-    };
-  });
   const role = current.role_posture!;
   return {
     schema_version: "synapsor.authority-dependencies.v1" as const,
@@ -364,10 +450,23 @@ function authorityDependenciesFor(current: SchemaInspection) {
         owned_relations: [...role.owned_relations].sort(),
       },
     }),
-    resources: {
-      "public.subscriptions": {
+    resources: Object.fromEntries(current.tables.map((table) => {
+      const fields = ["id", "region", "status", "tenant_id"];
+      const selectedColumns = fields.map((name) => {
+        const item = table.columns.find((candidate) => candidate.name === name)!;
+        return {
+          name: item.name,
+          data_type: item.data_type,
+          nullable: item.nullable,
+          default: item.default ?? null,
+          generated: item.generated,
+          identity: item.identity ?? false,
+          enum_values: [...(item.enum_values ?? [])].sort(),
+        };
+      });
+      return [`${table.schema}.${table.name}`, {
         schema: "public",
-        table: "subscriptions",
+        table: table.name,
         fields,
         fingerprint: canonicalJsonDigest({
           engine: current.engine,
@@ -394,8 +493,8 @@ function authorityDependenciesFor(current: SchemaInspection) {
             row_security_effective_for_current_role: table.role_posture!.row_security_effective_for_current_role,
           },
         }),
-      },
-    },
+      }];
+    })),
     relationships: {},
   };
 }

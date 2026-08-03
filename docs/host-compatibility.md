@@ -1,7 +1,7 @@
 # MCP Host Compatibility
 
 This matrix separates host evidence from protocol evidence. It was last
-reviewed on 2026-07-25. A working MCP SDK handshake is not presented as proof
+reviewed on 2026-07-26. A working MCP SDK handshake is not presented as proof
 that a specific editor renders an extension or protects app-only controls.
 
 | Host/surface | Status | Evidence and boundary |
@@ -11,8 +11,8 @@ that a specific editor renders an extension or protects app-only controls.
 | Cursor MCP Apps inline proposal card | Unknown | Runner advertises the standard display-only resource metadata, but current stable Cursor rendering and app-only authority guarantees have not been reproduced. Use the secured localhost workbench or operator CLI. |
 | Cursor approval/apply/revert through MCP | Unsupported | Intentionally absent. Cursor may auto-run model-facing tools; commit authority therefore stays outside MCP regardless of host settings. |
 | Generic Add to Cursor deep link | Unsupported | Runner does not generate a link because no current documented generic server payload has been verified end to end. Project install is the supported path. |
-| Generic stdio MCP client | Protocol-tested | Official MCP SDK initialization, tool listing, calls, resources, and display-only Apps metadata are covered in the suite. |
-| Generic Streamable HTTP MCP client | Protocol-tested | Official MCP SDK sessions, signed context, secret rotation, JWKS, mTLS, aliases, and session isolation are covered. |
+| Generic stdio MCP client | Protocol-tested | Official MCP SDK initialization, analytical input/output schema discovery, digest-pinned catalog resources, typed legal/refused calls, semantic reads/proposals, and absent operator tools are covered. |
+| Generic Streamable HTTP MCP client | Protocol-tested | The same host-neutral analytical/operational conformance passes with Bearer auth; signed context, secret rotation, JWKS, mTLS, aliases, and session isolation remain covered. |
 | Claude Desktop | Protocol-tested | Packaged stdio configuration and MCP transport are tested; manual host UI behavior varies by version and remains a release checklist item. |
 | Claude Code project `.mcp.json` lifecycle | Configuration-tested and protocol-tested | Runner install/status/uninstall tests cover preview, merge, backup, idempotency, ownership, tamper refusal, exact-version wiring, and the exact reviewed `tools/list`. Local Claude Code version observed: 2.1.220. A manual model-driven proposal call remains a release gate. |
 | Codex | Configuration-tested and protocol-tested | Codex CLI 0.144.6 accepted the secret-free stdio configuration through `codex mcp add`; the same command completed MCP `tools/list`. A manual model-driven proposal call remains a release gate. |
@@ -21,6 +21,13 @@ that a specific editor renders an extension or protects app-only controls.
 | LangChain/LangGraph | Recipe-checked, protocol-only | The current `@langchain/mcp-adapters` recipe lists tools, rejects unsafe authority, and calls the proposal tool. The framework runtime has not been executed in this release environment. |
 | Google ADK | Recipe-checked, protocol-only | The current `McpToolset`/`StdioConnectionParams` recipe exposes only the two reviewed tools. The framework runtime has not been executed in this release environment. |
 | LlamaIndex | Recipe-checked, protocol-only | The current `BasicMCPClient` recipe lists tools and calls the proposal tool. The framework runtime has not been executed in this release environment. |
+
+The packaged
+[`examples/host-neutral-typescript-client`](../examples/host-neutral-typescript-client/)
+is the reference application-owned integration. It is not a BI connector or
+host adapter: it discovers the standard MCP surface, gives only reviewed
+schemas to an application-owned model layer, validates the chosen typed call,
+and consumes structured results.
 
 ## Managed Project Setup
 

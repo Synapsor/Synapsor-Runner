@@ -28,6 +28,7 @@ $$;
 
 ALTER ROLE fitflow_analytics_reader SET default_transaction_read_only = on;
 ALTER ROLE fitflow_trainer_reader SET default_transaction_read_only = on;
+ALTER ROLE fitflow_analytics_reader SET app.tenant_id = 'org-fitflow';
 
 CREATE TABLE public.organizations (
   id text PRIMARY KEY,

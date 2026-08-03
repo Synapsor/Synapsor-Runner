@@ -138,7 +138,9 @@ try {
 - `KEEP OUT`
 - `REQUIRE EVIDENCE`
 - `AGGREGATE READ COUNT ROWS|COUNT NON NULL column|SUM column|AVG column`
-- `MIN GROUP SIZE n` for mandatory aggregate suppression
+- `MIN GROUP SIZE n` for a reviewed aggregate threshold from 1 upward; `1`
+  disables small-group suppression and permits groups of one, so use it only
+  after an explicit human disclosure decision
 - `PROTECTED READ ROWS|AGGREGATE` for a named capability produced from a
   human-reviewed local Explore plan
 - `BOUNDARY DIGEST` and `GENERATION LOCK` for exact reviewed authority
@@ -148,7 +150,9 @@ try {
   most two catalog-proven many-to-one links each
 - fixed `PROTECTED FILTER`, reviewed `MEASURE`, `GROUP DIMENSION`,
   `TIME DIMENSION`, `COMPARE RANGE`, aggregate ordering/top-N, row ordering,
-  and `PROTECTED LIMITS`
+  and `PROTECTED LIMITS`; protected aggregates may use a separately reviewed
+  `RANKED GROUPS` candidate ceiling and, with exactly two comparison ranges,
+  order by signed `ABSOLUTE CHANGE` or `PERCENTAGE CHANGE`
 - `PROPOSE ACTION`
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE` (operation defaults to `UPDATE`)
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE SET` for bounded-set authoring

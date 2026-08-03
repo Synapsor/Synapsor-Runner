@@ -60,8 +60,14 @@ export function createMcpRuntimeSharedResources(
   const rateLimiter = config.rate_limits && config.rate_limits.enabled !== false
     ? new RuntimeRateLimiter(config, env, clock)
     : undefined;
+  const rawReadRow = customReadRow ?? ((input: Parameters<DbRowReader>[0]) => databasePools!.read(input));
   return {
-    readRow: customReadRow ?? ((input) => databasePools!.read(input)),
+    readRow: (input) => rawReadRow({
+      ...input,
+      ...(input.capability.protected_read && config.generated_authority?.reporting_timezone
+        ? { reporting_timezone: config.generated_authority.reporting_timezone }
+        : {}),
+    }),
     consumeRateLimit: async (context, capability) => {
       await rateLimiter?.consume(context, capability);
     },
@@ -286,6 +292,9 @@ export class RuntimeDatabasePools {
         try {
           const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
           await client.query(input.capability.protected_read || input.transaction_mode === "read_only" ? "BEGIN READ ONLY" : "BEGIN");
+          if (input.reporting_timezone === "UTC") {
+            await client.query("SET LOCAL TIME ZONE 'UTC'");
+          }
           const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
           if (timeoutMs) await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
           if (input.source.database_scope?.mode === "postgres_rls") {
@@ -351,7 +360,15 @@ export class RuntimeDatabasePools {
       );
       counter.waiting -= 1;
       counter.active += 1;
+      let connectionDestroyed = false;
+      let previousTimeZone: string | undefined;
       try {
+        if (input.reporting_timezone === "UTC") {
+          const [timeZoneRows] = await connection.query("SELECT @@session.time_zone AS time_zone");
+          const first = Array.isArray(timeZoneRows) ? timeZoneRows[0] as Record<string, unknown> | undefined : undefined;
+          previousTimeZone = typeof first?.time_zone === "string" ? first.time_zone : undefined;
+          await connection.query("SET SESSION time_zone = '+00:00'");
+        }
         const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
         if (timeoutMs) await connection.query("SET SESSION max_execution_time = ?", [timeoutMs]).catch(() => undefined);
         const query = runtimeReadQuery(input.capability, "?", input.args, input.context);
@@ -368,7 +385,15 @@ export class RuntimeDatabasePools {
         }
       } finally {
         counter.active -= 1;
-        connection.release();
+        if (previousTimeZone !== undefined) {
+          try {
+            await connection.query("SET SESSION time_zone = ?", [previousTimeZone]);
+          } catch {
+            connection.destroy();
+            connectionDestroyed = true;
+          }
+        }
+        if (!connectionDestroyed) connection.release();
       }
     } catch (error) {
       if (counter.waiting > 0) counter.waiting -= 1;
@@ -449,6 +474,9 @@ export async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promis
   try {
     const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
     await client.query(input.capability.protected_read || input.transaction_mode === "read_only" ? "BEGIN READ ONLY" : "BEGIN");
+    if (input.reporting_timezone === "UTC") {
+      await client.query("SET LOCAL TIME ZONE 'UTC'");
+    }
     const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
     if (timeoutMs) {
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
@@ -486,6 +514,9 @@ export async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{
   if (!uri) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const connection = await mysql.createConnection({ uri, dateStrings: true });
   try {
+    if (input.reporting_timezone === "UTC") {
+      await connection.query("SET SESSION time_zone = '+00:00'");
+    }
     const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
     if (timeoutMs) {
       await connection.query("SET SESSION max_execution_time = ?", [timeoutMs]).catch(() => undefined);

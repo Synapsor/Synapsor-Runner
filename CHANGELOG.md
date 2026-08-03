@@ -1,6 +1,165 @@
 # Changelog
 
-## 1.6.5 (prepared, not published)
+## 1.6.6 (prepared, not published)
+
+### Repeated Safe Analytics And Host-Neutral Integration
+
+- Repairs the all-blocked first-run path so Workbench shows every unresolved
+  resource instead of an empty review, and makes Workbench/CLI resource review
+  use one shared domain implementation. CLI review can resolve source-proven
+  identity/scope, apply versioned multi-resource decision files atomically, and
+  never activates authority.
+- Makes Auto Boundary artifact replacement transactional and ownership-checked.
+  Output, generation lock, review report, overrides, active authority, and
+  review progress roll back together on a failed regeneration.
+- Adds `try ask` over the same OpenAI, Anthropic, and loopback
+  OpenAI-compatible provider/MCP engine as Workbench Ask. Provider keys never
+  enter command arguments; exact egress consent, one-catalog authority,
+  untrusted prose, verified tool traces, and authority-drift refusal remain
+  enforced.
+- Keeps Scoped Explore useful for repeated legal combinations after one human
+  boundary review. Each successful execution gets an encrypted expiring local
+  reference, but no DSL, contract, or named capability is created until an
+  operator explicitly protects one selected result.
+- Adds exact two-period analytical comparisons in one read-only repeatable-read
+  snapshot, semantic measure/dimension aliases, reviewed UTC reporting
+  authority, top/bottom-N, and explicit empty, fully suppressed, and incomplete
+  comparison outcomes.
+- Adds a separately reviewed candidate-group ceiling for high-cardinality
+  top/bottom queries and ranked two-period movers. Runner validates the complete
+  population, applies cohort suppression before ordering, returns only the
+  reviewed top-N, and refuses partial rankings. Period movers support only
+  signed absolute or percentage change, not model-authored expressions.
+- Advertises shared analytical `outputSchema` contracts and a deterministic
+  `synapsor.analytics-catalog.v1` MCP/CLI catalog pinned to exact active
+  contract digests. The catalog excludes SQL, credentials, trusted-scope
+  columns/values, kept-out fields, and generation-lock internals.
+- Adds a packaged host-neutral TypeScript MCP client and conformance harness
+  for stdio and authenticated Streamable HTTP. It discovers schemas/catalog
+  authority, forwards typed legal/refused calls, exercises semantic
+  reads/proposals, and proves approval/apply are absent.
+- Expands conservative PHI classification and adds packed Retail and Healthcare
+  clean-room journeys with real desktop/mobile Workbench interaction, repeated
+  analytics, suppression, cross-tenant/principal isolation, stored-injection
+  inertness, CLI/provider/MCP parity, optional Protect, production narrowing,
+  and unchanged-source evidence.
+- Keeps Auto Boundary's minimum cohort at 5 by default while allowing a human
+  owner to record a reviewer-and-reason-bound override from 1 through 4.
+  Threshold 1 is presented as disabling small-group suppression; effective
+  values are marked in Workbench, `describe_data`, and the safe catalog, and
+  Protect plus production activation require separate exact confirmations.
+- Adds a reviewed third field-egress tier between model-visible and kept-out.
+  Model-withheld fields remain usable by their reviewed operations, but Runner
+  sends response-local opaque tokens to model providers and renders the real
+  values only in its local verified result. The tier survives Protect through
+  public `MODEL WITHHELD` DSL and canonical `model_withheld_fields`; protected
+  MCP output marks affected columns `no_model_egress` and keeps full local
+  values in non-model metadata. Model-facing catalogs retain reviewed type and
+  legal-operation metadata but omit withheld enum/value domains.
+- Makes privacy accounting atomic and durable. Every cohort-protected aggregate
+  reserves against a stable source/scope/resource pool before execution;
+  variants share a rolling 24-hour allowance across restart, UTC midnight,
+  boundary revisions, plan-shape changes, and concurrent requests. Exact
+  normalized replays reuse a differencing variant, while a complementary
+  suppressed grouping and scalar total cannot both be released.
+- New Auto Boundaries review a finite default of 16 distinct cohort-protected
+  variants per root resource per rolling 24 hours. Existing boundaries retain
+  their exact value, reviewers may narrow it, and changing plan families cannot
+  create another allowance.
+- Fails closed on unsupported row-hash write guards instead of silently
+  applying without the reviewed conflict check, rejects PostgreSQL writers
+  that can assume the target owner role, proves source uniqueness before an
+  INSERT deduplication pre-read, and reports an ambiguous COMMIT as
+  reconciliation-required rather than an ordinary failure.
+- Treats qualified person-name columns as sensitive Auto Boundary inputs and
+  leaves ambiguous display names unresolved for human review. Auto Boundary
+  re-runs the current classifier and keeps the more restrictive result, so a
+  stale inspection snapshot cannot preserve a former low-risk suggestion.
+- Revalidates proposal freshness authority against the current reviewed policy
+  before apply, requires exact fenced lease IDs on every worker terminal path,
+  and gives MySQL writes a client-enforced pre-COMMIT deadline. A live MySQL
+  trigger proof verifies timeout rollback of both the source row and receipt.
+- Requires issuer and audience for OIDC operator identity, provides an atomic
+  durable webhook replay-claim API, and isolates notification lease loss so one
+  item cannot abort the claimed batch. Human CLI errors no longer begin with
+  raw telemetry JSON, and bare non-TTY `boundary review` shows the concise map.
+- Adds `/access` to the natural-language analytics shell so an operator can
+  open the secured boundary editor after a refusal without giving the model
+  review or activation authority. CLI result validation no longer treats a
+  derived number such as a zero delta as fabricated merely because the literal
+  zero was not present in an underlying result cell.
+- Lets one local authoring session use up to eight independently reviewed
+  active boundaries through the same two MCP tools. `app.describe_data`
+  catalogs them and each `app.explore_data` plan selects exactly one; overlapping
+  resource aliases require an explicit boundary and cross-boundary joins/unions
+  remain impossible. Adding authority retains the configured provider and
+  in-memory key, clears stale conversation, rebinds consent to the active-set
+  digest, and shares privacy-budget history across boundaries.
+- Repairs the model-withheld boundary-review CLI front door: previews now name
+  the resolved column and exact requested tier, unknown columns fail with the
+  inspected column list, and the one next command records the disabled
+  decision. Adds a risk-first TTY table/column picker with the same mutation
+  path as flags; explicit V/W/K controls distinguish model-and-Runner,
+  Runner-output-only, and kept-out access. Styled focus states, back navigation,
+  and a safe structural map make fields, operations, trusted scope, and reviewed
+  relationships inspectable without saving or activating authority.
+  `boundary draft` now keeps CLI users in that register by presenting
+  `boundary review` as the primary next action and Workbench as an explicit
+  visual alternative.
+- Makes the boundary shape explicit in both review surfaces. Auto Boundary
+  still inspects every deterministically reviewable table; full CLI and
+  Workbench review now share one conservative disabled candidate of at most
+  three related tables, while Quick Start remains an explicitly labeled
+  one-table, zero-relationship fast lane. The default CLI map is a bounded
+  explanation of active authority, the next disabled boundary, available
+  tables, and useful proven paths; `--map --all` is the explicit exhaustive
+  catalog. The TTY starts with boundary tables, reveals the full catalog only
+  on request, shows below-fold counts, and uses conventional navigation and
+  back keys. CLI and Workbench now identify this as one digest-bound named
+  boundary pack containing multiple tables, rather than implying that each
+  `schema.table` row is a separate boundary. Operators can rename the disabled
+  next version, inspect the audit dimensions behind one table sign-off, inspect
+  and stage table additions/removals, complete review, and disable active
+  Scoped Explore from either surface. Disable preserves the next boundary,
+  review decisions, protected capabilities, evidence, ledger, and source data.
+  CLI and Workbench now use progressive disclosure: their first boundary view
+  shows only the active and disabled-next versions, and opening the next version
+  reveals its member tables and then its columns. Interactive disabled-draft
+  edits use a default-yes save prompt after human identity, reason, and validated
+  preview, so pressing Enter records the decision without a generated-command
+  rerun; activation remains separate. Per-table access maps explain legal
+  operations, trusted scope, and reviewed relationships:
+  Runner-output-only fields may support separately reviewed local operations or
+  joins while real values stay out of model requests; kept-out fields cannot be
+  selected, filtered, grouped, joined, or aggregated.
+- Adds a continuous terminal Quick Start to `start --cli`. A fresh project
+  presents the same conservative one-table, zero-relationship candidate as
+  Workbench; one default-yes human gesture records review, binds and rechecks
+  the exact digest, activates local read-only Explore, and continues directly
+  to model/MCP-client selection. With exactly one hosted provider configured,
+  Runner skips the provider picker and the first submitted question confirms
+  the displayed provider/model/origin egress review. Declining or failing
+  eligibility opens the detailed editor. Models still cannot review, activate,
+  widen, approve, or apply, and noninteractive/headless routes retain their
+  exact verified-decision requirements.
+- Proves the reviewed aggregate executor and evidence path against live
+  PostgreSQL and MySQL fixtures, including trusted scope, read-only execution,
+  count/sum/average, cohort suppression and its explicit threshold-1 override,
+  audit/evidence records, timeout behavior, and absence of source mutation.
+- Preserves published 1.5.4, 1.6.0, 1.6.3, and 1.6.5 contract digests,
+  generated projects, CLI routes, and tool surfaces. The authorized Spec and
+  DSL source change additively accepts explicit `minimum_group_size: 1`
+  without changing defaults or legacy normalization.
+
+Prepared package versions: `@synapsor/runner@1.6.6`, the optional
+`synapsor-runner@1.6.6` command alias, `@synapsor/spec@1.8.0`, and
+`@synapsor/dsl@1.8.0`. Spec/DSL 1.8.0 add the canonical model-withheld egress
+tier, explicitly reviewed minimum cohort 1, a separate ranked-candidate group
+ceiling, and absolute/percentage comparison-change ordering. These additions
+preserve legacy normalization and digests when omitted. No package is published
+by this change.
+
+## 1.6.5 (published 2026-07-26)
 
 ### Managed Claude Code and VS Code project MCP installs
 
@@ -18,9 +177,9 @@
   `doctor` client-neutral while retaining the existing Cursor lifecycle and
   `--check-cursor` compatibility.
 
-Prepared package versions: `@synapsor/runner@1.6.5` and the optional
+Published package versions: `@synapsor/runner@1.6.5` and the optional
 `synapsor-runner@1.6.5` command alias. `@synapsor/spec@1.7.0` and
-`@synapsor/dsl@1.7.0` are unchanged. No package is published by this change.
+`@synapsor/dsl@1.7.0` remained unchanged.
 
 ## 1.6.4 (published 2026-07-25)
 

@@ -518,6 +518,22 @@ describe("public protocol fixtures", () => {
     expect(result.error_code).toBe("VERSION_CONFLICT");
   });
 
+  it("represents a legacy ambiguous source outcome as reconciliation instead of an ordinary failure", () => {
+    const result = parseWritebackResult({
+      protocol_version: "1.0",
+      job_id: "wbj_legacy_unknown",
+      runner_id: "runner_1",
+      status: "reconciliation_required",
+      affected_rows: 0,
+      result_hash: `sha256:${"a".repeat(64)}`,
+      completed_at: "2026-08-02T00:00:00.000Z",
+      error_code: "OUTCOME_UNKNOWN",
+      intent_id: "source-db:sha256:legacy",
+    });
+    expect(result).toMatchObject({ status: "reconciliation_required", intent_id: "source-db:sha256:legacy" });
+    expect(() => parseWritebackResult({ ...result, intent_id: undefined })).toThrow(/intent_id/);
+  });
+
   it("parses runner registration fixtures", () => {
     const registration = parseRunnerRegistration(fixture("runner-registration.v1.json"));
     expect(registration.schema_version).toBe(protocolVersions.runnerRegistration);

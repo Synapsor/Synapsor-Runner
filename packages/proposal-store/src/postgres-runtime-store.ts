@@ -328,6 +328,24 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     return await this.withRead((store) => store.listQueryAudit(filters));
   }
 
+  async claimExploreBudgetReservation(
+    input: Parameters<NonNullable<ProposalRuntimeStore["claimExploreBudgetReservation"]>>[0],
+  ): Promise<ReturnType<ProposalStore["claimExploreBudgetReservation"]>> {
+    return await this.withWrite(
+      "claimExploreBudgetReservation",
+      (store) => store.claimExploreBudgetReservation(input),
+    );
+  }
+
+  async completeExploreBudgetReservation(
+    input: Parameters<NonNullable<ProposalRuntimeStore["completeExploreBudgetReservation"]>>[0],
+  ): Promise<ReturnType<ProposalStore["completeExploreBudgetReservation"]>> {
+    return await this.withWrite(
+      "completeExploreBudgetReservation",
+      (store) => store.completeExploreBudgetReservation(input),
+    );
+  }
+
   async replay(proposalId: string): Promise<ProposalReplayRecord> {
     return await this.withWrite("replay", (store) => store.replay(proposalId));
   }

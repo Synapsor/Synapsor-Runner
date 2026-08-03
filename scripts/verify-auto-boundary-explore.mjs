@@ -245,10 +245,18 @@ async function main() {
     const explored = resultPayload(called);
     assert(explored.ok === true && explored.source_database_changed === false, "Golden aggregate did not remain read-only.", explored);
     assert(explored.privacy?.suppressed_groups === 2 && explored.privacy?.totals_returned === false, "Small cohorts were not safely suppressed.", explored);
-    assert(Array.isArray(explored.data) && explored.data.length === 5, "Golden aggregate returned the wrong reviewed groups.", explored);
+    assert(Array.isArray(explored.data) && explored.data.length === 2, "Golden comparison returned the wrong complete reviewed groups.", explored);
     const serializedResult = JSON.stringify(explored);
     assert(!serializedResult.match(/globex|other-west|@example\.invalid|private kept-out|synthetic kept-out/), "Golden aggregate leaked cross-tenant, identifier, or kept-out data.", explored);
-    assert(serializedResult.includes('"measure_0":10') && serializedResult.includes('"measure_0":5'), "Golden result did not preserve the expected churn changes.", explored);
+    const visibleByRegion = Object.fromEntries(explored.data.map((row) => [row.accounts_region, row]));
+    assert(
+      visibleByRegion.west?.count_distinct_accounts_id_period_1 === 5
+        && visibleByRegion.west?.count_distinct_accounts_id_period_2 === 10
+        && visibleByRegion.east?.count_distinct_accounts_id_period_1 === 5
+        && visibleByRegion.east?.count_distinct_accounts_id_period_2 === 7,
+      "Golden result did not preserve the expected semantic comparison values.",
+      explored.data,
+    );
 
     for (const [plan, label] of [
       [{ ...goldenPlan, dimensions: [{ field: "customer_email", relationship: "churn_events_account_id_fkey" }] }, "kept-out dimension"],
@@ -278,7 +286,7 @@ async function main() {
       await expectRefusal(exploreRuntime, plan, label);
     }
 
-    for (const reason of ["price", "service", "product"]) {
+    for (const reason of ["price", "service"]) {
       const result = await exploreRuntime.explore({
         ...goldenPlan,
         where: [{ field: "reason_category", op: "eq", value: reason }],
@@ -288,7 +296,7 @@ async function main() {
     await expectAsyncRefusal(
       () => exploreRuntime.explore({
         ...goldenPlan,
-        where: [{ field: "reason_category", op: "eq", value: "support" }],
+        where: [{ field: "reason_category", op: "eq", value: "product" }],
       }),
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
     );
@@ -302,6 +310,7 @@ async function main() {
       description: "Compare reviewed churn-account cohorts by week, region, and reason.",
       returnsHint: "Returns privacy-suppressed descriptive groups; it does not establish causation.",
       arguments: [],
+      env,
     });
     assert(protectedDraft.dsl.includes("PROTECTED READ AGGREGATE"), "Protect did not emit public aggregate DSL.", protectedDraft.dsl);
     assert(protectedDraft.dsl.includes("PROTECTED RELATIONSHIP churn_events_account_id_fkey"), "Protect lost the reviewed relationship.", protectedDraft.dsl);

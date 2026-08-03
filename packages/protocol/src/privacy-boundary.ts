@@ -45,7 +45,10 @@ export function enforcePrivacyBudgets(input: {
     throw new PrivacyBoundaryError("EXTRACTION_BUDGET_EXHAUSTED", "The reviewed response or cumulative extraction budget would be exceeded.");
   }
   if (input.aggregate && input.snapshot.differencing_attempts >= input.limits.max_differencing_queries) {
-    throw new PrivacyBoundaryError("DIFFERENCING_BUDGET_EXHAUSTED", "Repeated aggregate comparisons exhausted the reviewed differencing budget.");
+    throw new PrivacyBoundaryError(
+      "DIFFERENCING_BUDGET_EXHAUSTED",
+      "Too many distinct filter or date-range variants of the same cohort-protected aggregate were requested in this privacy window.",
+    );
   }
 }
 

@@ -58,7 +58,17 @@ const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
 const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const GOVERNANCE_KEYS = new Set(["mode", "connection_file", "evidence_residency", "queue_when_unavailable", "sync_interval_ms", "max_attempts", "outbox_retention_days"]);
-const GENERATED_AUTHORITY_KEYS = new Set(["generation_lock_path", "enforcement"]);
+const GENERATED_AUTHORITY_KEYS = new Set([
+  "generation_lock_path",
+  "enforcement",
+  "reporting_timezone",
+  "minimum_cohort_overrides",
+]);
+const MINIMUM_COHORT_OVERRIDE_KEYS = new Set([
+  "contract_digest",
+  "minimum_cohort_size",
+  "review_digest",
+]);
 const SUPERVISED_WORKER_KEYS = new Set(["enabled", "profile", "capabilities"]);
 const SUPERVISED_WORKER_CAPABILITY_KEYS = new Set([
   "capability",
@@ -196,6 +206,7 @@ const CAPABILITY_KEYS = new Set([
   "aggregate",
   "protected_read",
   "kept_out_fields",
+  "model_withheld_fields",
   "contract_provenance",
 ]);
 const CONTRACT_PROVENANCE_KEYS = new Set(["digest", "version"]);
@@ -354,6 +365,56 @@ function validateGeneratedAuthority(value: unknown, strict: boolean, errors: Con
   }
   if (value.enforcement !== "required") {
     errors.push({ path: "$.generated_authority.enforcement", code: "INVALID_GENERATION_LOCK_ENFORCEMENT", message: "generated authority must use required lock enforcement." });
+  }
+  if (value.reporting_timezone !== undefined && value.reporting_timezone !== "UTC") {
+    errors.push({ path: "$.generated_authority.reporting_timezone", code: "INVALID_REPORTING_TIMEZONE", message: "generated analytical authority currently supports only the reviewed UTC reporting timezone." });
+  }
+  if (value.minimum_cohort_overrides !== undefined) {
+    if (!isRecord(value.minimum_cohort_overrides)) {
+      errors.push({
+        path: "$.generated_authority.minimum_cohort_overrides",
+        code: "INVALID_MINIMUM_COHORT_OVERRIDES",
+        message: "minimum_cohort_overrides must map fixed capability names to exact reviewed override metadata.",
+      });
+    } else {
+      for (const [capability, rawOverride] of Object.entries(value.minimum_cohort_overrides)) {
+        const path = `$.generated_authority.minimum_cohort_overrides.${capability}`;
+        if (!isQualifiedName(capability) || !isRecord(rawOverride)) {
+          errors.push({
+            path,
+            code: "INVALID_MINIMUM_COHORT_OVERRIDE",
+            message: "each minimum cohort override must use a qualified capability name and bounded metadata object.",
+          });
+          continue;
+        }
+        if (strict) checkUnknownKeys(rawOverride, MINIMUM_COHORT_OVERRIDE_KEYS, path, errors);
+        if (typeof rawOverride.contract_digest !== "string"
+          || !/^sha256:[a-f0-9]{64}$/.test(rawOverride.contract_digest)) {
+          errors.push({
+            path: `${path}.contract_digest`,
+            code: "INVALID_MINIMUM_COHORT_OVERRIDE_DIGEST",
+            message: "minimum cohort override must bind the exact protected contract digest.",
+          });
+        }
+        if (!Number.isSafeInteger(rawOverride.minimum_cohort_size)
+          || Number(rawOverride.minimum_cohort_size) < 1
+          || Number(rawOverride.minimum_cohort_size) >= 5) {
+          errors.push({
+            path: `${path}.minimum_cohort_size`,
+            code: "INVALID_MINIMUM_COHORT_OVERRIDE_VALUE",
+            message: "minimum cohort override must be an integer from 1 through 4.",
+          });
+        }
+        if (typeof rawOverride.review_digest !== "string"
+          || !/^sha256:[a-f0-9]{64}$/.test(rawOverride.review_digest)) {
+          errors.push({
+            path: `${path}.review_digest`,
+            code: "INVALID_MINIMUM_COHORT_REVIEW_DIGEST",
+            message: "minimum cohort override must bind an exact non-secret review digest.",
+          });
+        }
+      }
+    }
   }
 }
 
@@ -1760,8 +1821,19 @@ function validateOperatorIdentity(value: unknown, strict: boolean, errors: Confi
     if (value.public_key_path !== undefined && !isNonEmptyString(value.public_key_path)) {
       errors.push({ path: "$.operator_identity.public_key_path", code: "INVALID_OPERATOR_PUBLIC_KEY_PATH", message: "public_key_path must be a non-empty path." });
     }
-    for (const key of ["issuer", "audience"] as const) {
-      if (value[key] !== undefined && !isNonEmptyString(value[key])) errors.push({ path: `$.operator_identity.${key}`, code: "INVALID_OPERATOR_IDENTITY_VALUE", message: `${key} must be a non-empty string.` });
+    if (!isNonEmptyString(value.issuer)) {
+      errors.push({
+        path: "$.operator_identity.issuer",
+        code: "OPERATOR_JWT_ISSUER_REQUIRED",
+        message: "jwt_oidc operator identity requires the exact token issuer.",
+      });
+    }
+    if (!isNonEmptyString(value.audience)) {
+      errors.push({
+        path: "$.operator_identity.audience",
+        code: "OPERATOR_JWT_AUDIENCE_REQUIRED",
+        message: "jwt_oidc operator identity requires the exact token audience/resource.",
+      });
     }
     for (const [key, minimum, maximum] of [
       ["clock_skew_seconds", 0, 300],
@@ -2161,7 +2233,7 @@ function validateAggregateReadCapability(value: JsonRecord, path: string, strict
   if (!isRecord(value.aggregate)) { errors.push({ path: `${path}.aggregate`, code: "AGGREGATE_READ_REQUIRED", message: "aggregate_read requires a reviewed aggregate definition." }); return; }
   if (strict) checkUnknownKeys(value.aggregate, AGGREGATE_READ_KEYS, `${path}.aggregate`, errors);
   if (!["count", "sum", "avg"].includes(String(value.aggregate.function))) errors.push({ path: `${path}.aggregate.function`, code: "INVALID_AGGREGATE_FUNCTION", message: "aggregate function must be count, sum, or avg." });
-  if (!Number.isSafeInteger(value.aggregate.minimum_group_size) || Number(value.aggregate.minimum_group_size) < 2) errors.push({ path: `${path}.aggregate.minimum_group_size`, code: "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", message: "minimum_group_size must be at least 2." });
+  if (!Number.isSafeInteger(value.aggregate.minimum_group_size) || Number(value.aggregate.minimum_group_size) < 1) errors.push({ path: `${path}.aggregate.minimum_group_size`, code: "AGGREGATE_MINIMUM_GROUP_SIZE_REQUIRED", message: "minimum_group_size must be at least 1." });
   if (value.aggregate.function === "count") {
     if (value.aggregate.count_mode !== "rows" && value.aggregate.count_mode !== "non_null") errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_REQUIRED", message: "COUNT requires rows or non_null mode." });
   } else if (!isSafeIdentifier(value.aggregate.column)) errors.push({ path: `${path}.aggregate.column`, code: "AGGREGATE_NUMERIC_COLUMN_REQUIRED", message: "SUM/AVG require a fixed aggregate column." });
@@ -2192,6 +2264,9 @@ function validateProtectedRuntimeCapability(value: JsonRecord, path: string, err
       args: value.args,
       visible_fields: value.visible_columns,
       ...(value.kept_out_fields === undefined ? {} : { kept_out_fields: value.kept_out_fields }),
+      ...(value.model_withheld_fields === undefined
+        ? {}
+        : { model_withheld_fields: value.model_withheld_fields }),
       evidence: { required: true, query_audit: true },
       ...(value.max_rows === undefined ? {} : { max_rows: value.max_rows }),
       protected_read: value.protected_read,

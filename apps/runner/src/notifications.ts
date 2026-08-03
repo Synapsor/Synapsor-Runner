@@ -142,7 +142,13 @@ export type NotificationDispatchResult = {
   delivered: number;
   retry_wait: number;
   dead_letter: number;
+  lease_lost: number;
 };
+
+export type NotificationWebhookReplayClaim = (input: {
+  event_id: string;
+  expires_at_seconds: number;
+}) => Awaitable<boolean>;
 
 type Address = {
   address: string;
@@ -507,7 +513,6 @@ export function verifyNotificationWebhook(input: {
   const now = input.now_seconds ?? Math.floor(Date.now() / 1_000);
   const window = Math.max(30, Math.min(input.replay_window_seconds ?? 300, 3_600));
   if (Math.abs(now - timestamp) > window) return { ok: false, code: "STALE_WEBHOOK" };
-  if (input.seen_event_ids?.has(input.event_id)) return { ok: false, code: "REPLAYED_EVENT" };
   if (!input.signature.startsWith("sha256=")) return { ok: false, code: "INVALID_SIGNATURE" };
   const supplied = Buffer.from(input.signature.slice("sha256=".length), "hex");
   const expected = Buffer.from(
@@ -520,8 +525,30 @@ export function verifyNotificationWebhook(input: {
   ) {
     return { ok: false, code: "INVALID_SIGNATURE" };
   }
+  if (input.seen_event_ids?.has(input.event_id)) return { ok: false, code: "REPLAYED_EVENT" };
   input.seen_event_ids?.add(input.event_id);
   return { ok: true, event_id: input.event_id };
+}
+
+export async function verifyNotificationWebhookDurably(input: {
+  body: string;
+  event_id: string;
+  timestamp: string;
+  signature: string;
+  signature_version: string;
+  secret: string;
+  claim_event_id: NotificationWebhookReplayClaim;
+  now_seconds?: number;
+  replay_window_seconds?: number;
+}): Promise<{ ok: true; event_id: string } | { ok: false; code: string }> {
+  const verified = verifyNotificationWebhook(input);
+  if (!verified.ok) return verified;
+  const window = Math.max(30, Math.min(input.replay_window_seconds ?? 300, 3_600));
+  const claimed = await input.claim_event_id({
+    event_id: input.event_id,
+    expires_at_seconds: Number(input.timestamp) + window,
+  });
+  return claimed ? verified : { ok: false, code: "REPLAYED_EVENT" };
 }
 
 export async function dispatchNotificationDeliveries(input: {
@@ -544,6 +571,7 @@ export async function dispatchNotificationDeliveries(input: {
     delivered: 0,
     retry_wait: 0,
     dead_letter: 0,
+    lease_lost: 0,
   };
   if (!input.config?.enabled) return result;
   const now = input.now ?? new Date().toISOString();
@@ -562,7 +590,11 @@ export async function dispatchNotificationDeliveries(input: {
   const attentionById = new Map(attentionItems.map((item) => [item.attention_id, item]));
 
   for (const item of claimed) {
-    if (!item.lease_id) throw new Error(`notification delivery ${item.delivery_id} has no lease id`);
+    if (!item.lease_id) {
+      result.lease_lost += 1;
+      output(`Notification delivery ${item.delivery_id} has no active lease; skipped.\n`);
+      continue;
+    }
     const sink = sinks.get(item.sink_id);
     try {
       if (!sink) throw new NotificationDeliveryError("NOTIFICATION_SINK_DISABLED", false);
@@ -595,20 +627,35 @@ export async function dispatchNotificationDeliveries(input: {
       const retryAt = new Date(
         Date.parse(now) + boundedRetryDelayMs(item.attempts, item.delivery_id),
       ).toISOString();
-      const failed = await input.store.failNotificationDelivery({
-        delivery_id: item.delivery_id,
-        owner: input.owner,
-        lease_id: item.lease_id,
-        error_code: classified.code,
-        retryable: classified.retryable,
-        retry_at: retryAt,
-        now,
-      });
+      let failed: NotificationDelivery;
+      try {
+        failed = await input.store.failNotificationDelivery({
+          delivery_id: item.delivery_id,
+          owner: input.owner,
+          lease_id: item.lease_id,
+          error_code: classified.code,
+          retryable: classified.retryable,
+          retry_at: retryAt,
+          now,
+        });
+      } catch (finalizationError) {
+        if (!isNotificationLeaseLoss(finalizationError)) throw finalizationError;
+        result.lease_lost += 1;
+        output(`Notification delivery ${item.delivery_id} lease changed before finalization; skipped.\n`);
+        continue;
+      }
       if (failed.status === "retry_wait") result.retry_wait += 1;
       else result.dead_letter += 1;
     }
   }
   return result;
+}
+
+function isNotificationLeaseLoss(error: unknown): boolean {
+  const code = error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code ?? "")
+    : "";
+  return code === "NOTIFICATION_LEASE_MISMATCH" || code === "NOTIFICATION_LEASE_EXPIRED";
 }
 
 export async function deliverNotification(input: {

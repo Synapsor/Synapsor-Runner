@@ -19,7 +19,7 @@ no-database demo, wire your database, then read deeper concepts.
 - [README](../README.md): audit-first proof, no-database demo, safety diagram,
   and the shortest own-database path.
 - [Database To First Safe Tool](guided-onboarding.md): one public command,
-  five-minute first read, ten-minute Explore to Protect, fifteen-minute
+  five-minute first read, repeated bounded Explore, optional Protect, first
   proposal, resumable setup, guarded development writeback, and host-neutral
   client handoff.
 - [Workbench Ask With Your Model](workbench-ask.md): optional local OpenAI,
@@ -30,6 +30,34 @@ no-database demo, wire your database, then read deeper concepts.
 
 ## 02 Why Raw SQL Is Dangerous
 
+- [Safe Postgres MCP For AI Agents](safe-postgres-mcp.md): use reviewed typed
+  tools, trusted scope, and outside-model decisions instead of handing an agent
+  a credential and `execute_sql`.
+- [Prevent An LLM From Executing Arbitrary SQL](prevent-llm-arbitrary-sql.md):
+  remove SQL authority from the model-facing interface and compile only
+  validated typed plans.
+- [Human Approval For AI Database Writes](human-approval-ai-database-writes.md):
+  separate proposals from human or reviewed-policy decisions and guarded apply.
+- [MCP Database Access Without Schema Exposure](mcp-without-schema-exposure.md):
+  expose reviewed aliases and operations without exposing unrestricted schema,
+  DDL, credentials, or kept-out fields.
+- [Secure Text-to-SQL Without Giving The Model SQL](secure-text-to-sql.md):
+  benchmark evidence, exact limits, and why a reviewed plan changes authority
+  rather than claiming to make the model accurate.
+- [Let An AI Agent Update A Production Database Safely](ai-agent-production-database.md):
+  Explore in staging, Protect one useful plan, and keep production authority
+  named and reviewed.
+- [AI Agent Database Permissions And Tenant Isolation](agent-database-permissions.md):
+  layer database policy, reviewed authority, and trusted per-request scope.
+- [Synapsor vs A Raw Postgres MCP](synapsor-vs-raw-postgres-mcp.md): decide when
+  direct SQL access is appropriate and when a narrower boundary is warranted.
+- [Synapsor vs Stored Procedures](synapsor-vs-stored-procedures.md): keep fixed
+  database logic and add an agent review lifecycle only where needed.
+- [Synapsor vs A Custom API Layer](synapsor-vs-custom-api-layer.md): keep safe
+  application APIs and add shared agent governance around them.
+- [Synapsor vs PostgreSQL RLS Alone](synapsor-vs-rls-only.md): use RLS as the
+  row-security floor and Runner for model-facing fields, operations, limits,
+  proposals, and evidence.
 - [Choose The Smallest Safe Database Boundary](alternatives.md): compare raw
   database MCP, direct read-only access, hand-built application tools, and
   Synapsor Runner, including when each is sufficient and what remains outside
@@ -59,8 +87,9 @@ no-database demo, wire your database, then read deeper concepts.
 - [Auto Boundary, Scoped Explore, And
   Protect](auto-boundary-and-scoped-explore.md): deterministically inspect a
   whole staging application, review one digest-bound boundary, ask bounded row
-  and PM-style aggregate questions in Cursor, and turn a useful query into a
-  disabled named production capability.
+  and aggregate questions repeatedly through Workbench, CLI, or any MCP client,
+  and optionally turn one useful result into a disabled named production
+  capability.
 - [Workbench Ask With Your Model](workbench-ask.md): use the same reviewed
   tools from Workbench without requiring Cursor or giving the model activation,
   approval, or apply authority.
@@ -148,9 +177,12 @@ no-database demo, wire your database, then read deeper concepts.
 - [MCP Client Configs](mcp-clients.md): complete Claude, Cursor, OpenAI Agents,
   generic stdio, and Streamable HTTP templates.
 - [Client And Framework Recipes](client-recipes.md): one proposal-only
-  support-plan-credit flow for Claude Code, Codex, VS Code, OpenAI Agents,
-  LangChain/LangGraph, Google ADK, LlamaIndex, and generic MCP clients, with
-  explicit evidence labels.
+  support-plan-credit flow plus a host-neutral structured analytics contract
+  for Claude Code, Codex, VS Code, OpenAI Agents, LangChain/LangGraph, Google
+  ADK, LlamaIndex, and generic MCP clients, with explicit evidence labels.
+- [Host-Neutral TypeScript MCP Client](../examples/host-neutral-typescript-client/):
+  discover input/output schemas, pin the safe analytical catalog, and forward
+  typed calls over stdio or authenticated Streamable HTTP.
 - `examples/claude-desktop-postgres/`: copy-paste Claude Desktop config for the
   Postgres billing fixture.
 - `examples/cursor-postgres/`: copy-paste Cursor config for the Postgres

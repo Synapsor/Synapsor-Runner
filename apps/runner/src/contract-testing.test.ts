@@ -103,6 +103,79 @@ describe("adopter contract tests", () => {
     expect(report).toMatchObject({ ok: true, summary: { passed: 1, failed: 0 } });
   });
 
+  it("freezes the exact protected-read resources, aggregate shape, suppression, and budgets", async () => {
+    const fixture = await writeFixture();
+    const contract = JSON.parse(await fs.readFile(fixture.contractPath, "utf8"));
+    const protectedRead = {
+      version: "1",
+      mode: "aggregate",
+      boundary_digest: `sha256:${"a".repeat(64)}`,
+      generation_lock_fingerprint: `sha256:${"b".repeat(64)}`,
+      aggregate: {
+        counted_entity: "subject",
+        measures: [{ name: "order_count", function: "count" }],
+        dimensions: [{ name: "region", field: "region" }],
+        top_n: 10,
+        minimum_group_size: 5,
+      },
+      limits: {
+        max_rows: 20,
+        max_groups: 20,
+        max_response_cells: 200,
+        max_response_bytes: 32_000,
+        statement_timeout_ms: 3_000,
+        max_queries_per_session: 20,
+        max_extracted_cells_per_session: 2_000,
+        max_differencing_queries: 6,
+        rate_limit_per_minute: 20,
+      },
+    };
+    contract.capabilities = [{
+      name: "analytics.orders_by_region",
+      kind: "aggregate_read",
+      context: "trusted",
+      source: "source",
+      description: "Count reviewed orders by region.",
+      returns_hint: "Returns privacy-suppressed aggregate groups.",
+      subject: {
+        schema: "public",
+        table: "orders",
+        primary_key: "id",
+        tenant_key: "tenant_id",
+      },
+      args: {},
+      visible_fields: [],
+      kept_out_fields: ["customer_email"],
+      evidence: { required: true, query_audit: true },
+      protected_read: protectedRead,
+    }];
+    await fs.writeFile(fixture.contractPath, JSON.stringify(contract, null, 2));
+    await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [{
+      id: "protected-boundary",
+      kind: "protected_read_boundary",
+      capability: "analytics.orders_by_region",
+      expected: protectedRead,
+    }] }, null, 2));
+
+    const matching = await runContractTests({ ...fixture, live: false });
+    expect(matching).toMatchObject({ ok: true, summary: { passed: 1, failed: 0 } });
+
+    const widened = structuredClone(protectedRead);
+    widened.limits.max_groups = 21;
+    await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [{
+      id: "protected-boundary",
+      kind: "protected_read_boundary",
+      capability: "analytics.orders_by_region",
+      expected: widened,
+    }] }, null, 2));
+    const mismatch = await runContractTests({ ...fixture, live: false });
+    expect(mismatch).toMatchObject({
+      ok: false,
+      summary: { passed: 0, failed: 1 },
+      tests: [{ code: "PROTECTED_READ_BOUNDARY_MISMATCH" }],
+    });
+  });
+
   it("fails static mismatches with stable assertion codes", async () => {
     const fixture = await writeFixture();
     await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [

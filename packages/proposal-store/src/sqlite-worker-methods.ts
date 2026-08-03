@@ -562,7 +562,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       workerId: string;
       errorCode: string;
       retryAt: string;
-      leaseId?: string;
+      leaseId: string;
       now?: string;
     }): WorkerQueueItem {
       const now = options.now ?? new Date().toISOString();
@@ -591,7 +591,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       proposalId: string;
       workerId: string;
       errorCode: string;
-      leaseId?: string;
+      leaseId: string;
       now?: string;
     }): WorkerQueueItem {
       const now = options.now ?? new Date().toISOString();
@@ -801,11 +801,17 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
     },
   
   assertWorkerLease(proposalId: string, workerId: string, leaseId?: string): WorkerQueueItem {
+      if (!leaseId) {
+        throw new ProposalStoreError(
+          "WORKER_LEASE_ID_REQUIRED",
+          `worker ${workerId} must present the exact lease id for ${proposalId}`,
+        );
+      }
       const item = this.requireWorkerQueueItem(proposalId);
       if (
         item.status !== "leased"
         || item.lease_owner !== workerId
-        || (leaseId !== undefined && item.lease_id !== leaseId)
+        || item.lease_id !== leaseId
       ) {
         throw new ProposalStoreError("WORKER_LEASE_MISMATCH", `worker ${workerId} does not hold the lease for ${proposalId}`);
       }

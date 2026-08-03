@@ -102,10 +102,36 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
         }
         if (resultFormat === 2) {
           assertStoreAvailable();
-          return await callConfiguredToolV2({ config, env, store, readRow, cloudClient, trustedContext, privacySessionId, name, args });
+          return await callConfiguredToolV2({
+            config,
+            env,
+            store,
+            readRow,
+            cloudClient,
+            trustedContext,
+            privacySessionId,
+            ...(options.generatedAuthorityInspector
+              ? { generatedAuthorityInspector: options.generatedAuthorityInspector }
+              : {}),
+            name,
+            args,
+          });
         }
         assertStoreAvailable();
-        return await callConfiguredTool({ config, env, store, readRow, cloudClient, trustedContext, privacySessionId, name, args });
+        return await callConfiguredTool({
+          config,
+          env,
+          store,
+          readRow,
+          cloudClient,
+          trustedContext,
+          privacySessionId,
+          ...(options.generatedAuthorityInspector
+            ? { generatedAuthorityInspector: options.generatedAuthorityInspector }
+            : {}),
+          name,
+          args,
+        });
       } catch (error) {
         logToolRejection(error, config, env, capability, name, trustedContext);
         if (resultFormat === 2) return errorEnvelopeFromError(error, capability, name);

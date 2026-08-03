@@ -9,6 +9,7 @@ import {
   resolveNotificationWebhookTarget,
   signNotificationWebhook,
   verifyNotificationWebhook,
+  verifyNotificationWebhookDurably,
 } from "./notifications.js";
 
 const now = "2026-07-24T12:00:00.000Z";
@@ -430,7 +431,7 @@ describe("human-attention notification routing", () => {
           } as { external_reference: string };
         },
       });
-      expect(result).toEqual({ claimed: 1, delivered: 1, retry_wait: 0, dead_letter: 0 });
+      expect(result).toEqual({ claimed: 1, delivered: 1, retry_wait: 0, dead_letter: 0, lease_lost: 0 });
       expect(receiverAttempts).toBe(1);
       expect(store.listNotificationDeliveries({ status: "delivered" })[0])
         .toMatchObject({ external_reference: "receiver-accepted", attempts: 1 });
@@ -442,6 +443,93 @@ describe("human-attention notification routing", () => {
     } finally {
       store.close();
     }
+  });
+
+  it("claims verified webhook event IDs atomically through a durable replay store", async () => {
+    const event = attentionEvent();
+    const body = JSON.stringify(buildNotificationEnvelope({ event }));
+    const secret = "notification-test-secret-at-least-32-bytes";
+    const headers = signNotificationWebhook({
+      body,
+      event_id: event.event_id,
+      secret,
+      timestamp_seconds: 2_000,
+    });
+    const durableIds = new Set<string>();
+    const expirations: number[] = [];
+    const claim = async (input: { event_id: string; expires_at_seconds: number }) => {
+      if (durableIds.has(input.event_id)) return false;
+      durableIds.add(input.event_id);
+      expirations.push(input.expires_at_seconds);
+      return true;
+    };
+    const request = {
+      body,
+      event_id: event.event_id,
+      timestamp: headers["x-synapsor-timestamp"],
+      signature: headers["x-synapsor-signature"],
+      signature_version: headers["x-synapsor-signature-version"],
+      secret,
+      now_seconds: 2_010,
+      replay_window_seconds: 300,
+      claim_event_id: claim,
+    };
+
+    await expect(verifyNotificationWebhookDurably(request))
+      .resolves.toEqual({ ok: true, event_id: event.event_id });
+    await expect(verifyNotificationWebhookDurably(request))
+      .resolves.toEqual({ ok: false, code: "REPLAYED_EVENT" });
+    expect(expirations).toEqual([2_300]);
+    expect(durableIds).toEqual(new Set([event.event_id]));
+  });
+
+  it("continues a claimed delivery batch when one item loses its lease", async () => {
+    const event = attentionEvent();
+    const claimed = ["one", "two"].map((suffix) => ({
+      ...baseDelivery(),
+      delivery_id: `ntd_${suffix}`,
+      event_id: event.event_id,
+      sink_id: "operations",
+      status: "leased" as const,
+      lease_owner: "dispatcher_test",
+      lease_id: `lease_${suffix}`,
+      lease_expires_at: "2026-07-24T12:01:00.000Z",
+      delivered_at: undefined,
+      external_reference: undefined,
+    }));
+    const leaseError = Object.assign(new Error("lease changed"), {
+      code: "NOTIFICATION_LEASE_MISMATCH",
+    });
+    const output: string[] = [];
+    const store = {
+      claimNotificationDeliveries: async () => claimed,
+      listAttentionItems: async () => [],
+      getAttentionEvent: async () => event,
+      completeNotificationDelivery: async (input: { delivery_id: string }) => {
+        if (input.delivery_id === "ntd_one") throw leaseError;
+        return { ...claimed[1]!, status: "delivered" as const };
+      },
+      failNotificationDelivery: async (input: { delivery_id: string }) => {
+        if (input.delivery_id === "ntd_one") throw leaseError;
+        return { ...claimed[1]!, status: "dead_letter" as const };
+      },
+    } as any;
+
+    await expect(dispatchNotificationDeliveries({
+      store,
+      config: quietConfig(),
+      owner: "dispatcher_test",
+      now: "2026-07-24T12:00:02.000Z",
+      output: (line) => output.push(line),
+      deliver: async ({ envelope }) => ({ external_reference: `accepted:${envelope.id}` }),
+    })).resolves.toEqual({
+      claimed: 2,
+      delivered: 1,
+      retry_wait: 0,
+      dead_letter: 0,
+      lease_lost: 1,
+    });
+    expect(output.join("")).toContain("ntd_one lease changed before finalization; skipped");
   });
 });
 

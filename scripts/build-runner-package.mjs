@@ -156,6 +156,8 @@ const packageRoot = resolve(root, "apps/runner");
 await cp(resolve(root, "README.md"), resolve(packageRoot, "README.md"));
 
 const publicDocs = [
+  "agent-database-permissions.md",
+  "ai-agent-production-database.md",
   "alternatives.md",
   "README.md",
   "approval-roles-and-operator-identity.md",
@@ -185,6 +187,7 @@ const publicDocs = [
   "host-compatibility.md",
   "hosted-cloud-linked-verification.md",
   "human-attention-notifications.md",
+  "human-approval-ai-database-writes.md",
   "dependency-license-inventory.md",
   "dsl-json-parity.md",
   "dsl-reference.md",
@@ -196,11 +199,13 @@ const publicDocs = [
   "mcp-apps.md",
   "mcp-client-setup.md",
   "mcp-clients.md",
+  "mcp-without-schema-exposure.md",
   "migrating-to-synapsor-spec.md",
   "aggregate-reads.md",
   "agent-guided-setup.md",
   "openai-agents-sdk.md",
   "oss-vs-cloud.md",
+  "prevent-llm-arbitrary-sql.md",
   "production.md",
   "reviewed-relationships.md",
   "reviewed-database-views.md",
@@ -214,20 +219,31 @@ const publicDocs = [
   "runner-config-reference.md",
   "runner-bundles.md",
   "running-a-runner-fleet.md",
+  "safe-postgres-mcp.md",
   "schema-api-candidates.md",
+  "secure-text-to-sql.md",
   "conformance.md",
   "recipes.md",
   "security-boundary.md",
   "shadow-studies.md",
   "store-lifecycle.md",
   "supervised-automatic-apply.md",
+  "synapsor-vs-custom-api-layer.md",
+  "synapsor-vs-raw-postgres-mcp.md",
+  "synapsor-vs-rls-only.md",
+  "synapsor-vs-stored-procedures.md",
   "troubleshooting-first-run.md",
   "writeback-executors.md",
   "use-your-own-database.md",
   "workbench-ask.md",
   "why-synapsor-vs-app-guardrails.md",
 ];
-const publishedCompatibilityBaselines = ["published-1.5.4", "published-1.6.0", "published-1.6.3"];
+const publishedCompatibilityBaselines = [
+  "published-1.5.4",
+  "published-1.6.0",
+  "published-1.6.3",
+  "published-1.6.5",
+];
 const publishedCompatibilityAssets = [];
 for (const baseline of publishedCompatibilityBaselines) {
   const manifestPath = `fixtures/compatibility/${baseline}/manifest.json`;
@@ -259,8 +275,10 @@ const releaseAssets = [
   ["examples/app-owned-writeback", "examples/app-owned-writeback"],
   ["examples/auto-boundary-churn", "examples/auto-boundary-churn"],
   ["examples/community-solar-clean-room", "examples/community-solar-clean-room"],
+  ["examples/healthcare-phi-clean-room", "examples/healthcare-phi-clean-room"],
   ["examples/retail-clean-room", "examples/retail-clean-room"],
   ["examples/fitflow-guided-onboarding", "examples/fitflow-guided-onboarding"],
+  ["examples/host-neutral-typescript-client", "examples/host-neutral-typescript-client"],
   ["examples/claude-desktop-postgres", "examples/claude-desktop-postgres"],
   ["examples/cursor-postgres", "examples/cursor-postgres"],
   ["examples/mcp-postgres-billing-app-handler", "examples/mcp-postgres-billing-app-handler"],
@@ -289,6 +307,16 @@ for (const [source, destination] of releaseAssets) {
   await mkdir(dirname(to), { recursive: true });
   await cp(from, to, { recursive: true });
 }
+
+await build({
+  entryPoints: [resolve(root, "examples/host-neutral-typescript-client/client.ts")],
+  outfile: resolve(packageRoot, "examples/host-neutral-typescript-client/client.mjs"),
+  bundle: false,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  logLevel: "silent",
+});
 
 await cp(
   resolve(root, "packages/handler/dist/index.js"),
