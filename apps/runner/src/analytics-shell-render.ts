@@ -407,11 +407,26 @@ export function renderAnalysis(
       "",
       `${suppressed} additional group${suppressed === 1 ? " was" : "s were"} withheld because ${suppressed === 1 ? "it was" : "they were"} below the reviewed minimum cohort${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`,
       ...(minimumCohort !== undefined && minimumCohort > 1
-        ? ["Use /access, choose the boundary, then choose Privacy for this table. No suppression uses an effective minimum of 1."]
+        ? [minimumCohortRecoveryPath(analysis)]
         : []),
     );
   }
   return lines;
+}
+
+function minimumCohortRecoveryPath(analysis: AnalyticsAnalysis): string {
+  const boundary = stringValue(analysis.result.boundary_name)
+    ?? stringValue(analysis.arguments?.boundary);
+  const table = analysis.plan?.resource
+    ?? stringValue(record(analysis.result.audit).resource_id);
+  const path = [
+    "/access",
+    boundary ? `boundary ${safeTerminalText(boundary)}` : "the active boundary",
+    table ? `table ${safeTerminalText(table)}` : "the result table",
+    "Privacy (P)",
+    "minimum cohort",
+  ].join(" -> ");
+  return `To change it: ${path}. No suppression uses an effective minimum of 1.`;
 }
 
 export function renderTable(

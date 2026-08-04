@@ -37,6 +37,7 @@ import {
 
 const COMMANDS = [
   "/help",
+  "/catalog",
   "/analyses",
   "/protect",
   "/details",
@@ -49,6 +50,7 @@ const COMMANDS = [
 
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "List shell actions",
+  "/catalog": "Show what the reviewed boundaries can answer",
   "/analyses": "List recent protectable analyses",
   "/protect": "Protect the latest eligible analysis",
   "/details": "Show safe execution metadata",
@@ -298,7 +300,7 @@ export function renderAnalyticsShellBanner(input: {
     ...(input.accessSummary?.suggestions[0]
       ? [`Try: ${theme.scope(`"${safeTerminalText(input.accessSummary.suggestions[0])}"`)}`]
       : []),
-    "Ask a question. /access manages boundaries; /help lists actions; Ctrl+D exits.",
+    "Ask a question. /catalog shows reviewed access; /access manages boundaries; /help lists actions; Ctrl+D exits.",
     "",
   ].join("\n");
 }
@@ -538,6 +540,7 @@ async function handleShellCommand(
     input.io.write([
       "",
       "Actions",
+      "  /catalog [page]              Show what each reviewed table can answer",
       "  /analyses                    List recent protectable analyses",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
@@ -551,6 +554,15 @@ async function handleShellCommand(
       "  Ctrl+D                       Close the shell (Ctrl+C twice also exits)",
       "",
     ].join("\n"));
+    return "continue";
+  }
+  if (line === "/catalog" || line.startsWith("/catalog ")) {
+    input.io.write(renderReviewedAccessCatalog({
+      line,
+      boundaryLabel: input.boundaryLabel,
+      summary: input.accessSummary,
+      color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+    }));
     return "continue";
   }
   if (line === "/clear") {
@@ -608,6 +620,72 @@ async function handleShellCommand(
   }
   input.io.write("Unknown action. Type /help for the available actions.\n\n");
   return "continue";
+}
+
+export function renderReviewedAccessCatalog(input: {
+  line: string;
+  boundaryLabel?: string;
+  summary?: ReviewedAskAccessSummary;
+  color?: boolean;
+  pageSize?: number;
+}): string {
+  const theme = terminalTheme(input.color === true);
+  const pageSize = Math.max(1, Math.min(10, input.pageSize ?? 5));
+  const rawPage = input.line.slice("/catalog".length).trim();
+  const requestedPage = rawPage === "" ? 1 : Number(rawPage);
+  if (!Number.isSafeInteger(requestedPage) || requestedPage < 1) {
+    return `\n${theme.warning("Usage: /catalog [page]")} ${theme.dim("Page numbers start at 1.")}\n\n`;
+  }
+  const resources = input.summary?.resources ?? [];
+  if (!resources.length) {
+    return [
+      "",
+      theme.title("CAN ASK NOW"),
+      "No reviewed table details are available in this session.",
+      `Use ${theme.key("/access")} to inspect reviewed boundaries.`,
+      "",
+      "",
+    ].join("\n");
+  }
+  const pageCount = Math.max(1, Math.ceil(resources.length / pageSize));
+  if (requestedPage > pageCount) {
+    return `\n${theme.warning(`Catalog page ${requestedPage} does not exist.`)} ` +
+      `${theme.dim(`Choose page 1-${pageCount}.`)}\n\n`;
+  }
+  const start = (requestedPage - 1) * pageSize;
+  const visible = resources.slice(start, start + pageSize);
+  const defaultBoundary = input.boundaryLabel;
+  const lines = [
+    "",
+    theme.title("CAN ASK NOW"),
+    theme.dim(
+      `${resources.length} reviewed ${resources.length === 1 ? "table" : "tables"} ` +
+      `- page ${requestedPage} of ${pageCount}`,
+    ),
+    "",
+    ...visible.flatMap((resource) => {
+      const boundary = resource.boundary_name ?? defaultBoundary;
+      return [
+        `${theme.key(safeTerminalText(resource.label))} ${theme.dim(`(${safeTerminalText(resource.id)})`)}`,
+        ...(boundary
+          ? [`  Boundary: ${theme.scope(safeTerminalText(boundary))}`]
+          : []),
+        `  Can answer: ${safeTerminalText(resource.capabilities.join("; "))}`,
+        ...resource.suggestions.slice(0, 2).map((suggestion) =>
+          `  Try: ${theme.dim(`"${safeTerminalText(suggestion)}"`)}`),
+        "",
+      ];
+    }),
+    theme.dim([
+      `Page ${requestedPage} of ${pageCount}.`,
+      ...(requestedPage > 1 ? [`/catalog ${requestedPage - 1} previous.`] : []),
+      ...(requestedPage < pageCount ? [`/catalog ${requestedPage + 1} next.`] : []),
+      "/access edits reviewed access.",
+    ].join(" ")),
+    "",
+    "",
+  ];
+  return lines.join("\n");
 }
 
 async function showAnalyses(

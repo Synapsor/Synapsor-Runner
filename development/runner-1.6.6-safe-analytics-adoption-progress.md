@@ -3660,3 +3660,39 @@ Inactive-boundary error closure (2026-08-03):
   human command-surface, DSL source-path, and Cursor-plugin verification.
 - No package was published. No version, commit, merge, push, tag, release, or
   dist-tag change was made.
+
+Analytics shell discoverability and weak-model guidance (2026-08-04):
+
+- The interactive shell now exposes `/catalog [page]`. It renders five reviewed
+  tables at a time with the owning boundary, exact table identifier, supported
+  analytical operations, and source-validated starter questions. The startup
+  banner remains concise, and `/access` remains the separate operator action for
+  changing reviewed authority.
+- A real terminal-readline regression submits a question, renders a completed
+  answer, opens the next `synapsor>` prompt, sends the Up-arrow escape sequence,
+  and verifies that the previous question is recalled. The existing post-answer
+  slash-menu redraw regression remains green.
+- Suppressed aggregate results now name the exact recovery path when metadata is
+  available: `/access -> boundary <name> -> table <schema.table> -> Privacy (P)
+  -> minimum cohort`. The setting remains table-level; no column-level control is
+  implied, and an effective minimum of 1 is still described as no suppression.
+- The table editor now separates selected-table actions from whole-boundary
+  actions and packs each group to the terminal width. A 58-column TTY regression
+  proves that Privacy, ranked limits, boundary navigation, and review/activation
+  remain complete and readable instead of truncating or squeezing together.
+- The common Ask system instruction used by CLI and Workbench now tells every
+  provider to discover active reviewed boundaries through `app.describe_data`,
+  never ask the user for a boundary name, never reinterpret tenant/organization/
+  principal text as a boundary, and never put trusted scope in tool arguments.
+- Focused tests pass 108/108. The full root gate passes 81 files and 1,275 tests,
+  followed by trusted-core, license/content, human command-surface, DSL source
+  path, and Cursor-plugin verification. Typecheck and `git diff --check` pass.
+- The packed first-run PTY gate passes from clean installs against PostgreSQL and
+  MySQL in 3.230 seconds and 3.178 seconds respectively. Both runs resolve scope,
+  review columns, activate the boundary, reach model selection, and prove no
+  source mutation. The Workbench Ask browser gate also passes with seven desktop/
+  mobile captures, eight provider requests, two reviewed calls, one safe refusal,
+  no persisted key, zero browser-storage entries, and no source mutation.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.

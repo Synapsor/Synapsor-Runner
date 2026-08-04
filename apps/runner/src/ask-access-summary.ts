@@ -10,6 +10,7 @@ import type { AskToolGateway } from "./model-ask.js";
 export type ReviewedAskResourceSummary = {
   id: string;
   label: string;
+  boundary_name?: string;
   capabilities: string[];
   suggestions: string[];
 };
@@ -153,6 +154,7 @@ function reviewedResourceSummary(
 ): ReviewedAskResourceSummary | undefined {
   const id = safeIdentifier(resource.id);
   if (!id) return undefined;
+  const boundaryName = safeIdentifier(resource.boundary_name);
   const label = safeLabel(resource.label) ?? businessLabel(id.split(".").at(-1) ?? id);
   const labels = isRecord(resource.field_labels) ? resource.field_labels : {};
   const fieldLabel = (field: string) => safeLabel(labels[field]) ?? businessLabel(field);
@@ -176,7 +178,13 @@ function reviewedResourceSummary(
       .map((question) => safeQuestion(question.text))
       .filter((question): question is string => Boolean(question))
     : [];
-  return { id, label, capabilities, suggestions };
+  return {
+    id,
+    label,
+    ...(boundaryName ? { boundary_name: boundaryName } : {}),
+    capabilities,
+    suggestions,
+  };
 }
 
 function activeSuggestionIsExecutable(

@@ -586,6 +586,11 @@ describe("Workbench BYOM Ask", () => {
     });
     const prompt = JSON.stringify(requestBody);
     expect(prompt).toContain("unless the successful executed plan contains that exact reviewed relationship");
+    expect(prompt).toContain("Never ask the user for an Explore boundary name");
+    expect(prompt).toContain("Call app.describe_data without a boundary selector");
+    expect(prompt).toContain("Never treat a tenant, organization, account, customer, or principal");
+    expect(prompt).toContain("Tenant and principal scope are injected and enforced by Runner outside model arguments");
+    expect(prompt).toContain("instead of asking the user to identify Runner internals");
     expect(prompt).toContain("Do not offer a follow-up data operation unless its exact fields");
     expect(prompt).toContain("do not guess table or field names");
     expect(prompt).toContain("request only the minimum measures");

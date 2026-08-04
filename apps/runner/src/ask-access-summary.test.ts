@@ -61,6 +61,7 @@ describe("Ask access summaries", () => {
           resources: [{
             id: "public.orders",
             label: "Orders",
+            boundary_name: "reviewed_sales",
             field_labels: {
               total_cents: "Total cents",
               status: "Status",
@@ -100,6 +101,7 @@ describe("Ask access summaries", () => {
       resources: [{
         id: "public.orders",
         label: "Orders",
+        boundary_name: "reviewed_sales",
         capabilities: [
           "record counts",
           "totals and averages of Total cents",

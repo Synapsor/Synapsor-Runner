@@ -114,7 +114,10 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("No separate table sign-off.");
     expect(firstViewPlain).toContain("B/Esc Boundary overview");
     expect(firstViewPlain).toContain("A Add related tables");
-    expect(firstViewPlain).toContain("C Review and activate");
+    expect(firstViewPlain).toContain("SELECTED TABLE");
+    expect(firstViewPlain).toContain("BOUNDARY");
+    expect(firstViewPlain).toContain("C Review + activate");
+    expect(firstViewPlain).toContain("L Ranked limits");
     expect(firstViewPlain).not.toContain("BOUNDARIES");
     expect(firstViewPlain).not.toContain("One S sign-off records");
     expect(firstViewPlain).not.toContain("[table sign-off needed]");
@@ -157,8 +160,32 @@ describe("boundary review terminal picker", () => {
     });
     const tableView = output.read()?.toString() ?? "";
     expect(tableView).toContain("P");
-    expect(tableView).toContain("Privacy for selected table");
+    expect(tableView).toContain("Privacy (minimum group 5)");
     expect(tableView).toContain("minimum group 5");
+  });
+
+  it("keeps table and boundary actions readable in a narrow terminal", async () => {
+    const { input, output } = fakeTerminal();
+    Object.assign(output, { columns: 58 });
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.equipment", 0);
+    resource.minimum_cohort_size = 5;
+    const selected = session.chooseResource(
+      [resource],
+      undefined,
+      { initialView: "access" },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("SELECTED TABLE");
+    expect(rendered).toContain("Enter Edit columns");
+    expect(rendered).toContain("P Privacy (minimum group 5)");
+    expect(rendered).toContain("BOUNDARY");
+    expect(rendered).toContain("B/Esc Boundary overview");
+    expect(rendered).toContain("L Ranked limits");
+    expect(rendered).toContain("C Review + activate");
+
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("returns from focused access to the boundary overview instead of quitting", async () => {

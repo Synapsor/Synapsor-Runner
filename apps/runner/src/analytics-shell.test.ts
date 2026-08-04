@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createTerminalAnalyticsShellIo,
   renderAnalyticsShellBanner,
+  renderReviewedAccessCatalog,
   renderSlashCommandMenu,
   runAnalyticsShell,
   slashCommandSuggestions,
@@ -61,6 +62,9 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("west");
     expect(output).toContain("184");
     expect(output).toContain("1 additional group was withheld");
+    expect(output).toContain(
+      "To change it: /access -> boundary support_analytics -> table public.sessions -> Privacy (P) -> minimum cohort.",
+    );
     expect(output).not.toContain("Database unchanged");
     expect(output).not.toContain("Source database changed: no");
     expect(output).not.toContain("Evidence recorded");
@@ -866,6 +870,63 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain('Try: "How did total cents change by week across channel?"');
   });
 
+  it("pages detailed reviewed access without dumping every table", () => {
+    const resources = Array.from({ length: 7 }, (_, index) => ({
+      id: `public.table_${index + 1}`,
+      label: `Table ${index + 1}`,
+      boundary_name: index < 4 ? "billing_review" : "support_review",
+      capabilities: ["record counts", `grouping by Field ${index + 1}`],
+      suggestions: [`How many table ${index + 1} records are there?`],
+    }));
+    const page = renderReviewedAccessCatalog({
+      line: "/catalog 2",
+      boundaryLabel: "2 active boundaries",
+      summary: { table_count: resources.length, resources, suggestions: [] },
+      pageSize: 5,
+    });
+    expect(page).toContain("CAN ASK NOW");
+    expect(page).toContain("7 reviewed tables - page 2 of 2");
+    expect(page).toContain("Table 6 (public.table_6)");
+    expect(page).toContain("Boundary: support_review");
+    expect(page).toContain("Can answer: record counts; grouping by Field 6");
+    expect(page).toContain('/catalog 1 previous.');
+    expect(page).not.toContain("Table 1 (public.table_1)");
+    expect(renderReviewedAccessCatalog({
+      line: "/catalog all",
+      summary: { table_count: resources.length, resources, suggestions: [] },
+    })).toContain("Usage: /catalog [page]");
+  });
+
+  it("exposes the detailed reviewed catalog as a shell action", async () => {
+    const io = fakeIo(["/catalog", "/exit"]);
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      accessSummary: {
+        table_count: 1,
+        resources: [{
+          id: "public.orders",
+          label: "Orders",
+          boundary_name: "reviewed_staging",
+          capabilities: ["record counts", "grouping by Status"],
+          suggestions: ["Which statuses have the most orders?"],
+        }],
+        suggestions: ["Which statuses have the most orders?"],
+      },
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+    expect(io.output()).toContain("CAN ASK NOW");
+    expect(io.output()).toContain("Boundary: reviewed_staging");
+    expect(io.output()).toContain("Can answer: record counts; grouping by Status");
+  });
+
   it("shows, filters, and fully clears transient slash actions while editing", async () => {
     expect(slashCommandSuggestions("/")).toContain("/access");
     expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/access-workbench"]);
@@ -959,6 +1020,24 @@ describe("Synapsor Analytics shell", () => {
 
     readable.write("done\r");
     await expect(secondAnswer).resolves.toBe("done");
+    io.close();
+  });
+
+  it("recalls submitted questions with Up after a completed model turn", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough() as PassThrough & { columns: number };
+    writable.columns = 80;
+    writable.on("data", () => undefined);
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+
+    const firstAnswer = io.read("synapsor> ");
+    readable.write("How did revenue change?\r");
+    await expect(firstAnswer).resolves.toBe("How did revenue change?");
+    io.write("RUNNER-VERIFIED DATA\n");
+
+    const secondAnswer = io.read("synapsor> ");
+    readable.write("\u001b[A\r");
+    await expect(secondAnswer).resolves.toBe("How did revenue change?");
     io.close();
   });
 
@@ -1511,6 +1590,7 @@ function analysis(reference: string, suppressed: number): AnalyticsAnalysis {
     },
     result: {
       ok: true,
+      boundary_name: "support_analytics",
       data: [{ region: "west", count: 184 }, { region: "north", count: 121 }],
       privacy: {
         minimum_cohort_size: 5,

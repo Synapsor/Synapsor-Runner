@@ -633,6 +633,37 @@ async function chooseResource(
       const displayedReviewLeft = focusedAccess && reviewLeft !== "Complete"
         ? "FINAL REVIEW PENDING"
         : safeTerminalText(reviewLeft);
+      const actionWidth = terminalContentWidth(output.columns);
+      const selectedTableActions = [
+        `${theme.key("Up/Down")} Select`,
+        `${theme.key("Enter")} ${resourceView === "boundary" ? "Edit columns" : "Review and add"}`,
+        ...(resourceView === "boundary" && !focusedAccess
+          ? [`${theme.key("S")} Sign off table`]
+          : []),
+        ...(resourceView === "boundary"
+          ? [`${theme.key("R")} Remove`]
+          : []),
+        ...(focusedAccess && resourceView === "boundary"
+          ? [`${theme.key("P")} Privacy (minimum group ${
+            highlighted.minimum_cohort_size ?? 5
+          }${highlighted.minimum_cohort_overridden ? ", owner override" : ""})`]
+          : []),
+      ];
+      const boundaryActions = [
+        `${theme.key("B/Esc")} ${resourceView === "boundary"
+          ? (focusedAccess ? "Boundary overview" : "Boundaries")
+          : "Boundary tables"}`,
+        ...(resourceView === "boundary"
+          ? [`${theme.key("A")} Add related tables`]
+          : [`${theme.key("Tab")} ${resourceView === "related"
+            ? "All inspected tables"
+            : "Related tables only"}`]),
+        `${theme.key("M")} Map`,
+        `${theme.key("N")} Rename`,
+        `${theme.key("L")} Ranked limits`,
+        `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
+        `${theme.key("Q")} Quit`,
+      ];
       render([
         theme.title(
           focusedAccess
@@ -706,27 +737,10 @@ async function chooseResource(
           ? relationshipConnectionDetail(highlighted, boundaryResources, theme)
           : []),
         "",
-        `${theme.key("Up/Down")} Select   ${theme.key("Enter")} ` +
-          `${resourceView === "boundary" ? "Edit columns" : "Review and add"}` +
-          `${resourceView === "boundary"
-            ? `   ${focusedAccess ? "" : `${theme.key("S")} Sign off table   `}${theme.key("R")} Remove`
-            : ""}`,
-        ...(focusedAccess && resourceView === "boundary"
-          ? [`${theme.key("P")} Privacy for selected table · minimum group ${
-            highlighted.minimum_cohort_size ?? 5
-          }${highlighted.minimum_cohort_overridden ? " · owner override" : ""}`]
-          : []),
-        `${theme.key("B/Esc")} ${resourceView === "boundary"
-          ? (focusedAccess ? "Boundary overview" : "Boundaries")
-          : "Boundary tables"}   ` +
-          `${resourceView === "boundary"
-            ? theme.key("A") + " Add related tables"
-            : theme.key("Tab") + (resourceView === "related"
-              ? " All inspected tables"
-              : " Related tables only")}   ` +
-          `${theme.key("M")} Map`,
-        `${theme.key("N")} Rename boundary   ${theme.key("C")} ${focusedAccess ? "Review and activate" : "Complete review"}   ${theme.key("Q")} Quit`,
-        `${theme.key("L")} Ranked aggregate limit (operator reviewed)`,
+        theme.bold("SELECTED TABLE"),
+        ...packTerminalActions(selectedTableActions, actionWidth),
+        theme.bold("BOUNDARY"),
+        ...packTerminalActions(boundaryActions, actionWidth),
         theme.dim("Edits stay disabled until separate activation."),
       ]);
       const key = await nextKey();
