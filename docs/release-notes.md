@@ -10,7 +10,43 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.6 (prepared, not published)
+## 1.6.7 (prepared, not published)
+
+### Clear First-Run Review And Privacy Controls
+
+- Fresh `start --cli` sessions can resolve source-proven record identity and
+  trusted tenant scope inside the boundary editor. Selecting a blocked table no
+  longer exits or requires a signed headless-review command.
+- Existing Runner configuration is preserved unless replacement is explicitly
+  requested. Missing active boundaries, invalid capability names, and refused
+  field operations now use actionable messages without leaking local paths.
+- Natural-language Ask receives reviewed time coverage, safer default models,
+  conversation continuity, command history, discoverable access summaries, and
+  more reliable weak-model guidance. Verified JSON and parameterized SQL remain
+  operator-only and are rendered separately from model prose.
+- Ranked aggregates, comparisons, distinct counts, and `try protect --last`
+  follow the latest reviewed analysis correctly. Refusals identify the exact
+  boundary, table, field, operation, or limit that an operator may review.
+- Privacy review now explains cohort changes in plain language, defaults to
+  saving the operator's requested change, offers a whole-boundary threshold,
+  shows pending inactive changes, and offers immediate exact-digest activation.
+  Complementary-total protection and small-group suppression remain enforced.
+- Auto Boundary keeps qualified person names out by default. Withheld enum
+  domains stay outside model context, aggregate differencing remains durable,
+  unsupported row-hash guards fail closed, and PostgreSQL write posture rejects
+  roles that can assume the table owner.
+- Proposal apply rechecks supporting freshness expiry, and MySQL writes retain
+  the client-enforced pre-COMMIT deadline. PostgreSQL and MySQL tests continue
+  to prove read-only Explore and guarded write rollback behavior.
+- Workbench and CLI share the same review, activation, evidence, Protect, and
+  MCP authority paths. The packed first-run, browser visual, compatibility, and
+  full test gates cover the corrected journey.
+
+Prepared package versions: `@synapsor/runner@1.6.7` and
+`synapsor-runner@1.6.7`. Spec and DSL remain at their already-published `1.8.0`
+versions. No package is published by this change.
+
+## 1.6.6 (published 2026-08-03)
 
 ### Review Once, Ask Repeatedly
 
@@ -98,13 +134,12 @@ for the Synapsor Cloud CLI.
   key or conversation. Anthropic and generic compatible claims remain
   protocol-tested; no real Ollama/LM Studio runtime was available.
 
-Prepared package versions: `@synapsor/runner@1.6.6`,
+Published package versions: `@synapsor/runner@1.6.6`,
 `synapsor-runner@1.6.6`, `@synapsor/spec@1.8.0`, and
 `@synapsor/dsl@1.8.0`. Spec/DSL 1.8.0 add the canonical model-withheld egress
 tier, explicitly reviewed minimum cohort 1, a separate ranked-candidate group
 ceiling, and absolute/percentage comparison-change ordering. Omitted fields
-preserve existing contract normalization and digests. No package is published
-by this change.
+preserve existing contract normalization and digests.
 
 ## 1.6.5 (published 2026-07-26)
 

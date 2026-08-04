@@ -20,7 +20,7 @@ claim that Cursor Marketplace review has completed.
 
 ## What the plugin installs
 
-- one production stdio MCP server pinned to `@synapsor/runner@1.6.6`;
+- one production stdio MCP server pinned to `@synapsor/runner@1.6.7`;
 - one `/synapsor-protect` agent command;
 - one discoverable Safe Action skill;
 - one file-scoped rule for `synapsor/actions/**/*.ts`;
@@ -81,7 +81,7 @@ Required listing media:
 
 ## Submission checklist
 
-- [ ] Runner 1.6.6 package and plugin version agree.
+- [ ] Runner 1.6.7 package and plugin version agree.
 - [ ] `corepack pnpm verify:cursor-plugin` passes from a clean checkout.
 - [ ] Plugin is manually loaded in current stable Cursor at workspace scope.
 - [ ] `/synapsor-protect` drafts and validates without activation.
