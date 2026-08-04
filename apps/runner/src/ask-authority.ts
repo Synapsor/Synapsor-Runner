@@ -6,6 +6,10 @@ import {
   askToolSurfaceDigest,
   type AskToolDefinition,
 } from "./model-ask.js";
+import {
+  explorationBoundaryCandidateDigest,
+  type ExplorationBoundaryDraft,
+} from "./auto-boundary.js";
 
 type ActiveBoundaryAuthorityIdentity = {
   name: string;
@@ -43,6 +47,42 @@ export async function resolveActiveBoundarySummary(
     names,
     boundary_count: names.length,
     table_count: boundaries.reduce((count, boundary) => count + boundary.table_count, 0),
+  };
+}
+
+export async function resolvePendingBoundaryReviewSummary(
+  projectRoot: string,
+): Promise<{
+  boundary_name: string;
+  pending_changes: 1;
+  previous_authority_active: boolean;
+} | undefined> {
+  const library = await readOptionalJson(
+    path.join(projectRoot, ".synapsor/boundary-library.json"),
+  );
+  if (!isRecord(library) || !isRecord(library.boundaries)) return undefined;
+  const selectedName = typeof library.selected_name === "string"
+    ? library.selected_name
+    : undefined;
+  if (!selectedName || !/^[a-z][a-z0-9_.-]{0,63}$/.test(selectedName)) return undefined;
+  const progress = record(library.boundaries[selectedName]);
+  const candidate = progress.candidate;
+  if (!isRecord(candidate) || !isRecord(candidate.pack)) return undefined;
+  let candidateDigest: `sha256:${string}`;
+  try {
+    candidateDigest = explorationBoundaryCandidateDigest(
+      candidate as unknown as ExplorationBoundaryDraft,
+    );
+  } catch {
+    return undefined;
+  }
+  const active = await optionalActiveBoundaries(projectRoot);
+  const activeBoundary = active.find((boundary) => boundary.name === selectedName);
+  if (activeBoundary?.digest === candidateDigest) return undefined;
+  return {
+    boundary_name: selectedName,
+    pending_changes: 1,
+    previous_authority_active: Boolean(activeBoundary),
   };
 }
 

@@ -950,6 +950,20 @@ async function interactiveBoundaryReviewLoop(input: {
       if (result !== 0) return result;
       continue;
     }
+    if (selected.action === "privacy_all") {
+      const result = await interactiveBoundaryMinimumCohortReview({
+        projectRoot: input.projectRoot,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+        focusedAccess: input.initialView === "access",
+      });
+      if (result === "review") {
+        if (input.initialView === "access") return confirmAndActivateFocusedBoundary(input);
+        continue;
+      }
+      if (result !== "back" && result !== 0) return result;
+      continue;
+    }
     if (selected.action === "create") {
       const requestedName = await input.session.promptText(
         "New boundary name: ",
@@ -2110,10 +2124,112 @@ async function interactiveMinimumCohortReview(input: {
   process.stdout.write([
     `Saved minimum cohort ${minimumCohort}${minimumCohort === 1 ? " (suppression off)" : ""} in disabled boundary revision ${committed.review_revision}.`,
     "Agent authority changed: no.",
-    "Next: review the complete boundary and activate it to use this setting.",
+    "Ask does not use this threshold until the updated boundary is activated.",
     "",
   ].join("\n"));
-  return input.focusedAccess ? "back" : 0;
+  return input.focusedAccess
+    ? offerImmediateBoundaryActivation(input.session)
+    : 0;
+}
+
+async function interactiveBoundaryMinimumCohortReview(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  focusedAccess: boolean;
+}): Promise<number | "back" | "review"> {
+  const resources = (await listBoundaryResourceReviews(input.projectRoot))
+    .filter((resource) => resource.included);
+  if (!resources.length) {
+    process.stdout.write("Add at least one table before setting boundary-wide privacy.\n");
+    return "back";
+  }
+  const currentValues = [...new Set(resources.map((resource) =>
+    resource.minimum_cohort_size ?? 5))].sort((left, right) => left - right);
+  const currentLabel = currentValues.length === 1 ? String(currentValues[0]) : "mixed";
+  const enteredInput = await input.session.promptText(
+    `Minimum returned group for all ${resources.length} tables [${currentLabel}] (2-5, or off; off has effective minimum 1): `,
+  );
+  if (enteredInput === undefined) return "back";
+  const entered = enteredInput.trim().toLowerCase();
+  if (!entered) return "back";
+  const minimumCohort = entered === "off" || entered === "none" || entered === "0"
+    ? 1
+    : Number(entered);
+  if (!Number.isSafeInteger(minimumCohort) || minimumCohort < 1 || minimumCohort > 5) {
+    throw new Error(
+      "Choose 2 through 5, or choose off. Off is stored as effective minimum 1 because groups cannot contain zero rows.",
+    );
+  }
+  const changed = resources.filter((resource) =>
+    (resource.minimum_cohort_size ?? 5) !== minimumCohort);
+  if (!changed.length) {
+    process.stdout.write(`Every table already uses minimum cohort ${minimumCohort}.\n`);
+    return "back";
+  }
+  const reasonInput = await input.session.promptText(
+    minimumCohort === 1
+      ? "Why may every table in this owner-controlled boundary return groups of one? "
+      : `Why is a minimum returned group of ${minimumCohort} appropriate for this whole boundary? `,
+  );
+  if (reasonInput === undefined) {
+    process.stdout.write("Returned to boundary review. No privacy threshold changed.\n");
+    return "back";
+  }
+  const reason = reasonInput.trim();
+  if (!reason) {
+    throw new Error("Changing aggregate privacy thresholds requires a concrete human reason.");
+  }
+  process.stdout.write(minimumCohort === 1
+    ? "Off means no small-group suppression on these tables. Groups of one can identify individuals.\n"
+    : `Groups smaller than ${minimumCohort} will be withheld on every included table.\n`);
+  if (!await input.session.confirm(
+    minimumCohort === 1
+      ? `Record the owner decision to disable small-group suppression for ${changed.length} tables?`
+      : `Record minimum cohort ${minimumCohort} for ${changed.length} tables?`,
+    { defaultValue: false },
+  )) {
+    process.stdout.write("Boundary-wide privacy change discarded. Nothing was saved or activated.\n");
+    return "back";
+  }
+  const actor = localInteractiveActor();
+  const preview = await prepareBoundaryReviewMutationBatch(
+    input.projectRoot,
+    changed.map((resource) => ({
+      resource_id: resource.resource_id,
+      minimum_cohort_size: minimumCohort,
+      actor,
+      reason,
+    })),
+    input.schemaInspector,
+  );
+  const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved minimum cohort ${minimumCohort}${minimumCohort === 1 ? " (suppression off)" : ""} for ${changed.length} tables in disabled boundary revision ${committed.review_revision}.`,
+    "Agent authority changed: no.",
+    "Ask does not use these thresholds until the updated boundary is activated.",
+    "",
+  ].join("\n"));
+  return input.focusedAccess
+    ? offerImmediateBoundaryActivation(input.session)
+    : 0;
+}
+
+async function offerImmediateBoundaryActivation(
+  session: BoundaryReviewInteractiveSession,
+): Promise<"back" | "review"> {
+  const activate = await session.confirm(
+    "Review and activate this updated boundary now?",
+    { defaultValue: true },
+  );
+  if (activate) return "review";
+  process.stdout.write([
+    "1 pending boundary change is not active.",
+    "Existing Ask access, if any, continues to use the previous exact boundary revision.",
+    "From /access, select this boundary and press C to Review + activate.",
+    "",
+  ].join("\n"));
+  return "back";
 }
 
 function focusedEditNeedsExplicitReason(

@@ -5,7 +5,7 @@ import {
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
-import type { AskToolGateway } from "./model-ask.js";
+import type { AskToolGateway, AskToolTrace } from "./model-ask.js";
 
 export type ReviewedAskResourceSummary = {
   id: string;
@@ -26,8 +26,11 @@ export type AskAccessGuidance = {
   title: string;
   message: string;
   candidate_path?: string;
+  review_boundary?: string;
   review_resource?: string;
   review_field?: string;
+  review_focus?: "privacy" | "field_operation";
+  source_query_executed?: boolean;
   next_action: string;
 };
 
@@ -67,11 +70,20 @@ export async function readReviewedAskAccessSummary(
 export async function resolveAskAccessGuidance(input: {
   projectRoot: string;
   question: string;
+  toolCalls?: AskToolTrace[];
 }): Promise<AskAccessGuidance | undefined> {
   const normalizedQuestion = normalizedSearchText(input.question);
-  if (!normalizedQuestion) return undefined;
-  const draft = await readGeneratedBoundaryDraft(input.projectRoot).catch(() => undefined);
-  if (!draft) return undefined;
+  const [draft, activeBoundaries] = await Promise.all([
+    readGeneratedBoundaryDraft(input.projectRoot).catch(() => undefined),
+    loadActivatedExplorationBoundaries(input.projectRoot).catch(() => []),
+  ]);
+  const refusalGuidance = resolveRefusalAccessGuidance({
+    toolCalls: input.toolCalls ?? [],
+    draft,
+    activeBoundaries,
+  });
+  if (refusalGuidance) return refusalGuidance;
+  if (!normalizedQuestion || !draft) return undefined;
 
   const resources = draft.pack.resources;
   const keptOutMatch = resources.some((resource) =>
@@ -87,7 +99,6 @@ export async function resolveAskAccessGuidance(input: {
     };
   }
 
-  const activeBoundaries = await loadActivatedExplorationBoundaries(input.projectRoot).catch(() => []);
   const matches = resources.flatMap((resource) => {
     const fields = candidateVisibleFields(resource);
     const matchingField = fields.find((field) => phraseMatches(normalizedQuestion, field));
@@ -128,6 +139,243 @@ export async function resolveAskAccessGuidance(input: {
     ...(target.matchingField ? { review_field: target.matchingField } : {}),
     next_action: "Use /access in the CLI or Review or expand access in Workbench. Nothing is activated automatically.",
   };
+}
+
+function resolveRefusalAccessGuidance(input: {
+  toolCalls: AskToolTrace[];
+  draft?: ExplorationBoundaryDraft;
+  activeBoundaries: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>>;
+}): AskAccessGuidance | undefined {
+  const refused = input.toolCalls.filter((call) =>
+    call.tool === "app.explore_data" && call.status === "refused");
+  const complementary = [...refused].reverse().find((call) => {
+    const details = refusalDetails(call);
+    return call.error_code === "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
+      && details.reason === "complementary_aggregate_release";
+  });
+  if (complementary) {
+    const details = refusalDetails(complementary);
+    const resource = safeIdentifier(details.resource)
+      ?? safeIdentifier(record(complementary.arguments.plan).resource);
+    if (!resource) return undefined;
+    const boundary = boundaryNameForTrace(
+      complementary,
+      resource,
+      input.activeBoundaries,
+    );
+    const minimum = Number.isSafeInteger(details.minimum_cohort_size)
+      ? Number(details.minimum_cohort_size)
+      : undefined;
+    const groupedFirst = details.conflicting_release_kind === "suppressed_grouping";
+    const path = reviewPath(
+      boundary,
+      resource,
+      "Privacy (P) -> choose off (effective minimum 1) -> Review + activate",
+    );
+    return {
+      kind: "review_candidate",
+      title: groupedFirst
+        ? "A complementary total was blocked to protect a withheld group"
+        : "A grouped result was blocked to protect a withheld group",
+      message: groupedFirst
+        ? `An earlier grouped result for ${resource} withheld at least one group below the reviewed minimum${minimum ? ` of ${minimum}` : ""}. Returning the bare total as well could reconstruct that hidden count by subtraction, so Runner discarded this result.`
+        : `Runner previously returned a bare total for ${resource}. This grouping would suppress at least one small cohort, and releasing both results could reconstruct that cohort by subtraction, so Runner discarded this result.`,
+      ...(boundary ? { review_boundary: boundary } : {}),
+      review_resource: resource,
+      review_focus: "privacy",
+      source_query_executed: details.source_query_executed === true,
+      next_action: `Ask a different reviewed measure or bounded filter/time range. To permit complementary totals, use ${path}. This disables small-group suppression for that table and groups of one can identify individuals.`,
+    };
+  }
+
+  const fieldRefusal = [...refused].reverse().find((call) =>
+    call.error_code === "EXPLORE_FIELD_FORBIDDEN"
+      && refusalDetails(call).reason === "field_operation_not_reviewed");
+  if (!fieldRefusal) return undefined;
+  const details = refusalDetails(fieldRefusal);
+  const resource = safeIdentifier(details.resource)
+    ?? safeIdentifier(record(fieldRefusal.arguments.plan).resource);
+  const field = safeIdentifier(details.field);
+  const operation = safeLabel(details.operation);
+  if (!resource || !field || !operation) return undefined;
+  const boundaryName = boundaryNameForTrace(
+    fieldRefusal,
+    resource,
+    input.activeBoundaries,
+  );
+  const activeBoundary = boundaryName
+    ? input.activeBoundaries.find((boundary) => boundary.pack.name === boundaryName)
+    : input.activeBoundaries.find((boundary) =>
+      boundary.pack.resources.some((candidate) => candidate.id === resource));
+  const activeResource = activeBoundary?.pack.resources.find((candidate) => candidate.id === resource);
+  const generatedResource = input.draft?.pack.resources.find((candidate) => candidate.id === resource);
+  const permission = operationPermission(operation);
+  if (permission && generatedResource && operationAvailable(generatedResource, field, operation)) {
+    const fields = reviewedOperationFields(activeResource, permission.key, field);
+    const command = `synapsor-runner boundary review resource ${resource} ${permission.flag} ${fields.join(",")} --actor <reviewer> --reason '<reason>' --apply`;
+    return {
+      kind: "review_candidate",
+      title: `${resource}.${field} is not enabled for ${permission.label.toLowerCase()}`,
+      message: `The inspected safe boundary supports this operation, but it is off in the active reviewed boundary. Enabling it creates a disabled revision and still requires separate review and activation; the model cannot change it.`,
+      ...(boundaryName ? { review_boundary: boundaryName } : {}),
+      review_resource: resource,
+      review_field: field,
+      review_focus: "field_operation",
+      next_action: `Visual path: /access-workbench -> ${reviewPath(boundaryName, resource, `column ${field} -> Advanced field operations -> enable ${permission.label}`)} -> Review + activate. CLI-only path: leave the shell and run ${command}.`,
+    };
+  }
+
+  const related = operation === "group"
+    ? relatedGroupingAlternative(activeBoundary, activeResource, field)
+    : undefined;
+  if (related) {
+    return {
+      kind: "reviewed_view_required",
+      title: `${resource}.${field} is not available as a grouped output`,
+      message: `Reference identifiers are not generated as group labels. This boundary already has the reviewed path ${related.relationship} to ${related.resource}, where ${related.field} is an approved grouping field.`,
+      ...(boundaryName ? { review_boundary: boundaryName } : {}),
+      review_resource: resource,
+      review_field: field,
+      next_action: `Ask to group ${businessLabel(resource.split(".").at(-1) ?? resource)} by ${businessLabel(related.field)} through relationship ${related.relationship}. For a different account label, create a narrow reviewed database view, rescan, then use /access.`,
+    };
+  }
+  return {
+    kind: "reviewed_view_required",
+    title: `${resource}.${field} is not available for ${operation}`,
+    message: "The generated safe boundary does not offer this operation, so the access editor cannot enable it silently.",
+    ...(boundaryName ? { review_boundary: boundaryName } : {}),
+    review_resource: resource,
+    review_field: field,
+    next_action: `Create a narrow reviewed database view that exposes the intended analytical field, rescan, then use /access to review and activate that view.`,
+  };
+}
+
+type ReviewedBoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
+type ReviewedOperationKey =
+  | "selectable_fields"
+  | "filterable_fields"
+  | "sortable_fields"
+  | "groupable_fields"
+  | "aggregate_measures"
+  | "count_distinct_fields"
+  | "time_bucket_fields";
+
+function refusalDetails(call: AskToolTrace): Record<string, unknown> {
+  const direct = record(call.result.details);
+  if (Object.keys(direct).length > 0) return direct;
+  return record(record(call.result.outcome).details);
+}
+
+function boundaryNameForTrace(
+  trace: AskToolTrace,
+  resource: string,
+  boundaries: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>>,
+): string | undefined {
+  const selected = safeIdentifier(trace.arguments.boundary);
+  if (selected && boundaries.some((boundary) => boundary.pack.name === selected)) return selected;
+  const matches = boundaries.filter((boundary) =>
+    boundary.pack.resources.some((candidate) => candidate.id === resource));
+  return matches.length === 1 ? matches[0]!.pack.name : undefined;
+}
+
+function reviewPath(
+  boundary: string | undefined,
+  resource: string,
+  finalStep: string,
+): string {
+  return [
+    "/access",
+    boundary ? `boundary ${boundary}` : "the active boundary",
+    `table ${resource}`,
+    finalStep,
+  ].join(" -> ");
+}
+
+function operationPermission(operation: string): {
+  key: ReviewedOperationKey;
+  flag: string;
+  label: string;
+} | undefined {
+  if (operation === "select" || operation === "return") {
+    return { key: "selectable_fields", flag: "--visible-fields", label: "Return values" };
+  }
+  if (operation === "sort") {
+    return { key: "sortable_fields", flag: "--sort-fields", label: "Sort" };
+  }
+  if (operation === "group") {
+    return { key: "groupable_fields", flag: "--group-fields", label: "Group totals" };
+  }
+  if (operation === "sum" || operation === "avg") {
+    return { key: "aggregate_measures", flag: "--measure-fields", label: "Totals and averages" };
+  }
+  if (operation === "count_distinct") {
+    return { key: "count_distinct_fields", flag: "--count-distinct-fields", label: "Count unique" };
+  }
+  if (operation.startsWith("filter operator ")) {
+    return { key: "filterable_fields", flag: "--filter-fields", label: "Filter" };
+  }
+  if (operation === "time comparison" || operation.endsWith(" time bucket")) {
+    return { key: "time_bucket_fields", flag: "--time-fields", label: "Time buckets" };
+  }
+  return undefined;
+}
+
+function operationAvailable(
+  resource: ReviewedBoundaryResource,
+  field: string,
+  operation: string,
+): boolean {
+  const permission = operationPermission(operation);
+  if (!permission) return false;
+  if (permission.key === "filterable_fields") {
+    const expectedOperator = operation.slice("filter operator ".length);
+    return resource.filterable_fields[field]?.some((candidate) => candidate === expectedOperator) === true;
+  }
+  if (permission.key === "time_bucket_fields") {
+    if (operation === "time comparison") return Boolean(resource.time_bucket_fields[field]?.length);
+    const bucket = operation.slice(0, -" time bucket".length);
+    return resource.time_bucket_fields[field]?.some((candidate) => candidate === bucket) === true;
+  }
+  return resource[permission.key].includes(field);
+}
+
+function reviewedOperationFields(
+  resource: ReviewedBoundaryResource | undefined,
+  key: ReviewedOperationKey,
+  field: string,
+): string[] {
+  const current = !resource
+    ? []
+    : key === "filterable_fields" || key === "time_bucket_fields"
+      ? Object.keys(resource[key])
+      : resource[key];
+  return unique([...current, field]).sort();
+}
+
+function relatedGroupingAlternative(
+  boundary: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>>[number] | undefined,
+  resource: ReviewedBoundaryResource | undefined,
+  field: string,
+): { relationship: string; resource: string; field: string } | undefined {
+  if (!boundary || !resource) return undefined;
+  for (const relationship of resource.relationships) {
+    const localColumns = relationship.local_columns
+      ?? relationship.proof?.links
+        ?.filter((link) => link.source_resource === resource.id)
+        .flatMap((link) => link.source_columns)
+      ?? [];
+    if (!localColumns.includes(field)) continue;
+    const target = boundary.pack.resources.find((candidate) =>
+      candidate.id === relationship.target_resource);
+    const groupedField = target?.groupable_fields[0];
+    if (!target || !groupedField) continue;
+    return {
+      relationship: relationship.id,
+      resource: target.id,
+      field: groupedField,
+    };
+  }
+  return undefined;
 }
 
 function activeCandidateCanAnswer(input: {
@@ -397,4 +645,8 @@ function unique<T>(values: T[]): T[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
 }

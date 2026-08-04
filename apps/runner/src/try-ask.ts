@@ -22,6 +22,7 @@ import {
   computeAskAuthority,
   resolveActiveBoundarySummary,
   resolveAskDeploymentProfile,
+  resolvePendingBoundaryReviewSummary,
 } from "./ask-authority.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { assertKnownOptions, optionalArg, positional } from "./cli-options.js";
@@ -307,7 +308,11 @@ export async function tryAsk(
         && call.result.ok !== false);
       const accessGuidance = completedDataPlan
         ? undefined
-        : await resolveAskAccessGuidance({ projectRoot, question: plainQuestion }).catch(() => undefined);
+        : await resolveAskAccessGuidance({
+            projectRoot,
+            question: plainQuestion,
+            toolCalls: turn.tool_calls,
+          }).catch(() => undefined);
       const references = analyses.flatMap((analysis) =>
         analysis.reference ? [analysis.reference] : []);
       const answerId = `ans_${crypto.randomBytes(12).toString("hex")}`;
@@ -362,8 +367,9 @@ export async function tryAsk(
       storePath,
       projectRoot,
       env,
-    });
+      });
       const activeBoundary = await resolveActiveBoundarySummary(projectRoot);
+      const pendingBoundaryReview = await resolvePendingBoundaryReviewSummary(projectRoot);
       const listProtectable = dependencies.listProtectable ?? listProtectableQueries;
       const createDraft = dependencies.createProtectedDraft ?? createProtectedQueryDraft;
       const activateProtected = dependencies.activateProtected ?? activateProtectedQuery;
@@ -376,6 +382,7 @@ export async function tryAsk(
       profileLabel: profile,
       reviewedDataAreas: accessSummary.table_count,
       accessSummary,
+      pendingBoundaryReview,
       operatorLabel: localAskOperator(env),
       verboseAttempts: verbose,
       io: dependencies.shellIo ?? createTerminalAnalyticsShellIo(),

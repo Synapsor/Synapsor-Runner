@@ -3723,3 +3723,60 @@ Terminal JSON and SQL presentation (2026-08-04):
 - No package was published. No version, merge, push, tag, release, or dist-tag
   change was made, and the Cloud repository and technical deep dive remain
   untouched.
+
+Explore privacy and refusal DX closure (2026-08-04):
+
+- Cohort suppression, complementary-release protection, trusted scope, and
+  separate human activation remain strict. No local developer-mode bypass and
+  no release-with-warning exception was added. The existing owner-reviewed
+  minimum cohort of 1 remains the explicit way to disable suppression for a
+  table; that decision is digest-bound, recorded, and inactive until review and
+  activation.
+- Complementary aggregate refusals now state which earlier release created the
+  subtraction risk, the reviewed table and minimum cohort, whether a source
+  query executed, and that Runner discarded the result before release. CLI Ask,
+  Workbench Ask/composer, and direct `try explore` provide the exact operator
+  path through the boundary, table, Privacy control, and Review + activate.
+- Field-operation refusals now carry structured resource, field, and operation
+  details. Recovery names the exact review path when the generated safe boundary
+  proves the operation available. Foreign-key identifier grouping instead points
+  to an already reviewed relationship and human-readable grouping field; Runner
+  does not suggest enabling opaque per-entity identifiers as labels.
+- Suppressed per-entity groupings explain that groups of one can identify an
+  individual and recommend a coarser reviewed grouping. Provider token-budget
+  failures name `/clear` in the terminal and Clear in Workbench.
+- The terminal editor now offers `P Privacy for all tables` at the boundary
+  level. It stages all included-table threshold decisions as one atomic disabled
+  revision. Per-table and whole-boundary changes state that Ask still uses the
+  old digest, immediately offer Review + activate in focused `/access`, and show
+  a persistent pending-change banner when activation is declined.
+- Workbench has the equivalent atomic whole-boundary Privacy action, staged
+  change count, and one primary Review and activate action. The API commits the
+  complete batch or none of it; browser input cannot activate authority or
+  partially update an active boundary.
+- A real PTY walkthrough copied an active five-table CloudNimbus project into a
+  disposable directory and used the current source-built CLI. It changed all
+  five table thresholds through the boundary-level Privacy action, declined
+  immediate activation, observed the pending banner in both `/access` and the
+  `synapsor>` shell, then reviewed and activated with `C`. Ask returned to the
+  same OpenAI/model session with cleared conversation context, no pending banner,
+  no provider request, and no source mutation.
+- The same live PostgreSQL fixture proved direct refusal behavior. Grouping
+  `public.support_tickets.account_id` was rejected before execution and pointed
+  to the reviewed `support_tickets_account_id_fkey` relationship plus
+  `public.accounts.company_name`. A grouped Accounts result suppressed the
+  three-row APAC cohort; the following scalar total was refused after execution,
+  discarded before release, and displayed the exact owner review path.
+- The Workbench boundary visual gate passes with first human result in two
+  actions, first actionable UI at 575 ms, first verified result at 2.153 s, and
+  40 inspected tables. The independent Workbench Ask gate passes with eight
+  provider requests, two reviewed calls, one safe refusal, no source mutation,
+  no persisted key, and zero browser-storage entries.
+- `scripts/verify-packed-runner.sh` passes from a registry-only packed install,
+  including manifest validation and the installed MCP surface. The final full
+  root gate passes 83 files and 1,295 tests, followed by trusted-core dependency,
+  license/content, human command-surface, DSL source-path, and Cursor-plugin
+  verification.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.

@@ -66,13 +66,30 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("184");
     expect(output).toContain("1 additional group was withheld");
     expect(output).toContain(
-      "To change it: /access -> boundary support_analytics -> table public.sessions -> Privacy (P) -> minimum cohort.",
+      "To change it: /access -> boundary support_analytics -> table public.sessions -> Privacy (P) -> minimum cohort -> Review + activate.",
     );
+    expect(output).toContain("Until activation, Ask keeps the previous threshold");
     expect(output).not.toContain("Database unchanged");
     expect(output).not.toContain("Source database changed: no");
     expect(output).not.toContain("Evidence recorded");
     expect(output).not.toContain("Analysis A1");
     expect(output).not.toContain(digest);
+  });
+
+  it("explains when an entity-shaped grouping triggers cohort suppression", () => {
+    const current = analysis("A1", 1);
+    current.plan = {
+      kind: "aggregate",
+      resource: "public.support_tickets",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "account_id" }],
+      top_n: 10,
+    };
+    current.result.boundary_name = "support_analytics";
+    const output = renderAnalysis(current).join("\n");
+    expect(output).toContain("one row per account id");
+    expect(output).toContain("Try a coarser reviewed grouping");
+    expect(output).toContain("table public.support_tickets -> Privacy (P)");
   });
 
   it("renders TrailPeak-style verified aggregates with business labels and readable values", () => {
@@ -434,6 +451,33 @@ describe("Synapsor Analytics shell", () => {
 
     expect(displayed).toBe("Category is not in the active boundary. The active reviewed boundary cannot answer this question, so Runner did not execute a data query.");
     expect(original).toContain("guessed product table");
+  });
+
+  it("reports a complementary privacy refusal as an executed and discarded read", () => {
+    const refused = refusedAnalysis(
+      "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      "An earlier grouped result withheld a small cohort. This total could reconstruct it.",
+    );
+    refused.result.details = {
+      reason: "complementary_aggregate_release",
+      source_query_executed: true,
+    };
+    const output = renderAnalyticsTurn(turn("I could not release that total."), [refused], 100, {
+      accessGuidance: {
+        kind: "review_candidate",
+        title: "A complementary total was blocked to protect a withheld group",
+        message: "Runner discarded the result.",
+        review_boundary: "support_analytics",
+        review_resource: "public.sessions",
+        review_focus: "privacy",
+        source_query_executed: true,
+        next_action: "/access -> boundary support_analytics -> table public.sessions -> Privacy (P) -> Review + activate.",
+      },
+    });
+    expect(output).toContain("Runner executed a read-only query, then discarded its result");
+    expect(output).not.toContain("No data query ran");
+    expect(output).toContain("HUMAN REVIEW PATH");
+    expect(output).toContain("Privacy (P)");
   });
 
   it("protects a sole current analysis without making the user type its reference", async () => {
@@ -856,6 +900,24 @@ describe("Synapsor Analytics shell", () => {
     expect(colored).toContain("Provider: \u001b[1;36mOpenAI\u001b[0m");
     expect(colored).toContain("Model: \u001b[1;36mgpt-5-mini\u001b[0m");
     expect(colored).toContain("Reviewed access: \u001b[1;35mreviewed_staging\u001b[0m");
+  });
+
+  it("keeps a disabled boundary update visible when Ask still uses the prior revision", () => {
+    const output = renderAnalyticsShellBanner({
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5-mini",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 2,
+      pendingBoundaryReview: {
+        boundary_name: "reviewed_staging",
+        pending_changes: 1,
+        previous_authority_active: true,
+      },
+    });
+    expect(output).toContain("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE");
+    expect(output).toContain("Ask still uses the previous exact reviewed revision");
+    expect(output).toContain("/access -> select the boundary -> C Review + activate");
   });
 
   it("shows a concise reviewed-access summary and only validated starter questions", () => {

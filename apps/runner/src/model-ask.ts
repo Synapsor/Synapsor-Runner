@@ -259,7 +259,7 @@ export class WorkbenchAskSession {
       await gateway.close().catch(() => undefined);
       throw new AskError(
         "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
-        "This in-memory Ask session reached its fixed reported-token budget. Clear the session before continuing.",
+        "This in-memory Ask session reached its fixed reported-token budget. Clear the conversation before continuing: type /clear in the CLI or use Clear in Workbench.",
         429,
       );
     }
@@ -294,7 +294,7 @@ export class WorkbenchAskSession {
       if (this.#reportedTokens + reportedTokens > MAX_SESSION_REPORTED_TOKENS) {
         throw new AskError(
           "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
-          "The provider reported usage beyond the fixed Ask session token budget. The result was not accepted.",
+          "The provider reported usage beyond the fixed Ask session token budget, so the result was not accepted. Type /clear in the CLI or use Clear in Workbench before continuing.",
           429,
         );
       }
@@ -1629,6 +1629,7 @@ function askSystemPrompt(): string {
     "If the reviewed catalog cannot answer, do not guess table or field names and do not tell the user to add guessed schema or access; state the limitation only because the Synapsor client separately presents any source-proven operator review path.",
     "For each question, request only the minimum measures, dimensions, filters, time grain, and relationships needed to answer it; never add a related-looking measure just because it is available.",
     "For related fields, keep resource set to the reviewed root that owns the counted entity or measure, use the target field alias by itself, and put the exact active path alias in the separate relationship property; never concatenate a relationship or table name into field.",
+    "When the user asks for results by an entity such as account or customer, do not group by a foreign-key identifier unless the catalog explicitly marks it groupable. Prefer an exact active many-to-one relationship and a reviewed grouping field on the related entity, while keeping the root resource that owns the counted records.",
     "Use one aggregate measure unless the user explicitly asks for multiple measures or the requested reviewed calculation requires them; for example, a revenue-only question does not justify also requesting discounts.",
     "When a valid bounded plan can answer the question and only a date range, group limit, or presentation choice is omitted, use the boundary's conservative defaults and state what was returned instead of asking an unnecessary clarification.",
     "Treat an unqualified week-over-week, month-over-month, or day-over-day trend question as a chronological time-bucketed series over the available reviewed range. Use a two-range comparison only when the user explicitly asks for the latest, current, or two named periods.",

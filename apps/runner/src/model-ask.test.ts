@@ -1512,6 +1512,7 @@ describe("Workbench BYOM Ask", () => {
     await expect(runBudgetedTurn(testGateway().gateway)).resolves.toMatchObject({ ok: true });
     await expect(runBudgetedTurn(testGateway().gateway)).rejects.toMatchObject({
       code: "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
+      message: expect.stringContaining("/clear"),
     });
   });
 

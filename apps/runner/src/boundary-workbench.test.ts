@@ -25,7 +25,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("An active boundary adds choices to the same two Explore tools");
     expect(html).toContain("Active boundaries never merge relationship graphs.");
     expect(html).toContain('id="boundary-overview" class="boundary-overview"');
-    expect(html).toContain('id="edit-boundary-tables" type="button">Edit selected boundary</button>');
+    expect(html).toContain('id="edit-boundary-tables" ');
+    expect(html).toContain('type="button">Edit selected boundary</button>');
+    expect(html).toContain("pendingBoundaryChange?'class=\"secondary\" '");
     expect(html).toContain('id="new-boundary" class="secondary" type="button">New boundary</button>');
     expect(html).toContain("Choose its first table. Nothing is copied from another boundary");
     expect(html).toContain('id="new-boundary-table"');
@@ -231,6 +233,16 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Changing a tier opens a recorded human review");
     expect(html).toContain("sensitive kept out");
     expect(html).toContain("Aggregate privacy threshold");
+    expect(html).toContain("Privacy for all tables");
+    expect(html).toContain('id="boundary-cohort-all"');
+    expect(html).toContain('kind:"minimum_cohort_all"');
+    expect(html).toContain("Apply to all");
+    expect(html).toContain("pending boundary change");
+    expect(html).toContain("Review and activate now");
+    expect(html).toContain("offerStagedActivation");
+    expect(html).toContain("suppressionReviewGuidance");
+    expect(html).toContain("Try a coarser reviewed grouping");
+    expect(html).toContain("Until activation, Ask uses the previous threshold");
     expect(html).toContain("Ranked result settings");
     expect(html).toContain('id="boundary-ranked-groups"');
     expect(html).toContain("Groups considered before ranking");

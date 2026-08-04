@@ -8,6 +8,10 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { cliCommandName } from "./cli-command-meta.js";
 import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
+import {
+  resolveAskAccessGuidance,
+  type AskAccessGuidance,
+} from "./ask-access-summary.js";
 import { usage } from "./cli-help.js";
 import { assertKnownOptions, firstPositional, optionalArg, repeatedArgs } from "./cli-options.js";
 import { activeProjectResolutionState, prepareReferenceDemo } from "./cli-project.js";
@@ -29,6 +33,7 @@ import {
 } from "./protect-query.js";
 import {
   bindProtectedPlansToAnswer,
+  ScopedExploreError,
   type ExplorePlan,
   type InspectDatabaseFn,
 } from "./scoped-explore.js";
@@ -288,10 +293,39 @@ async function tryScopedExplore(args: string[]): Promise<number> {
         filters: repeatedArgs(args, "--where"),
         ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
       });
-    const result = await runtime.explore(
-      parsed as ExplorePlan,
-      optionalArg(args, "--boundary"),
-    );
+    let result: Record<string, unknown>;
+    try {
+      result = await runtime.explore(
+        parsed as ExplorePlan,
+        optionalArg(args, "--boundary"),
+      );
+    } catch (error) {
+      if (!(error instanceof ScopedExploreError) || args.includes("--json")) throw error;
+      const selectedBoundary = optionalArg(args, "--boundary");
+      const guidance = await resolveAskAccessGuidance({
+        projectRoot,
+        question: "",
+        toolCalls: [{
+          call_id: "cli_try_explore",
+          tool: "app.explore_data",
+          provider_tool: "app_explore_data",
+          status: "refused",
+          error_code: error.code,
+          arguments: {
+            ...(selectedBoundary ? { boundary: selectedBoundary } : {}),
+            plan: parsed as Record<string, unknown>,
+          },
+          result: {
+            error_code: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {}),
+          },
+        }],
+      });
+      if (!guidance) throw error;
+      process.stderr.write(formatTryExploreRefusal(error, guidance));
+      return 1;
+    }
     const protectToken = (result.protect as { token?: unknown } | undefined)?.token;
     if (typeof protectToken === "string") {
       await bindProtectedPlansToAnswer({
@@ -325,6 +359,25 @@ async function tryScopedExplore(args: string[]): Promise<number> {
   } finally {
     await runtime.close();
   }
+}
+
+export function formatTryExploreRefusal(
+  error: Pick<ScopedExploreError, "code" | "message">,
+  guidance: AskAccessGuidance,
+): string {
+  return [
+    "Runner refused this analysis",
+    `${error.code} - ${error.message}`,
+    "",
+    guidance.title,
+    guidance.message,
+    `Source query executed: ${guidance.source_query_executed === true
+      ? "yes; Runner discarded the result before release"
+      : "no"}`,
+    "",
+    `Next: ${guidance.next_action}`,
+    "",
+  ].join("\n");
 }
 
 function comparisonChangeArg(value: string): "absolute" | "percentage" {

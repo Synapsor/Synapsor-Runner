@@ -131,6 +131,11 @@ export type AnalyticsShellInput = {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
+  pendingBoundaryReview?: {
+    boundary_name: string;
+    pending_changes: number;
+    previous_authority_active: boolean;
+  };
   operatorLabel?: string;
   verboseAttempts?: boolean;
   io: AnalyticsShellIo;
@@ -201,6 +206,7 @@ export async function runAnalyticsShell(
     profileLabel: input.profileLabel,
     reviewedDataAreas: input.reviewedDataAreas,
     accessSummary: input.accessSummary,
+    pendingBoundaryReview: input.pendingBoundaryReview,
   }, input.io.isTerminal?.() === true && !("NO_COLOR" in process.env)));
   try {
     while (true) {
@@ -284,6 +290,11 @@ export function renderAnalyticsShellBanner(input: {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
+  pendingBoundaryReview?: {
+    boundary_name: string;
+    pending_changes: number;
+    previous_authority_active: boolean;
+  };
 }, color = false): string {
   const theme = terminalTheme(color);
   const tableCount = `${input.reviewedDataAreas} ${input.reviewedDataAreas === 1 ? "table" : "tables"}`;
@@ -305,6 +316,20 @@ export function renderAnalyticsShellBanner(input: {
       : []),
     ...(input.accessSummary?.suggestions[0]
       ? [`Try: ${theme.scope(`"${safeTerminalText(input.accessSummary.suggestions[0])}"`)}`]
+      : []),
+    ...(input.pendingBoundaryReview
+      ? [
+        "",
+        theme.warning(
+          `${input.pendingBoundaryReview.pending_changes} PENDING BOUNDARY ` +
+          `${input.pendingBoundaryReview.pending_changes === 1 ? "CHANGE IS" : "CHANGES ARE"} NOT ACTIVE`,
+        ),
+        `Boundary: ${theme.scope(safeTerminalText(input.pendingBoundaryReview.boundary_name))}`,
+        input.pendingBoundaryReview.previous_authority_active
+          ? "Ask still uses the previous exact reviewed revision."
+          : "This disabled boundary does not grant Ask access yet.",
+        `${theme.key("/access")} -> select the boundary -> ${theme.key("C")} Review + activate.`,
+      ]
       : []),
     "Ask a question. /catalog shows reviewed access; /access manages boundaries; /help lists actions; Ctrl+D exits.",
     "",

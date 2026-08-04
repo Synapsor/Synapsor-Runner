@@ -2336,11 +2336,21 @@ function enforcePrivacyComplementRelease(
     );
   }
   if (!decision.allowed) {
+    const earlierRelease = decision.conflicting_release_kind === "suppressed_grouping"
+      ? "An earlier grouped result for this table withheld at least one small cohort."
+      : "An earlier scalar total was released for this table.";
+    const reconstructionRisk = releaseKind === "scalar_total"
+      ? "Runner blocked this complementary total because releasing both results could reconstruct the withheld count."
+      : "Runner blocked this grouped result because suppressing a small cohort after releasing the total could make that cohort reconstructable by subtraction.";
     throw new ScopedExploreError(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      "The reviewed privacy boundary does not permit this complementary aggregate after an earlier result was released.",
+      `${earlierRelease} ${reconstructionRisk}`,
       {
         reason: "complementary_aggregate_release",
+        resource: input.plan.resource,
+        minimum_cohort_size: resource.minimum_cohort_size,
+        attempted_release_kind: releaseKind,
+        conflicting_release_kind: decision.conflicting_release_kind,
         source_query_executed: true,
         source_rows_returned_to_caller: false,
         result_returned_to_caller: false,
@@ -3244,6 +3254,12 @@ function fieldError(resource: BoundaryResource, field: string, operation: string
         ? ` An operator can review it with boundary review resource ${resource.id} `
           + `--count-distinct-fields ${field}; the model cannot change this permission.`
         : ""),
+    {
+      reason: "field_operation_not_reviewed",
+      resource: resource.id,
+      field,
+      operation,
+    },
   );
 }
 

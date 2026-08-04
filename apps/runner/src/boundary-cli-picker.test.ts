@@ -237,6 +237,7 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("reviewed_staging");
     expect(firstViewPlain).toContain("DRAFT - NO ACCESS");
     expect(firstViewPlain).toContain("A New boundary");
+    expect(firstViewPlain).toContain("P Privacy for all tables");
     expect(firstViewPlain).toContain("C Complete review");
     expect(firstViewPlain).not.toContain("public.high_risk");
 
@@ -271,6 +272,52 @@ describe("boundary review terminal picker", () => {
     expect(stripAnsi(firstView)).toContain("L Ranked limit");
     await send(input, "l");
     await expect(selected).resolves.toEqual({ action: "limits" });
+  });
+
+  it("opens one boundary-wide privacy action from the boundary list", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      undefined,
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    expect(stripAnsi(output.read()?.toString() ?? "")).toContain("P Privacy for all tables");
+    await send(input, "p");
+    await expect(selected).resolves.toEqual({ action: "privacy_all" });
+  });
+
+  it("keeps an active boundary's disabled edits visibly pending", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.orders", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const selected = session.chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: false,
+          table_count: 1,
+          outstanding_decisions: 0,
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("ACTIVE + DRAFT EDITS");
+    expect(first).toContain("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE");
+    expect(first).toContain("C reviews and activates the exact disabled update");
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("starts with boundary tables and opens proven relationship candidates in place", async () => {

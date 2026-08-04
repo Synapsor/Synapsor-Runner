@@ -31,7 +31,7 @@ export type BoundaryResourceSelection =
       action: "add" | "review" | "remove" | "signoff" | "privacy";
     }
   | {
-      action: "create" | "rename" | "confirm" | "limits";
+      action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
     }
   | {
       action: "switch" | "delete" | "disable";
@@ -433,6 +433,8 @@ async function chooseResource(
           }];
         selectedBoundary = Math.min(selectedBoundary, boundaryEntries.length - 1);
         const highlightedBoundary = boundaryEntries[selectedBoundary]!;
+        const selectedBoundaryHasPendingChange = highlightedBoundary.selected
+          && (!highlightedBoundary.active || !highlightedBoundary.matches_active_digest);
         if (focusedAccess && !activeResources.length && boundaryEntries.length === 1) {
           render([
             theme.title("YOUR DATA BOUNDARY"),
@@ -453,6 +455,7 @@ async function chooseResource(
             ...packTerminalActions([
               `${theme.key("E")} Edit access`,
               `${theme.key("A")} New boundary`,
+              `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Ranked limit`,
               `${theme.key("M")} Map`,
               `${theme.key("N")} Rename`,
@@ -481,6 +484,7 @@ async function chooseResource(
             continue;
           }
           if (key.name === "a") return { action: "create" };
+          if (key.name === "p") return { action: "privacy_all" };
           if (key.name === "l") return { action: "limits" };
           if (key.name === "n") return { action: "rename" };
           if (isCancel(key) || isEscapeKey(key)) return undefined;
@@ -512,6 +516,13 @@ async function chooseResource(
           "",
           theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "AUTHORITY")),
           ...rows,
+          ...(selectedBoundaryHasPendingChange
+            ? [
+              "",
+              theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
+              theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`),
+            ]
+            : []),
           "",
           ...packTerminalActions([
             `${theme.key("Up/Down")} Select`,
@@ -520,6 +531,7 @@ async function chooseResource(
               : "Open"}`,
             `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
             `${theme.key("A")} New boundary`,
+            `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Ranked limit`,
             `${theme.key("M")} Map`,
             `${theme.key("N")} Rename`,
@@ -552,6 +564,7 @@ async function chooseResource(
           continue;
         }
         if (key.name === "a") return { action: "create" };
+        if (key.name === "p") return { action: "privacy_all" };
         if (key.name === "l") return { action: "limits" };
         if (key.name === "n") {
           if (!highlightedBoundary.selected) {
@@ -621,12 +634,19 @@ async function chooseResource(
       const highlighted = listedResources[selected]!;
       const includedCount = resources.filter((resource) => resource.included).length;
       const reviewLeft = boundaryReviewLeft(resources, overview);
-      const candidateIsActive = reviewLeft === "Complete"
-        && resources.some((resource) =>
-          resource.active_boundary_name === resource.candidate_boundary_name)
-        && resources.filter((resource) => resource.active).length === includedCount;
+      const selectedBoundaryEntry = overview?.boundaries?.find((entry) => entry.selected);
+      const candidateIsActive = selectedBoundaryEntry
+        ? selectedBoundaryEntry.active && selectedBoundaryEntry.matches_active_digest
+        : reviewLeft === "Complete"
+          && resources.some((resource) =>
+            resource.active_boundary_name === resource.candidate_boundary_name)
+          && resources.filter((resource) => resource.active).length === includedCount;
+      const candidateHasPendingChange = selectedBoundaryEntry?.active === true
+        && selectedBoundaryEntry.matches_active_digest === false;
       const candidateStatus = candidateIsActive
         ? theme.success("ACTIVE")
+        : candidateHasPendingChange
+          ? theme.warning("ACTIVE + DRAFT EDITS")
         : reviewLeft === "Complete"
           ? theme.success("REVIEWED - NOT ACTIVE")
         : theme.warning("DRAFT - NO ACCESS");
@@ -672,6 +692,12 @@ async function chooseResource(
         ),
         `${candidateStatus}  ${includedCount} ` +
           `${plural(includedCount, "table", "tables")}  ${displayedReviewLeft}`,
+        ...(candidateHasPendingChange
+          ? [
+            theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
+            theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`),
+          ]
+          : []),
         ...(focusedAccess
           ? [
             theme.bold(

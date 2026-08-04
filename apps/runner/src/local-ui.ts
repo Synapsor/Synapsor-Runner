@@ -148,8 +148,13 @@ import {
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
 import {
+  commitBoundaryReviewMutationBatch,
   commitBoundaryResourceReviewMutation,
+  listBoundaryResourceReviews,
+  prepareBoundaryReviewMutationBatch,
   prepareBoundaryResourceReviewMutation,
+  type BoundaryReviewMutationBatchPreview,
+  type BoundaryReviewMutationPreview,
   type BoundaryResourceReviewRequest,
 } from "./boundary-review-mutation.js";
 import {
@@ -1294,14 +1299,39 @@ async function handleRequest(input: {
     const activeBeforeReview = await readOptionalJson(
       path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
     );
-    const normalizedDecision = normalizeSharedManagedBoundaryReviewDecision(body);
-    const mutationRequest = managedReviewMutationRequest(normalizedDecision);
-    const preview = await prepareBoundaryResourceReviewMutation(
-      projectRoot,
-      mutationRequest,
-      schemaInspector,
-    );
-    const committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
+    let preview: BoundaryReviewMutationPreview | BoundaryReviewMutationBatchPreview;
+    let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>
+      | Awaited<ReturnType<typeof commitBoundaryReviewMutationBatch>>;
+    if (body.kind === "minimum_cohort_all") {
+      const included = (await listBoundaryResourceReviews(projectRoot))
+        .filter((resource) => resource.included)
+        .filter((resource) => resource.minimum_cohort_size !== Number(body.value));
+      if (!included.length) {
+        throw new Error("Every included table already uses this aggregate privacy threshold.");
+      }
+      const requests = included.map((resource) => managedReviewMutationRequest(
+        normalizeSharedManagedBoundaryReviewDecision({
+          ...body,
+          kind: "minimum_cohort",
+          resource_id: resource.resource_id,
+        }),
+      ));
+      preview = await prepareBoundaryReviewMutationBatch(
+        projectRoot,
+        requests,
+        schemaInspector,
+      );
+      committed = await commitBoundaryReviewMutationBatch(projectRoot, preview);
+    } else {
+      const normalizedDecision = normalizeSharedManagedBoundaryReviewDecision(body);
+      const mutationRequest = managedReviewMutationRequest(normalizedDecision);
+      preview = await prepareBoundaryResourceReviewMutation(
+        projectRoot,
+        mutationRequest,
+        schemaInspector,
+      );
+      committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
+    }
     const build = preview.build;
     const progress = await readSharedBoundaryReviewProgress(projectRoot, build.exploration_boundary);
     const journey = activeBeforeReview
@@ -1335,11 +1365,13 @@ async function handleRequest(input: {
       },
       source_event_key: `workbench-boundary-review:${candidateDigest}`,
     });
-    const sensitiveOverride = sensitiveFieldOverrideEvent(
-      body,
-      build.overrides,
-      preview.semantic_diff,
-    );
+    const sensitiveOverride = Array.isArray(preview.semantic_diff)
+      ? undefined
+      : sensitiveFieldOverrideEvent(
+        body,
+        build.overrides,
+        preview.semantic_diff,
+      );
     if (sensitiveOverride) {
       await recordWorkbenchAttention(storeAccess, {
         event_type: "sensitive_override_activated",
@@ -2725,7 +2757,11 @@ async function handleRequest(input: {
         && call.result.ok !== false);
       const accessGuidance = completedDataPlan
         ? undefined
-        : await resolveAskAccessGuidance({ projectRoot, question }).catch(() => undefined);
+        : await resolveAskAccessGuidance({
+            projectRoot,
+            question,
+            toolCalls: result.tool_calls,
+          }).catch(() => undefined);
       const displayAnswer = modelAnswerForDisplay(
         result.answer,
         collectAnalyticsAnalyses(result.tool_calls),

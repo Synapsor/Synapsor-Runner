@@ -155,6 +155,97 @@ describe("Ask access summaries", () => {
       next_action: expect.stringContaining("reviewed view or named metric"),
     });
   });
+
+  it("explains complementary privacy refusals with the exact human review path", async () => {
+    const root = await fixtureProject();
+    await activateFixtureBoundary(root);
+    const guidance = await resolveAskAccessGuidance({
+      projectRoot: root,
+      question: "What is the total?",
+      toolCalls: [{
+        call_id: "call-1",
+        tool: "app.explore_data",
+        provider_tool: "app__explore_data",
+        status: "refused",
+        error_code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+        arguments: {
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.orders",
+            measures: [{ function: "count" }],
+            top_n: 1,
+          },
+        },
+        result: {
+          ok: false,
+          details: {
+            reason: "complementary_aggregate_release",
+            resource: "public.orders",
+            minimum_cohort_size: 5,
+            attempted_release_kind: "scalar_total",
+            conflicting_release_kind: "suppressed_grouping",
+            source_query_executed: true,
+          },
+        },
+      }],
+    });
+    expect(guidance).toMatchObject({
+      kind: "review_candidate",
+      review_boundary: "reviewed_staging",
+      review_resource: "public.orders",
+      review_focus: "privacy",
+      source_query_executed: true,
+    });
+    expect(guidance?.message).toMatch(/withheld.*reconstruct.*discarded/i);
+    expect(guidance?.next_action).toContain(
+      "/access -> boundary reviewed_staging -> table public.orders -> Privacy (P) -> choose off (effective minimum 1) -> Review + activate",
+    );
+    expect(guidance?.next_action).toContain("groups of one can identify individuals");
+  });
+
+  it("routes a forbidden foreign-key grouping through its reviewed relationship", async () => {
+    const root = await fixtureProject();
+    await activateFixtureBoundary(root);
+    const guidance = await resolveAskAccessGuidance({
+      projectRoot: root,
+      question: "Which product has the most order items?",
+      toolCalls: [{
+        call_id: "call-2",
+        tool: "app.explore_data",
+        provider_tool: "app__explore_data",
+        status: "refused",
+        error_code: "EXPLORE_FIELD_FORBIDDEN",
+        arguments: {
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.order_items",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "product_id" }],
+            top_n: 10,
+          },
+        },
+        result: {
+          ok: false,
+          details: {
+            reason: "field_operation_not_reviewed",
+            resource: "public.order_items",
+            field: "product_id",
+            operation: "group",
+          },
+        },
+      }],
+    });
+    expect(guidance).toMatchObject({
+      kind: "reviewed_view_required",
+      review_boundary: "reviewed_staging",
+      review_resource: "public.order_items",
+      review_field: "product_id",
+    });
+    expect(guidance?.message).toContain("order_items_product_id_fkey");
+    expect(guidance?.next_action).toContain("group Order items by Category");
+  });
 });
 
 async function fixtureProject(): Promise<string> {

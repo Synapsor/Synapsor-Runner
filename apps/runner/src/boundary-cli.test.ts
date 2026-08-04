@@ -1847,6 +1847,66 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("sets one cohort threshold across the boundary and makes pending activation explicit", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cohort-all-"));
+    const inspection = boundaryInspection();
+    const second = structuredClone(inspection.tables[0]!);
+    second.name = "service_routes";
+    second.unique_constraints = [{ name: "service_routes_pkey", columns: ["id"] }];
+    second.indexes = [{ name: "service_routes_pkey", columns: ["id"], unique: true }];
+    inspection.tables.push(second);
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [{ action: "privacy_all" as const }, undefined];
+    const text = ["off", "Local owner review for this non-production demonstration."];
+    const confirmations = [true, false];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      editFieldTiers: async () => {
+        throw new Error("Boundary-wide privacy must not open one table's column editor.");
+      },
+      promptText: async () => text.shift(),
+      confirm: async () => confirmations.shift(),
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      const progress = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(progress.candidate.pack.resources).toHaveLength(2);
+      expect(progress.candidate.pack.resources.every((resource: { minimum_cohort_size: number }) =>
+        resource.minimum_cohort_size === 1)).toBe(true);
+      expect(output).toContain("Saved minimum cohort 1 (suppression off) for 2 tables");
+      expect(output).toContain("1 pending boundary change is not active");
+      expect(output).toContain("press C to Review + activate");
+      expect(confirmations).toHaveLength(0);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("refuses a requested relationship when its target table is not in the boundary", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-missing-target-"));
     const inspection = boundaryInspection();

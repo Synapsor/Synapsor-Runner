@@ -2312,6 +2312,34 @@ export default defineCapability({
           },
         },
       });
+      const wholeBoundaryCohort = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "minimum_cohort_all",
+          value: 3,
+          actor: "owner@example.test",
+          reason: "Apply one reviewed staging threshold across every included table.",
+        },
+      );
+      expect(wholeBoundaryCohort).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              minimum_cohort_size: 3,
+              minimum_cohort_overridden: true,
+            }],
+          },
+        },
+        semantic_diff: [{
+          resource_id: "public.members",
+          minimum_cohort_before: 1,
+          minimum_cohort_after: 3,
+        }],
+        source_database_changed: false,
+      });
       const boundaryResponse = await fetch(`http://${server.host}:${server.port}/api/boundary`, {
         headers: { "x-synapsor-ui-token": "boundary-regenerate-token" },
       });

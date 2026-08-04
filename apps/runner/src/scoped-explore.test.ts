@@ -736,7 +736,15 @@ describe("Scoped Explore", () => {
         resource: "public.subscriptions",
         select: ["billing_token"],
         limit: 1,
-      })).rejects.toMatchObject({ code: "EXPLORE_FIELD_FORBIDDEN" });
+      })).rejects.toMatchObject({
+        code: "EXPLORE_FIELD_FORBIDDEN",
+        details: {
+          reason: "field_operation_not_reviewed",
+          resource: "public.subscriptions",
+          field: "billing_token",
+          operation: "select",
+        },
+      });
       expect(executions).toBe(0);
       expect(store.listEvidenceBundles()).toHaveLength(0);
       const records = store.listQueryAudit();
@@ -2030,7 +2038,16 @@ describe("Scoped Explore", () => {
     });
     await expect(nextDayRuntime.explore(scalarPlan)).rejects.toMatchObject({
       code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      message: expect.stringContaining("complementary aggregate"),
+      message: expect.stringMatching(/earlier grouped result.*reconstruct/i),
+      details: {
+        reason: "complementary_aggregate_release",
+        resource: "public.subscriptions",
+        minimum_cohort_size: 5,
+        attempted_release_kind: "scalar_total",
+        conflicting_release_kind: "suppressed_grouping",
+        source_query_executed: true,
+        result_returned_to_caller: false,
+      },
     });
     await nextDayRuntime.close();
 
@@ -2047,7 +2064,16 @@ describe("Scoped Explore", () => {
     });
     await expect(scalarRuntime.explore(groupedPlan)).rejects.toMatchObject({
       code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      message: expect.stringContaining("complementary aggregate"),
+      message: expect.stringMatching(/earlier scalar total.*reconstructable/i),
+      details: {
+        reason: "complementary_aggregate_release",
+        resource: "public.subscriptions",
+        minimum_cohort_size: 5,
+        attempted_release_kind: "suppressed_grouping",
+        conflicting_release_kind: "scalar_total",
+        source_query_executed: true,
+        result_returned_to_caller: false,
+      },
     });
     await scalarRuntime.close();
 
@@ -2060,7 +2086,7 @@ describe("Scoped Explore", () => {
       result_values_persisted: false,
     });
     auditStore.close();
-  });
+  }, 15_000);
 
   it("atomically permits only one side of a concurrent complementary aggregate release", async () => {
     const fixture = await activatedFixture();
