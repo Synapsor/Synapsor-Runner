@@ -6,6 +6,7 @@ import {
 } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import type { AskToolGateway, AskToolTrace } from "./model-ask.js";
+import { cliPrivacyReviewInstructions } from "./privacy-review-guidance.js";
 
 export type ReviewedAskResourceSummary = {
   id: string;
@@ -167,11 +168,11 @@ function resolveRefusalAccessGuidance(input: {
       ? Number(details.minimum_cohort_size)
       : undefined;
     const groupedFirst = details.conflicting_release_kind === "suppressed_grouping";
-    const path = reviewPath(
-      boundary,
+    const instructions = cliPrivacyReviewInstructions({
+      ...(boundary ? { boundary } : {}),
       resource,
-      "Privacy (P) -> choose off (effective minimum 1) -> Review + activate",
-    );
+      requireSuppressionOff: true,
+    });
     return {
       kind: "review_candidate",
       title: groupedFirst
@@ -184,7 +185,7 @@ function resolveRefusalAccessGuidance(input: {
       review_resource: resource,
       review_focus: "privacy",
       source_query_executed: details.source_query_executed === true,
-      next_action: `Ask a different reviewed measure or bounded filter/time range. To permit complementary totals, use ${path}. This disables small-group suppression for that table and groups of one can identify individuals.`,
+      next_action: `Ask a different reviewed measure or bounded filter/time range. To permit complementary totals, the owner must explicitly turn suppression off for this table; groups of one can identify individuals.\n${instructions}`,
     };
   }
 

@@ -814,7 +814,7 @@ async function handleRequest(input: {
     if (draft.pack.resources.some((resource) => resource.minimum_cohort_overridden === true)) {
       sendJson(response, 409, {
         ok: false,
-        error: "Quick Start cannot activate a lowered minimum cohort. Complete the full recorded boundary review.",
+        error: "Quick Start cannot activate a lowered minimum group size. Complete the full recorded boundary review.",
         source_database_changed: false,
       });
       return;

@@ -198,7 +198,7 @@ without a generation lock retain their previous behavior.
 ## Aggregate Explore Suppressed Or Refused A Result
 
 Suppression and budget failures are security behavior, not query failures.
-Workbench shows the reviewed minimum cohort, maximum groups, response limits,
+Workbench shows the reviewed minimum group size, maximum groups, response limits,
 and durable extraction/differencing budgets. You cannot widen them in a model
 argument.
 
@@ -221,6 +221,24 @@ time bucket, or have an operator review a narrower `max_ranked_groups` setting
 appropriate to the known population.
 Returned rows/groups, trusted tenant/principal values, credentials, and raw
 sensitive literals are not stored in the query audit.
+
+To change the minimum group size for one table in the terminal:
+
+1. Type `/access`, select the boundary if the boundary list appears, and press
+   Enter.
+2. Highlight the affected table in the table list. Do not open its columns;
+   press `P` for Privacy while the table remains highlighted.
+3. Enter a **minimum group size** from 1 through 5 and a short reason. Runner
+   hides groups with fewer rows than that number. Choosing 1 turns small-group
+   suppression off and can reveal a group containing one person or record.
+4. Press Enter at the default-Yes save prompt. This creates a disabled boundary
+   revision only.
+5. Press Enter again at `Review and activate this boundary change now? [Y/n]`.
+   If you postpone activation, return to the boundary screen and press `C`
+   (**Review + activate**).
+
+Press `P` on the boundary screen, before opening a table, to apply one minimum
+group size to all included tables atomically.
 
 ## Safe Action Draft Does Not Appear As A Tool
 

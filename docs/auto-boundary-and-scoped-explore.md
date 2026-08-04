@@ -405,6 +405,26 @@ The command first prints a disabled semantic-diff preview. Applying it still
 uses the existing signed operator review flow and does not activate authority.
 Set `--minimum-cohort 5` to restore the default and remove the override.
 
+In the interactive CLI, this setting is labelled **minimum group size**. To
+change it for one table:
+
+1. Type `/access` in Analytics, or run
+   `synapsor-runner boundary review --access` from the shell.
+2. If the boundary list appears, highlight the boundary and press Enter.
+3. Highlight the table in the table list. Do not press Enter, because Enter
+   opens the column editor. Press `P`; Privacy applies to the highlighted table.
+4. Enter a number from 1 through 5 and a short reason. Runner hides aggregate
+   groups with fewer rows than that number. A value of 1 turns small-group
+   suppression off.
+5. Press Enter at `Save this privacy change? [Y/n]` to save the disabled draft.
+6. Press Enter at `Review and activate this boundary change now? [Y/n]` to
+   review and activate it. If activation is postponed, return to the boundary
+   screen and press `C` (**Review + activate**).
+
+Press `P` while the boundary is highlighted to set the same minimum group size
+for all included tables as one atomic disabled change. Saving never activates
+authority by itself.
+
 A threshold of 1 disables small-group suppression: groups of one may identify
 individuals. Workbench and CLI state that consequence directly. The recorded
 decision changes the reviewed boundary digest; reviewer identity and reason

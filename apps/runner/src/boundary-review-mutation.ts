@@ -1071,7 +1071,7 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
       || request.minimum_cohort_size < 1
       || request.minimum_cohort_size > 5)) {
     throw new Error(
-      "The reviewed minimum cohort must be an integer from 1 through 5; 5 restores the default.",
+      "The reviewed minimum group size must be an integer from 1 through 5; 5 restores the default.",
     );
   }
   if (request.max_ranked_groups !== undefined

@@ -981,7 +981,7 @@ function formatToolPreviewCapabilityDetails(details: ToolPreviewCapabilityDetail
   return details.flatMap((detail) => [
     `  - ${detail.name}: ${detail.kind}${detail.operation ? ` ${detail.cardinality === "set" ? "BOUNDED SET " : "SINGLE-ROW "}${detail.operation.toUpperCase()}` : ""}`,
     detail.kind === "aggregate_read" && detail.protected_aggregate
-      ? `    target: ${detail.target}; reviewed measures: ${detail.aggregate}; dimensions: ${detail.aggregate_dimensions?.join(", ") || "none"}; max groups: ${detail.max_rows}; minimum cohort: ${detail.minimum_group_size}`
+      ? `    target: ${detail.target}; reviewed measures: ${detail.aggregate}; dimensions: ${detail.aggregate_dimensions?.join(", ") || "none"}; max groups: ${detail.max_rows}; minimum group size: ${detail.minimum_group_size}`
       : detail.kind === "aggregate_read"
         ? `    target: ${detail.target}; output: one ${detail.aggregate} scalar; minimum group size: ${detail.minimum_group_size}`
       : `    target: ${detail.target}; max rows: ${detail.max_rows}`,

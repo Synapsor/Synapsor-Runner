@@ -10,6 +10,7 @@ import {
 import type {
   ExplorePlan,
 } from "./scoped-explore.js";
+import { cliPrivacyReviewInstructions } from "./privacy-review-guidance.js";
 import {
   renderTerminalJson,
   safeTerminalCellText,
@@ -420,7 +421,7 @@ export function renderAnalysis(
       ?? stringValue(record(record(analysis.result.outcome).result).suppression?.toString())
       ?? "empty";
     lines.push(status === "fully_suppressed"
-      ? `No aggregate value can be shown under the reviewed minimum cohort${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`
+      ? `No aggregate value can be shown under the reviewed minimum group size${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`
       : "No reviewed rows or groups were returned.");
   }
   const suppressed = suppressedGroupCount(analysis.result);
@@ -428,7 +429,7 @@ export function renderAnalysis(
     const shapeHint = minimumCohortQuestionShapeHint(analysis, minimumCohort);
     lines.push(
       "",
-      `${suppressed} additional group${suppressed === 1 ? " was" : "s were"} withheld because ${suppressed === 1 ? "it was" : "they were"} below the reviewed minimum cohort${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`,
+      `${suppressed} additional group${suppressed === 1 ? " was" : "s were"} withheld because ${suppressed === 1 ? "it was" : "they were"} below the reviewed minimum group size${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`,
       ...(shapeHint ? [shapeHint] : []),
       ...(minimumCohort !== undefined && minimumCohort > 1
         ? [minimumCohortRecoveryPath(analysis)]
@@ -443,15 +444,10 @@ function minimumCohortRecoveryPath(analysis: AnalyticsAnalysis): string {
     ?? stringValue(analysis.arguments?.boundary);
   const table = analysis.plan?.resource
     ?? stringValue(record(analysis.result.audit).resource_id);
-  const path = [
-    "/access",
-    boundary ? `boundary ${safeTerminalText(boundary)}` : "the active boundary",
-    table ? `table ${safeTerminalText(table)}` : "the result table",
-    "Privacy (P)",
-    "minimum cohort",
-    "Review + activate",
-  ].join(" -> ");
-  return `To change it: ${path}. Until activation, Ask keeps the previous threshold. No suppression uses an effective minimum of 1.`;
+  return `${cliPrivacyReviewInstructions({
+    ...(boundary ? { boundary: safeTerminalText(boundary) } : {}),
+    ...(table ? { resource: safeTerminalText(table) } : {}),
+  })}\nUntil activation, Ask keeps the previous minimum group size.`;
 }
 
 function minimumCohortQuestionShapeHint(
@@ -464,7 +460,7 @@ function minimumCohortQuestionShapeHint(
   const field = analysis.plan.dimensions[0]!.field;
   if (!/(^id$|_id$|(^|_)name$)/i.test(field)) return undefined;
   const label = businessLabel(field).toLowerCase();
-  return `This question groups records into one row per ${label}; any entity with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or explicitly review the staging threshold.`;
+  return `This question groups records into one row per ${label}; any entity with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size.`;
 }
 
 export function renderTable(

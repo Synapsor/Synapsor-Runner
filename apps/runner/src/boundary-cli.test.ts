@@ -425,7 +425,7 @@ describe("boundary operator-plane CLI", () => {
         "--actor", "owner@example.test",
         "--reason", "This owner-controlled staging analysis may return groups of one.",
       ], async () => inspection)).resolves.toBe(0);
-      expect(output).toContain("Minimum cohort: 5 -> 1 (explicit owner override)");
+      expect(output).toContain("Minimum group size: 5 -> 1 (explicit owner override)");
       expect(output).toContain(
         "Warning: 1 disables small-group suppression; groups of one identify individuals.",
       );
@@ -1847,6 +1847,77 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("changes one table's minimum group size with default-Yes save and activation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-group-size-one-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [
+      { resource_id: "public.service_visits", action: "privacy" as const },
+      undefined,
+    ];
+    const text = ["1", "Owner-reviewed local analysis may show groups of one."];
+    const confirmationPrompts: string[] = [];
+    const confirmationDefaults: Array<boolean | undefined> = [];
+    let chooseCalls = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (_resources, _overview, options) => {
+        chooseCalls += 1;
+        if (chooseCalls === 2) {
+          expect(options?.initialResourceId).toBe("public.service_visits");
+        }
+        return choices.shift();
+      },
+      editFieldTiers: async () => {
+        throw new Error("Table privacy must not open the column editor.");
+      },
+      promptText: async () => text.shift(),
+      confirm: async (prompt, options) => {
+        confirmationPrompts.push(prompt);
+        confirmationDefaults.push(options?.defaultValue);
+        return confirmationDefaults.length === 1;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      const progress = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(progress.candidate.pack.resources[0].minimum_cohort_size).toBe(1);
+      expect(output).toContain("PRIVACY - public.service_visits");
+      expect(output).toContain("Current minimum group size: 5");
+      expect(output).toContain("press C (Review + activate)");
+      expect(confirmationPrompts).toEqual([
+        "Save this privacy change for public.service_visits?",
+        "Review and activate this boundary change now?",
+      ]);
+      expect(confirmationDefaults).toEqual([true, true]);
+      expect(chooseCalls).toBe(2);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("sets one cohort threshold across the boundary and makes pending activation explicit", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cohort-all-"));
     const inspection = boundaryInspection();
@@ -1868,15 +1939,25 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const choices = [{ action: "privacy_all" as const }, undefined];
-    const text = ["off", "Local owner review for this non-production demonstration."];
+    const text = ["1", "Local owner review for this non-production demonstration."];
     const confirmations = [true, false];
+    const prompts: string[] = [];
+    const confirmationPrompts: string[] = [];
+    const confirmationDefaults: Array<boolean | undefined> = [];
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => choices.shift(),
       editFieldTiers: async () => {
         throw new Error("Boundary-wide privacy must not open one table's column editor.");
       },
-      promptText: async () => text.shift(),
-      confirm: async () => confirmations.shift(),
+      promptText: async (prompt) => {
+        prompts.push(prompt);
+        return text.shift();
+      },
+      confirm: async (prompt, options) => {
+        confirmationPrompts.push(prompt);
+        confirmationDefaults.push(options?.defaultValue);
+        return confirmations.shift();
+      },
     };
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -1896,9 +1977,21 @@ describe("boundary operator-plane CLI", () => {
       expect(progress.candidate.pack.resources).toHaveLength(2);
       expect(progress.candidate.pack.resources.every((resource: { minimum_cohort_size: number }) =>
         resource.minimum_cohort_size === 1)).toBe(true);
-      expect(output).toContain("Saved minimum cohort 1 (suppression off) for 2 tables");
+      expect(output).toContain("PRIVACY - ALL 2 TABLES IN THIS BOUNDARY");
+      expect(output).toContain("Enter a whole number from 1 through 5");
+      expect(output).toContain("Consequence: aggregate output may contain groups with one person or record");
+      expect(output).toContain("Saved minimum group size 1 (small-group suppression off) for 2 tables");
       expect(output).toContain("1 pending boundary change is not active");
-      expect(output).toContain("press C to Review + activate");
+      expect(output).toContain("press C (Review + activate)");
+      expect(prompts).toEqual([
+        "New minimum group size for all tables [current 5]: ",
+        "Reason for setting 2 tables to minimum group size 1 (recorded with this decision): ",
+      ]);
+      expect(confirmationPrompts).toEqual([
+        "Save this privacy change for 2 tables?",
+        "Review and activate this boundary change now?",
+      ]);
+      expect(confirmationDefaults).toEqual([true, true]);
       expect(confirmations).toHaveLength(0);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });

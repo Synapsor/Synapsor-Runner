@@ -164,6 +164,35 @@ describe("boundary review terminal picker", () => {
     expect(tableView).toContain("minimum group 5");
   });
 
+  it("keeps focused access tables alphabetical and restores the highlighted table", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const invoices = summary("public.invoices", 1);
+    invoices.active = true;
+    const accounts = summary("public.accounts", 0);
+    accounts.active = true;
+    const subscriptions = summary("public.subscriptions", 0);
+    subscriptions.active = true;
+    const selected = session.chooseResource(
+      [invoices, accounts, subscriptions],
+      undefined,
+      {
+        initialView: "access",
+        initialResourceId: "public.invoices",
+      },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered.indexOf("public.accounts")).toBeLessThan(rendered.indexOf("public.invoices"));
+    expect(rendered.indexOf("public.invoices")).toBeLessThan(rendered.indexOf("public.subscriptions"));
+    expect(rendered).toContain("> public.invoices");
+
+    await send(input, "p");
+    await expect(selected).resolves.toEqual({
+      resource_id: "public.invoices",
+      action: "privacy",
+    });
+  });
+
   it("keeps table and boundary actions readable in a narrow terminal", async () => {
     const { input, output } = fakeTerminal();
     Object.assign(output, { columns: 58 });

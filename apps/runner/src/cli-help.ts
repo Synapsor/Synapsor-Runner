@@ -439,6 +439,24 @@ a reviewer and reason. A nullable reviewed path asks explicitly whether
 unmatched counted rows remain under an empty group or are excluded; there is no
 default because that choice changes totals.
 
+To change aggregate privacy for one table in the focused editor:
+
+1. If the boundary list appears, highlight the boundary and press Enter.
+2. In the table list, highlight the table. Do not press Enter; Enter opens its
+   columns. Press P instead. Privacy applies to the highlighted table.
+3. Enter a minimum group size from 1 through 5 and a short recorded reason.
+   Runner hides groups with fewer rows than that number. A value of 1 turns
+   small-group suppression off and may reveal a group containing one person or
+   record.
+4. At \`Save this privacy change? [Y/n]\`, press Enter to save the disabled
+   boundary revision. This does not change active authority.
+5. At \`Review and activate this boundary change now? [Y/n]\`, press Enter to
+   review and activate it. If you choose No or Escape, return to the boundary
+   screen later and press C (**Review + activate**).
+
+Press P while the boundary itself is highlighted to set one minimum group size
+for every included table atomically. The same save and activation steps apply.
+
 Run \`${cmd} boundary review\` in a terminal to see only the saved boundaries
 that exist. This is the advanced governance route. A creates another named
 disabled boundary from the selected draft, Enter opens a boundary, and X
@@ -520,7 +538,7 @@ fields or relationships. It previews a semantic diff and saves disabled review
 state; it never activates authority. A versioned decision file can apply several
 resource decisions atomically, but the file is not authority: application still
 requires an exact digest gesture or a verified signed-key/OIDC operator proof.
-Auto Boundary keeps the minimum cohort at 5 by default. An owner may lower it
+Auto Boundary keeps the minimum group size at 5 by default. An owner may lower it
 to 1-4 only through --minimum-cohort with a recorded actor and reason. A value
 of 1 disables small-group suppression and can identify individuals; Protect and
 protected-capability activation require separate explicit re-confirmation.

@@ -65,10 +65,13 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("west");
     expect(output).toContain("184");
     expect(output).toContain("1 additional group was withheld");
-    expect(output).toContain(
-      "To change it: /access -> boundary support_analytics -> table public.sessions -> Privacy (P) -> minimum cohort -> Review + activate.",
-    );
-    expect(output).toContain("Until activation, Ask keeps the previous threshold");
+    expect(output).toContain("To change this in the CLI:");
+    expect(output).toContain("select support_analytics and press Enter");
+    expect(output).toContain("Highlight public.sessions; do not open its columns");
+    expect(output).toContain("Press P (Privacy) for the highlighted table");
+    expect(output).toContain("Save this privacy change? [Y/n]");
+    expect(output).toContain("press C later from the boundary screen");
+    expect(output).toContain("Until activation, Ask keeps the previous minimum group size");
     expect(output).not.toContain("Database unchanged");
     expect(output).not.toContain("Source database changed: no");
     expect(output).not.toContain("Evidence recorded");
@@ -89,7 +92,7 @@ describe("Synapsor Analytics shell", () => {
     const output = renderAnalysis(current).join("\n");
     expect(output).toContain("one row per account id");
     expect(output).toContain("Try a coarser reviewed grouping");
-    expect(output).toContain("table public.support_tickets -> Privacy (P)");
+    expect(output).toContain("Highlight public.support_tickets; do not open its columns");
   });
 
   it("renders TrailPeak-style verified aggregates with business labels and readable values", () => {

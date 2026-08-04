@@ -140,6 +140,11 @@ bearing grouping, or the reverse, when the two results could expose the hidden
 aggregate by subtraction. A reviewed minimum cohort of `1` disables small-
 group suppression and therefore disables differencing and complementary-total
 checks; query, rate, extraction, response, and complexity limits still apply.
+The interactive CLI calls this the **minimum group size**. In `/access`, keep
+the affected table highlighted and press `P`; do not open its column editor.
+After entering the value and reason, Enter accepts the default-Yes draft save
+and the following default-Yes review/activation prompt. If activation is
+postponed, press `C` from the boundary screen later.
 New Auto Boundaries review a finite default of 16 distinct cohort-protected
 variants per root resource in that rolling window. This supports the ten-plan
 first-use journey while remaining one shared cross-shape allowance. Existing

@@ -899,6 +899,7 @@ async function interactiveBoundaryReviewLoop(input: {
   startAtBoundaryList?: boolean;
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
+  let selectedResourceId: string | undefined;
   while (true) {
     let context = await loadBoundaryReviewContext(input.projectRoot);
     const boundaryLibrary = await synchronizeBoundaryLibrary({
@@ -917,6 +918,7 @@ async function interactiveBoundaryReviewLoop(input: {
       {
         initialView: input.initialView ?? "boundaries",
         startAtBoundaryList,
+        ...(selectedResourceId ? { initialResourceId: selectedResourceId } : {}),
       },
     );
     if (!selected) {
@@ -1090,6 +1092,7 @@ async function interactiveBoundaryReviewLoop(input: {
       process.stdout.write(
         `Opened saved boundary "${selected.boundary_name}" for editing. Active Explore authority did not change.\n`,
       );
+      selectedResourceId = undefined;
       continue;
     }
     if (selected.action === "delete") {
@@ -1149,6 +1152,7 @@ async function interactiveBoundaryReviewLoop(input: {
     if (!("resource_id" in selected)) {
       throw new Error("Boundary review returned an unsupported interactive action.");
     }
+    selectedResourceId = selected.resource_id;
     // The boundary list is the entry point for /access, not the destination
     // for Back from a table's column editor. Resume at this boundary's table
     // list after any table-level action.
@@ -1583,7 +1587,7 @@ function formatFocusedBoundaryActivationReview(
       ["Principal scope", principalScopeSummary],
       [
         "Small-group privacy",
-        `Minimum cohorts: ${bundle.candidate.pack.resources.map(
+        `Minimum group sizes: ${bundle.candidate.pack.resources.map(
           (resource) => `${resource.id}=${resource.minimum_cohort_size}${
             resource.minimum_cohort_overridden ? " (owner override)" : ""
           }`,
@@ -2067,8 +2071,16 @@ async function interactiveMinimumCohortReview(input: {
 }): Promise<number | "back" | "review"> {
   const candidate = input.view.candidate ?? input.view.generated_candidate;
   if (!candidate) return "back";
+  process.stdout.write([
+    "",
+    `PRIVACY - ${input.resourceId}`,
+    `Current minimum group size: ${candidate.minimum_cohort_size}`,
+    "Runner hides aggregate groups with fewer rows than this number.",
+    "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
+    "",
+  ].join("\n"));
   const enteredInput = await input.session.promptText(
-    `Minimum returned group [${candidate.minimum_cohort_size}] (2-5, or off; off has effective minimum 1): `,
+    `New minimum group size [current ${candidate.minimum_cohort_size}]: `,
   );
   if (enteredInput === undefined) return "back";
   const entered = enteredInput.trim().toLowerCase();
@@ -2078,36 +2090,35 @@ async function interactiveMinimumCohortReview(input: {
     : Number(entered);
   if (!Number.isSafeInteger(minimumCohort) || minimumCohort < 1 || minimumCohort > 5) {
     throw new Error(
-      "Choose 2 through 5, or choose off. Off is stored as effective minimum 1 because groups cannot contain zero rows.",
+      "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
     );
   }
   if (minimumCohort === candidate.minimum_cohort_size) {
-    process.stdout.write("The aggregate privacy threshold is unchanged.\n");
+    process.stdout.write("The minimum group size is unchanged.\n");
     return "back";
   }
   const reasonInput = await input.session.promptText(
-    minimumCohort === 1
-      ? "Why may this owner-controlled data return groups of one? "
-      : `Why is a minimum returned group of ${minimumCohort} appropriate? `,
+    `Reason for changing ${input.resourceId} from ${candidate.minimum_cohort_size} to ${minimumCohort} (recorded with this decision): `,
   );
   if (reasonInput === undefined) {
-    process.stdout.write("Returned to column review. The privacy threshold was not changed.\n");
+    process.stdout.write("Returned to column review. The minimum group size was not changed.\n");
     return "back";
   }
   const reason = reasonInput.trim();
   if (!reason) {
-    throw new Error("Changing the aggregate privacy threshold requires a concrete human reason.");
+    throw new Error("Changing the minimum group size requires a concrete human reason.");
   }
   process.stdout.write(minimumCohort === 1
-    ? "Off means no small-group suppression. Groups of one can identify individuals.\n"
-    : `Groups smaller than ${minimumCohort} will be withheld.\n`);
+    ? [
+      "New setting: minimum group size 1 (small-group suppression off).",
+      "Consequence: aggregate output may contain a group with one person or record.",
+    ].join("\n") + "\n"
+    : `New setting: minimum group size ${minimumCohort}. Runner will hide groups with fewer than ${minimumCohort} rows.\n`);
   if (!await input.session.confirm(
-    minimumCohort === 1
-      ? `Record the owner decision to disable small-group suppression for ${input.resourceId}?`
-      : `Record minimum cohort ${minimumCohort} for ${input.resourceId}?`,
-    { defaultValue: false },
+    `Save this privacy change for ${input.resourceId}?`,
+    { defaultValue: true },
   )) {
-    process.stdout.write("Privacy-threshold change discarded. Nothing was saved or activated.\n");
+    process.stdout.write("Privacy change discarded. Nothing was saved or activated.\n");
     return "back";
   }
   const preview = await prepareBoundaryResourceReviewMutation(
@@ -2122,9 +2133,9 @@ async function interactiveMinimumCohortReview(input: {
   );
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
   process.stdout.write([
-    `Saved minimum cohort ${minimumCohort}${minimumCohort === 1 ? " (suppression off)" : ""} in disabled boundary revision ${committed.review_revision}.`,
+    `Saved minimum group size ${minimumCohort}${minimumCohort === 1 ? " (small-group suppression off)" : ""} in disabled boundary revision ${committed.review_revision}.`,
     "Agent authority changed: no.",
-    "Ask does not use this threshold until the updated boundary is activated.",
+    "Ask does not use this minimum group size until the updated boundary is activated.",
     "",
   ].join("\n"));
   return input.focusedAccess
@@ -2146,9 +2157,19 @@ async function interactiveBoundaryMinimumCohortReview(input: {
   }
   const currentValues = [...new Set(resources.map((resource) =>
     resource.minimum_cohort_size ?? 5))].sort((left, right) => left - right);
-  const currentLabel = currentValues.length === 1 ? String(currentValues[0]) : "mixed";
+  const currentLabel = currentValues.length === 1
+    ? String(currentValues[0])
+    : `mixed (${currentValues.join(", ")})`;
+  process.stdout.write([
+    "",
+    `PRIVACY - ALL ${resources.length} TABLES IN THIS BOUNDARY`,
+    `Current minimum group size: ${currentLabel}`,
+    "Runner hides aggregate groups with fewer rows than the selected number.",
+    "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off for every included table.",
+    "",
+  ].join("\n"));
   const enteredInput = await input.session.promptText(
-    `Minimum returned group for all ${resources.length} tables [${currentLabel}] (2-5, or off; off has effective minimum 1): `,
+    `New minimum group size for all tables [current ${currentLabel}]: `,
   );
   if (enteredInput === undefined) return "back";
   const entered = enteredInput.trim().toLowerCase();
@@ -2158,36 +2179,35 @@ async function interactiveBoundaryMinimumCohortReview(input: {
     : Number(entered);
   if (!Number.isSafeInteger(minimumCohort) || minimumCohort < 1 || minimumCohort > 5) {
     throw new Error(
-      "Choose 2 through 5, or choose off. Off is stored as effective minimum 1 because groups cannot contain zero rows.",
+      "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
     );
   }
   const changed = resources.filter((resource) =>
     (resource.minimum_cohort_size ?? 5) !== minimumCohort);
   if (!changed.length) {
-    process.stdout.write(`Every table already uses minimum cohort ${minimumCohort}.\n`);
+    process.stdout.write(`Every table already uses minimum group size ${minimumCohort}.\n`);
     return "back";
   }
   const reasonInput = await input.session.promptText(
-    minimumCohort === 1
-      ? "Why may every table in this owner-controlled boundary return groups of one? "
-      : `Why is a minimum returned group of ${minimumCohort} appropriate for this whole boundary? `,
+    `Reason for setting ${changed.length} table${changed.length === 1 ? "" : "s"} to minimum group size ${minimumCohort} (recorded with this decision): `,
   );
   if (reasonInput === undefined) {
-    process.stdout.write("Returned to boundary review. No privacy threshold changed.\n");
+    process.stdout.write("Returned to boundary review. No minimum group size changed.\n");
     return "back";
   }
   const reason = reasonInput.trim();
   if (!reason) {
-    throw new Error("Changing aggregate privacy thresholds requires a concrete human reason.");
+    throw new Error("Changing minimum group sizes requires a concrete human reason.");
   }
   process.stdout.write(minimumCohort === 1
-    ? "Off means no small-group suppression on these tables. Groups of one can identify individuals.\n"
-    : `Groups smaller than ${minimumCohort} will be withheld on every included table.\n`);
+    ? [
+      "New setting: minimum group size 1 for every included table (small-group suppression off).",
+      "Consequence: aggregate output may contain groups with one person or record.",
+    ].join("\n") + "\n"
+    : `New setting: minimum group size ${minimumCohort} for every included table. Runner will hide groups with fewer than ${minimumCohort} rows.\n`);
   if (!await input.session.confirm(
-    minimumCohort === 1
-      ? `Record the owner decision to disable small-group suppression for ${changed.length} tables?`
-      : `Record minimum cohort ${minimumCohort} for ${changed.length} tables?`,
-    { defaultValue: false },
+    `Save this privacy change for ${changed.length} table${changed.length === 1 ? "" : "s"}?`,
+    { defaultValue: true },
   )) {
     process.stdout.write("Boundary-wide privacy change discarded. Nothing was saved or activated.\n");
     return "back";
@@ -2205,9 +2225,9 @@ async function interactiveBoundaryMinimumCohortReview(input: {
   );
   const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
   process.stdout.write([
-    `Saved minimum cohort ${minimumCohort}${minimumCohort === 1 ? " (suppression off)" : ""} for ${changed.length} tables in disabled boundary revision ${committed.review_revision}.`,
+    `Saved minimum group size ${minimumCohort}${minimumCohort === 1 ? " (small-group suppression off)" : ""} for ${changed.length} table${changed.length === 1 ? "" : "s"} in disabled boundary revision ${committed.review_revision}.`,
     "Agent authority changed: no.",
-    "Ask does not use these thresholds until the updated boundary is activated.",
+    "Ask does not use these minimum group sizes until the updated boundary is activated.",
     "",
   ].join("\n"));
   return input.focusedAccess
@@ -2219,14 +2239,14 @@ async function offerImmediateBoundaryActivation(
   session: BoundaryReviewInteractiveSession,
 ): Promise<"back" | "review"> {
   const activate = await session.confirm(
-    "Review and activate this updated boundary now?",
+    "Review and activate this boundary change now?",
     { defaultValue: true },
   );
   if (activate) return "review";
   process.stdout.write([
     "1 pending boundary change is not active.",
     "Existing Ask access, if any, continues to use the previous exact boundary revision.",
-    "From /access, select this boundary and press C to Review + activate.",
+    "To activate it later: run /access, select this boundary, and press C (Review + activate).",
     "",
   ].join("\n"));
   return "back";
@@ -2529,7 +2549,7 @@ function formatBoundaryMutationPreview(
       : []),
     ...(diff.minimum_cohort_before !== diff.minimum_cohort_after
       ? [
-        `  Minimum cohort: ${diff.minimum_cohort_before ?? "not included"} -> ` +
+        `  Minimum group size: ${diff.minimum_cohort_before ?? "not included"} -> ` +
         `${diff.minimum_cohort_after ?? "not included"}` +
         `${diff.minimum_cohort_overridden ? " (explicit owner override)" : ""}`,
       ]

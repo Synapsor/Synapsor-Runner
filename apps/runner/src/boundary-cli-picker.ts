@@ -62,6 +62,7 @@ export type BoundaryReviewInteractiveSession = {
       initialView?: "boundaries" | "access";
       startingBoundaryName?: string;
       startAtBoundaryList?: boolean;
+      initialResourceId?: string;
     },
   ): Promise<BoundaryResourceSelection | undefined>;
   editFieldTiers(
@@ -238,6 +239,7 @@ async function chooseResource(
     initialView?: "boundaries" | "access";
     startingBoundaryName?: string;
     startAtBoundaryList?: boolean;
+    initialResourceId?: string;
   } | undefined,
   input: ReadStream,
   output: WriteStream,
@@ -254,6 +256,7 @@ async function chooseResource(
   let resourceView: ResourcePickerView = resources.some(
     (resource) => resource.included || resource.active,
   ) ? "boundary" : "all";
+  let initialResourceId = options?.initialResourceId;
   let mapOffset = 0;
   let startingTableNotice: string | undefined;
   return withRawKeys(input, output, async (nextKey, render) => {
@@ -326,7 +329,19 @@ async function chooseResource(
       }
       if (showReviewItems) {
         const boundaryResources = resources.filter((resource) => resource.included || resource.active);
-        const listedResources = resourcesForPickerView(resources, boundaryResources, resourceView);
+        const listedResources = resourcesForPickerView(
+          resources,
+          boundaryResources,
+          resourceView,
+          focusedAccess,
+        );
+        if (initialResourceId) {
+          const initialIndex = listedResources.findIndex(
+            (resource) => resource.resource_id === initialResourceId,
+          );
+          if (initialIndex >= 0) selected = initialIndex;
+          initialResourceId = undefined;
+        }
         selected = Math.min(selected, listedResources.length - 1);
         const highlighted = listedResources[selected]!;
         render([
@@ -589,7 +604,12 @@ async function chooseResource(
         continue;
       }
       const boundaryResources = resources.filter((resource) => resource.included || resource.active);
-      const listedResources = resourcesForPickerView(resources, boundaryResources, resourceView);
+      const listedResources = resourcesForPickerView(
+        resources,
+        boundaryResources,
+        resourceView,
+        focusedAccess,
+      );
       if (!listedResources.length) {
         render([
           theme.title(
@@ -625,6 +645,13 @@ async function chooseResource(
         }
         if (isCancel(key)) return undefined;
         continue;
+      }
+      if (initialResourceId) {
+        const initialIndex = listedResources.findIndex(
+          (resource) => resource.resource_id === initialResourceId,
+        );
+        if (initialIndex >= 0) selected = initialIndex;
+        initialResourceId = undefined;
       }
       selected = Math.min(selected, listedResources.length - 1);
       const start = boundedWindowStart(selected, listedResources.length, 10);
@@ -1072,7 +1099,7 @@ function boundaryResourceMapLines(
     ),
     ...mapTierLines(view, candidate, "kept_out", groupedFields.get("kept_out")!, theme),
     ...mapRelationshipLines(candidate, theme),
-    `\`-- Aggregate guard: minimum cohort ${candidate.minimum_cohort_size}; small groups are suppressed`,
+    `\`-- Aggregate guard: minimum group size ${candidate.minimum_cohort_size}; small groups are suppressed`,
   ];
   return lines;
 }
@@ -1333,8 +1360,14 @@ function resourcesForPickerView(
   resources: BoundaryResourceReviewSummary[],
   boundaryResources: BoundaryResourceReviewSummary[],
   view: ResourcePickerView,
+  stableBoundaryOrder = false,
 ): BoundaryResourceReviewSummary[] {
-  if (view === "boundary") return boundaryResources.length ? boundaryResources : resources;
+  if (view === "boundary") {
+    const listed = boundaryResources.length ? boundaryResources : resources;
+    return stableBoundaryOrder
+      ? [...listed].sort((left, right) => left.resource_id.localeCompare(right.resource_id))
+      : listed;
+  }
   const boundaryIds = new Set(boundaryResources.map((resource) => resource.resource_id));
   const outsideBoundary = resources.filter((resource) => !boundaryIds.has(resource.resource_id));
   if (view === "all" || !boundaryResources.length) return outsideBoundary.length
@@ -1657,7 +1690,7 @@ function reviewItemPresentation(
   if (normalized.includes("minimum cohort")) {
     return {
       label: "Privacy limits",
-      detail: "Minimum returned group size plus extraction and differencing budgets.",
+      detail: "Minimum group size plus extraction and differencing limits.",
     };
   }
   if (normalized.includes("principal scope")) {

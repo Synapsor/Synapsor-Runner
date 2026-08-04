@@ -3780,3 +3780,45 @@ Explore privacy and refusal DX closure (2026-08-04):
 - No package was published. No version, merge, push, tag, release, or dist-tag
   change was made, and the Cloud repository and technical deep dive remain
   untouched.
+
+Plain-language privacy-setting flow (2026-08-04):
+
+- First-run-facing CLI and Workbench copy now calls the control **minimum group
+  size** and explains its behavior directly: Runner hides aggregate groups with
+  fewer rows than the selected number; `1` turns small-group suppression off
+  and can reveal a group containing one person or record. Internal contract
+  field names and enforcement semantics remain unchanged.
+- The CLI path is explicit and consequence-led. In `/access`, the operator
+  highlights the table without opening its columns and presses `P`. Runner
+  shows the current value, accepts `1` through `5`, requests a recorded reason,
+  previews the consequence, and defaults the deliberate Save confirmation to
+  Yes. The next default-Yes action opens the exact whole-boundary review and
+  activation. `C` is needed only when that immediate activation is postponed.
+- Suppression and complementary-total messages now render a numbered recovery
+  path naming the exact boundary and table, including the distinction between
+  highlighting the table and opening its column editor. Workbench has the same
+  plain labels, explicit choices, consequence text, disabled-save behavior, and
+  separate Review and activate action.
+- Focused terminal access keeps included tables alphabetically stable even when
+  a privacy edit changes review status, and restores the same highlighted table
+  after the edit. Detailed non-focused review retains its existing risk-first
+  ordering.
+- A real PTY walkthrough used a disposable copy of the active five-table
+  CloudNimbus boundary. It highlighted `public.invoices`, pressed `P`, changed
+  the value, pressed Enter to save, and declined immediate activation. The
+  table remained second and highlighted, the pending banner named `C` as the
+  later action, and existing authority remained unchanged. A second run accepted
+  both default-Yes actions, activated the exact reviewed revision, and continued
+  directly to the provider chooser without a copied digest or source mutation.
+- Focused tests pass 122/122. The full root gate passes 84 files and 1,299 tests,
+  followed by trusted-core, license/content, human command-surface, DSL
+  source-path, and Cursor-plugin checks. Typecheck and `git diff --check` pass.
+- The Auto Boundary browser gate passes across desktop/mobile and reports two
+  human steps to first value, first actionable UI at 428 ms, and first verified
+  result at 1.826 s. The Workbench Ask gate passes with eight provider requests,
+  two reviewed calls, one safe refusal, no source mutation, no persisted key,
+  and zero browser-storage entries. Registry-only packed Runner verification
+  also passes.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.

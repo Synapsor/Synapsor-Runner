@@ -198,9 +198,11 @@ describe("Ask access summaries", () => {
       source_query_executed: true,
     });
     expect(guidance?.message).toMatch(/withheld.*reconstruct.*discarded/i);
-    expect(guidance?.next_action).toContain(
-      "/access -> boundary reviewed_staging -> table public.orders -> Privacy (P) -> choose off (effective minimum 1) -> Review + activate",
-    );
+    expect(guidance?.next_action).toContain("select reviewed_staging and press Enter");
+    expect(guidance?.next_action).toContain("Highlight public.orders; do not open its columns");
+    expect(guidance?.next_action).toContain("Press P (Privacy) for the highlighted table");
+    expect(guidance?.next_action).toContain("Enter 1 to turn small-group suppression off");
+    expect(guidance?.next_action).toContain("Save this privacy change? [Y/n]");
     expect(guidance?.next_action).toContain("groups of one can identify individuals");
   });
 
