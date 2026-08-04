@@ -19,6 +19,7 @@ import { TrustedOperatorInvocation } from "./operator-authority.js";
 import { formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
 import { findProposalCapability } from "./writeback-execution.js";
+import { terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 
 
 export async function proposalsList(args: string[]): Promise<number> {
@@ -582,7 +583,9 @@ export async function queryAuditShow(args: string[]): Promise<number> {
     const row = store.getQueryAudit(auditId);
     if (!row) throw new Error(`query audit record not found: ${auditId}`);
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
-    else process.stdout.write(showDetails(args) ? formatQueryAuditDetail(row) : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    else process.stdout.write(showDetails(args)
+      ? formatQueryAuditDetail(row, terminalSyntaxColorEnabled())
+      : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
     return 0;
   } finally {
     store.close();
@@ -794,7 +797,13 @@ export async function eventsTail(args: string[]): Promise<number> {
       } else if (rows.length === 0 && !follow) {
         process.stdout.write("No local events found.\n");
       } else {
-        for (const event of rows) process.stdout.write(formatEventLine(event, showDetails(args)));
+        for (const event of rows) {
+          process.stdout.write(formatEventLine(
+            event,
+            showDetails(args),
+            terminalSyntaxColorEnabled(),
+          ));
+        }
         if (!follow && rows.length > 0) {
           process.stdout.write(`Inspect newest complete lifecycle:\n${cliCommandName()} lifecycle${storeOptionSuffix(args)}\n`);
         }

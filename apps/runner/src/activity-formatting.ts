@@ -11,6 +11,7 @@ import {
 } from "@synapsor-runner/worker-core";
 import { cliCommandName } from "./cli-command-meta.js";
 import { humanStatus, stringField } from "./cli-format.js";
+import { renderTerminalJson } from "./terminal-syntax.js";
 
 
 export function activityFromProposal(proposal: StoredProposal): Record<string, unknown> {
@@ -133,14 +134,17 @@ export function formatActivityNext(items: Record<string, unknown>[], storeSuffix
 }
 
 
-export function formatEventLine(event: ProposalEvent, details = false): string {
+export function formatEventLine(event: ProposalEvent, details = false, color = false): string {
   const lines = [
     `${event.created_at}  ${event.kind}`,
     `  proposal: ${event.proposal_id}`,
     `  actor: ${event.actor}`,
   ];
   if (details && Object.keys(event.payload).length > 0) {
-    lines.push(`  payload: ${JSON.stringify(event.payload)}`);
+    lines.push(
+      "  payload:",
+      ...renderTerminalJson(event.payload, color).split("\n").map((line) => `    ${line}`),
+    );
   }
   lines.push("");
   return `${lines.join("\n")}\n`;

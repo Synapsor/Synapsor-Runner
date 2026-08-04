@@ -12,6 +12,7 @@ import { buildLifecycleView, formatLifecycleDetails, formatLifecycleFirstLook, f
 import { activitySearch, eventsTail, eventsWebhook, evidenceExport, evidenceList, evidenceShow, proposalsApprove, proposalsCheckFreshness, proposalsList, proposalsReject, proposalsShow, proposalsWritebackJob, queryAuditExport, queryAuditList, queryAuditShow, receiptsList, receiptsShow, replayExport, replayList, replayShow } from "./proposal-ledger.js";
 import { argsWithRuntimeStoreBridge, maybeSharedPostgresRuntimeStoreRead, storePrune, storeReset, storeSharedPostgres, storeStats, storeVacuum } from "./store-shared.js";
 import { formatPrometheusMetrics } from "./worker-runtime.js";
+import { terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 
 
 export async function proposals(args: string[]): Promise<number> {
@@ -62,7 +63,9 @@ async function lifecycleShow(args: string[]): Promise<number> {
     const resolved = resolveLifecycleProposal(store, { handle, filters: lifecycleFiltersFromArgs(args) });
     const payload = buildLifecycleView(store, resolved.proposal, resolved.selection, cliCommandName());
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else if (showDetails(args)) process.stdout.write(formatLifecycleDetails(payload));
+    else if (showDetails(args)) {
+      process.stdout.write(formatLifecycleDetails(payload, terminalSyntaxColorEnabled()));
+    }
     else process.stdout.write(formatLifecycleFirstLook(payload));
     return 0;
   } finally {

@@ -10,6 +10,13 @@ import {
 import type {
   ExplorePlan,
 } from "./scoped-explore.js";
+import {
+  renderTerminalJson,
+  safeTerminalCellText,
+  safeTerminalText,
+} from "./terminal-syntax.js";
+
+export { safeTerminalText } from "./terminal-syntax.js";
 
 export type AnalyticsAnalysis = {
   index: number;
@@ -143,7 +150,7 @@ export function renderAnalyticsTurn(
   }
   if (refused.length > 0) {
     if (options.includeAttempts) {
-      lines.push(...renderRefusedAttempts(refused));
+      lines.push(...renderRefusedAttempts(refused, options.ansi === true));
     } else if (successfulData.length === 0) {
       const latest = refused[refused.length - 1]!;
       lines.push(
@@ -332,6 +339,7 @@ function renderAccessGuidance(
 
 export function renderRefusedAttempts(
   analyses: AnalyticsAnalysis[],
+  ansi = false,
 ): string[] {
   const refused = refusedAnalyses(analyses);
   if (refused.length === 0) {
@@ -357,7 +365,7 @@ export function renderRefusedAttempts(
         ...(analysis.arguments
           ? [
               "Typed tool request:",
-              safeTerminalText(JSON.stringify(analysis.arguments, null, 2)),
+              renderTerminalJson(analysis.arguments, ansi),
             ]
           : []),
         `Source query executed: ${sourceExecution}`,
@@ -583,23 +591,6 @@ function naturalList(values: string[]): string {
   if (values.length <= 1) return values[0] ?? "";
   if (values.length === 2) return `${values[0]} and ${values[1]}`;
   return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
-}
-
-export function safeTerminalText(value: string): string {
-  return escapeTerminalControls(value, true);
-}
-
-function safeTerminalCellText(value: string): string {
-  return escapeTerminalControls(value, false);
-}
-
-function escapeTerminalControls(value: string, preserveNewlines: boolean): string {
-  return value.replace(
-    /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g,
-    (character) => preserveNewlines && character === "\n"
-      ? "\n"
-      : `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
 }
 
 export function analysisJson(analysis: AnalyticsAnalysis): Record<string, unknown> {

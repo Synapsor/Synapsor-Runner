@@ -36,6 +36,11 @@ import { mcpSmoke, smokeCall, toolsPreview } from "./mcp-runtime.js";
 import { formatMysqlReceiptGrants, formatMysqlReceiptMigration, formatPostgresReceiptGrants, formatPostgresReceiptMigration, requiredWritebackEngine } from "./onboarding.js";
 import { quoteSqlIdentifier } from "./sql-identifiers.js";
 import { argsWithRuntimeStoreBridge, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
+import {
+  renderTerminalJson,
+  renderTerminalSql,
+  terminalSyntaxColorEnabled,
+} from "./terminal-syntax.js";
 import { formatSourceReceiptMode, hashReceipt, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
 import { resolveSqlWriteDatabaseUrl } from "./writeback-execution.js";
 
@@ -63,7 +68,9 @@ async function toolsCatalog(args: string[]): Promise<number> {
       ? 1
       : config.result_format ?? 1;
   const catalog = buildAnalyticsCatalog(config, resultFormat);
-  process.stdout.write(`${JSON.stringify(catalog, null, 2)}\n`);
+  process.stdout.write(`${args.includes("--json")
+    ? JSON.stringify(catalog, null, 2)
+    : renderTerminalJson(catalog, terminalSyntaxColorEnabled())}\n`);
   return 0;
 }
 
@@ -549,10 +556,11 @@ async function writebackSetup(args: string[]): Promise<number> {
     };
   const digest = canonicalJsonDigest(unsigned);
   const plan: WritebackSetupPlan = { ...unsigned, digest };
+  const color = terminalSyntaxColorEnabled();
 
   if (!args.includes("--apply")) {
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, applied: false, plan }, null, 2)}\n`);
-    else process.stdout.write(formatWritebackSetupPlan(plan));
+    else process.stdout.write(formatWritebackSetupPlan(plan, color));
     return 0;
   }
   if (!selected) {
@@ -586,7 +594,7 @@ async function writebackSetup(args: string[]): Promise<number> {
   };
   if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else process.stdout.write([
-    formatWritebackSetupPlan(plan).trimEnd(),
+    formatWritebackSetupPlan(plan, color).trimEnd(),
     "",
     applied.message,
     `State: ${statePath}`,
@@ -731,7 +739,7 @@ async function writebackSetupProfile(args: string[], configPath: string): Promis
 }
 
 
-function formatWritebackSetupPlan(plan: WritebackSetupPlan): string {
+function formatWritebackSetupPlan(plan: WritebackSetupPlan, color = false): string {
   const applyArguments = [
     "--config", shellQuote(plan.config_path),
     ...(plan.source ? ["--source", shellQuote(plan.source)] : []),
@@ -756,7 +764,9 @@ function formatWritebackSetupPlan(plan: WritebackSetupPlan): string {
     `Setup connection env: ${plan.setup_connection_env ?? "not required"}`,
     "Source database changed: no",
     ...(plan.writer_grants.length ? ["", "Reviewed grants:", ...plan.writer_grants.map((grant) => `  ${grant}`)] : []),
-    ...(plan.sql_preview ? ["", "Exact SQL preview:", plan.sql_preview.trimEnd()] : []),
+    ...(plan.sql_preview
+      ? ["", "Exact SQL preview:", renderTerminalSql(plan.sql_preview.trimEnd(), color)]
+      : []),
     "",
     `Next: ${plan.next_action}`,
     ...(plan.apply_allowed
@@ -860,6 +870,7 @@ async function writeCliJsonAtomic(filePath: string, value: unknown): Promise<voi
 async function writebackDoctor(args: string[]): Promise<number> {
   const configPath = runnerConfigPath(args, defaultConfigPath);
   const config = await readRuntimeConfig(configPath);
+  const color = terminalSyntaxColorEnabled();
   const checkDb = args.includes("--check-db");
   const sqlSources = Object.entries(config.sources ?? {})
     .filter(([sourceName]) => sourceNeedsSqlWriteback(config, sourceName));
@@ -903,7 +914,7 @@ async function writebackDoctor(args: string[]): Promise<number> {
         receipts,
       } satisfies RunnerConfig);
       lines.push(`  db check: ${result.ok ? "ok" : "failed"}`);
-      lines.push(`  details: ${JSON.stringify(redactConfig(result.details ?? {}))}`);
+      lines.push(`  details: ${renderTerminalJson(redactConfig(result.details ?? {}), color, 0)}`);
       if (!result.ok) ok = false;
     } else if (checkDb) {
       lines.push("  db check: skipped because writer env is missing");
@@ -924,10 +935,16 @@ async function writebackMigration(args: string[]): Promise<number> {
   const schema = optionalArg(args, "--schema");
   const table = optionalArg(args, "--table") ?? "synapsor_writeback_receipts";
   if (engine === "postgres") {
-    process.stdout.write(formatPostgresReceiptMigration(schema, table));
+    process.stdout.write(renderTerminalSql(
+      formatPostgresReceiptMigration(schema, table),
+      terminalSyntaxColorEnabled(),
+    ));
     return 0;
   }
-  process.stdout.write(formatMysqlReceiptMigration(schema, table));
+  process.stdout.write(renderTerminalSql(
+    formatMysqlReceiptMigration(schema, table),
+    terminalSyntaxColorEnabled(),
+  ));
   return 0;
 }
 
@@ -938,9 +955,15 @@ async function writebackGrants(args: string[]): Promise<number> {
   const schema = optionalArg(args, "--schema") ?? (engine === "postgres" ? "public" : "<database_name>");
   const table = optionalArg(args, "--table") ?? "synapsor_writeback_receipts";
   if (engine === "postgres") {
-    process.stdout.write(formatPostgresReceiptGrants(schema, writerRole, table));
+    process.stdout.write(renderTerminalSql(
+      formatPostgresReceiptGrants(schema, writerRole, table),
+      terminalSyntaxColorEnabled(),
+    ));
     return 0;
   }
-  process.stdout.write(formatMysqlReceiptGrants(schema, writerRole, table));
+  process.stdout.write(renderTerminalSql(
+    formatMysqlReceiptGrants(schema, writerRole, table),
+    terminalSyntaxColorEnabled(),
+  ));
   return 0;
 }

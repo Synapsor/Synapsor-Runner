@@ -15,6 +15,7 @@ import {
   type StoredWritebackReceipt,
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
+import { renderTerminalJson } from "./terminal-syntax.js";
 
 export const lifecycleViewSchemaVersion = "synapsor.lifecycle-view.v1" as const;
 export const lifecycleListSchemaVersion = "synapsor.lifecycle-list.v1" as const;
@@ -419,7 +420,7 @@ export function formatLifecycleFirstLook(view: LifecycleViewV1): string {
   return `${lines.join("\n")}\n`;
 }
 
-export function formatLifecycleDetails(view: LifecycleViewV1): string {
+export function formatLifecycleDetails(view: LifecycleViewV1, color = false): string {
   const sections: Array<[string, unknown]> = [
     ["Proposal", view.proposal],
     ["Approval", view.approval],
@@ -437,7 +438,7 @@ export function formatLifecycleDetails(view: LifecycleViewV1): string {
     `Selection: ${view.selection.mode}; matches=${view.selection.match_count}`,
   ];
   for (const [label, value] of sections) {
-    lines.push("", `${label}:`, indent(JSON.stringify(value, null, 2), 2));
+    lines.push("", `${label}:`, indent(renderTerminalJson(value, color), 2));
   }
   lines.push("", `Read next: ${view.next.read_only}`);
   if (view.next.operator) lines.push(`Operator next: ${view.next.operator}`);

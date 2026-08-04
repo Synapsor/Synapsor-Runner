@@ -3696,3 +3696,30 @@ Analytics shell discoverability and weak-model guidance (2026-08-04):
 - No package was published. No version, merge, push, tag, release, or dist-tag
   change was made, and the Cloud repository and technical deep dive remain
   untouched.
+
+Terminal JSON and SQL presentation (2026-08-04):
+
+- Added one shared, terminal-safe syntax renderer for human-facing JSON and SQL.
+  JSON keys, values, numbers, booleans, nulls, and structure are visually
+  distinct. PostgreSQL and MySQL diagnostics distinguish comments, keywords,
+  functions, data types, quoted identifiers, strings, numbers, and positional or
+  named placeholders.
+- The renderer is used by Ask `/details`, `/details --sql`, `/attempts`, normal
+  `try call` and `try explore` results, reviewed tool catalogs, lifecycle detail,
+  query-audit detail, event payload detail, writeback doctor/setup previews,
+  receipt migrations and grants, and the shared-Postgres ledger migration.
+- Terminal control and bidi characters are escaped before trusted ANSI styling
+  is added. SQL whitespace and statement text remain unchanged so the displayed
+  operator diagnostic stays faithful to the compiled statement Runner executed.
+- Explicit `--json`, redirected output, generated files, MCP/provider payloads,
+  logs, and copyable client configuration remain ANSI-free. A real PTY check
+  showed colored human JSON and SQL; the same catalog under `--json` and the same
+  SQL through a pipe each contained zero ANSI bytes. `NO_COLOR` is honored.
+- Focused terminal, analytics-shell, lifecycle, and CLI tests pass 214/214. The
+  full root gate passes 82 files and 1,284 tests, followed by trusted-core,
+  license/content, human command-surface, DSL source-path, and Cursor-plugin
+  verification. The Runner 1.6.6 package build passes, and its built CLI was
+  exercised in a real PTY for MySQL SQL plus ANSI-free JSON mode.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.

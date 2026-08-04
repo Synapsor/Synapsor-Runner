@@ -34,6 +34,12 @@ import {
   padTerminalLine,
   terminalContentWidth,
 } from "./terminal-layout.js";
+import {
+  renderTerminalJson,
+  renderTerminalSql,
+} from "./terminal-syntax.js";
+
+export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
 const COMMANDS = [
   "/help",
@@ -580,7 +586,10 @@ async function handleShellCommand(
   }
   if (line === "/attempts") {
     input.io.write([
-      ...renderRefusedAttempts(current?.analyses ?? []),
+      ...renderRefusedAttempts(
+        current?.analyses ?? [],
+        input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+      ),
       "",
       "",
     ].join("\n"));
@@ -737,6 +746,7 @@ async function showDetails(
   const boundaryName = stringRecordValue(liveResult?.boundary_name)
     ?? stringRecordValue(toolArguments?.boundary)
     ?? "recorded reviewed boundary";
+  const color = input.io.isTerminal?.() === true && !("NO_COLOR" in process.env);
   let operatorInspection: OperatorCompiledExploreEvidence | undefined;
   let inspectionFailure: string | undefined;
   if (input.inspectAnalysis && selected.normalized_plan) {
@@ -747,8 +757,7 @@ async function showDetails(
     }
   }
   const modelRequest = toolArguments
-    ? JSON.stringify(toolArguments, null, 2)
-    : JSON.stringify({ plan: redactPlanLiterals(selected.normalized_plan) }, null, 2);
+    ?? { plan: redactPlanLiterals(selected.normalized_plan) };
   input.io.write([
     "",
     `ANALYSIS ${safeTerminalText(selected.token)}`,
@@ -760,7 +769,7 @@ async function showDetails(
     "",
     "WHAT THE MODEL REQUESTED",
     live?.analysis.tool ?? "app.explore_data",
-    safeTerminalText(modelRequest),
+    renderTerminalJson(modelRequest, color),
     "",
     "WHAT RUNNER EXECUTED",
     `Plan validated: ${live?.analysis.status === "refused" ? "no" : "yes"}`,
@@ -771,7 +780,7 @@ async function showDetails(
     `Database role: ${operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution"}`,
     `Transaction: ${safeTerminalText(operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction")}`,
     "Normalized validated plan:",
-    JSON.stringify(redactPlanLiterals(selected.normalized_plan), null, 2),
+    renderTerminalJson(redactPlanLiterals(selected.normalized_plan), color),
     "",
     "WHAT RUNNER RETURNED",
     `Outcome: ${selected.outcome ?? stringRecordValue(asRecord(liveResult?.outcome).status) ?? "ok"}`,
@@ -794,7 +803,7 @@ async function showDetails(
             "Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted.",
             ...operatorInspection.statements.flatMap((statement, index) => [
               `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,
-              safeTerminalText(statement.statement),
+              renderTerminalSql(statement.statement, color),
               `Parameter types: ${statement.parameter_types.join(", ") || "none"}`,
               "Parameter values: redacted",
             ]),

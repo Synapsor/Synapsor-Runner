@@ -36,6 +36,10 @@ import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
 import { tryAsk } from "./try-ask.js";
 import { resolveReadableTryStateRoot } from "./try-state.js";
+import {
+  renderTerminalJson,
+  terminalSyntaxColorEnabled,
+} from "./terminal-syntax.js";
 import { openBrowser } from "./ui-command.js";
 
 
@@ -174,7 +178,7 @@ async function tryOwnDataCall(args: string[]): Promise<number> {
       `Principal scope: ${payload.trusted_principal_scope}`,
       `Source database changed: ${sourceChanged ? "yes" : "no"}`,
       "",
-      JSON.stringify(call.result, null, 2),
+      renderTerminalJson(call.result, terminalSyntaxColorEnabled()),
       "",
       `Next: ${payload.next_action}`,
       "",
@@ -493,11 +497,11 @@ function resolvedSynapsorProjectRoot(args: string[]): string {
 function formatTryExploreDescription(payload: {
   description: Record<string, unknown>;
   next_action: string;
-}): string {
+}, color = terminalSyntaxColorEnabled()): string {
   return [
     "Reviewed local data boundary",
     "",
-    JSON.stringify(payload.description, null, 2),
+    renderTerminalJson(payload.description, color),
     "",
     "Source database changed: no",
     `Next: ${payload.next_action}`,
@@ -509,11 +513,11 @@ function formatTryExploreDescription(payload: {
 function formatTryExploreResult(payload: {
   result: Record<string, unknown>;
   next_action: string;
-}): string {
+}, color = terminalSyntaxColorEnabled()): string {
   return [
     "Your first safe exploration is working.",
     "",
-    JSON.stringify(payload.result, null, 2),
+    renderTerminalJson(payload.result, color),
     "",
     "Source database changed: no",
     `Next: ${payload.next_action}`,

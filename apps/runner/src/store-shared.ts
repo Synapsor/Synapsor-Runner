@@ -20,6 +20,7 @@ import { storePruneAllowedOptions, storeResetAllowedOptions, storeSharedPostgres
 import { SharedPostgresLedgerMirror, sharedPostgresLedgerMirrorOptions, sharedPostgresLedgerTableCounts } from "./shared-ledger-domain.js";
 import { quoteSqlIdentifier } from "./sql-identifiers.js";
 import { assertNoActiveStoreLease, storeLeasePath } from "./store-lease.js";
+import { renderTerminalSql, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 import { hashReceipt } from "./writeback-domain.js";
 
 
@@ -127,7 +128,7 @@ async function storeSharedPostgresMigration(args: string[]): Promise<number> {
   if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify({ ok: true, engine: "postgres", schema, sql }, null, 2)}\n`);
   } else {
-    process.stdout.write(`${sql}\n`);
+    process.stdout.write(`${renderTerminalSql(sql, terminalSyntaxColorEnabled())}\n`);
   }
   return 0;
 }

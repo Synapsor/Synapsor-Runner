@@ -6,6 +6,8 @@ import {
   renderAnalyticsShellBanner,
   renderReviewedAccessCatalog,
   renderSlashCommandMenu,
+  renderTerminalJson,
+  renderTerminalSql,
   runAnalyticsShell,
   slashCommandSuggestions,
   type AnalyticsShellIo,
@@ -15,6 +17,7 @@ import {
   modelAnswerForDisplay,
   renderAnalysis,
   renderAnalyticsTurn,
+  renderRefusedAttempts,
   renderTable,
   type AnalyticsAnalysis,
 } from "./analytics-shell-render.js";
@@ -792,6 +795,18 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("top_n exceeds the reviewed aggregate result bound");
   });
 
+  it("syntax-highlights typed tool requests in refused-attempt details", () => {
+    const refused = refusedAnalysis("EXPLORE_FIELD_FORBIDDEN", "field access was refused");
+    refused.arguments = {
+      boundary: "reviewed_sessions",
+      plan: { kind: "aggregate", resource: "public.sessions", top_n: 10 },
+    };
+    const output = renderRefusedAttempts([refused], true).join("\n");
+    expect(output).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(output).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+    expect(output).toContain("\u001b[1;33m10\u001b[0m");
+  });
+
   it("styles model prose and Runner facts differently in a TTY", async () => {
     const io = fakeIo(["show reviewed totals", "/exit"], 100, true);
     await runAnalyticsShell({
@@ -1289,6 +1304,57 @@ describe("Synapsor Analytics shell", () => {
     expect(inspectAnalysis).toHaveBeenCalledOnce();
   });
 
+  it("syntax-highlights detail JSON only for interactive color terminals", async () => {
+    const value = {
+      boundary: "reviewed_sessions",
+      plan: {
+        kind: "aggregate",
+        top_n: 1,
+        enabled: true,
+        optional: null,
+      },
+    };
+    const plain = renderTerminalJson(value);
+    expect(plain).toBe(JSON.stringify(value, null, 2));
+    expect(plain).not.toContain("\u001b[");
+
+    const colored = renderTerminalJson(value, true);
+    expect(colored).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(colored).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+    expect(colored).toContain("\u001b[1;33m1\u001b[0m");
+    expect(colored).toContain("\u001b[1;35mtrue\u001b[0m");
+    expect(colored).toContain("\u001b[2mnull\u001b[0m");
+    expect(colored).toContain("\u001b[2m{\u001b[0m");
+
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    const io = fakeIo(["How many sessions are in each region?", "/details A1", "/exit"], 100, true);
+    const liveAnalysis = analysis("A1", 0);
+    liveAnalysis.arguments = { boundary: "reviewed_sessions", plan: liveAnalysis.plan };
+    try {
+      await runAnalyticsShell({
+        providerLabel: "OpenAI",
+        profileLabel: "staging",
+        reviewedDataAreas: 1,
+        io,
+        ask: async () => ({
+          turn: turn("West has the most sessions."),
+          analyses: [liveAnalysis],
+          answer_id: "ans_colored_details",
+        }),
+        listAnalyses: async () => [storedAnalysis("A1")],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
+    expect(io.output()).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(io.output()).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+  });
+
   it("reveals only placeholder SQL and parameter types through the explicit operator detail action", async () => {
     const io = fakeIo(["How many sessions are in each region?", "/details A1 --sql", "/exit"]);
     const liveAnalysis = analysis("A1", 0);
@@ -1317,6 +1383,21 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("Parameter types: string, integer");
     expect(output).toContain("Parameter values: redacted");
     expect(output).not.toContain("tenant-secret-value");
+  });
+
+  it("syntax-highlights compiled SQL only for interactive color terminals", () => {
+    const statement = 'SELECT t0."feature", SUM(t0."event_count") FROM "public"."usage_events" t0 WHERE t0."organization_id" = $1 ORDER BY "measure_0" DESC LIMIT $2';
+    expect(renderTerminalSql(statement)).toBe(statement);
+    expect(renderTerminalSql(statement)).not.toContain("\u001b[");
+
+    const colored = renderTerminalSql(statement, true);
+    expect(colored).toContain("\u001b[1;36mSELECT\u001b[0m");
+    expect(colored).toContain('\u001b[1;32m"feature"\u001b[0m');
+    expect(colored).toContain("\u001b[1;34mSUM\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m$1\u001b[0m");
+    expect(colored).toContain("\u001b[1;36mORDER\u001b[0m");
+    expect(colored).toContain("\u001b[1;36mDESC\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m$2\u001b[0m");
   });
 
   it("does not mislabel a derived number as absent from the verified result", async () => {
