@@ -15,6 +15,7 @@ import {
   formatProviderEgressReview,
   parseEgressConfirmation,
   providerDisplayLabel,
+  resolveAskModel,
   tryAsk,
 } from "./try-ask.js";
 
@@ -63,6 +64,44 @@ describe("try ask", () => {
     expect(providerDisplayLabel("openai_compatible", "custom_remote"))
       .toBe("OpenAI-compatible (custom remote)");
     expect(providerDisplayLabel("openai", "official_remote")).toBe("OpenAI");
+  });
+
+  it("uses the documented hosted-provider defaults while requiring an explicit custom model", () => {
+    expect(resolveAskModel("openai", undefined)).toBe("gpt-5-mini");
+    expect(resolveAskModel("anthropic", undefined)).toBe("claude-sonnet-4-20250514");
+    expect(resolveAskModel("openai", "gpt-custom")).toBe("gpt-custom");
+    expect(() => resolveAskModel("openai_compatible", undefined))
+      .toThrow("requires --model <value> for an OpenAI-compatible endpoint");
+  });
+
+  it("runs the OpenAI flag path without --model using the documented default", async () => {
+    const fixture = await askProject();
+    const consent = vi.fn(async () => true);
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        choices: [{ message: { role: "assistant", content: "The reviewed answer is available." } }],
+      },
+    }));
+
+    await expect(tryAsk([
+      "Count reviewed rows.",
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([]),
+      confirmEgress: consent,
+      providerDependencies: { requestJson },
+      bindPlansToAnswer: async () => undefined,
+    })).resolves.toBe(0);
+
+    expect(consent).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5-mini" }));
+    expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ model: "gpt-5-mini" }),
+    }));
   });
 
   it("uses a default-Yes interactive egress confirmation without exposing the fingerprint", async () => {

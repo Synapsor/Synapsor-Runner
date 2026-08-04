@@ -405,6 +405,26 @@ The command first prints a disabled semantic-diff preview. Applying it still
 uses the existing signed operator review flow and does not activate authority.
 Set `--minimum-cohort 5` to restore the default and remove the override.
 
+In the interactive CLI, this setting is labelled **minimum group size**. To
+change it for one table:
+
+1. Type `/access` in Analytics, or run
+   `synapsor-runner boundary review --access` from the shell.
+2. If the boundary list appears, highlight the boundary and press Enter.
+3. Highlight the table in the table list. Do not press Enter, because Enter
+   opens the column editor. Press `P`; Privacy applies to the highlighted table.
+4. Enter a number from 1 through 5 and a short reason. Runner hides aggregate
+   groups with fewer rows than that number. A value of 1 turns small-group
+   suppression off.
+5. Press Enter at `Save this privacy change? [Y/n]` to save the disabled draft.
+6. Press Enter at `Review and activate this boundary change now? [Y/n]` to
+   review and activate it. If activation is postponed, return to the boundary
+   screen and press `C` (**Review + activate**).
+
+Press `P` while the boundary is highlighted to set the same minimum group size
+for all included tables as one atomic disabled change. Saving never activates
+authority by itself.
+
 A threshold of 1 disables small-group suppression: groups of one may identify
 individuals. Workbench and CLI state that consequence directly. The recorded
 decision changes the reviewed boundary digest; reviewer identity and reason
@@ -476,10 +496,34 @@ authority also remains available through explicit CLI Try:
 ```bash
 synapsor-runner try call --list --format json
 synapsor-runner try explore --suggested --json
-synapsor-runner try ask \
-  --provider openai \
-  --model gpt-5-mini
+synapsor-runner try ask --provider openai
 ```
+
+OpenAI uses the tested `gpt-5-mini` default and Anthropic uses the tested
+Claude Sonnet default when `--model` is omitted. A loopback OpenAI-compatible
+endpoint still requires `--model` because its installed models are local
+operator state.
+
+Run a two-period comparison without hand-writing plan JSON:
+
+```bash
+synapsor-runner try explore \
+  --resource public.orders \
+  --sum total_cents \
+  --group-by channel \
+  --time-bucket created_at:week \
+  --compare created_at \
+  --period 2026-06-01T00:00:00Z..2026-06-08T00:00:00Z \
+  --vs-period 2026-06-08T00:00:00Z..2026-06-15T00:00:00Z \
+  --change percentage
+```
+
+`app.describe_data` reports cohort-safe minimum and maximum dates for reviewed
+time fields. It returns dates only when at least the reviewed minimum cohort has
+a value; otherwise coverage is marked empty, withheld, or unavailable. The
+model uses that coverage to anchor phrases such as `latest week` against a
+historical staging snapshot instead of silently assuming today's date. Startup
+preflight defers this aggregate, so activation still reads schema metadata only.
 
 Cursor, Claude, Codex, and generic stdio are optional clients, not onboarding
 dependencies. The packed FitFlow gate proves Workbench, CLI Try, and an

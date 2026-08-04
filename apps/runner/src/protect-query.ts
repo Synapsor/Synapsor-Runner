@@ -21,6 +21,7 @@ import {
   loadProtectedPlan,
   modelWithheldExploreOutputColumns,
   prepareScopedExplore,
+  scopedExploreBoundaryLoadError,
   assertPreparedExplorePlanAuthority,
   validateExplorePlan,
   type AggregateExplorePlan,
@@ -179,7 +180,9 @@ export async function listProtectableQueries(input: {
   };
 }>> {
   const projectRoot = path.resolve(input.projectRoot);
-  const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
+    throw scopedExploreBoundaryLoadError(error);
+  });
   const boundaryByDigest = new Map(
     boundaries.map((boundary) => [boundary.activation.digest, boundary]),
   );
@@ -1281,9 +1284,9 @@ function safeIdentifier(value: string): string {
   return value;
 }
 
-function assertQualifiedCapabilityName(value: string): void {
+export function assertQualifiedCapabilityName(value: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-    throw new Error("Protected capability name must be namespace.name.");
+    throw new Error("Invalid protected capability name. Use namespace.name, for example analytics.customers_by_region.");
   }
 }
 

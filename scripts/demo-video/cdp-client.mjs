@@ -188,15 +188,20 @@ export async function waitForExpression(page, expression, timeoutMs = 30_000) {
 
 export async function clickSelector(page, selector) {
   const result = await page.send("Runtime.evaluate", {
-    expression: `(() => {
+    expression: `(async () => {
       const element=document.querySelector(${JSON.stringify(selector)});
       if(!element)throw new Error("Missing element: "+${JSON.stringify(selector)});
       element.scrollIntoView({behavior:"instant",block:"center",inline:"center"});
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       const rect=element.getBoundingClientRect();
       if(rect.width<1||rect.height<1)throw new Error("Element is not visible: "+${JSON.stringify(selector)});
-      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+      const point={x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+      const hit=document.elementFromPoint(point.x,point.y);
+      if(hit!==element&&!element.contains(hit))throw new Error("Element is covered before click: "+${JSON.stringify(selector)});
+      return point;
     })()`,
     returnByValue: true,
+    awaitPromise: true,
   });
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.exception?.description ?? `Could not click ${selector}`);
@@ -226,17 +231,22 @@ export async function clickSelector(page, selector) {
 
 export async function clickElementByText(page, selector, text) {
   const result = await page.send("Runtime.evaluate", {
-    expression: `(() => {
+    expression: `(async () => {
       const expected=${JSON.stringify(text)};
       const element=[...document.querySelectorAll(${JSON.stringify(selector)})]
         .find(candidate=>candidate.textContent.trim()===expected);
       if(!element)throw new Error("Missing "+${JSON.stringify(selector)}+" with text: "+expected);
       element.scrollIntoView({behavior:"instant",block:"center",inline:"center"});
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       const rect=element.getBoundingClientRect();
       if(rect.width<1||rect.height<1)throw new Error("Element is not visible: "+expected);
-      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+      const point={x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+      const hit=document.elementFromPoint(point.x,point.y);
+      if(hit!==element&&!element.contains(hit))throw new Error("Element is covered before click: "+expected);
+      return point;
     })()`,
     returnByValue: true,
+    awaitPromise: true,
   });
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.exception?.description ?? `Could not click ${selector} with text ${text}`);
@@ -266,6 +276,16 @@ export async function clickElementByText(page, selector, text) {
 
 export async function typeIntoSelector(page, selector, text) {
   await clickSelector(page, selector);
+  const focused = await page.send("Runtime.evaluate", {
+    expression: `(() => {
+      const element=document.querySelector(${JSON.stringify(selector)});
+      return Boolean(element&&document.activeElement===element);
+    })()`,
+    returnByValue: true,
+  });
+  if (focused.result?.value !== true) {
+    throw new Error(`Physical click did not focus input: ${selector}`);
+  }
   await page.send("Input.dispatchKeyEvent", {
     type: "keyDown",
     key: "a",
@@ -283,6 +303,13 @@ export async function typeIntoSelector(page, selector, text) {
     modifiers: 2,
   });
   await page.send("Input.insertText", { text: String(text) });
+  const inserted = await page.send("Runtime.evaluate", {
+    expression: `document.querySelector(${JSON.stringify(selector)})?.value`,
+    returnByValue: true,
+  });
+  if (inserted.result?.value !== String(text)) {
+    throw new Error(`Typed value did not reach input: ${selector}`);
+  }
 }
 
 export async function selectOptionByValue(page, selector, value) {

@@ -15,6 +15,10 @@ export type FriendlyExploreOptions = {
   averages?: string[];
   groupBy?: string[];
   timeBucket?: string;
+  compareField?: string;
+  period?: string;
+  versusPeriod?: string;
+  comparisonChange?: "absolute" | "percentage";
   filters?: string[];
   top?: number;
 };
@@ -85,6 +89,23 @@ export function buildFriendlyAggregatePlan(
     timeBucket = { field: reference.field, bucket, ...(reference.relationship ? { relationship: reference.relationship } : {}) };
   }
 
+  let comparison: AggregateExplorePlan["comparison"];
+  if (options.compareField || options.period || options.versusPeriod) {
+    if (!options.compareField || !options.period || !options.versusPeriod) {
+      throw new Error("A period comparison requires --compare <time-field>, --period <start>..<end>, and --vs-period <start>..<end>.");
+    }
+    if (!timeBucket) {
+      throw new Error("A period comparison requires --time-bucket <time-field>:day|week|month to state its reviewed reporting grain.");
+    }
+    const reference = parseFieldReference(options.compareField);
+    bindRelationship(reference.relationship);
+    comparison = {
+      field: reference.field,
+      ranges: [parsePeriod(options.period, "--period"), parsePeriod(options.versusPeriod, "--vs-period")],
+      ...(reference.relationship ? { relationship: reference.relationship } : {}),
+    };
+  }
+
   const where: ExploreFilter[] = [];
   for (const value of options.filters ?? []) {
     const filter = parseFilter(value);
@@ -103,10 +124,18 @@ export function buildFriendlyAggregatePlan(
     ...(dimensions.length ? { dimensions } : {}),
     ...(timeBucket ? { time_bucket: timeBucket } : {}),
     ...(where.length ? { where } : {}),
-    order_by: timeBucket
-      ? { kind: "time_bucket", direction: "asc" }
-      : { kind: "measure", index: 0, direction: "desc" },
+    order_by: comparison
+      ? {
+        kind: "comparison_change",
+        index: 0,
+        change: options.comparisonChange ?? "percentage",
+        direction: "desc",
+      }
+      : timeBucket
+        ? { kind: "time_bucket", direction: "asc" }
+        : { kind: "measure", index: 0, direction: "desc" },
     top_n: top,
+    ...(comparison ? { comparison } : {}),
   };
 }
 
@@ -182,6 +211,19 @@ function parseFilter(value: string): ExploreFilter {
     value: parsed,
     ...(reference.relationship ? { relationship: reference.relationship } : {}),
   };
+}
+
+function parsePeriod(value: string, option: "--period" | "--vs-period"): { start: string; end: string } {
+  const separator = value.indexOf("..");
+  const start = separator > 0 ? value.slice(0, separator).trim() : "";
+  const end = separator > 0 ? value.slice(separator + 2).trim() : "";
+  if (!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {
+    throw new Error(`${option} must use bounded ISO timestamps as <start>..<end>.`);
+  }
+  if (Date.parse(start) >= Date.parse(end)) {
+    throw new Error(`${option} requires start before end.`);
+  }
+  return { start, end };
 }
 
 function parseScalar(value: string): string | number | boolean | null {

@@ -12,6 +12,7 @@ import {
   createScopedExploreMcpServer,
 } from "./authoring-mcp.js";
 import {
+  NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
   ScopedExploreError,
 } from "./scoped-explore.js";
 import {
@@ -36,6 +37,9 @@ type ConnectedMcpSurface = {
     args: Record<string, unknown>,
     result: Record<string, unknown>,
   ) => { value: Record<string, unknown>; withheld: boolean };
+  describeOperatorMetadata?: (
+    args: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
 };
 
 export async function createWorkbenchAskMcpGateway(input: {
@@ -66,7 +70,7 @@ export async function createWorkbenchAskMcpGateway(input: {
       if (requestedMode === "authoring") {
         throw new AskError(
           "ASK_AUTHORING_UNAVAILABLE",
-          "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.",
+          NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
           409,
         );
       }
@@ -130,6 +134,15 @@ export async function createWorkbenchAskMcpGateway(input: {
           };
         }
       },
+      ...(toolSurface.some((tool) => tool.name === "app.describe_data")
+        && surfaces[0]?.describeOperatorMetadata
+        ? {
+          describeOperatorMetadata: async (args: Record<string, unknown>) => ({
+            ok: true,
+            value: await surfaces[0]!.describeOperatorMetadata!(args),
+          }),
+        }
+        : {}),
       close: async () => {
         if (closed) return;
         closed = true;
@@ -184,6 +197,13 @@ async function connectAuthoringSurface(input: {
         arguments: args,
         result,
       });
+    surface.describeOperatorMetadata = (args) => runtime!.describe({
+      ...(typeof args.boundary === "string" ? { boundary: args.boundary } : {}),
+      ...(typeof args.resource === "string" ? { resource: args.resource } : {}),
+      ...(typeof args.cursor === "number" ? { cursor: args.cursor } : {}),
+      ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
+      include_time_coverage: false,
+    });
     return surface;
   } catch (error) {
     await runtime?.close().catch(() => undefined);

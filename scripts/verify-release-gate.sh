@@ -47,6 +47,7 @@ run node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source
 run node "$ROOT/scripts/check-public-package-version-collisions.mjs"
 run "$ROOT/scripts/verify-packed-runner.sh"
 run "$ROOT/scripts/verify-packed-own-db.sh"
+run node "$ROOT/scripts/verify-packed-first-run-cli.mjs"
 run node "$ROOT/scripts/check-license-content.mjs"
 
 log "No install-looking @synapsor/handler references in public docs/examples"

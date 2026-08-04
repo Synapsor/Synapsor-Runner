@@ -721,7 +721,11 @@ export async function verifyLocalWritebackAuthority(
   const jobFreshness = "freshness" in job && job.freshness
     ? parseFreshnessAuthority(job.freshness)
     : undefined;
-  const currentFreshnessPolicy = config.proposal_freshness?.[matching.name];
+  // Compensation carries an exact expected-state/version guard in its inverse
+  // descriptor; the v4 protocol deliberately has no generic freshness field.
+  const currentFreshnessPolicy = job.protocol_version === protocolVersions.normalizedWritebackJobV4
+    ? undefined
+    : config.proposal_freshness?.[matching.name];
   if (Boolean(currentFreshnessPolicy) !== Boolean(jobFreshness)) {
     throw new Error(
       "FRESHNESS_POLICY_CHANGED_CREATE_NEW_PROPOSAL: the reviewed freshness policy changed after this proposal was created; create and review a new proposal",

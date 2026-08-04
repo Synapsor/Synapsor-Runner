@@ -59,7 +59,7 @@ Commands:
 
 Examples:
   ${cmd} try --prove --yes --no-open
-  ${cmd} try ask --provider openai --model <model> [--verbose]
+  ${cmd} try ask --provider openai [--model <model>] [--verbose]
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
   ${cmd} start --action refund_order --description "Propose one reviewed order refund"
@@ -106,11 +106,12 @@ Global options:
   ${cmd} try explore
   ${cmd} try explore --suggested
   ${cmd} try explore --resource public.check_ins --count-distinct member_id --group-by outcome --time-bucket checked_in_at:week
+  ${cmd} try explore --resource public.orders --sum total_cents --group-by channel --time-bucket created_at:week --compare created_at --period 2026-06-01T00:00:00Z..2026-06-08T00:00:00Z --vs-period 2026-06-08T00:00:00Z..2026-06-15T00:00:00Z
   ${cmd} try explore --plan '{"kind":"aggregate",...}'
-  ${cmd} try ask --provider openai --model <model>
-  ${cmd} try ask --provider anthropic --model <model>
+  ${cmd} try ask --provider openai [--model <model>]
+  ${cmd} try ask --provider anthropic [--model <model>]
   ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1
-  ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai --model <model>
+  ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai
   ${cmd} try protect --last --name analytics.protected_analysis
   ${cmd} try protect --from A2 --name analytics.protected_analysis
 
@@ -118,9 +119,12 @@ Choose the intended path:
   ${cmd} try
     Runs an isolated synthetic commit-safety proof. It does not use your
     connected project database and may open its separate demo review screen.
-  ${cmd} try ask --provider openai --model <model>
+  ${cmd} try ask --provider openai
     Opens the terminal natural-language analytics shell for an already active
-    reviewed project boundary. It does not open the demo UI.
+    reviewed project boundary. OpenAI defaults to gpt-5-mini and Anthropic
+    defaults to Claude Sonnet; --model overrides either choice. A loopback
+    OpenAI-compatible provider still requires an explicit model. This command
+    does not open the demo UI.
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
@@ -344,6 +348,8 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
   ${cmd} boundary review --map [--all] [--project-root .]
   ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
+  ${cmd} boundary rename reviewed_sales --to sales_analytics --actor reviewer@example.com --reason "Use the team-facing boundary name"
+  ${cmd} boundary delete old_draft --yes [--project-root .]
   ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
@@ -408,6 +414,20 @@ A boundary is the reviewed set of tables, fields, relationships, trusted row
 scope, privacy limits, and query budgets an agent may use. A disabled draft is
 editable and grants no access.
 
+Plain language for the access editor:
+  Boundary           The data and operations the AI cannot exceed.
+  Record ID          A database-proven unique key for one row.
+  Tenant isolation   The customer/account column Runner fixes outside AI input.
+  Model + Runner     Reviewed raw values may be sent to the configured model.
+  Runner only        Raw values stay local; reviewed counts/statistics may be sent.
+  Kept out           The field cannot be used by Explore at all.
+  Fingerprint        Runner's internal proof that the reviewed access did not change.
+
+If a table has valid Record ID and Tenant isolation candidates but Runner cannot
+choose between them safely, Enter opens one inline choice screen. Saving those
+choices keeps the table in the disabled draft and continues directly to column
+review. It does not require a signed key and does not activate access.
+
 Run \`${cmd} boundary review --access\`, press E from \`start --cli\`, or use
 \`/access\` in Analytics for the focused two-step editor. First choose every
 table and column tier in one screen. Routine choices save directly to the
@@ -418,6 +438,24 @@ changes clear conversation state and renew the egress decision. Sensitive-field 
 a reviewer and reason. A nullable reviewed path asks explicitly whether
 unmatched counted rows remain under an empty group or are excluded; there is no
 default because that choice changes totals.
+
+To change aggregate privacy for one table in the focused editor:
+
+1. If the boundary list appears, highlight the boundary and press Enter.
+2. In the table list, highlight the table. Do not press Enter; Enter opens its
+   columns. Press P instead. Privacy applies to the highlighted table.
+3. Enter a minimum group size from 1 through 5 and a short recorded reason.
+   Runner hides groups with fewer rows than that number. A value of 1 turns
+   small-group suppression off and may reveal a group containing one person or
+   record.
+4. At \`Save this privacy change? [Y/n]\`, press Enter to save the disabled
+   boundary revision. This does not change active authority.
+5. At \`Review and activate this boundary change now? [Y/n]\`, press Enter to
+   review and activate it. If you choose No or Escape, return to the boundary
+   screen later and press C (**Review + activate**).
+
+Press P while the boundary itself is highlighted to set one minimum group size
+for every included table atomically. The same save and activation steps apply.
 
 Run \`${cmd} boundary review\` in a terminal to see only the saved boundaries
 that exist. This is the advanced governance route. A creates another named
@@ -500,7 +538,7 @@ fields or relationships. It previews a semantic diff and saves disabled review
 state; it never activates authority. A versioned decision file can apply several
 resource decisions atomically, but the file is not authority: application still
 requires an exact digest gesture or a verified signed-key/OIDC operator proof.
-Auto Boundary keeps the minimum cohort at 5 by default. An owner may lower it
+Auto Boundary keeps the minimum group size at 5 by default. An owner may lower it
 to 1-4 only through --minimum-cohort with a recorded actor and reason. A value
 of 1 disables small-group suppression and can identify individuals; Protect and
 protected-capability activation require separate explicit re-confirmation.

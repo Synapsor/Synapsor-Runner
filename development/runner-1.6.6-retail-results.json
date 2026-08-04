@@ -4,16 +4,16 @@
     "spec_tarball": "synapsor-spec-1.8.0.tgz",
     "spec_sha256": "sha256:3694a3b5aa0080aa33ce9252812e94bccf432b7ba8b8f65c92beee74cebbcc8c",
     "runner_tarball": "synapsor-runner-1.6.6.tgz",
-    "runner_sha256": "sha256:57cc48b626052de982f92e03fcc17a4d2dc48e04f79ea7d9ce34b6631c031850"
+    "runner_sha256": "sha256:34126b7221145543445b76dde2d61e92a29c438a5eaa7565f1372743230706cd"
   },
   "timings_ms": {
-    "schema_summary": 36668,
-    "boundary_activation": 41997,
-    "first_safe_read": 43377,
-    "first_pm_aggregate": 44402,
-    "protected_capability": 172407,
-    "first_guided_proposal": 177760,
-    "first_guarded_apply": 234661
+    "schema_summary": 55204,
+    "boundary_activation": 61954,
+    "first_safe_read": 63603,
+    "first_pm_aggregate": 65132,
+    "protected_capability": 202471,
+    "first_guided_proposal": 208951,
+    "first_guarded_apply": 280618
   },
   "interactions": {
     "shell_commands_through_first_value": 1,
@@ -130,7 +130,7 @@
   },
   "protected": {
     "capability": "retail.weekly_revenue_by_store_and_category",
-    "digest": "sha256:dd66a716f36f7ddb8d0842cdd882db7143964fe67e7ff56c6f9d29c0578df536",
+    "digest": "sha256:4ff21b785111886ca94292a86684360f92788922213f26ced7994dbc02c7b827",
     "disabled_before_activation": true,
     "activated_by_human": true,
     "mode": "aggregate",
@@ -139,7 +139,7 @@
   "write_lifecycle": {
     "capability": "retail.propose_order_fulfillment",
     "target": "public.orders:order-005",
-    "proposal_hash": "sha256:c49f02e68a8ad91c38b89a3402c17c5725afd2969b3f24334e5a38a98b0d50f3",
+    "proposal_hash": "sha256:a22e86f23f85c11a266614374c2920489ecb8b44b3f79e7e052ec865dc84e3a7",
     "action_digest": "sha256:4f6238852ce6d586270d750711cadcb69e5a165ac69c798acc27e4743a9ed078",
     "before": {
       "status": "processing",
@@ -211,7 +211,7 @@
     "cli_and_mcp_analytics_catalog_match": true,
     "protected_output_schema_checked": true
   },
-  "elapsed_ms": 274436,
+  "elapsed_ms": 332110,
   "screenshots": [
     "01-overview.png",
     "02-activated-and-ready-to-ask.png",
@@ -226,6 +226,7 @@
     "08-disabled-safe-action.png",
     "08b-disabled-safe-action-dark.png",
     "09-proposal-created.png",
+    "09b-proposal-review-before-freshness.png",
     "10-human-review.png",
     "11-approved-awaiting-apply.png",
     "12-guarded-apply.png",

@@ -43,6 +43,7 @@ import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
   createSavedBoundary,
   deleteSavedBoundary,
+  renameSavedBoundary,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -111,6 +112,129 @@ export type BoundaryReviewCommandOptions = {
   }) => string;
   startAtBoundaryList?: boolean;
 };
+
+export async function boundaryRenameCommand(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--project-root", "--to", "--actor", "--reason", "--json"]),
+    "boundary rename",
+  );
+  const currentName = positional(args, 0)?.trim();
+  const newName = optionalArg(args, "--to")?.trim().toLowerCase();
+  const actor = optionalArg(args, "--actor")?.trim();
+  const reason = optionalArg(args, "--reason")?.trim();
+  if (!currentName || !newName) {
+    throw new Error("boundary rename requires <current-name> --to <new-name>.");
+  }
+  if (!actor || !reason) {
+    throw new Error("Renaming a disabled boundary requires --actor <human> and --reason <review-reason>.");
+  }
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  let context = await loadBoundaryReviewContext(projectRoot);
+  await synchronizeBoundaryLibrary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+  });
+  if (context.candidate.pack.name !== currentName) {
+    await switchSavedBoundary({
+      projectRoot,
+      draft: context.draft,
+      currentCandidate: context.candidate,
+      ...(context.progress ? { currentProgress: context.progress } : {}),
+      name: currentName,
+    });
+    context = await loadBoundaryReviewContext(projectRoot);
+  }
+  const progress = await renameSavedBoundary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+    name: currentName,
+    newName,
+    actor,
+    reason,
+  });
+  const payload = {
+    ok: true,
+    previous_name: currentName,
+    name: progress.candidate.pack.name,
+    state: "disabled",
+    table_count: progress.candidate.pack.resources.length,
+    authority_activated: false,
+    source_database_changed: false,
+  };
+  process.stdout.write(args.includes("--json")
+    ? `${JSON.stringify(payload, null, 2)}\n`
+    : [
+      `Renamed disabled boundary "${currentName}" to "${payload.name}".`,
+      `Tables retained: ${payload.table_count}`,
+      "Authority activated: no",
+      "Source database changed: no",
+      `Next: ${cliCommandName()} boundary review`,
+      "",
+    ].join("\n"));
+  return 0;
+}
+
+export async function boundaryDeleteCommand(
+  args: string[],
+  session?: Pick<BoundaryReviewInteractiveSession, "confirm">,
+): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--project-root", "--yes", "--json"]),
+    "boundary delete",
+  );
+  const name = positional(args, 0)?.trim();
+  if (!name) throw new Error("boundary delete requires <disabled-boundary-name>.");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  if (!args.includes("--yes")) {
+    const interactive = session ?? (process.stdin.isTTY && process.stdout.isTTY
+      ? createBoundaryReviewInteractiveSession()
+      : undefined);
+    if (!interactive) {
+      throw new Error("boundary delete requires --yes outside an interactive terminal.");
+    }
+    if (!await interactive.confirm(`Delete saved disabled boundary "${name}"?`, { defaultValue: false })) {
+      process.stdout.write("Boundary deletion cancelled. Nothing changed.\n");
+      return 0;
+    }
+  }
+  const context = await loadBoundaryReviewContext(projectRoot);
+  await synchronizeBoundaryLibrary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+  });
+  const deleted = await deleteSavedBoundary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+    name,
+  });
+  const payload = {
+    ok: true,
+    deleted: name,
+    selected_boundary: deleted.selected_name,
+    authority_activated: false,
+    source_database_changed: false,
+  };
+  process.stdout.write(args.includes("--json")
+    ? `${JSON.stringify(payload, null, 2)}\n`
+    : [
+      `Deleted saved disabled boundary "${name}".`,
+      `Selected boundary: ${deleted.selected_name}`,
+      "Active reviewed boundaries were unchanged.",
+      "Source database changed: no",
+      "",
+    ].join("\n"));
+  return 0;
+}
 
 
 export async function boundaryReviewCommand(
@@ -775,6 +899,7 @@ async function interactiveBoundaryReviewLoop(input: {
   startAtBoundaryList?: boolean;
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
+  let selectedResourceId: string | undefined;
   while (true) {
     let context = await loadBoundaryReviewContext(input.projectRoot);
     const boundaryLibrary = await synchronizeBoundaryLibrary({
@@ -793,6 +918,7 @@ async function interactiveBoundaryReviewLoop(input: {
       {
         initialView: input.initialView ?? "boundaries",
         startAtBoundaryList,
+        ...(selectedResourceId ? { initialResourceId: selectedResourceId } : {}),
       },
     );
     if (!selected) {
@@ -824,6 +950,20 @@ async function interactiveBoundaryReviewLoop(input: {
         session: input.session,
       });
       if (result !== 0) return result;
+      continue;
+    }
+    if (selected.action === "privacy_all") {
+      const result = await interactiveBoundaryMinimumCohortReview({
+        projectRoot: input.projectRoot,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+        focusedAccess: input.initialView === "access",
+      });
+      if (result === "review") {
+        if (input.initialView === "access") return confirmAndActivateFocusedBoundary(input);
+        continue;
+      }
+      if (result !== "back" && result !== 0) return result;
       continue;
     }
     if (selected.action === "create") {
@@ -860,7 +1000,8 @@ async function interactiveBoundaryReviewLoop(input: {
           Number(left.status !== "draft_read") - Number(right.status !== "draft_read")
           || right.risk_count - left.risk_count
           || left.resource_id.localeCompare(right.resource_id));
-      if (!startingResources.some((resource) => resource.status === "draft_read")) {
+      if (!startingResources.some((resource) =>
+        resource.status === "draft_read" || resource.inline_resolution_available === true)) {
         process.stdout.write([
           "Boundary was not created because no generated table has proven identity and tenant scope.",
           "Resolve a blocked table in the detailed review before creating another boundary.",
@@ -876,6 +1017,25 @@ async function interactiveBoundaryReviewLoop(input: {
       if (!startingSelection || !("resource_id" in startingSelection)) {
         process.stdout.write("New boundary cancelled. Nothing was saved or activated.\n");
         continue;
+      }
+      let startingView = await inspectBoundaryResourceReview(
+        input.projectRoot,
+        startingSelection.resource_id,
+      );
+      if (!startingView.generated_candidate) {
+        const resolved = await resolveBlockedBoundaryResource({
+          projectRoot: input.projectRoot,
+          view: startingView,
+          schemaInspector: input.schemaInspector,
+          session: input.session,
+          include: false,
+        });
+        if (resolved === "back" || !resolved) {
+          process.stdout.write("New boundary cancelled. Nothing was saved or activated.\n");
+          continue;
+        }
+        startingView = resolved;
+        context = await loadBoundaryReviewContext(input.projectRoot);
       }
       let progress;
       try {
@@ -905,7 +1065,7 @@ async function interactiveBoundaryReviewLoop(input: {
         "",
       ].join("\n"));
       startAtBoundaryList = false;
-      const startingView = await inspectBoundaryResourceReview(
+      startingView = await inspectBoundaryResourceReview(
         input.projectRoot,
         startingSelection.resource_id,
       );
@@ -932,6 +1092,7 @@ async function interactiveBoundaryReviewLoop(input: {
       process.stdout.write(
         `Opened saved boundary "${selected.boundary_name}" for editing. Active Explore authority did not change.\n`,
       );
+      selectedResourceId = undefined;
       continue;
     }
     if (selected.action === "delete") {
@@ -991,6 +1152,7 @@ async function interactiveBoundaryReviewLoop(input: {
     if (!("resource_id" in selected)) {
       throw new Error("Boundary review returned an unsupported interactive action.");
     }
+    selectedResourceId = selected.resource_id;
     // The boundary list is the entry point for /access, not the destination
     // for Back from a table's column editor. Resume at this boundary's table
     // list after any table-level action.
@@ -1144,9 +1306,22 @@ async function interactiveBoundaryResourceAddition(input: {
     });
   }
   if (!input.view.generated_candidate) {
-    throw new Error(
-      `${input.view.resource_id} cannot be added because record identity or trusted scope is unresolved.`,
-    );
+    const resolved = await resolveBlockedBoundaryResource({
+      projectRoot: input.projectRoot,
+      view: input.view,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      include: true,
+    });
+    if (!resolved || resolved === "back") return "back";
+    return interactiveBoundaryResourceReview({
+      projectRoot: input.projectRoot,
+      resourceId: input.view.resource_id,
+      view: resolved,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      focusedAccess: input.focusedAccess,
+    });
   }
   const actor = localInteractiveActor();
   const preview = await prepareBoundaryResourceReviewMutation(
@@ -1175,6 +1350,59 @@ async function interactiveBoundaryResourceAddition(input: {
     session: input.session,
     focusedAccess: input.focusedAccess,
   });
+}
+
+async function resolveBlockedBoundaryResource(input: {
+  projectRoot: string;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  include: boolean;
+}): Promise<BoundaryResourceReviewView | "back" | undefined> {
+  if (!input.session.resolveBlockedResource) {
+    process.stdout.write([
+      `${input.view.resource_id} still needs a reviewed record ID and tenant-isolation column.`,
+      `Run ${cliCommandName()} boundary review in a terminal to choose from database-inspected candidates.`,
+      "Nothing was saved or activated.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
+  const resolution = await input.session.resolveBlockedResource(input.view);
+  if (!resolution || resolution === "back") return resolution;
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      {
+        resource_id: input.view.resource_id,
+        ...(input.include ? { include: true } : {}),
+        row_identity: resolution.row_identity,
+        tenant_key: resolution.tenant_key,
+        actor: localInteractiveActor(),
+        reason: "Selected database-inspected identity and tenant isolation in local boundary review.",
+      },
+      input.schemaInspector,
+    );
+    const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    process.stdout.write([
+      `Saved structural review for ${input.view.resource_id} in disabled boundary revision ${committed.review_revision}.`,
+      `Record ID: ${resolution.row_identity}`,
+      `Tenant isolation: ${resolution.tenant_key} (trusted value stays outside model arguments)`,
+      "Agent authority activated: no",
+      "Review column access next.",
+      "",
+    ].join("\n"));
+    return inspectBoundaryResourceReview(input.projectRoot, input.view.resource_id);
+  } catch (error) {
+    process.stdout.write([
+      `This table was not added: ${redactCliErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      )}`,
+      "You are still in boundary review. Nothing was saved or activated.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
 }
 
 async function confirmAndActivateFocusedBoundary(input: {
@@ -1318,7 +1546,7 @@ function formatFocusedBoundaryActivationReview(
   color = false,
 ): string {
   const theme = terminalTheme(color);
-  const rows = bundle.candidate.pack.resources.map((resource) => {
+  const accessRows = bundle.candidate.pack.resources.flatMap((resource, index) => {
     const modelFields = resource.selectable_fields.filter(
       (field) => !(resource.model_withheld_fields ?? []).includes(field),
     );
@@ -1326,11 +1554,12 @@ function formatFocusedBoundaryActivationReview(
       (relationship) => `${relationship.target_resource} (${relationship.cardinality.replaceAll("_", "-")})`,
     );
     return [
-      resource.id,
-      fieldList(modelFields),
-      fieldList(resource.model_withheld_fields ?? []),
-      fieldList(resource.kept_out_fields),
-      relationships.length ? relationships.join(", ") : "None",
+      ...(index === 0 ? [] : [["", ""]]),
+      ["Table", resource.id],
+      ["Model + Runner", fieldList(modelFields)],
+      ["Runner only", fieldList(resource.model_withheld_fields ?? [])],
+      ["Kept out", fieldList(resource.kept_out_fields)],
+      ["Reviewed links", relationships.length ? relationships.join(", ") : "None"],
     ];
   });
   const tenantKeys = [...new Set(bundle.candidate.pack.resources.map((resource) => resource.tenant_key))];
@@ -1347,9 +1576,9 @@ function formatFocusedBoundaryActivationReview(
     ? `Required for ${principalScopes.join(", ")} via ${bundle.candidate.trusted_context.principal_env}`
     : "Not required for this boundary";
   const accessTable = formatTextTable(
-    ["TABLE", "MODEL + RUNNER", "RUNNER ONLY", "KEPT OUT", "REVIEWED LINKS"],
-    rows,
-    [24, 28, 24, 28, 28],
+    ["REVIEWED ACCESS", "VALUE"],
+    accessRows,
+    [20, 76],
   );
   const limitsTable = formatTextTable(
     ["LIMIT", "REVIEWED VALUE"],
@@ -1358,7 +1587,7 @@ function formatFocusedBoundaryActivationReview(
       ["Principal scope", principalScopeSummary],
       [
         "Small-group privacy",
-        `Minimum cohorts: ${bundle.candidate.pack.resources.map(
+        `Minimum group sizes: ${bundle.candidate.pack.resources.map(
           (resource) => `${resource.id}=${resource.minimum_cohort_size}${
             resource.minimum_cohort_overridden ? " (owner override)" : ""
           }`,
@@ -1471,16 +1700,16 @@ async function interactiveBoundaryRename(input: {
     process.stdout.write("Boundary name change discarded. Nothing was saved or activated.\n");
     return 0;
   }
-  const progress = createBoundaryReviewProgress({
+  const progress = await renameSavedBoundary({
+    projectRoot: input.projectRoot,
     draft: context.draft,
-    candidate: reviewed.candidate,
-    confirmedDecisions: context.progress?.confirmed_decisions ?? [],
-    ...(context.progress ? { previous: context.progress } : {}),
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+    name: currentName,
+    newName: nextName,
     actor,
     reason,
-    revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
   process.stdout.write([
     `Saved boundary name "${nextName}" in review revision ${progress.revision}.`,
     `Next boundary contains ${progress.candidate.pack.resources.length} ` +
@@ -1725,6 +1954,17 @@ async function interactiveBoundaryResourceReview(input: {
   session: BoundaryReviewInteractiveSession;
   focusedAccess?: boolean;
 }): Promise<number | "back" | "review"> {
+  if (!input.view.candidate && !input.view.generated_candidate) {
+    const resolved = await resolveBlockedBoundaryResource({
+      projectRoot: input.projectRoot,
+      view: input.view,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      include: true,
+    });
+    if (!resolved || resolved === "back") return "back";
+    return interactiveBoundaryResourceReview({ ...input, view: resolved });
+  }
   const selected = await input.session.editFieldTiers(input.view, {
     focusedAccess: input.focusedAccess === true,
   });
@@ -1831,8 +2071,16 @@ async function interactiveMinimumCohortReview(input: {
 }): Promise<number | "back" | "review"> {
   const candidate = input.view.candidate ?? input.view.generated_candidate;
   if (!candidate) return "back";
+  process.stdout.write([
+    "",
+    `PRIVACY - ${input.resourceId}`,
+    `Current minimum group size: ${candidate.minimum_cohort_size}`,
+    "Runner hides aggregate groups with fewer rows than this number.",
+    "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
+    "",
+  ].join("\n"));
   const enteredInput = await input.session.promptText(
-    `Minimum returned group [${candidate.minimum_cohort_size}] (2-5, or off; off has effective minimum 1): `,
+    `New minimum group size [current ${candidate.minimum_cohort_size}]: `,
   );
   if (enteredInput === undefined) return "back";
   const entered = enteredInput.trim().toLowerCase();
@@ -1842,36 +2090,35 @@ async function interactiveMinimumCohortReview(input: {
     : Number(entered);
   if (!Number.isSafeInteger(minimumCohort) || minimumCohort < 1 || minimumCohort > 5) {
     throw new Error(
-      "Choose 2 through 5, or choose off. Off is stored as effective minimum 1 because groups cannot contain zero rows.",
+      "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
     );
   }
   if (minimumCohort === candidate.minimum_cohort_size) {
-    process.stdout.write("The aggregate privacy threshold is unchanged.\n");
+    process.stdout.write("The minimum group size is unchanged.\n");
     return "back";
   }
   const reasonInput = await input.session.promptText(
-    minimumCohort === 1
-      ? "Why may this owner-controlled data return groups of one? "
-      : `Why is a minimum returned group of ${minimumCohort} appropriate? `,
+    `Reason for changing ${input.resourceId} from ${candidate.minimum_cohort_size} to ${minimumCohort} (recorded with this decision): `,
   );
   if (reasonInput === undefined) {
-    process.stdout.write("Returned to column review. The privacy threshold was not changed.\n");
+    process.stdout.write("Returned to column review. The minimum group size was not changed.\n");
     return "back";
   }
   const reason = reasonInput.trim();
   if (!reason) {
-    throw new Error("Changing the aggregate privacy threshold requires a concrete human reason.");
+    throw new Error("Changing the minimum group size requires a concrete human reason.");
   }
   process.stdout.write(minimumCohort === 1
-    ? "Off means no small-group suppression. Groups of one can identify individuals.\n"
-    : `Groups smaller than ${minimumCohort} will be withheld.\n`);
+    ? [
+      "New setting: minimum group size 1 (small-group suppression off).",
+      "Consequence: aggregate output may contain a group with one person or record.",
+    ].join("\n") + "\n"
+    : `New setting: minimum group size ${minimumCohort}. Runner will hide groups with fewer than ${minimumCohort} rows.\n`);
   if (!await input.session.confirm(
-    minimumCohort === 1
-      ? `Record the owner decision to disable small-group suppression for ${input.resourceId}?`
-      : `Record minimum cohort ${minimumCohort} for ${input.resourceId}?`,
-    { defaultValue: false },
+    `Save this privacy change for ${input.resourceId}?`,
+    { defaultValue: true },
   )) {
-    process.stdout.write("Privacy-threshold change discarded. Nothing was saved or activated.\n");
+    process.stdout.write("Privacy change discarded. Nothing was saved or activated.\n");
     return "back";
   }
   const preview = await prepareBoundaryResourceReviewMutation(
@@ -1886,12 +2133,123 @@ async function interactiveMinimumCohortReview(input: {
   );
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
   process.stdout.write([
-    `Saved minimum cohort ${minimumCohort}${minimumCohort === 1 ? " (suppression off)" : ""} in disabled boundary revision ${committed.review_revision}.`,
+    `Saved minimum group size ${minimumCohort}${minimumCohort === 1 ? " (small-group suppression off)" : ""} in disabled boundary revision ${committed.review_revision}.`,
     "Agent authority changed: no.",
-    "Next: review the complete boundary and activate it to use this setting.",
+    "Ask does not use this minimum group size until the updated boundary is activated.",
     "",
   ].join("\n"));
-  return input.focusedAccess ? "back" : 0;
+  return input.focusedAccess
+    ? offerImmediateBoundaryActivation(input.session)
+    : 0;
+}
+
+async function interactiveBoundaryMinimumCohortReview(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  focusedAccess: boolean;
+}): Promise<number | "back" | "review"> {
+  const resources = (await listBoundaryResourceReviews(input.projectRoot))
+    .filter((resource) => resource.included);
+  if (!resources.length) {
+    process.stdout.write("Add at least one table before setting boundary-wide privacy.\n");
+    return "back";
+  }
+  const currentValues = [...new Set(resources.map((resource) =>
+    resource.minimum_cohort_size ?? 5))].sort((left, right) => left - right);
+  const currentLabel = currentValues.length === 1
+    ? String(currentValues[0])
+    : `mixed (${currentValues.join(", ")})`;
+  process.stdout.write([
+    "",
+    `PRIVACY - ALL ${resources.length} TABLES IN THIS BOUNDARY`,
+    `Current minimum group size: ${currentLabel}`,
+    "Runner hides aggregate groups with fewer rows than the selected number.",
+    "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off for every included table.",
+    "",
+  ].join("\n"));
+  const enteredInput = await input.session.promptText(
+    `New minimum group size for all tables [current ${currentLabel}]: `,
+  );
+  if (enteredInput === undefined) return "back";
+  const entered = enteredInput.trim().toLowerCase();
+  if (!entered) return "back";
+  const minimumCohort = entered === "off" || entered === "none" || entered === "0"
+    ? 1
+    : Number(entered);
+  if (!Number.isSafeInteger(minimumCohort) || minimumCohort < 1 || minimumCohort > 5) {
+    throw new Error(
+      "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
+    );
+  }
+  const changed = resources.filter((resource) =>
+    (resource.minimum_cohort_size ?? 5) !== minimumCohort);
+  if (!changed.length) {
+    process.stdout.write(`Every table already uses minimum group size ${minimumCohort}.\n`);
+    return "back";
+  }
+  const reasonInput = await input.session.promptText(
+    `Reason for setting ${changed.length} table${changed.length === 1 ? "" : "s"} to minimum group size ${minimumCohort} (recorded with this decision): `,
+  );
+  if (reasonInput === undefined) {
+    process.stdout.write("Returned to boundary review. No minimum group size changed.\n");
+    return "back";
+  }
+  const reason = reasonInput.trim();
+  if (!reason) {
+    throw new Error("Changing minimum group sizes requires a concrete human reason.");
+  }
+  process.stdout.write(minimumCohort === 1
+    ? [
+      "New setting: minimum group size 1 for every included table (small-group suppression off).",
+      "Consequence: aggregate output may contain groups with one person or record.",
+    ].join("\n") + "\n"
+    : `New setting: minimum group size ${minimumCohort} for every included table. Runner will hide groups with fewer than ${minimumCohort} rows.\n`);
+  if (!await input.session.confirm(
+    `Save this privacy change for ${changed.length} table${changed.length === 1 ? "" : "s"}?`,
+    { defaultValue: true },
+  )) {
+    process.stdout.write("Boundary-wide privacy change discarded. Nothing was saved or activated.\n");
+    return "back";
+  }
+  const actor = localInteractiveActor();
+  const preview = await prepareBoundaryReviewMutationBatch(
+    input.projectRoot,
+    changed.map((resource) => ({
+      resource_id: resource.resource_id,
+      minimum_cohort_size: minimumCohort,
+      actor,
+      reason,
+    })),
+    input.schemaInspector,
+  );
+  const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved minimum group size ${minimumCohort}${minimumCohort === 1 ? " (small-group suppression off)" : ""} for ${changed.length} table${changed.length === 1 ? "" : "s"} in disabled boundary revision ${committed.review_revision}.`,
+    "Agent authority changed: no.",
+    "Ask does not use these minimum group sizes until the updated boundary is activated.",
+    "",
+  ].join("\n"));
+  return input.focusedAccess
+    ? offerImmediateBoundaryActivation(input.session)
+    : 0;
+}
+
+async function offerImmediateBoundaryActivation(
+  session: BoundaryReviewInteractiveSession,
+): Promise<"back" | "review"> {
+  const activate = await session.confirm(
+    "Review and activate this boundary change now?",
+    { defaultValue: true },
+  );
+  if (activate) return "review";
+  process.stdout.write([
+    "1 pending boundary change is not active.",
+    "Existing Ask access, if any, continues to use the previous exact boundary revision.",
+    "To activate it later: run /access, select this boundary, and press C (Review + activate).",
+    "",
+  ].join("\n"));
+  return "back";
 }
 
 function focusedEditNeedsExplicitReason(
@@ -2191,7 +2549,7 @@ function formatBoundaryMutationPreview(
       : []),
     ...(diff.minimum_cohort_before !== diff.minimum_cohort_after
       ? [
-        `  Minimum cohort: ${diff.minimum_cohort_before ?? "not included"} -> ` +
+        `  Minimum group size: ${diff.minimum_cohort_before ?? "not included"} -> ` +
         `${diff.minimum_cohort_after ?? "not included"}` +
         `${diff.minimum_cohort_overridden ? " (explicit owner override)" : ""}`,
       ]

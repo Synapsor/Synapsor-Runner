@@ -34,9 +34,16 @@ import {
   padTerminalLine,
   terminalContentWidth,
 } from "./terminal-layout.js";
+import {
+  renderTerminalJson,
+  renderTerminalSql,
+} from "./terminal-syntax.js";
+
+export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
 const COMMANDS = [
   "/help",
+  "/catalog",
   "/analyses",
   "/protect",
   "/details",
@@ -49,6 +56,7 @@ const COMMANDS = [
 
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "List shell actions",
+  "/catalog": "Show what the reviewed boundaries can answer",
   "/analyses": "List recent protectable analyses",
   "/protect": "Protect the latest eligible analysis",
   "/details": "Show safe execution metadata",
@@ -123,6 +131,11 @@ export type AnalyticsShellInput = {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
+  pendingBoundaryReview?: {
+    boundary_name: string;
+    pending_changes: number;
+    previous_authority_active: boolean;
+  };
   operatorLabel?: string;
   verboseAttempts?: boolean;
   io: AnalyticsShellIo;
@@ -193,6 +206,7 @@ export async function runAnalyticsShell(
     profileLabel: input.profileLabel,
     reviewedDataAreas: input.reviewedDataAreas,
     accessSummary: input.accessSummary,
+    pendingBoundaryReview: input.pendingBoundaryReview,
   }, input.io.isTerminal?.() === true && !("NO_COLOR" in process.env)));
   try {
     while (true) {
@@ -276,6 +290,11 @@ export function renderAnalyticsShellBanner(input: {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
+  pendingBoundaryReview?: {
+    boundary_name: string;
+    pending_changes: number;
+    previous_authority_active: boolean;
+  };
 }, color = false): string {
   const theme = terminalTheme(color);
   const tableCount = `${input.reviewedDataAreas} ${input.reviewedDataAreas === 1 ? "table" : "tables"}`;
@@ -298,7 +317,21 @@ export function renderAnalyticsShellBanner(input: {
     ...(input.accessSummary?.suggestions[0]
       ? [`Try: ${theme.scope(`"${safeTerminalText(input.accessSummary.suggestions[0])}"`)}`]
       : []),
-    "Ask a question. /access manages boundaries; /help lists actions; Ctrl+D exits.",
+    ...(input.pendingBoundaryReview
+      ? [
+        "",
+        theme.warning(
+          `${input.pendingBoundaryReview.pending_changes} PENDING BOUNDARY ` +
+          `${input.pendingBoundaryReview.pending_changes === 1 ? "CHANGE IS" : "CHANGES ARE"} NOT ACTIVE`,
+        ),
+        `Boundary: ${theme.scope(safeTerminalText(input.pendingBoundaryReview.boundary_name))}`,
+        input.pendingBoundaryReview.previous_authority_active
+          ? "Ask still uses the previous exact reviewed revision."
+          : "This disabled boundary does not grant Ask access yet.",
+        `${theme.key("/access")} -> select the boundary -> ${theme.key("C")} Review + activate.`,
+      ]
+      : []),
+    "Ask a question. /catalog shows reviewed access; /access manages boundaries; /help lists actions; Ctrl+D exits.",
     "",
   ].join("\n");
 }
@@ -538,6 +571,7 @@ async function handleShellCommand(
     input.io.write([
       "",
       "Actions",
+      "  /catalog [page]              Show what each reviewed table can answer",
       "  /analyses                    List recent protectable analyses",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
@@ -551,6 +585,15 @@ async function handleShellCommand(
       "  Ctrl+D                       Close the shell (Ctrl+C twice also exits)",
       "",
     ].join("\n"));
+    return "continue";
+  }
+  if (line === "/catalog" || line.startsWith("/catalog ")) {
+    input.io.write(renderReviewedAccessCatalog({
+      line,
+      boundaryLabel: input.boundaryLabel,
+      summary: input.accessSummary,
+      color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+    }));
     return "continue";
   }
   if (line === "/clear") {
@@ -568,7 +611,10 @@ async function handleShellCommand(
   }
   if (line === "/attempts") {
     input.io.write([
-      ...renderRefusedAttempts(current?.analyses ?? []),
+      ...renderRefusedAttempts(
+        current?.analyses ?? [],
+        input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+      ),
       "",
       "",
     ].join("\n"));
@@ -608,6 +654,72 @@ async function handleShellCommand(
   }
   input.io.write("Unknown action. Type /help for the available actions.\n\n");
   return "continue";
+}
+
+export function renderReviewedAccessCatalog(input: {
+  line: string;
+  boundaryLabel?: string;
+  summary?: ReviewedAskAccessSummary;
+  color?: boolean;
+  pageSize?: number;
+}): string {
+  const theme = terminalTheme(input.color === true);
+  const pageSize = Math.max(1, Math.min(10, input.pageSize ?? 5));
+  const rawPage = input.line.slice("/catalog".length).trim();
+  const requestedPage = rawPage === "" ? 1 : Number(rawPage);
+  if (!Number.isSafeInteger(requestedPage) || requestedPage < 1) {
+    return `\n${theme.warning("Usage: /catalog [page]")} ${theme.dim("Page numbers start at 1.")}\n\n`;
+  }
+  const resources = input.summary?.resources ?? [];
+  if (!resources.length) {
+    return [
+      "",
+      theme.title("CAN ASK NOW"),
+      "No reviewed table details are available in this session.",
+      `Use ${theme.key("/access")} to inspect reviewed boundaries.`,
+      "",
+      "",
+    ].join("\n");
+  }
+  const pageCount = Math.max(1, Math.ceil(resources.length / pageSize));
+  if (requestedPage > pageCount) {
+    return `\n${theme.warning(`Catalog page ${requestedPage} does not exist.`)} ` +
+      `${theme.dim(`Choose page 1-${pageCount}.`)}\n\n`;
+  }
+  const start = (requestedPage - 1) * pageSize;
+  const visible = resources.slice(start, start + pageSize);
+  const defaultBoundary = input.boundaryLabel;
+  const lines = [
+    "",
+    theme.title("CAN ASK NOW"),
+    theme.dim(
+      `${resources.length} reviewed ${resources.length === 1 ? "table" : "tables"} ` +
+      `- page ${requestedPage} of ${pageCount}`,
+    ),
+    "",
+    ...visible.flatMap((resource) => {
+      const boundary = resource.boundary_name ?? defaultBoundary;
+      return [
+        `${theme.key(safeTerminalText(resource.label))} ${theme.dim(`(${safeTerminalText(resource.id)})`)}`,
+        ...(boundary
+          ? [`  Boundary: ${theme.scope(safeTerminalText(boundary))}`]
+          : []),
+        `  Can answer: ${safeTerminalText(resource.capabilities.join("; "))}`,
+        ...resource.suggestions.slice(0, 2).map((suggestion) =>
+          `  Try: ${theme.dim(`"${safeTerminalText(suggestion)}"`)}`),
+        "",
+      ];
+    }),
+    theme.dim([
+      `Page ${requestedPage} of ${pageCount}.`,
+      ...(requestedPage > 1 ? [`/catalog ${requestedPage - 1} previous.`] : []),
+      ...(requestedPage < pageCount ? [`/catalog ${requestedPage + 1} next.`] : []),
+      "/access edits reviewed access.",
+    ].join(" ")),
+    "",
+    "",
+  ];
+  return lines.join("\n");
 }
 
 async function showAnalyses(
@@ -659,6 +771,7 @@ async function showDetails(
   const boundaryName = stringRecordValue(liveResult?.boundary_name)
     ?? stringRecordValue(toolArguments?.boundary)
     ?? "recorded reviewed boundary";
+  const color = input.io.isTerminal?.() === true && !("NO_COLOR" in process.env);
   let operatorInspection: OperatorCompiledExploreEvidence | undefined;
   let inspectionFailure: string | undefined;
   if (input.inspectAnalysis && selected.normalized_plan) {
@@ -669,8 +782,7 @@ async function showDetails(
     }
   }
   const modelRequest = toolArguments
-    ? JSON.stringify(toolArguments, null, 2)
-    : JSON.stringify({ plan: redactPlanLiterals(selected.normalized_plan) }, null, 2);
+    ?? { plan: redactPlanLiterals(selected.normalized_plan) };
   input.io.write([
     "",
     `ANALYSIS ${safeTerminalText(selected.token)}`,
@@ -682,7 +794,7 @@ async function showDetails(
     "",
     "WHAT THE MODEL REQUESTED",
     live?.analysis.tool ?? "app.explore_data",
-    safeTerminalText(modelRequest),
+    renderTerminalJson(modelRequest, color),
     "",
     "WHAT RUNNER EXECUTED",
     `Plan validated: ${live?.analysis.status === "refused" ? "no" : "yes"}`,
@@ -693,7 +805,7 @@ async function showDetails(
     `Database role: ${operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution"}`,
     `Transaction: ${safeTerminalText(operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction")}`,
     "Normalized validated plan:",
-    JSON.stringify(redactPlanLiterals(selected.normalized_plan), null, 2),
+    renderTerminalJson(redactPlanLiterals(selected.normalized_plan), color),
     "",
     "WHAT RUNNER RETURNED",
     `Outcome: ${selected.outcome ?? stringRecordValue(asRecord(liveResult?.outcome).status) ?? "ok"}`,
@@ -716,7 +828,7 @@ async function showDetails(
             "Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted.",
             ...operatorInspection.statements.flatMap((statement, index) => [
               `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,
-              safeTerminalText(statement.statement),
+              renderTerminalSql(statement.statement, color),
               `Parameter types: ${statement.parameter_types.join(", ") || "none"}`,
               "Parameter values: redacted",
             ]),

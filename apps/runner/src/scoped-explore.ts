@@ -41,6 +41,10 @@ import {
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
 export const SCOPED_EXPLORE_VERSION = "synapsor.scoped-explore.v1";
+export const NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE =
+  "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.";
+export const INVALID_REVIEWED_ANALYTICS_ACCESS_MESSAGE =
+  "Reviewed analytics access could not be loaded. Run `synapsor-runner boundary review` to inspect and recover it.";
 
 const MAX_FILTERS = 8;
 const MAX_IN_VALUES = 20;
@@ -135,6 +139,15 @@ export class ScopedExploreError extends Error {
   }
 }
 
+export function scopedExploreBoundaryLoadError(error: unknown): ScopedExploreError {
+  return new ScopedExploreError(
+    "EXPLORE_DISABLED",
+    (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT"
+      ? NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE
+      : INVALID_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
+  );
+}
+
 export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
@@ -142,7 +155,12 @@ export type ScopedExploreRuntime = {
     tenant: { source: "environment" | "postgres_role_setting"; binding: string };
     principal: { source: "environment" | "not_required"; binding?: string };
   };
-  describe(input?: { resource?: string; cursor?: number; limit?: number }): Record<string, unknown>;
+  describe(input?: {
+    resource?: string;
+    cursor?: number;
+    limit?: number;
+    include_time_coverage?: boolean;
+  }): Promise<Record<string, unknown>>;
   explore(plan: unknown): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 };
@@ -192,7 +210,7 @@ export async function prepareScopedExplore(input: {
     projectRoot,
     input.boundaryName ? { name: input.boundaryName } : undefined,
   ).catch((error) => {
-    throw new ScopedExploreError("EXPLORE_DISABLED", `Scoped Explore is disabled: ${safeError(error)}`);
+    throw scopedExploreBoundaryLoadError(error);
   });
   if (boundary.deployment_profile !== "development" && boundary.deployment_profile !== "staging") {
     throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "Missing, unknown, malformed, and production profiles cannot enable Scoped Explore.");
@@ -301,6 +319,16 @@ export async function createScopedExploreRuntime(input: {
     databaseUrl,
   });
   const reviewableBoundary = await readOptionalExplorationDraft(projectRoot);
+  let timeCoveragePromise: Promise<ReviewedTimeCoverage> | undefined;
+
+  const reviewedTimeCoverage = (): Promise<ReviewedTimeCoverage> => {
+    timeCoveragePromise ??= loadReviewedTimeCoverage({
+      prepared,
+      executor,
+      context: { tenant: trustedTenant, principal },
+    });
+    return timeCoveragePromise;
+  };
 
   return {
     boundary: prepared.boundary,
@@ -315,7 +343,12 @@ export async function createScopedExploreRuntime(input: {
         ...(trustedScope.principal_binding ? { binding: trustedScope.principal_binding } : {}),
       },
     },
-    describe: (request = {}) => describeBoundary(prepared.boundary, request, reviewableBoundary),
+    describe: async (request = {}) => describeBoundary(
+      prepared.boundary,
+      request,
+      reviewableBoundary,
+      request.include_time_coverage === false ? {} : await reviewedTimeCoverage(),
+    ),
     explore: async (unknownPlan) => {
       let currentPrepared: PreparedExplore;
       try {
@@ -1794,6 +1827,7 @@ function describeBoundary(
   boundary: ActivatedExplorationBoundary,
   input: { resource?: string; cursor?: number; limit?: number },
   reviewableBoundary?: ExplorationBoundaryDraft,
+  timeCoverage: ReviewedTimeCoverage = {},
 ): Record<string, unknown> {
   const limit = input.limit === undefined ? 8 : positiveInteger(input.limit, "describe limit");
   if (limit > 10) throw planError("app.describe_data limit cannot exceed 10 resources");
@@ -1841,6 +1875,7 @@ function describeBoundary(
         aggregate_measures: resource.aggregate_measures,
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
+        time_coverage: timeCoverage[resource.id] ?? {},
         field_types: Object.fromEntries(reviewedFields.map((field) => [field, resource.field_types[field]])),
         field_enums: Object.fromEntries(reviewedFields
           .filter((field) => !modelWithheld.has(field) && resource.field_enums[field]?.length)
@@ -1914,6 +1949,86 @@ function describeBoundary(
     raw_sql_available: false,
     source_rows_available_before_activation: false,
   };
+}
+
+type ReviewedTimeCoverage = Record<string, Record<string, {
+  status: "available" | "empty" | "withheld_below_minimum_cohort" | "unavailable";
+  start_date?: string;
+  end_date?: string;
+  reporting_timezone?: "UTC" | "database_session";
+}>>;
+
+async function loadReviewedTimeCoverage(input: {
+  prepared: PreparedExplore;
+  executor: ScopedExploreExecutor;
+  context: { tenant: string; principal: string };
+}): Promise<ReviewedTimeCoverage> {
+  const descriptors = input.prepared.boundary.pack.resources.flatMap((resource) =>
+    Object.keys(resource.time_bucket_fields).sort().map((field) => ({ resource, field })));
+  if (!descriptors.length) return {};
+  const queries = descriptors.map(({ resource, field }): CompiledExploreQuery => {
+    const params: Scalar[] = [];
+    const alias = "t0";
+    const column = `${alias}.${quote(field, input.prepared.lock.engine)}`;
+    const where = scopePredicates(resource, alias, input.context, params, input.prepared.lock.engine);
+    where.push(`${column} IS NOT NULL`);
+    return {
+      sql: `SELECT MIN(${column}) AS ${quote("__coverage_start", input.prepared.lock.engine)}, MAX(${column}) AS ${quote("__coverage_end", input.prepared.lock.engine)}, COUNT(${column}) AS ${quote("__coverage_cohort", input.prepared.lock.engine)} FROM ${qualified(resource, input.prepared.lock.engine)} ${alias} WHERE ${where.join(" AND ")}`,
+      params,
+      resources: [resource],
+      ...(input.prepared.boundary.reporting_timezone
+        ? { reporting_timezone: input.prepared.boundary.reporting_timezone }
+        : {}),
+    };
+  });
+  let batches: Array<Record<string, unknown>[]>;
+  try {
+    batches = await input.executor.executeBatch({
+      queries,
+      context: input.context,
+      timeoutMs: input.prepared.boundary.budgets.statement_timeout_ms,
+    });
+  } catch {
+    const unavailable: ReviewedTimeCoverage = {};
+    for (const { resource, field } of descriptors) {
+      unavailable[resource.id] ??= {};
+      unavailable[resource.id]![field] = { status: "unavailable" };
+    }
+    return unavailable;
+  }
+  const coverage: ReviewedTimeCoverage = {};
+  descriptors.forEach(({ resource, field }, index) => {
+    const row = batches[index]?.[0];
+    const cohort = finiteInteger(row?.__coverage_cohort);
+    const start = reviewedDate(row?.__coverage_start);
+    const end = reviewedDate(row?.__coverage_end);
+    coverage[resource.id] ??= {};
+    coverage[resource.id]![field] = cohort === 0 || !start || !end
+      ? { status: "empty" }
+      : cohort === undefined || cohort < resource.minimum_cohort_size
+        ? { status: "withheld_below_minimum_cohort" }
+        : {
+          status: "available",
+          start_date: start,
+          end_date: end,
+          reporting_timezone: input.prepared.boundary.reporting_timezone ?? "database_session",
+        };
+  });
+  return coverage;
+}
+
+function finiteInteger(value: unknown): number | undefined {
+  const numeric = typeof value === "bigint" ? Number(value) : Number(value);
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
+}
+
+function reviewedDate(value: unknown): string | undefined {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value !== "string") return undefined;
+  const leadingDate = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim())?.[1];
+  if (leadingDate && Number.isFinite(Date.parse(`${leadingDate}T00:00:00Z`))) return leadingDate;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : undefined;
 }
 
 function inactiveReviewableRelationships(
@@ -2221,11 +2336,21 @@ function enforcePrivacyComplementRelease(
     );
   }
   if (!decision.allowed) {
+    const earlierRelease = decision.conflicting_release_kind === "suppressed_grouping"
+      ? "An earlier grouped result for this table withheld at least one small cohort."
+      : "An earlier scalar total was released for this table.";
+    const reconstructionRisk = releaseKind === "scalar_total"
+      ? "Runner blocked this complementary total because releasing both results could reconstruct the withheld count."
+      : "Runner blocked this grouped result because suppressing a small cohort after releasing the total could make that cohort reconstructable by subtraction.";
     throw new ScopedExploreError(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      "The reviewed privacy boundary does not permit this complementary aggregate after an earlier result was released.",
+      `${earlierRelease} ${reconstructionRisk}`,
       {
         reason: "complementary_aggregate_release",
+        resource: input.plan.resource,
+        minimum_cohort_size: resource.minimum_cohort_size,
+        attempted_release_kind: releaseKind,
+        conflicting_release_kind: decision.conflicting_release_kind,
         source_query_executed: true,
         source_rows_returned_to_caller: false,
         result_returned_to_caller: false,
@@ -3119,7 +3244,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function fieldError(resource: BoundaryResource, field: string, operation: string): ScopedExploreError {
-  return new ScopedExploreError("EXPLORE_FIELD_FORBIDDEN", `${resource.id}.${field} is not reviewed for ${operation}.`);
+  const reviewableVisibleOperation = operation === "count_distinct"
+    && resource.selectable_fields.includes(field)
+    && !resource.kept_out_fields.includes(field);
+  return new ScopedExploreError(
+    "EXPLORE_FIELD_FORBIDDEN",
+    `${resource.id}.${field} is not reviewed for ${operation}.`
+      + (reviewableVisibleOperation
+        ? ` An operator can review it with boundary review resource ${resource.id} `
+          + `--count-distinct-fields ${field}; the model cannot change this permission.`
+        : ""),
+    {
+      reason: "field_operation_not_reviewed",
+      resource: resource.id,
+      field,
+      operation,
+    },
+  );
 }
 
 function relationshipError(message: string): ScopedExploreError {

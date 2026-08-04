@@ -1,9 +1,10 @@
-import { evaluateProposalFreshness, resolveSupervisedWorkerEligibility, type ProposalFreshnessEvaluation, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { evaluateProposalFreshness, resolveSupervisedWorkerEligibility, validateFreshnessAuthorityAgainstCurrentConfig, type ProposalFreshnessEvaluation, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   type StoredProposal,
   type WorkerQueueItem
 } from "@synapsor-runner/proposal-store";
+import { parseFreshnessAuthority } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -18,6 +19,7 @@ import { TrustedOperatorInvocation } from "./operator-authority.js";
 import { formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
 import { findProposalCapability } from "./writeback-execution.js";
+import { terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 
 
 export async function proposalsList(args: string[]): Promise<number> {
@@ -180,6 +182,47 @@ async function evaluateAndRecordProposalFreshness(input: {
 }
 
 
+export function reusableRecordedFreshness(input: {
+  proposal: StoredProposal;
+  config: RuntimeConfig | undefined;
+  configPath: string;
+  store: ProposalStore;
+  proofDigest: string | undefined;
+}): ProposalFreshnessEvaluation | undefined {
+  if (!input.proofDigest) return undefined;
+  if (!("freshness" in input.proposal.change_set) || input.proposal.change_set.freshness === undefined) return undefined;
+  if (!input.config) {
+    throw new Error(`freshness-required proposal needs an existing --config file; not found: ${path.resolve(input.configPath)}`);
+  }
+  const authority = parseFreshnessAuthority(input.proposal.change_set.freshness);
+  const capability = findProposalCapability(input.config, input.proposal);
+  const authorityError = validateFreshnessAuthorityAgainstCurrentConfig(input.config, capability, authority);
+  if (authorityError) {
+    throw new Error(
+      `FRESHNESS_POLICY_CHANGED_CREATE_NEW_PROPOSAL: ${authorityError}; create and review a new proposal`,
+    );
+  }
+  const proof = input.store.latestFreshnessProof(input.proposal.proposal_id);
+  if (!proof || proof.proof_digest !== input.proofDigest) return undefined;
+  if (proof.proposal_hash !== input.proposal.proposal_hash
+    || proof.proposal_version !== input.proposal.proposal_version
+    || proof.dependency_set_digest !== authority.dependency_set_digest
+    || proof.result !== "fresh"
+    || Date.parse(proof.valid_until) < Date.now()) return undefined;
+  if (input.store.approvals(input.proposal.proposal_id).some((approval) => approval.freshness_proof_digest === proof.proof_digest)) {
+    return undefined;
+  }
+  return {
+    required: true,
+    status: "fresh",
+    safe_code: proof.safe_code,
+    target_count: proof.target_count,
+    supporting_count: proof.supporting_count,
+    proof,
+  };
+}
+
+
 function freshnessJson(result: ProposalFreshnessEvaluation): Record<string, unknown> {
   return {
     schema_version: "synapsor.proposal-freshness-result.v1",
@@ -257,7 +300,13 @@ export async function proposalsApprove(
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
-    const freshness = await evaluateAndRecordProposalFreshness({
+    const freshness = reusableRecordedFreshness({
+      proposal,
+      config,
+      configPath,
+      store,
+      proofDigest: invocation.freshnessProofDigest,
+    }) ?? await evaluateAndRecordProposalFreshness({
       proposal,
       config,
       configPath,
@@ -534,7 +583,9 @@ export async function queryAuditShow(args: string[]): Promise<number> {
     const row = store.getQueryAudit(auditId);
     if (!row) throw new Error(`query audit record not found: ${auditId}`);
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
-    else process.stdout.write(showDetails(args) ? formatQueryAuditDetail(row) : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    else process.stdout.write(showDetails(args)
+      ? formatQueryAuditDetail(row, terminalSyntaxColorEnabled())
+      : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
     return 0;
   } finally {
     store.close();
@@ -746,7 +797,13 @@ export async function eventsTail(args: string[]): Promise<number> {
       } else if (rows.length === 0 && !follow) {
         process.stdout.write("No local events found.\n");
       } else {
-        for (const event of rows) process.stdout.write(formatEventLine(event, showDetails(args)));
+        for (const event of rows) {
+          process.stdout.write(formatEventLine(
+            event,
+            showDetails(args),
+            terminalSyntaxColorEnabled(),
+          ));
+        }
         if (!follow && rows.length > 0) {
           process.stdout.write(`Inspect newest complete lifecycle:\n${cliCommandName()} lifecycle${storeOptionSuffix(args)}\n`);
         }

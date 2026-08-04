@@ -944,16 +944,116 @@ try {
       features: [{ name: "prefers-color-scheme", value: "light" }],
     });
 
-    const blockedResource = await evaluate(page, `([...document.querySelectorAll(".resource")]
-      .find(resource=>resource.textContent.includes("Blocked"))
-      ?.querySelector("[data-open-resource]")
-      ?.getAttribute("data-open-resource"))`);
-    assert(blockedResource, "visual fixture did not expose a blocked resource");
+    const blockedResource = "public.ambiguous_customer_identity_records";
+    assert(
+      await evaluate(page, `(() => {
+        const button=document.querySelector(${JSON.stringify(`[data-open-resource="${blockedResource}"]`)});
+        return Boolean(button?.closest(".resource")?.textContent.includes("Blocked"));
+      })()`),
+      "visual fixture did not expose its permanently blocked resource",
+    );
     await clickSelector(page, `[data-open-resource="${blockedResource}"]`);
     await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
     await waitForExpression(page, "document.querySelector('#resource-detail')?.textContent.includes('Blocked') === true");
     await assertWorkbenchDom(page, "blocked exception", { expectedView: "exceptions" });
     await screenshot(page, "workbench-blocked-identity.png");
+
+    const resolvableResource = "public.manual_scope_orders";
+    await clickSelector(page, "#show-all-access");
+    await waitForExpression(page, "document.querySelectorAll('[data-access-resource]').length === 40");
+    await clickSelector(page, `[data-access-resource="${resolvableResource}"]`);
+    await waitForExpression(
+      page,
+      `document.querySelector(".access-resource.selected")?.dataset.accessResource === ${JSON.stringify(resolvableResource)}`,
+    );
+    await evaluate(page, `(() => {
+      const details=[...document.querySelectorAll("#resource-detail details")]
+        .find(item=>/Resolve blocked access/i.test(item.querySelector("summary")?.textContent||""));
+      if(!details)throw new Error("Resolvable blocked table omitted its review controls");
+      details.open=true;
+    })()`);
+    await waitForExpression(page, "document.querySelector('[data-submit-scope-review=\"row_identity\"]')?.offsetParent !== null");
+    const identityForm = '[data-scope-review-form]:has([data-submit-scope-review="row_identity"])';
+    await selectOptionByValue(page, `${identityForm} [data-scope-review-value]`, "id");
+    await typeIntoSelector(page, `${identityForm} [data-scope-review-actor]`, "visual-scope-reviewer");
+    await typeIntoSelector(page, `${identityForm} [data-scope-review-reason]`, "The inspected unique key is the application record identity.");
+    await clickSelector(page, '[data-submit-scope-review="row_identity"]');
+    await waitForExpression(page, `(() => {
+      const review=reviewResource(${JSON.stringify(resolvableResource)});
+      const form=document.querySelector('[data-scope-review-form]:has([data-submit-scope-review="tenant_key"])');
+      const rowForm=document.querySelector('[data-scope-review-form]:has([data-submit-scope-review="row_identity"])');
+      return review?.primary_key?.selected==="id"
+        && !rowForm
+        && document.querySelector("#resource-detail")?.getAttribute("aria-busy")!=="true"
+        && Boolean(form?.offsetParent&&form.querySelector('[data-scope-review-value]')?.value);
+    })()`);
+    const tenantForm = '[data-scope-review-form]:has([data-submit-scope-review="tenant_key"])';
+    await screenshot(page, "workbench-blocked-scope-tenant-review.png");
+    await typeIntoSelector(page, `${tenantForm} [data-scope-review-actor]`, "visual-scope-reviewer");
+    await typeIntoSelector(page, `${tenantForm} [data-scope-review-reason]`, "The application fixes tenant_id outside every model argument.");
+    const tenantInputState = await evaluate(page, `(() => {
+      const form=document.querySelector(${JSON.stringify(tenantForm)});
+      return {
+        value:form?.querySelector("[data-scope-review-value]")?.value||null,
+        actor:form?.querySelector("[data-scope-review-actor]")?.value||null,
+        reason:form?.querySelector("[data-scope-review-reason]")?.value||null,
+      };
+    })()`);
+    assert(
+      tenantInputState.value === "tenant_id"
+        && tenantInputState.actor === "visual-scope-reviewer"
+        && tenantInputState.reason === "The application fixes tenant_id outside every model argument.",
+      "Workbench scope form lost operator input before submission",
+      tenantInputState,
+    );
+    await clickSelector(page, '[data-submit-scope-review="tenant_key"]');
+    await waitForExpression(
+      page,
+      `(candidate?.pack?.resources||[]).some(item=>item.id===${JSON.stringify(resolvableResource)})
+        || [...document.querySelectorAll("[data-scope-review-status].error")].some(item=>item.textContent?.trim())`,
+    );
+    const resolvedState = await evaluate(page, `(() => ({
+      candidateIds:(candidate?.pack?.resources||[]).map(item=>item.id),
+      selectedResource,
+      row:document.querySelector(${JSON.stringify(`[data-access-resource="${resolvableResource}"]`)})?.dataset.accessIncluded||null,
+      review:(() => {
+        const item=reviewResource(${JSON.stringify(resolvableResource)});
+        return item?{
+          status:item.status,
+          blockers:item.blockers,
+          primary:item.primary_key,
+          tenant:item.tenant_key
+        }:null;
+      })(),
+      statuses:[...document.querySelectorAll("[data-scope-review-status]")].map(item=>({
+        className:item.className,
+        text:item.textContent||""
+      }))
+    }))()`);
+    assert(
+      resolvedState.candidateIds.includes(resolvableResource),
+      "Workbench did not include the table after both reviewed scope choices",
+      resolvedState,
+    );
+    assert(
+      await evaluate(page, `(() => {
+        const selected=document.querySelector(".access-resource.selected");
+        const detail=document.querySelector("#resource-detail")?.textContent||"";
+        return selected?.dataset.accessResource===${JSON.stringify(resolvableResource)}
+          && selected?.dataset.accessIncluded==="true"
+          && /Columns/i.test(detail)
+          && !/Unavailable:/.test(detail);
+      })()`),
+      "Workbench scope resolution did not keep the table selected for column review",
+    );
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "resolving blocked Workbench access changed active authority before review",
+    );
+    await screenshot(page, "workbench-blocked-scope-resolved.png");
     await page.send("Emulation.setDeviceMetricsOverride", {
       width: 390,
       height: 844,
@@ -1161,7 +1261,10 @@ async function assertWorkbenchDom(page, label, options) {
       }));
     const primary=[...visibleView.querySelectorAll("button")]
       .filter(button=>!button.disabled&&!button.classList.contains("secondary")&&!button.classList.contains("quiet")&&!button.classList.contains("danger"))
-      .filter(button=>button.offsetParent!==null)
+      .filter(button=>button.offsetParent!==null
+        && !button.closest("details:not([open])")
+        && button.getClientRects().length>0
+        && getComputedStyle(button).visibility!=="hidden")
       .map(button=>button.textContent.trim());
     return {
       title:document.title,
@@ -1314,6 +1417,26 @@ function visualInspection() {
           delete_rule: "RESTRICT",
         }],
       });
+    }
+    if (index === 6) {
+      const candidate = table("manual_scope_orders", {
+        primaryKey: [],
+        extraColumns: [column("external_id", "uuid", { immutable: true })],
+      });
+      candidate.unique_constraints = [
+        { name: "manual_scope_orders_id_key", columns: ["id"] },
+        { name: "manual_scope_orders_external_id_key", columns: ["external_id"] },
+      ];
+      candidate.indexes = candidate.unique_constraints.map((constraint) => ({
+        name: constraint.name,
+        columns: constraint.columns,
+        unique: true,
+      }));
+      candidate.row_level_security = false;
+      candidate.row_level_security_policies = [];
+      candidate.role_posture.row_security_forced = false;
+      candidate.role_posture.row_security_effective_for_current_role = false;
+      return candidate;
     }
     return table(`operational_resource_${String(index + 1).padStart(2, "0")}`);
   });

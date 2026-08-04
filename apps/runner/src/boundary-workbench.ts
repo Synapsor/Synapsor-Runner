@@ -1204,17 +1204,25 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          :'';
 		        return '<tr class="'+(entry.selected?'selected-boundary':'')+'"><td><strong>'+esc(entry.name)+'</strong>'+(entry.selected?'<small>Selected for editing</small>':'')+'</td><td>'+esc(status)+'</td><td>'+esc(entry.table_count)+'</td><td>'+(entry.active?'<span class="badge good">Active Explore</span>':'<span class="badge">No authority</span>')+'</td><td><div class="actions boundary-row-actions">'+action+deletion+'</div></td></tr>';
 		      }).join("");
-		      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
-		      const lifecycleControls='<div class="actions"><button id="edit-boundary-tables" type="button">Edit selected boundary</button><button id="new-boundary" class="secondary" type="button">New boundary</button>'+(selectedEntry?.active?'<button id="disable-active-boundary" class="quiet" type="button">Deactivate selected boundary</button>':'<button id="disable-active-boundary" class="quiet" type="button" disabled title="The selected boundary is not active.">Selected boundary inactive</button>')+'</div>';
+			      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
+			      const pendingBoundaryChange=Boolean(selectedEntry&&(!selectedEntry.active||!selectedEntry.matches_active_digest));
+			      const pendingBoundaryBanner=pendingBoundaryChange
+			        ?'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p><button id="review-pending-boundary" type="button">Review and activate now</button></div>'
+			        :'';
+			      const lifecycleControls='<div class="actions"><button id="edit-boundary-tables" '+(pendingBoundaryChange?'class="secondary" ':'')+'type="button">Edit selected boundary</button><button id="new-boundary" class="secondary" type="button">New boundary</button>'+(selectedEntry?.active?'<button id="disable-active-boundary" class="quiet" type="button">Deactivate selected boundary</button>':'<button id="disable-active-boundary" class="quiet" type="button" disabled title="The selected boundary is not active.">Selected boundary inactive</button>')+'</div>';
 		      const rankedMinimum=candidate.budgets.max_groups;
 		      const rankedCurrent=candidate.budgets.max_ranked_groups??rankedMinimum;
-		      const rankedMaximum=original.budgets.max_ranked_groups??original.budgets.max_groups;
-		      const rankedEditable=Number.isSafeInteger(original.budgets.max_ranked_groups);
-		      const rankedSettings='<details class="boundary-options"><summary>Ranked result settings</summary><div class="boundary-name-editor"><label>Groups considered before ranking<input id="boundary-ranked-groups" type="number" min="'+esc(rankedMinimum)+'" max="'+esc(rankedMaximum)+'" value="'+esc(rankedCurrent)+'" '+(rankedEditable?'':'disabled')+' aria-describedby="boundary-ranked-help"></label><button id="save-ranked-groups" class="secondary" type="button" '+(rankedEditable?'':'disabled')+'>Save reviewed limit</button><span id="boundary-ranked-status" class="status-message" aria-live="polite"></span><small id="boundary-ranked-help">Top, bottom, and period-mover questions may consider this many groups. Small-group suppression runs before ranking, and only the reviewed top '+esc(candidate.budgets.max_top_n)+' may be returned. The AI cannot change this setting.</small></div></details>';
-		      panel.innerHTML=
-		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p><div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+rankedSettings+'</div>'+lifecycleControls+'</div>'
+			      const rankedMaximum=original.budgets.max_ranked_groups??original.budgets.max_groups;
+			      const rankedEditable=Number.isSafeInteger(original.budgets.max_ranked_groups);
+			      const rankedSettings='<details class="boundary-options"><summary>Ranked result settings</summary><div class="boundary-name-editor"><label>Groups considered before ranking<input id="boundary-ranked-groups" type="number" min="'+esc(rankedMinimum)+'" max="'+esc(rankedMaximum)+'" value="'+esc(rankedCurrent)+'" '+(rankedEditable?'':'disabled')+' aria-describedby="boundary-ranked-help"></label><button id="save-ranked-groups" class="secondary" type="button" '+(rankedEditable?'':'disabled')+'>Save reviewed limit</button><span id="boundary-ranked-status" class="status-message" aria-live="polite"></span><small id="boundary-ranked-help">Top, bottom, and period-mover questions may consider this many groups. Small-group suppression runs before ranking, and only the reviewed top '+esc(candidate.budgets.max_top_n)+' may be returned. The AI cannot change this setting.</small></div></details>';
+			      const cohortValues=[...new Set(candidate.pack.resources.map(resource=>resource.minimum_cohort_size))];
+			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
+			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
+			      panel.innerHTML=
+			        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
 		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"");
-		      byId("edit-boundary-tables").onclick=()=>openFocusedAccessReview();
+			      byId("edit-boundary-tables").onclick=()=>openFocusedAccessReview();
+			      byId("review-pending-boundary")?.addEventListener("click",openFocusedActivationReview);
 		      byId("new-boundary").onclick=()=>{
 		        byId("new-boundary-form").hidden=false;
 		        byId("new-boundary-name").focus();
@@ -1349,10 +1357,39 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        }
 		        await load();
 		        const saved=byId("boundary-ranked-status");
-		        saved.className="status-message";
-		        saved.textContent="Saved in the disabled boundary. Suppression still runs before ranking; active authority did not change.";
-		      };
-		    }
+			        saved.className="status-message";
+			        saved.textContent="Saved in the disabled boundary. Suppression still runs before ranking; active authority did not change.";
+			      };
+			      const cohortAllSave=byId("save-boundary-cohort");
+			      if(cohortAllSave&&!cohortAllSave.disabled)cohortAllSave.onclick=async()=>{
+			        const status=byId("boundary-cohort-status");
+			        const value=Number(byId("boundary-cohort-all").value);
+			        const actor=byId("boundary-cohort-actor").value.trim();
+			        const reason=byId("boundary-cohort-reason").value.trim();
+			        try{
+			          if(!Number.isSafeInteger(value)||value<1||value>5||!actor||!reason){
+			            throw new Error("Choose a minimum group size from 1 through 5, then enter the human reviewer identity and reason.");
+			          }
+			          status.className="status-message";
+			          status.textContent="Saving one atomic owner decision for every included table...";
+			          await post("/api/boundary/regenerate",{
+			            kind:"minimum_cohort_all",
+			            value,
+			            actor,
+			            reason
+			          });
+			          candidateDigest=undefined;
+			          focusedAccessReview=true;
+			          document.body.classList.remove("quick-start-mode");
+			          await load();
+			          await openFocusedAccessReview();
+			          offerStagedActivation();
+			        }catch(error){
+			          status.className="status-message error";
+			          status.textContent=error.message;
+			        }
+			      };
+			    }
 
 		    function synchronizeBoundaryAuthorityState(active){
 		      if(!boundaryLibrary?.entries)return;
@@ -1629,18 +1666,47 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           if(beforeWithheld.has(field)!==afterWithheld.has(field))egressChanged+=1;
         }
       }
-      return {added,removed,egressChanged};
+      const active=activeBoundaryForCandidate();
+      const activeResources=new Map((active?.pack?.resources||[]).map(resource=>[resource.id,resource]));
+      const candidateResources=new Map((candidate?.pack?.resources||[]).map(resource=>[resource.id,resource]));
+      let privacyChanged=0;
+      let tableChanges=0;
+      for(const resourceId of new Set([...activeResources.keys(),...candidateResources.keys()])){
+        const before=activeResources.get(resourceId);
+        const after=candidateResources.get(resourceId);
+        if(!before||!after){tableChanges+=1;continue;}
+        if(before.minimum_cohort_size!==after.minimum_cohort_size)privacyChanged+=1;
+      }
+      const rankedChanged=Boolean(active&&(
+        (active.budgets.max_ranked_groups??active.budgets.max_groups)
+        !==(candidate.budgets.max_ranked_groups??candidate.budgets.max_groups)
+      ))?1:0;
+      return {added,removed,egressChanged,privacyChanged,tableChanges,rankedChanged};
     }
 
     function renderStagedAccessBar(){
       const bar=byId("access-staged");
       if(!bar)return;
       const counts=stagedAccessCounts();
-      const changed=counts.added+counts.removed+counts.egressChanged>0;
-      bar.classList.toggle("hidden",!focusedAccessReview&&!changed);
-      byId("access-staged-summary").textContent=changed
-        ?counts.added+" columns added, "+counts.removed+" removed, "+counts.egressChanged+" model-egress changes"
+      const selectedEntry=(boundaryLibrary?.entries||[]).find(entry=>entry.selected);
+      const pendingRevision=Boolean(selectedEntry&&(!selectedEntry.active||!selectedEntry.matches_active_digest));
+      const counted=counts.added+counts.removed+counts.egressChanged+counts.privacyChanged+counts.tableChanges+counts.rankedChanged;
+      const pendingChanges=pendingRevision?Math.max(1,counted):counted;
+      bar.classList.toggle("hidden",!focusedAccessReview&&!pendingRevision);
+      byId("access-staged-summary").textContent=pendingRevision
+        ?pendingChanges+" pending boundary change"+(pendingChanges===1?" is":"s are")+" not active; Ask still uses the previous exact revision"
         :"No access changes staged; review the current boundary as shown";
+      byId("review-staged-access").textContent=pendingRevision
+        ?"Review and activate now →"
+        :"Review and activate →";
+    }
+
+    function offerStagedActivation(){
+      renderStagedAccessBar();
+      const bar=byId("access-staged");
+      bar.classList.remove("hidden");
+      bar.scrollIntoView({behavior:"smooth",block:"center"});
+      byId("review-staged-access").focus();
     }
 
     function conciseFieldRisk(field){
@@ -1735,11 +1801,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason:"Staged through the focused access editor; the exact boundary update requires final human confirmation."
         });
         candidateDigest=undefined;
-        await load();
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
-        setView("exceptions");
-        renderResourceDetail();
+        await load();
       }catch(error){
         summary.textContent=error.message;
         bar.classList.remove("hidden");
@@ -1765,11 +1829,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason
         });
         candidateDigest=undefined;
-        await load();
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
-        setView("exceptions");
-        renderResourceDetail();
+        await load();
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -1782,12 +1844,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     async function submitManagedScopeReview(kind,form){
       const status=form.querySelector("[data-scope-review-status]");
+      const button=form.querySelector("[data-submit-scope-review]");
+      const detail=byId("resource-detail");
       try{
         const selected=form.querySelector("[data-scope-review-value]").value;
         const value=kind==="principal_key"&&selected==="__none__"?null:selected;
         const actor=form.querySelector("[data-scope-review-actor]").value.trim();
         const reason=form.querySelector("[data-scope-review-reason]").value.trim();
         if((value===null?false:!value)||!actor||!reason)throw new Error("Choose the source column and enter the human reviewer identity and reason.");
+        button.disabled=true;
+        detail.setAttribute("aria-busy","true");
         status.className="status-message";
         status.textContent="Saving this reviewed choice and updating only the affected access...";
         await post("/api/boundary/regenerate",{
@@ -1798,10 +1864,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason
         });
         candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
         await load();
-        setView("exceptions");
-        renderResourceDetail();
+        detail.removeAttribute("aria-busy");
       }catch(error){
+        button.disabled=false;
+        detail.removeAttribute("aria-busy");
         status.className="status-message error";
         status.textContent=error.message;
       }
@@ -1814,7 +1883,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const actor=form.querySelector("[data-cohort-review-actor]").value.trim();
         const reason=form.querySelector("[data-cohort-review-reason]").value.trim();
         if(!Number.isSafeInteger(value)||value<1||value>5||!actor||!reason){
-          throw new Error("Choose a value from 1 through 5 and enter the human reviewer identity and reason.");
+          throw new Error("Choose a minimum group size from 1 through 5, then enter the human reviewer identity and reason.");
         }
         status.className="status-message";
         status.textContent="Saving this owner decision and rebuilding only the affected disabled authority...";
@@ -1826,9 +1895,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason
         });
         candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
         await load();
-        setView("exceptions");
-        renderResourceDetail();
+        offerStagedActivation();
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -2053,14 +2123,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const kind=resolvingIdentity?"row_identity":"tenant_key";
           const candidateValues=resolvingIdentity
             ?review.primary_key?.candidates||[]
-            :fields.map(field=>field.name);
+            :review.tenant_key?.candidates||[];
           const decisionLabel=resolvingIdentity?"record ID backed by a unique database key":"customer-isolation column";
           const decisionInference=resolvingIdentity?review.primary_key:review.tenant_key;
           const resolution=candidateValues.length
             ?'<p>Your choice updates the public DSL, canonical JSON, tests, and review fingerprint. It does not activate access.</p>'+managedScopeReviewForm(kind,decisionLabel,candidateValues,undefined,false,decisionInference)
             :'<div class="risk high"><strong>No safe '+esc(decisionLabel)+' candidate exists.</strong><p>Add a single-column primary or unique key in the database, then rescan. Runner will not accept a friendly ORM or API name as row-identity proof.</p></div>';
-	        const blockedDetails='<details class="access-secondary" data-access-secondary><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Tenant candidates</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
-	        byId("resource-detail").innerHTML=header+columnList+blockedDetails;
+	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Tenant candidates</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
+	        byId("resource-detail").innerHTML=header+blockedDetails+columnList;
 		      byId("back-resources").onclick=backFromResourceDetail;
 		      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 		        const section=document.querySelector("[data-cohort-review-section]");
@@ -2097,10 +2167,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const cohortWarning=cohortValue===1
         ?'<div class="risk high"><strong>Small-group suppression is disabled.</strong><p>Groups of one identify individuals. Protect and protected-capability activation will each require another explicit confirmation.</p></div>'
         :"";
-      const cohortReview=resource?'<details class="access-secondary" data-access-secondary data-cohort-review-section><summary>Aggregate privacy threshold · minimum '+esc(cohortValue)+'</summary><p><strong>Effective minimum cohort:</strong> '+esc(cohortValue)+' '+(cohortDecision?'<span class="badge warn">Explicit owner override</span>':'<span class="badge good">Default</span>')+'</p><p>Runner hides aggregate groups smaller than 5 by default. Lowering this is an owner decision; the AI cannot request, trigger, or confirm it.</p>'
+      const cohortReview=resource?'<details class="access-secondary" data-access-secondary data-cohort-review-section><summary>Aggregate privacy · minimum group size '+esc(cohortValue)+'</summary><p><strong>Current minimum group size:</strong> '+esc(cohortValue)+' '+(cohortDecision?'<span class="badge warn">Explicit owner override</span>':'<span class="badge good">Default</span>')+'</p><p>Runner hides aggregate groups with fewer rows than this number. Choosing 1 shows every non-empty group and may identify one person or record. The AI cannot change or confirm this setting.</p>'
         +(cohortDecision?'<p>Reviewed by '+esc(cohortDecision.actor)+' at '+esc(cohortDecision.decided_at)+': '+esc(cohortDecision.reason)+'</p>':"")
         +cohortWarning
-        +'<div class="review-form" data-cohort-review-form><div class="form-grid"><label class="field">Minimum cohort<select data-cohort-review-value><option value="5" '+(cohortValue===5?"selected":"")+'>5 — restore default</option><option value="4" '+(cohortValue===4?"selected":"")+'>4 — owner override</option><option value="3" '+(cohortValue===3?"selected":"")+'>3 — owner override</option><option value="2" '+(cohortValue===2?"selected":"")+'>2 — high disclosure risk</option><option value="1" '+(cohortValue===1?"selected":"")+'>No suppression — effective minimum 1</option></select></label><label class="field">Human reviewer<input data-cohort-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this appropriate?<textarea data-cohort-review-reason maxlength="500" rows="2" placeholder="Describe why this owner-approved dataset may use the lower threshold."></textarea></label></div><div class="actions"><button data-submit-cohort-review type="button">'+(cohortDecision?"Change this recorded decision":"Record owner override")+'</button></div><span data-cohort-review-status class="status-message"></span></div></details>':"";
+        +'<div class="review-form" data-cohort-review-form><div class="form-grid"><label class="field">Minimum group size<select data-cohort-review-value><option value="5" '+(cohortValue===5?"selected":"")+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortValue===4?"selected":"")+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortValue===3?"selected":"")+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortValue===2?"selected":"")+'>2 — hide groups with 1 row</option><option value="1" '+(cohortValue===1?"selected":"")+'>1 — show every non-empty group; suppression off</option></select></label><label class="field">Human reviewer<input data-cohort-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason for this privacy setting<textarea data-cohort-review-reason maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for this table."></textarea></label></div><div class="actions"><button data-submit-cohort-review type="button">Save privacy change</button></div><span data-cohort-review-status class="status-message"></span></div></details>':"";
       const unresolvedRelationship=resource?.relationships.some(relationship=>relationship.unmatched_rows==="review_required");
       const relationshipReview=resource?.relationships.length
         ?'<details class="access-secondary" data-access-secondary '+(focusedAccessReview&&unresolvedRelationship?"open":"")+'><summary>Reviewed related data'+(unresolvedRelationship?" · choice required":"")+'</summary><p>Only database foreign keys that cannot multiply '+esc(source.table)+' records are available. The AI cannot invent another join.</p><div class="risk-list">'+resource.relationships.map(relationship=>{
@@ -2879,7 +2949,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         field:typeof guidance.review_field==="string"?guidance.review_field:undefined
       };
       const review=guidance.kind==="review_candidate"
-        ?'<button class="secondary" data-review-another-question'+askReviewTargetAttributes(target)+' type="button">Review this candidate access</button>'
+        ?guidance.review_focus==="privacy"&&target.resource
+          ?'<button class="secondary" data-review-privacy-resource="'+esc(target.resource)+'" type="button">Review privacy for this table</button>'
+          :'<button class="secondary" data-review-another-question'+askReviewTargetAttributes(target)+' type="button">Review this candidate access</button>'
         :"";
       return '<section class="ask-access-guidance"><span class="instant-kicker">Human review path</span><h3>'+esc(guidance.title||"More reviewed access is needed")+'</h3><p>'+esc(guidance.message||"")+'</p>'
         +(guidance.candidate_path?'<p><strong>Candidate path:</strong> '+esc(guidance.candidate_path)+'</p>':"")
@@ -3095,10 +3167,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	              ?'<div class="notice"><strong>Complete-population share unavailable</strong><p>At least one group was withheld. Percentages calculated from the displayed rows describe only the returned non-suppressed subtotal.</p></div>'
 	              :"";
 	          const accessGuidance=askAccessGuidanceHtml(payload.access_guidance);
+	          const refusedSourceExecuted=payload.access_guidance?.source_query_executed===true;
 	          const runnerOutput=completedOperation
             ?'<details class="ask-verified"><summary><span class="badge runner-verified">Runner verified</span><span class="ask-verified-hint">Numbers in this answer come from the bounded plan, not model prose</span></summary><div class="ask-verified-body">'+analyses+'</div></details>'
 	            :visibleCalls.length
-	              ?'<section class="ask-refused"><span class="instant-kicker">Nothing ran</span><h3>That question needs data outside this boundary.</h3><p>Runner stopped every attempted plan before it could return source data.</p>'+analyses+accessGuidance+'<div class="actions">'+(askStarterPrompts[0]?'<button class="secondary" data-ask-alternative type="button">Ask instead: '+esc(askStarterPrompts[0])+'</button>':'')+(payload.access_guidance?.kind==="review_candidate"?'':'<button class="quiet" data-review-another-question'+askReviewTargetAttributes(refusedReviewTarget)+' type="button">Review or expand access</button>')+'</div></section>'
+	              ?'<section class="ask-refused"><span class="instant-kicker">'+(refusedSourceExecuted?'Result not released':'Nothing ran')+'</span><h3>'+esc(payload.access_guidance?.title||"That question needs data outside this boundary.")+'</h3><p>'+(refusedSourceExecuted?'Runner executed a read-only aggregate, then discarded the result because releasing it would cross the reviewed privacy boundary.':'Runner stopped every attempted plan before it could return source data.')+'</p>'+analyses+accessGuidance+'<div class="actions">'+(askStarterPrompts[0]?'<button class="secondary" data-ask-alternative type="button">Ask instead: '+esc(askStarterPrompts[0])+'</button>':'')+(payload.access_guidance?.kind==="review_candidate"?'':'<button class="quiet" data-review-another-question'+askReviewTargetAttributes(refusedReviewTarget)+' type="button">Review or expand access</button>')+'</div></section>'
               :'<div class="notice"><strong>No Runner data query was executed for this answer.</strong></div>'+accessGuidance;
           const modelPanel='<section class="ask-model-panel"><span class="ask-model-label">'+esc(answerLabel)+'</span>'
             +(modelWithheldValues?'<div class="notice"><strong>Some values were shown only to you.</strong><p>Runner withheld them from the model, so its summary cannot name them. The verified result still applies the reviewed scope, suppression, and budgets.</p></div>':"")
@@ -3127,7 +3200,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         status.textContent=completedOperation
           ?""
           :visibleCalls.length
-            ?"Choose the validated alternative or review the boundary."
+            ?refusedSourceExecuted
+              ?"The read-only result was discarded. Choose another question or review this table's minimum group size."
+              :"Choose the validated alternative or review the boundary."
             :payload.next_action||"Ask another bounded question.";
       }catch(error){
         const presentation=askFailurePresentation(error);
@@ -3232,7 +3307,20 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          ?'<p><strong>Attempted plan:</strong> '+esc(safeAttemptedPlanSentence(call.arguments.plan))+'</p>'
 	          :"";
 	        const target=askReviewTarget(call);
-	        return '<section class="ask-tool-trace refusal"><strong>Stopped at the reviewed boundary</strong>'+attempted+'<p>'+esc(refusalMessage)+'</p><p><strong>Source query executed:</strong> '+esc(refusalCode==="EXPLORE_RESPONSE_TOO_LARGE"?"yes; the oversized result was discarded":refusalCode==="EXPLORE_SOURCE_UNAVAILABLE"?"outcome unavailable":"no; validation stopped it first")+'</p><button class="quiet" data-review-refusal-access'+askReviewTargetAttributes(target)+' type="button">Review or expand access</button>'+exploreEvidenceDisclosure(call,result,false)+'</section>';
+	        const refusalDetails=result.details&&typeof result.details==="object"
+	          ?result.details
+	          :result.outcome?.details&&typeof result.outcome.details==="object"
+	            ?result.outcome.details
+	            :{};
+	        const sourceExecuted=refusalDetails.source_query_executed===true||refusalCode==="EXPLORE_RESPONSE_TOO_LARGE";
+	        const execution=sourceExecuted
+	          ?refusalCode==="EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
+	            ?"yes; the privacy-reconstructing result was discarded"
+	            :"yes; the bounded result was discarded"
+	          :refusalCode==="EXPLORE_SOURCE_UNAVAILABLE"
+	            ?"outcome unavailable"
+	            :"no; validation stopped it first";
+	        return '<section class="ask-tool-trace refusal"><strong>Stopped at the reviewed boundary</strong>'+attempted+'<p>'+esc(refusalMessage)+'</p><p><strong>Source query executed:</strong> '+esc(execution)+'</p><button class="quiet" data-review-refusal-access'+askReviewTargetAttributes(target)+' type="button">Review or expand access</button>'+exploreEvidenceDisclosure(call,result,false)+'</section>';
 	      }
       if(call.tool==="app.describe_data"){
         const resources=Array.isArray(result.resources)?result.resources:[];
@@ -3247,21 +3335,40 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const semantics=result.outcome?.result;
 	        const suppressed=Number(result.privacy?.suppressed_groups||result.data?.suppression?.suppressed_groups||semantics?.suppression?.suppressed_groups||0);
 	        const minimumCohort=Number(result.privacy?.minimum_cohort_size||result.data?.suppression?.minimum_cohort_size||semantics?.suppression?.minimum_cohort_size||0);
-        const protectToken=result.protect?.query_ref;
-        const returned=Number(result.audit?.returned_rows_or_groups??rows.length);
-        const resultKind=plan.kind==="aggregate"?"group":"row";
-        const verifiedData=rows.length
+	        const protectToken=result.protect?.query_ref;
+	        const returned=Number(result.audit?.returned_rows_or_groups??rows.length);
+	        const resultKind=plan.kind==="aggregate"?"group":"row";
+	        const privacyGuidance=suppressed>0
+	          ?suppressionReviewGuidance(plan,boundaryName,minimumCohort)
+	          :null;
+	        const verifiedData=rows.length
           ?'<details class="verified-data-details"><summary>View verified data ('+esc(returned)+' '+resultKind+(returned===1?"":"s")+')</summary><div class="verified-data-body">'+resultDataHtml(plan,rows,semantics,boundaryName)+'</div></details>'
           :'<p class="ask-verified-count">No rows or groups passed the reviewed scope and privacy thresholds.</p>';
         return '<section class="ask-tool-trace"><p>'+esc(planSentence(plan,boundaryName))+'</p>'
           +(rows.length?'<p class="ask-verified-count">'+esc(returned)+' verified '+resultKind+(returned===1?"":"s")+' returned.</p>':"")
           +verifiedData
-	          +(suppressed>0?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum cohort'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy threshold</button>':'')
+		          +(privacyGuidance?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum group size'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')
           +(protectToken?'<button class="secondary" data-ask-protect="'+esc(protectToken)+'" type="button">Protect as reusable capability</button>':'')
 	          +exploreEvidenceDisclosure(call,result,true)+'</section>';
       }
-      return '<section class="ask-tool-trace"><strong>Reviewed Runner tool completed</strong><details><summary>Advanced bounded result</summary><pre>'+esc(JSON.stringify({arguments:call.arguments,result},null,2))+'</pre></details></section>';
-    }
+	      return '<section class="ask-tool-trace"><strong>Reviewed Runner tool completed</strong><details><summary>Advanced bounded result</summary><pre>'+esc(JSON.stringify({arguments:call.arguments,result},null,2))+'</pre></details></section>';
+	    }
+
+	    function suppressionReviewGuidance(plan,boundaryName,minimumCohort){
+	      const resource=describedResourceForPlan(plan,boundaryName);
+	      const resolvedBoundary=boundaryName||resource?.boundary_name||"the active boundary";
+	      const dimension=plan.kind==="aggregate"&&Array.isArray(plan.dimensions)&&plan.dimensions.length===1
+	        ?plan.dimensions[0]
+	        :null;
+	      const field=dimension&&typeof dimension.field==="string"?dimension.field:null;
+	      const shape=field&&/(^id$|_id$|(^|_)name$)/i.test(field)
+	        ?"This question groups records into one row per "+fieldLabel(resource,field).toLowerCase()+"; any entity with fewer than "+(minimumCohort||"the reviewed minimum")+" records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size."
+	        :"";
+	      return {
+	        shape,
+	        path:"To change this in Workbench, select Review privacy for "+plan.resource+" below. Workbench opens that table's Aggregate privacy setting inside boundary "+resolvedBoundary+". Choose a Minimum group size, enter a reason, select Save privacy change, then select Review and activate now. Until activation, Ask uses the previous group size."
+	      };
+	    }
 
     function safeAttemptedPlanSentence(plan){
       try{
@@ -3517,7 +3624,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         groups?"Group by "+groups:"No categorical grouping",
         plan.time_bucket?"Group time by "+plan.time_bucket.bucket+" using "+fieldReferenceLabel(resource,plan.time_bucket):"No time grouping",
         "Maximum "+plan.top_n+" groups",
-        "Minimum cohort "+resource.minimum_cohort_size+(resource.minimum_cohort_overridden?" (explicit owner override)":"")
+        "Minimum group size "+resource.minimum_cohort_size+(resource.minimum_cohort_overridden?" (explicit owner override)":"")
       ];
     }
 
@@ -3928,10 +4035,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     async function runExplore(){
       const status=byId("explore-status");
       const resultPanel=byId("explore-result");
+      let attemptedPlan=null;
+      let attemptedBoundary=null;
       try{
-        const plan=currentPlan();
+        const plan=attemptedPlan=currentPlan();
         const selectedDescriptionResource=describedResourceForPlan(plan);
-        const selectedBoundary=selectedDescriptionResource?.boundary_name;
+        const selectedBoundary=attemptedBoundary=selectedDescriptionResource?.boundary_name;
         if(plan.kind==="rows"&&!plan.where.length)throw new Error("Enter the real row identifier. Runner will not select an arbitrary first row.");
         status.className="status-message";
         status.textContent="Running the bounded read through the reviewed authoring boundary...";
@@ -3948,23 +4057,39 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		            .concat((plan.dimensions||[]).map(dimension=>fieldReferenceLabel(selectedDescriptionResource,dimension)),plan.time_bucket?[fieldReferenceLabel(selectedDescriptionResource,plan.time_bucket)]:[]);
 		        const unavailable=(reviewedResource?.kept_out_fields||[]).join(", ")||"all fields outside this reviewed result";
 		        status.textContent="Reviewed result returned.";
-		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+(result.privacy.suppressed_groups>0?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum cohort of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p><button id="review-result-privacy" class="quiet" type="button">Review privacy threshold</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum cohort:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
+		        const privacyGuidance=result.privacy.suppressed_groups>0
+		          ?suppressionReviewGuidance(plan,selectedBoundary,result.privacy.minimum_cohort_size)
+		          :null;
+		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
 			        byId("ask-another-result").onclick=()=>{if(plan.kind==="rows")switchExploreMode("aggregate");byId("explore-composer").open=true;byId("explore-composer").scrollIntoView({behavior:"auto",block:"start"})};
 		        if(byId("review-result-privacy"))byId("review-result-privacy").onclick=()=>openAccessEditor(plan.resource,undefined,true);
 		        byId("protect-result").onclick=async()=>{preferredProtectQueryRef=resultProtectQueryRef;await loadProtect(resultProtectQueryRef);setView("protect")};
       }catch(error){
         const remediation=error.payload?.remediation;
         const relationshipReview=error.payload?.details?.relationship_review;
+        const refusalDetails=error.payload?.details||{};
+        const privacyComplement=error.payload?.error_code==="EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
+          &&refusalDetails.reason==="complementary_aggregate_release"
+          &&attemptedPlan;
+        const fieldOperation=error.payload?.error_code==="EXPLORE_FIELD_FORBIDDEN"
+          &&refusalDetails.reason==="field_operation_not_reviewed";
+        const privacyGuidance=privacyComplement
+          ?suppressionReviewGuidance(attemptedPlan,attemptedBoundary,refusalDetails.minimum_cohort_size)
+          :null;
         const drifted=["EXPLORE_LOCK_STALE","EXPLORE_BOUNDARY_MISMATCH"].includes(error.payload?.error_code);
         status.className="status-message error";
         status.textContent=error.message;
         const evidence=relationshipReview?.evidence||[];
         resultPanel.innerHTML='<section class="band error"><h3>Request refused safely</h3><p>'+esc(error.message)+'</p>'
+          +(privacyGuidance?'<p>Runner executed the read-only aggregate, then discarded its result because releasing it could reconstruct a previously withheld group.</p><p>'+esc(privacyGuidance.path)+'</p><button id="review-refused-privacy" type="button">Review privacy for '+esc(attemptedPlan.resource)+'</button>':'')
+          +(fieldOperation?'<p><strong>Review path:</strong> boundary '+esc(attemptedBoundary||"the active boundary")+' -> table '+esc(refusalDetails.resource||attemptedPlan?.resource||"the requested table")+' -> column '+esc(refusalDetails.field||"the requested field")+' -> Advanced field operations -> review '+esc(refusalDetails.operation||"this operation")+' -> Review and activate. If the operation is unavailable there, create a narrow reviewed view instead.</p><button id="review-refused-field" type="button">Review this field operation</button>':'')
           +(relationshipReview
             ?'<div class="risk"><strong>Catalog proof available for human review</strong><p>Counted entity: <code>'+esc(relationshipReview.counted_entity)+'</code> · Path depth: '+esc(relationshipReview.path_depth)+' · Nullable: '+esc(String(relationshipReview.nullable))+'</p>'+evidence.map(link=>'<p><code>'+esc(link.constraint)+'</code>: '+esc(link.source_resource+"."+link.source_columns.join(","))+' → unique '+esc(link.target_resource+"."+link.target_columns.join(","))+' · '+esc(link.cardinality)+' · max fan-out '+esc(link.max_fan_out)+'</p>').join("")+'<label class="field">Human reviewer<input id="relationship-review-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><button id="review-missing-relationship" type="button">Review and add this relationship</button><span id="relationship-review-status" class="status-message"></span></div>'
             :"")
           +(remediation?'<p><strong>Next action:</strong> '+esc(remediation.action)+'</p><p>'+esc(remediation.preserved)+'</p>':"")
           +(drifted?'<button id="rescan-refused-analysis" type="button">Rescan and review the affected table or view</button>':"")+'</section>';
+        if(privacyGuidance)byId("review-refused-privacy").onclick=()=>openAccessEditor(attemptedPlan.resource,undefined,true);
+        if(fieldOperation)byId("review-refused-field").onclick=()=>openAccessEditor(refusalDetails.resource||attemptedPlan?.resource,refusalDetails.field);
         if(relationshipReview)byId("review-missing-relationship").onclick=()=>stageRelationshipReview(relationshipReview);
         if(drifted)byId("rescan-refused-analysis").onclick=previewProjectRescan;
       }
@@ -4127,7 +4252,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const literals=(query.literal_positions||[]).map((position,index)=>'<div class="risk"><label class="check"><input type="checkbox" data-arg-enable="'+index+'"><span>Turn this reviewed literal into a bounded typed argument</span></label><p><code>'+esc(position.location+" / "+(position.relationship?position.relationship+".":"")+position.field+" = "+JSON.stringify(position.current_value))+'</code></p><div class="form-grid"><label class="field">Argument name<input type="text" data-arg-name="'+index+'" value="'+esc(position.suggested_argument)+'"></label><label class="field">Description<input type="text" data-arg-description="'+index+'" value="'+esc("Reviewed "+position.field+" filter.")+'"></label></div></div>').join("");
       const cohort=query.minimum_cohort_override;
       const cohortReview=cohort
-        ?'<div class="risk high"><strong>Re-confirm lowered aggregate privacy threshold</strong><p>This analysis uses an explicit owner override: minimum cohort '+esc(cohort.minimum_cohort_size)+'. '+(cohort.minimum_cohort_size===1?"Groups of one can identify individuals. ":"")+'Protecting it can graduate this staging disclosure posture into a named capability.</p><label class="check"><input id="protect-cohort-confirmed" type="checkbox"><span>I reviewed this consequence and want the protected draft to retain this threshold.</span></label></div>'
+        ?'<div class="risk high"><strong>Re-confirm lowered aggregate privacy setting</strong><p>This analysis uses an explicit owner override: minimum group size '+esc(cohort.minimum_cohort_size)+'. '+(cohort.minimum_cohort_size===1?"Groups of one can identify individuals. ":"")+'Protecting it can graduate this staging disclosure posture into a named capability.</p><label class="check"><input id="protect-cohort-confirmed" type="checkbox"><span>I reviewed this consequence and want the protected draft to retain this setting.</span></label></div>'
         :"";
       editor.innerHTML='<section class="band"><div class="form-grid"><label class="field">Capability name<input id="protect-name" type="text" value="analytics.protected_query"></label><label class="field">Description<input id="protect-description" type="text" value="Answer one reviewed, bounded data question."></label><label class="field">Returns hint<input id="protect-returns" type="text" value="Returns only the reviewed bounded result shape."></label></div>'+cohortReview+'<h3 style="margin-top:16px">Literal review</h3>'+literals+'<div class="actions"><button id="create-protected" type="button">Generate disabled capability</button></div><div id="protect-preview"></div></section>';
       byId("create-protected").onclick=createProtected;
@@ -4185,7 +4310,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
       const activationCohort=payload.draft.minimum_cohort_override;
       const activationCohortReview=activationCohort
-        ?'<div class="risk high"><strong>Lowered privacy threshold</strong><p>Activation retains minimum cohort '+esc(activationCohort.minimum_cohort_size)+'. '+(activationCohort.minimum_cohort_size===1?"Groups of one can identify individuals. ":"")+'This decision is recorded separately from draft generation.</p><label class="check"><input id="activate-cohort-confirmed" type="checkbox"><span>I reviewed this consequence and want to activate this exact threshold.</span></label></div>'
+        ?'<div class="risk high"><strong>Lowered privacy setting</strong><p>Activation retains minimum group size '+esc(activationCohort.minimum_cohort_size)+'. '+(activationCohort.minimum_cohort_size===1?"Groups of one can identify individuals. ":"")+'This decision is recorded separately from draft generation.</p><label class="check"><input id="activate-cohort-confirmed" type="checkbox"><span>I reviewed this consequence and want to activate this exact setting.</span></label></div>'
         :"";
       byId("protect-preview").innerHTML='<h3 style="margin-top:16px">Disabled named capability: '+esc(payload.draft.capability)+'</h3><p><strong>Agent authority activated:</strong> no</p><div class="band notice"><strong>Read-only authority generated</strong><p>Review the DSL below. This button is bound to the exact fingerprint you loaded; Runner recomputes it immediately before activation.</p><p><strong>DSL:</strong> <code>'+esc(payload.draft.dsl_path)+'</code><br><strong>Contract:</strong> <code>'+esc(payload.draft.contract_path)+'</code><br><strong>Tests:</strong> <code>'+esc(payload.draft.tests_path)+'</code></p></div><pre id="protect-dsl-preview"></pre><details><summary>Advanced fingerprint</summary><code>'+esc(payload.draft.contract_digest)+'</code></details><div class="form-grid"><label class="field">Operator identity<input id="protect-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div>'+activationCohortReview+'<label class="check" style="margin-top:12px"><input id="protect-disable-explore" type="checkbox"><span>Disable temporary Scoped Explore after activating this named capability.</span></label><div class="actions"><button id="activate-protected" type="button">Activate this reviewed capability</button></div>';
       renderSyntaxCode("protect-dsl-preview",payload.dsl,"synapsor-dsl");

@@ -1,12 +1,17 @@
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { cliCommandName } from "./cli-command-meta.js";
 import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
+import {
+  resolveAskAccessGuidance,
+  type AskAccessGuidance,
+} from "./ask-access-summary.js";
 import { usage } from "./cli-help.js";
 import { assertKnownOptions, firstPositional, optionalArg, repeatedArgs } from "./cli-options.js";
 import { activeProjectResolutionState, prepareReferenceDemo } from "./cli-project.js";
@@ -20,12 +25,15 @@ import {
 } from "./local-ui.js";
 import { executeRuntimeToolCall, inspectMcpToolBoundary } from "./mcp-runtime.js";
 import {
+  assertQualifiedCapabilityName,
   createProtectedQueryDraft,
   describeProtectableAnalysis,
   listProtectableQueries,
   suggestProtectedCapabilityName,
 } from "./protect-query.js";
 import {
+  bindProtectedPlansToAnswer,
+  ScopedExploreError,
   type ExplorePlan,
   type InspectDatabaseFn,
 } from "./scoped-explore.js";
@@ -33,6 +41,10 @@ import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
 import { tryAsk } from "./try-ask.js";
 import { resolveReadableTryStateRoot } from "./try-state.js";
+import {
+  renderTerminalJson,
+  terminalSyntaxColorEnabled,
+} from "./terminal-syntax.js";
 import { openBrowser } from "./ui-command.js";
 
 
@@ -171,7 +183,7 @@ async function tryOwnDataCall(args: string[]): Promise<number> {
       `Principal scope: ${payload.trusted_principal_scope}`,
       `Source database changed: ${sourceChanged ? "yes" : "no"}`,
       "",
-      JSON.stringify(call.result, null, 2),
+      renderTerminalJson(call.result, terminalSyntaxColorEnabled()),
       "",
       `Next: ${payload.next_action}`,
       "",
@@ -200,6 +212,10 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       "--avg",
       "--group-by",
       "--time-bucket",
+      "--compare",
+      "--period",
+      "--vs-period",
+      "--change",
       "--where",
       "--top",
       "--json",
@@ -224,6 +240,10 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       || repeatedArgs(args, "--group-by").length > 0
       || repeatedArgs(args, "--where").length > 0
       || Boolean(optionalArg(args, "--time-bucket"))
+      || Boolean(optionalArg(args, "--compare"))
+      || Boolean(optionalArg(args, "--period"))
+      || Boolean(optionalArg(args, "--vs-period"))
+      || Boolean(optionalArg(args, "--change"))
       || Boolean(optionalArg(args, "--top"));
     if (!inline && !inputPath && !friendly) {
       const cursor = optionalArg(args, "--cursor");
@@ -264,13 +284,56 @@ async function tryScopedExplore(args: string[]): Promise<number> {
         averages: repeatedArgs(args, "--avg"),
         groupBy: repeatedArgs(args, "--group-by"),
         timeBucket: optionalArg(args, "--time-bucket"),
+        compareField: optionalArg(args, "--compare"),
+        period: optionalArg(args, "--period"),
+        versusPeriod: optionalArg(args, "--vs-period"),
+        ...(optionalArg(args, "--change")
+          ? { comparisonChange: comparisonChangeArg(optionalArg(args, "--change")!) }
+          : {}),
         filters: repeatedArgs(args, "--where"),
         ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
       });
-    const result = await runtime.explore(
-      parsed as ExplorePlan,
-      optionalArg(args, "--boundary"),
-    );
+    let result: Record<string, unknown>;
+    try {
+      result = await runtime.explore(
+        parsed as ExplorePlan,
+        optionalArg(args, "--boundary"),
+      );
+    } catch (error) {
+      if (!(error instanceof ScopedExploreError) || args.includes("--json")) throw error;
+      const selectedBoundary = optionalArg(args, "--boundary");
+      const guidance = await resolveAskAccessGuidance({
+        projectRoot,
+        question: "",
+        toolCalls: [{
+          call_id: "cli_try_explore",
+          tool: "app.explore_data",
+          provider_tool: "app_explore_data",
+          status: "refused",
+          error_code: error.code,
+          arguments: {
+            ...(selectedBoundary ? { boundary: selectedBoundary } : {}),
+            plan: parsed as Record<string, unknown>,
+          },
+          result: {
+            error_code: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {}),
+          },
+        }],
+      });
+      if (!guidance) throw error;
+      process.stderr.write(formatTryExploreRefusal(error, guidance));
+      return 1;
+    }
+    const protectToken = (result.protect as { token?: unknown } | undefined)?.token;
+    if (typeof protectToken === "string") {
+      await bindProtectedPlansToAnswer({
+        projectRoot,
+        tokens: [protectToken],
+        answerId: `ans_${crypto.randomBytes(12).toString("hex")}`,
+      });
+    }
     await updateGuidedOnboardingState({
       projectRoot,
       status: (parsed as { kind?: unknown }).kind === "aggregate" ? "protect" : "first_value",
@@ -298,6 +361,30 @@ async function tryScopedExplore(args: string[]): Promise<number> {
   }
 }
 
+export function formatTryExploreRefusal(
+  error: Pick<ScopedExploreError, "code" | "message">,
+  guidance: AskAccessGuidance,
+): string {
+  return [
+    "Runner refused this analysis",
+    `${error.code} - ${error.message}`,
+    "",
+    guidance.title,
+    guidance.message,
+    `Source query executed: ${guidance.source_query_executed === true
+      ? "yes; Runner discarded the result before release"
+      : "no"}`,
+    "",
+    `Next: ${guidance.next_action}`,
+    "",
+  ].join("\n");
+}
+
+function comparisonChangeArg(value: string): "absolute" | "percentage" {
+  if (value === "absolute" || value === "percentage") return value;
+  throw new Error("--change must be absolute or percentage.");
+}
+
 
 async function tryProtectLatest(
   args: string[],
@@ -319,6 +406,8 @@ async function tryProtectLatest(
     "try protect",
   );
   const projectRoot = resolvedSynapsorProjectRoot(args);
+  const requestedCapabilityName = optionalArg(args, "--name");
+  if (requestedCapabilityName) assertQualifiedCapabilityName(requestedCapabilityName);
   const available = await listProtectableQueries({ projectRoot });
   const requestedReference = optionalArg(args, "--from");
   if (requestedReference && args.includes("--last")) {
@@ -332,7 +421,9 @@ async function tryProtectLatest(
     const latestAnswer = latest?.answer_id;
     const candidates = latestAnswer
       ? available.filter((item) => item.answer_id === latestAnswer)
-      : available;
+      : latest
+        ? [latest]
+        : [];
     if (candidates.length === 1) {
       selected = candidates[0];
     } else if (candidates.length > 1) {
@@ -352,7 +443,7 @@ async function tryProtectLatest(
     }
     throw new Error("No unexpired successful exploration is available. Run one bounded try explore plan, then protect it.");
   }
-  const capabilityName = optionalArg(args, "--name")
+  const capabilityName = requestedCapabilityName
     ?? suggestProtectedCapabilityName(selected.normalized_plan);
   let minimumCohortActor = optionalArg(args, "--actor")?.trim();
   let minimumCohortConfirmation = optionalArg(args, "--cohort-confirmation")?.trim();
@@ -459,11 +550,11 @@ function resolvedSynapsorProjectRoot(args: string[]): string {
 function formatTryExploreDescription(payload: {
   description: Record<string, unknown>;
   next_action: string;
-}): string {
+}, color = terminalSyntaxColorEnabled()): string {
   return [
     "Reviewed local data boundary",
     "",
-    JSON.stringify(payload.description, null, 2),
+    renderTerminalJson(payload.description, color),
     "",
     "Source database changed: no",
     `Next: ${payload.next_action}`,
@@ -475,11 +566,11 @@ function formatTryExploreDescription(payload: {
 function formatTryExploreResult(payload: {
   result: Record<string, unknown>;
   next_action: string;
-}): string {
+}, color = terminalSyntaxColorEnabled()): string {
   return [
     "Your first safe exploration is working.",
     "",
-    JSON.stringify(payload.result, null, 2),
+    renderTerminalJson(payload.result, color),
     "",
     "Source database changed: no",
     `Next: ${payload.next_action}`,

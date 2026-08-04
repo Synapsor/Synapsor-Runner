@@ -44,6 +44,24 @@ describe("Scoped Explore active boundary routing", () => {
       .toThrowError(expect.objectContaining({ code: "EXPLORE_RESOURCE_FORBIDDEN" }));
   });
 
+  it("reports one path-free recovery action when no reviewed boundary is active", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-no-active-boundary-"));
+    try {
+      const error = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+      }).catch((failure: unknown) => failure);
+      expect(error).toMatchObject({
+        code: "EXPLORE_DISABLED",
+        message: "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.",
+      });
+      expect(String(error)).not.toContain(projectRoot);
+      expect(String(error)).not.toContain("ENOENT");
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("discovers an additively activated boundary through one live runtime without reconnecting", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-live-boundary-set-"));
     const support = validBoundary("support", ["public.tickets"]);
@@ -220,7 +238,7 @@ function fakeChildRuntime(boundary: ActivatedExplorationBoundary): ScopedExplore
       tenant: { source: "environment", binding: "SYNAPSOR_TENANT_ID" },
       principal: { source: "not_required" },
     },
-    describe: ({ resource, cursor = 0, limit = 10 } = {}) => {
+    describe: async ({ resource, cursor = 0, limit = 10 } = {}) => {
       const resources = boundary.pack.resources
         .filter((candidate) => !resource || candidate.id === resource)
         .map((candidate) => ({ id: candidate.id }));

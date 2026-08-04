@@ -2375,7 +2375,8 @@ function buildResource(
         sensitivity,
         raw_visible_suggestion: !keptOutByClassification && !column.suggestions.large_or_binary,
         aggregate_measure_suggestion: !keptOutByClassification && isNumericType(column.data_type),
-        count_distinct_suggestion: table.primary_key.includes(column.name) && !keptOutByClassification,
+        count_distinct_suggestion: !keptOutByClassification
+          && (table.primary_key.includes(column.name) || isReferenceIdentifierName(column.name)),
         groupable_suggestion: !keptOutByClassification
           && !table.primary_key.includes(column.name)
           && !isReferenceIdentifierName(column.name)

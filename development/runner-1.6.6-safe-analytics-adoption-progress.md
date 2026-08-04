@@ -3509,3 +3509,316 @@ Post-audit hardening checkpoint complete (2026-08-03):
 - Release notes and the changelog now cover this audit pass. No Cloud repository
   was touched. No package was published and no commit, push, merge, tag, release,
   or dist-tag change was made. The technical deep dive remains untouched.
+
+Post-1.6.6 first-run repair checkpoint (2026-08-03):
+
+- Release status is blocked. Published 1.6.6 can dead-end on the first
+  `start --from-env DATABASE_URL --cli` access screen when a normal schema has
+  source-proven record-ID and tenant candidates but no pre-resolved trusted
+  scope. A green unit suite did not substitute for the missing packed Enter-key
+  journey; no replacement release is ready until that exact journey passes.
+- The terminal access editor now identifies candidate-resolvable blocked tables,
+  opens an inline `RESOLVE TABLE ACCESS` screen, constrains choices to inspected
+  unique-key/tenant candidates, records the reviewer decision through the
+  canonical boundary mutation path, then opens column review without activating
+  authority or terminating the parent `start --cli` session. The CLI front-door
+  regression passes.
+- Workbench exposed a second form of the same defect: it submitted record identity
+  and tenant isolation separately while each request demanded immediate table
+  inclusion. The first valid choice therefore failed because the second remained
+  unresolved. Partial scope choices can now be staged as disabled review evidence;
+  inclusion occurs only after all required choices resolve. A real secured
+  `/api/boundary/regenerate` regression selects `id`, then `tenant_id`, proves the
+  table enters only the disabled candidate, and verifies no active-boundary file
+  exists.
+- Startup summaries and Workbench preflight now use an operator-only metadata
+  catalog that defers reviewed time-coverage aggregates. The model-facing
+  `app.describe_data` catalog still receives cohort-safe date coverage when it is
+  actually requested for analysis. A regression proves startup description makes
+  zero executor calls, keeping the UI's `No source rows have been read yet` claim
+  true.
+- Additional repairs currently on the branch include natural foreign-key
+  `count_distinct` defaults with an actionable operator-only refusal, path-free
+  no-boundary errors, hosted-provider default models, friendly two-period CLI
+  comparison flags, invocation-scoped `try protect --last`, explicit invalid
+  Protect-name errors, noninteractive boundary rename/delete, and cohort-safe
+  reviewed time coverage.
+- Current verification: typecheck passes; the combined changed Runner suites pass
+  207/207, and the new Workbench blocked-scope route passes independently. Packed
+  PostgreSQL/MySQL first-run, browser visual, and full root/release gates remain
+  outstanding and must be recorded literally before completion.
+
+Post-release first-run human verification (2026-08-03):
+
+- A durable packed-TTY gate now installs a newly packed Runner into a clean
+  directory, starts the real PostgreSQL and MySQL example databases, and drives
+  `start --from-env DATABASE_URL --cli` through the same Enter/arrow-key screens
+  a first-time developer sees. On both engines it resolved the blocked record
+  identity and tenant key inline, kept the column editor open, performed the one
+  whole-boundary review and activation, reached model selection, and proved the
+  source snapshots were byte-for-byte unchanged. The measured runs were 3.170 s
+  for PostgreSQL and 3.117 s for MySQL.
+- The equivalent secured Workbench browser journey exposed a state bug that the
+  route-only test missed: the first of two scope choices discarded a renamed
+  disabled boundary while an older boundary remained active. Partial decisions
+  now preserve a freshly rebased review revision whenever the selected candidate
+  already contains tables; the legacy empty-candidate first-run behavior remains
+  valid. A route regression covers the exact active + renamed + two-choice state.
+- Physical browser testing also found two interaction defects: the second scope
+  form could be rerendered while a fast user was entering text, and the remaining
+  blocked-access decision collapsed below an unreachable diagnostic column list.
+  Managed review updates are now single-flight and expose `aria-busy`; unresolved
+  access stays open above column diagnostics until the table is usable.
+- The complete Workbench visual journey passes with 40 inspected tables, blocked
+  and ambiguous fixtures, mobile and desktop layouts, two human actions to first
+  value, first actionable UI at 501 ms, and a verified answer at 1.830 s. The
+  independent Ask browser gate passes with eight provider requests, two reviewed
+  tool calls, one safe refusal, no source mutation, no persisted provider key,
+  and zero browser-storage entries.
+- Full root, packed compatibility, and release gates are still in progress. No
+  version, publication, tag, release, merge, push, or dist-tag change was made.
+
+Packed Workbench approval repair (2026-08-03):
+
+- The retained retail clean-room run exposed a load-sensitive integration defect
+  after an explicit fresh source proof: Workbench delegated approval to the
+  canonical CLI implementation, which discarded the still-valid proof and ran
+  the same database check again. Under the complete browser journey that
+  redundant read exceeded the fixture's statement timeout, so approval failed
+  closed even though the operator-created proof was unexpired.
+- Workbench now selects the current project-local proof on the server, never from
+  browser input. Canonical approval reuses it only when it is the latest exact
+  digest, fresh, unexpired, unused, proposal hash/version/dependency bound, and
+  still matches the current reviewed freshness policy. Proposal Store repeats
+  the exact proof and expiry checks atomically while recording approval; guarded
+  apply still revalidates the live source independently.
+- Focused tests pass 45/45. They cover the server-selected digest, rejection of a
+  browser-supplied digest, wrong/expired/already-used proofs, and freshness-policy
+  drift. Runner typecheck and diff validation pass for this repair.
+- A clean packed Runner installation completed the full physical-browser retail
+  journey in 332.110 seconds. It performed one schema start, boundary activation,
+  verified Explore and Ask, Protect, disabled guided write proposal, explicit
+  live freshness check, human approval, guarded apply, receipt/lifecycle review,
+  and post-write Ask. Approval advanced to apply without a redundant failing
+  source read; `order-005` moved only at apply from `processing:1` to
+  `fulfilled:2`. Proposal and approval reported no source mutation.
+- The packed proof used `@synapsor/runner` 1.6.6 and `@synapsor/spec` 1.8.0
+  tarballs built from this worktree, generated 19 browser captures, exercised 10
+  legal aggregate plans plus refusal cases, exposed only `app.describe_data` and
+  `app.explore_data` to authoring MCP, and completed with exit 0. No publication,
+  version, tag, release, merge, push, or dist-tag change occurred.
+
+Final post-release repair verification (2026-08-03):
+
+- The full root suite passes 81 files and 1,269 tests, including the trusted-core
+  graph, license/content checks, human-surface checks, DSL source paths, and the
+  Cursor plugin. The focused freshness-proof regressions pass 45/45.
+- The packed PostgreSQL/MySQL first-run TTY gate passes from clean installations.
+  Both engines resolve blocked scope inline, keep column review open after the
+  first Enter action, activate the reviewed boundary, reach model selection, and
+  leave the source database unchanged. The final release-gate measurements were
+  3.378 seconds for PostgreSQL and 3.227 seconds for MySQL.
+- The Workbench boundary visual gate passes with 27 captures, and the independent
+  Workbench Ask gate passes with seven captures, eight provider requests, two
+  reviewed tool calls, one safe refusal, no source mutation, no persisted key,
+  and zero browser-storage entries.
+- Packed backward compatibility passes against Runner 1.5.4, 1.6.0, 1.6.3, and
+  1.6.5 with their corresponding published DSL/spec dependency graphs. The
+  packed guided-onboarding journey passes through schema review, activation,
+  first read, aggregate analysis, Protect, proposal, guarded apply, OIDC refusal
+  cases, supervised modes, compensation, and notifications.
+- `scripts/verify-release-gate.sh` passes end to end for Runner 1.6.6. It includes
+  typecheck; 458 trusted release tests; current Claude Code 2.1.220 and Codex CLI
+  0.146.0 MCP configuration checks; the disposable Docker proof; public command,
+  local-runner, source-manifest, registry-only packed-install, own-database, and
+  publish-dry-run checks; byte-identical npm collision checks for spec/dsl 1.8.0;
+  and `git diff --check`.
+- No package was published. No version, commit, merge, push, tag, release, or
+  dist-tag change was made, and the Cloud repository and technical deep dive
+  remain untouched.
+
+Inactive-boundary error closure (2026-08-03):
+
+- External follow-up was correct: the earlier path-redaction fix covered
+  `try explore` and `try ask`, but both `try protect --last` and explicit
+  `try protect --from A1` still exposed the absolute legacy active-boundary path
+  through a raw `ENOENT` error.
+- All analytics boundary loaders now share one `EXPLORE_DISABLED` translation.
+  Missing authority returns one recovery action; unreadable or malformed
+  authority returns a separate path-free review/recovery message. Protect's
+  analysis-reference resolver uses the same translation as Explore and Ask.
+- Fast regressions cover direct Explore and both Protect selectors. A CLI
+  front-door regression invokes Explore, Ask, Protect `--last`, and Protect
+  `--from` through the production error renderer and asserts that no project
+  path, active-boundary filename, or `ENOENT` text is emitted.
+- A newly packed Runner 1.6.6 tarball was installed into a clean temporary npm
+  prefix. All four commands were run against an empty project and returned only:
+  `No reviewed analytics access is active. Run synapsor-runner start and complete
+  the local data-access review.` No provider request or source query ran.
+- Typecheck, package build, focused tests, and `git diff --check` pass. The final
+  full root suite passes 81 files and 1,271 tests, including license/content,
+  human command-surface, DSL source-path, and Cursor-plugin verification.
+- No package was published. No version, commit, merge, push, tag, release, or
+  dist-tag change was made.
+
+Analytics shell discoverability and weak-model guidance (2026-08-04):
+
+- The interactive shell now exposes `/catalog [page]`. It renders five reviewed
+  tables at a time with the owning boundary, exact table identifier, supported
+  analytical operations, and source-validated starter questions. The startup
+  banner remains concise, and `/access` remains the separate operator action for
+  changing reviewed authority.
+- A real terminal-readline regression submits a question, renders a completed
+  answer, opens the next `synapsor>` prompt, sends the Up-arrow escape sequence,
+  and verifies that the previous question is recalled. The existing post-answer
+  slash-menu redraw regression remains green.
+- Suppressed aggregate results now name the exact recovery path when metadata is
+  available: `/access -> boundary <name> -> table <schema.table> -> Privacy (P)
+  -> minimum cohort`. The setting remains table-level; no column-level control is
+  implied, and an effective minimum of 1 is still described as no suppression.
+- The table editor now separates selected-table actions from whole-boundary
+  actions and packs each group to the terminal width. A 58-column TTY regression
+  proves that Privacy, ranked limits, boundary navigation, and review/activation
+  remain complete and readable instead of truncating or squeezing together.
+- The common Ask system instruction used by CLI and Workbench now tells every
+  provider to discover active reviewed boundaries through `app.describe_data`,
+  never ask the user for a boundary name, never reinterpret tenant/organization/
+  principal text as a boundary, and never put trusted scope in tool arguments.
+- Focused tests pass 108/108. The full root gate passes 81 files and 1,275 tests,
+  followed by trusted-core, license/content, human command-surface, DSL source
+  path, and Cursor-plugin verification. Typecheck and `git diff --check` pass.
+- The packed first-run PTY gate passes from clean installs against PostgreSQL and
+  MySQL in 3.230 seconds and 3.178 seconds respectively. Both runs resolve scope,
+  review columns, activate the boundary, reach model selection, and prove no
+  source mutation. The Workbench Ask browser gate also passes with seven desktop/
+  mobile captures, eight provider requests, two reviewed calls, one safe refusal,
+  no persisted key, zero browser-storage entries, and no source mutation.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.
+
+Terminal JSON and SQL presentation (2026-08-04):
+
+- Added one shared, terminal-safe syntax renderer for human-facing JSON and SQL.
+  JSON keys, values, numbers, booleans, nulls, and structure are visually
+  distinct. PostgreSQL and MySQL diagnostics distinguish comments, keywords,
+  functions, data types, quoted identifiers, strings, numbers, and positional or
+  named placeholders.
+- The renderer is used by Ask `/details`, `/details --sql`, `/attempts`, normal
+  `try call` and `try explore` results, reviewed tool catalogs, lifecycle detail,
+  query-audit detail, event payload detail, writeback doctor/setup previews,
+  receipt migrations and grants, and the shared-Postgres ledger migration.
+- Terminal control and bidi characters are escaped before trusted ANSI styling
+  is added. SQL whitespace and statement text remain unchanged so the displayed
+  operator diagnostic stays faithful to the compiled statement Runner executed.
+- Explicit `--json`, redirected output, generated files, MCP/provider payloads,
+  logs, and copyable client configuration remain ANSI-free. A real PTY check
+  showed colored human JSON and SQL; the same catalog under `--json` and the same
+  SQL through a pipe each contained zero ANSI bytes. `NO_COLOR` is honored.
+- Focused terminal, analytics-shell, lifecycle, and CLI tests pass 214/214. The
+  full root gate passes 82 files and 1,284 tests, followed by trusted-core,
+  license/content, human command-surface, DSL source-path, and Cursor-plugin
+  verification. The Runner 1.6.6 package build passes, and its built CLI was
+  exercised in a real PTY for MySQL SQL plus ANSI-free JSON mode.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.
+
+Explore privacy and refusal DX closure (2026-08-04):
+
+- Cohort suppression, complementary-release protection, trusted scope, and
+  separate human activation remain strict. No local developer-mode bypass and
+  no release-with-warning exception was added. The existing owner-reviewed
+  minimum cohort of 1 remains the explicit way to disable suppression for a
+  table; that decision is digest-bound, recorded, and inactive until review and
+  activation.
+- Complementary aggregate refusals now state which earlier release created the
+  subtraction risk, the reviewed table and minimum cohort, whether a source
+  query executed, and that Runner discarded the result before release. CLI Ask,
+  Workbench Ask/composer, and direct `try explore` provide the exact operator
+  path through the boundary, table, Privacy control, and Review + activate.
+- Field-operation refusals now carry structured resource, field, and operation
+  details. Recovery names the exact review path when the generated safe boundary
+  proves the operation available. Foreign-key identifier grouping instead points
+  to an already reviewed relationship and human-readable grouping field; Runner
+  does not suggest enabling opaque per-entity identifiers as labels.
+- Suppressed per-entity groupings explain that groups of one can identify an
+  individual and recommend a coarser reviewed grouping. Provider token-budget
+  failures name `/clear` in the terminal and Clear in Workbench.
+- The terminal editor now offers `P Privacy for all tables` at the boundary
+  level. It stages all included-table threshold decisions as one atomic disabled
+  revision. Per-table and whole-boundary changes state that Ask still uses the
+  old digest, immediately offer Review + activate in focused `/access`, and show
+  a persistent pending-change banner when activation is declined.
+- Workbench has the equivalent atomic whole-boundary Privacy action, staged
+  change count, and one primary Review and activate action. The API commits the
+  complete batch or none of it; browser input cannot activate authority or
+  partially update an active boundary.
+- A real PTY walkthrough copied an active five-table CloudNimbus project into a
+  disposable directory and used the current source-built CLI. It changed all
+  five table thresholds through the boundary-level Privacy action, declined
+  immediate activation, observed the pending banner in both `/access` and the
+  `synapsor>` shell, then reviewed and activated with `C`. Ask returned to the
+  same OpenAI/model session with cleared conversation context, no pending banner,
+  no provider request, and no source mutation.
+- The same live PostgreSQL fixture proved direct refusal behavior. Grouping
+  `public.support_tickets.account_id` was rejected before execution and pointed
+  to the reviewed `support_tickets_account_id_fkey` relationship plus
+  `public.accounts.company_name`. A grouped Accounts result suppressed the
+  three-row APAC cohort; the following scalar total was refused after execution,
+  discarded before release, and displayed the exact owner review path.
+- The Workbench boundary visual gate passes with first human result in two
+  actions, first actionable UI at 575 ms, first verified result at 2.153 s, and
+  40 inspected tables. The independent Workbench Ask gate passes with eight
+  provider requests, two reviewed calls, one safe refusal, no source mutation,
+  no persisted key, and zero browser-storage entries.
+- `scripts/verify-packed-runner.sh` passes from a registry-only packed install,
+  including manifest validation and the installed MCP surface. The final full
+  root gate passes 83 files and 1,295 tests, followed by trusted-core dependency,
+  license/content, human command-surface, DSL source-path, and Cursor-plugin
+  verification.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.
+
+Plain-language privacy-setting flow (2026-08-04):
+
+- First-run-facing CLI and Workbench copy now calls the control **minimum group
+  size** and explains its behavior directly: Runner hides aggregate groups with
+  fewer rows than the selected number; `1` turns small-group suppression off
+  and can reveal a group containing one person or record. Internal contract
+  field names and enforcement semantics remain unchanged.
+- The CLI path is explicit and consequence-led. In `/access`, the operator
+  highlights the table without opening its columns and presses `P`. Runner
+  shows the current value, accepts `1` through `5`, requests a recorded reason,
+  previews the consequence, and defaults the deliberate Save confirmation to
+  Yes. The next default-Yes action opens the exact whole-boundary review and
+  activation. `C` is needed only when that immediate activation is postponed.
+- Suppression and complementary-total messages now render a numbered recovery
+  path naming the exact boundary and table, including the distinction between
+  highlighting the table and opening its column editor. Workbench has the same
+  plain labels, explicit choices, consequence text, disabled-save behavior, and
+  separate Review and activate action.
+- Focused terminal access keeps included tables alphabetically stable even when
+  a privacy edit changes review status, and restores the same highlighted table
+  after the edit. Detailed non-focused review retains its existing risk-first
+  ordering.
+- A real PTY walkthrough used a disposable copy of the active five-table
+  CloudNimbus boundary. It highlighted `public.invoices`, pressed `P`, changed
+  the value, pressed Enter to save, and declined immediate activation. The
+  table remained second and highlighted, the pending banner named `C` as the
+  later action, and existing authority remained unchanged. A second run accepted
+  both default-Yes actions, activated the exact reviewed revision, and continued
+  directly to the provider chooser without a copied digest or source mutation.
+- Focused tests pass 122/122. The full root gate passes 84 files and 1,299 tests,
+  followed by trusted-core, license/content, human command-surface, DSL
+  source-path, and Cursor-plugin checks. Typecheck and `git diff --check` pass.
+- The Auto Boundary browser gate passes across desktop/mobile and reports two
+  human steps to first value, first actionable UI at 428 ms, and first verified
+  result at 1.826 s. The Workbench Ask gate passes with eight provider requests,
+  two reviewed calls, one safe refusal, no source mutation, no persisted key,
+  and zero browser-storage entries. Registry-only packed Runner verification
+  also passes.
+- No package was published. No version, merge, push, tag, release, or dist-tag
+  change was made, and the Cloud repository and technical deep dive remain
+  untouched.

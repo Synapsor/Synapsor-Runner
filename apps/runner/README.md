@@ -208,6 +208,7 @@ npx -y @synapsor/runner try --prove
 The embedded fixture demonstrates an exact proposal, outside-model approval,
 one guarded mutation, a durable receipt, restart-safe retry, and stale-write
 refusal. It proves Runner's local mechanics, not a live database connection.
+Temporary proof state stays project-local under `./.synapsor/try/`.
 `demo --quick` remains a noninteractive compatibility alias.
 
 ### Audit An Existing MCP Server

@@ -23,7 +23,7 @@ what state remains, and one next action. Do not delete the project or add
 | Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the URL/network without printing the credential, then rerun `npx -y @synapsor/runner start`. |
 | Read role is writable, owner, superuser, `BYPASSRLS`, or unverifiable | Disabled metadata draft; no source-row Explore | Supply a verifiably SELECT-only non-owner staging role, then rerun the same `start` command. |
 | Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner start --schema public`. |
-| Tenant or principal scope is unresolved | Conservative blocked resource decisions | Open the same Workbench URL and resolve the highlighted scope exception. |
+| Tenant or principal scope is unresolved | Conservative blocked resource decisions | In CLI, select the table and choose its database-inspected Record ID and Tenant isolation values; in Workbench, open **Resolve blocked access**. No signed key is needed for this interactive disabled-draft decision. |
 | Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
 | Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
 | Trusted context environment is missing | Boundary and ledger remain intact; query did not run | Export the named tenant/principal variable locally, then rerun the displayed Try action. |
@@ -137,10 +137,13 @@ Model](workbench-ask.md).
 The same provider path is available without a browser:
 
 ```bash
-synapsor-runner try ask \
-  --provider openai \
-  --model gpt-5-mini
+synapsor-runner try ask --provider openai
 ```
+
+Hosted providers have tested defaults: OpenAI uses `gpt-5-mini` and Anthropic
+uses `claude-sonnet-4-20250514` when `--model` is omitted. Pass `--model` to
+override either default. OpenAI-compatible endpoints require an explicit model
+because Runner cannot infer what a local endpoint serves.
 
 CLI Ask refuses provider keys on the command line. Use the conventional or an
 explicitly named environment variable, or the hidden interactive prompt. While
@@ -195,7 +198,7 @@ without a generation lock retain their previous behavior.
 ## Aggregate Explore Suppressed Or Refused A Result
 
 Suppression and budget failures are security behavior, not query failures.
-Workbench shows the reviewed minimum cohort, maximum groups, response limits,
+Workbench shows the reviewed minimum group size, maximum groups, response limits,
 and durable extraction/differencing budgets. You cannot widen them in a model
 argument.
 
@@ -218,6 +221,24 @@ time bucket, or have an operator review a narrower `max_ranked_groups` setting
 appropriate to the known population.
 Returned rows/groups, trusted tenant/principal values, credentials, and raw
 sensitive literals are not stored in the query audit.
+
+To change the minimum group size for one table in the terminal:
+
+1. Type `/access`, select the boundary if the boundary list appears, and press
+   Enter.
+2. Highlight the affected table in the table list. Do not open its columns;
+   press `P` for Privacy while the table remains highlighted.
+3. Enter a **minimum group size** from 1 through 5 and a short reason. Runner
+   hides groups with fewer rows than that number. Choosing 1 turns small-group
+   suppression off and can reveal a group containing one person or record.
+4. Press Enter at the default-Yes save prompt. This creates a disabled boundary
+   revision only.
+5. Press Enter again at `Review and activate this boundary change now? [Y/n]`.
+   If you postpone activation, return to the boundary screen and press `C`
+   (**Review + activate**).
+
+Press `P` on the boundary screen, before opening a table, to apply one minimum
+group size to all included tables atomically.
 
 ## Safe Action Draft Does Not Appear As A Tool
 

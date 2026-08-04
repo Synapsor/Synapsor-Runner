@@ -37,6 +37,19 @@ afterEach(async () => {
 });
 
 describe("Protect This Query", () => {
+  it("reports an invalid capability name before inspecting analysis history", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-invalid-protect-name-"));
+    temporaryRoots.push(projectRoot);
+    await expect(tryCommand([
+      "protect",
+      "--project-root", projectRoot,
+      "--last",
+      "--name", "bad name!!",
+    ])).rejects.toThrow(
+      "Invalid protected capability name. Use namespace.name, for example analytics.customers_by_region.",
+    );
+  });
+
   it("freezes a reviewed star aggregate into additive multi-path DSL and canonical authority", async () => {
     const fixture = await activatedFixture(starProtectInspection());
     const runtime = await createScopedExploreRuntime({
@@ -411,6 +424,61 @@ describe("Protect This Query", () => {
       analysis_reference: token,
       source_database_changed: false,
       model_can_activate: false,
+    });
+  });
+
+  it("selects only the newest legacy one-shot analysis when older unbound analyses exist", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.now();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: (() => {
+        let tick = now;
+        return () => tick++;
+      })(),
+    });
+    await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    const newest = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count_distinct", field: "id" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(tryCommand([
+      "protect",
+      "--project-root", fixture.root,
+      "--last",
+      "--name", "analytics.newest_legacy_analysis",
+      "--json",
+    ], {
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).resolves.toBe(0);
+
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      analysis_reference: (newest.protect as { token: string }).token,
+      capability: "analytics.newest_legacy_analysis",
     });
   });
 

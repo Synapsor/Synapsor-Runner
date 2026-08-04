@@ -10,6 +10,14 @@ import {
 import type {
   ExplorePlan,
 } from "./scoped-explore.js";
+import { cliPrivacyReviewInstructions } from "./privacy-review-guidance.js";
+import {
+  renderTerminalJson,
+  safeTerminalCellText,
+  safeTerminalText,
+} from "./terminal-syntax.js";
+
+export { safeTerminalText } from "./terminal-syntax.js";
 
 export type AnalyticsAnalysis = {
   index: number;
@@ -89,6 +97,7 @@ export function renderAnalyticsTurn(
     ? "The complete reviewed result was suppressed, so the model explanation is withheld."
     : safeTerminalText(modelAnswerForDisplay(turn.answer, analyses, options.accessGuidance));
   const refused = refusedAnalyses(analyses);
+  const refusedSourceExecuted = refused.some(refusedSourceQueryExecuted);
   const withheldFromModel = turn.tool_calls.some((call) => call.model_withheld_values === true);
   const suppressedShareWarning = turn.answer_source === "runner"
     ? undefined
@@ -136,14 +145,16 @@ export function renderAnalyticsTurn(
     ),
     successfulData.length > 0
       ? "Structured values rendered by Runner. Model prose cannot replace or alter them."
-      : "No data query ran because Runner rejected the attempted plans.",
+      : refusedSourceExecuted
+        ? "Runner executed a read-only query, then discarded its result because the reviewed privacy boundary blocked its release."
+        : "No data query ran because Runner rejected the attempted plans before source execution.",
   );
   for (const analysis of successfulData) {
     lines.push(...renderAnalysis(analysis, width));
   }
   if (refused.length > 0) {
     if (options.includeAttempts) {
-      lines.push(...renderRefusedAttempts(refused));
+      lines.push(...renderRefusedAttempts(refused, options.ansi === true));
     } else if (successfulData.length === 0) {
       const latest = refused[refused.length - 1]!;
       lines.push(
@@ -262,7 +273,9 @@ function conciseBoundaryLimitation(
     analysis.tool === "app.explore_data"
     && analysis.status === "ok"
     && analysis.result.ok !== false)) return answer;
-  return `${accessGuidance.title}. The active reviewed boundary cannot answer this question, so Runner did not execute a data query.`;
+  return accessGuidance.source_query_executed
+    ? `${accessGuidance.title}. Runner completed the read-only aggregate, but discarded its result instead of releasing a privacy-reconstructing answer.`
+    : `${accessGuidance.title}. The active reviewed boundary cannot answer this question, so Runner did not execute a data query.`;
 }
 
 function matchingResultRows(
@@ -332,6 +345,7 @@ function renderAccessGuidance(
 
 export function renderRefusedAttempts(
   analyses: AnalyticsAnalysis[],
+  ansi = false,
 ): string[] {
   const refused = refusedAnalyses(analyses);
   if (refused.length === 0) {
@@ -344,8 +358,10 @@ export function renderRefusedAttempts(
       const message = stringValue(analysis.result.message)
         ?? stringValue(record(analysis.result.outcome).message)
         ?? "The reviewed boundary refused this request.";
-      const sourceExecution = analysis.error_code === "EXPLORE_RESPONSE_TOO_LARGE"
-        ? "yes; the oversized bounded result was discarded"
+      const sourceExecution = refusedSourceQueryExecuted(analysis)
+        ? analysis.error_code === "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
+          ? "yes; the privacy-reconstructing result was discarded"
+          : "yes; the bounded result was discarded"
         : analysis.error_code === "EXPLORE_SOURCE_UNAVAILABLE"
           ? "outcome unavailable; inspect the durable audit before retrying"
           : "no; validation stopped it before source execution";
@@ -357,7 +373,7 @@ export function renderRefusedAttempts(
         ...(analysis.arguments
           ? [
               "Typed tool request:",
-              safeTerminalText(JSON.stringify(analysis.arguments, null, 2)),
+              renderTerminalJson(analysis.arguments, ansi),
             ]
           : []),
         `Source query executed: ${sourceExecution}`,
@@ -366,6 +382,13 @@ export function renderRefusedAttempts(
       ];
     }),
   ];
+}
+
+function refusedSourceQueryExecuted(analysis: AnalyticsAnalysis): boolean {
+  const direct = record(analysis.result.details);
+  const outcome = record(record(analysis.result.outcome).details);
+  if (direct.source_query_executed === true || outcome.source_query_executed === true) return true;
+  return analysis.error_code === "EXPLORE_RESPONSE_TOO_LARGE";
 }
 
 export function renderAnalysis(
@@ -398,20 +421,46 @@ export function renderAnalysis(
       ?? stringValue(record(record(analysis.result.outcome).result).suppression?.toString())
       ?? "empty";
     lines.push(status === "fully_suppressed"
-      ? `No aggregate value can be shown under the reviewed minimum cohort${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`
+      ? `No aggregate value can be shown under the reviewed minimum group size${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`
       : "No reviewed rows or groups were returned.");
   }
   const suppressed = suppressedGroupCount(analysis.result);
   if (suppressed > 0) {
+    const shapeHint = minimumCohortQuestionShapeHint(analysis, minimumCohort);
     lines.push(
       "",
-      `${suppressed} additional group${suppressed === 1 ? " was" : "s were"} withheld because ${suppressed === 1 ? "it was" : "they were"} below the reviewed minimum cohort${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`,
+      `${suppressed} additional group${suppressed === 1 ? " was" : "s were"} withheld because ${suppressed === 1 ? "it was" : "they were"} below the reviewed minimum group size${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`,
+      ...(shapeHint ? [shapeHint] : []),
       ...(minimumCohort !== undefined && minimumCohort > 1
-        ? ["Use /access, choose the boundary, then choose Privacy for this table. No suppression uses an effective minimum of 1."]
+        ? [minimumCohortRecoveryPath(analysis)]
         : []),
     );
   }
   return lines;
+}
+
+function minimumCohortRecoveryPath(analysis: AnalyticsAnalysis): string {
+  const boundary = stringValue(analysis.result.boundary_name)
+    ?? stringValue(analysis.arguments?.boundary);
+  const table = analysis.plan?.resource
+    ?? stringValue(record(analysis.result.audit).resource_id);
+  return `${cliPrivacyReviewInstructions({
+    ...(boundary ? { boundary: safeTerminalText(boundary) } : {}),
+    ...(table ? { resource: safeTerminalText(table) } : {}),
+  })}\nUntil activation, Ask keeps the previous minimum group size.`;
+}
+
+function minimumCohortQuestionShapeHint(
+  analysis: AnalyticsAnalysis,
+  minimumCohort: number | undefined,
+): string | undefined {
+  if (analysis.plan?.kind !== "aggregate" || analysis.plan.dimensions?.length !== 1) {
+    return undefined;
+  }
+  const field = analysis.plan.dimensions[0]!.field;
+  if (!/(^id$|_id$|(^|_)name$)/i.test(field)) return undefined;
+  const label = businessLabel(field).toLowerCase();
+  return `This question groups records into one row per ${label}; any entity with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size.`;
 }
 
 export function renderTable(
@@ -568,23 +617,6 @@ function naturalList(values: string[]): string {
   if (values.length <= 1) return values[0] ?? "";
   if (values.length === 2) return `${values[0]} and ${values[1]}`;
   return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
-}
-
-export function safeTerminalText(value: string): string {
-  return escapeTerminalControls(value, true);
-}
-
-function safeTerminalCellText(value: string): string {
-  return escapeTerminalControls(value, false);
-}
-
-function escapeTerminalControls(value: string, preserveNewlines: boolean): string {
-  return value.replace(
-    /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g,
-    (character) => preserveNewlines && character === "\n"
-      ? "\n"
-      : `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
 }
 
 export function analysisJson(analysis: AnalyticsAnalysis): Record<string, unknown> {

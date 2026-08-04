@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -153,8 +154,9 @@ try {
     () => "guided start did not print its Workbench continuation",
   );
   assert.ok(evidence.timings_ms.schema_summary <= 60_000, "schema summary exceeded 60 seconds");
-  assert.match(ui.output(), /✓ Connected/);
-  assert.match(ui.output(), /Inspected 40 tables \(metadata only; no rows read\)/);
+  const guidedOutput = stripVTControlCharacters(ui.output());
+  assert.match(guidedOutput, /✓ Connected/);
+  assert.match(guidedOutput, /Inspected 40 tables \(metadata only; no rows read\)/);
   assert.match(ui.output(), /Synapsor Runner local UI: http:\/\/127\.0\.0\.1:/);
   assert.match(ui.output(), /Next: review the proposed boundary, then ask your first question in Workbench/);
   await assert.rejects(fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")));
@@ -916,10 +918,12 @@ try {
     timeout: 7_000,
   });
   assert.notEqual(disabledAuthoring.status, 0, "Scoped Explore restarted after the operator disabled it");
+  const disabledAuthoringOutput = `${disabledAuthoring.stdout}\n${disabledAuthoring.stderr}`;
   assert.match(
-    `${disabledAuthoring.stdout}\n${disabledAuthoring.stderr}`,
-    /EXPLORE_DISABLED|disabled|not active/i,
+    disabledAuthoringOutput,
+    /No reviewed analytics access is active\.[\s\S]*synapsor-runner start/i,
   );
+  assert.doesNotMatch(disabledAuthoringOutput, /ENOENT|\.synapsor\//i, "disabled authoring leaked an internal path");
 
   const activeTools = JSON.parse(run(cli, [
     "try", "call", "--list", "--format", "json",

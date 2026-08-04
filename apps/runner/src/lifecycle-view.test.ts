@@ -307,6 +307,7 @@ describe("typed lifecycle inspection", () => {
       });
       expect(formatLifecycleFirstLook(view)).toContain(`Freshness: fresh; target=1 supporting=1; proof=${proof.proof_digest}`);
       expect(formatLifecycleDetails(view)).toContain("FRESHNESS_FRESH");
+      expect(formatLifecycleDetails(view, true)).toContain('\u001b[1;36m"latest_status"\u001b[0m');
     } finally {
       store.close();
     }

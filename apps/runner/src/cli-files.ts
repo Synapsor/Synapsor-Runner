@@ -48,8 +48,11 @@ export async function readJsonFileWithLocation<T>(filePath: string, label: strin
       column = offset - prefix.lastIndexOf("\n");
     }
     const location = line && column ? ` at line ${line}, column ${column}` : "";
+    const commentHint = /(^|\s)\/\//m.test(source) || /\/\*/.test(source)
+      ? " JSON does not support // or /* */ comments; remove the comments or keep notes outside the config."
+      : "";
     throw new Error(
-      `${label} is not valid JSON: ${resolved}${location}. ${message} ` +
+      `${label} is not valid JSON: ${resolved}${location}. ${message}${commentHint} ` +
       `State preserved: the file and source database were not changed. ` +
       `Next: correct that location, then run ${cliCommandName()} config validate --config ${shellQuote(filePath)} --json.`,
     );

@@ -9,6 +9,7 @@ import { protocolVersions } from "@synapsor-runner/protocol";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
 import { approvalBoundary, boundedSetReviewLines, currentApprovalStatus, currentWritebackStatus, formatChangeLines, formatReceiptId, formatScalar, humanStatus, isRecord, plural, proposalNextCommands, receiptOperationLabel, stringField } from "./cli-format.js";
+import { renderTerminalJson } from "./terminal-syntax.js";
 
 
 export function formatProposalSummary(proposal: StoredProposal): string {
@@ -267,7 +268,7 @@ export function formatQueryAuditFirstLook(row: Record<string, unknown>, storeSuf
 }
 
 
-export function formatQueryAuditDetail(row: Record<string, unknown>): string {
+export function formatQueryAuditDetail(row: Record<string, unknown>, color = false): string {
   const payload = isRecord(row.payload) ? row.payload : {};
   return [
     `Query audit: ${row.audit_id}`,
@@ -283,7 +284,7 @@ export function formatQueryAuditDetail(row: Record<string, unknown>): string {
     `Parameters redacted: ${payload.parameters_redacted === true ? "yes" : "unknown"}`,
     "",
     "Payload:",
-    JSON.stringify(payload, null, 2),
+    renderTerminalJson(payload, color),
   ].join("\n") + "\n";
 }
 

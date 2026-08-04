@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -247,8 +248,9 @@ try {
 
   ui = await startPublicGuidedCommand({ cli, projectRoot, env: sharedEnv });
   evidence.timings_ms.schema_summary = ui.readyAt - startedAt;
-  assert.match(ui.output(), /✓ Connected/);
-  assert.match(ui.output(), /Inspected 10 tables \(metadata only; no rows read\)/);
+  const guidedOutput = stripVTControlCharacters(ui.output());
+  assert.match(guidedOutput, /✓ Connected/);
+  assert.match(guidedOutput, /Inspected 10 tables \(metadata only; no rows read\)/);
   assert.match(ui.output(), /Next: review the proposed boundary, then ask your first question in Workbench/);
   await assert.rejects(fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")));
   assert.doesNotMatch(ui.output(), /harbor_reader_password/);

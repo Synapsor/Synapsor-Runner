@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createTerminalAnalyticsShellIo,
   renderAnalyticsShellBanner,
+  renderReviewedAccessCatalog,
   renderSlashCommandMenu,
+  renderTerminalJson,
+  renderTerminalSql,
   runAnalyticsShell,
   slashCommandSuggestions,
   type AnalyticsShellIo,
@@ -14,6 +17,7 @@ import {
   modelAnswerForDisplay,
   renderAnalysis,
   renderAnalyticsTurn,
+  renderRefusedAttempts,
   renderTable,
   type AnalyticsAnalysis,
 } from "./analytics-shell-render.js";
@@ -61,11 +65,34 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("west");
     expect(output).toContain("184");
     expect(output).toContain("1 additional group was withheld");
+    expect(output).toContain("To change this in the CLI:");
+    expect(output).toContain("select support_analytics and press Enter");
+    expect(output).toContain("Highlight public.sessions; do not open its columns");
+    expect(output).toContain("Press P (Privacy) for the highlighted table");
+    expect(output).toContain("Save this privacy change? [Y/n]");
+    expect(output).toContain("press C later from the boundary screen");
+    expect(output).toContain("Until activation, Ask keeps the previous minimum group size");
     expect(output).not.toContain("Database unchanged");
     expect(output).not.toContain("Source database changed: no");
     expect(output).not.toContain("Evidence recorded");
     expect(output).not.toContain("Analysis A1");
     expect(output).not.toContain(digest);
+  });
+
+  it("explains when an entity-shaped grouping triggers cohort suppression", () => {
+    const current = analysis("A1", 1);
+    current.plan = {
+      kind: "aggregate",
+      resource: "public.support_tickets",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "account_id" }],
+      top_n: 10,
+    };
+    current.result.boundary_name = "support_analytics";
+    const output = renderAnalysis(current).join("\n");
+    expect(output).toContain("one row per account id");
+    expect(output).toContain("Try a coarser reviewed grouping");
+    expect(output).toContain("Highlight public.support_tickets; do not open its columns");
   });
 
   it("renders TrailPeak-style verified aggregates with business labels and readable values", () => {
@@ -429,6 +456,33 @@ describe("Synapsor Analytics shell", () => {
     expect(original).toContain("guessed product table");
   });
 
+  it("reports a complementary privacy refusal as an executed and discarded read", () => {
+    const refused = refusedAnalysis(
+      "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      "An earlier grouped result withheld a small cohort. This total could reconstruct it.",
+    );
+    refused.result.details = {
+      reason: "complementary_aggregate_release",
+      source_query_executed: true,
+    };
+    const output = renderAnalyticsTurn(turn("I could not release that total."), [refused], 100, {
+      accessGuidance: {
+        kind: "review_candidate",
+        title: "A complementary total was blocked to protect a withheld group",
+        message: "Runner discarded the result.",
+        review_boundary: "support_analytics",
+        review_resource: "public.sessions",
+        review_focus: "privacy",
+        source_query_executed: true,
+        next_action: "/access -> boundary support_analytics -> table public.sessions -> Privacy (P) -> Review + activate.",
+      },
+    });
+    expect(output).toContain("Runner executed a read-only query, then discarded its result");
+    expect(output).not.toContain("No data query ran");
+    expect(output).toContain("HUMAN REVIEW PATH");
+    expect(output).toContain("Privacy (P)");
+  });
+
   it("protects a sole current analysis without making the user type its reference", async () => {
     const projectRoot = path.resolve("/tmp/synapsor-protect-display");
     const io = fakeIo([
@@ -788,6 +842,18 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("top_n exceeds the reviewed aggregate result bound");
   });
 
+  it("syntax-highlights typed tool requests in refused-attempt details", () => {
+    const refused = refusedAnalysis("EXPLORE_FIELD_FORBIDDEN", "field access was refused");
+    refused.arguments = {
+      boundary: "reviewed_sessions",
+      plan: { kind: "aggregate", resource: "public.sessions", top_n: 10 },
+    };
+    const output = renderRefusedAttempts([refused], true).join("\n");
+    expect(output).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(output).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+    expect(output).toContain("\u001b[1;33m10\u001b[0m");
+  });
+
   it("styles model prose and Runner facts differently in a TTY", async () => {
     const io = fakeIo(["show reviewed totals", "/exit"], 100, true);
     await runAnalyticsShell({
@@ -839,6 +905,24 @@ describe("Synapsor Analytics shell", () => {
     expect(colored).toContain("Reviewed access: \u001b[1;35mreviewed_staging\u001b[0m");
   });
 
+  it("keeps a disabled boundary update visible when Ask still uses the prior revision", () => {
+    const output = renderAnalyticsShellBanner({
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5-mini",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 2,
+      pendingBoundaryReview: {
+        boundary_name: "reviewed_staging",
+        pending_changes: 1,
+        previous_authority_active: true,
+      },
+    });
+    expect(output).toContain("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE");
+    expect(output).toContain("Ask still uses the previous exact reviewed revision");
+    expect(output).toContain("/access -> select the boundary -> C Review + activate");
+  });
+
   it("shows a concise reviewed-access summary and only validated starter questions", () => {
     const output = renderAnalyticsShellBanner({
       providerLabel: "OpenAI",
@@ -864,6 +948,63 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("Can ask now");
     expect(output).toContain("Orders: record counts; totals and averages of Total cents; grouping by Status and Channel");
     expect(output).toContain('Try: "How did total cents change by week across channel?"');
+  });
+
+  it("pages detailed reviewed access without dumping every table", () => {
+    const resources = Array.from({ length: 7 }, (_, index) => ({
+      id: `public.table_${index + 1}`,
+      label: `Table ${index + 1}`,
+      boundary_name: index < 4 ? "billing_review" : "support_review",
+      capabilities: ["record counts", `grouping by Field ${index + 1}`],
+      suggestions: [`How many table ${index + 1} records are there?`],
+    }));
+    const page = renderReviewedAccessCatalog({
+      line: "/catalog 2",
+      boundaryLabel: "2 active boundaries",
+      summary: { table_count: resources.length, resources, suggestions: [] },
+      pageSize: 5,
+    });
+    expect(page).toContain("CAN ASK NOW");
+    expect(page).toContain("7 reviewed tables - page 2 of 2");
+    expect(page).toContain("Table 6 (public.table_6)");
+    expect(page).toContain("Boundary: support_review");
+    expect(page).toContain("Can answer: record counts; grouping by Field 6");
+    expect(page).toContain('/catalog 1 previous.');
+    expect(page).not.toContain("Table 1 (public.table_1)");
+    expect(renderReviewedAccessCatalog({
+      line: "/catalog all",
+      summary: { table_count: resources.length, resources, suggestions: [] },
+    })).toContain("Usage: /catalog [page]");
+  });
+
+  it("exposes the detailed reviewed catalog as a shell action", async () => {
+    const io = fakeIo(["/catalog", "/exit"]);
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      accessSummary: {
+        table_count: 1,
+        resources: [{
+          id: "public.orders",
+          label: "Orders",
+          boundary_name: "reviewed_staging",
+          capabilities: ["record counts", "grouping by Status"],
+          suggestions: ["Which statuses have the most orders?"],
+        }],
+        suggestions: ["Which statuses have the most orders?"],
+      },
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+    expect(io.output()).toContain("CAN ASK NOW");
+    expect(io.output()).toContain("Boundary: reviewed_staging");
+    expect(io.output()).toContain("Can answer: record counts; grouping by Status");
   });
 
   it("shows, filters, and fully clears transient slash actions while editing", async () => {
@@ -959,6 +1100,24 @@ describe("Synapsor Analytics shell", () => {
 
     readable.write("done\r");
     await expect(secondAnswer).resolves.toBe("done");
+    io.close();
+  });
+
+  it("recalls submitted questions with Up after a completed model turn", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough() as PassThrough & { columns: number };
+    writable.columns = 80;
+    writable.on("data", () => undefined);
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+
+    const firstAnswer = io.read("synapsor> ");
+    readable.write("How did revenue change?\r");
+    await expect(firstAnswer).resolves.toBe("How did revenue change?");
+    io.write("RUNNER-VERIFIED DATA\n");
+
+    const secondAnswer = io.read("synapsor> ");
+    readable.write("\u001b[A\r");
+    await expect(secondAnswer).resolves.toBe("How did revenue change?");
     io.close();
   });
 
@@ -1210,6 +1369,57 @@ describe("Synapsor Analytics shell", () => {
     expect(inspectAnalysis).toHaveBeenCalledOnce();
   });
 
+  it("syntax-highlights detail JSON only for interactive color terminals", async () => {
+    const value = {
+      boundary: "reviewed_sessions",
+      plan: {
+        kind: "aggregate",
+        top_n: 1,
+        enabled: true,
+        optional: null,
+      },
+    };
+    const plain = renderTerminalJson(value);
+    expect(plain).toBe(JSON.stringify(value, null, 2));
+    expect(plain).not.toContain("\u001b[");
+
+    const colored = renderTerminalJson(value, true);
+    expect(colored).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(colored).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+    expect(colored).toContain("\u001b[1;33m1\u001b[0m");
+    expect(colored).toContain("\u001b[1;35mtrue\u001b[0m");
+    expect(colored).toContain("\u001b[2mnull\u001b[0m");
+    expect(colored).toContain("\u001b[2m{\u001b[0m");
+
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    const io = fakeIo(["How many sessions are in each region?", "/details A1", "/exit"], 100, true);
+    const liveAnalysis = analysis("A1", 0);
+    liveAnalysis.arguments = { boundary: "reviewed_sessions", plan: liveAnalysis.plan };
+    try {
+      await runAnalyticsShell({
+        providerLabel: "OpenAI",
+        profileLabel: "staging",
+        reviewedDataAreas: 1,
+        io,
+        ask: async () => ({
+          turn: turn("West has the most sessions."),
+          analyses: [liveAnalysis],
+          answer_id: "ans_colored_details",
+        }),
+        listAnalyses: async () => [storedAnalysis("A1")],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
+    expect(io.output()).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(io.output()).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+  });
+
   it("reveals only placeholder SQL and parameter types through the explicit operator detail action", async () => {
     const io = fakeIo(["How many sessions are in each region?", "/details A1 --sql", "/exit"]);
     const liveAnalysis = analysis("A1", 0);
@@ -1238,6 +1448,21 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("Parameter types: string, integer");
     expect(output).toContain("Parameter values: redacted");
     expect(output).not.toContain("tenant-secret-value");
+  });
+
+  it("syntax-highlights compiled SQL only for interactive color terminals", () => {
+    const statement = 'SELECT t0."feature", SUM(t0."event_count") FROM "public"."usage_events" t0 WHERE t0."organization_id" = $1 ORDER BY "measure_0" DESC LIMIT $2';
+    expect(renderTerminalSql(statement)).toBe(statement);
+    expect(renderTerminalSql(statement)).not.toContain("\u001b[");
+
+    const colored = renderTerminalSql(statement, true);
+    expect(colored).toContain("\u001b[1;36mSELECT\u001b[0m");
+    expect(colored).toContain('\u001b[1;32m"feature"\u001b[0m');
+    expect(colored).toContain("\u001b[1;34mSUM\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m$1\u001b[0m");
+    expect(colored).toContain("\u001b[1;36mORDER\u001b[0m");
+    expect(colored).toContain("\u001b[1;36mDESC\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m$2\u001b[0m");
   });
 
   it("does not mislabel a derived number as absent from the verified result", async () => {
@@ -1511,6 +1736,7 @@ function analysis(reference: string, suppressed: number): AnalyticsAnalysis {
     },
     result: {
       ok: true,
+      boundary_name: "support_analytics",
       data: [{ region: "west", count: 184 }, { region: "north", count: 121 }],
       privacy: {
         minimum_cohort_size: 5,

@@ -1355,7 +1355,7 @@ export default defineCapability({
       scopedExploreRuntimeFactory: async () => ({
         boundary: {} as never,
         session_fingerprint: `sha256:${"c".repeat(64)}`,
-        describe: () => ({}),
+        describe: async () => ({}),
         explore: async (plan: unknown) => {
           plans.push(plan);
           return {
@@ -1903,6 +1903,290 @@ export default defineCapability({
     }
   });
 
+  it("resolves blocked record identity and tenant scope through the Workbench route", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-resolve-scope-"));
+    const inspection = boundaryReviewInspection();
+    const table = inspection.tables[0]!;
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    if (!table.role_posture) throw new Error("fixture role posture is required");
+    table.role_posture.row_security_effective_for_current_role = false;
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources).toEqual([]);
+    expect(build.review.resources[0]).toMatchObject({
+      id: "public.members",
+      primary_key: { candidates: ["id"] },
+      tenant_key: { candidates: ["tenant_id"] },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.6",
+      instantOnboarding: true,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "resolve-scope-token",
+      csrfToken: "resolve-scope-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "resolve-scope-token",
+      "x-synapsor-csrf": "resolve-scope-csrf",
+    };
+    try {
+      const initial = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(initial.review.resources[0]).toMatchObject({
+        id: "public.members",
+        status: expect.stringMatching(/^blocked_/),
+        primary_key: { candidates: ["id"] },
+        tenant_key: { candidates: ["tenant_id"] },
+      });
+
+      const identity = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "row_identity",
+          resource_id: "public.members",
+          value: "id",
+          actor: "local-workbench-reviewer",
+          reason: "The database primary key is the reviewed record identity.",
+        },
+      );
+      expect(identity).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+      });
+
+      const scoped = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "tenant_key",
+          resource_id: "public.members",
+          value: "tenant_id",
+          actor: "local-workbench-reviewer",
+          reason: "The application fixes tenant_id outside model arguments.",
+        },
+      );
+      expect(scoped).toMatchObject({
+        ok: true,
+        candidate: {
+          pack: {
+            resources: [expect.objectContaining({
+              id: "public.members",
+              primary_key: "id",
+              tenant_key: "tenant_id",
+            })],
+          },
+        },
+        source_database_changed: false,
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves the selected disabled boundary while Workbench resolves scope in two steps", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-resolve-saved-scope-"));
+    const inspection = boundaryReviewInspection();
+    const blocked = structuredClone(inspection.tables[0]!);
+    blocked.name = "manual_scope_orders";
+    blocked.primary_key = [];
+    blocked.columns.push({
+      ...structuredClone(blocked.columns[0]!),
+      name: "external_id",
+      ordinal_position: blocked.columns.length + 1,
+    });
+    blocked.unique_constraints = [
+      { name: "manual_scope_orders_id_key", columns: ["id"] },
+      { name: "manual_scope_orders_external_id_key", columns: ["external_id"] },
+    ];
+    blocked.indexes = blocked.unique_constraints.map((constraint) => ({
+      name: constraint.name,
+      columns: constraint.columns,
+      unique: true,
+    }));
+    blocked.row_level_security = false;
+    blocked.row_level_security_policies = [];
+    if (!blocked.role_posture) throw new Error("fixture role posture is required");
+    blocked.role_posture.row_security_effective_for_current_role = false;
+    inspection.tables.push(blocked);
+
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources.map((resource) => resource.id))
+      .toEqual(["public.members"]);
+    expect(build.review.resources.find((resource) => resource.id === "public.manual_scope_orders"))
+      .toMatchObject({
+        status: expect.stringMatching(/^blocked_/),
+        primary_key: { candidates: ["id", "external_id"] },
+        tenant_key: { candidates: ["tenant_id"] },
+      });
+
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.6",
+      instantOnboarding: true,
+    });
+    const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: activeDigest,
+      actor: "initial-reviewer@example.test",
+      confirmation: `ACTIVATE ${activeDigest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const activePath = path.join(tempDir, ".synapsor/exploration-boundary.active.json");
+    const activeBeforeReview = await fs.readFile(activePath, "utf8");
+
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "resolve-saved-scope-token",
+      csrfToken: "resolve-saved-scope-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "resolve-saved-scope-token",
+      "x-synapsor-csrf": "resolve-saved-scope-csrf",
+    };
+    try {
+      let boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      boundary.candidate.pack.name = "retail_reviewed";
+      await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+        candidate: boundary.candidate,
+        confirmed_decisions: [],
+        expected_revision: boundary.review_progress?.revision ?? 0,
+        actor: "local-workbench-reviewer",
+      });
+      boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      expect(boundary).toMatchObject({
+        candidate: { pack: { name: "retail_reviewed" } },
+        boundary_library: {
+          selected_name: "retail_reviewed",
+          entries: expect.arrayContaining([
+            expect.objectContaining({ name: "retail_reviewed", selected: true, active: false }),
+            expect.objectContaining({ name: "reviewed_staging", active: true }),
+          ]),
+        },
+      });
+
+      const identity = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "row_identity",
+          resource_id: "public.manual_scope_orders",
+          value: "id",
+          actor: "local-workbench-reviewer",
+          reason: "The inspected unique key is the application record identity.",
+        },
+      );
+      expect(identity).toMatchObject({
+        ok: true,
+        candidate: { pack: { name: "retail_reviewed", resources: [
+          expect.objectContaining({ id: "public.members" }),
+        ] } },
+        review_progress: { revision: expect.any(Number) },
+        source_database_changed: false,
+      });
+      expect(identity.candidate.pack.resources).toHaveLength(1);
+
+      boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      expect(boundary).toMatchObject({
+        candidate: { pack: { name: "retail_reviewed" } },
+        boundary_library: { selected_name: "retail_reviewed" },
+      });
+
+      const scoped = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "tenant_key",
+          resource_id: "public.manual_scope_orders",
+          value: "tenant_id",
+          actor: "local-workbench-reviewer",
+          reason: "The application fixes tenant_id outside every model argument.",
+        },
+      );
+      expect(scoped).toMatchObject({
+        ok: true,
+        candidate: {
+          pack: {
+            name: "retail_reviewed",
+            resources: expect.arrayContaining([
+              expect.objectContaining({ id: "public.members" }),
+              expect.objectContaining({
+                id: "public.manual_scope_orders",
+                primary_key: "id",
+                tenant_key: "tenant_id",
+              }),
+            ]),
+          },
+        },
+        source_database_changed: false,
+      });
+      const reloaded = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      expect(reloaded).toMatchObject({
+        candidate: {
+          pack: {
+            name: "retail_reviewed",
+            resources: expect.arrayContaining([
+              expect.objectContaining({ id: "public.members" }),
+              expect.objectContaining({ id: "public.manual_scope_orders" }),
+            ]),
+          },
+        },
+        boundary_library: { selected_name: "retail_reviewed" },
+      });
+      await expect(fs.readFile(activePath, "utf8")).resolves.toBe(activeBeforeReview);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("persists reviewed field exceptions and regenerates every managed boundary artifact", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-regenerate-"));
     const inspection = boundaryReviewInspection();
@@ -2027,6 +2311,34 @@ export default defineCapability({
             },
           },
         },
+      });
+      const wholeBoundaryCohort = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "minimum_cohort_all",
+          value: 3,
+          actor: "owner@example.test",
+          reason: "Apply one reviewed staging threshold across every included table.",
+        },
+      );
+      expect(wholeBoundaryCohort).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              minimum_cohort_size: 3,
+              minimum_cohort_overridden: true,
+            }],
+          },
+        },
+        semantic_diff: [{
+          resource_id: "public.members",
+          minimum_cohort_before: 1,
+          minimum_cohort_after: 3,
+        }],
+        source_database_changed: false,
       });
       const boundaryResponse = await fetch(`http://${server.host}:${server.port}/api/boundary`, {
         headers: { "x-synapsor-ui-token": "boundary-regenerate-token" },
@@ -3605,6 +3917,79 @@ export default defineCapability({
     }
   });
 
+  it("binds Workbench approval to the server-selected current freshness proof", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-current-freshness-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const storePath = path.join(tempDir, "local.db");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "review",
+      operator_identity: { provider: "dev_env" },
+    }), "utf8");
+    const input = freshnessChangeSet("wrp_ui_current_freshness");
+    const current = freshnessEvaluation(input, "fresh");
+    const store = new ProposalStore(storePath);
+    store.createProposal(input);
+    store.recordFreshnessProof(current.proof);
+    store.close();
+    const decisions: Array<{ proposalId: string; freshnessProofDigest?: string }> = [];
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      configPath,
+      storePath,
+      token: "ui-token",
+      csrfToken: "csrf-token",
+      deploymentProfile: "staging",
+      proposalApprove: async (decision) => {
+        decisions.push(decision);
+        const decisionStore = new ProposalStore(storePath);
+        try {
+          const proposal = decisionStore.getProposal(decision.proposalId)!;
+          decisionStore.approveProposal(decision.proposalId, {
+            approver: decision.actor ?? "reviewer",
+            proposal_hash: proposal.proposal_hash,
+            proposal_version: proposal.proposal_version,
+            freshness_proof_digest: decision.freshnessProofDigest,
+          });
+        } finally {
+          decisionStore.close();
+        }
+        return { code: 0 };
+      },
+    });
+    try {
+      const response = await fetch(`${`http://${server.host}:${server.port}`}/api/proposals/${input.proposal_id}/approve`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-synapsor-ui-token": "ui-token",
+          "x-synapsor-csrf": "csrf-token",
+        },
+        body: JSON.stringify({
+          actor: "reviewer_1",
+          confirm: `APPROVE ${input.integrity.proposal_hash}`,
+          freshness_proof_digest: canonicalJsonDigest({ attacker_selected: true }),
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(decisions).toEqual([expect.objectContaining({
+        proposalId: input.proposal_id,
+        freshnessProofDigest: current.proof.proof_digest,
+      })]);
+      expect(decisions[0]?.freshnessProofDigest).not.toBe(canonicalJsonDigest({ attacker_selected: true }));
+      const verified = new ProposalStore(storePath);
+      try {
+        expect(verified.getProposal(input.proposal_id)?.state).toBe("approved");
+        expect(verified.approvals(input.proposal_id)[0]?.freshness_proof_digest).toBe(current.proof.proof_digest);
+      } finally {
+        verified.close();
+      }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     { status: "stale" as const, httpStatus: 409, expectedState: "conflict" },
     { status: "unavailable" as const, httpStatus: 503, expectedState: "pending_review" },
@@ -3631,7 +4016,7 @@ export default defineCapability({
       const shellText = await shell.text();
       expect(shellText).toContain("Check live freshness");
       expect(shellText).toContain("Checking the current source state");
-      expect(shellText).toContain("Approval rechecks live freshness before recording the decision");
+      expect(shellText).toContain("Approval uses the current unexpired freshness proof and checks again only when needed");
 
       const check = await fetch(`${baseUrl}/api/proposals/${input.proposal_id}/check-freshness`, {
         method: "POST",

@@ -114,7 +114,10 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("No separate table sign-off.");
     expect(firstViewPlain).toContain("B/Esc Boundary overview");
     expect(firstViewPlain).toContain("A Add related tables");
-    expect(firstViewPlain).toContain("C Review and activate");
+    expect(firstViewPlain).toContain("SELECTED TABLE");
+    expect(firstViewPlain).toContain("BOUNDARY");
+    expect(firstViewPlain).toContain("C Review + activate");
+    expect(firstViewPlain).toContain("L Ranked limits");
     expect(firstViewPlain).not.toContain("BOUNDARIES");
     expect(firstViewPlain).not.toContain("One S sign-off records");
     expect(firstViewPlain).not.toContain("[table sign-off needed]");
@@ -157,8 +160,61 @@ describe("boundary review terminal picker", () => {
     });
     const tableView = output.read()?.toString() ?? "";
     expect(tableView).toContain("P");
-    expect(tableView).toContain("Privacy for selected table");
+    expect(tableView).toContain("Privacy (minimum group 5)");
     expect(tableView).toContain("minimum group 5");
+  });
+
+  it("keeps focused access tables alphabetical and restores the highlighted table", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const invoices = summary("public.invoices", 1);
+    invoices.active = true;
+    const accounts = summary("public.accounts", 0);
+    accounts.active = true;
+    const subscriptions = summary("public.subscriptions", 0);
+    subscriptions.active = true;
+    const selected = session.chooseResource(
+      [invoices, accounts, subscriptions],
+      undefined,
+      {
+        initialView: "access",
+        initialResourceId: "public.invoices",
+      },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered.indexOf("public.accounts")).toBeLessThan(rendered.indexOf("public.invoices"));
+    expect(rendered.indexOf("public.invoices")).toBeLessThan(rendered.indexOf("public.subscriptions"));
+    expect(rendered).toContain("> public.invoices");
+
+    await send(input, "p");
+    await expect(selected).resolves.toEqual({
+      resource_id: "public.invoices",
+      action: "privacy",
+    });
+  });
+
+  it("keeps table and boundary actions readable in a narrow terminal", async () => {
+    const { input, output } = fakeTerminal();
+    Object.assign(output, { columns: 58 });
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.equipment", 0);
+    resource.minimum_cohort_size = 5;
+    const selected = session.chooseResource(
+      [resource],
+      undefined,
+      { initialView: "access" },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("SELECTED TABLE");
+    expect(rendered).toContain("Enter Edit columns");
+    expect(rendered).toContain("P Privacy (minimum group 5)");
+    expect(rendered).toContain("BOUNDARY");
+    expect(rendered).toContain("B/Esc Boundary overview");
+    expect(rendered).toContain("L Ranked limits");
+    expect(rendered).toContain("C Review + activate");
+
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("returns from focused access to the boundary overview instead of quitting", async () => {
@@ -210,6 +266,7 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("reviewed_staging");
     expect(firstViewPlain).toContain("DRAFT - NO ACCESS");
     expect(firstViewPlain).toContain("A New boundary");
+    expect(firstViewPlain).toContain("P Privacy for all tables");
     expect(firstViewPlain).toContain("C Complete review");
     expect(firstViewPlain).not.toContain("public.high_risk");
 
@@ -244,6 +301,52 @@ describe("boundary review terminal picker", () => {
     expect(stripAnsi(firstView)).toContain("L Ranked limit");
     await send(input, "l");
     await expect(selected).resolves.toEqual({ action: "limits" });
+  });
+
+  it("opens one boundary-wide privacy action from the boundary list", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      undefined,
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    expect(stripAnsi(output.read()?.toString() ?? "")).toContain("P Privacy for all tables");
+    await send(input, "p");
+    await expect(selected).resolves.toEqual({ action: "privacy_all" });
+  });
+
+  it("keeps an active boundary's disabled edits visibly pending", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.orders", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const selected = session.chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: false,
+          table_count: 1,
+          outstanding_decisions: 0,
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("ACTIVE + DRAFT EDITS");
+    expect(first).toContain("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE");
+    expect(first).toContain("C reviews and activates the exact disabled update");
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("starts with boundary tables and opens proven relationship candidates in place", async () => {
@@ -624,6 +727,59 @@ describe("boundary review terminal picker", () => {
     expect(plain).toMatch(/Back to boundary\s+tables/);
     await send(input, "b");
     await expect(edited).resolves.toBe("back");
+  });
+
+  it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.blockers = ["trusted tenant scope is unresolved"];
+    view.row_identity = {
+      ...view.row_identity,
+      selected: "outcome",
+      candidates: ["outcome"],
+      alternatives_considered: [{
+        value: "outcome",
+        confidence: "high",
+        evidence: ["database primary key"],
+        selected: true,
+      }],
+    };
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: ["tenant_id", "workspace_id"],
+      alternatives_considered: [
+        {
+          value: "tenant_id",
+          confidence: "low",
+          evidence: ["column name matches a tenant convention"],
+          selected: false,
+        },
+        {
+          value: "workspace_id",
+          confidence: "low",
+          evidence: ["column name matches a tenant convention"],
+          selected: false,
+        },
+      ],
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("RESOLVE TABLE ACCESS - public.check_ins");
+    expect(first).toContain("Record ID");
+    expect(first).toContain("Tenant isolation");
+    expect(first).toContain("These choices stay outside model arguments");
+    await send(input, "\u001b[C");
+    await send(input, "\r");
+    await expect(resolution).resolves.toEqual({
+      row_identity: "outcome",
+      tenant_key: "workspace_id",
+    });
   });
 
   it("sanitizes inspected names before rendering the structural map", () => {

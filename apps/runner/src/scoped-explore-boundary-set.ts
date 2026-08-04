@@ -9,6 +9,7 @@ import {
   createScopedExploreRuntime,
   projectScopedExploreResultForModel,
   SCOPED_EXPLORE_QUERY_TOOL,
+  scopedExploreBoundaryLoadError,
   ScopedExploreError,
   type ExplorePlan,
   type InspectDatabaseFn,
@@ -23,6 +24,7 @@ export type BoundarySetDescribeInput = {
   resource?: string;
   cursor?: number;
   limit?: number;
+  include_time_coverage?: boolean;
 };
 
 export type ScopedExploreBoundarySetRuntime = {
@@ -62,10 +64,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   const store = input.store ?? new ProposalStore(path.join(projectRoot, ".synapsor/local.db"));
   const children = new Map<string, Child>();
   let boundaries = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
-    throw new ScopedExploreError(
-      "EXPLORE_DISABLED",
-      `Scoped Explore is disabled: ${safeError(error)}`,
-    );
+    throw scopedExploreBoundaryLoadError(error);
   });
   let selected = boundaries.at(-1)!;
   let setDigest = activatedExplorationBoundarySetDigest(boundaries);
@@ -74,10 +73,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   const refresh = async (): Promise<void> => {
     if (closed) throw new ScopedExploreError("EXPLORE_DISABLED", "Scoped Explore is closed.");
     const current = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
-      throw new ScopedExploreError(
-        "EXPLORE_DISABLED",
-        `Scoped Explore is disabled: ${safeError(error)}`,
-      );
+      throw scopedExploreBoundaryLoadError(error);
     });
     const currentNames = new Set(current.map((boundary) => boundary.pack.name));
     for (const [name, child] of children) {
@@ -144,10 +140,13 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       if (request.boundary || request.resource || boundaries.length === 1) {
         const boundary = route(request.boundary, request.resource);
         const child = await childFor(boundary);
-        const described = child.describe({
+        const described = await child.describe({
           ...(request.resource ? { resource: request.resource } : {}),
           ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
           ...(request.limit === undefined ? {} : { limit: request.limit }),
+          ...(request.include_time_coverage === undefined
+            ? {}
+            : { include_time_coverage: request.include_time_coverage }),
         });
         return addBoundaryCatalog(described, boundary, boundaries, setDigest);
       }
@@ -163,7 +162,10 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       const catalog: Array<Record<string, unknown>> = [];
       for (const boundary of boundaries) {
         const child = await childFor(boundary);
-        for (const resource of await describeAllResources(child)) {
+        for (const resource of await describeAllResources(
+          child,
+          request.include_time_coverage,
+        )) {
           catalog.push({ ...resource, boundary_name: boundary.pack.name });
         }
       }
@@ -305,13 +307,17 @@ function recordArray(value: unknown): Array<Record<string, unknown>> {
 
 async function describeAllResources(
   runtime: ScopedExploreRuntime,
+  includeTimeCoverage?: boolean,
 ): Promise<Array<Record<string, unknown>>> {
   const resources: Array<Record<string, unknown>> = [];
   let cursor: number | undefined;
   for (let page = 0; page < 100; page += 1) {
-    const described = runtime.describe({
+    const described = await runtime.describe({
       limit: 10,
       ...(cursor === undefined ? {} : { cursor }),
+      ...(includeTimeCoverage === undefined
+        ? {}
+        : { include_time_coverage: includeTimeCoverage }),
     });
     resources.push(...recordArray(described.resources));
     cursor = typeof described.next_cursor === "number" ? described.next_cursor : undefined;
@@ -325,9 +331,4 @@ async function describeAllResources(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function safeError(error: unknown): string {
-  if (error instanceof Error) return error.message.replace(/[\r\n]+/g, " ").slice(0, 300);
-  return "reviewed authority is unavailable";
 }
