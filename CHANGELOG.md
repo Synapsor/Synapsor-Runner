@@ -1,6 +1,35 @@
 # Changelog
 
-## 1.6.6 (prepared, not published)
+## 1.6.7 (prepared, not published)
+
+### First-Run, Explore, And Privacy Review Corrections
+
+- Completes fresh interactive setup inside the CLI by resolving source-proven
+  identity and tenant scope in place, preserving existing config by default,
+  and keeping blocked-table review in the active session.
+- Makes common analytics operations and recovery paths discoverable: reviewed
+  time coverage, provider defaults, shell history, access summaries, field-level
+  refusal guidance, ranked aggregates, comparisons, distinct counts, and the
+  latest-analysis Protect shortcut now behave consistently.
+- Keeps privacy restrictions intact while making them operable. Cohort edits
+  use plain language, default to saving the requested change, support a
+  whole-boundary value, advertise pending inactive changes, and offer immediate
+  exact-digest review and activation. Complementary releases remain blocked.
+- Separates model prose, Runner-verified data, structured JSON, and redacted
+  parameterized SQL in both operator surfaces. External MCP clients still
+  receive neither SQL nor operator-only evidence.
+- Tightens conservative name classification, withheld-domain egress,
+  differencing accounting, conflict guards, PostgreSQL role posture, freshness
+  expiry, worker fencing, and MySQL write deadlines without widening model
+  authority.
+- Adds packed first-run and human-PTY coverage alongside the full test,
+  Workbench visual, compatibility, PostgreSQL, and MySQL gates.
+
+Prepared package versions: `@synapsor/runner@1.6.7` and the optional
+`synapsor-runner@1.6.7` command alias. Spec and DSL remain at their
+already-published `1.8.0` versions. No package is published by this change.
+
+## 1.6.6 (published 2026-08-03)
 
 ### Repeated Safe Analytics And Host-Neutral Integration
 
@@ -151,13 +180,12 @@
   DSL source change additively accepts explicit `minimum_group_size: 1`
   without changing defaults or legacy normalization.
 
-Prepared package versions: `@synapsor/runner@1.6.6`, the optional
+Published package versions: `@synapsor/runner@1.6.6`, the optional
 `synapsor-runner@1.6.6` command alias, `@synapsor/spec@1.8.0`, and
 `@synapsor/dsl@1.8.0`. Spec/DSL 1.8.0 add the canonical model-withheld egress
 tier, explicitly reviewed minimum cohort 1, a separate ranked-candidate group
 ceiling, and absolute/percentage comparison-change ordering. These additions
-preserve legacy normalization and digests when omitted. No package is published
-by this change.
+preserve legacy normalization and digests when omitted.
 
 ## 1.6.5 (published 2026-07-26)
 
