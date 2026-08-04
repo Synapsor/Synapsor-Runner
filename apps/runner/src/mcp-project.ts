@@ -63,7 +63,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
       env: process.env,
     });
     try {
-      await runtime.describe({ limit: 10 });
+      await runtime.describe({ limit: 10, include_time_coverage: false });
     } finally {
       await runtime.close();
     }

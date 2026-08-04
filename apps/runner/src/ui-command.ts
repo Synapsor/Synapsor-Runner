@@ -71,6 +71,7 @@ export async function ui(args: string[]): Promise<number> {
   const proposalApprove: WorkbenchProposalDecision | undefined = trustedDecisionSupported
     ? (input) => proposalsApprove([input.proposalId, ...authorityArgs], {
       quiet: true,
+      freshnessProofDigest: input.freshnessProofDigest,
       decision: {
         actor: input.actor,
         reason: input.reason,

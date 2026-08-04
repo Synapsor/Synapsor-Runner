@@ -1735,11 +1735,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason:"Staged through the focused access editor; the exact boundary update requires final human confirmation."
         });
         candidateDigest=undefined;
-        await load();
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
-        setView("exceptions");
-        renderResourceDetail();
+        await load();
       }catch(error){
         summary.textContent=error.message;
         bar.classList.remove("hidden");
@@ -1765,11 +1763,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason
         });
         candidateDigest=undefined;
-        await load();
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
-        setView("exceptions");
-        renderResourceDetail();
+        await load();
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -1782,12 +1778,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     async function submitManagedScopeReview(kind,form){
       const status=form.querySelector("[data-scope-review-status]");
+      const button=form.querySelector("[data-submit-scope-review]");
+      const detail=byId("resource-detail");
       try{
         const selected=form.querySelector("[data-scope-review-value]").value;
         const value=kind==="principal_key"&&selected==="__none__"?null:selected;
         const actor=form.querySelector("[data-scope-review-actor]").value.trim();
         const reason=form.querySelector("[data-scope-review-reason]").value.trim();
         if((value===null?false:!value)||!actor||!reason)throw new Error("Choose the source column and enter the human reviewer identity and reason.");
+        button.disabled=true;
+        detail.setAttribute("aria-busy","true");
         status.className="status-message";
         status.textContent="Saving this reviewed choice and updating only the affected access...";
         await post("/api/boundary/regenerate",{
@@ -1798,10 +1798,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason
         });
         candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
         await load();
-        setView("exceptions");
-        renderResourceDetail();
+        detail.removeAttribute("aria-busy");
       }catch(error){
+        button.disabled=false;
+        detail.removeAttribute("aria-busy");
         status.className="status-message error";
         status.textContent=error.message;
       }
@@ -1826,9 +1829,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reason
         });
         candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
         await load();
-        setView("exceptions");
-        renderResourceDetail();
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -2053,14 +2056,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const kind=resolvingIdentity?"row_identity":"tenant_key";
           const candidateValues=resolvingIdentity
             ?review.primary_key?.candidates||[]
-            :fields.map(field=>field.name);
+            :review.tenant_key?.candidates||[];
           const decisionLabel=resolvingIdentity?"record ID backed by a unique database key":"customer-isolation column";
           const decisionInference=resolvingIdentity?review.primary_key:review.tenant_key;
           const resolution=candidateValues.length
             ?'<p>Your choice updates the public DSL, canonical JSON, tests, and review fingerprint. It does not activate access.</p>'+managedScopeReviewForm(kind,decisionLabel,candidateValues,undefined,false,decisionInference)
             :'<div class="risk high"><strong>No safe '+esc(decisionLabel)+' candidate exists.</strong><p>Add a single-column primary or unique key in the database, then rescan. Runner will not accept a friendly ORM or API name as row-identity proof.</p></div>';
-	        const blockedDetails='<details class="access-secondary" data-access-secondary><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Tenant candidates</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
-	        byId("resource-detail").innerHTML=header+columnList+blockedDetails;
+	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Tenant candidates</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
+	        byId("resource-detail").innerHTML=header+blockedDetails+columnList;
 		      byId("back-resources").onclick=backFromResourceDetail;
 		      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 		        const section=document.querySelector("[data-cohort-review-section]");

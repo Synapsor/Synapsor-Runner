@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -295,12 +296,13 @@ try {
     () => "guided start did not print its Workbench continuation",
   );
   assert.ok(evidence.timings_ms.schema_summary <= 60_000, "schema summary exceeded 60 seconds");
-  assert.match(ui.output(), /✓ Connected/);
-  assert.match(ui.output(), /Inspected 45 tables and views \(metadata only; no rows read\)/);
-  assert.match(ui.output(), /Synapsor Runner local UI: http:\/\/127\.0\.0\.1:/);
-  assert.match(ui.output(), /Next: review the proposed boundary, then ask your first question in Workbench/);
+  const guidedOutput = stripVTControlCharacters(ui.output());
+  assert.match(guidedOutput, /✓ Connected/);
+  assert.match(guidedOutput, /Inspected 45 tables and views \(metadata only; no rows read\)/);
+  assert.match(guidedOutput, /Synapsor Runner local UI: http:\/\/127\.0\.0\.1:/);
+  assert.match(guidedOutput, /Next: review the proposed boundary, then ask your first question in Workbench/);
   await assert.rejects(fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")));
-  assert.doesNotMatch(ui.output(), /retail_manager_reader_password|retail_writer_password/);
+  assert.doesNotMatch(guidedOutput, /retail_manager_reader_password|retail_writer_password/);
   const generationReport = JSON.parse(await fsp.readFile(
     path.join(projectRoot, "synapsor", "generated", "generation-review.json"),
     "utf8",
@@ -1140,16 +1142,22 @@ try {
     const connectionsBeforeFreshness = Number(queryPostgres(
       "SELECT count(*) FROM pg_stat_activity WHERE datname = 'northstar_commerce'",
     ));
-    if (await evaluate(page, `[...document.querySelectorAll("button")]
-      .some(button=>button.textContent.trim()==="Check live freshness")`)) {
-      const freshnessEventsBefore = await evaluate(page, `[...document.querySelectorAll("#detail *")]
-        .filter(node=>node.childElementCount===0 && node.textContent.trim()==="Freshness checked against live source").length`);
-      await clickText(page, "button", "Check live freshness");
-      await waitForExpression(page, `[...document.querySelectorAll("#detail *")]
-        .filter(node=>node.childElementCount===0 && node.textContent.trim()==="Freshness checked against live source").length > ${freshnessEventsBefore}`);
-      await waitForExpression(page, `document.querySelector('#detail')?.textContent.includes('Freshness: fresh')
-        && !document.querySelector('#detail')?.textContent.includes('Checking the current source state')`);
-    }
+    await waitForExpression(page, `Boolean(document.querySelector("#check-live-freshness"))`);
+    await shot(page, "09b-proposal-review-before-freshness.png");
+    await evaluate(page, `(() => {
+      window.__synapsorFreshnessClickDispatched = false;
+      document.querySelector("#check-live-freshness").addEventListener("click", () => {
+        window.__synapsorFreshnessClickDispatched = true;
+      }, { capture: true, once: true });
+    })()`);
+    await click(page, "#check-live-freshness");
+    await waitForExpression(page, `window.__synapsorFreshnessClickDispatched === true`);
+    await waitForExpression(page, `document.querySelector('#check-live-freshness')?.disabled === false
+      && !document.querySelector('#detail')?.textContent.includes('Checking the current source state')`);
+    const freshnessDetail = await evaluate(page, "document.querySelector('#detail')?.textContent");
+    assert.match(freshnessDetail, /Freshness:\s*fresh\b/i, `Live freshness did not pass:\n${freshnessDetail}`);
+    await waitForExpression(page, `[...document.querySelectorAll("#detail *")]
+      .some(node=>node.childElementCount===0 && node.textContent.trim()==="Freshness checked against live source")`);
     const connectionsAfterFreshness = Number(queryPostgres(
       "SELECT count(*) FROM pg_stat_activity WHERE datname = 'northstar_commerce'",
     ));
@@ -1328,10 +1336,12 @@ try {
     timeout: 7_000,
   });
   assert.notEqual(disabledAuthoring.status, 0, "Scoped Explore restarted after the operator disabled it");
+  const disabledAuthoringOutput = `${disabledAuthoring.stdout}\n${disabledAuthoring.stderr}`;
   assert.match(
-    `${disabledAuthoring.stdout}\n${disabledAuthoring.stderr}`,
-    /EXPLORE_DISABLED|disabled|not active/i,
+    disabledAuthoringOutput,
+    /No reviewed analytics access is active\.[\s\S]*synapsor-runner start/i,
   );
+  assert.doesNotMatch(disabledAuthoringOutput, /ENOENT|\.synapsor\//i, "disabled authoring leaked an internal path");
 
   const activeTools = JSON.parse(run(cli, [
     "try", "call", "--list", "--format", "json",

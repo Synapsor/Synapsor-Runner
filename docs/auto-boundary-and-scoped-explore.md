@@ -476,10 +476,34 @@ authority also remains available through explicit CLI Try:
 ```bash
 synapsor-runner try call --list --format json
 synapsor-runner try explore --suggested --json
-synapsor-runner try ask \
-  --provider openai \
-  --model gpt-5-mini
+synapsor-runner try ask --provider openai
 ```
+
+OpenAI uses the tested `gpt-5-mini` default and Anthropic uses the tested
+Claude Sonnet default when `--model` is omitted. A loopback OpenAI-compatible
+endpoint still requires `--model` because its installed models are local
+operator state.
+
+Run a two-period comparison without hand-writing plan JSON:
+
+```bash
+synapsor-runner try explore \
+  --resource public.orders \
+  --sum total_cents \
+  --group-by channel \
+  --time-bucket created_at:week \
+  --compare created_at \
+  --period 2026-06-01T00:00:00Z..2026-06-08T00:00:00Z \
+  --vs-period 2026-06-08T00:00:00Z..2026-06-15T00:00:00Z \
+  --change percentage
+```
+
+`app.describe_data` reports cohort-safe minimum and maximum dates for reviewed
+time fields. It returns dates only when at least the reviewed minimum cohort has
+a value; otherwise coverage is marked empty, withheld, or unavailable. The
+model uses that coverage to anchor phrases such as `latest week` against a
+historical staging snapshot instead of silently assuming today's date. Startup
+preflight defers this aggregate, so activation still reads schema metadata only.
 
 Cursor, Claude, Codex, and generic stdio are optional clients, not onboarding
 dependencies. The packed FitFlow gate proves Workbench, CLI Try, and an

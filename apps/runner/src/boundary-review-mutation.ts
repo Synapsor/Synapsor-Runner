@@ -84,6 +84,7 @@ export type BoundaryReviewMutationPreview = {
   candidate: ExplorationBoundaryDraft;
   build: AutoBoundaryBuild;
   previous_progress?: BoundaryReviewProgress;
+  partial_scope_resolution: boolean;
   boundary_root: string;
   source_database_changed: false;
 };
@@ -170,6 +171,7 @@ export type BoundaryResourceReviewSummary = {
   kept_out_fields: number;
   minimum_cohort_size?: number;
   minimum_cohort_overridden?: boolean;
+  inline_resolution_available?: boolean;
   relationships: Array<{
     relationship_id: string;
     target_resource: string;
@@ -269,6 +271,10 @@ export async function listBoundaryResourceReviews(
             ? { minimum_cohort_overridden: true }
             : {}),
         } : {}),
+        inline_resolution_available:
+          resource.status !== "blocked_role"
+          && Boolean(resource.primary_key.selected || resource.primary_key.candidates.length)
+          && Boolean(resource.tenant_key.selected || resource.tenant_key.candidates.length),
         relationships: boundaryRelationshipSummaries(generated, candidate, active),
       };
     })
@@ -325,7 +331,17 @@ export async function prepareBoundaryResourceReviewMutation(
     generated: build.exploration_boundary,
     request,
   });
-  const preview = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+  const partialScopeResolution = request.include === true
+    && canStageIncompleteScopeResolution(request)
+    && !build.exploration_boundary.pack.resources.some(
+      (resource) => resource.id === request.resource_id,
+    );
+  const preview = partialScopeResolution
+    ? {
+      candidate,
+      digest: explorationBoundaryCandidateDigest(candidate),
+    }
+    : reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
   assertRequestedExposureState(request, preview.candidate);
   const diff = semanticDiff(
     request.resource_id,
@@ -358,6 +374,7 @@ export async function prepareBoundaryResourceReviewMutation(
     candidate: preview.candidate,
     build,
     ...(state.progress ? { previous_progress: state.progress } : {}),
+    partial_scope_resolution: partialScopeResolution,
     boundary_root: state.boundary_root,
     source_database_changed: false,
   };
@@ -477,6 +494,40 @@ export async function commitBoundaryResourceReviewMutation(
   semantic_diff: BoundaryReviewSemanticDiff;
   source_database_changed: false;
 }> {
+  if (preview.partial_scope_resolution) {
+    if (preview.candidate.pack.resources.length === 0) {
+      const current = await loadBoundaryReviewFiles(projectRoot);
+      assertBindingsEqual(preview.bindings, reviewBindings(current));
+      await writeAutoBoundaryArtifacts({
+        projectRoot,
+        outputRoot: path.relative(projectRoot, preview.boundary_root),
+        build: preview.build,
+        force: true,
+        preserveReviewProgress: false,
+        preserveActiveBoundary: true,
+      });
+      return {
+        candidate_digest: preview.candidate_digest,
+        review_revision: 0,
+        semantic_diff: preview.semantic_diff,
+        source_database_changed: false,
+      };
+    }
+    const result = await commitPreparedBoundaryReviewMutation({
+      projectRoot,
+      bindings: preview.bindings,
+      build: preview.build,
+      candidate: preview.candidate,
+      boundaryRoot: preview.boundary_root,
+      previousProgress: preview.previous_progress,
+      actor: preview.request.actor,
+      reason: preview.request.reason,
+    });
+    return {
+      ...result,
+      semantic_diff: preview.semantic_diff,
+    };
+  }
   const result = await commitPreparedBoundaryReviewMutation({
     projectRoot,
     bindings: preview.bindings,
@@ -656,11 +707,12 @@ function buildReviewedCandidate(input: {
       (resource) => resource.id === input.request.resource_id,
     );
     if (!generated) {
-      throw new Error(
-        `Resource ${input.request.resource_id} remains blocked after the reviewed identity/scope choices and cannot be included.`,
-      );
-    }
-    if (!candidate.pack.resources.some((resource) => resource.id === generated.id)) {
+      if (!canStageIncompleteScopeResolution(input.request)) {
+        throw new Error(
+          `Resource ${input.request.resource_id} remains blocked after the reviewed identity/scope choices and cannot be included.`,
+        );
+      }
+    } else if (!candidate.pack.resources.some((resource) => resource.id === generated.id)) {
       candidate.pack.resources.push(structuredClone(generated));
     }
   }
@@ -673,6 +725,10 @@ function buildReviewedCandidate(input: {
       throw new Error(`Resource ${input.request.resource_id} must be included before its field or relationship authority can be reviewed.`);
     }
     pruneRelationshipsOutsideBoundary(candidate);
+    if (candidate.pack.resources.length === 0
+      && canStageIncompleteScopeResolution(input.request)) {
+      return candidate;
+    }
     return reviewExplorationBoundaryCandidate(input.generated, candidate).candidate;
   }
 
@@ -824,6 +880,32 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
     || request.nullable_relationship !== undefined;
+}
+
+function canStageIncompleteScopeResolution(
+  request: BoundaryResourceReviewRequest,
+): boolean {
+  const hasScopeChoice = request.row_identity !== undefined
+    || request.tenant_key !== undefined
+    || request.principal_key !== undefined;
+  const hasNonScopeChoice = [
+    request.keep_out_fields,
+    request.withhold_from_model_fields,
+    request.allow_reviewed_fields,
+    request.selectable_fields,
+    request.filterable_fields,
+    request.sortable_fields,
+    request.groupable_fields,
+    request.aggregate_measures,
+    request.count_distinct_fields,
+    request.time_bucket_fields,
+    request.relationship_ids,
+  ].some((value) => value !== undefined)
+    || request.minimum_cohort_size !== undefined
+    || request.max_ranked_groups !== undefined
+    || request.nullable_relationship !== undefined
+    || request.exclude === true;
+  return hasScopeChoice && !hasNonScopeChoice;
 }
 
 function semanticDiff(

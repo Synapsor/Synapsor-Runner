@@ -594,7 +594,8 @@ describe("Workbench BYOM Ask", () => {
     expect(prompt).toContain("use the boundary's conservative defaults");
     expect(prompt).toContain("latest periods are not silently truncated");
     expect(prompt).toContain("fastest-growing or fastest-declining");
-    expect(prompt).toContain("28 days ending on the current UTC date");
+    expect(prompt).toContain("latest 28 reviewed days in app.describe_data time_coverage");
+    expect(prompt).toContain("Use the current UTC date only when the reviewed coverage actually reaches it");
     expect(prompt).toContain("order by comparison_change");
     expect(prompt).toContain("do not request an all-history dimension-by-week cube");
     expect(prompt).toContain("top_n counts every group-by-time row");
@@ -603,7 +604,7 @@ describe("Workbench BYOM Ask", () => {
     expect(prompt).toContain("never treat a missing group-period as zero");
     expect(prompt).toContain("never calculate or claim percentages or shares of the complete population");
     expect(prompt).toContain("returned non-suppressed groups");
-    expect(prompt).toContain("both a lower and upper reviewed timestamp filter");
+    expect(prompt).toContain("Never send an open-ended relative range");
     expect(prompt).toContain("Runner current UTC date: 2026-08-02");
   });
 

@@ -145,11 +145,13 @@ verified structured result and displays a deterministic local explanation
 instead of discarding the answer.
 
 For an unqualified question such as `Which product category is growing
-fastest?`, Ask uses one reviewed two-period comparison: the 28 days ending on
-the current UTC date against the preceding 28 days, ordered by reviewed
-percentage change. `Largest increase` uses signed absolute change; `fastest
-decline` uses ascending percentage change. The rendered interpretation states
-the two ranges. Ask does not request an all-history category-by-week cube.
+fastest?`, Ask first reads cohort-safe reviewed time coverage and uses one
+reviewed two-period comparison: the latest 28 reviewed days against the
+preceding 28 days, ordered by reviewed percentage change. It uses the current
+UTC date only when the reviewed coverage reaches it. `Largest increase` uses
+signed absolute change; `fastest decline` uses ascending percentage change.
+The rendered interpretation states the two ranges. Ask does not request an
+all-history category-by-week cube.
 Runner validates the complete population against the separately reviewed ranked
 candidate ceiling, suppresses small cohorts, and only then ranks the result.
 This is an Ask interpretation default, not broader authority; both periods, the

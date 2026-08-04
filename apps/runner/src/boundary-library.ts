@@ -176,6 +176,45 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   return progress;
 }
 
+export async function renameSavedBoundary(input: BoundaryLibraryContext & {
+  name: string;
+  newName: string;
+  actor: string;
+  reason: string;
+}): Promise<BoundaryReviewProgress> {
+  assertBoundaryName(input.name);
+  assertBoundaryName(input.newName);
+  const library = await readOrCreateLibrary(input);
+  const stored = library.boundaries[input.name];
+  if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
+  if (input.name !== input.newName && library.boundaries[input.newName]) {
+    throw new Error(`A saved boundary named ${input.newName} already exists.`);
+  }
+  if (input.name === input.newName) return stored;
+  const candidate = structuredClone(stored.candidate);
+  candidate.pack.name = input.newName;
+  const reviewed = reviewExplorationBoundaryCandidate(input.draft, candidate).candidate;
+  const progress = createBoundaryReviewProgress({
+    draft: input.draft,
+    candidate: reviewed,
+    confirmedDecisions: stored.confirmed_decisions,
+    previous: stored,
+    actor: input.actor,
+    reason: input.reason,
+    revision: stored.revision + 1,
+  });
+  const activeNames = new Set(
+    (await readActiveBoundaryIdentities(input.projectRoot)).map((active) => active.name),
+  );
+  library.boundaries[input.newName] = progress;
+  if (!activeNames.has(input.name)) delete library.boundaries[input.name];
+  library.selected_name = input.newName;
+  library.updated_at = new Date().toISOString();
+  await writeBoundaryLibrary(input.projectRoot, library);
+  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  return progress;
+}
+
 export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   name: string;
 }): Promise<{ selected_name: string; progress: BoundaryReviewProgress }> {

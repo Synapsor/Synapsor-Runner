@@ -43,6 +43,7 @@
     "test:auto-boundary-explore": "corepack pnpm build && node scripts/verify-auto-boundary-explore.mjs",
     "test:auto-boundary-explore:packed": "node scripts/verify-packed-backward-compatibility.mjs && node scripts/verify-packed-auto-boundary-explore.mjs",
     "test:guided-onboarding:packed": "node scripts/verify-packed-guided-onboarding.mjs",
+    "test:first-run-cli:packed": "node scripts/verify-packed-first-run-cli.mjs",
     "test:auto-boundary-scale": "corepack pnpm build && node scripts/verify-auto-boundary-scale.mjs",
     "test:reviewed-relationships": "corepack pnpm build && node scripts/verify-reviewed-star-relationships.mjs",
     "test:auto-boundary-visual": "corepack pnpm build:runner-package && node scripts/verify-auto-boundary-workbench-visual.mjs",

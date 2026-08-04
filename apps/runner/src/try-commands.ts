@@ -1,6 +1,7 @@
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -20,12 +21,14 @@ import {
 } from "./local-ui.js";
 import { executeRuntimeToolCall, inspectMcpToolBoundary } from "./mcp-runtime.js";
 import {
+  assertQualifiedCapabilityName,
   createProtectedQueryDraft,
   describeProtectableAnalysis,
   listProtectableQueries,
   suggestProtectedCapabilityName,
 } from "./protect-query.js";
 import {
+  bindProtectedPlansToAnswer,
   type ExplorePlan,
   type InspectDatabaseFn,
 } from "./scoped-explore.js";
@@ -200,6 +203,10 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       "--avg",
       "--group-by",
       "--time-bucket",
+      "--compare",
+      "--period",
+      "--vs-period",
+      "--change",
       "--where",
       "--top",
       "--json",
@@ -224,6 +231,10 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       || repeatedArgs(args, "--group-by").length > 0
       || repeatedArgs(args, "--where").length > 0
       || Boolean(optionalArg(args, "--time-bucket"))
+      || Boolean(optionalArg(args, "--compare"))
+      || Boolean(optionalArg(args, "--period"))
+      || Boolean(optionalArg(args, "--vs-period"))
+      || Boolean(optionalArg(args, "--change"))
       || Boolean(optionalArg(args, "--top"));
     if (!inline && !inputPath && !friendly) {
       const cursor = optionalArg(args, "--cursor");
@@ -264,6 +275,12 @@ async function tryScopedExplore(args: string[]): Promise<number> {
         averages: repeatedArgs(args, "--avg"),
         groupBy: repeatedArgs(args, "--group-by"),
         timeBucket: optionalArg(args, "--time-bucket"),
+        compareField: optionalArg(args, "--compare"),
+        period: optionalArg(args, "--period"),
+        versusPeriod: optionalArg(args, "--vs-period"),
+        ...(optionalArg(args, "--change")
+          ? { comparisonChange: comparisonChangeArg(optionalArg(args, "--change")!) }
+          : {}),
         filters: repeatedArgs(args, "--where"),
         ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
       });
@@ -271,6 +288,14 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       parsed as ExplorePlan,
       optionalArg(args, "--boundary"),
     );
+    const protectToken = (result.protect as { token?: unknown } | undefined)?.token;
+    if (typeof protectToken === "string") {
+      await bindProtectedPlansToAnswer({
+        projectRoot,
+        tokens: [protectToken],
+        answerId: `ans_${crypto.randomBytes(12).toString("hex")}`,
+      });
+    }
     await updateGuidedOnboardingState({
       projectRoot,
       status: (parsed as { kind?: unknown }).kind === "aggregate" ? "protect" : "first_value",
@@ -298,6 +323,11 @@ async function tryScopedExplore(args: string[]): Promise<number> {
   }
 }
 
+function comparisonChangeArg(value: string): "absolute" | "percentage" {
+  if (value === "absolute" || value === "percentage") return value;
+  throw new Error("--change must be absolute or percentage.");
+}
+
 
 async function tryProtectLatest(
   args: string[],
@@ -319,6 +349,8 @@ async function tryProtectLatest(
     "try protect",
   );
   const projectRoot = resolvedSynapsorProjectRoot(args);
+  const requestedCapabilityName = optionalArg(args, "--name");
+  if (requestedCapabilityName) assertQualifiedCapabilityName(requestedCapabilityName);
   const available = await listProtectableQueries({ projectRoot });
   const requestedReference = optionalArg(args, "--from");
   if (requestedReference && args.includes("--last")) {
@@ -332,7 +364,9 @@ async function tryProtectLatest(
     const latestAnswer = latest?.answer_id;
     const candidates = latestAnswer
       ? available.filter((item) => item.answer_id === latestAnswer)
-      : available;
+      : latest
+        ? [latest]
+        : [];
     if (candidates.length === 1) {
       selected = candidates[0];
     } else if (candidates.length > 1) {
@@ -352,7 +386,7 @@ async function tryProtectLatest(
     }
     throw new Error("No unexpired successful exploration is available. Run one bounded try explore plan, then protect it.");
   }
-  const capabilityName = optionalArg(args, "--name")
+  const capabilityName = requestedCapabilityName
     ?? suggestProtectedCapabilityName(selected.normalized_plan);
   let minimumCohortActor = optionalArg(args, "--actor")?.trim();
   let minimumCohortConfirmation = optionalArg(args, "--cohort-confirmation")?.trim();

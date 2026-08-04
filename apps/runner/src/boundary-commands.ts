@@ -43,6 +43,7 @@ import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
   createSavedBoundary,
   deleteSavedBoundary,
+  renameSavedBoundary,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -111,6 +112,129 @@ export type BoundaryReviewCommandOptions = {
   }) => string;
   startAtBoundaryList?: boolean;
 };
+
+export async function boundaryRenameCommand(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--project-root", "--to", "--actor", "--reason", "--json"]),
+    "boundary rename",
+  );
+  const currentName = positional(args, 0)?.trim();
+  const newName = optionalArg(args, "--to")?.trim().toLowerCase();
+  const actor = optionalArg(args, "--actor")?.trim();
+  const reason = optionalArg(args, "--reason")?.trim();
+  if (!currentName || !newName) {
+    throw new Error("boundary rename requires <current-name> --to <new-name>.");
+  }
+  if (!actor || !reason) {
+    throw new Error("Renaming a disabled boundary requires --actor <human> and --reason <review-reason>.");
+  }
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  let context = await loadBoundaryReviewContext(projectRoot);
+  await synchronizeBoundaryLibrary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+  });
+  if (context.candidate.pack.name !== currentName) {
+    await switchSavedBoundary({
+      projectRoot,
+      draft: context.draft,
+      currentCandidate: context.candidate,
+      ...(context.progress ? { currentProgress: context.progress } : {}),
+      name: currentName,
+    });
+    context = await loadBoundaryReviewContext(projectRoot);
+  }
+  const progress = await renameSavedBoundary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+    name: currentName,
+    newName,
+    actor,
+    reason,
+  });
+  const payload = {
+    ok: true,
+    previous_name: currentName,
+    name: progress.candidate.pack.name,
+    state: "disabled",
+    table_count: progress.candidate.pack.resources.length,
+    authority_activated: false,
+    source_database_changed: false,
+  };
+  process.stdout.write(args.includes("--json")
+    ? `${JSON.stringify(payload, null, 2)}\n`
+    : [
+      `Renamed disabled boundary "${currentName}" to "${payload.name}".`,
+      `Tables retained: ${payload.table_count}`,
+      "Authority activated: no",
+      "Source database changed: no",
+      `Next: ${cliCommandName()} boundary review`,
+      "",
+    ].join("\n"));
+  return 0;
+}
+
+export async function boundaryDeleteCommand(
+  args: string[],
+  session?: Pick<BoundaryReviewInteractiveSession, "confirm">,
+): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--project-root", "--yes", "--json"]),
+    "boundary delete",
+  );
+  const name = positional(args, 0)?.trim();
+  if (!name) throw new Error("boundary delete requires <disabled-boundary-name>.");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  if (!args.includes("--yes")) {
+    const interactive = session ?? (process.stdin.isTTY && process.stdout.isTTY
+      ? createBoundaryReviewInteractiveSession()
+      : undefined);
+    if (!interactive) {
+      throw new Error("boundary delete requires --yes outside an interactive terminal.");
+    }
+    if (!await interactive.confirm(`Delete saved disabled boundary "${name}"?`, { defaultValue: false })) {
+      process.stdout.write("Boundary deletion cancelled. Nothing changed.\n");
+      return 0;
+    }
+  }
+  const context = await loadBoundaryReviewContext(projectRoot);
+  await synchronizeBoundaryLibrary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+  });
+  const deleted = await deleteSavedBoundary({
+    projectRoot,
+    draft: context.draft,
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+    name,
+  });
+  const payload = {
+    ok: true,
+    deleted: name,
+    selected_boundary: deleted.selected_name,
+    authority_activated: false,
+    source_database_changed: false,
+  };
+  process.stdout.write(args.includes("--json")
+    ? `${JSON.stringify(payload, null, 2)}\n`
+    : [
+      `Deleted saved disabled boundary "${name}".`,
+      `Selected boundary: ${deleted.selected_name}`,
+      "Active reviewed boundaries were unchanged.",
+      "Source database changed: no",
+      "",
+    ].join("\n"));
+  return 0;
+}
 
 
 export async function boundaryReviewCommand(
@@ -860,7 +984,8 @@ async function interactiveBoundaryReviewLoop(input: {
           Number(left.status !== "draft_read") - Number(right.status !== "draft_read")
           || right.risk_count - left.risk_count
           || left.resource_id.localeCompare(right.resource_id));
-      if (!startingResources.some((resource) => resource.status === "draft_read")) {
+      if (!startingResources.some((resource) =>
+        resource.status === "draft_read" || resource.inline_resolution_available === true)) {
         process.stdout.write([
           "Boundary was not created because no generated table has proven identity and tenant scope.",
           "Resolve a blocked table in the detailed review before creating another boundary.",
@@ -876,6 +1001,25 @@ async function interactiveBoundaryReviewLoop(input: {
       if (!startingSelection || !("resource_id" in startingSelection)) {
         process.stdout.write("New boundary cancelled. Nothing was saved or activated.\n");
         continue;
+      }
+      let startingView = await inspectBoundaryResourceReview(
+        input.projectRoot,
+        startingSelection.resource_id,
+      );
+      if (!startingView.generated_candidate) {
+        const resolved = await resolveBlockedBoundaryResource({
+          projectRoot: input.projectRoot,
+          view: startingView,
+          schemaInspector: input.schemaInspector,
+          session: input.session,
+          include: false,
+        });
+        if (resolved === "back" || !resolved) {
+          process.stdout.write("New boundary cancelled. Nothing was saved or activated.\n");
+          continue;
+        }
+        startingView = resolved;
+        context = await loadBoundaryReviewContext(input.projectRoot);
       }
       let progress;
       try {
@@ -905,7 +1049,7 @@ async function interactiveBoundaryReviewLoop(input: {
         "",
       ].join("\n"));
       startAtBoundaryList = false;
-      const startingView = await inspectBoundaryResourceReview(
+      startingView = await inspectBoundaryResourceReview(
         input.projectRoot,
         startingSelection.resource_id,
       );
@@ -1144,9 +1288,22 @@ async function interactiveBoundaryResourceAddition(input: {
     });
   }
   if (!input.view.generated_candidate) {
-    throw new Error(
-      `${input.view.resource_id} cannot be added because record identity or trusted scope is unresolved.`,
-    );
+    const resolved = await resolveBlockedBoundaryResource({
+      projectRoot: input.projectRoot,
+      view: input.view,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      include: true,
+    });
+    if (!resolved || resolved === "back") return "back";
+    return interactiveBoundaryResourceReview({
+      projectRoot: input.projectRoot,
+      resourceId: input.view.resource_id,
+      view: resolved,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      focusedAccess: input.focusedAccess,
+    });
   }
   const actor = localInteractiveActor();
   const preview = await prepareBoundaryResourceReviewMutation(
@@ -1175,6 +1332,59 @@ async function interactiveBoundaryResourceAddition(input: {
     session: input.session,
     focusedAccess: input.focusedAccess,
   });
+}
+
+async function resolveBlockedBoundaryResource(input: {
+  projectRoot: string;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  include: boolean;
+}): Promise<BoundaryResourceReviewView | "back" | undefined> {
+  if (!input.session.resolveBlockedResource) {
+    process.stdout.write([
+      `${input.view.resource_id} still needs a reviewed record ID and tenant-isolation column.`,
+      `Run ${cliCommandName()} boundary review in a terminal to choose from database-inspected candidates.`,
+      "Nothing was saved or activated.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
+  const resolution = await input.session.resolveBlockedResource(input.view);
+  if (!resolution || resolution === "back") return resolution;
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      {
+        resource_id: input.view.resource_id,
+        ...(input.include ? { include: true } : {}),
+        row_identity: resolution.row_identity,
+        tenant_key: resolution.tenant_key,
+        actor: localInteractiveActor(),
+        reason: "Selected database-inspected identity and tenant isolation in local boundary review.",
+      },
+      input.schemaInspector,
+    );
+    const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    process.stdout.write([
+      `Saved structural review for ${input.view.resource_id} in disabled boundary revision ${committed.review_revision}.`,
+      `Record ID: ${resolution.row_identity}`,
+      `Tenant isolation: ${resolution.tenant_key} (trusted value stays outside model arguments)`,
+      "Agent authority activated: no",
+      "Review column access next.",
+      "",
+    ].join("\n"));
+    return inspectBoundaryResourceReview(input.projectRoot, input.view.resource_id);
+  } catch (error) {
+    process.stdout.write([
+      `This table was not added: ${redactCliErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      )}`,
+      "You are still in boundary review. Nothing was saved or activated.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
 }
 
 async function confirmAndActivateFocusedBoundary(input: {
@@ -1318,7 +1528,7 @@ function formatFocusedBoundaryActivationReview(
   color = false,
 ): string {
   const theme = terminalTheme(color);
-  const rows = bundle.candidate.pack.resources.map((resource) => {
+  const accessRows = bundle.candidate.pack.resources.flatMap((resource, index) => {
     const modelFields = resource.selectable_fields.filter(
       (field) => !(resource.model_withheld_fields ?? []).includes(field),
     );
@@ -1326,11 +1536,12 @@ function formatFocusedBoundaryActivationReview(
       (relationship) => `${relationship.target_resource} (${relationship.cardinality.replaceAll("_", "-")})`,
     );
     return [
-      resource.id,
-      fieldList(modelFields),
-      fieldList(resource.model_withheld_fields ?? []),
-      fieldList(resource.kept_out_fields),
-      relationships.length ? relationships.join(", ") : "None",
+      ...(index === 0 ? [] : [["", ""]]),
+      ["Table", resource.id],
+      ["Model + Runner", fieldList(modelFields)],
+      ["Runner only", fieldList(resource.model_withheld_fields ?? [])],
+      ["Kept out", fieldList(resource.kept_out_fields)],
+      ["Reviewed links", relationships.length ? relationships.join(", ") : "None"],
     ];
   });
   const tenantKeys = [...new Set(bundle.candidate.pack.resources.map((resource) => resource.tenant_key))];
@@ -1347,9 +1558,9 @@ function formatFocusedBoundaryActivationReview(
     ? `Required for ${principalScopes.join(", ")} via ${bundle.candidate.trusted_context.principal_env}`
     : "Not required for this boundary";
   const accessTable = formatTextTable(
-    ["TABLE", "MODEL + RUNNER", "RUNNER ONLY", "KEPT OUT", "REVIEWED LINKS"],
-    rows,
-    [24, 28, 24, 28, 28],
+    ["REVIEWED ACCESS", "VALUE"],
+    accessRows,
+    [20, 76],
   );
   const limitsTable = formatTextTable(
     ["LIMIT", "REVIEWED VALUE"],
@@ -1471,16 +1682,16 @@ async function interactiveBoundaryRename(input: {
     process.stdout.write("Boundary name change discarded. Nothing was saved or activated.\n");
     return 0;
   }
-  const progress = createBoundaryReviewProgress({
+  const progress = await renameSavedBoundary({
+    projectRoot: input.projectRoot,
     draft: context.draft,
-    candidate: reviewed.candidate,
-    confirmedDecisions: context.progress?.confirmed_decisions ?? [],
-    ...(context.progress ? { previous: context.progress } : {}),
+    currentCandidate: context.candidate,
+    ...(context.progress ? { currentProgress: context.progress } : {}),
+    name: currentName,
+    newName: nextName,
     actor,
     reason,
-    revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
   process.stdout.write([
     `Saved boundary name "${nextName}" in review revision ${progress.revision}.`,
     `Next boundary contains ${progress.candidate.pack.resources.length} ` +
@@ -1725,6 +1936,17 @@ async function interactiveBoundaryResourceReview(input: {
   session: BoundaryReviewInteractiveSession;
   focusedAccess?: boolean;
 }): Promise<number | "back" | "review"> {
+  if (!input.view.candidate && !input.view.generated_candidate) {
+    const resolved = await resolveBlockedBoundaryResource({
+      projectRoot: input.projectRoot,
+      view: input.view,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      include: true,
+    });
+    if (!resolved || resolved === "back") return "back";
+    return interactiveBoundaryResourceReview({ ...input, view: resolved });
+  }
   const selected = await input.session.editFieldTiers(input.view, {
     focusedAccess: input.focusedAccess === true,
   });

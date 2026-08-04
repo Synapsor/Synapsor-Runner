@@ -50,6 +50,49 @@ describe("friendly Scoped Explore CLI", () => {
       ],
     });
   });
+
+  it("builds a friendly bounded two-period comparison without plan JSON", () => {
+    expect(buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      groupBy: ["outcome"],
+      timeBucket: "checked_in_at:week",
+      compareField: "checked_in_at",
+      period: "2026-06-01T00:00:00Z..2026-06-08T00:00:00Z",
+      versusPeriod: "2026-06-08T00:00:00Z..2026-06-15T00:00:00Z",
+      comparisonChange: "absolute",
+    })).toMatchObject({
+      comparison: {
+        field: "checked_in_at",
+        ranges: [
+          { start: "2026-06-01T00:00:00Z", end: "2026-06-08T00:00:00Z" },
+          { start: "2026-06-08T00:00:00Z", end: "2026-06-15T00:00:00Z" },
+        ],
+      },
+      order_by: {
+        kind: "comparison_change",
+        index: 0,
+        change: "absolute",
+        direction: "desc",
+      },
+    });
+  });
+
+  it("requires complete and ordered comparison periods", () => {
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      timeBucket: "checked_in_at:week",
+      compareField: "checked_in_at",
+      period: "2026-06-01T00:00:00Z..2026-06-08T00:00:00Z",
+    })).toThrow(/requires --compare.*--period.*--vs-period/);
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      timeBucket: "checked_in_at:week",
+      compareField: "checked_in_at",
+      period: "2026-06-08T00:00:00Z..2026-06-01T00:00:00Z",
+      versusPeriod: "2026-06-08T00:00:00Z..2026-06-15T00:00:00Z",
+    })).toThrow(/requires start before end/);
+  });
 });
 
 function boundary(): ActivatedExplorationBoundary {

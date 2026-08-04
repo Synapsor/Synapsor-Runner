@@ -626,6 +626,59 @@ describe("boundary review terminal picker", () => {
     await expect(edited).resolves.toBe("back");
   });
 
+  it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.blockers = ["trusted tenant scope is unresolved"];
+    view.row_identity = {
+      ...view.row_identity,
+      selected: "outcome",
+      candidates: ["outcome"],
+      alternatives_considered: [{
+        value: "outcome",
+        confidence: "high",
+        evidence: ["database primary key"],
+        selected: true,
+      }],
+    };
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: ["tenant_id", "workspace_id"],
+      alternatives_considered: [
+        {
+          value: "tenant_id",
+          confidence: "low",
+          evidence: ["column name matches a tenant convention"],
+          selected: false,
+        },
+        {
+          value: "workspace_id",
+          confidence: "low",
+          evidence: ["column name matches a tenant convention"],
+          selected: false,
+        },
+      ],
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("RESOLVE TABLE ACCESS - public.check_ins");
+    expect(first).toContain("Record ID");
+    expect(first).toContain("Tenant isolation");
+    expect(first).toContain("These choices stay outside model arguments");
+    await send(input, "\u001b[C");
+    await send(input, "\r");
+    await expect(resolution).resolves.toEqual({
+      row_identity: "outcome",
+      tenant_key: "workspace_id",
+    });
+  });
+
   it("sanitizes inspected names before rendering the structural map", () => {
     const view = reviewView();
     view.resource_id = "public.check_ins\u001b[2J";

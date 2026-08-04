@@ -243,6 +243,12 @@ export const scopedExploreDescribeOutputSchema = z.object({
     aggregate_measures: z.array(z.string()),
     count_distinct_fields: z.array(z.string()),
     time_bucket_fields: z.record(z.array(z.string())),
+    time_coverage: z.record(z.object({
+      status: z.enum(["available", "empty", "withheld_below_minimum_cohort", "unavailable"]),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+      reporting_timezone: z.enum(["UTC", "database_session"]).optional(),
+    }).strict()),
     field_types: z.record(z.string()),
     field_enums: z.record(z.array(jsonScalarSchema)),
     kept_out_field_count: z.number().int().nonnegative(),

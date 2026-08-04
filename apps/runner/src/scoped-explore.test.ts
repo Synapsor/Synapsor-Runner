@@ -23,6 +23,7 @@ import {
   projectScopedExploreResultForModel,
   ScopedExploreError,
   validateExplorePlan,
+  type CompiledExploreQuery,
   type ScopedExploreExecutor,
 } from "./scoped-explore.js";
 import { createScopedExploreMcpServer } from "./authoring-mcp.js";
@@ -498,7 +499,7 @@ describe("Scoped Explore", () => {
       inspectDatabaseFn: async () => fixture.inspection,
       executor: fixedExecutor([]),
     });
-    const description = runtime.describe({ resource: "public.subscriptions" });
+    const description = await runtime.describe({ resource: "public.subscriptions" });
     expect(description).toMatchObject({
       resources: [{
         minimum_cohort_size: 1,
@@ -536,6 +537,107 @@ describe("Scoped Explore", () => {
     } finally {
       await client.close();
       await server.close();
+      await runtime.close();
+    }
+  });
+
+  it("describes cohort-safe date coverage for reviewed time fields without exposing source rows", async () => {
+    const fixture = await activatedFixture();
+    const queries: CompiledExploreQuery[] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries: batch }) => {
+          queries.push(...structuredClone(batch));
+          return batch.map(() => [{
+            __coverage_start: "2026-06-01T03:00:00.000Z",
+            __coverage_end: "2026-06-27T21:00:00.000Z",
+            __coverage_cohort: 30,
+          }]);
+        },
+        close: async () => undefined,
+      },
+    });
+    try {
+      const described = await runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{ time_coverage: Record<string, unknown> }>;
+      };
+      expect(described.resources[0]?.time_coverage).toMatchObject({
+        churned_at: {
+          status: "available",
+          start_date: "2026-06-01",
+          end_date: "2026-06-27",
+          reporting_timezone: "UTC",
+        },
+      });
+      expect(queries).toHaveLength(1);
+      expect(queries[0]?.sql).toMatch(/SELECT MIN\(.+churned_at.+MAX\(.+churned_at.+COUNT\(.+churned_at/is);
+      expect(queries[0]?.sql).not.toContain("tenant-acme");
+      expect(JSON.stringify(described)).not.toContain("tenant-acme");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("keeps startup metadata reads row-free when time coverage is deferred", async () => {
+    const fixture = await activatedFixture();
+    let databaseExecutions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => {
+          databaseExecutions += 1;
+          return [];
+        },
+        executeBatch: async () => {
+          databaseExecutions += 1;
+          return [];
+        },
+        close: async () => undefined,
+      },
+    });
+    try {
+      const described = await runtime.describe({
+        resource: "public.subscriptions",
+        include_time_coverage: false,
+      }) as { resources: Array<{ time_coverage: Record<string, unknown> }> };
+      expect(described.resources[0]?.time_coverage).toEqual({});
+      expect(databaseExecutions).toBe(0);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("withholds reviewed time coverage when the field cohort is below its minimum", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{
+        __coverage_start: "2026-06-01T00:00:00Z",
+        __coverage_end: "2026-06-02T00:00:00Z",
+        __coverage_cohort: 2,
+      }]),
+    });
+    try {
+      const described = await runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{ time_coverage: Record<string, unknown> }>;
+      };
+      expect(described.resources[0]?.time_coverage).toEqual({
+        churned_at: { status: "withheld_below_minimum_cohort" },
+      });
+      expect(JSON.stringify(described)).not.toContain("2026-06-01");
+      expect(JSON.stringify(described)).not.toContain("2026-06-02");
+    } finally {
       await runtime.close();
     }
   });
@@ -667,6 +769,15 @@ describe("Scoped Explore", () => {
       dimensions: [{ field: "billing_token" }],
       top_n: 10,
     }, boundary)).toThrow(/not reviewed for group/i);
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count_distinct", field: "region" }],
+      top_n: 1,
+    }, boundary)).toThrow(
+      /boundary review resource public\.subscriptions --count-distinct-fields region/,
+    );
 
     const plan = validateExplorePlan({
       kind: "aggregate",
@@ -1015,7 +1126,7 @@ describe("Scoped Explore", () => {
       inspectDatabaseFn: async () => fixture.inspection,
     });
     try {
-      const description = runtime.describe({ resource: "public.subscriptions" }) as {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as {
         resources: Array<{
           relationships: Array<Record<string, any>>;
           suggested_questions: Array<Record<string, any>>;
@@ -1121,7 +1232,7 @@ describe("Scoped Explore", () => {
       inspectDatabaseFn: async () => fixture.inspection,
     });
     try {
-      const description = runtime.describe({ resource: "public.subscriptions" }) as {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as {
         resources: Array<{
           relationships: Array<Record<string, unknown>>;
           suggested_questions: Array<Record<string, unknown>>;
@@ -2084,12 +2195,18 @@ describe("Scoped Explore", () => {
   it("treats missing, unknown, production, stale-compiler, and HTTP authoring posture as forbidden", async () => {
     const missingRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-explore-missing-"));
     temporaryRoots.push(missingRoot);
-    await expect(prepareScopedExplore({
+    const missingError = await prepareScopedExplore({
       projectRoot: missingRoot,
       transport: "stdio",
       env: {},
       inspectDatabaseFn: async () => churnInspection(),
-    })).rejects.toMatchObject({ code: "EXPLORE_DISABLED" });
+    }).catch((error: unknown) => error);
+    expect(missingError).toMatchObject({
+      code: "EXPLORE_DISABLED",
+      message: "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.",
+    });
+    expect(String(missingError)).not.toContain(missingRoot);
+    expect(String(missingError)).not.toContain("ENOENT");
 
     for (const transport of ["streamable_http", "remote_http"] as const) {
       const fixture = await activatedFixture();

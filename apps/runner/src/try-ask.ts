@@ -44,6 +44,7 @@ import {
 } from "./protect-query.js";
 import {
   bindProtectedPlansToAnswer,
+  NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
 } from "./scoped-explore.js";
 import { readHiddenSecret } from "./secret-input.js";
 import { terminalTheme } from "./boundary-cli-picker.js";
@@ -120,7 +121,7 @@ export async function tryAsk(
     );
   }
   const provider = providerValue(optionalArg(args, "--provider"));
-  const model = requiredOption(args, "--model");
+  const model = resolveAskModel(provider, optionalArg(args, "--model"));
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const guidedState = await readGuidedOnboardingState(projectRoot);
   const boundaryArtifactsRoot = path.resolve(
@@ -173,7 +174,7 @@ export async function tryAsk(
     if (profile !== "development" && profile !== "staging") {
       throw new AskError(
         "ASK_AUTHORING_UNAVAILABLE",
-        "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.",
+        NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
         409,
       );
     }
@@ -755,10 +756,12 @@ function providerValue(value: string | undefined): AskProvider {
   throw new Error("try ask requires --provider openai|anthropic|openai-compatible.");
 }
 
-function requiredOption(args: string[], name: string): string {
-  const value = optionalArg(args, name)?.trim();
-  if (!value) throw new Error(`try ask requires ${name} <value>.`);
-  return value;
+export function resolveAskModel(provider: AskProvider, value: string | undefined): string {
+  const requested = value?.trim();
+  if (requested) return requested;
+  if (provider === "openai") return "gpt-5-mini";
+  if (provider === "anthropic") return "claude-sonnet-4-20250514";
+  throw new Error("try ask requires --model <value> for an OpenAI-compatible endpoint.");
 }
 
 function providerLabel(provider: AskProvider): string {

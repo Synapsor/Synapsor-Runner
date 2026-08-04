@@ -546,6 +546,33 @@ describe("runner cli", () => {
     expect(diagnostics.join("")).not.toContain("syn_do_not_echo_this");
   });
 
+  it("explains that Runner configs are strict JSON when a comment is pasted", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-json-comment-"));
+    const configPath = path.join(tempDir, "commented.runner.json");
+    await fs.writeFile(configPath, [
+      "{",
+      "  // Human note",
+      '  "version": 1,',
+      '  "mode": "read_only",',
+      '  "capabilities": []',
+      "}",
+      "",
+    ].join("\n"));
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await expect(runCliProcess([
+      "config", "validate", "--config", configPath, "--json",
+    ])).resolves.toBe(1);
+
+    const payload = JSON.parse(output.join(""));
+    expect(payload.error.message).toContain("JSON does not support // or /* */ comments");
+    expect(payload.error.message).toContain("State preserved");
+  });
+
   it("does not print raw operational JSON before a normal human CLI error", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-human-error-"));
     const configPath = path.join(tempDir, "broken.runner.json");
@@ -573,6 +600,41 @@ describe("runner cli", () => {
     expect(diagnostics.join("")).toContain("Runner config is not valid JSON");
     expect(diagnostics.join("")).not.toContain('"event":"cli_rejected"');
     expect(diagnostics.join("")).not.toMatch(/^\s*\{/);
+  });
+
+  it("keeps inactive-boundary paths out of every analytics try entry point", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-no-boundary-"));
+    const output: string[] = [];
+    const diagnostics: string[] = [];
+    vi.stubEnv("OPENAI_API_KEY", "test-only-key");
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      diagnostics.push(String(chunk));
+      return true;
+    });
+
+    const commands = [
+      ["try", "explore", "--project-root", projectRoot],
+      ["try", "ask", "How many records?", "--project-root", projectRoot, "--provider", "openai"],
+      ["try", "protect", "--project-root", projectRoot, "--last", "--name", "analytics.test_analysis"],
+      ["try", "protect", "--project-root", projectRoot, "--from", "A1", "--name", "analytics.test_analysis"],
+    ];
+
+    for (const command of commands) {
+      output.length = 0;
+      diagnostics.length = 0;
+      await expect(runCliProcess(command)).resolves.toBe(1);
+      const rendered = `${output.join("")}\n${diagnostics.join("")}`;
+      expect(rendered).toContain(
+        "No reviewed analytics access is active. Run `synapsor-runner start` and complete the local data-access review.",
+      );
+      expect(rendered).not.toContain(projectRoot);
+      expect(rendered).not.toContain("ENOENT");
+      expect(rendered).not.toContain("exploration-boundary.active.json");
+    }
   });
 
   it("documents invalid config fields and the exact validation retry in JSON mode", async () => {
@@ -6874,6 +6936,9 @@ END
       storage: { sqlite_path: storePath },
       sources: { src_pg_acme: { engine: "postgres", read_url_env: "READ_URL", write_url_env: "WRITE_URL" } },
       trusted_context: { provider: "static_dev", values: { tenant_id: "acme", principal: "local_operator" } },
+      proposal_freshness: {
+        "billing.adjust_credit": { approval: "required", dependencies: [] },
+      },
       capabilities: [{
         name: "billing.adjust_credit",
         kind: "proposal",
@@ -6917,6 +6982,10 @@ END
     expect(compensation?.change_set.principal).toEqual(forward.principal);
     expect(compensation?.change_set.approval).toMatchObject({ required_role: "support_lead", required_approvals: 2 });
     expect(reopened.receipts(compensation!.proposal_id)).toEqual([]);
+    reopened.approveProposal(compensation!.proposal_id, { approver: "reviewer_a", proposal_hash: compensation!.proposal_hash, proposal_version: 1 });
+    reopened.approveProposal(compensation!.proposal_id, { approver: "reviewer_b", proposal_hash: compensation!.proposal_hash, proposal_version: 1 });
+    const compensationJob = parseWritebackJob(reopened.createWritebackJobFromProposal(compensation!.proposal_id));
+    await expect(verifyLocalWritebackAuthority(compensationJob, configPath)).resolves.toBeUndefined();
     const compensationReplay = reopened.replay(compensation!.proposal_id);
     expect(compensationReplay.evidence).toHaveLength(1);
     expect(compensationReplay.evidence[0]?.payload).toMatchObject({

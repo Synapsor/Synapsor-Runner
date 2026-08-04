@@ -192,11 +192,13 @@ try {
     input: "",
   });
   assert.notEqual(beforeActivation.status, 0, "packed Scoped Explore started before boundary activation");
+  const beforeActivationOutput = `${beforeActivation.stdout}\n${beforeActivation.stderr}`;
   assert.match(
-    `${beforeActivation.stdout}\n${beforeActivation.stderr}`,
-    /not active|active exploration boundary|exploration-boundary\.active/i,
+    beforeActivationOutput,
+    /No reviewed analytics access is active\.[\s\S]*synapsor-runner start/i,
     "pre-activation authoring refusal was not actionable",
   );
+  assert.doesNotMatch(beforeActivationOutput, /ENOENT|\.synapsor\//i, "pre-activation refusal leaked an internal path");
 
   const activationUi = await startWorkbench({ cli, boundaryRoot, projectRoot, env: runtimeEnv });
   let boundaryDigest;
@@ -815,7 +817,9 @@ try {
     input: "",
   });
   assert.notEqual(disabledAuthoring.status, 0, "Scoped Explore restarted after Protect disabled it");
-  assert.match(`${disabledAuthoring.stdout}\n${disabledAuthoring.stderr}`, /EXPLORE_DISABLED|disabled/i);
+  const disabledAuthoringOutput = `${disabledAuthoring.stdout}\n${disabledAuthoring.stderr}`;
+  assert.match(disabledAuthoringOutput, /No reviewed analytics access is active\.[\s\S]*synapsor-runner start/i);
+  assert.doesNotMatch(disabledAuthoringOutput, /ENOENT|\.synapsor\//i, "disabled authoring leaked an internal path");
 
   const configPath = path.join(projectRoot, "synapsor.runner.json");
   assert.match(await fsp.readFile(configPath, "utf8"), /"mode": "postgres_rls"/);

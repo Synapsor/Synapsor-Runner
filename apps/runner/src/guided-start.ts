@@ -21,7 +21,9 @@ import {
 } from "./auto-boundary.js";
 import {
   boundaryActivateCommand,
+  boundaryDeleteCommand,
   boundaryDisableCommand,
+  boundaryRenameCommand,
   boundaryReviewCommand,
   loadBoundaryReviewContext,
   preferredDetectedDatabaseEnv,
@@ -578,6 +580,8 @@ export async function boundaryCommand(
   if (subcommand === "activate") {
     return boundaryActivateCommand(rest, schemaInspector, undefined, activationHandoff);
   }
+  if (subcommand === "rename") return boundaryRenameCommand(rest);
+  if (subcommand === "delete") return boundaryDeleteCommand(rest);
   if (subcommand === "disable") return boundaryDisableCommand(rest);
   if (subcommand === "draft") {
     assertKnownOptions(rest, new Set(["--from-env", "--engine", "--schema", "--project-root", "--force", "--json"]), "boundary draft");

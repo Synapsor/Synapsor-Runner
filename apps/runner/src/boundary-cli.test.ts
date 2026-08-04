@@ -779,6 +779,51 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it("preserves a hand-authored Runner config while drafting a boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-preserve-config-"));
+    const configPath = path.join(root, "synapsor.runner.json");
+    const config = `${JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./custom-ledger.db" },
+      sources: {
+        warehouse_reader: {
+          engine: "postgres",
+          read_url_env: "WAREHOUSE_READ_URL",
+          read_only: true,
+          statement_timeout_ms: 2500,
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: { tenant_id_env: "WAREHOUSE_TENANT" },
+        tenant_binding: "tenant_id",
+      },
+      capabilities: [],
+      strict: true,
+      result_format: 2,
+    }, null, 2)}\n`;
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await fs.writeFile(configPath, config, "utf8");
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+      ], async () => boundaryInspection())).resolves.toBe(0);
+
+      await expect(fs.readFile(configPath, "utf8")).resolves.toBe(config);
+      expect(output).toContain("Generated disabled Auto Boundary draft");
+      expect(output).not.toContain("Prepared the local Runner config");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("renames the one disabled multi-table boundary without activating authority", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-name-"));
     const inspection = boundaryInspection();
@@ -1306,7 +1351,7 @@ describe("boundary operator-plane CLI", () => {
       ]);
       expect(output).toContain("Draft updated: public.service_visits");
       expect(output).toContain("REVIEW EXACT BOUNDARY");
-      expect(output).toContain("RUNNER ONLY");
+      expect(output).toContain("Runner only");
       expect(output).toContain("Principal scope");
       expect(output).toContain("Not required for this boundary");
       expect(output).toContain("MODEL CONTINUATION TEST");
@@ -1598,6 +1643,78 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("resolves a blocked table inline and returns to review instead of terminating the CLI", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-inline-scope-"));
+    const inspection = batchBoundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources).toEqual([]);
+    const choices = [
+      { resource_id: "public.service_visits", action: "add" as const },
+      undefined,
+    ];
+    let resolverCalls = 0;
+    let pickerCalls = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => {
+        pickerCalls += 1;
+        return choices.shift();
+      },
+      resolveBlockedResource: async (view) => {
+        resolverCalls += 1;
+        expect(view.generated_candidate).toBeNull();
+        expect(view.row_identity.candidates).toContain("id");
+        expect(view.tenant_key.candidates).toContain("tenant_id");
+        return { row_identity: "id", tenant_key: "tenant_id" };
+      },
+      editFieldTiers: async (view) => {
+        expect(view.generated_candidate?.id).toBe("public.service_visits");
+        return "back";
+      },
+      promptText: async () => {
+        throw new Error("Inline scope resolution must not require a signed-key prompt.");
+      },
+      confirm: async () => {
+        throw new Error("Inline scope resolution must not activate authority.");
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(resolverCalls).toBe(1);
+      expect(pickerCalls).toBe(2);
+      expect(output).toContain("Saved structural review for public.service_visits");
+      expect(output).toContain("Record ID: id");
+      expect(output).toContain("Tenant isolation: tenant_id");
+      expect(output).toContain("Agent authority activated: no");
+      expect(output).toContain("Boundary review paused");
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews.find((resource) => resource.resource_id === "public.service_visits"))
+        .toMatchObject({ included: true, status: "draft_read" });
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
 
   it("adds a table before column review and stages removal without exiting the access editor", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-add-remove-loop-"));
@@ -2019,6 +2136,73 @@ describe("boundary operator-plane CLI", () => {
       expect(restored.confirmed_decisions).not.toEqual(
         restored.candidate.unresolved_decisions,
       );
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("renames and deletes disabled saved boundaries through the CLI front door", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-library-cli-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const context = await loadBoundaryReviewContext(root);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+      });
+      await createSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        name: "support_analytics",
+        resourceId: "public.service_visits",
+        actor: "alice",
+      });
+
+      await expect(boundaryCommand([
+        "rename", "support_analytics",
+        "--to", "support_team",
+        "--actor", "alice",
+        "--reason", "Use the team-facing boundary name.",
+        "--project-root", root,
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      let library = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-library.json"),
+        "utf8",
+      ));
+      expect(library.selected_name).toBe("support_team");
+      expect(library.boundaries).toHaveProperty("support_team");
+      expect(library.boundaries).not.toHaveProperty("support_analytics");
+
+      await expect(boundaryCommand([
+        "delete", "support_team",
+        "--yes",
+        "--project-root", root,
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      library = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-library.json"),
+        "utf8",
+      ));
+      expect(library.boundaries).not.toHaveProperty("support_team");
+      expect(Object.keys(library.boundaries)).toHaveLength(1);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {

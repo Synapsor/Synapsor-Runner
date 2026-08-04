@@ -36,10 +36,13 @@ export async function readReviewedAskAccessSummary(
   const resources: ReviewedAskResourceSummary[] = [];
   let cursor: number | undefined;
   for (let page = 0; page < 100; page += 1) {
-    const result = await gateway.callTool("app.describe_data", {
+    const args = {
       limit: 10,
       ...(cursor === undefined ? {} : { cursor }),
-    });
+    };
+    const result = gateway.describeOperatorMetadata
+      ? await gateway.describeOperatorMetadata(args)
+      : await gateway.callTool("app.describe_data", args);
     if (!result.ok) break;
     const described = Array.isArray(result.value.resources)
       ? result.value.resources.filter(isRecord)

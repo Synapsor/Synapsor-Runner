@@ -16,6 +16,40 @@ afterEach(async () => {
 });
 
 describe("Ask access summaries", () => {
+  it("uses the operator-only metadata catalog for the startup summary", async () => {
+    let publicToolCalls = 0;
+    let operatorCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => [],
+      callTool: async () => {
+        publicToolCalls += 1;
+        throw new Error("startup must not call the model-facing catalog");
+      },
+      describeOperatorMetadata: async () => {
+        operatorCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [],
+            next_cursor: null,
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+
+    await expect(readReviewedAskAccessSummary(gateway)).resolves.toEqual({
+      table_count: 0,
+      resources: [],
+      suggestions: [],
+    });
+    expect(operatorCalls).toBe(1);
+    expect(publicToolCalls).toBe(0);
+  });
+
   it("projects only executable active suggestions into the CLI summary", async () => {
     const gateway: AskToolGateway = {
       mode: "authoring",

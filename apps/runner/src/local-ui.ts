@@ -256,6 +256,7 @@ export type WorkbenchProposalDecision = (input: {
   actor?: string;
   reason?: string;
   identityToken?: string;
+  freshnessProofDigest?: string;
 }) => Promise<{ code: number }>;
 
 export type WorkbenchAttentionDecision = (input: {
@@ -2229,7 +2230,7 @@ async function handleRequest(input: {
         transport: "loopback_workbench",
         env: { ...process.env, ...bootstrapState.trustedContext },
       });
-      const description = await describeWorkbenchExploreCatalog(runtime);
+      const description = await describeWorkbenchExploreCatalog(runtime, false);
       const runtimeBoundaries = isBoundarySetRuntime(runtime)
         ? runtime.boundaries
         : [runtime.boundary];
@@ -3771,11 +3772,19 @@ async function handleRequest(input: {
       }
       try {
         const identityToken = workbenchIdentityToken(body.identity_token);
+        const freshnessProofDigest = await storeAccess("read", "proposal-approve-freshness-proof", (store) => {
+          const proposal = requireProposal(store, proposalId);
+          const proof = store.latestFreshnessProof(proposalId);
+          if (!proof || proof.result !== "fresh" || Date.parse(proof.valid_until) < Date.now()) return undefined;
+          if (proof.proposal_hash !== proposal.proposal_hash || proof.proposal_version !== proposal.proposal_version) return undefined;
+          return proof.proof_digest;
+        });
         const result = await proposalApprove({
           proposalId,
           actor: stringValueOrUndefined(body.actor),
           reason: stringValueOrUndefined(body.reason),
           identityToken,
+          freshnessProofDigest,
         });
         if (result.code !== 0) {
           const failure = workbenchApprovalExitFailure(result.code);
@@ -5731,6 +5740,7 @@ function isBoundarySetRuntime(
 
 async function describeWorkbenchExploreCatalog(
   runtime: WorkbenchScopedExploreRuntime,
+  includeTimeCoverage = true,
 ): Promise<Record<string, unknown>> {
   const resources: Record<string, unknown>[] = [];
   let first: Record<string, unknown> | undefined;
@@ -5739,6 +5749,7 @@ async function describeWorkbenchExploreCatalog(
     const described = await runtime.describe({
       limit: 10,
       ...(cursor === undefined ? {} : { cursor }),
+      include_time_coverage: includeTimeCoverage,
     });
     first ??= described;
     if (Array.isArray(described.resources)) {
@@ -6287,6 +6298,7 @@ const text = (tag, value, className = "") => { const node = document.createEleme
 function el(tag, opts, kids) {
   const node = document.createElement(tag);
   if (opts) {
+    if (opts.id) node.id = opts.id;
     if (opts.class) node.className = opts.class;
     if (opts.text != null) node.textContent = String(opts.text);
     if (opts.onclick) node.onclick = opts.onclick;
@@ -7411,7 +7423,7 @@ async function loadDetail(proposalId, knownPayload) {
       for (const button of decision.querySelectorAll("button")) button.disabled = disabled;
     };
     const check = freshness.required
-      ? el("button", { class: "secondary", text: "Check live freshness", onclick: async () => {
+      ? el("button", { id: "check-live-freshness", class: "secondary", text: "Check live freshness", onclick: async () => {
         setReviewActionsDisabled(true);
         freshnessStatus.textContent = "Checking the current source state...";
         try {
@@ -7455,7 +7467,7 @@ async function loadDetail(proposalId, knownPayload) {
       token.placeholder = "Fresh OIDC bearer token for this approval only";
       token.setAttribute("aria-label", "OIDC bearer token for approval");
       if (operator.provider !== "jwt_oidc") token.classList.add("hidden");
-      const decisionStatus = el("div", { class: "status-line", text: "Type the exact hash-bound confirmation. Approval rechecks live freshness before recording the decision." });
+      const decisionStatus = el("div", { class: "status-line", text: "Type the exact hash-bound confirmation. Approval uses the current unexpired freshness proof and checks again only when needed." });
       const approve = el("button", { text: "Approve outside MCP", onclick: async () => {
         setReviewActionsDisabled(true);
         const identityToken = token.value;

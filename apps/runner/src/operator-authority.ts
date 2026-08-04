@@ -32,5 +32,6 @@ export type TrustedOperatorDecisionOverride = {
 
 export type TrustedOperatorInvocation = {
   decision?: TrustedOperatorDecisionOverride;
+  freshnessProofDigest?: string;
   quiet?: boolean;
 };

@@ -77,6 +77,7 @@ export type AskToolGateway = {
   mode?: "authoring" | "runtime";
   listTools(): Promise<AskToolDefinition[]> | AskToolDefinition[];
   callTool(name: string, args: Record<string, unknown>): Promise<AskToolCallResult>;
+  describeOperatorMetadata?(args: Record<string, unknown>): Promise<AskToolCallResult>;
   close(): Promise<void>;
 };
 
@@ -1628,11 +1629,11 @@ function askSystemPrompt(): string {
     "When a valid bounded plan can answer the question and only a date range, group limit, or presentation choice is omitted, use the boundary's conservative defaults and state what was returned instead of asking an unnecessary clarification.",
     "Treat an unqualified week-over-week, month-over-month, or day-over-day trend question as a chronological time-bucketed series over the available reviewed range. Use a two-range comparison only when the user explicitly asks for the latest, current, or two named periods.",
     "For a two-range comparison, send non-overlapping half-open ranges in chronological order: period_1 is the earlier baseline, period_2 is the later period, and Runner computes change as period_2 minus period_1.",
-    "For an unqualified fastest-growing or fastest-declining question, use one bounded comparison of the 28 days ending on the current UTC date against the immediately preceding 28 days. Include the reviewed week time_bucket and exact relationship aliases for the comparison field, dimension, and measure; order by comparison_change with percentage for relative growth or decline and absolute for value change; do not request an all-history dimension-by-week cube.",
+    "For an unqualified fastest-growing or fastest-declining question, use one bounded comparison of the latest 28 reviewed days in app.describe_data time_coverage against the immediately preceding 28 days. Use the current UTC date only when the reviewed coverage actually reaches it. Include the reviewed week time_bucket and exact relationship aliases for the comparison field, dimension, and measure; order by comparison_change with percentage for relative growth or decline and absolute for value change; do not request an all-history dimension-by-week cube.",
     "For a time-series or trend question with no date range, use chronological order and the reviewed maximum group bound so the latest periods are not silently truncated; state the returned range.",
     "In a grouped time series, top_n counts every group-by-time row rather than only distinct group labels; request enough reviewed rows to return at least two visible periods for every group you compare.",
     "Never rank fastest growth or decline from a single returned period or substitute the largest absolute value for growth; if suppression or result bounds leave no comparable pair for a group, state that the returned result cannot rank that group's growth.",
-    "For relative periods such as last week or last month, use both a lower and upper reviewed timestamp filter ending on the current UTC date; never send an open-ended relative range.",
+    "For relative periods such as last week, latest week, or last month, first inspect app.describe_data time_coverage. Anchor the bounded range to its latest reviewed date when the data is historical; use the current UTC date only when coverage reaches it. Never send an open-ended relative range and never invent coverage when its status is unavailable or withheld.",
     "A proposal is not a database mutation. State clearly when a tool created only a proposal.",
     "If a reviewed tool refuses a request, explain the refusal without suggesting a bypass.",
     "After a successful data tool call, give a concise interpretation in at most two sentences.",

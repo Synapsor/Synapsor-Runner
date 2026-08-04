@@ -436,6 +436,8 @@ describe("Auto Boundary compiler", () => {
     const inspection = churnInspection();
     inspection.tables[0]!.columns.push(
       column("payment_method", "text"),
+      column("card_on_file", "text"),
+      column("bank_account_number", "text"),
       column("medical_waiver_notes", "text"),
       column("full_name", "text"),
       column("display_name", "text"),
@@ -443,6 +445,8 @@ describe("Auto Boundary compiler", () => {
     );
     inspection.tables[0]!.suggestions.default_visible_columns.push(
       "payment_method",
+      "card_on_file",
+      "bank_account_number",
       "medical_waiver_notes",
       "full_name",
       "display_name",
@@ -455,7 +459,15 @@ describe("Auto Boundary compiler", () => {
       sourceEnv: "DATABASE_URL",
     });
     const resource = result.exploration_boundary.pack.resources[0]!;
-    const hidden = ["payment_method", "medical_waiver_notes", "full_name", "display_name", "trainer_comments"];
+    const hidden = [
+      "payment_method",
+      "card_on_file",
+      "bank_account_number",
+      "medical_waiver_notes",
+      "full_name",
+      "display_name",
+      "trainer_comments",
+    ];
 
     expect(resource.kept_out_fields).toEqual(expect.arrayContaining(hidden));
     for (const field of hidden) {
@@ -477,6 +489,28 @@ describe("Auto Boundary compiler", () => {
       .toMatchObject({ state: "unresolved_free_text", reason_codes: ["ambiguous_display_name"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "trainer_comments")?.sensitivity.state)
       .toBe("unresolved_free_text");
+  });
+
+  it("suggests distinct counts for non-sensitive entity references but not scope or PII fields", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.push(
+      column("customer_id", "uuid", { immutable: true }),
+      column("customer_email", "text"),
+    );
+    inspection.tables[0]!.suggestions.default_visible_columns.push("customer_id", "customer_email");
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/orders-app"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = result.exploration_boundary.pack.resources[0]!;
+
+    expect(resource.count_distinct_fields).toContain("customer_id");
+    expect(resource.count_distinct_fields).toContain("id");
+    expect(resource.count_distinct_fields).not.toContain("tenant_id");
+    expect(resource.count_distinct_fields).not.toContain("customer_email");
+    expect(resource.kept_out_fields).toContain("customer_email");
   });
 
   it("regenerates disabled DSL, contract, and lock from an explicit field review decision", async () => {

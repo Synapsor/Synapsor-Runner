@@ -66,6 +66,14 @@ the displayed default still takes one gesture. Submitting the first question
 confirms the provider/model/origin egress review. JSON, CI, and headless
 activation remain noninteractive.
 
+If Runner can prove candidate columns but cannot safely choose the table's
+Record ID or Tenant isolation column, Enter opens one inline resolver instead
+of ending the command. Choose only from the database-inspected candidates,
+save them, and continue directly to column review. The equivalent Workbench
+control is **Resolve blocked access**. These choices update only the disabled
+draft; they require no operator key and activate nothing by themselves. A
+table with no source-proven unique Record ID remains blocked.
+
 Inside `Synapsor Analytics`, use `/access` to leave chat cleanly and edit or add
 a boundary in the terminal, or `/access-workbench` for the visual editor. Active
 boundaries remain available while the draft is edited. Additions and removals

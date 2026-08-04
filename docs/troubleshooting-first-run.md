@@ -23,7 +23,7 @@ what state remains, and one next action. Do not delete the project or add
 | Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the URL/network without printing the credential, then rerun `npx -y @synapsor/runner start`. |
 | Read role is writable, owner, superuser, `BYPASSRLS`, or unverifiable | Disabled metadata draft; no source-row Explore | Supply a verifiably SELECT-only non-owner staging role, then rerun the same `start` command. |
 | Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner start --schema public`. |
-| Tenant or principal scope is unresolved | Conservative blocked resource decisions | Open the same Workbench URL and resolve the highlighted scope exception. |
+| Tenant or principal scope is unresolved | Conservative blocked resource decisions | In CLI, select the table and choose its database-inspected Record ID and Tenant isolation values; in Workbench, open **Resolve blocked access**. No signed key is needed for this interactive disabled-draft decision. |
 | Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
 | Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
 | Trusted context environment is missing | Boundary and ledger remain intact; query did not run | Export the named tenant/principal variable locally, then rerun the displayed Try action. |
@@ -137,10 +137,13 @@ Model](workbench-ask.md).
 The same provider path is available without a browser:
 
 ```bash
-synapsor-runner try ask \
-  --provider openai \
-  --model gpt-5-mini
+synapsor-runner try ask --provider openai
 ```
+
+Hosted providers have tested defaults: OpenAI uses `gpt-5-mini` and Anthropic
+uses `claude-sonnet-4-20250514` when `--model` is omitted. Pass `--model` to
+override either default. OpenAI-compatible endpoints require an explicit model
+because Runner cannot infer what a local endpoint serves.
 
 CLI Ask refuses provider keys on the command line. Use the conventional or an
 explicitly named environment variable, or the hidden interactive prompt. While

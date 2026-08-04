@@ -17,6 +17,14 @@ export type BoundaryFieldTierEditResult =
   | "privacy"
   | undefined;
 
+export type BoundaryBlockedResolution =
+  | {
+      row_identity: string;
+      tenant_key: string;
+    }
+  | "back"
+  | undefined;
+
 export type BoundaryResourceSelection =
   | {
       resource_id: string;
@@ -60,6 +68,9 @@ export type BoundaryReviewInteractiveSession = {
     view: BoundaryResourceReviewView,
     options?: { focusedAccess?: boolean },
   ): Promise<BoundaryFieldTierEditResult>;
+  resolveBlockedResource?(
+    view: BoundaryResourceReviewView,
+  ): Promise<BoundaryBlockedResolution>;
   promptText(prompt: string): Promise<string | undefined>;
   confirm(prompt: string, options?: { defaultValue?: boolean }): Promise<boolean | undefined>;
 };
@@ -95,6 +106,7 @@ export function createBoundaryReviewInteractiveSession(
     chooseResource: (resources, overview, options) =>
       chooseResource(resources, overview, options, input, output),
     editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),
+    resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
     promptText: (prompt) => readTerminalTextWithEscape(
       formatTextPromptWithBack(prompt, theme),
       input,
@@ -113,6 +125,110 @@ export function createBoundaryReviewInteractiveSession(
       return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
     },
   };
+}
+
+async function resolveBlockedResource(
+  view: BoundaryResourceReviewView,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<BoundaryBlockedResolution> {
+  const rowCandidates = uniqueCandidates(view.row_identity.selected, view.row_identity.candidates);
+  const tenantCandidates = uniqueCandidates(view.tenant_key.selected, view.tenant_key.candidates);
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  let selectedDecision = view.row_identity.selected ? 1 : 0;
+  let rowIndex = Math.max(0, rowCandidates.indexOf(view.row_identity.selected ?? rowCandidates[0] ?? ""));
+  let tenantIndex = Math.max(0, tenantCandidates.indexOf(view.tenant_key.selected ?? tenantCandidates[0] ?? ""));
+
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      const rowValue = rowCandidates[rowIndex];
+      const tenantValue = tenantCandidates[tenantIndex];
+      const resolvable = Boolean(rowValue && tenantValue);
+      const selectedInference = selectedDecision === 0 ? view.row_identity : view.tenant_key;
+      const selectedValue = selectedDecision === 0 ? rowValue : tenantValue;
+      const evidence = selectedInference.alternatives_considered
+        .find((candidate) => candidate.value === selectedValue)?.evidence[0]
+        ?? selectedInference.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
+      render([
+        theme.title(`RESOLVE TABLE ACCESS - ${safeTerminalText(view.resource_id)}`),
+        "Runner needs one database-backed record ID and one tenant-isolation column.",
+        theme.dim("These choices stay outside model arguments and do not activate access."),
+        "",
+        resolutionRow(
+          theme,
+          selectedDecision === 0,
+          "Record ID",
+          rowValue,
+          rowCandidates.length,
+          view.row_identity.selected === rowValue,
+        ),
+        resolutionRow(
+          theme,
+          selectedDecision === 1,
+          "Tenant isolation",
+          tenantValue,
+          tenantCandidates.length,
+          view.tenant_key.selected === tenantValue,
+        ),
+        "",
+        ...(selectedValue
+          ? [theme.dim(`Evidence: ${safeTerminalText(evidence ?? "inspected database structure")}`)]
+          : [theme.danger(
+            selectedDecision === 0
+              ? "No single-column primary or unique key was proven by the database."
+              : "No tenant-isolation candidate was found in the inspected structure.",
+          )]),
+        ...(resolvable
+          ? [
+              "",
+              `${theme.key("Up/Down")} Choose decision   ${theme.key("Left/Right")} Change value`,
+              `${theme.key("Enter")} Save choices and review columns   ${theme.key("B/Esc")} Back`,
+            ]
+          : [
+              "",
+              theme.warning("This table cannot be added until the missing database structure is available."),
+              `${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+            ]),
+      ]);
+      const key = await nextKey();
+      if (isBackKey(key) || isEscapeKey(key)) return "back";
+      if (isCancel(key)) return undefined;
+      if (key.name === "up" || key.name === "down") {
+        selectedDecision = selectedDecision === 0 ? 1 : 0;
+        continue;
+      }
+      const direction = key.name === "left" ? -1 : key.name === "right" || key.name === "space" ? 1 : 0;
+      if (direction !== 0) {
+        if (selectedDecision === 0 && rowCandidates.length) {
+          rowIndex = (rowIndex + direction + rowCandidates.length) % rowCandidates.length;
+        } else if (selectedDecision === 1 && tenantCandidates.length) {
+          tenantIndex = (tenantIndex + direction + tenantCandidates.length) % tenantCandidates.length;
+        }
+        continue;
+      }
+      if ((key.name === "return" || key.name === "enter") && rowValue && tenantValue) {
+        return { row_identity: rowValue, tenant_key: tenantValue };
+      }
+    }
+  });
+}
+
+function uniqueCandidates(selected: string | undefined, candidates: string[]): string[] {
+  return [...new Set([...(selected ? [selected] : []), ...candidates])];
+}
+
+function resolutionRow(
+  theme: TerminalTheme,
+  selected: boolean,
+  label: string,
+  value: string | undefined,
+  optionCount: number,
+  alreadyReviewed: boolean,
+): string {
+  const line = `${selected ? ">" : " "} ${label.padEnd(18)} ${safeTerminalText(value ?? "not available")}`
+    + (optionCount > 1 ? `  [${optionCount} choices]` : "")
+    + (alreadyReviewed ? "  [reviewed]" : "  [choice required]");
+  return selected ? theme.focus(line) : line;
 }
 
 async function chooseResource(
@@ -149,7 +265,8 @@ async function chooseResource(
         const end = start + visible.length;
         const below = resources.length - end;
         const highlighted = resources[selected]!;
-        const eligible = resources.filter((resource) => resource.status === "draft_read").length;
+        const eligible = resources.filter((resource) =>
+          resource.status === "draft_read" || resource.inline_resolution_available === true).length;
         const unavailable = resources.length - eligible;
         render([
           theme.title(`CHOOSE FIRST TABLE - ${safeTerminalText(startingBoundaryName)}`),
@@ -161,11 +278,15 @@ async function chooseResource(
             const details = resource.status === "draft_read"
               ? `${resource.model_visible_fields} model · ` +
                 `${resource.runner_output_only_fields} Runner-only · ${resource.kept_out_fields} kept out`
-              : `UNAVAILABLE · ${resource.blockers[0] ?? "structural review required"}`;
+              : resource.inline_resolution_available
+                ? `REVIEW REQUIRED · ${resource.blockers[0] ?? "choose trusted structure"}`
+                : `UNAVAILABLE · ${resource.blockers[0] ?? "structural review required"}`;
             const line = `${absolute === selected ? ">" : " "} ${safeTerminalText(resource.resource_id)}  ` +
               `[${safeTerminalText(details)}]`;
             if (absolute === selected) return theme.focus(line);
-            return resource.status === "draft_read" ? line : theme.dim(line);
+            return resource.status === "draft_read" || resource.inline_resolution_available
+              ? line
+              : theme.dim(line);
           }),
           theme.dim(
             `Inspected tables: ${resources.length} total · ${eligible} eligible · ${unavailable} unavailable.`,
@@ -194,7 +315,7 @@ async function chooseResource(
           continue;
         }
         if (key.name === "return" || key.name === "enter") {
-          if (highlighted.status !== "draft_read") {
+          if (highlighted.status !== "draft_read" && !highlighted.inline_resolution_available) {
             startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot start a boundary: ` +
               safeTerminalText(highlighted.blockers[0] ?? "structural review is required first.");
             continue;
