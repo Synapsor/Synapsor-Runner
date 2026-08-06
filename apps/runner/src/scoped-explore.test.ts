@@ -16,6 +16,7 @@ import {
   type ActivatedExplorationBoundary,
 } from "./auto-boundary.js";
 import {
+  assertPreparedExplorePlanAuthority,
   compileExplorePlan,
   createScopedExploreRuntime,
   loadProtectedPlan,
@@ -1457,6 +1458,30 @@ describe("Scoped Explore", () => {
         }
       }
     }
+  });
+
+  it("fails closed when a derived-scope prepared plan is missing authority dependencies", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    delete prepared.lock.authority_dependencies;
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.order_items",
+      measures: [{ function: "sum", field: "quantity" }],
+      top_n: 1,
+    }, prepared.boundary);
+
+    expect(() => assertPreparedExplorePlanAuthority(plan, prepared)).toThrowError(
+      expect.objectContaining({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/derived trusted scope.*does not bind.*No query was executed/is),
+      }),
+    );
   });
 
   it("scopes a derived relationship target independently and preserves MySQL parameter order", async () => {

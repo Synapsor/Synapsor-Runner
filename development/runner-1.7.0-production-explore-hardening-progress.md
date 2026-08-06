@@ -560,5 +560,24 @@ Final verification:
   open, activating the exact boundary, reaching explicit model choice, and not
   mutating the source.
 
-The derived-scope work is ready to commit on
+The derived-scope work was committed as `1478875` on
 `feature/production-scoped-explore-http`. It has not been pushed or published.
+
+## Missing Authority-Dependency Defensive Hardening
+
+- `assertPreparedExplorePlanAuthority` no longer accepts a prepared boundary
+  with derived tenant or principal scope when its generation lock lacks
+  `authority_dependencies`. It fails closed with `EXPLORE_LOCK_STALE`, states
+  that no query executed, and includes the existing regeneration guidance.
+- Dependency-less legacy locks remain compatible only for boundaries whose
+  resources all use direct scope. Activation and generation-lock fingerprints
+  already prevented the malformed derived state from normal disk loading; this
+  adds defense in depth at the final pre-execution assertion.
+- Focused Scoped Explore regression: 50/50 passed. Typecheck passed.
+- Full suite against a fresh live PostgreSQL accounting database: 88 files and
+  1,377/1,377 tests passed, including the PostgreSQL accounting suite at 8/8.
+  License/content, human command-surface, DSL path, and Cursor plugin gates also
+  passed.
+
+This hardening remains part of unpublished Runner 1.7.0. No Spec/DSL bump,
+Cloud change, push, or publish was performed.

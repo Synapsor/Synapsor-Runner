@@ -893,7 +893,20 @@ export function assertPreparedExplorePlanAuthority(
   plan: ExplorePlan,
   prepared: PreparedExplore,
 ): void {
-  if (!prepared.lock.authority_dependencies) return;
+  if (!prepared.lock.authority_dependencies) {
+    const usesDerivedScope = prepared.boundary.pack.resources.some((resource) =>
+      Boolean(resource.tenant_scope || resource.principal_scope));
+    if (usesDerivedScope) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        withGenerationLockRemediation(
+          "The active boundary uses derived trusted scope, but its generation lock does not bind the required relationship authority. No query was executed.",
+          prepared.lock,
+        ),
+      );
+    }
+    return;
+  }
   assertPlanAuthorityDependenciesCurrent(
     plan,
     prepared.boundary,
