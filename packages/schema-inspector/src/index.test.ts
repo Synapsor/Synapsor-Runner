@@ -78,6 +78,20 @@ describe("schema inspector helpers", () => {
     })).toBeUndefined();
   });
 
+  it("ignores an unparsed native enum value without losing CHECK metadata", () => {
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: "{pending,fulfilled,cancelled}",
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: "{pending,fulfilled,cancelled}",
+      check_definitions: ["CHECK (status IN ('open', 'paid', 'void'))"],
+    })).toEqual(["open", "paid", "void"]);
+  });
+
   it("maps MySQL grants to exact relations and fails closed on roles or elevated authority", () => {
     const relations = [
       { schema: "fitflow", table: "memberships" },

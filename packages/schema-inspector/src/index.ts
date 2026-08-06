@@ -31,11 +31,13 @@ export function deriveSchemaDeclaredEnumValues(input: {
   engine: SourceEngine;
   column_name: string;
   column_type?: string;
-  native_values?: string[] | null;
+  native_values?: unknown;
   check_definitions?: string[];
 }): string[] | undefined {
   const declaredSets: string[][] = [];
-  if (input.native_values?.length) declaredSets.push(input.native_values.map(String));
+  if (Array.isArray(input.native_values) && input.native_values.length) {
+    declaredSets.push(input.native_values.map(String));
+  }
   if (input.engine === "mysql" && input.column_type) {
     const nativeMysqlValues = parseMysqlEnumOrSet(input.column_type);
     if (nativeMysqlValues) declaredSets.push(nativeMysqlValues);
@@ -908,7 +910,7 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
                 ordinal_position
               ) AS comment,
               CASE WHEN data_type = 'USER-DEFINED' THEN (
-                SELECT array_agg(enum_value.enumlabel ORDER BY enum_value.enumsortorder)
+                SELECT array_agg(enum_value.enumlabel::text ORDER BY enum_value.enumsortorder)
                 FROM pg_catalog.pg_type enum_type
                 JOIN pg_catalog.pg_namespace enum_ns ON enum_ns.oid = enum_type.typnamespace
                 JOIN pg_catalog.pg_enum enum_value ON enum_value.enumtypid = enum_type.oid
@@ -1279,7 +1281,7 @@ type RawColumn = {
   is_identity?: string | null;
   ordinal_position: number;
   comment?: string | null;
-  enum_values?: string[] | null;
+  enum_values?: unknown;
 };
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
 type RawForeignKey = {
@@ -1488,7 +1490,9 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
     name,
     data_type: String(column.data_type || column.udt_name || "unknown"),
     ...(column.comment ? { comment: column.comment } : {}),
-    ...(column.enum_values?.length ? { enum_values: column.enum_values.map(String) } : {}),
+    ...(Array.isArray(column.enum_values) && column.enum_values.length
+      ? { enum_values: column.enum_values.map(String) }
+      : {}),
     nullable: String(column.is_nullable).toUpperCase() === "YES",
     default: column.column_default ?? undefined,
     generated: /always|stored|virtual|generated/i.test(String(column.is_generated ?? "")),
