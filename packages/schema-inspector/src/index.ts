@@ -359,6 +359,14 @@ export type IndexInfo = {
   columns?: string[];
   unique?: boolean;
   definition?: string;
+  /** Live-catalog key order used by advisory checks; excluded from authority fingerprints. */
+  catalog_key_columns?: string[];
+  /** Live-catalog leading key column; undefined for expression-leading indexes. */
+  catalog_leading_column?: string;
+  /** False for an index the database cannot currently use. */
+  catalog_usable?: boolean;
+  /** Partial indexes do not cover every row and cannot satisfy general scope probes. */
+  catalog_partial?: boolean;
 };
 
 export type CheckConstraintInfo = {
@@ -1025,11 +1033,31 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       [options.schema ?? null],
     );
     const indexes = await client.query<RawIndex>(
-      `SELECT schemaname AS schema, tablename AS table_name, indexname AS name, indexdef AS definition
-       FROM pg_indexes
-       WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-         AND ($1::text IS NULL OR schemaname = $1)
-       ORDER BY schemaname, tablename, indexname`,
+      `SELECT table_ns.nspname AS schema, source_table.relname AS table_name,
+              index_relation.relname AS name,
+              pg_catalog.pg_get_indexdef(index_definition.indexrelid) AS definition,
+              leading_attribute.attname AS catalog_leading_column,
+              ARRAY(
+                SELECT COALESCE(key_attribute.attname, '')
+                FROM unnest(index_definition.indkey::smallint[]) WITH ORDINALITY AS key_column(attnum, ordinal_position)
+                LEFT JOIN pg_catalog.pg_attribute key_attribute
+                  ON key_attribute.attrelid = source_table.oid
+                 AND key_attribute.attnum = key_column.attnum
+                WHERE key_column.ordinal_position <= index_definition.indnkeyatts
+                ORDER BY key_column.ordinal_position
+              ) AS catalog_key_columns,
+              (index_definition.indisvalid AND index_definition.indisready) AS catalog_usable,
+              (index_definition.indpred IS NOT NULL) AS catalog_partial
+       FROM pg_catalog.pg_index index_definition
+       JOIN pg_catalog.pg_class source_table ON source_table.oid = index_definition.indrelid
+       JOIN pg_catalog.pg_namespace table_ns ON table_ns.oid = source_table.relnamespace
+       JOIN pg_catalog.pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+       LEFT JOIN pg_catalog.pg_attribute leading_attribute
+         ON leading_attribute.attrelid = source_table.oid
+        AND leading_attribute.attnum = index_definition.indkey[0]
+       WHERE table_ns.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR table_ns.nspname = $1)
+       ORDER BY table_ns.nspname, source_table.relname, index_relation.relname`,
       [options.schema ?? null],
     );
     await client.query("COMMIT");
@@ -1145,6 +1173,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     const [indexRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, index_name AS name,
               GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns,
+              MAX(CASE WHEN seq_in_index = 1 THEN column_name END) AS catalog_leading_column,
               MIN(non_unique) AS non_unique
        FROM information_schema.statistics
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
@@ -1216,6 +1245,12 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
         table_name: String(row.table_name),
         name: String(row.name),
         columns: typeof row.columns === "string" ? row.columns.split(",") : undefined,
+        catalog_key_columns: typeof row.columns === "string" ? row.columns.split(",") : undefined,
+        catalog_leading_column: typeof row.catalog_leading_column === "string"
+          ? row.catalog_leading_column
+          : undefined,
+        catalog_usable: true,
+        catalog_partial: false,
         unique: Number(row.non_unique) === 0,
       })),
       triggers: triggerRows as RawTrigger[],
@@ -1258,7 +1293,18 @@ type RawForeignKey = {
   ordinal_position: number;
   delete_rule?: string;
 };
-type RawIndex = { schema: string; table_name: string; name: string; definition?: string; columns?: string[]; unique?: boolean };
+type RawIndex = {
+  schema: string;
+  table_name: string;
+  name: string;
+  definition?: string;
+  columns?: string[];
+  unique?: boolean;
+  catalog_key_columns?: string[];
+  catalog_leading_column?: string;
+  catalog_usable?: boolean;
+  catalog_partial?: boolean;
+};
 type RawTrigger = { schema: string; table_name: string; name: string; timing: string; orientation: string; event: string };
 type RawRowSecurity = { schema: string; table_name: string; enabled: boolean; forced?: boolean };
 type RawCheckConstraint = { schema: string; table_name: string; name: string; definition: string };
@@ -1373,6 +1419,10 @@ function normalizeInspection(input: {
         columns: index.columns,
         unique: index.unique,
         definition: index.definition,
+        catalog_key_columns: index.catalog_key_columns,
+        catalog_leading_column: index.catalog_leading_column,
+        catalog_usable: index.catalog_usable,
+        catalog_partial: index.catalog_partial,
       })),
       suggestions: {
         tenant_columns: columns.filter((column) => column.suggestions.tenant).map((column) => column.name),

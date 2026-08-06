@@ -4,6 +4,7 @@ import {
   deriveSchemaDeclaredEnumValues,
   generateRunnerConfigFromSpec,
   mysqlGrantPosture,
+  schemaFingerprintForInspection,
   summarizeInspection,
   type SchemaInspection,
   type TableInfo,
@@ -509,6 +510,32 @@ describe("schema inspector helpers", () => {
     };
     expect(summarizeInspection(inspection)).toContain("public.invoices");
     expect(summarizeInspection(inspection)).toContain("tenant=tenant_id");
+  });
+
+  it("keeps advisory catalog index metadata outside reviewed schema fingerprints", () => {
+    const inspection: SchemaInspection = {
+      engine: "postgres",
+      server_version: "PostgreSQL 16",
+      current_user: "reader",
+      inspected_at: "2026-08-05T00:00:00.000Z",
+      schemas: ["public"],
+      warnings: [],
+      tables: [directWriteTable()],
+    };
+    inspection.tables[0]!.indexes = [{
+      name: "credits_tenant_idx",
+      definition: 'CREATE INDEX credits_tenant_idx ON public.credits USING btree (tenant_id)',
+    }];
+    const before = schemaFingerprintForInspection(inspection);
+    inspection.tables[0]!.indexes[0] = {
+      ...inspection.tables[0]!.indexes[0]!,
+      catalog_key_columns: ["tenant_id"],
+      catalog_leading_column: "tenant_id",
+      catalog_usable: true,
+      catalog_partial: false,
+    };
+
+    expect(schemaFingerprintForInspection(inspection)).toBe(before);
   });
 });
 

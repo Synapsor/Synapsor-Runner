@@ -19,6 +19,7 @@ import {
 import {
   assertProductionExploreStartup,
 } from "../apps/runner/dist/mcp-runtime.js";
+import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = path.join(root, "examples/auto-boundary-churn");
@@ -183,6 +184,9 @@ async function seedDerivedSource(pool) {
       CONSTRAINT scoped_order_items_order_id_fkey
         FOREIGN KEY (order_id) REFERENCES public.scoped_orders(id) ON DELETE RESTRICT
     );
+    CREATE INDEX scoped_order_items_order_id_idx ON public.scoped_order_items (order_id);
+    CREATE INDEX scoped_orders_tenant_id_idx ON public.scoped_orders (tenant_id);
+    CREATE INDEX scoped_orders_owner_id_idx ON public.scoped_orders (owner_id);
     INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
       ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01T00:00:00Z'),
       ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01T00:00:00Z');
@@ -369,6 +373,28 @@ async function main() {
     );
     narrowResource(churnResource);
     narrowDerivedResources(scopedOrders, scopedOrderItems);
+    const indexedChecks = derivedScopeIndexDoctorChecks({
+      boundaries: [candidate],
+      inspectionsBySource: new Map([[candidate.source, [inspection]]]),
+    });
+    assert(indexedChecks.some((check) => check.name === "derived-scope-indexes:complete"),
+      "PostgreSQL live catalog did not attest the indexed derived-scope path.", indexedChecks);
+    await admin.query("DROP INDEX public.scoped_order_items_order_id_idx");
+    const missingIndexInspection = await inspectDatabase({
+      engine: "postgres",
+      databaseUrlEnv: "DATABASE_URL",
+      env,
+    });
+    const missingIndexChecks = derivedScopeIndexDoctorChecks({
+      boundaries: [candidate],
+      inspectionsBySource: new Map([[candidate.source, [missingIndexInspection]]]),
+    });
+    assert(missingIndexChecks.filter((check) => check.advisory === "warning").length === 2
+      && missingIndexChecks.every((check) => check.ok === true)
+      && missingIndexChecks.every((check) => check.message.includes("scoped_order_items.order_id"))
+      && missingIndexChecks.every((check) => check.message.includes("CREATE INDEX")),
+    "PostgreSQL dropped-index advisory did not name both reviewed scope paths without gating them.", missingIndexChecks);
+    await admin.query("CREATE INDEX scoped_order_items_order_id_idx ON public.scoped_order_items (order_id)");
     candidate.budgets.max_queries_per_session = 1;
     candidate.budgets.rate_limit_per_minute = 10;
     candidate.budgets.max_extracted_cells_per_session = 100;
@@ -489,6 +515,9 @@ async function main() {
     assert(doctor.checks?.some((check) => check.name === "production-explore:source-connection-ceiling"
       && check.ok === true && check.message.includes("2 connections")),
     "Production Explore doctor did not attest the process-wide source connection ceiling.", doctor.checks);
+    assert(doctor.checks?.some((check) => check.name === "derived-scope-indexes:complete"
+      && check.level === "pass" && check.message.includes("2 reviewed derived-scope paths")),
+    "Production Explore doctor did not attest live derived-scope index coverage.", doctor.checks);
     const doctorSerialized = JSON.stringify(doctor);
     assert(!doctorSerialized.includes(controlUrl)
       && !doctorSerialized.includes(readUrl)
@@ -671,6 +700,7 @@ async function main() {
       public_cli_entrypoint: true,
       packed_artifact: Boolean(process.env.SYNAPSOR_PRODUCTION_EXPLORE_RUNNER?.trim()),
       doctor_attested: true,
+      derived_scope_indexes_attested: true,
       suppressed_groups: aliceResult.privacy.suppressed_groups,
       source_database_changed: false,
     }, null, 2)}\n`);

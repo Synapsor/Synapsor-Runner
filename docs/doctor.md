@@ -17,6 +17,7 @@ The default check validates:
 - read/write credential separation;
 - reachable source metadata when the read env var is set;
 - configured target tables and columns;
+- supporting indexes for active reviewed derived-scope paths;
 - MCP tool boundary, including absence of raw SQL and commit tools;
 - local store stats.
 
@@ -36,6 +37,26 @@ This performs a read-only cross-tenant and cross-principal canary and checks
 that transaction-local values do not survive the pooled transaction. See
 [Database-Enforced Tenant And Principal
 Scope](database-enforced-scope.md).
+
+## Derived Scope Index Advisory
+
+When an active boundary scopes a normalized child table through a proven
+relationship path, `doctor` checks the live index catalog for every link the
+mandatory scope predicate traverses. It looks for:
+
+- a child index whose leading column or columns are the reviewed foreign key;
+- an index on the ancestor key referenced by that relationship;
+- an index on the terminal tenant or principal filter column.
+
+A missing child foreign-key index is a warning because the mandatory scoping
+`EXISTS` may scan. Missing referenced-key or terminal scope-filter coverage is
+shown as a lower-impact note. These findings are advisory: they never activate,
+disable, widen, or gate Explore, and they never change the scope predicate.
+
+Each finding includes engine-correct `CREATE INDEX` SQL for an operator to
+review and run separately. Runner only reads catalog metadata; `doctor` never
+creates the suggested index or reads source rows for this check. A clean report
+explicitly confirms that all reviewed derived-scope paths are index-backed.
 
 ## App-Owned Handler Checks
 

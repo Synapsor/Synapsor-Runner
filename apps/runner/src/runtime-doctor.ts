@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists } from "./cli-files.js";
 import { formatScalar, isRecord, safeErrorMessage, stableStringArray } from "./cli-format.js";
@@ -18,6 +19,7 @@ import { readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./c
 import { RunnerCapabilityConfig, RunnerSourceConfig, adapters, dynamicImportModule } from "./cli-runtime.js";
 import { validateConfigFile } from "./config-domain.js";
 import { DoctorCheck, LocalDoctorGovernance, LocalDoctorReport, envPresenceCheck, formatLocalDoctorMarkdown, formatLocalDoctorReport, formatLocalDoctorSetupReport, httpHandlerReachabilityCheck, inspectConfiguredSource, localDoctorSetupStatus, localToolNames, proposalApprovalPolicyResolutionDoctorCheck, proposalConflictGuardDoctorCheck, proposalReversibilityDoctorCheck, proposalWritebackResolutionDoctorCheck, sharedPostgresLedgerDoctorChecks, trustedContextsForDoctor } from "./doctor-domain.js";
+import { derivedScopeIndexDoctorChecks } from "./derived-scope-index-doctor.js";
 import {
   managedMcpProjectDefinition,
   managedMcpProjectStatus,
@@ -63,6 +65,12 @@ export async function localDoctor(args: string[]): Promise<number> {
       message: check.message,
     })));
   }
+  const activeExploreBoundaries = validation.ok
+    ? await activeExploreBoundariesForDoctor(
+      parsed.production_explore?.project_root ?? path.dirname(path.resolve(configPath)),
+      checks,
+    )
+    : [];
   if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
     try {
       await preflightGeneratedAuthority(parsed, process.env);
@@ -143,6 +151,7 @@ export async function localDoctor(args: string[]): Promise<number> {
       }
     }
   }
+  const inspectionsBySource = new Map<string, Awaited<ReturnType<typeof inspectConfiguredSource>>>();
   for (const [sourceName, source] of Object.entries(sources)) {
     const assurance = isolation.find((item) => item.source === sourceName);
     if (assurance) checks.push(databaseScopeModeDoctorCheck(assurance));
@@ -199,7 +208,17 @@ export async function localDoctor(args: string[]): Promise<number> {
         }
       }
     }
-    await inspectConfiguredSource({ config: parsed, sourceName, source, checks });
+    const additionalSchemas = activeExploreBoundaries
+      .filter((boundary) => boundary.source === sourceName)
+      .flatMap((boundary) => boundary.pack.resources.map((resource) => resource.schema));
+    const inspections = await inspectConfiguredSource({
+      config: parsed,
+      sourceName,
+      source,
+      checks,
+      additionalSchemas,
+    });
+    inspectionsBySource.set(sourceName, inspections);
     if (source.database_scope?.mode === "postgres_rls") {
       checks.push(...await postgresRlsDoctorChecks({
         config: parsed,
@@ -209,6 +228,10 @@ export async function localDoctor(args: string[]): Promise<number> {
       }));
     }
   }
+  checks.push(...derivedScopeIndexDoctorChecks({
+    boundaries: activeExploreBoundaries,
+    inspectionsBySource,
+  }));
 
   for (const [executorName, executor] of Object.entries(parsed.executors ?? {})) {
     if (!isRecord(executor)) continue;
@@ -287,6 +310,26 @@ export async function localDoctor(args: string[]): Promise<number> {
     return localDoctorSetupStatus(report) === "failed" ? 1 : 0;
   }
   return report.ok ? 0 : 1;
+}
+
+
+async function activeExploreBoundariesForDoctor(
+  projectRoot: string,
+  checks: DoctorCheck[],
+): Promise<ActivatedExplorationBoundary[]> {
+  try {
+    return await loadActivatedExplorationBoundaries(projectRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    checks.push({
+      name: "derived-scope-indexes:boundary-metadata",
+      ok: true,
+      level: "warn",
+      advisory: "note",
+      message: `Derived-scope index coverage could not be inspected because active boundary metadata did not load. Explore authority is unchanged. Run ${cliCommandName()} boundary review --map, recover the reviewed boundary, then rerun doctor.`,
+    });
+    return [];
+  }
 }
 
 

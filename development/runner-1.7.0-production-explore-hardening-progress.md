@@ -581,3 +581,51 @@ The derived-scope work was committed as `1478875` on
 
 This hardening remains part of unpublished Runner 1.7.0. No Spec/DSL bump,
 Cloud change, push, or publish was performed.
+
+## Derived Scope Index Doctor Advisory
+
+- `doctor` now reads live PostgreSQL `pg_index`/`pg_attribute` metadata and
+  MySQL `information_schema.STATISTICS` metadata for the exact derived tenant
+  and principal paths already recorded in each active reviewed boundary. It
+  does not infer alternative relationships or read source rows.
+- Every mandatory path link checks that the child foreign-key columns are the
+  leading columns of a usable, non-partial index and that the referenced
+  ancestor key is index-backed. The terminal tenant/principal filter column is
+  checked as a lower-severity optimization note.
+- Missing child coverage produces a non-gating warning; missing referenced-key
+  or terminal-filter coverage produces a non-gating note. Each finding names
+  the exact boundary, reviewed path, table, and columns and includes
+  engine-correct `CREATE INDEX` SQL for separate operator review. Runner never
+  executes that SQL.
+- A clean run explicitly attests that every reviewed derived-scope path is
+  index-backed. Direct-scope and unscoped resources produce no derived-path
+  advisory output.
+- The structured catalog index fields are deliberately excluded from reviewed
+  schema fingerprints. Adding, dropping, or rebuilding an advisory performance
+  index cannot silently alter authority, activation digests, or generation-lock
+  bytes.
+- The check is advisory only: it does not gate `doctor`, startup, local Explore,
+  or production HTTP Explore; it does not alter mandatory scope predicates,
+  budgets, model tools, or source data.
+
+Verification:
+
+- Focused derived-scope doctor, schema-inspector fingerprint, and runtime-doctor
+  regressions: 25/25 passed. Typecheck passed.
+- Direct live PostgreSQL production HTTP passed. It attested two indexed tenant
+  and principal paths, detected a deliberately dropped child FK index with two
+  non-gating warnings and copyable SQL, then passed the real public `doctor`
+  path after the index was restored. Source mutation by Explore remained false.
+- Direct live MySQL production HTTP passed using actual
+  `information_schema.STATISTICS` leading-column metadata, with both reviewed
+  paths attested and no source mutation by Explore.
+- Full suite with live PostgreSQL accounting enabled: 89 files and
+  1,385/1,385 tests passed; the PostgreSQL accounting suite ran 8/8 rather than
+  skipping.
+- Packed production HTTP passed with the exact two-tool model surface, derived
+  tenant/principal row isolation, per-principal budget isolation, concurrent
+  reservations, source/session ceilings, public doctor attestation, derived
+  scope index attestation, and no source mutation.
+
+This advisory remains part of unpublished Runner 1.7.0. No Spec/DSL bump,
+Cloud-repository change, push, or publish was performed.

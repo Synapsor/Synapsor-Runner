@@ -21,6 +21,7 @@ import {
   assertProductionExploreStartup,
   productionExploreSessionFactory,
 } from "../apps/runner/dist/mcp-runtime.js";
+import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const compose = path.join(root, "examples/runner-fleet/docker-compose.yml");
@@ -70,6 +71,8 @@ async function seedSource(connection) {
       category enum('enterprise', 'trail') NOT NULL,
       occurred_at timestamp NOT NULL
     );
+    CREATE INDEX scoped_orders_tenant_id_idx ON ${sourceSchema}.scoped_orders (tenant_id);
+    CREATE INDEX scoped_orders_owner_id_idx ON ${sourceSchema}.scoped_orders (owner_id);
     CREATE TABLE ${sourceSchema}.scoped_order_items (
       id varchar(64) PRIMARY KEY,
       order_id varchar(64) NOT NULL,
@@ -305,6 +308,13 @@ async function main() {
       .filter(([field]) => field === "occurred_at"));
     resource.relationships = [];
     narrowDerivedResources(scopedOrders, scopedOrderItems);
+    const indexChecks = derivedScopeIndexDoctorChecks({
+      boundaries: [candidate],
+      inspectionsBySource: new Map([[candidate.source, [inspection]]]),
+    });
+    assert(indexChecks.some((check) => check.name === "derived-scope-indexes:complete"
+      && check.message.includes("2 reviewed derived-scope paths")),
+    "MySQL information_schema.STATISTICS did not attest the live derived-scope indexes.", indexChecks);
     candidate.budgets.max_queries_per_session = 1;
     candidate.budgets.rate_limit_per_minute = 10;
     candidate.budgets.max_extracted_cells_per_session = 100;
@@ -495,6 +505,7 @@ async function main() {
       derived_tenant_and_principal_scope_isolated: true,
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,
+      derived_scope_indexes_attested: true,
       source_database_changed: false,
     }, null, 2)}\n`);
   } finally {

@@ -30,6 +30,12 @@ for the Synapsor Cloud CLI.
   exact production authority, verified issuer/audience/claims and OAuth scope,
   direct TLS or a trusted TLS proxy, shared HMAC material, and initialized
   shared accounting.
+- Reviewed normalized child tables may derive tenant or principal scope through
+  an exact non-null, catalog-proven many-to-one path. Runner injects that path
+  as a mandatory scope predicate outside model arguments for every plan shape.
+- `doctor` now checks live PostgreSQL and MySQL index metadata for every active
+  derived-scope path. Missing supporting indexes are advisory warnings or notes
+  with reviewable `CREATE INDEX` suggestions; they never weaken or gate scope.
 - Real PostgreSQL and MySQL HTTP journeys verify official MCP interoperability,
   row scope, suppression, budget isolation, concurrency, source immutability,
   public `doctor` attestation, and packed-package behavior.

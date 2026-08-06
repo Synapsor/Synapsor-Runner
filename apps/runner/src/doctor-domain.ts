@@ -2,7 +2,8 @@ import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capa
 import { createPostgresPool } from "@synapsor-runner/postgres";
 import {
   assessDirectWritePrerequisites,
-  inspectDatabase
+  inspectDatabase,
+  type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
@@ -311,10 +312,15 @@ export async function inspectConfiguredSource(input: {
   sourceName: string;
   source: NonNullable<RuntimeConfig["sources"]>[string];
   checks: DoctorCheck[];
-}): Promise<void> {
-  if (!envValue(process.env, input.source.read_url_env)) return;
+  additionalSchemas?: string[];
+}): Promise<SchemaInspection[]> {
+  if (!envValue(process.env, input.source.read_url_env)) return [];
   const capabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
-  const schemas = Array.from(new Set(capabilities.map((capability) => capability.target.schema)));
+  const schemas = Array.from(new Set([
+    ...capabilities.map((capability) => capability.target.schema),
+    ...(input.additionalSchemas ?? []),
+  ]));
+  const inspections: SchemaInspection[] = [];
   for (const schema of schemas.length ? schemas : [undefined]) {
     try {
       const inspection = await inspectDatabase({
@@ -322,6 +328,7 @@ export async function inspectConfiguredSource(input: {
         databaseUrlEnv: input.source.read_url_env,
         schema,
       });
+      inspections.push(inspection);
       input.checks.push({
         name: `source:${input.sourceName}:read-connectivity${schema ? `:${schema}` : ""}`,
         ok: true,
@@ -408,6 +415,7 @@ export async function inspectConfiguredSource(input: {
       });
     }
   }
+  return inspections;
 }
 
 
@@ -456,7 +464,9 @@ export function formatLocalDoctorReport(report: LocalDoctorReport): string {
     for (const tool of report.tools) lines.push(`  - ${tool}`);
   }
   for (const check of report.checks) {
-    const prefix = check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
+    const prefix = check.advisory === "note"
+      ? "i"
+      : check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
     lines.push(`${prefix} ${check.message}`);
   }
   return `${lines.join("\n")}\n`;
@@ -492,7 +502,9 @@ export function formatLocalDoctorSetupReport(report: LocalDoctorReport): string 
       lines.push(`- ${check.name.slice("env:".length)} is not set yet.`);
       continue;
     }
-    const prefix = check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
+    const prefix = check.advisory === "note"
+      ? "i"
+      : check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
     lines.push(`${prefix} ${check.message}`);
   }
   return `${lines.join("\n")}\n`;
@@ -551,7 +563,7 @@ export function formatLocalDoctorMarkdown(report: LocalDoctorReport): string {
     "",
     "## Checks",
     "",
-    ...report.checks.map((check) => `- ${check.level.toUpperCase()} ${check.name}: ${check.message}`),
+    ...report.checks.map((check) => `- ${check.advisory === "note" ? "NOTE" : check.level.toUpperCase()} ${check.name}: ${check.message}`),
     "",
     "## Redaction Note",
     "",
@@ -566,6 +578,7 @@ export type DoctorCheck = {
   ok: boolean;
   level: "pass" | "warn" | "fail";
   message: string;
+  advisory?: "warning" | "note";
   setup?: "pending" | "required";
 };
 
