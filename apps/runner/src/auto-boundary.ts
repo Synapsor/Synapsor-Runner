@@ -101,6 +101,26 @@ export type ExplorationRelationship = {
   unmatched_rows?: "exclude" | "keep_null" | "review_required";
 };
 
+export type DerivedScopePath = {
+  mode: "derived";
+  path_id: string;
+  ancestor_resource: string;
+  ancestor_column: string;
+  proof: {
+    source: "database_catalog";
+    links: RelationshipLinkProof[];
+    digest: `sha256:${string}`;
+  };
+};
+
+export type DerivedScopeInference = {
+  candidates: DerivedScopePath[];
+  selected?: DerivedScopePath;
+  confirmation_required: true;
+  safety_consequence: string;
+  blocked_reason?: string;
+};
+
 export type BoundaryInference<T> = {
   selected?: T;
   candidates: T[];
@@ -148,6 +168,10 @@ export type AutoBoundaryResource = {
   primary_key: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
   principal_key: BoundaryInference<string>;
+  /** Present only when a catalog-proven scope path is available. */
+  derived_tenant_scope?: DerivedScopeInference;
+  /** Present only when a catalog-proven principal path is available. */
+  derived_principal_scope?: DerivedScopeInference;
   fields: AutoBoundaryField[];
   relationships: Array<{
     name: string;
@@ -273,8 +297,10 @@ export type ExplorationBoundaryDraft = {
       schema: string;
       table: string;
       primary_key: string;
-      tenant_key: string;
+      tenant_key?: string;
+      tenant_scope?: DerivedScopePath;
       principal_key?: string;
+      principal_scope?: DerivedScopePath;
       field_types: Record<string, string>;
       field_enums: Record<string, string[]>;
       selectable_fields: string[];
@@ -414,7 +440,9 @@ export type AutoBoundaryReviewOverrides = {
   resources: Record<string, {
     row_identity?: ReviewedValueDecision;
     tenant_key?: ReviewedValueDecision;
+    tenant_scope_path?: ReviewedValueDecision;
     principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
+    principal_scope_path?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     minimum_cohort?: ReviewedMinimumCohortDecision;
     field_enums?: Record<string, ReviewedEnumValuesDecision>;
     fields?: Record<string, {
@@ -512,6 +540,11 @@ export async function loadAutoBoundaryReviewOverrides(projectRoot: string): Prom
 export function pruneAutoBoundaryReviewOverrides(
   inspection: SchemaInspection,
   input: AutoBoundaryReviewOverrides,
+  context: {
+    project?: ProjectDetectionSummary;
+    parsedEvidence?: ParsedSchema[];
+    existingContracts?: SynapsorContract[];
+  } = {},
 ): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
   const current = normalizeReviewOverrides(input);
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
@@ -538,6 +571,7 @@ export function pruneAutoBoundaryReviewOverrides(
       if (columns.has(decision.tenant_key.value)) retained.tenant_key = decision.tenant_key;
       else removed.push(`${resourceId}: reviewed tenant key ${decision.tenant_key.value} no longer exists`);
     }
+    if (decision.tenant_scope_path) retained.tenant_scope_path = decision.tenant_scope_path;
     if (decision.principal_key) {
       if (decision.principal_key.value === null || columns.has(decision.principal_key.value)) {
         retained.principal_key = decision.principal_key;
@@ -545,6 +579,7 @@ export function pruneAutoBoundaryReviewOverrides(
         removed.push(`${resourceId}: reviewed principal key ${decision.principal_key.value} no longer exists`);
       }
     }
+    if (decision.principal_scope_path) retained.principal_scope_path = decision.principal_scope_path;
     if (decision.minimum_cohort) retained.minimum_cohort = decision.minimum_cohort;
     const fieldEnums: NonNullable<
       AutoBoundaryReviewOverrides["resources"][string]["field_enums"]
@@ -588,6 +623,50 @@ export function pruneAutoBoundaryReviewOverrides(
     if (Object.keys(fields).length) retained.fields = fields;
     if (Object.keys(retained).length) resources[resourceId] = retained;
   }
+  const preliminary = normalizeReviewOverrides({
+    schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+    resources,
+  });
+  if (Object.values(preliminary.resources).some((resource) =>
+    resource.tenant_scope_path || resource.principal_scope_path)) {
+    const parsedEvidence = context.parsedEvidence ?? [];
+    const staticObjects = parsedEvidence.flatMap((evidence) =>
+      evidence.objects.map((object) => ({ format: evidence.format, object })));
+    const graph = buildEvidenceGraph(
+      inspection,
+      context.project ?? {
+        root: "",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: [],
+      },
+      staticObjects,
+      context.existingContracts ?? [],
+    );
+    applyReviewOverrides(graph, preliminary);
+    inferDerivedScopeCandidates(graph);
+    const reviewedResources = new Map(graph.resources.map((resource) => [resource.id, resource]));
+    for (const [resourceId, decision] of Object.entries(resources)) {
+      const reviewed = reviewedResources.get(resourceId);
+      if (decision.tenant_scope_path
+        && !reviewed?.derived_tenant_scope?.candidates.some((candidate) =>
+          candidate.path_id === decision.tenant_scope_path!.value)) {
+        removed.push(
+          `${resourceId}: reviewed derived tenant path ${decision.tenant_scope_path.value} is no longer non-null, catalog-proven, unique, and connected to direct tenant scope`,
+        );
+        delete decision.tenant_scope_path;
+      }
+      if (decision.principal_scope_path?.value
+        && !reviewed?.derived_principal_scope?.candidates.some((candidate) =>
+          candidate.path_id === decision.principal_scope_path!.value)) {
+        removed.push(
+          `${resourceId}: reviewed derived principal path ${decision.principal_scope_path.value} is no longer non-null, catalog-proven, unique, and connected to direct principal scope`,
+        );
+        delete decision.principal_scope_path;
+      }
+      if (Object.keys(decision).length === 0) delete resources[resourceId];
+    }
+  }
   return {
     overrides: normalizeReviewOverrides({
       schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -619,6 +698,9 @@ export function buildAutoBoundary(input: {
   const staticObjects = parsedEvidence.flatMap((evidence) => evidence.objects.map((object) => ({ format: evidence.format, object })));
   const graph = buildEvidenceGraph(input.inspection, input.project, staticObjects, existingContracts);
   applyReviewOverrides(graph, overrides);
+  inferDerivedScopeCandidates(graph);
+  applyDerivedScopeReviewOverrides(graph, overrides);
+  graph.resources.forEach(refreshResourceStatus);
   const dsl = emitDraftDsl(graph, sourceName);
   const contract = compileAgentDsl(dsl);
   const contractDigest = canonicalJsonDigest(contract);
@@ -642,7 +724,9 @@ export function buildAutoBoundary(input: {
     evidence_fingerprint: evidenceFingerprint,
     generated_contract_digest: contractDigest,
     reviewed_overrides_digest: overridesDigest,
-    protected_authority: graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => resource.id),
+    protected_authority: graph.resources
+      .filter((resource) => resource.status === "draft_read" && Boolean(resource.tenant_key.selected))
+      .map((resource) => resource.id),
     reporting_timezone: "UTC",
   };
   const provisionalBoundary = buildExplorationBoundaryDraft(
@@ -705,7 +789,13 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
           {
             ...(resource.row_identity ? { row_identity: resource.row_identity.value } : {}),
             ...(resource.tenant_key ? { tenant_key: resource.tenant_key.value } : {}),
+            ...(resource.tenant_scope_path
+              ? { tenant_scope_path: resource.tenant_scope_path.value }
+              : {}),
             ...(resource.principal_key ? { principal_key: resource.principal_key.value } : {}),
+            ...(resource.principal_scope_path
+              ? { principal_scope_path: resource.principal_scope_path.value }
+              : {}),
             ...(resource.minimum_cohort ? { minimum_cohort: resource.minimum_cohort.value } : {}),
             ...(resource.fields ? {
               fields: Object.fromEntries(
@@ -1021,7 +1111,7 @@ function buildGenerationAuthorityDependencies(
   boundary: ExplorationBoundaryDraft,
 ): GenerationAuthorityDependencies {
   const resources = Object.fromEntries(boundary.pack.resources.map((resource) => {
-    const fields = authorityDependencyFields(resource);
+    const fields = authorityDependencyFields(resource, boundary.pack.resources);
     const descriptor = {
       schema: resource.schema,
       table: resource.table,
@@ -1031,8 +1121,8 @@ function buildGenerationAuthorityDependencies(
     if (!fingerprint) throw new Error(`Cannot fingerprint generated authority for missing resource ${resource.id}.`);
     return [resource.id, { ...descriptor, fingerprint }];
   }));
-  const relationships = Object.fromEntries(boundary.pack.resources.flatMap((resource) =>
-    resource.relationships.map((relationship) => {
+  const relationships = Object.fromEntries(boundary.pack.resources.flatMap((resource) => [
+    ...resource.relationships.map((relationship) => {
       if (!relationship.proof || relationship.proof.source !== "database_catalog") {
         throw new Error(`Generated relationship ${resource.id}.${relationship.id} lacks database-catalog proof.`);
       }
@@ -1043,7 +1133,22 @@ function buildGenerationAuthorityDependencies(
         links: structuredClone(relationship.proof.links),
         proof_digest: relationship.proof.digest,
       }];
-    })));
+    }),
+    ...([[
+      "tenant" as const,
+      resource.tenant_scope,
+    ], [
+      "principal" as const,
+      resource.principal_scope,
+    ]] as const).flatMap(([kind, scope]) => scope
+      ? [[derivedScopeDependencyKey(resource.id, kind), {
+        root_resource: resource.id,
+        relationship_id: `scope:${kind}:${scope.path_id}`,
+        links: structuredClone(scope.proof.links),
+        proof_digest: scope.proof.digest,
+      }] as const]
+      : []),
+  ]));
   return {
     schema_version: AUTHORITY_DEPENDENCIES_VERSION,
     credential_posture_fingerprint: credentialPostureFingerprintForAuthority(inspection),
@@ -1054,6 +1159,7 @@ function buildGenerationAuthorityDependencies(
 
 function authorityDependencyFields(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
 ): string[] {
   const fields = new Set([
     resource.primary_key,
@@ -1073,11 +1179,32 @@ function authorityDependencyFields(
       if (link.target_resource === resource.id) link.target_columns.forEach((field) => fields.add(field));
     }
   }
+  for (const scopedResource of resources) {
+    for (const scope of [scopedResource.tenant_scope, scopedResource.principal_scope]) {
+      if (!scope) continue;
+      for (const link of scope.proof.links) {
+        if (link.source_resource === resource.id) {
+          link.source_columns.forEach((field) => fields.add(field));
+        }
+        if (link.target_resource === resource.id) {
+          link.target_columns.forEach((field) => fields.add(field));
+        }
+      }
+      if (scope.ancestor_resource === resource.id) fields.add(scope.ancestor_column);
+    }
+  }
   return [...fields].sort();
 }
 
 export function relationshipDependencyKey(rootResource: string, relationshipId: string): string {
   return `${rootResource}::${relationshipId}`;
+}
+
+export function derivedScopeDependencyKey(
+  resourceId: string,
+  kind: "tenant" | "principal",
+): string {
+  return `${resourceId}::scope:${kind}`;
 }
 
 function sameOrderedStrings(left: string[], right: string[]): boolean {
@@ -1531,7 +1658,16 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
     if (!isRecord(rawResource)) throw new Error(`Review overrides for ${resourceId} must be an object.`);
     assertOnlyKeys(
       rawResource,
-      ["row_identity", "tenant_key", "principal_key", "minimum_cohort", "field_enums", "fields"],
+      [
+        "row_identity",
+        "tenant_key",
+        "tenant_scope_path",
+        "principal_key",
+        "principal_scope_path",
+        "minimum_cohort",
+        "field_enums",
+        "fields",
+      ],
       `${resourceId} review overrides`,
     );
     const resource: AutoBoundaryReviewOverrides["resources"][string] = {};
@@ -1541,8 +1677,22 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
     if (rawResource.tenant_key !== undefined) {
       resource.tenant_key = normalizeReviewedValueDecision(rawResource.tenant_key, `${resourceId} tenant key`, false) as ReviewedValueDecision;
     }
+    if (rawResource.tenant_scope_path !== undefined) {
+      resource.tenant_scope_path = normalizeReviewedValueDecision(
+        rawResource.tenant_scope_path,
+        `${resourceId} derived tenant scope path`,
+        false,
+      ) as ReviewedValueDecision;
+    }
     if (rawResource.principal_key !== undefined) {
       resource.principal_key = normalizeReviewedValueDecision(rawResource.principal_key, `${resourceId} principal key`, true);
+    }
+    if (rawResource.principal_scope_path !== undefined) {
+      resource.principal_scope_path = normalizeReviewedValueDecision(
+        rawResource.principal_scope_path,
+        `${resourceId} derived principal scope path`,
+        true,
+      );
     }
     if (rawResource.minimum_cohort !== undefined) {
       resource.minimum_cohort = normalizeReviewedMinimumCohortDecision(
@@ -1759,6 +1909,140 @@ function applyReviewOverrides(
   }
 }
 
+function inferDerivedScopeCandidates(graph: AutoBoundaryEvidenceGraph): void {
+  const byId = new Map(graph.resources.map((resource) => [resource.id, resource]));
+  for (const resource of graph.resources) {
+    if (!resource.tenant_key.selected) {
+      const candidates = derivedScopeCandidates(resource, byId, "tenant");
+      if (candidates.length) {
+        resource.derived_tenant_scope = {
+          candidates,
+          confirmation_required: true,
+          safety_consequence: "Every read will be constrained through this mandatory proven path to the trusted tenant ancestor.",
+          blocked_reason: candidates.length === 1
+            ? "A human must review the single proven relationship-carried tenant path before this table becomes available."
+            : "Several proven tenant paths exist; a human must choose exactly one before this table becomes available.",
+        };
+      }
+    }
+    if (!resource.principal_key.selected) {
+      const candidates = derivedScopeCandidates(resource, byId, "principal");
+      if (candidates.length) {
+        resource.derived_principal_scope = {
+          candidates,
+          confirmation_required: true,
+          safety_consequence: "When selected, every read will also be constrained through this mandatory proven path to the trusted principal ancestor.",
+          blocked_reason: candidates.length === 1
+            ? "A human may review the single proven relationship-carried principal path."
+            : "Several proven principal paths exist; a human must choose one to add principal scope.",
+        };
+      }
+    }
+  }
+}
+
+function derivedScopeCandidates(
+  root: AutoBoundaryResource,
+  resources: Map<string, AutoBoundaryResource>,
+  kind: "tenant" | "principal",
+): DerivedScopePath[] {
+  const candidates: DerivedScopePath[] = [];
+  const visit = (
+    current: AutoBoundaryResource,
+    links: RelationshipLinkProof[],
+    visited: Set<string>,
+  ): void => {
+    if (links.length >= DEFAULT_BUDGETS.max_relationship_hops) return;
+    for (const relationship of current.relationships) {
+      if (!relationship.cardinality_proven
+        || relationship.nullable
+        || !relationship.target_uniqueness
+        || relationship.columns.length < 1
+        || relationship.columns.length !== relationship.referenced_columns.length) continue;
+      const target = resources.get(relationship.referenced_resource);
+      if (!target || visited.has(target.id) || target.id === root.id) continue;
+      const link: RelationshipLinkProof = {
+        constraint_name: relationship.name,
+        source_resource: current.id,
+        target_resource: target.id,
+        source_columns: [...relationship.columns],
+        target_columns: [...relationship.referenced_columns],
+        target_uniqueness: structuredClone(relationship.target_uniqueness),
+        nullable: false,
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+      };
+      const nextLinks = [...links, link];
+      const ancestorColumn = kind === "tenant"
+        ? target.tenant_key.selected
+        : target.principal_key.selected;
+      if (ancestorColumn) {
+        const pathId = nextLinks.map((item) => item.constraint_name).join("__");
+        candidates.push({
+          mode: "derived",
+          path_id: pathId,
+          ancestor_resource: target.id,
+          ancestor_column: ancestorColumn,
+          proof: {
+            source: "database_catalog",
+            links: nextLinks,
+            digest: canonicalJsonDigest(nextLinks),
+          },
+        });
+        continue;
+      }
+      visit(target, nextLinks, new Set([...visited, target.id]));
+    }
+  };
+  visit(root, [], new Set([root.id]));
+  return [...new Map(candidates.map((candidate) => [
+    `${candidate.path_id}:${candidate.ancestor_resource}:${candidate.ancestor_column}`,
+    candidate,
+  ])).values()].sort((left, right) =>
+    left.path_id.localeCompare(right.path_id)
+    || left.ancestor_resource.localeCompare(right.ancestor_resource)
+    || left.ancestor_column.localeCompare(right.ancestor_column));
+}
+
+function applyDerivedScopeReviewOverrides(
+  graph: AutoBoundaryEvidenceGraph,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(graph.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, override] of Object.entries(overrides.resources)) {
+    const resource = resources.get(resourceId);
+    if (!resource) continue;
+    if (override.tenant_key && override.tenant_scope_path) {
+      throw new Error(`${resourceId} cannot review both a direct tenant key and a derived tenant scope path.`);
+    }
+    if (override.principal_key?.value && override.principal_scope_path?.value) {
+      throw new Error(`${resourceId} cannot review both a direct principal key and a derived principal scope path.`);
+    }
+    if (override.tenant_scope_path) {
+      const selected = resource.derived_tenant_scope?.candidates.find((candidate) =>
+        candidate.path_id === override.tenant_scope_path!.value);
+      if (!selected) {
+        throw new Error(
+          `${resourceId} derived tenant scope path ${override.tenant_scope_path.value} is not a current non-null, catalog-proven many-to-one path to a direct tenant scope.`,
+        );
+      }
+      resource.derived_tenant_scope!.selected = structuredClone(selected);
+      delete resource.derived_tenant_scope!.blocked_reason;
+    }
+    if (override.principal_scope_path?.value) {
+      const selected = resource.derived_principal_scope?.candidates.find((candidate) =>
+        candidate.path_id === override.principal_scope_path!.value);
+      if (!selected) {
+        throw new Error(
+          `${resourceId} derived principal scope path ${override.principal_scope_path.value} is not a current non-null, catalog-proven many-to-one path to a direct principal scope.`,
+        );
+      }
+      resource.derived_principal_scope!.selected = structuredClone(selected);
+      delete resource.derived_principal_scope!.blocked_reason;
+    }
+  }
+}
+
 function markReviewedInference(
   target: BoundaryInference<string>,
   value: string,
@@ -1774,13 +2058,16 @@ function markReviewedInference(
 }
 
 function refreshResourceStatus(resource: AutoBoundaryResource): void {
+  const tenantResolved = Boolean(
+    resource.tenant_key.selected || resource.derived_tenant_scope?.selected,
+  );
   resource.blockers = [
     ...(!resource.primary_key.selected ? ["source-proven single-column primary or unique row identifier is unresolved"] : []),
-    ...(!resource.tenant_key.selected ? ["trusted tenant scope is unresolved"] : []),
+    ...(!tenantResolved ? ["trusted tenant scope is unresolved"] : []),
   ];
   resource.status = !resource.primary_key.selected
     ? "blocked_identifier"
-    : !resource.tenant_key.selected
+    : !tenantResolved
       ? "blocked_scope"
       : "draft_read";
 }
@@ -1952,6 +2239,11 @@ function assertBoundaryCandidateNarrowsDraft(
     for (const field of ["schema", "table", "primary_key", "tenant_key", "principal_key"] as const) {
       if (resource[field] !== original[field]) throw new Error(`${resource.id} ${field} cannot change during review.`);
     }
+    if (JSON.stringify(resource.tenant_scope ?? null) !== JSON.stringify(original.tenant_scope ?? null)
+      || JSON.stringify(resource.principal_scope ?? null) !== JSON.stringify(original.principal_scope ?? null)) {
+      throw new Error(`${resource.id} derived trusted scope cannot change during boundary review.`);
+    }
+    assertReviewedResourceScope(resource, candidateResources);
     if (JSON.stringify(resource.field_types) !== JSON.stringify(original.field_types)
       || JSON.stringify(resource.rls_session ?? null) !== JSON.stringify(original.rls_session ?? null)) {
       throw new Error(`${resource.id} field types and RLS session bindings cannot change during review.`);
@@ -2059,6 +2351,66 @@ function assertBoundaryCandidateNarrowsDraft(
       throw new Error(`${resource.id} minimum cohort override marker must match the reviewed owner decision.`);
     }
     if (resource.suppression_aware_totals !== true) throw new Error(`${resource.id} suppression-aware totals cannot be disabled.`);
+  }
+}
+
+function assertReviewedResourceScope(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
+): void {
+  if (Boolean(resource.tenant_key) === Boolean(resource.tenant_scope)) {
+    throw new Error(`${resource.id} must have exactly one direct or derived tenant scope.`);
+  }
+  if (resource.principal_key && resource.principal_scope) {
+    throw new Error(`${resource.id} cannot have both direct and derived principal scope.`);
+  }
+  if (resource.tenant_scope) {
+    assertDerivedScopePath(resource, resource.tenant_scope, resources, "tenant");
+  }
+  if (resource.principal_scope) {
+    assertDerivedScopePath(resource, resource.principal_scope, resources, "principal");
+  }
+}
+
+function assertDerivedScopePath(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  scope: DerivedScopePath,
+  resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
+  kind: "tenant" | "principal",
+): void {
+  const links = scope.proof?.links ?? [];
+  if (scope.mode !== "derived"
+    || scope.proof.source !== "database_catalog"
+    || links.length < 1
+    || links.length > 2
+    || canonicalJsonDigest(links) !== scope.proof.digest
+    || scope.path_id !== links.map((link) => link.constraint_name).join("__")) {
+    throw new Error(`${resource.id} has malformed derived ${kind} scope proof.`);
+  }
+  let expectedSource = resource.id;
+  const visited = new Set([resource.id]);
+  for (const link of links) {
+    const source = resources.get(link.source_resource);
+    const target = resources.get(link.target_resource);
+    if (!source || !target
+      || link.source_resource !== expectedSource
+      || visited.has(link.target_resource)
+      || link.nullable
+      || link.cardinality !== "many_to_one"
+      || link.max_fan_out !== 1
+      || link.source_columns.length < 1
+      || link.source_columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.some((field, index) => field !== link.target_columns[index])) {
+      throw new Error(`${resource.id} derived ${kind} scope is not a continuous non-null many-to-one path inside the reviewed boundary.`);
+    }
+    expectedSource = target.id;
+    visited.add(target.id);
+  }
+  const ancestor = resources.get(scope.ancestor_resource);
+  const directColumn = kind === "tenant" ? ancestor?.tenant_key : ancestor?.principal_key;
+  if (expectedSource !== scope.ancestor_resource || directColumn !== scope.ancestor_column) {
+    throw new Error(`${resource.id} derived ${kind} scope does not terminate at the reviewed direct ${kind} column.`);
   }
 }
 
@@ -2634,7 +2986,8 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
     "END",
     "",
   ];
-  for (const resource of graph.resources.filter((candidate) => candidate.status === "draft_read")) {
+  for (const resource of graph.resources.filter((candidate) =>
+    candidate.status === "draft_read" && Boolean(candidate.tenant_key.selected))) {
     const primaryKey = resource.primary_key.selected!;
     const tenantKey = resource.tenant_key.selected!;
     const principalKey = resource.principal_key.selected;
@@ -2798,8 +3151,13 @@ function buildExplorationBoundaryDraft(
       schema: resource.schema,
       table: resource.table,
       primary_key: resource.primary_key.selected!,
-      tenant_key: resource.tenant_key.selected!,
+      ...(resource.tenant_key.selected
+        ? { tenant_key: resource.tenant_key.selected }
+        : { tenant_scope: structuredClone(resource.derived_tenant_scope!.selected!) }),
       ...(resource.principal_key.selected ? { principal_key: resource.principal_key.selected } : {}),
+      ...(!resource.principal_key.selected && resource.derived_principal_scope?.selected
+        ? { principal_scope: structuredClone(resource.derived_principal_scope.selected) }
+        : {}),
       field_types: Object.fromEntries(resource.fields.map((field) => [field.name, field.data_type])),
       field_enums: Object.fromEntries(resource.fields
         .flatMap((field) => {
@@ -2828,7 +3186,7 @@ function buildExplorationBoundaryDraft(
       kept_out_fields: keptOut,
       ...(modelWithheld.length ? { model_withheld_fields: modelWithheld } : {}),
       relationships,
-      ...explorationRlsSession(resource),
+      ...explorationRlsSession(resource, graph.resources),
       minimum_cohort_size: resource.minimum_cohort_override?.value ?? 5,
       ...(resource.minimum_cohort_override ? { minimum_cohort_overridden: true as const } : {}),
       suppression_aware_totals: true as const,
@@ -3019,8 +3377,14 @@ function unresolvedDecisions(
     ...graph.resources.flatMap((resource) => [
     ...(resource.status !== "draft_read" ? resource.blockers.map((blocker) => `${resource.id}: ${blocker}`) : []),
     ...(resource.status === "draft_read" ? [
-      `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`,
-      `${resource.id}: confirm principal scope ${resource.principal_key.selected ?? "not configured"}`,
+      resource.tenant_key.selected
+        ? `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`
+        : `${resource.id}: confirm mandatory derived tenant scope via ${resource.derived_tenant_scope!.selected!.path_id} to ${resource.derived_tenant_scope!.selected!.ancestor_resource}.${resource.derived_tenant_scope!.selected!.ancestor_column}`,
+      resource.principal_key.selected
+        ? `${resource.id}: confirm principal scope ${resource.principal_key.selected}`
+        : resource.derived_principal_scope?.selected
+          ? `${resource.id}: confirm mandatory derived principal scope via ${resource.derived_principal_scope.selected.path_id} to ${resource.derived_principal_scope.selected.ancestor_resource}.${resource.derived_principal_scope.selected.ancestor_column}`
+          : `${resource.id}: confirm principal scope not configured`,
       `${resource.id}: confirm visible and kept-out fields`,
       `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
       `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,
@@ -3157,13 +3521,26 @@ function operatorsForType(type: string): Array<"eq" | "neq" | "lt" | "lte" | "gt
   return ["eq", "neq", "in"];
 }
 
-function explorationRlsSession(resource: AutoBoundaryResource): { rls_session?: { tenant_setting?: string; principal_setting?: string } } {
-  if (resource.rls.enabled !== true) return {};
-  const tenant = resource.tenant_key.selected
-    ? settingForScopedColumn(resource.rls.using_expressions, resource.tenant_key.selected)
+function explorationRlsSession(
+  resource: AutoBoundaryResource,
+  resources: AutoBoundaryResource[],
+): { rls_session?: { tenant_setting?: string; principal_setting?: string } } {
+  const byId = new Map(resources.map((candidate) => [candidate.id, candidate]));
+  const tenantOwner = resource.tenant_key.selected
+    ? resource
+    : resource.derived_tenant_scope?.selected
+      ? byId.get(resource.derived_tenant_scope.selected.ancestor_resource)
+      : undefined;
+  const principalOwner = resource.principal_key.selected
+    ? resource
+    : resource.derived_principal_scope?.selected
+      ? byId.get(resource.derived_principal_scope.selected.ancestor_resource)
+      : undefined;
+  const tenant = tenantOwner?.tenant_key.selected && tenantOwner.rls.enabled === true
+    ? settingForScopedColumn(tenantOwner.rls.using_expressions, tenantOwner.tenant_key.selected)
     : undefined;
-  const principal = resource.principal_key.selected
-    ? settingForScopedColumn(resource.rls.using_expressions, resource.principal_key.selected)
+  const principal = principalOwner?.principal_key.selected && principalOwner.rls.enabled === true
+    ? settingForScopedColumn(principalOwner.rls.using_expressions, principalOwner.principal_key.selected)
     : undefined;
   if (!tenant && !principal) return {};
   return {

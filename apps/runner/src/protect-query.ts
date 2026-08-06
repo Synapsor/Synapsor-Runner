@@ -561,6 +561,7 @@ function emitProtectedQueryDsl(input: {
   requiresPrincipal: boolean;
 }): string {
   const root = resourceFor(input.boundary, input.plan.resource);
+  const rootTenantKey = requireProtectedDirectTenantKey(root);
   const relationships = relationshipsForPlan(input.plan, root, input.boundary);
   const lines = [
     "CREATE AGENT CONTEXT protected_operator",
@@ -579,7 +580,7 @@ function emitProtectedQueryDsl(input: {
     `  SOURCE ${safeIdentifier(input.boundary.source)}`,
     `  ON ${safeIdentifier(root.schema)}.${safeIdentifier(root.table)}`,
     `  PRIMARY KEY ${safeIdentifier(root.primary_key)}`,
-    `  TENANT KEY ${safeIdentifier(root.tenant_key)}`,
+    `  TENANT KEY ${safeIdentifier(rootTenantKey)}`,
     ...(root.principal_key ? [`  PRINCIPAL SCOPE KEY ${safeIdentifier(root.principal_key)}`] : []),
     ...argumentDsl(input.positions, input.selections),
     `  PROTECTED READ ${input.plan.kind === "rows" ? "ROWS" : "AGGREGATE"}`,
@@ -741,6 +742,8 @@ function relationshipsForPlan(
       }
       const source = resourceFor(boundary, link.source_resource);
       const target = resourceFor(boundary, link.target_resource);
+      requireProtectedDirectTenantKey(source);
+      requireProtectedDirectTenantKey(target);
       const localKey = link.source_columns[0]!;
       const targetKey = link.target_columns[0]!;
       if (source.kept_out_fields.includes(localKey) || target.kept_out_fields.includes(targetKey)) {
@@ -779,11 +782,27 @@ function relationshipsDsl(relationships: ProtectedRelationshipPlan[]): string[] 
   if (only?.links.length === 1 && only.links[0]?.unmatchedRows === "exclude") {
     const link = only.links[0];
     return [
-      `  PROTECTED RELATIONSHIP ${safeIdentifier(only.name)} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(link.target.tenant_key)}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""}`,
+      `  PROTECTED RELATIONSHIP ${safeIdentifier(only.name)} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(requireProtectedDirectTenantKey(link.target))}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""}`,
     ];
   }
   return relationships.flatMap((relationship) => relationship.links.map((link, index) =>
-    `  PROTECTED RELATIONSHIP ${safeIdentifier(relationship.name)} LINK ${index + 1} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(link.target.tenant_key)}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""} UNMATCHED ${link.unmatchedRows === "keep_null" ? "KEEP NULL" : "EXCLUDE"}`));
+    `  PROTECTED RELATIONSHIP ${safeIdentifier(relationship.name)} LINK ${index + 1} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(requireProtectedDirectTenantKey(link.target))}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""} UNMATCHED ${link.unmatchedRows === "keep_null" ? "KEEP NULL" : "EXCLUDE"}`));
+}
+
+function requireProtectedDirectTenantKey(
+  resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+): string {
+  if (!resource.tenant_key) {
+    throw new Error(
+      `Protect conversion refused ${resource.id} because relationship-carried tenant scope is read-only Explore authority; protected capabilities currently require a direct tenant column.`,
+    );
+  }
+  if (resource.principal_scope) {
+    throw new Error(
+      `Protect conversion refused ${resource.id} because relationship-carried principal scope is read-only Explore authority; protected capabilities currently require a direct principal column when principal scope applies.`,
+    );
+  }
+  return resource.tenant_key;
 }
 
 function aggregateAliases(plan: AggregateExplorePlan): {
@@ -1126,6 +1145,7 @@ export function protectedDatabaseScope(
   if (resources.some((resource) => !resource)) {
     throw new Error("Protected capability references a resource outside the activated exploration boundary.");
   }
+  for (const resource of resources) requireProtectedDirectTenantKey(resource!);
   const scopes = resources
     .map((resource) => resource!.rls_session)
     .filter((scope): scope is NonNullable<typeof scope> => scope !== undefined);

@@ -52,6 +52,59 @@ describe("Explore trusted scope", () => {
     });
   });
 
+  it("proves role-bound derived scope on the terminal ancestor rather than the child", async () => {
+    const candidate = derivedBoundary();
+    const derivedInspection = inspection();
+    derivedInspection.tables.unshift({
+      schema: "public",
+      name: "check_in_items",
+      type: "table",
+      row_level_security: false,
+      role_posture: {
+        owner: "fitflow_admin",
+        current_role_is_owner: false,
+        current_role_can_assume_owner: false,
+        privileges: {
+          select: true,
+          insert: false,
+          update: false,
+          delete: false,
+          truncate: false,
+          references: false,
+          trigger: false,
+        },
+        row_security_forced: false,
+        row_security_effective_for_current_role: false,
+      },
+    } as SchemaInspection["tables"][number]);
+    const reader = vi.fn().mockResolvedValue({
+      currentUser: "fitflow_analytics_reader",
+      value: "org-fitflow",
+    });
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: derivedInspection,
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: reader,
+    })).resolves.toMatchObject({
+      tenant: "org-fitflow",
+      tenant_source: "postgres_role_setting",
+    });
+    expect(reader).toHaveBeenCalledOnce();
+
+    derivedInspection.tables.find((table) => table.name === "check_ins")!
+      .role_posture!.row_security_effective_for_current_role = false;
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: derivedInspection,
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: reader,
+    })).rejects.toThrow(/not proven by the reviewed RLS policy for public\.check_in_items/);
+  });
+
   it("still requires a trusted principal when reviewed authority explicitly selects principal scope", async () => {
     const candidate = boundary(true);
     candidate.pack.resources[0]!.principal_key = "trainer_id";
@@ -262,6 +315,47 @@ function productionBoundary(): ExplorationBoundaryDraft {
     tenant_claim: "org_id",
     principal_claim: "sub",
   };
+  return candidate;
+}
+
+function derivedBoundary(): ExplorationBoundaryDraft {
+  const candidate = boundary(true);
+  const ancestor = candidate.pack.resources[0]!;
+  candidate.pack.resources.unshift({
+    ...structuredClone(ancestor),
+    id: "public.check_in_items",
+    table: "check_in_items",
+    tenant_key: undefined,
+    tenant_scope: {
+      mode: "derived",
+      path_id: "public.check_in_items.check_in_id->public.check_ins.id",
+      ancestor_resource: "public.check_ins",
+      ancestor_column: "organization_id",
+      proof: {
+        source: "database_catalog",
+        links: [{
+          constraint_name: "check_in_items_check_in_id_fkey",
+          source_resource: "public.check_in_items",
+          source_columns: ["check_in_id"],
+          target_resource: "public.check_ins",
+          target_columns: ["id"],
+          target_uniqueness: {
+            kind: "primary_key",
+            name: "check_ins_pkey",
+            columns: ["id"],
+          },
+          nullable: false,
+          cardinality: "many_to_one",
+          max_fan_out: 1,
+        }],
+        digest: `sha256:${"8".repeat(64)}`,
+      },
+    },
+    field_types: { id: "text", check_in_id: "text" },
+    selectable_fields: ["id", "check_in_id"],
+    filterable_fields: { id: ["eq"], check_in_id: ["eq"] },
+    kept_out_fields: [],
+  });
   return candidate;
 }
 

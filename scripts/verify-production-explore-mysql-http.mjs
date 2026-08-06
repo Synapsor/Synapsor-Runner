@@ -32,6 +32,8 @@ const controlUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.
 const controlSchema = `synapsor_production_mysql_${process.pid}`;
 const sourceSchema = "synapsor_production_explore";
 const sourceId = `${sourceSchema}.events`;
+const scopedOrdersId = `${sourceSchema}.scoped_orders`;
+const scopedOrderItemsId = `${sourceSchema}.scoped_order_items`;
 
 function assert(condition, message, detail) {
   if (!condition) throw new Error(`${message}${detail === undefined ? "" : `\n${JSON.stringify(detail, null, 2)}`}`);
@@ -61,6 +63,22 @@ async function seedSource(connection) {
       amount_cents integer NOT NULL,
       occurred_at timestamp NOT NULL
     );
+    CREATE TABLE ${sourceSchema}.scoped_orders (
+      id varchar(64) PRIMARY KEY,
+      tenant_id varchar(64) NOT NULL,
+      owner_id varchar(64) NOT NULL,
+      category enum('enterprise', 'trail') NOT NULL,
+      occurred_at timestamp NOT NULL
+    );
+    CREATE TABLE ${sourceSchema}.scoped_order_items (
+      id varchar(64) PRIMARY KEY,
+      order_id varchar(64) NOT NULL,
+      item_kind enum('standard') NOT NULL,
+      quantity integer NOT NULL,
+      occurred_at timestamp NOT NULL,
+      CONSTRAINT scoped_order_items_order_id_fkey
+        FOREIGN KEY (order_id) REFERENCES ${sourceSchema}.scoped_orders(id) ON DELETE RESTRICT
+    );
     INSERT INTO ${sourceSchema}.events (id, tenant_id, category, amount_cents, occurred_at) VALUES
       ('a-1', 'acme', 'growth', 100, '2026-07-01 00:00:00'),
       ('a-2', 'acme', 'growth', 110, '2026-07-02 00:00:00'),
@@ -79,6 +97,22 @@ async function seedSource(connection) {
       ('g-3', 'globex', 'enterprise', 520, '2026-07-03 00:00:00'),
       ('g-4', 'globex', 'enterprise', 530, '2026-07-04 00:00:00'),
       ('g-5', 'globex', 'enterprise', 540, '2026-07-05 00:00:00');
+    INSERT INTO ${sourceSchema}.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
+      ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01 00:00:00'),
+      ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01 00:00:00');
+    INSERT INTO ${sourceSchema}.scoped_order_items (id, order_id, item_kind, quantity, occurred_at) VALUES
+      ('derived-acme-item-1', 'derived-acme-order', 'standard', 1, '2026-07-01 00:00:00'),
+      ('derived-acme-item-2', 'derived-acme-order', 'standard', 2, '2026-07-01 00:00:00'),
+      ('derived-acme-item-3', 'derived-acme-order', 'standard', 3, '2026-07-01 00:00:00'),
+      ('derived-acme-item-4', 'derived-acme-order', 'standard', 4, '2026-07-01 00:00:00'),
+      ('derived-acme-item-5', 'derived-acme-order', 'standard', 5, '2026-07-01 00:00:00'),
+      ('derived-globex-item-1', 'derived-globex-order', 'standard', 1, '2026-07-01 00:00:00'),
+      ('derived-globex-item-2', 'derived-globex-order', 'standard', 2, '2026-07-01 00:00:00'),
+      ('derived-globex-item-3', 'derived-globex-order', 'standard', 3, '2026-07-01 00:00:00'),
+      ('derived-globex-item-4', 'derived-globex-order', 'standard', 4, '2026-07-01 00:00:00'),
+      ('derived-globex-item-5', 'derived-globex-order', 'standard', 5, '2026-07-01 00:00:00'),
+      ('derived-globex-item-6', 'derived-globex-order', 'standard', 6, '2026-07-01 00:00:00'),
+      ('derived-globex-item-7', 'derived-globex-order', 'standard', 7, '2026-07-01 00:00:00');
     CREATE USER IF NOT EXISTS 'synapsor_production_reader'@'%' IDENTIFIED BY 'synapsor_production_reader_password';
     GRANT SELECT ON ${sourceSchema}.* TO 'synapsor_production_reader'@'%';
     FLUSH PRIVILEGES;
@@ -96,7 +130,44 @@ async function sourceSnapshot(connection) {
     row_count: Number(rows[0].row_count),
     total: Number(rows[0].total),
     latest: new Date(rows[0].latest).toISOString(),
+    derived: await derivedSourceSnapshot(connection),
   };
+}
+
+async function derivedSourceSnapshot(connection) {
+  const [rows] = await connection.query(`
+    SELECT
+      (SELECT COUNT(*) FROM ${sourceSchema}.scoped_orders) AS order_count,
+      (SELECT COUNT(*) FROM ${sourceSchema}.scoped_order_items) AS item_count,
+      (SELECT SUM(quantity) FROM ${sourceSchema}.scoped_order_items) AS quantity_total
+  `);
+  return {
+    order_count: Number(rows[0].order_count),
+    item_count: Number(rows[0].item_count),
+    quantity_total: Number(rows[0].quantity_total),
+  };
+}
+
+function narrowDerivedResources(parent, child) {
+  parent.selectable_fields = ["category", "occurred_at"];
+  parent.filterable_fields = Object.fromEntries(Object.entries(parent.filterable_fields)
+    .filter(([field]) => parent.selectable_fields.includes(field)));
+  parent.sortable_fields = parent.sortable_fields.filter((field) => parent.selectable_fields.includes(field));
+  parent.groupable_fields = parent.groupable_fields.filter((field) => field === "category");
+  parent.aggregate_measures = [];
+  parent.time_bucket_fields = Object.fromEntries(Object.entries(parent.time_bucket_fields)
+    .filter(([field]) => field === "occurred_at"));
+
+  child.selectable_fields = ["item_kind", "quantity", "occurred_at"];
+  child.filterable_fields = Object.fromEntries(Object.entries(child.filterable_fields)
+    .filter(([field]) => child.selectable_fields.includes(field)));
+  child.sortable_fields = child.sortable_fields.filter((field) => child.selectable_fields.includes(field));
+  child.groupable_fields = child.groupable_fields.filter((field) => field === "item_kind");
+  child.aggregate_measures = child.aggregate_measures.filter((field) => field === "quantity");
+  child.time_bucket_fields = Object.fromEntries(Object.entries(child.time_bucket_fields)
+    .filter(([field]) => field === "occurred_at"));
+  child.relationships = child.relationships.filter((relationship) =>
+    relationship.id === "scoped_order_items_order_id_fkey");
 }
 
 function signedToken(privateKey, { tenant, principal }) {
@@ -172,15 +243,51 @@ async function main() {
               decided_at: "2026-08-04T00:00:00.000Z",
             },
           },
+          [scopedOrdersId]: {
+            tenant_key: {
+              value: "tenant_id",
+              actor: "production-owner@example.test",
+              reason: "The application owner confirms tenant_id is the order authorization boundary.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+            principal_key: {
+              value: "owner_id",
+              actor: "production-owner@example.test",
+              reason: "The verified owner claim scopes each reviewed order.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+          },
+          [scopedOrderItemsId]: {
+            tenant_scope_path: {
+              value: "scoped_order_items_order_id_fkey",
+              actor: "production-owner@example.test",
+              reason: "Every item belongs to the tenant of its required reviewed order.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+            principal_scope_path: {
+              value: "scoped_order_items_order_id_fkey",
+              actor: "production-owner@example.test",
+              reason: "Every item belongs to the principal of its required reviewed order.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+          },
         },
       },
     });
     await writeAutoBoundaryArtifacts({ projectRoot, build });
     const candidate = structuredClone(build.exploration_boundary);
     candidate.pack.name = "mysql_events_production";
-    candidate.pack.resources = candidate.pack.resources.filter((resource) => resource.id === sourceId);
-    assert(candidate.pack.resources.length === 1, "MySQL production fixture did not draft the events table.", candidate.pack.resources);
-    const resource = candidate.pack.resources[0];
+    candidate.pack.resources = candidate.pack.resources.filter((resource) => [
+      sourceId,
+      scopedOrdersId,
+      scopedOrderItemsId,
+    ].includes(resource.id));
+    assert(candidate.pack.resources.length === 3, "MySQL production fixture did not draft the direct and derived resources.", candidate.pack.resources);
+    const resource = candidate.pack.resources.find((candidateResource) => candidateResource.id === sourceId);
+    const scopedOrders = candidate.pack.resources.find((candidateResource) => candidateResource.id === scopedOrdersId);
+    const scopedOrderItems = candidate.pack.resources.find((candidateResource) => candidateResource.id === scopedOrderItemsId);
+    assert(resource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope,
+      "MySQL production fixture did not preserve the reviewed derived tenant/principal path.", candidate.pack.resources);
     assert(
       JSON.stringify(resource.field_enums.category)
         === JSON.stringify(["growth", "retained", "private-small", "enterprise"]),
@@ -197,6 +304,7 @@ async function main() {
     resource.time_bucket_fields = Object.fromEntries(Object.entries(resource.time_bucket_fields)
       .filter(([field]) => field === "occurred_at"));
     resource.relationships = [];
+    narrowDerivedResources(scopedOrders, scopedOrderItems);
     candidate.budgets.max_queries_per_session = 1;
     candidate.budgets.rate_limit_per_minute = 10;
     candidate.budgets.max_extracted_cells_per_session = 100;
@@ -329,6 +437,51 @@ async function main() {
       && globexResult.data[0].count === 5,
     "MySQL production tenant predicate did not isolate the Globex result.", globexResult);
 
+    const derivedPlan = {
+      kind: "aggregate",
+      resource: scopedOrderItemsId,
+      measures: [{ function: "count" }, { function: "sum", field: "quantity" }],
+      dimensions: [{
+        field: "category",
+        relationship: "scoped_order_items_order_id_fkey",
+      }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const derivedAcme = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "derived-acme",
+    }));
+    clients.push(derivedAcme.client);
+    await derivedAcme.client.connect(derivedAcme.transport);
+    const derivedAcmeResult = resultPayload(await derivedAcme.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: derivedPlan },
+    }));
+    assert(derivedAcmeResult.ok === true
+      && derivedAcmeResult.data.length === 1
+      && derivedAcmeResult.data[0].scoped_orders_category === "trail"
+      && derivedAcmeResult.data[0].count === 5,
+    "MySQL production Explore did not isolate a normalized child through its mandatory scope path.", derivedAcmeResult);
+    assert(!JSON.stringify(derivedAcmeResult).match(/globex|enterprise|derived-globex|SELECT\s|`scoped_/i),
+      "MySQL derived-scope result leaked another scope or compiled SQL.", derivedAcmeResult);
+
+    const derivedGlobex = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "globex",
+      principal: "derived-globex",
+    }));
+    clients.push(derivedGlobex.client);
+    await derivedGlobex.client.connect(derivedGlobex.transport);
+    const derivedGlobexResult = resultPayload(await derivedGlobex.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: derivedPlan },
+    }));
+    assert(derivedGlobexResult.ok === true
+      && derivedGlobexResult.data.length === 1
+      && derivedGlobexResult.data[0].scoped_orders_category === "enterprise"
+      && derivedGlobexResult.data[0].count === 7,
+    "MySQL derived scope did not isolate the second tenant/principal.", derivedGlobexResult);
+
     const after = await sourceSnapshot(mysqlAdmin);
     assert(JSON.stringify(after) === JSON.stringify(before),
       "Production HTTP Explore mutated the MySQL source database.", { before, after });
@@ -339,6 +492,7 @@ async function main() {
       tools: tools.tools.map((tool) => tool.name),
       principal_budget_isolated: true,
       tenant_rows_isolated: true,
+      derived_tenant_and_principal_scope_isolated: true,
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,
       source_database_changed: false,

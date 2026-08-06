@@ -234,6 +234,36 @@ describe("Protect This Query", () => {
     expect(created.contract.capabilities[0]?.model_withheld_fields).toEqual(["region"]);
   });
 
+  it("keeps relationship-carried scope out of generated protected capabilities", async () => {
+    const fixture = await activatedDerivedProtectFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ quantity: 2 }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-05T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "rows",
+      resource: "public.order_items",
+      select: ["quantity"],
+      limit: 1,
+    });
+    await runtime.close();
+
+    await expect(createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.order_item_quantity",
+      description: "Return reviewed order item quantities.",
+      returnsHint: "Returns bounded reviewed rows.",
+      now: Date.parse("2026-08-05T12:00:01.000Z"),
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toThrow(/relationship-carried tenant scope is read-only Explore authority/);
+  });
+
   it("requires principal RLS only on participating relations that declare principal scope", async () => {
     const fixture = await activatedFixture();
     const boundary = structuredClone(fixture.boundary);
@@ -321,6 +351,37 @@ describe("Protect This Query", () => {
       tenant_setting: "app.tenant_id",
       principal_setting: "app.principal",
     });
+
+    const derivedPrincipalBoundary = structuredClone(boundary);
+    const derivedRoot = derivedPrincipalBoundary.pack.resources[0]!;
+    delete derivedRoot.principal_key;
+    derivedRoot.principal_scope = {
+      mode: "derived",
+      path_id: "subscriptions_operator_id_fkey",
+      ancestor_resource: target.id,
+      ancestor_column: "assigned_operator_id",
+      proof: {
+        source: "database_catalog",
+        links: [{
+          constraint_name: "subscriptions_operator_id_fkey",
+          source_resource: derivedRoot.id,
+          target_resource: target.id,
+          source_columns: ["assigned_operator_id"],
+          target_columns: ["assigned_operator_id"],
+          target_uniqueness: {
+            kind: "unique_constraint",
+            name: "regions_assigned_operator_id_key",
+            columns: ["assigned_operator_id"],
+          },
+          nullable: false,
+          cardinality: "many_to_one",
+          max_fan_out: 1,
+        }],
+        digest: `sha256:${"9".repeat(64)}`,
+      },
+    };
+    expect(() => protectedDatabaseScope(contract, derivedPrincipalBoundary))
+      .toThrow(/relationship-carried principal scope is read-only Explore authority/);
 
     target.principal_key = "assigned_operator_id";
     expect(() => protectedDatabaseScope(contract, boundary)).toThrow(/principal binding is incomplete/i);
@@ -1074,12 +1135,104 @@ async function activatedFixture(
   };
 }
 
+async function activatedDerivedProtectFixture(): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-derived-scope-"));
+  temporaryRoots.push(root);
+  const inspection = derivedProtectInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "owner@example.test",
+            reason: "Every item belongs to the tenant of its required order.",
+            decided_at: "2026-08-05T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+      SYNAPSOR_TENANT_ID: "tenant-acme",
+      SYNAPSOR_PRINCIPAL: "pm-1",
+    },
+  };
+}
+
 function fixedExecutor(rows: Record<string, unknown>[]): ScopedExploreExecutor {
   return {
     execute: async () => structuredClone(rows),
     executeBatch: async ({ queries }) => queries.map(() => structuredClone(rows)),
     close: async () => undefined,
   };
+}
+
+function derivedProtectInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) => field.name !== "tenant_id");
+  orderItems.columns.push(column("order_id", "uuid", { immutable: true }));
+  orderItems.columns.push(column("quantity", "integer"));
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (!orderItems.role_posture) throw new Error("derived-scope fixture role posture is required");
+  orderItems.role_posture.row_security_forced = false;
+  orderItems.role_posture.row_security_effective_for_current_role = false;
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("order_id", "quantity");
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function churnInspection(): SchemaInspection {

@@ -778,7 +778,7 @@ describe("boundary operator-plane CLI", () => {
       expect(stdout).toContain("TABLE ACCESS MAP - public.service_visits");
       expect(stdout).toContain("Model + Runner fields");
       expect(stdout).toContain("status: return, filter(eq/neq/in), sort");
-      expect(stdout).toContain("Trusted tenant scope: tenant_id (bound outside model arguments)");
+      expect(stdout).toContain("Trusted tenant scope: tenant_id (direct; bound outside model arguments)");
       expect(stdout).not.toContain("\u001b[");
       await expect(main([
         "boundary",

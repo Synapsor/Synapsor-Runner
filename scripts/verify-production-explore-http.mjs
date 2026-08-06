@@ -10,6 +10,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Pool } from "pg";
 import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -147,12 +148,60 @@ async function stopProductionExploreCli(handle) {
 }
 
 async function sourceSnapshot(pool) {
-  const result = await pool.query(`
+  const churn = await pool.query(`
     SELECT COUNT(*)::int AS row_count,
       md5(string_agg(id || ':' || tenant_id || ':' || owner_id || ':' || reason_category || ':' || monthly_revenue_cents::text, '|' ORDER BY id)) AS digest
     FROM public.churn_events
   `);
-  return result.rows[0];
+  const derived = await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM public.scoped_orders) AS order_count,
+      (SELECT COUNT(*)::int FROM public.scoped_order_items) AS item_count,
+      (SELECT md5(string_agg(id || ':' || order_id || ':' || item_kind || ':' || quantity::text, '|' ORDER BY id))
+        FROM public.scoped_order_items) AS item_digest
+  `);
+  return { churn: churn.rows[0], derived: derived.rows[0] };
+}
+
+async function seedDerivedSource(pool) {
+  await pool.query(`
+    DROP TABLE IF EXISTS public.scoped_order_items;
+    DROP TABLE IF EXISTS public.scoped_orders;
+    CREATE TABLE public.scoped_orders (
+      id text PRIMARY KEY,
+      tenant_id text NOT NULL,
+      owner_id text NOT NULL,
+      category text NOT NULL CHECK (category IN ('enterprise', 'trail')),
+      occurred_at timestamptz NOT NULL
+    );
+    CREATE TABLE public.scoped_order_items (
+      id text PRIMARY KEY,
+      order_id text NOT NULL,
+      item_kind text NOT NULL CHECK (item_kind IN ('standard')),
+      quantity integer NOT NULL CHECK (quantity > 0),
+      occurred_at timestamptz NOT NULL,
+      CONSTRAINT scoped_order_items_order_id_fkey
+        FOREIGN KEY (order_id) REFERENCES public.scoped_orders(id) ON DELETE RESTRICT
+    );
+    INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
+      ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01T00:00:00Z'),
+      ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01T00:00:00Z');
+    INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
+    SELECT 'derived-acme-item-' || item, 'derived-acme-order', 'standard', item, '2026-07-01T00:00:00Z'::timestamptz
+      FROM generate_series(1, 5) AS item;
+    INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
+    SELECT 'derived-globex-item-' || item, 'derived-globex-order', 'standard', item, '2026-07-01T00:00:00Z'::timestamptz
+      FROM generate_series(1, 7) AS item;
+    ALTER TABLE public.scoped_orders ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.scoped_orders FORCE ROW LEVEL SECURITY;
+    CREATE POLICY scoped_orders_trusted_scope ON public.scoped_orders
+      FOR SELECT
+      USING (
+        tenant_id = current_setting('app.tenant_id', true)
+        AND owner_id = current_setting('app.principal', true)
+      );
+    GRANT SELECT ON public.scoped_orders, public.scoped_order_items TO synapsor_churn_reader;
+  `);
 }
 
 function resultPayload(result) {
@@ -173,6 +222,28 @@ function narrowResource(resource) {
   resource.time_bucket_fields = Object.fromEntries(Object.entries(resource.time_bucket_fields)
     .filter(([field]) => field === "churned_at"));
   resource.relationships = [];
+}
+
+function narrowDerivedResources(parent, child) {
+  parent.selectable_fields = ["category", "occurred_at"];
+  parent.filterable_fields = Object.fromEntries(Object.entries(parent.filterable_fields)
+    .filter(([field]) => parent.selectable_fields.includes(field)));
+  parent.sortable_fields = parent.sortable_fields.filter((field) => parent.selectable_fields.includes(field));
+  parent.groupable_fields = parent.groupable_fields.filter((field) => field === "category");
+  parent.aggregate_measures = [];
+  parent.time_bucket_fields = Object.fromEntries(Object.entries(parent.time_bucket_fields)
+    .filter(([field]) => field === "occurred_at"));
+
+  child.selectable_fields = ["item_kind", "quantity", "occurred_at"];
+  child.filterable_fields = Object.fromEntries(Object.entries(child.filterable_fields)
+    .filter(([field]) => child.selectable_fields.includes(field)));
+  child.sortable_fields = child.sortable_fields.filter((field) => child.selectable_fields.includes(field));
+  child.groupable_fields = child.groupable_fields.filter((field) => field === "item_kind");
+  child.aggregate_measures = child.aggregate_measures.filter((field) => field === "quantity");
+  child.time_bucket_fields = Object.fromEntries(Object.entries(child.time_bucket_fields)
+    .filter(([field]) => field === "occurred_at"));
+  child.relationships = child.relationships.filter((relationship) =>
+    relationship.id === "scoped_order_items_order_id_fkey");
 }
 
 async function token(privateKey, { tenant, principal, scope = "synapsor.explore" }) {
@@ -234,6 +305,7 @@ async function main() {
         env: { ...process.env, SYNAPSOR_TEST_POSTGRES_URL: controlUrl },
       });
     }
+    await seedDerivedSource(admin);
     const before = await sourceSnapshot(admin);
     const env = { ...process.env, DATABASE_URL: readUrl };
     const inspection = await inspectDatabase({
@@ -255,19 +327,48 @@ async function main() {
       sourceEnv: "DATABASE_URL",
       deploymentProfile: "production",
       httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.scoped_order_items": {
+            tenant_scope_path: {
+              value: "scoped_order_items_order_id_fkey",
+              actor: "production-owner@example.test",
+              reason: "Every item belongs to the tenant of its required reviewed order.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+            principal_scope_path: {
+              value: "scoped_order_items_order_id_fkey",
+              actor: "production-owner@example.test",
+              reason: "Every item belongs to the principal of its required reviewed order.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+          },
+        },
+      },
     });
     await writeAutoBoundaryArtifacts({ projectRoot, build });
     const candidate = structuredClone(build.exploration_boundary);
     candidate.pack.name = "customer_churn_production";
-    candidate.pack.resources = candidate.pack.resources.filter((resource) => resource.id === "public.churn_events");
-    assert(candidate.pack.resources.length === 1, "Production fixture did not draft public.churn_events.");
+    candidate.pack.resources = candidate.pack.resources.filter((resource) => [
+      "public.churn_events",
+      "public.scoped_orders",
+      "public.scoped_order_items",
+    ].includes(resource.id));
+    assert(candidate.pack.resources.length === 3, "Production fixture did not draft the direct and derived resources.", candidate.pack.resources);
+    const churnResource = candidate.pack.resources.find((resource) => resource.id === "public.churn_events");
+    const scopedOrders = candidate.pack.resources.find((resource) => resource.id === "public.scoped_orders");
+    const scopedOrderItems = candidate.pack.resources.find((resource) => resource.id === "public.scoped_order_items");
+    assert(churnResource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope,
+      "Production fixture did not preserve the reviewed derived tenant/principal path.", candidate.pack.resources);
     assert(
-      JSON.stringify(candidate.pack.resources[0].field_enums.reason_category)
+      JSON.stringify(churnResource.field_enums.reason_category)
         === JSON.stringify(["onboarding", "price", "product", "service"]),
       "PostgreSQL CHECK-constrained values did not reach the reviewed boundary from live schema metadata.",
-      candidate.pack.resources[0].field_enums,
+      churnResource.field_enums,
     );
-    narrowResource(candidate.pack.resources[0]);
+    narrowResource(churnResource);
+    narrowDerivedResources(scopedOrders, scopedOrderItems);
     candidate.budgets.max_queries_per_session = 1;
     candidate.budgets.rate_limit_per_minute = 10;
     candidate.budgets.max_extracted_cells_per_session = 100;
@@ -463,6 +564,51 @@ async function main() {
       && globexResult.data[0].count === 8,
     "Verified tenant/principal claims did not isolate the Globex result.", globexResult);
 
+    const derivedPlan = {
+      kind: "aggregate",
+      resource: "public.scoped_order_items",
+      measures: [{ function: "count" }, { function: "sum", field: "quantity" }],
+      dimensions: [{
+        field: "category",
+        relationship: "scoped_order_items_order_id_fkey",
+      }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const derivedAcme = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "derived-acme",
+    }));
+    clients.push(derivedAcme.client);
+    await derivedAcme.client.connect(derivedAcme.transport);
+    const derivedAcmeResult = resultPayload(await derivedAcme.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: derivedPlan },
+    }));
+    assert(derivedAcmeResult.ok === true
+      && derivedAcmeResult.data.length === 1
+      && derivedAcmeResult.data[0].scoped_orders_category === "trail"
+      && derivedAcmeResult.data[0].count === 5,
+    "PostgreSQL production Explore did not isolate a normalized child through its mandatory scope path.", derivedAcmeResult);
+    assert(!JSON.stringify(derivedAcmeResult).match(/globex|enterprise|derived-globex|SELECT\s/i),
+      "PostgreSQL derived-scope result leaked another scope or compiled SQL.", derivedAcmeResult);
+
+    const derivedGlobex = clientFor(server.url, await token(privateKey, {
+      tenant: "globex",
+      principal: "derived-globex",
+    }));
+    clients.push(derivedGlobex.client);
+    await derivedGlobex.client.connect(derivedGlobex.transport);
+    const derivedGlobexResult = resultPayload(await derivedGlobex.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: derivedPlan },
+    }));
+    assert(derivedGlobexResult.ok === true
+      && derivedGlobexResult.data.length === 1
+      && derivedGlobexResult.data[0].scoped_orders_category === "enterprise"
+      && derivedGlobexResult.data[0].count === 7,
+    "PostgreSQL derived scope did not isolate the second tenant/principal.", derivedGlobexResult);
+
     const loadClients = await Promise.all(Array.from({ length: 8 }, async (_unused, index) => {
       const handle = clientFor(server.url, await token(privateKey, {
         tenant: "acme",
@@ -517,6 +663,7 @@ async function main() {
       tools: tools.tools.map((tool) => tool.name),
       principal_budget_isolated: true,
       tenant_and_principal_rows_isolated: true,
+      derived_tenant_and_principal_scope_isolated: true,
       concurrent_budget_reservation: true,
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,

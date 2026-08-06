@@ -41,7 +41,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('const name=requestedName.toLowerCase()');
     expect(html).toContain('Using lower-case name');
     expect(html).toContain('const next=requestedName.toLowerCase()');
-    expect(html).toContain('Principal: not required');
+    expect(html).toContain('Principal scope: ');
+    expect(html).toContain('mandatory proven relationship path');
+    expect(html).toContain('data-review-kind="');
+    expect(html).toContain('kind:reviewedKind');
+    expect(html).toContain('tenant_scope_path');
+    expect(html).toContain('principal_scope_path');
     expect(html).toContain('post("/api/boundary/library/switch"');
     expect(html).toContain('post("/api/boundary/library/delete"');
     expect(html).toContain('<details class="boundary-options"><summary>Rename selected boundary</summary>');

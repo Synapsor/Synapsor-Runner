@@ -1397,6 +1397,117 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("injects mandatory derived tenant scope for every root plan shape without aggregate fan-out", async () => {
+    const fixture = await activatedFixture();
+    const boundary = derivedScopeBoundary(fixture.boundary);
+    const plans = [
+      validateExplorePlan({
+        kind: "rows",
+        resource: "public.order_items",
+        select: ["id", "quantity"],
+        limit: 5,
+      }, boundary),
+      validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.order_items",
+        measures: [{ function: "sum", field: "quantity" }],
+        dimensions: [{ field: "status" }],
+        time_bucket: { field: "created_at", bucket: "week" },
+        top_n: 10,
+      }, boundary),
+      validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.order_items",
+        measures: [{ function: "sum", field: "quantity" }],
+        time_bucket: { field: "created_at", bucket: "week" },
+        comparison: {
+          field: "created_at",
+          ranges: [
+            { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+            { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+          ],
+        },
+        top_n: 1,
+      }, boundary),
+    ];
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      for (const plan of plans) {
+        const queries = compileExplorePlan(plan, boundary, {
+          tenant: "tenant-acme",
+          principal: "",
+        }, engine);
+        expect(queries).toHaveLength(plan.kind === "aggregate" && plan.comparison ? 2 : 1);
+        for (const query of queries) {
+          expect(query.resources.map((resource) => resource.id).sort()).toEqual([
+            "public.order_items",
+            "public.orders",
+          ]);
+          expect(query.sql).toContain(engine === "postgres"
+            ? "EXISTS (SELECT 1 FROM \"public\".\"orders\" st0_tenant_0"
+            : "EXISTS (SELECT 1 FROM `public`.`orders` st0_tenant_0");
+          expect(query.sql).toContain(engine === "postgres"
+            ? 't0."order_id" = st0_tenant_0."id"'
+            : "t0.`order_id` = st0_tenant_0.`id`");
+          expect(query.sql).toContain(engine === "postgres"
+            ? 'st0_tenant_0."tenant_id" = $1'
+            : "st0_tenant_0.`tenant_id` = ?");
+          expect(query.sql).not.toMatch(/JOIN\s+[^)]*orders[^)]*JOIN\s+[^)]*orders/i);
+          expect(query.params).toContain("tenant-acme");
+        }
+      }
+    }
+  });
+
+  it("scopes a derived relationship target independently and preserves MySQL parameter order", async () => {
+    const fixture = await activatedFixture();
+    const boundary = derivedTargetBoundary(fixture.boundary);
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship: "orders_featured_product_id_fkey" }],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(query!.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.catalogs",
+        "public.orders",
+        "public.products",
+      ]);
+      expect(query!.sql).toContain(engine === "postgres"
+        ? "JOIN \"public\".\"products\" t1 ON"
+        : "JOIN `public`.`products` t1 ON");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? "EXISTS (SELECT 1 FROM \"public\".\"catalogs\" st1_tenant_0"
+        : "EXISTS (SELECT 1 FROM `public`.`catalogs` st1_tenant_0");
+      expect(query!.params.filter((value) => value === "tenant-acme")).toHaveLength(2);
+    }
+
+    const enumPlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.order_items",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "status" }],
+      top_n: 10,
+    }, derivedScopeBoundary(fixture.boundary));
+    const [mysql] = compileExplorePlan(enumPlan, derivedScopeBoundary(fixture.boundary), {
+      tenant: "tenant-acme",
+      principal: "",
+    }, "mysql");
+    expect(mysql!.params.slice(0, 3)).toEqual([
+      "open",
+      "closed",
+      expect.stringMatching(/^__synapsor_unreviewed_[a-f0-9]+__$/),
+    ]);
+    expect(mysql!.params.indexOf("tenant-acme")).toBeGreaterThan(2);
+  });
+
   it("returns exact catalog evidence when a safe plan needs a proven but inactive relationship", async () => {
     const fixture = await activatedFixture((candidate) => {
       const root = candidate.pack.resources.find((resource) =>
@@ -2789,6 +2900,56 @@ describe("Scoped Explore", () => {
       await runtime.close();
     }
   });
+
+  it("runs an activated generated derived-scope resource and fails closed when its FK proof drifts", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    let currentInspection = fixture.inspection;
+    const compiled: CompiledExploreQuery[][] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => {
+          compiled.push(queries);
+          return queries.map(() => [{ quantity: 2 }]);
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => currentInspection,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.order_items",
+        select: ["quantity"],
+        limit: 1,
+      })).resolves.toMatchObject({ source_database_changed: false });
+      expect(compiled).toHaveLength(1);
+      expect(compiled[0]?.[0]?.resources.map((resource) => resource.id))
+        .toEqual(["public.order_items", "public.orders"]);
+      expect(compiled[0]?.[0]?.sql).toMatch(/WHERE EXISTS \(SELECT 1 FROM "public"\."orders"/);
+      expect(compiled[0]?.[0]?.sql).toMatch(/st0_tenant_0\."tenant_id" = \$1/);
+
+      const drifted = structuredClone(fixture.inspection);
+      drifted.tables.find((table) => table.name === "order_items")!.columns
+        .find((field) => field.name === "order_id")!.nullable = true;
+      currentInspection = drifted;
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.order_items",
+        select: ["quantity"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/derived tenant scope/i),
+      });
+      expect(compiled).toHaveLength(1);
+    } finally {
+      await runtime.close();
+    }
+  });
 });
 
 function aggregatePlan(value: string) {
@@ -2900,6 +3061,63 @@ async function activatedFixture(
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
   narrow?.(candidate);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+      SYNAPSOR_TENANT_ID: "tenant-acme",
+      SYNAPSOR_PRINCIPAL: "pm-1",
+    },
+  };
+}
+
+async function activatedDerivedScopeFixture(): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-scope-runtime-"));
+  temporaryRoots.push(root);
+  const inspection = derivedScopeInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "owner@example.test",
+            reason: "Every item belongs to the tenant of its required order.",
+            decided_at: "2026-08-05T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot: root,
@@ -3093,6 +3311,174 @@ function principalPolicy(name: string) {
   };
 }
 
+function derivedScopeBoundary(
+  input: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
+  const boundary = structuredClone(input);
+  const original = structuredClone(boundary.pack.resources[0]!);
+  const orders = {
+    ...original,
+    id: "public.orders",
+    table: "orders",
+    relationships: [],
+  };
+  const scopeLink = {
+    constraint_name: "order_items_order_id_fkey",
+    source_resource: "public.order_items",
+    target_resource: "public.orders",
+    source_columns: ["order_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "orders_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  };
+  const { tenant_key: _tenantKey, principal_key: _principalKey, ...withoutDirectScope } = original;
+  const orderItems = {
+    ...withoutDirectScope,
+    id: "public.order_items",
+    table: "order_items",
+    primary_key: "id",
+    tenant_scope: {
+      mode: "derived" as const,
+      path_id: "order_items_order_id_fkey",
+      ancestor_resource: "public.orders",
+      ancestor_column: "tenant_id",
+      proof: {
+        source: "database_catalog" as const,
+        links: [scopeLink],
+        digest: canonicalJsonDigest([scopeLink]),
+      },
+    },
+    field_types: {
+      id: "uuid",
+      order_id: "uuid",
+      quantity: "integer",
+      status: "text",
+      created_at: "timestamp with time zone",
+    },
+    field_enums: { status: ["open", "closed"] },
+    selectable_fields: ["id", "order_id", "quantity", "status", "created_at"],
+    filterable_fields: {
+      id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      order_id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      quantity: ["eq", "neq", "lt", "lte", "gt", "gte", "in"] as Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in">,
+      status: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      created_at: ["eq", "neq", "lt", "lte", "gt", "gte", "in"] as Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in">,
+    },
+    sortable_fields: ["id", "order_id", "quantity", "status", "created_at"],
+    groupable_fields: ["status"],
+    aggregate_measures: ["quantity"],
+    count_distinct_fields: ["id", "order_id"],
+    time_bucket_fields: { created_at: ["day", "week", "month"] as Array<"day" | "week" | "month"> },
+    kept_out_fields: [],
+    relationships: [],
+  };
+  boundary.pack.resources = [orders, orderItems];
+  return boundary;
+}
+
+function derivedTargetBoundary(
+  input: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
+  const boundary = derivedScopeBoundary(input);
+  const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+  const original = structuredClone(orders);
+  const catalogs = {
+    ...structuredClone(original),
+    id: "public.catalogs",
+    table: "catalogs",
+    relationships: [],
+  };
+  const scopeLink = {
+    constraint_name: "products_catalog_id_fkey",
+    source_resource: "public.products",
+    target_resource: "public.catalogs",
+    source_columns: ["catalog_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "catalogs_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  };
+  const { tenant_key: _tenantKey, principal_key: _principalKey, ...withoutDirectScope } = original;
+  const products = {
+    ...withoutDirectScope,
+    id: "public.products",
+    table: "products",
+    tenant_scope: {
+      mode: "derived" as const,
+      path_id: "products_catalog_id_fkey",
+      ancestor_resource: "public.catalogs",
+      ancestor_column: "tenant_id",
+      proof: {
+        source: "database_catalog" as const,
+        links: [scopeLink],
+        digest: canonicalJsonDigest([scopeLink]),
+      },
+    },
+    field_types: { id: "uuid", catalog_id: "uuid", name: "text" },
+    field_enums: {},
+    selectable_fields: ["id", "catalog_id", "name"],
+    filterable_fields: {
+      id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      catalog_id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      name: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+    },
+    sortable_fields: ["id", "catalog_id", "name"],
+    groupable_fields: ["name"],
+    aggregate_measures: [],
+    count_distinct_fields: ["id", "catalog_id"],
+    time_bucket_fields: {},
+    kept_out_fields: [],
+    relationships: [],
+  };
+  const relationshipLink = {
+    constraint_name: "orders_featured_product_id_fkey",
+    source_resource: "public.orders",
+    target_resource: "public.products",
+    source_columns: ["featured_product_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "products_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  };
+  orders.field_types.featured_product_id = "uuid";
+  orders.selectable_fields.push("featured_product_id");
+  orders.relationships = [{
+    id: "orders_featured_product_id_fkey",
+    target_resource: "public.products",
+    local_columns: ["featured_product_id"],
+    target_columns: ["id"],
+    counted_entity: orders.primary_key,
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+    path_depth: 1,
+    proof: {
+      source: "database_catalog",
+      links: [relationshipLink],
+      digest: canonicalJsonDigest([relationshipLink]),
+    },
+    nullable: false,
+    unmatched_rows: "exclude",
+  }];
+  boundary.pack.resources = [orders, products, catalogs];
+  return boundary;
+}
+
 function fixedExecutor(rows: Record<string, unknown>[]): ScopedExploreExecutor {
   return {
     execute: async () => structuredClone(rows),
@@ -3147,6 +3533,41 @@ async function rewriteActiveBoundary(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+}
+
+function derivedScopeInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) => field.name !== "tenant_id");
+  orderItems.columns.push(column("order_id", "uuid", { immutable: true }));
+  orderItems.columns.push(column("quantity", "integer"));
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (!orderItems.role_posture) throw new Error("derived-scope fixture role posture is required");
+  orderItems.role_posture.row_security_forced = false;
+  orderItems.role_posture.row_security_effective_for_current_role = false;
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("order_id", "quantity");
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function churnInspection(): SchemaInspection {

@@ -54,6 +54,7 @@ describe("Auto Boundary compiler", () => {
     expect(second.exploration_boundary.budgets.max_differencing_queries).toBe(16);
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("id");
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("tenant_id");
+    expect(JSON.stringify(first.exploration_boundary.pack.resources[0])).not.toContain("tenant_scope");
     expect(JSON.stringify(first)).not.toContain("postgres://");
     expect(JSON.stringify(first)).not.toContain("tenant-acme");
     expect(JSON.stringify(first)).not.toContain("customer@example.com");
@@ -276,6 +277,201 @@ describe("Auto Boundary compiler", () => {
         reviewed_cardinality: "many_to_one_candidate",
         cardinality_proven: false,
       });
+  });
+
+  it("offers a proven non-null child-to-ancestor tenant path but requires explicit human review", () => {
+    const inspection = derivedTenantScopeInspection();
+    const initial = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/derived-scope"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const initialChild = initial.graph.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+
+    expect(initialChild).toMatchObject({
+      status: "blocked_scope",
+      blockers: ["trusted tenant scope is unresolved"],
+      derived_tenant_scope: {
+        confirmation_required: true,
+        candidates: [{
+          path_id: "order_items_order_id_fkey",
+          ancestor_resource: "public.orders",
+          ancestor_column: "tenant_id",
+          proof: {
+            source: "database_catalog",
+            links: [{
+              source_resource: "public.order_items",
+              target_resource: "public.orders",
+              source_columns: ["order_id"],
+              target_columns: ["id"],
+              nullable: false,
+              cardinality: "many_to_one",
+              max_fan_out: 1,
+            }],
+          },
+        }],
+      },
+    });
+    expect(initial.exploration_boundary.pack.resources.map((resource) => resource.id))
+      .not.toContain("public.order_items");
+
+    const reviewed = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/derived-scope"),
+      sourceEnv: "DATABASE_URL",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.order_items": {
+            tenant_scope_path: {
+              value: "order_items_order_id_fkey",
+              actor: "owner@example.test",
+              reason: "Order items belong to the tenant of their required reviewed order.",
+              decided_at: "2026-08-05T12:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const reviewedChild = reviewed.graph.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+    const packedChild = reviewed.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+
+    expect(reviewedChild.status).toBe("draft_read");
+    expect(reviewedChild.derived_tenant_scope?.selected?.path_id)
+      .toBe("order_items_order_id_fkey");
+    expect(packedChild.tenant_key).toBeUndefined();
+    expect(packedChild.tenant_scope).toMatchObject({
+      mode: "derived",
+      path_id: "order_items_order_id_fkey",
+      ancestor_resource: "public.orders",
+      ancestor_column: "tenant_id",
+    });
+    expect(reviewed.dsl).not.toContain("ON public.order_items");
+    expect(reviewed.lock.protected_authority).not.toContain("public.order_items");
+  });
+
+  it("keeps nullable and ambiguous relationship-carried tenant paths blocked", () => {
+    const nullable = buildAutoBoundary({
+      inspection: derivedTenantScopeInspection({ nullable: true }),
+      project: projectSummary("/workspace/nullable-derived-scope"),
+      sourceEnv: "DATABASE_URL",
+    }).graph.resources.find((resource) => resource.id === "public.order_items")!;
+    expect(nullable.status).toBe("blocked_scope");
+    expect(nullable.derived_tenant_scope).toBeUndefined();
+
+    const ambiguous = buildAutoBoundary({
+      inspection: derivedTenantScopeInspection({ ambiguous: true }),
+      project: projectSummary("/workspace/ambiguous-derived-scope"),
+      sourceEnv: "DATABASE_URL",
+    }).graph.resources.find((resource) => resource.id === "public.order_items")!;
+    expect(ambiguous.status).toBe("blocked_scope");
+    expect(ambiguous.derived_tenant_scope?.candidates.map((candidate) => candidate.path_id))
+      .toEqual(["order_items_order_id_fkey", "order_items_shipment_id_fkey"]);
+    expect(ambiguous.derived_tenant_scope?.selected).toBeUndefined();
+  });
+
+  it("offers a bounded two-hop tenant path through normalized ancestors", () => {
+    const inspection = derivedTenantScopeInspection();
+    const orders = inspection.tables.find((table) => table.name === "orders")!;
+    orders.columns = orders.columns.filter((field) => field.name !== "tenant_id");
+    orders.columns.push(column("account_id", "uuid", { immutable: true }));
+    orders.suggestions.tenant_columns = [];
+    orders.suggestions.default_visible_columns = orders.suggestions.default_visible_columns
+      .filter((field) => field !== "tenant_id")
+      .concat("account_id");
+    orders.row_level_security = false;
+    orders.row_level_security_policies = [];
+    orders.foreign_keys.push({
+      name: "orders_account_id_fkey",
+      columns: ["account_id"],
+      referenced_schema: "public",
+      referenced_table: "accounts",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    });
+    inspection.tables.push(relationTable("accounts"));
+
+    const child = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/two-hop-derived-scope"),
+      sourceEnv: "DATABASE_URL",
+    }).graph.resources.find((resource) => resource.id === "public.order_items")!;
+    expect(child.derived_tenant_scope?.candidates).toEqual([
+      expect.objectContaining({
+        path_id: "order_items_order_id_fkey__orders_account_id_fkey",
+        ancestor_resource: "public.accounts",
+        ancestor_column: "tenant_id",
+        proof: expect.objectContaining({ links: expect.arrayContaining([
+          expect.objectContaining({ source_resource: "public.order_items", target_resource: "public.orders" }),
+          expect.objectContaining({ source_resource: "public.orders", target_resource: "public.accounts" }),
+        ]) }),
+      }),
+    ]);
+  });
+
+  it("reviews principal scope through the same mandatory path without changing tenant scope", () => {
+    const inspection = derivedTenantScopeInspection();
+    const orders = inspection.tables.find((table) => table.name === "orders")!;
+    orders.columns.push(column("owner_id", "uuid", { immutable: true }));
+    orders.suggestions.default_visible_columns.push("owner_id");
+    orders.row_level_security_policies!.push({
+      name: "orders_owner_read",
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(owner_id = current_setting('app.principal')::uuid)",
+    });
+    const initial = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/derived-principal-scope"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const initialChild = initial.graph.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+    expect(initialChild.derived_principal_scope?.candidates).toEqual([
+      expect.objectContaining({
+        path_id: "order_items_order_id_fkey",
+        ancestor_resource: "public.orders",
+        ancestor_column: "owner_id",
+      }),
+    ]);
+
+    const reviewed = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/derived-principal-scope"),
+      sourceEnv: "DATABASE_URL",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.order_items": {
+            tenant_scope_path: {
+              value: "order_items_order_id_fkey",
+              actor: "owner@example.test",
+              reason: "Every item belongs to its required order tenant.",
+              decided_at: "2026-08-05T12:00:00.000Z",
+            },
+            principal_scope_path: {
+              value: "order_items_order_id_fkey",
+              actor: "owner@example.test",
+              reason: "Every item belongs to its required order owner.",
+              decided_at: "2026-08-05T12:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const packed = reviewed.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+    expect(packed.tenant_scope?.ancestor_column).toBe("tenant_id");
+    expect(packed.principal_key).toBeUndefined();
+    expect(packed.principal_scope).toMatchObject({
+      path_id: "order_items_order_id_fkey",
+      ancestor_resource: "public.orders",
+      ancestor_column: "owner_id",
+    });
   });
 
   it("keeps a primary key hidden when it is also the trusted tenant key", () => {
@@ -1031,6 +1227,35 @@ describe("Auto Boundary compiler", () => {
     expect(rebuiltResource.groupable_fields).not.toContain("reason_category");
   });
 
+  it("prunes a reviewed derived path when its catalog proof becomes nullable", () => {
+    const inspection = derivedTenantScopeInspection();
+    const overrides: AutoBoundaryReviewOverrides = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "owner@example.test",
+            reason: "Every item belongs to its required order.",
+            decided_at: "2026-08-05T12:00:00.000Z",
+          },
+        },
+      },
+    };
+    expect(pruneAutoBoundaryReviewOverrides(inspection, overrides)
+      .overrides.resources["public.order_items"]?.tenant_scope_path?.value)
+      .toBe("order_items_order_id_fkey");
+
+    const drifted = structuredClone(inspection);
+    drifted.tables.find((table) => table.name === "order_items")!.columns
+      .find((field) => field.name === "order_id")!.nullable = true;
+    const pruned = pruneAutoBoundaryReviewOverrides(drifted, overrides);
+    expect(pruned.overrides.resources["public.order_items"]?.tenant_scope_path).toBeUndefined();
+    expect(pruned.removed).toContain(
+      "public.order_items: reviewed derived tenant path order_items_order_id_fkey is no longer non-null, catalog-proven, unique, and connected to direct tenant scope",
+    );
+  });
+
   it("keeps empty or entirely unscoped schemas at zero authority so Workbench can resolve exceptions", () => {
     const empty = churnInspection();
     empty.tables = [];
@@ -1592,6 +1817,49 @@ function relationshipChainInspection(options: {
     });
     tables.push(alternateProducts);
   }
+  inspection.tables = tables;
+  return inspection;
+}
+
+function derivedTenantScopeInspection(options: {
+  nullable?: boolean;
+  ambiguous?: boolean;
+} = {}): SchemaInspection {
+  const orderItems = relationTable("order_items", [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }]);
+  orderItems.columns = orderItems.columns.filter((field) => field.name !== "tenant_id");
+  orderItems.columns.push(column("quantity", "integer"));
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("quantity");
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (options.nullable) {
+    orderItems.columns.find((field) => field.name === "order_id")!.nullable = true;
+  }
+
+  const tables = [orderItems, relationTable("orders")];
+  if (options.ambiguous) {
+    orderItems.columns.push(column("shipment_id", "uuid", { immutable: true }));
+    orderItems.suggestions.default_visible_columns.push("shipment_id");
+    orderItems.foreign_keys.push({
+      name: "order_items_shipment_id_fkey",
+      columns: ["shipment_id"],
+      referenced_schema: "public",
+      referenced_table: "shipments",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    });
+    tables.push(relationTable("shipments"));
+  }
+  const inspection = churnInspection();
   inspection.tables = tables;
   return inspection;
 }

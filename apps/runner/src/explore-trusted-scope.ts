@@ -68,7 +68,7 @@ export async function resolveExploreTrustedScope(input: {
     };
   }
   const principalRequired = input.boundary.pack.resources.some((resource) =>
-    typeof resource.principal_key === "string" && resource.principal_key.length > 0);
+    Boolean(resource.principal_key || resource.principal_scope));
   const configuredTenant = input.env[input.boundary.trusted_context.tenant_env]?.trim();
   const configuredPrincipal = input.env[input.boundary.trusted_context.principal_env]?.trim();
   if (principalRequired && !configuredPrincipal) {
@@ -141,7 +141,14 @@ function assertRoleBoundTenantAuthority(
   }
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   for (const resource of boundary.pack.resources) {
-    const table = tables.get(resource.id);
+    const scopeOwner = resource.tenant_key
+      ? resource
+      : resource.tenant_scope
+        ? boundary.pack.resources.find((candidate) =>
+          candidate.id === resource.tenant_scope!.ancestor_resource
+          && candidate.tenant_key === resource.tenant_scope!.ancestor_column)
+        : undefined;
+    const table = scopeOwner ? tables.get(scopeOwner.id) : undefined;
     if (resource.rls_session?.tenant_setting !== setting
       || table?.row_level_security !== true
       || table.role_posture?.row_security_effective_for_current_role !== true) {

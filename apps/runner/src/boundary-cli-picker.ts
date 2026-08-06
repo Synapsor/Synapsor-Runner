@@ -21,10 +21,10 @@ export type BoundaryFieldTierEditResult =
 export type BoundaryFieldEnumEditResult = string[] | "back" | undefined;
 
 export type BoundaryBlockedResolution =
-  | {
-      row_identity: string;
-      tenant_key: string;
-    }
+  | ({ row_identity: string } & (
+      | { tenant_key: string; tenant_scope_path?: never }
+      | { tenant_key?: never; tenant_scope_path: string }
+    ))
   | "back"
   | undefined;
 
@@ -142,25 +142,44 @@ async function resolveBlockedResource(
   output: WriteStream,
 ): Promise<BoundaryBlockedResolution> {
   const rowCandidates = uniqueCandidates(view.row_identity.selected, view.row_identity.candidates);
-  const tenantCandidates = uniqueCandidates(view.tenant_key.selected, view.tenant_key.candidates);
+  const tenantOptions = [
+    ...uniqueCandidates(view.tenant_key.selected, view.tenant_key.candidates).map((value) => ({
+      kind: "direct" as const,
+      value,
+      label: `${value} (direct column)`,
+      selected: view.tenant_key.selected === value,
+    })),
+    ...(view.derived_tenant_scope?.candidates ?? []).map((scope) => ({
+      kind: "derived" as const,
+      value: scope.path_id,
+      label: `via ${scope.path_id} to ${scope.ancestor_resource}.${scope.ancestor_column}`,
+      selected: view.derived_tenant_scope?.selected?.path_id === scope.path_id,
+    })),
+  ];
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   let selectedDecision = view.row_identity.selected ? 1 : 0;
   let rowIndex = Math.max(0, rowCandidates.indexOf(view.row_identity.selected ?? rowCandidates[0] ?? ""));
-  let tenantIndex = Math.max(0, tenantCandidates.indexOf(view.tenant_key.selected ?? tenantCandidates[0] ?? ""));
+  let tenantIndex = Math.max(0, tenantOptions.findIndex((option) => option.selected));
 
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
       const rowValue = rowCandidates[rowIndex];
-      const tenantValue = tenantCandidates[tenantIndex];
-      const resolvable = Boolean(rowValue && tenantValue);
-      const selectedInference = selectedDecision === 0 ? view.row_identity : view.tenant_key;
-      const selectedValue = selectedDecision === 0 ? rowValue : tenantValue;
-      const evidence = selectedInference.alternatives_considered
-        .find((candidate) => candidate.value === selectedValue)?.evidence[0]
-        ?? selectedInference.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
+      const tenantOption = tenantOptions[tenantIndex];
+      const resolvable = Boolean(rowValue && tenantOption);
+      const selectedValue = selectedDecision === 0 ? rowValue : tenantOption?.value;
+      const evidence = selectedDecision === 0
+        ? view.row_identity.alternatives_considered
+          .find((candidate) => candidate.value === selectedValue)?.evidence[0]
+          ?? view.row_identity.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail
+        : tenantOption?.kind === "derived"
+          ? "database foreign key is non-null and points many-to-one to a unique key on the scoped ancestor"
+          : view.tenant_key.alternatives_considered
+            .find((candidate) => candidate.value === selectedValue)?.evidence[0]
+            ?? view.tenant_key.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
       render([
         theme.title(`RESOLVE TABLE ACCESS - ${safeTerminalText(view.resource_id)}`),
-        "Runner needs one database-backed record ID and one tenant-isolation column.",
+        "Runner needs one database-backed record ID and one tenant-isolation choice.",
+        theme.dim("Tenant isolation may use a direct column or one mandatory, proven relationship path."),
         theme.dim("These choices stay outside model arguments and do not activate access."),
         "",
         resolutionRow(
@@ -175,9 +194,9 @@ async function resolveBlockedResource(
           theme,
           selectedDecision === 1,
           "Tenant isolation",
-          tenantValue,
-          tenantCandidates.length,
-          view.tenant_key.selected === tenantValue,
+          tenantOption?.label,
+          tenantOptions.length,
+          tenantOption?.selected === true,
         ),
         "",
         ...(selectedValue
@@ -210,13 +229,15 @@ async function resolveBlockedResource(
       if (direction !== 0) {
         if (selectedDecision === 0 && rowCandidates.length) {
           rowIndex = (rowIndex + direction + rowCandidates.length) % rowCandidates.length;
-        } else if (selectedDecision === 1 && tenantCandidates.length) {
-          tenantIndex = (tenantIndex + direction + tenantCandidates.length) % tenantCandidates.length;
+        } else if (selectedDecision === 1 && tenantOptions.length) {
+          tenantIndex = (tenantIndex + direction + tenantOptions.length) % tenantOptions.length;
         }
         continue;
       }
-      if ((key.name === "return" || key.name === "enter") && rowValue && tenantValue) {
-        return { row_identity: rowValue, tenant_key: tenantValue };
+      if ((key.name === "return" || key.name === "enter") && rowValue && tenantOption) {
+        return tenantOption.kind === "direct"
+          ? { row_identity: rowValue, tenant_key: tenantOption.value }
+          : { row_identity: rowValue, tenant_scope_path: tenantOption.value };
       }
     }
   });
@@ -1182,7 +1203,9 @@ function boundaryResourceMapLines(
     "",
     theme.bold(safeTerminalText(view.resource_id)),
     `|-- Record identity: ${safeTerminalText(candidate.primary_key)}`,
-    `|-- Trusted tenant scope: ${safeTerminalText(candidate.tenant_key)} (bound outside model arguments)`,
+    `|-- Trusted tenant scope: ${candidate.tenant_key
+      ? `${safeTerminalText(candidate.tenant_key)} (direct; bound outside model arguments)`
+      : `via ${safeTerminalText(candidate.tenant_scope!.path_id)} to ${safeTerminalText(candidate.tenant_scope!.ancestor_resource)}.${safeTerminalText(candidate.tenant_scope!.ancestor_column)} (mandatory)`}`,
     `|-- Trusted principal scope: ${candidate.principal_key
       ? `${safeTerminalText(candidate.principal_key)} (bound outside model arguments)`
       : "not configured"}`,

@@ -17,6 +17,7 @@ import {
   type AutoBoundaryField,
   type AutoBoundaryBuild,
   type BoundaryInference,
+  type DerivedScopeInference,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
   type GenerationLock,
@@ -42,7 +43,9 @@ export type BoundaryResourceReviewRequest = {
   exclude?: boolean;
   row_identity?: string;
   tenant_key?: string;
+  tenant_scope_path?: string;
   principal_key?: string | null;
+  principal_scope_path?: string | null;
   keep_out_fields?: string[];
   withhold_from_model_fields?: string[];
   allow_reviewed_fields?: string[];
@@ -115,7 +118,9 @@ export type BoundaryReviewSemanticDiff = {
   after_included: boolean;
   selected_row_identity: string | null;
   selected_tenant_key: string | null;
+  selected_tenant_scope_path?: string;
   selected_principal_key: string | null;
+  selected_principal_scope_path?: string;
   added_visible_fields: string[];
   removed_visible_fields: string[];
   added_kept_out_fields: string[];
@@ -147,7 +152,9 @@ export type BoundaryResourceReviewView = {
   blockers: string[];
   row_identity: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
+  derived_tenant_scope?: DerivedScopeInference;
   principal_key: BoundaryInference<string>;
+  derived_principal_scope?: DerivedScopeInference;
   fields: AutoBoundaryField[];
   relationships: Array<{
     name: string;
@@ -202,7 +209,9 @@ type BoundaryReviewFiles = {
       blockers: string[];
       primary_key: BoundaryInference<string>;
       tenant_key: BoundaryInference<string>;
+      derived_tenant_scope?: DerivedScopeInference;
       principal_key: BoundaryInference<string>;
+      derived_principal_scope?: DerivedScopeInference;
       fields: AutoBoundaryField[];
       relationships: BoundaryResourceReviewView["relationships"];
     }>;
@@ -228,7 +237,13 @@ export async function inspectBoundaryResourceReview(
     blockers: reviewed.blockers,
     row_identity: reviewed.primary_key,
     tenant_key: reviewed.tenant_key,
+    ...(reviewed.derived_tenant_scope
+      ? { derived_tenant_scope: reviewed.derived_tenant_scope }
+      : {}),
     principal_key: reviewed.principal_key,
+    ...(reviewed.derived_principal_scope
+      ? { derived_principal_scope: reviewed.derived_principal_scope }
+      : {}),
     fields: reviewed.fields,
     relationships: reviewed.relationships,
     candidate,
@@ -284,7 +299,11 @@ export async function listBoundaryResourceReviews(
         inline_resolution_available:
           resource.status !== "blocked_role"
           && Boolean(resource.primary_key.selected || resource.primary_key.candidates.length)
-          && Boolean(resource.tenant_key.selected || resource.tenant_key.candidates.length),
+          && Boolean(
+            resource.tenant_key.selected
+            || resource.tenant_key.candidates.length
+            || resource.derived_tenant_scope?.candidates.length,
+          ),
         relationships: boundaryRelationshipSummaries(generated, candidate, active),
       };
     })
@@ -651,11 +670,25 @@ function managedDecisionsForRequest(
       value: request.tenant_key,
     }));
   }
+  if (request.tenant_scope_path !== undefined) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "tenant_scope_path",
+      value: request.tenant_scope_path,
+    }));
+  }
   if (request.principal_key !== undefined) {
     decisions.push(normalizeManagedBoundaryReviewDecision({
       ...common,
       kind: "principal_key",
       value: request.principal_key,
+    }));
+  }
+  if (request.principal_scope_path !== undefined) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "principal_scope_path",
+      value: request.principal_scope_path,
     }));
   }
   for (const field of request.keep_out_fields ?? []) {
@@ -906,7 +939,9 @@ function canStageIncompleteScopeResolution(
 ): boolean {
   const hasScopeChoice = request.row_identity !== undefined
     || request.tenant_key !== undefined
-    || request.principal_key !== undefined;
+    || request.tenant_scope_path !== undefined
+    || request.principal_key !== undefined
+    || request.principal_scope_path !== undefined;
   const hasNonScopeChoice = [
     request.keep_out_fields,
     request.withhold_from_model_fields,
@@ -972,7 +1007,13 @@ function semanticDiff(
     after_included: Boolean(afterResource),
     selected_row_identity: afterResource?.primary_key ?? null,
     selected_tenant_key: afterResource?.tenant_key ?? null,
+    ...(afterResource?.tenant_scope
+      ? { selected_tenant_scope_path: afterResource.tenant_scope.path_id }
+      : {}),
     selected_principal_key: afterResource?.principal_key ?? null,
+    ...(afterResource?.principal_scope
+      ? { selected_principal_scope_path: afterResource.principal_scope.path_id }
+      : {}),
     added_visible_fields: visible.added,
     removed_visible_fields: visible.removed,
     added_kept_out_fields: keptOut.added,
@@ -1094,6 +1135,12 @@ function assertBindingsEqual(
 function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest): void {
   if (!request.resource_id.trim()) throw new Error("Boundary resource review requires a resource ID.");
   if (request.include && request.exclude) throw new Error("Boundary resource review cannot include and exclude the same resource.");
+  if (request.tenant_key !== undefined && request.tenant_scope_path !== undefined) {
+    throw new Error("Choose either a direct tenant-isolation column or one relationship-carried tenant path, not both.");
+  }
+  if (request.principal_key && request.principal_scope_path) {
+    throw new Error("Choose either a direct principal column or one relationship-carried principal path, not both.");
+  }
   if (!request.actor.trim() || request.actor.length > 128) {
     throw new Error("Boundary resource review requires a bounded human reviewer identity.");
   }
@@ -1133,7 +1180,9 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
     request.reason,
     request.row_identity,
     request.tenant_key,
+    request.tenant_scope_path,
     ...(request.principal_key ? [request.principal_key] : []),
+    ...(request.principal_scope_path ? [request.principal_scope_path] : []),
     ...requestArrays(request),
   ].filter((value): value is string => typeof value === "string");
   if (values.some((value) => /[\u0000-\u001f\u007f]/.test(value))) {
@@ -1168,6 +1217,23 @@ function validateBoundaryRequestAgainstResource(
     throw new Error(
       `Unknown field${unknown.length === 1 ? "" : "s"} ${unknown.map((field) => JSON.stringify(field)).join(", ")} ` +
       `for ${resource.id}. Available columns: ${columns.join(", ")}.`,
+    );
+  }
+
+  if (request.tenant_scope_path !== undefined
+    && !resource.derived_tenant_scope?.candidates.some((candidate) =>
+      candidate.path_id === request.tenant_scope_path)) {
+    throw new Error(
+      `${resource.id} tenant path ${JSON.stringify(request.tenant_scope_path)} is not a current non-null, catalog-proven many-to-one path. ` +
+      `Available derived tenant paths: ${resource.derived_tenant_scope?.candidates.map((candidate) => candidate.path_id).join(", ") || "none"}.`,
+    );
+  }
+  if (request.principal_scope_path
+    && !resource.derived_principal_scope?.candidates.some((candidate) =>
+      candidate.path_id === request.principal_scope_path)) {
+    throw new Error(
+      `${resource.id} principal path ${JSON.stringify(request.principal_scope_path)} is not a current non-null, catalog-proven many-to-one path. ` +
+      `Available derived principal paths: ${resource.derived_principal_scope?.candidates.map((candidate) => candidate.path_id).join(", ") || "none"}.`,
     );
   }
 
@@ -1261,7 +1327,13 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     exclude: request.exclude === true,
     row_identity: request.row_identity ?? null,
     tenant_key: request.tenant_key ?? null,
+    ...(request.tenant_scope_path !== undefined
+      ? { tenant_scope_path: request.tenant_scope_path }
+      : {}),
     principal_key: request.principal_key === undefined ? "unchanged" : request.principal_key,
+    ...(request.principal_scope_path !== undefined
+      ? { principal_scope_path: request.principal_scope_path }
+      : {}),
     keep_out_fields: [...(request.keep_out_fields ?? [])].sort(),
     withhold_from_model_fields: [...(request.withhold_from_model_fields ?? [])].sort(),
     allow_reviewed_fields: [...(request.allow_reviewed_fields ?? [])].sort(),

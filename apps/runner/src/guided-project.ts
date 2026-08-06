@@ -105,7 +105,7 @@ export async function initializeGuidedProject(input: {
   const sourceName = input.build.exploration_boundary.source;
   const trustedContext = input.build.exploration_boundary.trusted_context;
   const principalRequired = input.build.exploration_boundary.pack.resources
-    .some((resource) => Boolean(resource.principal_key));
+    .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
   const config = {
     version: 1,
     mode: "read_only",
@@ -323,7 +323,7 @@ export async function resetGuidedOnboardingForBoundaryReview(input: {
 function environmentExample(build: GuidedBuild): string {
   const trustedContext = build.exploration_boundary.trusted_context;
   const principalRequired = build.exploration_boundary.pack.resources
-    .some((resource) => Boolean(resource.principal_key));
+    .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
   const variables = [
     build.lock.source_env,
     trustedContext.tenant_env,

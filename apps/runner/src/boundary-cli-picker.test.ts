@@ -705,7 +705,7 @@ describe("boundary review terminal picker", () => {
       expect(rendered).toContain("TABLE ACCESS MAP - public.check_ins");
       expect(rendered).toContain("Preview includes unsaved access choices.");
       expect(rendered).toContain("outcome: return, filter(eq), sort, count distinct");
-      expect(rendered).toContain("Trusted tenant scope: tenant_id (bound outside model arguments)");
+      expect(rendered).toContain("Trusted tenant scope: tenant_id (direct; bound outside model arguments)");
       expect(rendered).not.toContain("tenant-secret");
     } finally {
       if (previousNoColor === undefined) delete process.env.NO_COLOR;

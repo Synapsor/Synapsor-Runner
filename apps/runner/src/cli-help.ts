@@ -373,6 +373,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary delete old_draft --yes [--project-root .]
   ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
+  ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant scope through their required order"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"

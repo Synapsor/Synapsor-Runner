@@ -52,7 +52,7 @@ export type ManagedBoundaryReviewDecision =
       decided_at?: string;
     }
   | {
-      kind: "row_identity" | "tenant_key";
+      kind: "row_identity" | "tenant_key" | "tenant_scope_path";
       resource_id: string;
       value: string;
       actor: string;
@@ -60,7 +60,7 @@ export type ManagedBoundaryReviewDecision =
       decided_at?: string;
     }
   | {
-      kind: "principal_key";
+      kind: "principal_key" | "principal_scope_path";
       resource_id: string;
       value: string | null;
       actor: string;
@@ -127,7 +127,7 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
-  if (kind === "row_identity" || kind === "tenant_key") {
+  if (kind === "row_identity" || kind === "tenant_key" || kind === "tenant_scope_path") {
     return {
       kind,
       resource_id: resourceId,
@@ -137,7 +137,7 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
-  if (kind === "principal_key") {
+  if (kind === "principal_key" || kind === "principal_scope_path") {
     return {
       kind,
       resource_id: resourceId,
@@ -161,7 +161,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, principal_key, or minimum_cohort.",
+    "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, principal_key, principal_scope_path, or minimum_cohort.",
   );
 }
 
@@ -210,6 +210,15 @@ export function applyManagedBoundaryReviewDecision(
       reason: input.reason,
       decided_at: decidedAt,
     };
+    delete resource.tenant_scope_path;
+  } else if (input.kind === "tenant_scope_path") {
+    resource.tenant_scope_path = {
+      value: input.value,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.tenant_key;
   } else if (input.kind === "principal_key") {
     resource.principal_key = {
       value: input.value,
@@ -217,6 +226,15 @@ export function applyManagedBoundaryReviewDecision(
       reason: input.reason,
       decided_at: decidedAt,
     };
+    delete resource.principal_scope_path;
+  } else if (input.kind === "principal_scope_path") {
+    resource.principal_scope_path = {
+      value: input.value,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.principal_key;
   } else {
     const minimumCohort = Number(input.value);
     if (minimumCohort === 5) {
@@ -501,9 +519,32 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         rls_session: resource.rls_session ?? null,
       }, resourceId);
     }
+    if (detail.startsWith("confirm mandatory derived tenant scope ")) {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        tenant_scope: resource.tenant_scope,
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
+          : {
+            trusted_tenant_env: candidate.trusted_context.tenant_env,
+            ...(candidate.trusted_context.database_role_tenant ? {
+              trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
+            } : {}),
+          }),
+        rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
     if (detail.startsWith("confirm principal scope ")) {
       return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
         principal_key: resource.principal_key ?? null,
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
+          : { trusted_principal_env: candidate.trusted_context.principal_env }),
+        rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail.startsWith("confirm mandatory derived principal scope ")) {
+      return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
+        principal_scope: resource.principal_scope,
         ...(candidate.trusted_context.provider === "http_claims"
           ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
           : { trusted_principal_env: candidate.trusted_context.principal_env }),
@@ -549,12 +590,16 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         {
           relationship: resource.relationships.find((item) => item.id === relationshipId) ?? null,
           source_scope: {
-            tenant_key: resource.tenant_key,
+            ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
+            ...(resource.tenant_scope ? { tenant_scope: resource.tenant_scope } : {}),
             principal_key: resource.principal_key ?? null,
+            ...(resource.principal_scope ? { principal_scope: resource.principal_scope } : {}),
           },
           target_scope: targetResource ? {
-            tenant_key: targetResource.tenant_key,
+            ...(targetResource.tenant_key ? { tenant_key: targetResource.tenant_key } : {}),
+            ...(targetResource.tenant_scope ? { tenant_scope: targetResource.tenant_scope } : {}),
             principal_key: targetResource.principal_key ?? null,
+            ...(targetResource.principal_scope ? { principal_scope: targetResource.principal_scope } : {}),
           } : null,
         },
         resourceId,

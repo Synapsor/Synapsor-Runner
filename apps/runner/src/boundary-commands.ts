@@ -620,7 +620,9 @@ async function boundaryResourceReviewCommand(
     "--exclude",
     "--row-identity",
     "--tenant-key",
+    "--tenant-scope-path",
     "--principal-key",
+    "--principal-scope-path",
     "--no-principal",
     "--keep-out",
     "--withhold-from-model",
@@ -659,7 +661,9 @@ async function boundaryResourceReviewCommand(
     "--exclude",
     "--row-identity",
     "--tenant-key",
+    "--tenant-scope-path",
     "--principal-key",
+    "--principal-scope-path",
     "--no-principal",
     "--keep-out",
     "--withhold-from-model",
@@ -742,6 +746,13 @@ async function boundaryResourceReviewCommand(
   if (args.includes("--principal-key") && args.includes("--no-principal")) {
     throw new Error("Use either --principal-key <column> or --no-principal, not both.");
   }
+  if (args.includes("--tenant-key") && args.includes("--tenant-scope-path")) {
+    throw new Error("Use either --tenant-key <column> or --tenant-scope-path <path>, not both.");
+  }
+  if (args.includes("--principal-scope-path")
+    && (args.includes("--principal-key") || args.includes("--no-principal"))) {
+    throw new Error("Use one of --principal-key <column>, --principal-scope-path <path>, or --no-principal.");
+  }
   const nullableRelationship = optionalArg(args, "--nullable-relationship");
   const unmatchedRows = optionalArg(args, "--unmatched-rows");
   const minimumCohortText = optionalArg(args, "--minimum-cohort");
@@ -777,11 +788,16 @@ async function boundaryResourceReviewCommand(
     ...(args.includes("--exclude") ? { exclude: true } : {}),
     ...(optionalArg(args, "--row-identity") ? { row_identity: optionalArg(args, "--row-identity") } : {}),
     ...(optionalArg(args, "--tenant-key") ? { tenant_key: optionalArg(args, "--tenant-key") } : {}),
+    ...(optionalArg(args, "--tenant-scope-path")
+      ? { tenant_scope_path: optionalArg(args, "--tenant-scope-path") }
+      : {}),
     ...(args.includes("--no-principal")
-      ? { principal_key: null }
+      ? { principal_key: null, principal_scope_path: null }
       : optionalArg(args, "--principal-key")
         ? { principal_key: optionalArg(args, "--principal-key") }
-        : {}),
+        : optionalArg(args, "--principal-scope-path")
+          ? { principal_scope_path: optionalArg(args, "--principal-scope-path") }
+          : {}),
     ...(listArg(args, "--keep-out") ? { keep_out_fields: listArg(args, "--keep-out") } : {}),
     ...(listArg(args, "--withhold-from-model")
       ? { withhold_from_model_fields: listArg(args, "--withhold-from-model") }
@@ -1377,7 +1393,9 @@ async function resolveBlockedBoundaryResource(input: {
         resource_id: input.view.resource_id,
         ...(input.include ? { include: true } : {}),
         row_identity: resolution.row_identity,
-        tenant_key: resolution.tenant_key,
+        ...(resolution.tenant_key
+          ? { tenant_key: resolution.tenant_key }
+          : { tenant_scope_path: resolution.tenant_scope_path }),
         actor: localInteractiveActor(),
         reason: "Selected database-inspected identity and tenant isolation in local boundary review.",
       },
@@ -1387,7 +1405,9 @@ async function resolveBlockedBoundaryResource(input: {
     process.stdout.write([
       `Saved structural review for ${input.view.resource_id} in disabled boundary revision ${committed.review_revision}.`,
       `Record ID: ${resolution.row_identity}`,
-      `Tenant isolation: ${resolution.tenant_key} (trusted value stays outside model arguments)`,
+      resolution.tenant_key
+        ? `Tenant isolation: ${resolution.tenant_key} (direct column; trusted value stays outside model arguments)`
+        : `Tenant isolation: mandatory path ${resolution.tenant_scope_path} (trusted value stays outside model arguments)`,
       "Agent authority activated: no",
       "Review column access next.",
       "",
@@ -1568,18 +1588,24 @@ function formatFocusedBoundaryActivationReview(
       ["Reviewed links", relationships.length ? relationships.join(", ") : "None"],
     ];
   });
-  const tenantKeys = [...new Set(bundle.candidate.pack.resources.map((resource) => resource.tenant_key))];
+  const directTenantKeys = [...new Set(bundle.candidate.pack.resources
+    .map((resource) => resource.tenant_key)
+    .filter((value): value is string => Boolean(value)))];
+  const allTenantScopesDirect = bundle.candidate.pack.resources.every((resource) => Boolean(resource.tenant_key));
   const tenantBinding = bundle.candidate.trusted_context.provider === "http_claims"
     ? `verified JWT claim ${bundle.candidate.trusted_context.tenant_claim}`
     : bundle.candidate.trusted_context.database_role_tenant
       ? `database role ${bundle.candidate.trusted_context.database_role_tenant.setting}`
       : bundle.candidate.trusted_context.tenant_env;
   const principalScopes = bundle.candidate.pack.resources
-    .filter((resource) => Boolean(resource.principal_key))
-    .map((resource) => `${resource.id}.${resource.principal_key}`);
-  const tenantScopeSummary = `${tenantKeys.length === 1
-    ? `${tenantKeys[0]} on every table`
-    : tenantKeys.join(", ")} via ${tenantBinding}`;
+    .filter((resource) => Boolean(resource.principal_key || resource.principal_scope))
+    .map((resource) => resource.principal_key
+      ? `${resource.id}.${resource.principal_key}`
+      : `${resource.id} via ${resource.principal_scope!.path_id} to ${resource.principal_scope!.ancestor_resource}.${resource.principal_scope!.ancestor_column}`);
+  const tenantScopeSummary = `${allTenantScopesDirect && directTenantKeys.length === 1
+    ? `${directTenantKeys[0]} on every table`
+    : bundle.candidate.pack.resources.map((resource) =>
+      `${resource.id} ${reviewedTenantScopeLabel(resource)}`).join("; ")} via ${tenantBinding}`;
   const principalBinding = bundle.candidate.trusted_context.provider === "http_claims"
     ? `verified JWT claim ${bundle.candidate.trusted_context.principal_claim}`
     : bundle.candidate.trusted_context.principal_env;
@@ -2802,6 +2828,9 @@ function formatRequestedBoundaryChanges(
   if (request.exclude) lines.push(`Exclude ${request.resource_id} from the disabled candidate.`);
   if (request.row_identity) lines.push(`Record ID: ${describeReviewedField(view, request.row_identity)}`);
   if (request.tenant_key) lines.push(`Trusted customer scope: ${describeReviewedField(view, request.tenant_key)}`);
+  if (request.tenant_scope_path) {
+    lines.push(`Trusted customer scope: mandatory reviewed path ${request.tenant_scope_path}`);
+  }
   if (request.principal_key !== undefined) {
     lines.push(request.principal_key === null
       ? "Trusted user/owner scope: not configured."
@@ -3382,8 +3411,10 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
         resource.kept_out_fields.length,
       ].join("/"),
       resource.principal_key
-        ? `${resource.tenant_key} + ${resource.principal_key}`
-        : resource.tenant_key,
+        ? `${reviewedTenantScopeLabel(resource)} + ${resource.principal_key}`
+        : resource.principal_scope
+          ? `${reviewedTenantScopeLabel(resource)} + derived principal`
+          : reviewedTenantScopeLabel(resource),
       `${resource.minimum_cohort_size}/${resource.relationships.length}`,
       "Sign-off needed",
     ]);
@@ -3404,6 +3435,13 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
     "MIN GROUP / LINKS = minimum returned cohort size / reviewed paths to related tables.",
     "",
   ].join("\n");
+}
+
+function reviewedTenantScopeLabel(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): string {
+  return resource.tenant_key
+    ?? `via ${resource.tenant_scope!.path_id} -> ${resource.tenant_scope!.ancestor_resource}.${resource.tenant_scope!.ancestor_column}`;
 }
 
 function formatBoundarySettingsSignoff(bundle: BoundaryReviewBundle): string {
@@ -3474,11 +3512,13 @@ function formatBoundaryResourceSignoff(
       ["SETTING", "REVIEWED VALUE"],
       [
         ["Record identity", resource.primary_key],
-        ["Customer scope", `${resource.tenant_key} - supplied outside AI requests`],
+        ["Customer scope", `${reviewedTenantScopeLabel(resource)} - supplied outside AI requests`],
         [
           "User/owner scope",
           resource.principal_key
             ? `${resource.principal_key} - supplied outside AI requests`
+            : resource.principal_scope
+              ? `via ${resource.principal_scope.path_id} -> ${resource.principal_scope.ancestor_resource}.${resource.principal_scope.ancestor_column} - supplied outside AI requests`
             : "No separate per-user column is configured",
         ],
         ["Allowed operations", operationCounts],

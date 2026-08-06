@@ -25,6 +25,7 @@ import {
   AUTO_BOUNDARY_SPEC_VERSION,
   compareGenerationLock,
   credentialPostureFingerprintForAuthority,
+  derivedScopeDependencyKey,
   generationLockRemediation,
   loadActivatedExplorationBoundary,
   loadGenerationLockForActivatedBoundary,
@@ -320,7 +321,7 @@ export async function createScopedExploreRuntime(input: {
   const databaseUrl = env[prepared.lock.source_env];
   if (!databaseUrl) throw new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE", `${prepared.lock.source_env} is not set.`);
   const principalRequired = mode === "production_http" || prepared.boundary.pack.resources.some((resource) =>
-    typeof resource.principal_key === "string" && resource.principal_key.length > 0);
+    Boolean(resource.principal_key || resource.principal_scope));
   const trustedScopeResolver = input.resolveTrustedScopeFn ?? resolveExploreTrustedScope;
   const trustedScope = await trustedScopeResolver({
     boundary: prepared.boundary,
@@ -1417,7 +1418,8 @@ function compileRowPlan(
   const resource = resourceFor(boundary, plan.resource);
   const params: Scalar[] = [];
   const alias = "t0";
-  const where = scopePredicates(resource, alias, context, params, engine);
+  const scope = compileScopePredicates(resource, boundary, alias, context, params, engine);
+  const where = scope.predicates;
   for (const filter of plan.where ?? []) where.push(filterSql(filter, resource, alias, params, engine));
   const enumUses = unique([
     ...plan.select,
@@ -1434,7 +1436,7 @@ function compileRowPlan(
   return {
     sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias} WHERE ${where.join(" AND ")}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
-    resources: [resource],
+    resources: scope.resources,
     ...(enumUses.length
       ? {
         reviewed_value_controls: enumUses.map((field) => ({
@@ -1473,7 +1475,8 @@ function compileAggregatePlan(
     params,
     engine,
   );
-  const where = scopePredicates(root, "t0", context, params, engine);
+  const rootScope = compileScopePredicates(root, boundary, "t0", context, params, engine);
+  const where = rootScope.predicates;
   for (const filter of plan.where ?? []) {
     const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
     where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
@@ -1597,7 +1600,7 @@ function compileAggregatePlan(
         ...params.slice(parametersAfterSelect),
       ]
       : params,
-    resources: joined.resources,
+    resources: uniqueResources([...joined.resources, ...rootScope.resources]),
     ...(reviewedValueControls.length
       ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
       : {}),
@@ -1634,10 +1637,19 @@ function compileReviewedRelationshipJoins(
       const targetAlias = `t${aliasIndex++}`;
       const on = link.source_columns.map((column, index) =>
         `${sourceAlias}.${quote(column, engine)} = ${targetAlias}.${quote(link.target_columns[index]!, engine)}`);
-      on.push(...scopePredicates(target, targetAlias, context, params, engine));
+      const targetScope = compileScopePredicates(
+        target,
+        boundary,
+        targetAlias,
+        context,
+        params,
+        engine,
+      );
+      on.push(...targetScope.predicates);
       const joinKind = relationship.unmatched_rows === "keep_null" ? " LEFT JOIN " : " JOIN ";
       joins.push(`${joinKind}${qualified(target, engine)} ${targetAlias} ON ${on.join(" AND ")}`);
       resources.set(target.id, target);
+      targetScope.resources.forEach((scopedResource) => resources.set(scopedResource.id, scopedResource));
       source = target;
       sourceAlias = targetAlias;
     }
@@ -2273,12 +2285,20 @@ async function loadReviewedTimeCoverage(input: {
     const params: Scalar[] = [];
     const alias = "t0";
     const column = `${alias}.${quote(field, input.prepared.lock.engine)}`;
-    const where = scopePredicates(resource, alias, input.context, params, input.prepared.lock.engine);
+    const scope = compileScopePredicates(
+      resource,
+      input.prepared.boundary,
+      alias,
+      input.context,
+      params,
+      input.prepared.lock.engine,
+    );
+    const where = scope.predicates;
     where.push(`${column} IS NOT NULL`);
     return {
       sql: `SELECT MIN(${column}) AS ${quote("__coverage_start", input.prepared.lock.engine)}, MAX(${column}) AS ${quote("__coverage_end", input.prepared.lock.engine)}, COUNT(${column}) AS ${quote("__coverage_cohort", input.prepared.lock.engine)} FROM ${qualified(resource, input.prepared.lock.engine)} ${alias} WHERE ${where.join(" AND ")}`,
       params,
-      resources: [resource],
+      resources: scope.resources,
       ...(input.prepared.boundary.reporting_timezone
         ? { reporting_timezone: input.prepared.boundary.reporting_timezone }
         : {}),
@@ -2961,7 +2981,7 @@ async function recordExploreEvidence(
       role_posture_fingerprint: input.rolePostureFingerprint,
       trusted_scope: {
         tenant_bound: true,
-        principal_bound: Boolean(resource.principal_key),
+        principal_bound: Boolean(resource.principal_key || resource.principal_scope),
         provenance: "trusted_runtime_context",
         values_persisted: false,
       },
@@ -3077,20 +3097,137 @@ function canonicalRecordOrder<T extends Record<string, unknown>>(values: T[]): T
     JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
-function scopePredicates(
+function compileScopePredicates(
   resource: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
   alias: string,
   context: { tenant: string; principal: string },
   params: Scalar[],
   engine: "postgres" | "mysql",
-): string[] {
-  params.push(context.tenant);
-  const predicates = [`${alias}.${quote(resource.tenant_key, engine)} = ${placeholder(params.length, engine)}`];
+): { predicates: string[]; resources: BoundaryResource[] } {
+  const predicates: string[] = [];
+  const resources = new Map<string, BoundaryResource>([[resource.id, resource]]);
+  if (resource.tenant_key) {
+    params.push(context.tenant);
+    predicates.push(
+      `${alias}.${quote(resource.tenant_key, engine)} = ${placeholder(params.length, engine)}`,
+    );
+  } else if (resource.tenant_scope) {
+    predicates.push(derivedScopePredicate({
+      resource,
+      boundary,
+      scope: resource.tenant_scope,
+      kind: "tenant",
+      value: context.tenant,
+      alias,
+      params,
+      engine,
+      resources,
+    }));
+  } else {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      `Reviewed resource ${resource.id} has no direct or derived tenant scope.`,
+    );
+  }
   if (resource.principal_key) {
     params.push(context.principal);
     predicates.push(`${alias}.${quote(resource.principal_key, engine)} = ${placeholder(params.length, engine)}`);
+  } else if (resource.principal_scope) {
+    predicates.push(derivedScopePredicate({
+      resource,
+      boundary,
+      scope: resource.principal_scope,
+      kind: "principal",
+      value: context.principal,
+      alias,
+      params,
+      engine,
+      resources,
+    }));
   }
-  return predicates;
+  return { predicates, resources: [...resources.values()] };
+}
+
+function derivedScopePredicate(input: {
+  resource: BoundaryResource;
+  boundary: ActivatedExplorationBoundary;
+  scope: NonNullable<BoundaryResource["tenant_scope"]>;
+  kind: "tenant" | "principal";
+  value: string;
+  alias: string;
+  params: Scalar[];
+  engine: "postgres" | "mysql";
+  resources: Map<string, BoundaryResource>;
+}): string {
+  const links = input.scope.proof?.links ?? [];
+  if (input.scope.mode !== "derived"
+    || input.scope.proof.source !== "database_catalog"
+    || links.length < 1
+    || links.length > input.boundary.budgets.max_relationship_hops
+    || input.scope.path_id !== links.map((link) => link.constraint_name).join("__")
+    || canonicalJsonDigest(links) !== input.scope.proof.digest) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      `Reviewed resource ${input.resource.id} has malformed derived ${input.kind} scope.`,
+    );
+  }
+  let expectedSource = input.resource.id;
+  let sourceAlias = input.alias;
+  let from = "";
+  const joins: string[] = [];
+  const correlations: string[] = [];
+  const visited = new Set([input.resource.id]);
+  let terminalAlias = "";
+  links.forEach((link, index) => {
+    if (link.source_resource !== expectedSource
+      || visited.has(link.target_resource)
+      || link.nullable
+      || link.cardinality !== "many_to_one"
+      || link.max_fan_out !== 1
+      || link.source_columns.length < 1
+      || link.source_columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.some((field, columnIndex) =>
+        field !== link.target_columns[columnIndex])) {
+      throw new ScopedExploreError(
+        "EXPLORE_BOUNDARY_MISMATCH",
+        `Reviewed resource ${input.resource.id} derived ${input.kind} scope is not a continuous non-null many-to-one path.`,
+      );
+    }
+    const target = resourceFor(input.boundary, link.target_resource);
+    const targetAlias = `s${input.alias}_${input.kind}_${index}`;
+    const equality = link.source_columns.map((column, columnIndex) =>
+      `${sourceAlias}.${quote(column, input.engine)} = ${targetAlias}.${quote(link.target_columns[columnIndex]!, input.engine)}`);
+    if (index === 0) {
+      from = `${qualified(target, input.engine)} ${targetAlias}`;
+      correlations.push(...equality);
+    } else {
+      joins.push(` JOIN ${qualified(target, input.engine)} ${targetAlias} ON ${equality.join(" AND ")}`);
+    }
+    input.resources.set(target.id, target);
+    expectedSource = target.id;
+    sourceAlias = targetAlias;
+    terminalAlias = targetAlias;
+    visited.add(target.id);
+  });
+  const ancestor = resourceFor(input.boundary, input.scope.ancestor_resource);
+  const directColumn = input.kind === "tenant" ? ancestor.tenant_key : ancestor.principal_key;
+  if (expectedSource !== ancestor.id || directColumn !== input.scope.ancestor_column) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      `Reviewed resource ${input.resource.id} derived ${input.kind} scope does not terminate at its reviewed direct scope column.`,
+    );
+  }
+  input.params.push(input.value);
+  correlations.push(
+    `${terminalAlias}.${quote(input.scope.ancestor_column, input.engine)} = ${placeholder(input.params.length, input.engine)}`,
+  );
+  return `EXISTS (SELECT 1 FROM ${from}${joins.join("")} WHERE ${correlations.join(" AND ")})`;
+}
+
+function uniqueResources(resources: BoundaryResource[]): BoundaryResource[] {
+  return [...new Map(resources.map((resource) => [resource.id, resource])).values()];
 }
 
 function filterSql(
@@ -3308,6 +3445,45 @@ function assertPlanAuthorityDependenciesCurrent(
       resourceIds.add(link.target_resource);
     }
   }
+  for (const resourceId of [...resourceIds]) {
+    const resource = resourceFor(boundary, resourceId);
+    for (const [kind, scope] of [
+      ["tenant", resource.tenant_scope],
+      ["principal", resource.principal_scope],
+    ] as const) {
+      if (!scope) continue;
+      const key = derivedScopeDependencyKey(resource.id, kind);
+      const dependency = dependencies.relationships[key];
+      const relationshipId = `scope:${kind}:${scope.path_id}`;
+      if (!dependency
+        || dependency.root_resource !== resource.id
+        || dependency.relationship_id !== relationshipId
+        || dependency.proof_digest !== scope.proof.digest
+        || canonicalJsonDigest(dependency.links) !== scope.proof.digest) {
+        throw new ScopedExploreError(
+          "EXPLORE_LOCK_STALE",
+          withGenerationLockRemediation(
+            `Reviewed derived ${kind} scope for ${resource.id} is not bound to the current generation-lock proof.`,
+            lock,
+          ),
+        );
+      }
+      const currentProof = relationshipAuthorityDependencyFingerprint(dependency, inspection);
+      if (currentProof !== dependency.proof_digest) {
+        throw new ScopedExploreError(
+          "EXPLORE_LOCK_STALE",
+          withGenerationLockRemediation(
+            `Reviewed derived ${kind} scope for ${resource.id} is stale because its foreign-key, nullability, or uniqueness proof changed.`,
+            lock,
+          ),
+        );
+      }
+      for (const link of dependency.links) {
+        resourceIds.add(link.source_resource);
+        resourceIds.add(link.target_resource);
+      }
+    }
+  }
   for (const resourceId of resourceIds) {
     const resource = resourceFor(boundary, resourceId);
     const dependency = dependencies.resources[resourceId];
@@ -3412,7 +3588,7 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
       throw relationshipError(`Relationship ${id} does not contain continuous many-to-one uniqueness proof.`);
     }
     const target = resourceFor(boundary, link.target_resource);
-    if (!target.tenant_key) {
+    if (!target.tenant_key && !target.tenant_scope) {
       throw relationshipError(`Relationship ${id} target ${target.id} has no independently reviewed tenant scope.`);
     }
     expectedSource = target.id;

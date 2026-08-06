@@ -159,6 +159,112 @@ doctor checks or production Explore attestation:
 No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
 deep-dive edit was performed.
 
+## Derived Scope Implementation Progress
+
+Derived tenant and principal scope remain part of the same unpublished Runner
+1.7.0 branch. Checkpoint commit `38de8a4` still preserves all preceding 1.7.0
+production-Explore, catalog, enum, and DX work; the derived-scope changes below
+are currently uncommitted.
+
+- Auto Boundary now discovers bounded one- and two-hop derived tenant/principal
+  candidates only through non-null, catalog-proven foreign keys targeting an
+  exact primary/unique key. A human must select the path in CLI or Workbench;
+  direct scope remains unchanged and ambiguous/nullable/unproven paths block.
+- Activated resources store the reviewed path and proof digest. Review
+  decisions, summaries, maps, final signoff, Workbench requests, and generation
+  lock dependencies all carry the same canonical path representation.
+- Scoped Explore injects each path as an unmodelled mandatory correlated
+  `EXISTS` semijoin for roots and relationship targets. It applies to rows,
+  aggregate/group/time, ranked, and both period-comparison statements without
+  multiplying rows or weakening optional model joins. PostgreSQL and MySQL use
+  their existing trusted parameter binding and read-only execution paths.
+- Scope ancestors are included in runtime role/RLS posture, drift validation,
+  and metadata-only evidence. PostgreSQL role-bound scope is proven on the
+  terminal ancestor rather than incorrectly requiring RLS on the normalized
+  child; removing the ancestor's effective RLS proof fails closed.
+- Rescans prune a reviewed derived path when FK nullability, target uniqueness,
+  or path proof changes. A generated activated child executes successfully,
+  then refuses before source execution after its FK becomes nullable.
+- Public DSL/Protect and guarded writes remain direct-scope only. Protect now
+  refuses conversion of a successful relationship-scoped Explore analysis.
+  Guided write options omit relationship-carried tenant or principal scope,
+  and explicit write attempts return the corresponding direct-scope error.
+- No Spec/DSL shape or package version was changed. Existing direct resources
+  omit `tenant_scope` and `principal_scope`, preserving their serialized shape.
+
+Focused verification completed at this checkpoint:
+
+- `corepack pnpm typecheck`: passed.
+- Auto Boundary derived inference, two-hop, principal, and drift pruning:
+  34/34 passed.
+- Trusted environment/role/HTTP scope including derived ancestor RLS: 10/10
+  passed.
+- Workbench renderer and real route submission for a derived path: passed.
+- Generated derived runtime/drift regression: passed.
+- Protect suite including the direct-scope conversion fence: 15/15 passed.
+- Guided write relationship-carried-principal regression: passed; the complete
+  guided-action file remains to be rerun with the broader focused gate.
+
+Remaining before the derived-scope checkpoint can be called complete:
+
+- Run the complete focused CLI, review-domain, Workbench, local UI, Protect,
+  guided-action, trusted-scope, and Scoped Explore files together.
+- Add and run real PostgreSQL and MySQL cross-tenant adversarial queries for a
+  normalized child, including aggregate/comparison and relationship-target
+  shapes, and verify no source mutation.
+- Run browser parity, packed/public artifact, full live-PostgreSQL suite, and
+  complete 1.7.0 release gates.
+- Remove only the generated test artifacts under `apps/runner/synapsor*`, run
+  final diff/status checks, then commit the derived-scope checkpoint on the same
+  feature branch. Do not push or publish without separate owner direction.
+
+## Derived Tenant Scope Analysis Checkpoint
+
+Checkpoint commit `38de8a4` preserves the verified production-Explore and
+catalog work. Derived scope remains part of the same unpublished 1.7.0 release.
+
+The proposed isolation proof holds against the current compiler with these
+implementation refinements and additional invariants:
+
+- A derived scope will be flattened into a bounded, catalog-proven path ending
+  at one direct tenant or principal column. Every hop must be a non-null foreign
+  key to an exact primary/unique key, many-to-one, maximum fan-out one, and part
+  of the reviewed digest. Direct resources keep their existing `tenant_key` and
+  `principal_key` bytes; optional derived fields appear only where used.
+- The compiler will inject the path as a mandatory correlated `EXISTS`
+  semijoin containing only INNER FK-to-unique joins. This is equivalent to the
+  proposed mandatory top-level join for isolation, cannot multiply source rows,
+  keeps aliases structurally separate from model joins, and preserves reviewed
+  `LEFT JOIN ... keep_null` semantics for optional model relationships.
+- Root rows, aggregate/group/time plans, both period-comparison queries, and
+  every model relationship target all pass through the same mandatory scope
+  compiler. The model cannot request, omit, weaken, or change the scope path.
+- Scope ancestors must be included in each compiled query's resource posture.
+  That is required for PostgreSQL RLS `set_config`, long-running read-only role
+  checks, and metadata-only execution evidence even though the scope path is not
+  a model-facing relationship.
+- Generation-lock dependencies must record and revalidate the hidden scope
+  path's FK, source nullability, referenced uniqueness, columns, and proof
+  digest for every plan. A stale path fails before source execution.
+- Database-role tenant resolution must validate the terminal direct ancestor's
+  effective RLS policy rather than incorrectly demanding RLS on the normalized
+  child. MySQL remains Runner-enforced through the mandatory predicate.
+- MySQL binds parameters in textual statement order. Derived-scope values must
+  remain in the WHERE/join parameter segment after any SELECT enum-bucket
+  parameters; PostgreSQL numbered placeholders retain current behavior.
+- Public generated DSL, named read capabilities, and all writes remain limited
+  to direct tenant columns. Derived scope changes only read-only Explore and
+  does not expand the DSL or writeback authority.
+- Self-joins, nullable paths, ambiguous paths, one-to-many/fact-to-fact joins,
+  and paths beyond the existing hop ceiling remain unresolved and blocking.
+  Referenced uniqueness already entails an indexed target lookup; requiring an
+  additional source-FK index would block valid schemas without strengthening
+  the isolation proof.
+
+Implementation, operator review, adversarial database tests, browser parity,
+and release gates remain in progress. No Spec/DSL bump or package publication
+is planned.
+
 ## Generation Lock, Model Choice, Catalog, And Sensitive-Access DX Follow-Up
 
 The final 1.7.0 DX findings are implemented without weakening generation-lock
@@ -395,3 +501,64 @@ expanding model authority or exposing row-derived values:
 
 No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
 deep-dive edit was performed.
+
+## Derived Scope Completion And Final Verification
+
+This section supersedes the earlier "Remaining" list under Derived Scope
+Implementation Progress. Reviewed derived tenant and principal scope is complete
+for the same unpublished Runner 1.7.0 branch.
+
+- Normalized read resources without direct scope columns can use a human-reviewed
+  one- or two-hop mandatory scope path to a directly scoped ancestor. Every hop
+  remains a non-null, catalog-proven many-to-one foreign key targeting an exact
+  primary or unique key; ambiguous, nullable, cyclic, unproven, or deeper paths
+  remain blocked.
+- The mandatory path is authority metadata, not a model argument. Scoped Explore
+  compiles it as a correlated `EXISTS` semijoin for root resources and reviewed
+  relationship targets across rows, aggregate/group/time, ranked, and period
+  comparison plans. This constrains every source row without multiplying
+  aggregates or allowing the model to remove, weaken, or outer-join the scope.
+- CLI and Workbench use the same canonical path review, digest, generation-lock,
+  drift, summary, and activation behavior. No path becomes active without the
+  existing exact human boundary review.
+- PostgreSQL role-bound scope proves effective RLS on the terminal ancestor;
+  MySQL enforces the same trusted tenant/principal values through the mandatory
+  Runner predicate. Path ancestors participate in posture checks and safe
+  metadata-only evidence.
+- Protect/public DSL and guarded writes still require direct tenant and principal
+  columns. A successful relationship-scoped Explore analysis cannot be converted
+  into authority that the production read/write compilers do not support.
+- Existing direct-scope serialized boundaries remain shape-compatible. No Spec,
+  DSL, package-version, model-tool-surface, or Cloud-repository change was made.
+
+Final verification:
+
+- Focused Auto Boundary, CLI picker/review, Workbench, local UI, trusted-scope,
+  Guided Action, Protect, and Scoped Explore regressions passed after correcting
+  two stale colorized-label assertions.
+- Full suite with live PostgreSQL accounting enabled: 88 files and 1,376/1,376
+  tests passed; the PostgreSQL accounting suite ran 8/8 rather than skipping.
+- Direct PostgreSQL production HTTP and direct MySQL production HTTP passed with
+  the exact two-tool surface. Cross-tenant and cross-principal normalized-child
+  queries were isolated through derived scope, concurrent budget reservation and
+  source/session ceilings held, and Explore did not mutate either source.
+- Auto Boundary Workbench visual gate passed across 27 captured desktop, mobile,
+  light/dark, blocked, stale, loading, and large-schema states. Workbench Ask
+  passed across 8 states with 2 reviewed tool calls, 1 refused call, no persisted
+  provider key, no browser storage, and no source mutation.
+- Packed production HTTP passed with derived tenant/principal isolation,
+  per-principal budget isolation, source/session ceilings, doctor attestation,
+  the exact two-tool surface, and no source mutation.
+- The complete `./scripts/verify-release-gate.sh 1.7.0` gate exited 0: typecheck;
+  13 release files and 589/589 tests; current Claude Code and Codex MCP config
+  acceptance; disposable first-run proof; live PostgreSQL/MySQL production HTTP;
+  public commands; local and packed packages; packed production HTTP; guarded
+  own-database onboarding; packed fresh CLI onboarding; license/content and
+  package-manifest checks; npm publish dry-run; and final `git diff --check`.
+- Packed fresh CLI onboarding passed from empty projects on PostgreSQL (3,275 ms)
+  and MySQL (3,330 ms), resolving blocked scope inline, keeping column review
+  open, activating the exact boundary, reaching explicit model choice, and not
+  mutating the source.
+
+The derived-scope work is ready to commit on
+`feature/production-scoped-explore-http`. It has not been pushed or published.

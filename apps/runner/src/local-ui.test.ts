@@ -2010,6 +2010,84 @@ export default defineCapability({
     }
   });
 
+  it("reviews a mandatory derived tenant path through the Workbench route", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-derived-scope-"));
+    const inspection = derivedBoundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const childReview = build.review.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+    expect(childReview).toMatchObject({
+      status: "blocked_scope",
+      tenant_key: { candidates: [] },
+      derived_tenant_scope: {
+        candidates: [{ path_id: "order_items_order_id_fkey" }],
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+      instantOnboarding: true,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "derived-scope-token",
+      csrfToken: "derived-scope-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "derived-scope-token",
+      "x-synapsor-csrf": "derived-scope-csrf",
+    };
+    try {
+      const scoped = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "tenant_scope_path",
+          resource_id: "public.order_items",
+          value: "order_items_order_id_fkey",
+          actor: "local-workbench-reviewer",
+          reason: "Every item belongs to the tenant of its required reviewed order.",
+        },
+      );
+      expect(scoped).toMatchObject({ ok: true, source_database_changed: false });
+      const scopedChild = scoped.candidate.pack.resources.find((resource: { id: string }) =>
+        resource.id === "public.order_items");
+      expect(scopedChild).toMatchObject({
+        id: "public.order_items",
+        tenant_scope: {
+          mode: "derived",
+          path_id: "order_items_order_id_fkey",
+          ancestor_resource: "public.orders",
+          ancestor_column: "tenant_id",
+        },
+      });
+      expect(scopedChild.tenant_key).toBeUndefined();
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("preserves the selected disabled boundary while Workbench resolves scope in two steps", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-resolve-saved-scope-"));
     const inspection = boundaryReviewInspection();
@@ -4658,6 +4736,42 @@ function boundaryReviewInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function derivedBoundaryReviewInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((column) => column.name !== "tenant_id");
+  const orderId = structuredClone(orderItems.columns.find((column) => column.name === "id")!);
+  orderId.name = "order_id";
+  orderId.ordinal_position = orderItems.columns.length + 1;
+  orderItems.columns.push(orderId);
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (!orderItems.role_posture) throw new Error("derived-scope fixture role posture is required");
+  orderItems.role_posture.row_security_effective_for_current_role = false;
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("order_id");
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function relationshipReviewInspection(): SchemaInspection {
