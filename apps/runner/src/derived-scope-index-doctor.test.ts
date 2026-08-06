@@ -107,6 +107,25 @@ describe("derived-scope index doctor", () => {
 
     expect(evaluate(boundary, inspection)).toEqual([]);
   });
+
+  it("notes once when a derived-scope source has no live inspection", () => {
+    const boundary = boundaryWithTenantScope(oneHopScope());
+
+    const checks = derivedScopeIndexDoctorChecks({
+      boundaries: [boundary],
+      inspectionsBySource: new Map(),
+    });
+
+    expect(checks).toEqual([expect.objectContaining({
+      name: "derived-scope-index:reviewed_orders:source-metadata",
+      ok: true,
+      level: "warn",
+      advisory: "note",
+      message: expect.stringContaining(
+        "live catalog metadata for source analytics was unavailable, so 1 reviewed derived-scope path could not be attested",
+      ),
+    })]);
+  });
 });
 
 

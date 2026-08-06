@@ -25,6 +25,7 @@ export function derivedScopeIndexDoctorChecks(input: {
     const inspections = input.inspectionsBySource.get(boundary.source) ?? [];
     if (inspections.length === 0) {
       missingCount += reviewedScopes.length;
+      checks.push(unavailableSourceMetadataCheck(boundary, reviewedScopes.length));
       continue;
     }
     const liveTables = new Map(inspections.flatMap((inspection) => inspection.tables)
@@ -106,6 +107,20 @@ export function derivedScopeIndexDoctorChecks(input: {
     });
   }
   return checks;
+}
+
+
+function unavailableSourceMetadataCheck(
+  boundary: ActivatedExplorationBoundary,
+  pathCount: number,
+): DoctorCheck {
+  return {
+    name: `derived-scope-index:${boundary.pack.name}:source-metadata`,
+    ok: true,
+    level: "warn",
+    advisory: "note",
+    message: `Derived-scope index note for boundary ${boundary.pack.name}: live catalog metadata for source ${boundary.source} was unavailable, so ${pathCount} reviewed derived-scope ${pathCount === 1 ? "path" : "paths"} could not be attested. Explore authority is unchanged; resolve the source connectivity or environment warning and rerun doctor.`,
+  };
 }
 
 
