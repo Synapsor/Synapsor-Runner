@@ -410,9 +410,11 @@ function formatInstantCliBoundaryReview(input: {
   ));
   const keptOutSummary = `${keptOutFields} field${keptOutFields === 1 ? "" : "s"}`;
   const label = (value: string) => theme.dim(value.padEnd(12));
-  const tenantScope = input.trustedScope.tenant_source === "postgres_role_setting"
-    ? "tenant fixed by read-only login"
-    : "tenant from operator environment";
+  const tenantScope = input.trustedScope.tenant_source === "reviewed_organization"
+    ? `whole reviewed organization (${input.candidate.organization_scope!.organization_id}); no tenant filter`
+    : input.trustedScope.tenant_source === "postgres_role_setting"
+      ? "tenant fixed by read-only login"
+      : "tenant from operator environment";
   return [
     "",
     theme.title("YOUR FIRST SAFE QUESTION"),

@@ -871,6 +871,20 @@ describe("runner capability config validation", () => {
     config.storage.shared_postgres.mode = "runtime_store";
     config.http_security.channel = "insecure_http_break_glass";
     expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("PRODUCTION_EXPLORE_SECURE_CHANNEL_REQUIRED");
+
+    config.http_security.channel = "trusted_tls_proxy";
+    delete config.session_auth.tenant_claim;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_TENANT_CLAIM_REQUIRED");
+    config.production_explore.single_organization_id = "internal-finance";
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+    config.session_auth.tenant_claim = "tenant_id";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_TENANT_CLAIM_FORBIDDEN");
+    delete config.session_auth.tenant_claim;
+    config.production_explore.single_organization_id = "bad organization id";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_ID_INVALID");
   });
 
   it("requires signed claims and RFC 9728 metadata for shared HTTP deployment", () => {

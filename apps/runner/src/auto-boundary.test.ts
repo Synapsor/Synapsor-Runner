@@ -22,7 +22,10 @@ import {
   writeAutoBoundaryArtifacts,
   type AutoBoundaryReviewOverrides,
 } from "./auto-boundary.js";
-import { applyManagedBoundaryReviewDecision } from "./boundary-review-domain.js";
+import {
+  applyManagedBoundaryReviewDecision,
+  boundaryReviewDecisions,
+} from "./boundary-review-domain.js";
 
 describe("Auto Boundary compiler", () => {
   it("emits deterministic disabled DSL-first candidates without source data or secrets", () => {
@@ -1710,6 +1713,105 @@ describe("Auto Boundary compiler", () => {
     }
   });
 
+  it("builds and activates explicit single-organization authority without per-resource tenant scope", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-single-org-boundary-"));
+    try {
+      const inspection = singleOrganizationInspection();
+      const build = buildAutoBoundary({
+        inspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+        singleOrganization: { organizationId: "internal-finance" },
+      });
+      expect(build.exploration_boundary.organization_scope).toEqual({
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      });
+      expect(build.lock.organization_scope).toEqual(build.exploration_boundary.organization_scope);
+      expect(build.exploration_boundary.pack.resources).toHaveLength(1);
+      expect(build.exploration_boundary.pack.resources[0]).not.toHaveProperty("tenant_key");
+      expect(build.exploration_boundary.pack.resources[0]).not.toHaveProperty("tenant_scope");
+      expect(build.exploration_boundary.unresolved_decisions).toContain(
+        "public.subscriptions: confirm whole-organization read access with no tenant predicate",
+      );
+      expect(build.exploration_boundary.unresolved_decisions.some((decision) =>
+        decision.includes("every row belongs to it"))).toBe(true);
+      expect(boundaryReviewDecisions(build.exploration_boundary)).toContainEqual(
+        expect.objectContaining({
+          id: "global.organization_scope",
+          kind: "organization_scope",
+          input_digest: canonicalJsonDigest({
+            schema_version: "synapsor.boundary-review-input.v1",
+            decision_kind: "organization_scope",
+            reviewed_input: {
+              mode: "single_organization",
+              organization_id: "internal-finance",
+              tenant_predicate: "not_applied",
+            },
+          }),
+        }),
+      );
+      const flipped = structuredClone(build.exploration_boundary);
+      delete flipped.organization_scope;
+      expect(() => reviewExplorationBoundaryCandidate(
+        build.exploration_boundary,
+        flipped,
+      )).toThrow(/organization_scope cannot change during boundary review/i);
+
+      await writeAutoBoundaryArtifacts({ projectRoot, build });
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      const active = await activateExplorationBoundary({
+        projectRoot,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      expect(active.organization_scope?.organization_id).toBe("internal-finance");
+      expect(active.activation.digest).toBe(digest);
+      expect(active.activation.reviewed_decisions.some(({ decision }) =>
+        decision.startsWith("organization scope:"))).toBe(true);
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses single-organization mode when tenant columns or row-level security are present", () => {
+    expect(() => buildAutoBoundary({
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/not-single-org"),
+      sourceEnv: "DATABASE_URL",
+      singleOrganization: { organizationId: "unsafe-shortcut" },
+    })).toThrow(/single-organization explore was refused[\s\S]*row-level security[\s\S]*tenant-scope candidate[\s\S]*no boundary was generated/i);
+  });
+
+  it("builds production single-organization authority with principal-only HTTP claims", () => {
+    const build = buildAutoBoundary({
+      inspection: singleOrganizationInspection(),
+      project: projectSummary("/workspace/single-org-production"),
+      sourceEnv: "DATABASE_URL",
+      deploymentProfile: "production",
+      httpClaims: { principalClaim: "sub" },
+      singleOrganization: { organizationId: "internal-finance" },
+    });
+    expect(build.exploration_boundary.trusted_context).toEqual({
+      provider: "http_claims",
+      principal_claim: "sub",
+    });
+    expect(build.exploration_boundary.organization_scope?.organization_id).toBe("internal-finance");
+    expect(() => buildAutoBoundary({
+      inspection: singleOrganizationInspection(),
+      project: projectSummary("/workspace/single-org-production"),
+      sourceEnv: "DATABASE_URL",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+      singleOrganization: { organizationId: "internal-finance" },
+    })).toThrow(/must not configure a tenant HTTP claim/i);
+  });
+
   it("binds production claim names into authority and refuses implicit claim bindings", () => {
     const input = {
       inspection: churnInspection(),
@@ -1956,6 +2058,22 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function singleOrganizationInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const table = inspection.tables[0]!;
+  table.columns = table.columns.filter((field) => field.name !== "tenant_id");
+  table.suggestions.tenant_columns = [];
+  table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id");
+  table.row_level_security = false;
+  table.row_level_security_policies = [];
+  table.role_posture = {
+    ...table.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
+  return inspection;
 }
 
 function column(

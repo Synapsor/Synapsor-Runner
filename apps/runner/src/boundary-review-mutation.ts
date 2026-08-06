@@ -353,6 +353,16 @@ export async function prepareBoundaryResourceReviewMutation(
     sourceEnv: state.lock.source_env,
     inspectedSchema: state.lock.inspected_schema,
     overrides,
+    deploymentProfile: state.candidate.deployment_profile,
+    ...(state.candidate.trusted_context.provider === "http_claims" ? {
+      httpClaims: {
+        tenantClaim: state.candidate.trusted_context.tenant_claim,
+        principalClaim: state.candidate.trusted_context.principal_claim,
+      },
+    } : {}),
+    ...(state.candidate.organization_scope ? {
+      singleOrganization: { organizationId: state.candidate.organization_scope.organization_id },
+    } : {}),
   });
 
   const candidate = buildReviewedCandidate({
@@ -466,6 +476,16 @@ export async function prepareBoundaryReviewMutationBatch(
     sourceEnv: state.lock.source_env,
     inspectedSchema: state.lock.inspected_schema,
     overrides,
+    deploymentProfile: state.candidate.deployment_profile,
+    ...(state.candidate.trusted_context.provider === "http_claims" ? {
+      httpClaims: {
+        tenantClaim: state.candidate.trusted_context.tenant_claim,
+        principalClaim: state.candidate.trusted_context.principal_claim,
+      },
+    } : {}),
+    ...(state.candidate.organization_scope ? {
+      singleOrganization: { organizationId: state.candidate.organization_scope.organization_id },
+    } : {}),
   });
   let candidate = state.candidate;
   const differences: BoundaryReviewSemanticDiff[] = [];

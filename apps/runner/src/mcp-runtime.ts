@@ -293,14 +293,18 @@ export async function inspectProductionExploreStartup(
   const authReady = config.session_auth?.provider === "jwt_asymmetric"
     && Boolean(config.session_auth.issuer)
     && Boolean(config.session_auth.audience)
-    && Boolean(config.session_auth.tenant_claim)
+    && (production.single_organization_id
+      ? !config.session_auth.tenant_claim
+      : Boolean(config.session_auth.tenant_claim))
     && Boolean(config.session_auth.principal_claim);
   add(
     "verified-principal-scope",
     authReady,
     authReady
-      ? `Every session requires asymmetric JWT verification and trusted ${config.session_auth!.tenant_claim}/${config.session_auth!.principal_claim} claims.`
-      : "Production Explore requires asymmetric JWT verification with exact issuer, audience, tenant claim, and principal claim.",
+      ? production.single_organization_id
+        ? `Every session requires asymmetric JWT verification and trusted ${config.session_auth!.principal_claim} principal claims; organization identity is fixed as ${production.single_organization_id}.`
+        : `Every session requires asymmetric JWT verification and trusted ${config.session_auth!.tenant_claim}/${config.session_auth!.principal_claim} claims.`
+      : "Production Explore requires asymmetric JWT verification with exact issuer, audience, principal claim, and either a tenant claim or reviewed fixed organization identity.",
   );
   const requiredScopes = config.http_security?.oauth_resource?.required_scopes ?? [];
   const transportReady = config.http_security?.deployment === "shared"
@@ -359,7 +363,12 @@ export async function inspectProductionExploreStartup(
       add("active-production-boundaries", false, `Boundary ${boundary.pack.name} does not bind tenant and principal scope to verified HTTP claims.`);
       continue;
     }
-    if (boundary.trusted_context.tenant_claim !== config.session_auth?.tenant_claim
+    const organizationMatches = boundary.organization_scope
+      ? boundary.organization_scope.organization_id === production.single_organization_id
+        && boundary.trusted_context.tenant_claim === undefined
+      : production.single_organization_id === undefined
+        && boundary.trusted_context.tenant_claim === config.session_auth?.tenant_claim;
+    if (!organizationMatches
       || boundary.trusted_context.principal_claim !== config.session_auth?.principal_claim) {
       add("active-production-boundaries", false, `Boundary ${boundary.pack.name} claim bindings do not match session_auth. Regenerate and review the production boundary against this HTTP identity contract.`);
       continue;
@@ -604,8 +613,12 @@ export function productionExploreSessionFactory(
     if (closed) throw new Error("Production Explore session factory is closed.");
     if (trustedContext.provenance !== "http_claims"
       || !trustedContext.tenant_id.trim()
-      || !trustedContext.principal.trim()) {
-      throw new Error("Production Explore requires verified tenant and principal HTTP claims for every MCP session.");
+      || !trustedContext.principal.trim()
+      || (production.single_organization_id !== undefined
+        && trustedContext.tenant_id !== production.single_organization_id)) {
+      throw new Error(production.single_organization_id
+        ? "Single-organization production Explore requires a verified principal and the exact reviewed organization identity for every MCP session."
+        : "Production Explore requires verified tenant and principal HTTP claims for every MCP session.");
     }
     const executor = await sharedExecutor();
     const runtime = await (dependencies.createBoundarySetRuntime ?? createScopedExploreBoundarySetRuntime)({

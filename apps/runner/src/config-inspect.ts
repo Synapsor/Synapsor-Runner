@@ -99,6 +99,7 @@ async function configInit(args: string[]): Promise<number> {
     new Set([
       "--output", "--out", "-o", "--engine", "--read-url-env", "--source", "--json",
       "--production-explore", "--project-root", "--tenant-claim", "--principal-claim",
+      "--single-tenant-organization-id",
       "--issuer", "--audience", "--accounting-namespace", "--oauth-scope",
       "--control-url-env", "--jwks-url-env", "--hmac-key-env", "--http-channel",
     ]),
@@ -133,6 +134,7 @@ async function configInit(args: string[]): Promise<number> {
     const reviewedPrincipalClaim = productionClaim(drafted.boundary, "principal");
     const requestedTenantClaim = optionalArg(args, "--tenant-claim");
     const requestedPrincipalClaim = optionalArg(args, "--principal-claim");
+    const requestedOrganizationId = optionalArg(args, "--single-tenant-organization-id");
     if (requestedTenantClaim && requestedTenantClaim !== reviewedTenantClaim) {
       throw new Error(
         `Production config --tenant-claim ${requestedTenantClaim} must match the reviewed boundary claim ${reviewedTenantClaim} exactly. Regenerate and review the boundary to change it.`,
@@ -141,6 +143,12 @@ async function configInit(args: string[]): Promise<number> {
     if (requestedPrincipalClaim && requestedPrincipalClaim !== reviewedPrincipalClaim) {
       throw new Error(
         `Production config --principal-claim ${requestedPrincipalClaim} must match the reviewed boundary claim ${reviewedPrincipalClaim} exactly. Regenerate and review the boundary to change it.`,
+      );
+    }
+    const reviewedOrganizationId = drafted.boundary.organization_scope?.organization_id;
+    if (requestedOrganizationId && requestedOrganizationId !== reviewedOrganizationId) {
+      throw new Error(
+        `Production config organization id ${requestedOrganizationId} must match the reviewed boundary organization ${reviewedOrganizationId ?? "(none)"} exactly. Regenerate and review the boundary to change it.`,
       );
     }
   }
@@ -152,6 +160,8 @@ async function configInit(args: string[]): Promise<number> {
       readUrlEnv,
       tenantClaim: optionalArg(args, "--tenant-claim") ?? productionClaim(drafted?.boundary, "tenant"),
       principalClaim: optionalArg(args, "--principal-claim") ?? productionClaim(drafted?.boundary, "principal"),
+      singleOrganizationId: optionalArg(args, "--single-tenant-organization-id")
+        ?? drafted?.boundary.organization_scope?.organization_id,
       issuer: optionalArg(args, "--issuer"),
       audience: optionalArg(args, "--audience"),
       accountingNamespace: optionalArg(args, "--accounting-namespace"),
@@ -273,6 +283,7 @@ function productionExploreConfigTemplate(input: {
   readUrlEnv: string;
   tenantClaim?: string;
   principalClaim?: string;
+  singleOrganizationId?: string;
   issuer?: string;
   audience?: string;
   accountingNamespace?: string;
@@ -282,8 +293,16 @@ function productionExploreConfigTemplate(input: {
   hmacKeyEnv: string;
   httpChannel: string;
 }): Record<string, unknown> {
-  if (!input.tenantClaim || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.tenantClaim)) {
+  if (!input.singleOrganizationId
+    && (!input.tenantClaim || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.tenantClaim))) {
     throw new Error("config init --production-explore requires --tenant-claim <claim>, or a production boundary draft containing that reviewed claim binding.");
+  }
+  if (input.singleOrganizationId
+    && !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(input.singleOrganizationId)) {
+    throw new Error("config init --production-explore --single-tenant-organization-id must be a stable 1-128 character organization label.");
+  }
+  if (input.singleOrganizationId && input.tenantClaim) {
+    throw new Error("Single-organization production Explore must not configure a tenant claim.");
   }
   if (!input.principalClaim || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.principalClaim)) {
     throw new Error("config init --production-explore requires --principal-claim <claim>, or a production boundary draft containing that reviewed claim binding.");
@@ -332,7 +351,7 @@ function productionExploreConfigTemplate(input: {
       jwks_url_env: input.jwksUrlEnv,
       issuer,
       audience,
-      tenant_claim: input.tenantClaim,
+      ...(input.tenantClaim ? { tenant_claim: input.tenantClaim } : {}),
       principal_claim: input.principalClaim,
     },
     http_security: {
@@ -352,6 +371,7 @@ function productionExploreConfigTemplate(input: {
       required_oauth_scope: input.oauthScope,
       budget_hmac_key_env: input.hmacKeyEnv,
       accounting_namespace: input.accountingNamespace,
+      ...(input.singleOrganizationId ? { single_organization_id: input.singleOrganizationId } : {}),
       source_max_connections: 8,
       max_sessions_per_principal: 4,
       tenant_limits: {

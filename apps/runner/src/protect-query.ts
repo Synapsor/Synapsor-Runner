@@ -284,6 +284,11 @@ export async function createProtectedQueryDraft(input: {
   const boundary = await loadActivatedExplorationBoundary(projectRoot, {
     digest: protectedPlan.boundary_digest,
   });
+  if (boundary.organization_scope) {
+    throw new Error(
+      "Protect conversion is unavailable for single-organization Explore because protected capabilities still require a direct tenant column. The reviewed Explore boundary remains read-only.",
+    );
+  }
   const prepared = await prepareScopedExplore({
     projectRoot,
     transport: "loopback_workbench",

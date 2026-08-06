@@ -202,6 +202,62 @@ describe("Explore trusted scope", () => {
     });
   });
 
+  it("uses the reviewed fixed organization locally without requiring a tenant environment value", async () => {
+    const candidate = boundary(false);
+    candidate.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    delete candidate.pack.resources[0]!.tenant_key;
+    const scope = await resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: { ...lock(), organization_scope: candidate.organization_scope },
+      inspection: inspection(),
+      env: {},
+      readPostgresRoleSetting: vi.fn(),
+    });
+    expect(scope).toEqual({
+      tenant: "internal-finance",
+      principal: "",
+      tenant_source: "reviewed_organization",
+      tenant_binding: "fixed organization internal-finance",
+      principal_source: "not_required",
+    });
+  });
+
+  it("requires only the verified principal for single-organization production Explore", async () => {
+    const candidate = productionBoundary();
+    candidate.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    candidate.trusted_context = {
+      provider: "http_claims",
+      principal_claim: "sub",
+    };
+    delete candidate.pack.resources[0]!.tenant_key;
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: { ...lock(), organization_scope: candidate.organization_scope },
+      inspection: inspection(),
+      env: {},
+      sessionContext: { principal: "analyst-7", provenance: "http_claims" },
+    })).resolves.toMatchObject({
+      tenant: "internal-finance",
+      principal: "analyst-7",
+      tenant_source: "reviewed_organization",
+      principal_source: "verified_http_claim",
+    });
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: { ...lock(), organization_scope: candidate.organization_scope },
+      inspection: inspection(),
+      env: {},
+    })).rejects.toMatchObject({ missingBindings: ["sub"] });
+  });
+
   it("requires both verified HTTP scopes for every production Explore session", async () => {
     for (const sessionContext of [
       undefined,

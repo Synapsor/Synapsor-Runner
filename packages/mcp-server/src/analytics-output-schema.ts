@@ -217,6 +217,11 @@ export const scopedExploreDescribeOutputSchema = z.object({
   boundary_digest: sha256Schema.optional(),
   active_boundary_set_digest: sha256Schema.optional(),
   boundary_name: z.string().optional(),
+  organization_scope: z.object({
+    mode: z.literal("single_organization"),
+    tenant_filter: z.literal("not_applicable"),
+    organization_identity: z.literal("fixed_outside_model_arguments"),
+  }).strict().optional(),
   boundaries: z.array(z.object({
     name: z.string(),
     digest: sha256Schema,

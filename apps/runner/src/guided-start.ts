@@ -248,7 +248,7 @@ async function startAutoBoundary(
   args: string[],
   dependencies: GuidedStartDependencies = {},
 ): Promise<number> {
-  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose"]), "start --from-env Auto Boundary");
+  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant", "--organization-id"]), "start --from-env Auto Boundary");
   const cliMode = args.includes("--cli");
   const writeGuidedOutput = (value: string) => process.stdout.write(
     cliMode && process.stdout.isTTY === true ? padTerminalBlock(value) : value,
@@ -275,6 +275,11 @@ async function startAutoBoundary(
   const openWorkbench = dependencies.openWorkbench ?? ui;
   const sourceEnv = optionalArg(args, "--from-env");
   if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
+  let singleOrganization = args.includes("--single-tenant");
+  let organizationId = optionalArg(args, "--organization-id");
+  if (singleOrganization !== Boolean(organizationId)) {
+    throw new Error("Single-organization Explore requires both --single-tenant and --organization-id <stable-org-id>.");
+  }
   const project = await detectProjectContext(process.cwd());
   const regenerateInstantBoundary: NonNullable<InstantCliBoundaryActivationInput["regenerateBoundary"]> =
     async ({ inspection, draft, lock }) => {
@@ -288,6 +293,15 @@ async function startAutoBoundary(
         sourceName: draft.source,
         inspectedSchema: lock.inspected_schema,
         deploymentProfile: draft.deployment_profile,
+        ...(draft.trusted_context.provider === "http_claims" ? {
+          httpClaims: {
+            tenantClaim: draft.trusted_context.tenant_claim,
+            principalClaim: draft.trusted_context.principal_claim,
+          },
+        } : {}),
+        ...(draft.organization_scope ? {
+          singleOrganization: { organizationId: draft.organization_scope.organization_id },
+        } : {}),
       });
       await writeAutoBoundaryArtifacts({
         projectRoot: project.root,
@@ -309,6 +323,13 @@ async function startAutoBoundary(
   if (verbose) writeGuidedOutput(formatProjectDetection(project));
   const existingJourney = await readGuidedOnboardingState(project.root);
   const shouldRescan = args.includes("--rescan") || args.includes("--force");
+  if (existingJourney && shouldRescan && !singleOrganization) {
+    const existingBoundary = await loadBoundaryReviewContext(project.root);
+    if (existingBoundary.draft.organization_scope) {
+      singleOrganization = true;
+      organizationId = existingBoundary.draft.organization_scope.organization_id;
+    }
+  }
   if (shouldRescan && !existingJourney) {
     throw new Error("There is no guided Synapsor project to rescan. Start without --rescan or --force.");
   }
@@ -413,6 +434,7 @@ async function startAutoBoundary(
     existingContracts: evidence.existingContracts,
     sourceEnv,
     inspectedSchema: optionalArg(args, "--schema"),
+    ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
   });
   let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
   let guided: Awaited<ReturnType<typeof initializeGuidedProject>>;
@@ -534,9 +556,11 @@ function formatGuidedBoundaryReady(
   const visible = [...first.agent_can_see_labels, "count"]
     .filter((value, index, values) => values.indexOf(value) === index)
     .join(" · ");
-  const tenantScope = candidate.trusted_context.database_role_tenant
-    ? "tenant fixed by the read-only database login"
-    : "tenant from your application";
+  const tenantScope = candidate.organization_scope
+    ? `whole reviewed organization (${candidate.organization_scope.organization_id}); no tenant filter`
+    : candidate.trusted_context.database_role_tenant
+      ? "tenant fixed by the read-only database login"
+      : "tenant from your application";
   const scope = first.principal_scope.startsWith("not required")
     ? tenantScope
     : `${tenantScope}; principal from your application`;
@@ -612,7 +636,7 @@ export async function boundaryCommand(
   if (subcommand === "draft") {
     assertKnownOptions(rest, new Set([
       "--from-env", "--engine", "--schema", "--project-root", "--force", "--json",
-      "--profile", "--tenant-claim", "--principal-claim",
+      "--profile", "--tenant-claim", "--principal-claim", "--single-tenant", "--organization-id",
     ]), "boundary draft");
     const sourceEnv = optionalArg(rest, "--from-env")
       ?? (envValue(process.env, "DATABASE_URL") ? "DATABASE_URL" : undefined);
@@ -623,12 +647,22 @@ export async function boundaryCommand(
     }
     const tenantClaim = optionalArg(rest, "--tenant-claim");
     const principalClaim = optionalArg(rest, "--principal-claim");
+    const singleOrganization = rest.includes("--single-tenant");
+    const organizationId = optionalArg(rest, "--organization-id");
+    if (singleOrganization !== Boolean(organizationId)) {
+      throw new Error("Single-organization Explore requires both --single-tenant and --organization-id <stable-org-id>.");
+    }
     if (deploymentProfile === "production") {
-      if (!tenantClaim || !principalClaim) {
-        throw new Error("A production Explore boundary requires --tenant-claim <claim> and --principal-claim <claim> from verified HTTP JWTs.");
+      if (!principalClaim || (!singleOrganization && !tenantClaim)) {
+        throw new Error(singleOrganization
+          ? "Single-organization production Explore requires --principal-claim <claim>; its organization identity comes from --organization-id."
+          : "A production Explore boundary requires --tenant-claim <claim> and --principal-claim <claim> from verified HTTP JWTs.");
       }
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tenantClaim) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(principalClaim)) {
+      if ((tenantClaim && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(tenantClaim)) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(principalClaim)) {
         throw new Error("Production Explore tenant and principal claims must be safe top-level JWT claim names.");
+      }
+      if (singleOrganization && tenantClaim) {
+        throw new Error("Single-organization production Explore must not set --tenant-claim; Runner uses the exact reviewed --organization-id for accounting and audit.");
       }
     } else if (tenantClaim || principalClaim) {
       throw new Error("--tenant-claim and --principal-claim are only valid with --profile production.");
@@ -651,8 +685,9 @@ export async function boundaryCommand(
       inspectedSchema: optionalArg(rest, "--schema"),
       deploymentProfile,
       ...(deploymentProfile === "production"
-        ? { httpClaims: { tenantClaim: tenantClaim!, principalClaim: principalClaim! } }
+        ? { httpClaims: { ...(tenantClaim ? { tenantClaim } : {}), principalClaim: principalClaim! } }
         : {}),
+      ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
     });
     const existingJourney = await readGuidedOnboardingState(projectRoot);
     const existingProject = await resolveSynapsorProject(projectRoot, process.env);

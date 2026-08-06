@@ -543,6 +543,47 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 15_000);
 
+  it("drafts explicit single-organization Explore without adding fake tenant columns", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-single-org-boundary-cli-"));
+    const inspection = structuredClone(boundaryInspection());
+    for (const table of inspection.tables) {
+      const tenantFields = new Set(table.suggestions.tenant_columns);
+      table.columns = table.columns.filter((column) => !tenantFields.has(column.name));
+      table.suggestions.tenant_columns = [];
+      table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+        .filter((field) => !tenantFields.has(field));
+      table.row_level_security = false;
+      table.row_level_security_policies = [];
+      if (table.role_posture) table.role_posture.row_security_effective_for_current_role = false;
+    }
+    try {
+      await expect(main([
+        "boundary",
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--single-tenant",
+        "--organization-id", "internal-finance",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).resolves.toBe(0);
+      const draft = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      ));
+      expect(draft.organization_scope).toEqual({
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      });
+      expect(draft.pack.resources.length).toBeGreaterThan(0);
+      expect(draft.pack.resources.every((resource: Record<string, unknown>) =>
+        resource.tenant_key === undefined && resource.tenant_scope === undefined)).toBe(true);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("records a model-withheld field through the top-level CLI and rejects unknown fields", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-front-door-"));
     const inspection = boundaryInspection();

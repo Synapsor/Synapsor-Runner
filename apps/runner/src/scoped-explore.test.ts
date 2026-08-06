@@ -212,6 +212,119 @@ describe("Scoped Explore", () => {
     expect(compiled?.sql).toContain('AVG(t0."monthly_revenue_cents")');
   });
 
+  it("emits no tenant predicate only for an explicit single-organization boundary", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    for (const resource of boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+    const [compiled] = compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "",
+    }, "postgres");
+    expect(compiled?.params).not.toContain("internal-finance");
+    expect(compiled?.sql).not.toContain('"tenant_id" =');
+    expect(compiled?.sql).not.toContain(" WHERE ");
+    expect(compiled?.sql).toMatch(/FROM "public"\."subscriptions" t0 LIMIT \$1$/);
+
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["id"],
+      limit: 1,
+    }, boundary);
+    const [compiledRows] = compileExplorePlan(rowPlan, boundary, {
+      tenant: "internal-finance",
+      principal: "",
+    }, "postgres");
+    expect(compiledRows?.sql).not.toContain(" WHERE ");
+    expect(compiledRows?.sql).toMatch(/ORDER BY t0\."id" ASC LIMIT \$1$/);
+
+    boundary.pack.resources[0]!.principal_key = "id";
+    const [principalScoped] = compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "user-7",
+    }, "postgres");
+    expect(principalScoped?.sql).toContain('t0."id" = $1');
+    expect(principalScoped?.params[0]).toBe("user-7");
+
+    delete boundary.organization_scope;
+    expect(() => compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "",
+    }, "postgres")).toThrow(/has no direct or derived tenant scope/i);
+  });
+
+  it("keeps a mandatory derived principal predicate in a single-organization boundary", async () => {
+    const fixture = await activatedFixture();
+    const boundary = derivedScopeBoundary(fixture.boundary);
+    boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    const orderItems = boundary.pack.resources.find((resource) => resource.id === "public.order_items")!;
+    for (const resource of boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    orders.principal_key = "id";
+    const scopeLink = {
+      constraint_name: "order_items_order_id_fkey",
+      source_resource: "public.order_items",
+      target_resource: "public.orders",
+      source_columns: ["order_id"],
+      target_columns: ["id"],
+      target_uniqueness: {
+        kind: "primary_key" as const,
+        name: "orders_pkey",
+        columns: ["id"],
+      },
+      nullable: false,
+      cardinality: "many_to_one" as const,
+      max_fan_out: 1 as const,
+    };
+    orderItems.principal_scope = {
+      mode: "derived",
+      path_id: "order_items_order_id_fkey",
+      ancestor_resource: "public.orders",
+      ancestor_column: "id",
+      proof: {
+        source: "database_catalog",
+        links: [scopeLink],
+        digest: canonicalJsonDigest([scopeLink]),
+      },
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.order_items",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+    const [compiled] = compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "order-owner-7",
+    }, "postgres");
+    expect(compiled?.sql).toContain(
+      'EXISTS (SELECT 1 FROM "public"."orders" st0_principal_0 WHERE t0."order_id" = st0_principal_0."id" AND st0_principal_0."id" = $1)',
+    );
+    expect(compiled?.params).toContain("order-owner-7");
+    expect(compiled?.params).not.toContain("internal-finance");
+  });
+
   it("keeps a reviewed Runner-only trusted scope value out of model egress and durable evidence", async () => {
     const fixture = await activatedFixture(undefined, churnInspection(), undefined, "runner_only");
     const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
@@ -1480,6 +1593,38 @@ describe("Scoped Explore", () => {
       expect.objectContaining({
         code: "EXPLORE_LOCK_STALE",
         message: expect.stringMatching(/derived trusted scope.*does not bind.*No query was executed/is),
+      }),
+    );
+  });
+
+  it("rechecks tenant-isolation evidence before a single-organization query executes", async () => {
+    const fixture = await activatedFixture();
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    prepared.boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    prepared.lock.organization_scope = prepared.boundary.organization_scope;
+    for (const resource of prepared.boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, prepared.boundary);
+    expect(() => assertPreparedExplorePlanAuthority(plan, prepared)).toThrowError(
+      expect.objectContaining({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/tenant-isolation evidence[\s\S]*No query was executed/i),
       }),
     );
   });

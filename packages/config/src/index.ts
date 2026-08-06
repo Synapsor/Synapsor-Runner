@@ -58,7 +58,7 @@ const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
 const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
 const PRODUCTION_EXPLORE_KEYS = new Set([
   "enabled", "project_root", "required_oauth_scope", "budget_hmac_key_env", "accounting_namespace", "tenant_limits",
-  "source_max_connections", "max_sessions_per_principal",
+  "source_max_connections", "max_sessions_per_principal", "single_organization_id",
 ]);
 const PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS = new Set([
   "max_queries_per_rolling_24_hours",
@@ -398,6 +398,16 @@ function validateProductionExplore(
     || !/^[a-z][a-z0-9_.:-]*$/.test(value.accounting_namespace)) {
     errors.push({ path: "$.production_explore.accounting_namespace", code: "PRODUCTION_EXPLORE_ACCOUNTING_NAMESPACE_REQUIRED", message: "production Explore requires a stable lower-case accounting namespace shared by every replica, for example acme.analytics.production." });
   }
+  const singleOrganizationId = value.single_organization_id;
+  if (singleOrganizationId !== undefined
+    && (typeof singleOrganizationId !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(singleOrganizationId))) {
+    errors.push({
+      path: "$.production_explore.single_organization_id",
+      code: "PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_ID_INVALID",
+      message: "single_organization_id must be a stable 1-128 character organization label using letters, numbers, dots, colons, underscores, or dashes.",
+    });
+  }
   for (const [key, maximum] of [
     ["source_max_connections", 100],
     ["max_sessions_per_principal", 100],
@@ -458,8 +468,15 @@ function validateProductionExplore(
   if (!isNonEmptyString(sessionAuth?.audience)) {
     errors.push({ path: "$.session_auth.audience", code: "PRODUCTION_EXPLORE_AUDIENCE_REQUIRED", message: "production Explore requires an exact JWT audience." });
   }
-  if (!isSafeIdentifier(sessionAuth?.tenant_claim)) {
-    errors.push({ path: "$.session_auth.tenant_claim", code: "PRODUCTION_EXPLORE_TENANT_CLAIM_REQUIRED", message: "production Explore requires an explicit safe tenant_claim." });
+  if (singleOrganizationId === undefined && !isSafeIdentifier(sessionAuth?.tenant_claim)) {
+    errors.push({ path: "$.session_auth.tenant_claim", code: "PRODUCTION_EXPLORE_TENANT_CLAIM_REQUIRED", message: "Multi-tenant production Explore requires an explicit safe tenant_claim." });
+  }
+  if (singleOrganizationId !== undefined && sessionAuth?.tenant_claim !== undefined) {
+    errors.push({
+      path: "$.session_auth.tenant_claim",
+      code: "PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_TENANT_CLAIM_FORBIDDEN",
+      message: "Single-organization production Explore uses production_explore.single_organization_id and must not accept a tenant claim from the request.",
+    });
   }
   if (!isSafeIdentifier(sessionAuth?.principal_claim)) {
     errors.push({ path: "$.session_auth.principal_claim", code: "PRODUCTION_EXPLORE_PRINCIPAL_CLAIM_REQUIRED", message: "production Explore requires an explicit safe principal_claim." });

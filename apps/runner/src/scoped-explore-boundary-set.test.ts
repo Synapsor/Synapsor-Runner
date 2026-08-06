@@ -197,7 +197,7 @@ function boundary(name: string, resources: string[]): ActivatedExplorationBounda
   return {
     pack: {
       name,
-      resources: resources.map((id) => ({ id })),
+      resources: resources.map((id) => ({ id, tenant_key: "tenant_id" })),
     },
   } as unknown as ActivatedExplorationBoundary;
 }
@@ -219,7 +219,7 @@ function validBoundary(name: string, resources: string[]): ActivatedExplorationB
     role_posture_fingerprint: `sha256:${"2".repeat(64)}`,
     pack: {
       name,
-      resources: resources.map((id) => ({ id })),
+      resources: resources.map((id) => ({ id, tenant_key: "tenant_id" })),
     },
     budgets: {},
   };

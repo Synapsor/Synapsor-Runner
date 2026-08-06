@@ -1592,7 +1592,9 @@ function formatFocusedBoundaryActivationReview(
     .map((resource) => resource.tenant_key)
     .filter((value): value is string => Boolean(value)))];
   const allTenantScopesDirect = bundle.candidate.pack.resources.every((resource) => Boolean(resource.tenant_key));
-  const tenantBinding = bundle.candidate.trusted_context.provider === "http_claims"
+  const tenantBinding = bundle.candidate.organization_scope
+    ? `fixed reviewed organization ${bundle.candidate.organization_scope.organization_id}`
+    : bundle.candidate.trusted_context.provider === "http_claims"
     ? `verified JWT claim ${bundle.candidate.trusted_context.tenant_claim}`
     : bundle.candidate.trusted_context.database_role_tenant
       ? `database role ${bundle.candidate.trusted_context.database_role_tenant.setting}`
@@ -1602,10 +1604,12 @@ function formatFocusedBoundaryActivationReview(
     .map((resource) => resource.principal_key
       ? `${resource.id}.${resource.principal_key}`
       : `${resource.id} via ${resource.principal_scope!.path_id} to ${resource.principal_scope!.ancestor_resource}.${resource.principal_scope!.ancestor_column}`);
-  const tenantScopeSummary = `${allTenantScopesDirect && directTenantKeys.length === 1
-    ? `${directTenantKeys[0]} on every table`
-    : bundle.candidate.pack.resources.map((resource) =>
-      `${resource.id} ${reviewedTenantScopeLabel(resource)}`).join("; ")} via ${tenantBinding}`;
+  const tenantScopeSummary = bundle.candidate.organization_scope
+    ? `Single organization (${bundle.candidate.organization_scope.organization_id}); no tenant predicate is applied`
+    : `${allTenantScopesDirect && directTenantKeys.length === 1
+      ? `${directTenantKeys[0]} on every table`
+      : bundle.candidate.pack.resources.map((resource) =>
+        `${resource.id} ${reviewedTenantScopeLabel(resource)}`).join("; ")} via ${tenantBinding}`;
   const principalBinding = bundle.candidate.trusted_context.provider === "http_claims"
     ? `verified JWT claim ${bundle.candidate.trusted_context.principal_claim}`
     : bundle.candidate.trusted_context.principal_env;

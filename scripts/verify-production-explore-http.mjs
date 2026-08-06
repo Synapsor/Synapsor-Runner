@@ -25,6 +25,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = path.join(root, "examples/auto-boundary-churn");
 const compose = path.join(fixture, "docker-compose.yml");
 const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-http-"));
+const singleOrganizationProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-single-org-http-"));
 const readUrl = "postgresql://synapsor_churn_reader:synapsor_churn_reader_password@127.0.0.1:55460/synapsor_auto_boundary";
 const adminUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/synapsor_auto_boundary";
 const controlUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/postgres";
@@ -208,6 +209,37 @@ async function seedDerivedSource(pool) {
   `);
 }
 
+async function seedSingleOrganizationSource(pool) {
+  await pool.query(`
+    DROP SCHEMA IF EXISTS single_org_http CASCADE;
+    CREATE SCHEMA single_org_http;
+    CREATE TABLE single_org_http.activity (
+      id text PRIMARY KEY,
+      category text NOT NULL CHECK (category IN ('billing', 'support')),
+      amount_cents integer NOT NULL CHECK (amount_cents >= 0),
+      occurred_at timestamptz NOT NULL
+    );
+    INSERT INTO single_org_http.activity (id, category, amount_cents, occurred_at)
+    SELECT 'billing-' || item, 'billing', item * 100, '2026-08-01T00:00:00Z'::timestamptz + item * interval '1 hour'
+      FROM generate_series(1, 6) AS item;
+    INSERT INTO single_org_http.activity (id, category, amount_cents, occurred_at)
+    SELECT 'support-' || item, 'support', item * 200, '2026-08-02T00:00:00Z'::timestamptz + item * interval '1 hour'
+      FROM generate_series(1, 6) AS item;
+    GRANT USAGE ON SCHEMA single_org_http TO synapsor_churn_reader;
+    GRANT SELECT ON single_org_http.activity TO synapsor_churn_reader;
+  `);
+}
+
+async function singleOrganizationSourceSnapshot(pool) {
+  const result = await pool.query(`
+    SELECT COUNT(*)::int AS row_count,
+      SUM(amount_cents)::bigint AS amount_cents,
+      md5(string_agg(id || ':' || category || ':' || amount_cents::text || ':' || occurred_at::text, '|' ORDER BY id)) AS digest
+    FROM single_org_http.activity
+  `);
+  return result.rows[0];
+}
+
 function resultPayload(result) {
   if (result.structuredContent && typeof result.structuredContent === "object") return result.structuredContent;
   const text = result.content?.find((item) => item.type === "text")?.text;
@@ -283,6 +315,207 @@ function clientFor(url, bearer, query = {}) {
     client: new Client({ name: "production-explore-verifier", version: "1.0.0" }),
     transport,
   };
+}
+
+async function verifySingleOrganizationProductionExplore(input) {
+  const { admin, controlSchema, controlUrl, privateKey, publicKeyPem } = input;
+  const clients = [];
+  let server;
+  await seedSingleOrganizationSource(admin);
+  const before = await singleOrganizationSourceSnapshot(admin);
+  const env = {
+    ...process.env,
+    DATABASE_URL: readUrl,
+    SYNAPSOR_CONTROL_DATABASE_URL: controlUrl,
+    SYNAPSOR_SESSION_PUBLIC_KEY: publicKeyPem,
+    SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY: "single-organization-budget-hmac-key-material-1234567890",
+  };
+  delete env.SYNAPSOR_TENANT_ID;
+  try {
+    const inspection = await inspectDatabase({
+      engine: "postgres",
+      databaseUrlEnv: "DATABASE_URL",
+      schema: "single_org_http",
+      env,
+    });
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: singleOrganizationProjectRoot,
+        package_manager: "pnpm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "single_org_http",
+      deploymentProfile: "production",
+      httpClaims: { principalClaim: "sub" },
+      singleOrganization: { organizationId: "internal-finance" },
+    });
+    await writeAutoBoundaryArtifacts({ projectRoot: singleOrganizationProjectRoot, build });
+    const candidate = structuredClone(build.exploration_boundary);
+    candidate.pack.name = "internal_finance_production";
+    assert(candidate.pack.resources.length === 1
+      && candidate.pack.resources[0].id === "single_org_http.activity"
+      && candidate.pack.resources[0].tenant_key === undefined
+      && candidate.pack.resources[0].tenant_scope === undefined,
+    "Single-organization production boundary did not retain one tenant-free reviewed resource.", candidate);
+    candidate.budgets.max_queries_per_session = 1;
+    candidate.budgets.rate_limit_per_minute = 10;
+    candidate.budgets.max_extracted_cells_per_session = 100;
+    candidate.budgets.max_differencing_queries = 10;
+    const digest = explorationBoundaryCandidateDigest(candidate);
+    await activateExplorationBoundary({
+      projectRoot: singleOrganizationProjectRoot,
+      candidate,
+      expectedDigest: digest,
+      actor: "production-owner@example.test",
+      confirmation: `ACTIVATE ${digest}`,
+      confirmedDecisions: candidate.unresolved_decisions,
+      currentInspection: inspection,
+    });
+
+    const runtimeConfig = {
+      version: 1,
+      mode: "read_only",
+      storage: {
+        sqlite_path: path.join(singleOrganizationProjectRoot, ".synapsor/local.db"),
+        shared_postgres: {
+          mode: "runtime_store",
+          url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
+          schema: controlSchema,
+          lock_timeout_ms: 5_000,
+          max_entries: 100_000,
+        },
+      },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          statement_timeout_ms: 3_000,
+        },
+      },
+      trusted_context: { provider: "http_claims" },
+      session_auth: {
+        provider: "jwt_asymmetric",
+        algorithms: ["RS256"],
+        public_key_env: "SYNAPSOR_SESSION_PUBLIC_KEY",
+        issuer: "https://identity.example",
+        audience: "https://runner.example/mcp",
+        principal_claim: "sub",
+      },
+      http_security: {
+        deployment: "shared",
+        channel: "trusted_tls_proxy",
+        allowed_hosts: ["127.0.0.1"],
+        oauth_resource: {
+          resource: "https://runner.example/mcp",
+          authorization_servers: ["https://identity.example"],
+          scopes_supported: ["synapsor.explore"],
+          required_scopes: ["synapsor.explore"],
+        },
+      },
+      production_explore: {
+        enabled: true,
+        project_root: singleOrganizationProjectRoot,
+        required_oauth_scope: "synapsor.explore",
+        budget_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
+        accounting_namespace: "verify.production.explore.single-organization",
+        single_organization_id: "internal-finance",
+        source_max_connections: 2,
+        max_sessions_per_principal: 2,
+        tenant_limits: {
+          max_queries_per_rolling_24_hours: 100,
+          max_extracted_cells_per_rolling_24_hours: 10_000,
+          max_differencing_queries_per_rolling_24_hours: 100,
+          requests_per_minute: 100,
+          max_response_cells_per_response: 500,
+        },
+      },
+    };
+    const mismatchConfig = structuredClone(runtimeConfig);
+    mismatchConfig.production_explore.single_organization_id = "different-organization";
+    let mismatchError = "";
+    try {
+      await assertProductionExploreStartup(mismatchConfig, env);
+    } catch (error) {
+      mismatchError = String(error);
+    }
+    assert(/claim bindings do not match|not ready/i.test(mismatchError),
+      "A runtime configured for a different fixed organization did not fail closed.", mismatchError);
+
+    const posture = await assertProductionExploreStartup(runtimeConfig, env);
+    assert(posture.ok
+      && posture.tools.join(",") === "app.describe_data,app.explore_data"
+      && posture.checks.some((check) => check.name === "verified-principal-scope"
+        && check.ok && check.message.includes("internal-finance")),
+    "Single-organization production startup did not attest principal-only JWT scope.", posture);
+    const configPath = path.join(singleOrganizationProjectRoot, "synapsor.runner.json");
+    fs.writeFileSync(configPath, `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
+    server = await startProductionExploreCli(configPath, env);
+
+    const alice = clientFor(server.url, await token(privateKey, { tenant: undefined, principal: "analyst-a" }));
+    clients.push(alice.client);
+    await alice.client.connect(alice.transport);
+    const tools = await alice.client.listTools();
+    assert(tools.tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
+      "Single-organization MCP exposed more than the two reviewed Explore tools.", tools.tools);
+    const described = resultPayload(await alice.client.callTool({
+      name: "app.describe_data",
+      arguments: {},
+    }));
+    const describedText = JSON.stringify(described);
+    assert(describedText.includes("single_organization")
+      && !describedText.includes("internal-finance"),
+    "Model-facing catalog did not report the fixed posture safely.", described);
+    const plan = {
+      kind: "aggregate",
+      resource: "single_org_http.activity",
+      measures: [{ function: "count" }, { function: "sum", field: "amount_cents" }],
+      dimensions: [{ field: "category" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const aliceResult = resultPayload(await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan },
+    }));
+    assert(aliceResult.ok === true
+      && aliceResult.source_database_changed === false
+      && aliceResult.data.length === 2
+      && aliceResult.data.reduce((sum, row) => sum + row.count, 0) === 12,
+    "Principal-only JWT production Explore did not return whole-organization analytics.", aliceResult);
+    const exhausted = await alice.client.callTool({ name: "app.explore_data", arguments: { plan } });
+    assert(exhausted.isError === true && JSON.stringify(exhausted).includes("authenticated principal"),
+      "The single-organization principal did not exhaust only its own reviewed budget.", exhausted);
+
+    const bob = clientFor(server.url, await token(privateKey, { tenant: undefined, principal: "analyst-b" }));
+    clients.push(bob.client);
+    await bob.client.connect(bob.transport);
+    const bobResult = resultPayload(await bob.client.callTool({ name: "app.explore_data", arguments: { plan } }));
+    assert(bobResult.ok === true && bobResult.data.length === 2,
+      "A second principal was starved by the first principal in the fixed organization.", bobResult);
+
+    const missingPrincipal = clientFor(server.url, await token(privateKey, { tenant: undefined, principal: undefined }));
+    await missingPrincipal.client.connect(missingPrincipal.transport)
+      .then(() => { throw new Error("JWT without a principal unexpectedly initialized single-organization production Explore."); })
+      .catch((error) => assert(/401|unauthorized/i.test(String(error)),
+        "Single-organization production Explore did not require a verified principal.", String(error)));
+    const after = await singleOrganizationSourceSnapshot(admin);
+    assert(JSON.stringify(after) === JSON.stringify(before),
+      "Single-organization production Explore mutated its source database.", { before, after });
+    return {
+      tools: tools.tools.map((tool) => tool.name),
+      principal_only_jwt: true,
+      fixed_organization: true,
+      principal_budget_isolated: true,
+      source_database_changed: false,
+    };
+  } finally {
+    await Promise.allSettled(clients.map((client) => client.close()));
+    await stopProductionExploreCli(server).catch(() => undefined);
+  }
 }
 
 async function main() {
@@ -682,6 +915,13 @@ async function main() {
       .then(() => { throw new Error("JWT without a principal unexpectedly initialized production Explore."); })
       .catch((error) => assert(/401|unauthorized/i.test(String(error)), "Missing-principal JWT did not fail as authentication.", String(error)));
 
+    const singleOrganization = await verifySingleOrganizationProductionExplore({
+      admin,
+      controlSchema,
+      controlUrl,
+      privateKey,
+      publicKeyPem,
+    });
     const after = await sourceSnapshot(admin);
     assert(JSON.stringify(after) === JSON.stringify(before),
       "Production HTTP Explore mutated the application source database.", { before, after });
@@ -702,6 +942,7 @@ async function main() {
       doctor_attested: true,
       derived_scope_indexes_attested: true,
       suppressed_groups: aliceResult.privacy.suppressed_groups,
+      single_organization: singleOrganization,
       source_database_changed: false,
     }, null, 2)}\n`);
   } finally {
@@ -714,6 +955,7 @@ async function main() {
     } else {
       run("docker", ["compose", "-f", compose, "down", "-v", "--remove-orphans"], { allowFailure: true });
       fs.rmSync(projectRoot, { recursive: true, force: true });
+      fs.rmSync(singleOrganizationProjectRoot, { recursive: true, force: true });
     }
   }
 }

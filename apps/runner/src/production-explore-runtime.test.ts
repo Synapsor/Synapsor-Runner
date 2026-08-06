@@ -155,6 +155,36 @@ describe("production Explore startup posture", () => {
     expect(rendered).not.toContain(controlDatabaseUrl);
   });
 
+  it("attests principal-only JWT binding for an exact reviewed single organization", async () => {
+    const config = productionConfig();
+    config.production_explore!.single_organization_id = "internal-finance";
+    delete config.session_auth!.tenant_claim;
+    const boundary = productionBoundary({
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+      trusted_context: {
+        provider: "http_claims",
+        principal_claim: "sub",
+      },
+    });
+    const report = await assertProductionExploreStartup(
+      config,
+      productionEnv(),
+      async () => [boundary],
+      async () => ({
+        boundary,
+        lock: { engine: "postgres", source_env: "DATABASE_URL" },
+      } as Awaited<ReturnType<PrepareBoundary>>),
+    );
+    expect(report.ok).toBe(true);
+    expect(formatProductionExploreStartupReport(report)).toContain(
+      "organization identity is fixed as internal-finance",
+    );
+  });
+
   it.each([
     {
       name: "missing shared HMAC material",
@@ -543,6 +573,67 @@ describe("production Explore startup posture", () => {
     await Promise.all([recovered.close(), cached.close()]);
     await expect(factory.close?.()).resolves.toBeUndefined();
     expect(executorCloses).toBe(1);
+    store.close();
+  });
+
+  it("binds single-organization production sessions to the fixed organization and verified principal", async () => {
+    const config = productionConfig();
+    config.production_explore!.single_organization_id = "internal-finance";
+    delete config.session_auth!.tenant_claim;
+    const boundary = productionBoundary({
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+      trusted_context: { provider: "http_claims", principal_claim: "sub" },
+    });
+    const store = new ProposalStore();
+    let runtimeInput: Record<string, unknown> | undefined;
+    const dependencies: NonNullable<Parameters<typeof productionExploreSessionFactory>[2]> = {
+      loadBoundaries: async () => [boundary],
+      createExecutor: () => ({
+        execute: async () => [],
+        executeBatch: async () => [],
+        close: async () => undefined,
+      }),
+      createBoundarySetRuntime: (async (input) => {
+        runtimeInput = input as unknown as Record<string, unknown>;
+        return { close: async () => undefined };
+      }) as NonNullable<Parameters<typeof productionExploreSessionFactory>[2]>["createBoundarySetRuntime"],
+      createMcpServer: (() => ({
+        connect: async () => undefined,
+        close: async () => undefined,
+      })) as unknown as NonNullable<Parameters<typeof productionExploreSessionFactory>[2]>["createMcpServer"],
+    };
+    const factory = productionExploreSessionFactory(config, productionEnv(), dependencies);
+    const session = await factory({
+      config,
+      env: productionEnv(),
+      store,
+      trustedContext: {
+        tenant_id: "internal-finance",
+        principal: "analyst-7",
+        provenance: "http_claims",
+      },
+    });
+    expect(runtimeInput?.sessionContext).toEqual({
+      tenant_id: "internal-finance",
+      principal: "analyst-7",
+      provenance: "http_claims",
+    });
+    await expect(factory({
+      config,
+      env: productionEnv(),
+      store,
+      trustedContext: {
+        tenant_id: "other-org",
+        principal: "analyst-7",
+        provenance: "http_claims",
+      },
+    })).rejects.toThrow(/exact reviewed organization identity/i);
+    await session.close();
+    await factory.close?.();
     store.close();
   });
 });

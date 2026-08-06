@@ -20,6 +20,11 @@ describe("analytical MCP output schemas", () => {
       outcome: { type: "success" },
       boundary_digest: digest,
       pack: "reviewed_staging",
+      organization_scope: {
+        mode: "single_organization",
+        tenant_filter: "not_applicable",
+        organization_identity: "fixed_outside_model_arguments",
+      },
       reporting_timezone: { name: "UTC", authority_bound: true },
       resources: [],
       next_cursor: null,
@@ -38,6 +43,7 @@ describe("analytical MCP output schemas", () => {
       source_database_changed: false,
     };
     expect(scopedExploreDescribeOutputSchema.safeParse(success).success).toBe(true);
+    expect(JSON.stringify(success)).not.toContain("internal-finance");
     expect(scopedExploreDescribeOutputSchema.safeParse(refusal).success).toBe(true);
     expect(scopedExploreDescribeOutputSchema.safeParse({
       ...refusal,

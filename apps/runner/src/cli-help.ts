@@ -174,6 +174,7 @@ activates the result.
     config: `Usage:
   ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
   ${cmd} config init --production-explore --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
+  ${cmd} config init --production-explore --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
@@ -315,6 +316,7 @@ Options:
   # Recommended interactive first run
   ${cmd} start --from-env DATABASE_URL [--schema public]
   ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose]
+  ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
 
   # Canonical non-interactive read-only setup
   ${cmd} start --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
@@ -333,6 +335,12 @@ samples source rows or uses an LLM. This fresh loopback route establishes the
 development authoring profile once; Workbench does not ask for a second
 development/staging declaration. Explicit production, unknown, remote, and
 established manual profiles retain their existing fail-closed behavior.
+
+For a database that genuinely contains one organization and no tenant columns
+or row-level tenant policies, add \`--single-tenant --organization-id <stable-id>\`.
+This is an explicit digest-bound owner decision: Runner applies no tenant row
+predicate, still applies reviewed principal scope when present, and refuses the
+mode if inspection finds evidence that the source is actually multi-tenant.
 
 Add \`--cli\` to keep the complete interactive journey in the terminal. Runner
 drafts or resumes the boundary and, for a fresh conservative candidate, asks
@@ -364,7 +372,9 @@ the local reviewed contract and proposal before writeback.
 `,
     boundary: `Usage:
   ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
+  ${cmd} boundary draft --from-env DATABASE_URL --single-tenant --organization-id internal-finance [--project-root .]
   ${cmd} boundary draft --from-env DATABASE_URL --profile production --tenant-claim tenant_id --principal-claim sub [--project-root .]
+  ${cmd} boundary draft --from-env DATABASE_URL --profile production --single-tenant --organization-id internal-finance --principal-claim sub [--project-root .]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
   ${cmd} boundary review --map [--all] [--project-root .]

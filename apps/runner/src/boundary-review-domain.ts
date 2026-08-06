@@ -479,6 +479,13 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
     if (decision.startsWith("trusted context:")) {
       return reviewDecision("global.trusted_context", "trusted_context", decision, candidate.trusted_context);
     }
+    if (decision.startsWith("organization scope:")) {
+      return reviewDecision("global.organization_scope", "organization_scope", decision, {
+        mode: candidate.organization_scope?.mode,
+        organization_id: candidate.organization_scope?.organization_id,
+        tenant_predicate: "not_applied",
+      });
+    }
     if (decision.startsWith("database role:")) {
       return reviewDecision("global.database_role", "database_role", decision, {
         role_posture_fingerprint: candidate.role_posture_fingerprint,
@@ -517,6 +524,12 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
             } : {}),
           }),
         rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail === "confirm whole-organization read access with no tenant predicate") {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        organization_scope: candidate.organization_scope,
+        tenant_predicate: "not_applied",
       }, resourceId);
     }
     if (detail.startsWith("confirm mandatory derived tenant scope ")) {

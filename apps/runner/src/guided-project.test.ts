@@ -161,6 +161,38 @@ describe("guided onboarding project", () => {
     }
   });
 
+  it("does not ask a single-organization authoring project for a tenant environment value", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-single-organization-"));
+    try {
+      await fs.mkdir(path.join(projectRoot, ".synapsor"), { recursive: true });
+      await fs.writeFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "{}\n");
+      const build = buildFixture();
+      build.exploration_boundary.organization_scope = {
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      };
+
+      const result = await initializeGuidedProject({
+        projectRoot,
+        build,
+        runnerVersion: "1.7.0",
+      });
+
+      const config = JSON.parse(await fs.readFile(result.config_path, "utf8"));
+      expect(config.trusted_context).toEqual({
+        provider: "environment",
+        values: {},
+      });
+      const environment = await fs.readFile(result.environment_path, "utf8");
+      expect(environment).toContain("DATABASE_URL=");
+      expect(environment).toContain("SYNAPSOR_OPERATOR_ID=");
+      expect(environment).not.toContain("SYNAPSOR_TENANT_ID=");
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("emits the interactive graduation tip once per project and honors suppression", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-tip-"));
     const suppressedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-tip-suppressed-"));

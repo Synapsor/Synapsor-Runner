@@ -869,6 +869,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const tenantSource=instantOnboarding.tenant_scope_source;
       const tenantLabel=tenantSource==="postgres_role_setting"
         ?"Tenant fixed by read-only database login"
+        :tenantSource==="reviewed_organization"
+          ?"Whole reviewed organization ("+instantOnboarding.candidate.organization_scope.organization_id+"); no tenant filter"
         :"Tenant from your app";
       const scopeLabel=String(first.principal_scope).startsWith("not required")
         ?tenantLabel
@@ -1140,7 +1142,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           ?"Choose the source-proven record ID for "+review.id+"."
           :"Add a single-column primary or unique key, then rescan "+review.id+".";
       }
-      if(!review.tenant_key?.selected&&!review.derived_tenant_scope?.selected){
+      if(!candidate?.organization_scope&&!review.tenant_key?.selected&&!review.derived_tenant_scope?.selected){
         const candidates=review.tenant_key?.candidates||[];
         const paths=review.derived_tenant_scope?.candidates||[];
         return candidates.length||paths.length
@@ -1162,6 +1164,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
     function reviewedTenantScopeLabel(resource,review){
+      if(candidate?.organization_scope)return "whole reviewed organization ("+candidate.organization_scope.organization_id+"); no tenant filter";
       if(resource?.tenant_key)return "direct column "+resource.tenant_key;
       const scope=resource?.tenant_scope||review?.derived_tenant_scope?.selected;
       return scope?derivedScopePathLabel(scope):"unresolved";
@@ -1189,8 +1192,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        [hidden,"fields hidden from the agent"],
 	        [unresolvedSignoffs,"review sign-offs remaining"]
 	      ].map(item=>'<div class="metric"><strong>'+esc(item[0])+'</strong><span>'+esc(item[1])+'</span></div>').join("");
-	      const tenantResources=(reviewReport.resources||[]).filter(resource=>
-	        resource.tenant_key?.selected||resource.derived_tenant_scope?.selected);
+	      const tenantResources=candidate.organization_scope
+	        ?reviewReport.resources||[]
+	        :(reviewReport.resources||[]).filter(resource=>
+	          resource.tenant_key?.selected||resource.derived_tenant_scope?.selected);
 	      const principalResources=(reviewReport.resources||[]).filter(resource=>
 	        resource.principal_key?.selected||resource.derived_principal_scope?.selected);
 	      const tenantResolved=tenantResources.length;
@@ -1202,7 +1207,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      byId("resource-navigation-shell").setAttribute("aria-label",collectionLabel.replace(/\\b\\w/g,char=>char.toUpperCase())+" navigation");
 	      byId("resource-search-label").textContent="Find a "+(collectionLabel==="tables"?"table":"table or view");
 	      byId("resource-search").placeholder="Search "+collectionLabel;
-			      byId("database-summary").innerHTML='<h3>Database connected</h3><p><strong>'+esc(String(reviewReport.engine||"database").toUpperCase())+'</strong> · read role <code>'+esc(reviewReport.database_role?.name||"unknown")+'</code> · '+esc(summary.objects)+' '+esc(collectionLabel)+' inspected.</p><p>'+esc(summary.draft_reads)+' can be reviewed now; '+esc(summary.blocked_objects)+' stay unavailable. Customer isolation was detected for '+esc(tenantResolved)+' '+esc(reviewedCollectionLabel(tenantResources))+'. Per-user row limits were detected for '+esc(principalResolved)+' '+esc(reviewedCollectionLabel(principalResources))+'. '+esc(summary.sensitive_fields_kept_out)+' sensitive field(s) were hidden conservatively across the inspected schema.</p>';
+			      byId("database-summary").innerHTML='<h3>Database connected</h3><p><strong>'+esc(String(reviewReport.engine||"database").toUpperCase())+'</strong> · read role <code>'+esc(reviewReport.database_role?.name||"unknown")+'</code> · '+esc(summary.objects)+' '+esc(collectionLabel)+' inspected.</p><p>'+esc(summary.draft_reads)+' can be reviewed now; '+esc(summary.blocked_objects)+' stay unavailable. '+(candidate.organization_scope?'Whole-organization access is explicitly reviewed for <code>'+esc(candidate.organization_scope.organization_id)+'</code>; no tenant predicate is applied.':'Customer isolation was detected for '+esc(tenantResolved)+' '+esc(reviewedCollectionLabel(tenantResources))+'.')+' Per-user row limits were detected for '+esc(principalResolved)+' '+esc(reviewedCollectionLabel(principalResources))+'. '+esc(summary.sensitive_fields_kept_out)+' sensitive field(s) were hidden conservatively across the inspected schema.</p>';
 		    }
 
 		    function renderBoundaryOverview(){
@@ -2294,8 +2299,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const advanced=resource
         ?'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>Turning a permission off narrows access. Fields hidden by Runner cannot be restored in this review.</p><div style="overflow:auto"><table class="permission-table"><thead><tr><th>Field</th>'+advancedPermissions.map(item=>'<th>'+esc(item[0])+'</th>').join("")+'</tr></thead><tbody>'+permissionRows+'</tbody></table></div></details>'
         :'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>This '+esc(selectedKind)+' is excluded. Include it before changing analytical permissions.</p></details>';
+      const organizationScopeReview=candidate.organization_scope
+        ?'<div class="risk"><strong>Whole reviewed organization</strong><p>'+esc(candidate.organization_scope.organization_id)+' is fixed outside model arguments. This boundary applies no tenant predicate; changing that posture requires regenerating and reviewing the complete boundary.</p></div>'
+        :managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id);
       const scopeReview=resource
-        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id)+managedTrustedScopeReviewForm("principal_key","user/owner limit",review.principal_key?.candidates||[],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
+        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",review.principal_key?.candidates||[],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
         :'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>This '+esc(selectedKind)+' is excluded. Include it before reviewing trusted scope.</p></details>';
       const cohortDecision=review.minimum_cohort_override;
       const cohortValue=resource?.minimum_cohort_size??5;

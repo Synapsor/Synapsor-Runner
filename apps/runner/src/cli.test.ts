@@ -3184,6 +3184,45 @@ END
     );
   });
 
+  it("generates production Explore config for a reviewed fixed organization with no tenant claim", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-single-org-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await fs.mkdir(path.join(tempDir, "synapsor/generated"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, ".synapsor"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, "synapsor/generated/exploration-boundary.draft.json"), JSON.stringify({
+      deployment_profile: "production",
+      source: "internal_analytics",
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+      trusted_context: { provider: "http_claims", principal_claim: "sub" },
+    }));
+    await fs.writeFile(path.join(tempDir, ".synapsor/generation-lock.json"), JSON.stringify({
+      engine: "postgres",
+      source_env: "DATABASE_URL",
+    }));
+
+    await expect(main([
+      "config", "init", "--production-explore",
+      "--project-root", tempDir,
+      "--output", configPath,
+      "--issuer", "https://identity.example.test",
+      "--audience", "https://runner.example.test/mcp",
+      "--accounting-namespace", "internal.finance.production",
+      "--json",
+    ])).resolves.toBe(0);
+    const config = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect(config.session_auth).toMatchObject({
+      provider: "jwt_asymmetric",
+      principal_claim: "sub",
+    });
+    expect(config.session_auth.tenant_claim).toBeUndefined();
+    expect(config.production_explore.single_organization_id).toBe("internal-finance");
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("validates and shows redacted runner config", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");

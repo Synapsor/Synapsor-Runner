@@ -23,6 +23,7 @@ import {
   AUTHORITY_DEPENDENCIES_VERSION,
   AUTO_BOUNDARY_COMPILER_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
+  assertSingleOrganizationInspectionSafe,
   compareGenerationLock,
   credentialPostureFingerprintForAuthority,
   derivedScopeDependencyKey,
@@ -162,7 +163,7 @@ export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
   trusted_scope?: {
-    tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim"; binding: string };
+    tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization"; binding: string };
     principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
   };
   describe(input?: {
@@ -893,6 +894,26 @@ export function assertPreparedExplorePlanAuthority(
   plan: ExplorePlan,
   prepared: PreparedExplore,
 ): void {
+  if (JSON.stringify(prepared.boundary.organization_scope ?? null)
+    !== JSON.stringify(prepared.lock.organization_scope ?? null)) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      withGenerationLockRemediation(
+        "The active boundary organization-scope posture does not match its generation lock. No query was executed.",
+        prepared.lock,
+      ),
+    );
+  }
+  if (prepared.boundary.organization_scope) {
+    try {
+      assertSingleOrganizationInspectionSafe(prepared.inspection);
+    } catch (error) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        `${error instanceof Error ? error.message : String(error)} No query was executed.`,
+      );
+    }
+  }
   if (!prepared.lock.authority_dependencies) {
     const usesDerivedScope = prepared.boundary.pack.resources.some((resource) =>
       Boolean(resource.tenant_scope || resource.principal_scope));
@@ -1447,7 +1468,7 @@ function compileRowPlan(
     : ` ORDER BY ${alias}.${quote(resource.primary_key, engine)} ASC`;
   params.push(plan.limit);
   return {
-    sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias} WHERE ${where.join(" AND ")}${order} LIMIT ${placeholder(params.length, engine)}`,
+    sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
     resources: scope.resources,
     ...(enumUses.length
@@ -1605,7 +1626,7 @@ function compileAggregatePlan(
   // fails closed instead of silently truncating the ranking.
   params.push(aggregateUnderlyingGroupLimit(plan, boundary) + 1);
   return {
-    sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql} WHERE ${where.join(" AND ")}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
+    sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params: engine === "mysql"
       ? [
         ...params.slice(parametersBeforeSelect, parametersAfterSelect),
@@ -2168,6 +2189,13 @@ function describeBoundary(
     outcome: { type: "success" },
     boundary_digest: boundary.activation.digest,
     pack: boundary.pack.name,
+    ...(boundary.organization_scope ? {
+      organization_scope: {
+        mode: "single_organization",
+        tenant_filter: "not_applicable",
+        organization_identity: "fixed_outside_model_arguments",
+      },
+    } : {}),
     reporting_timezone: {
       name: boundary.reporting_timezone ?? "database_session",
       authority_bound: Boolean(boundary.reporting_timezone),
@@ -3137,7 +3165,7 @@ function compileScopePredicates(
       engine,
       resources,
     }));
-  } else {
+  } else if (!boundary.organization_scope) {
     throw new ScopedExploreError(
       "EXPLORE_BOUNDARY_MISMATCH",
       `Reviewed resource ${resource.id} has no direct or derived tenant scope.`,

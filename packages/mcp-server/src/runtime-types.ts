@@ -254,6 +254,8 @@ export type RuntimeProductionExploreConfig = {
   required_oauth_scope: string;
   budget_hmac_key_env: string;
   accounting_namespace: string;
+  /** Fixed audit/accounting identity for an explicitly reviewed one-organization source. */
+  single_organization_id?: string;
   tenant_limits: ProductionExploreTenantLimits;
   source_max_connections?: number;
   max_sessions_per_principal?: number;

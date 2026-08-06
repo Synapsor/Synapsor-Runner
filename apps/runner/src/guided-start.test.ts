@@ -134,6 +134,92 @@ describe("guided start surfaces", () => {
     }
   });
 
+  it("preserves an explicit single-organization posture across a guided rescan", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-single-org-rescan-"));
+    const schemaInspector = vi.fn(async () => singleOrganizationInspection());
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    process.chdir(projectRoot);
+
+    try {
+      await expect(start(
+        [
+          "--from-env", "DATABASE_URL",
+          "--single-tenant",
+          "--organization-id", "internal-finance",
+          "--no-open",
+        ],
+        { interactive: true, schemaInspector },
+      )).resolves.toBe(0);
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--rescan", "--no-open"],
+        { interactive: true, schemaInspector },
+      )).resolves.toBe(0);
+
+      const draft = JSON.parse(await fs.readFile(
+        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      )) as {
+        organization_scope?: { organization_id: string };
+        pack: { resources: Array<{ tenant_key?: string; tenant_scope?: unknown }> };
+      };
+      expect(schemaInspector).toHaveBeenCalledTimes(2);
+      expect(draft.organization_scope?.organization_id).toBe("internal-finance");
+      expect(draft.pack.resources.every((resource) =>
+        resource.tenant_key === undefined && resource.tenant_scope === undefined)).toBe(true);
+      expect(output).toContain("whole reviewed organization (internal-finance); no tenant filter");
+      expect(output).not.toContain("scoped by    tenant from your application");
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("labels single-organization authority honestly on the first interactive review", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-single-org-review-"));
+    const schemaInspector = vi.fn(async () => singleOrganizationInspection());
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    process.chdir(projectRoot);
+
+    try {
+      await expect(start(
+        [
+          "--from-env", "DATABASE_URL",
+          "--cli",
+          "--single-tenant",
+          "--organization-id", "internal-finance",
+        ],
+        {
+          interactive: true,
+          schemaInspector,
+          runInstantCliBoundary: (input) => activateInstantCliBoundary({
+            ...input,
+            env: { ...process.env, SYNAPSOR_TENANT_ID: undefined },
+            session: { promptText: async () => undefined },
+          }),
+          runBoundaryReview: vi.fn(async () => 0),
+          runPostActivationHandoff: vi.fn(async () => 0),
+          openWorkbench: vi.fn(async () => 0),
+        },
+      )).resolves.toBe(0);
+
+      expect(output).toContain(
+        "read-only · whole reviewed organization (internal-finance); no tenant filter",
+      );
+      expect(output).not.toContain("read-only · tenant from operator environment");
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("opens the detailed table, column, and path editor from Quick Start with E", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-detail-"));
     const schemaInspector = vi.fn(async () => inspection());
@@ -728,4 +814,18 @@ function inspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function singleOrganizationInspection(): SchemaInspection {
+  const result = inspection();
+  const table = result.tables[0]!;
+  table.columns = table.columns.filter((column) => column.name !== "tenant_id");
+  table.suggestions.tenant_columns = [];
+  table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  table.row_level_security = false;
+  table.row_level_security_policies = [];
+  table.role_posture!.row_security_forced = false;
+  table.role_posture!.row_security_effective_for_current_role = false;
+  return result;
 }

@@ -366,7 +366,10 @@ export async function verifySessionJwt(config: RuntimeConfig, token: string, ver
   const auth = config.session_auth;
   if (!auth) throw new Error("session auth is not configured");
   const { payload: claims } = await verifier(token);
-  const tenant = safeSessionClaim(claims[auth.tenant_claim ?? "tenant_id"]);
+  const reviewedOrganization = config.production_explore?.single_organization_id;
+  const tenant = reviewedOrganization
+    ? safeSessionClaim(reviewedOrganization)
+    : safeSessionClaim(claims[auth.tenant_claim ?? "tenant_id"]);
   const principal = safeSessionClaim(claims[auth.principal_claim ?? "sub"]);
   if (!tenant || !principal) throw new Error("JWT trusted context claims are missing or unsafe");
   const requiredScopes = config.http_security?.oauth_resource?.required_scopes ?? [];

@@ -71,6 +71,14 @@ export async function localDoctor(args: string[]): Promise<number> {
       checks,
     )
     : [];
+  for (const boundary of activeExploreBoundaries.filter((item) => item.organization_scope)) {
+    checks.push({
+      name: `single-organization:${boundary.pack.name}`,
+      ok: true,
+      level: "pass",
+      message: `Boundary ${boundary.pack.name} is explicitly reviewed for one organization (${boundary.organization_scope!.organization_id}); no tenant predicate is applied, and principal scope remains independently enforced where reviewed.`,
+    });
+  }
   if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
     try {
       await preflightGeneratedAuthority(parsed, process.env);
@@ -95,6 +103,9 @@ export async function localDoctor(args: string[]): Promise<number> {
   const isolation = describeIsolationAssurance(parsed);
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
+  const singleOrganizationAuthoringOnly = (parsed.capabilities ?? []).length === 0
+    && activeExploreBoundaries.length > 0
+    && activeExploreBoundaries.every((boundary) => Boolean(boundary.organization_scope));
   for (const context of contextsToCheck) {
     if (context.provider === "http_claims") {
       checks.push({
@@ -120,7 +131,10 @@ export async function localDoctor(args: string[]): Promise<number> {
     }
     const tenantEnv = String(context.values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(context.values.principal_env ?? "SYNAPSOR_PRINCIPAL");
-    for (const envName of [tenantEnv, ...(context.principal_required ? [principalEnv] : [])]) {
+    for (const envName of [
+      ...(!singleOrganizationAuthoringOnly ? [tenantEnv] : []),
+      ...(context.principal_required ? [principalEnv] : []),
+    ]) {
       checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`, "pending"));
     }
   }

@@ -7811,6 +7811,16 @@ async function prepareAutoBoundaryRescan(input: {
     sourceEnv: lock.source_env,
     inspectedSchema: lock.inspected_schema,
     overrides: currentOverrides.overrides,
+    deploymentProfile: oldDraft.deployment_profile,
+    ...(oldDraft.trusted_context.provider === "http_claims" ? {
+      httpClaims: {
+        tenantClaim: oldDraft.trusted_context.tenant_claim,
+        principalClaim: oldDraft.trusted_context.principal_claim,
+      },
+    } : {}),
+    ...(oldDraft.organization_scope ? {
+      singleOrganization: { organizationId: oldDraft.organization_scope.organization_id },
+    } : {}),
   });
   const diff = boundarySemanticDiff(oldDraft, build, currentOverrides.removed);
   const previewDigest = canonicalJsonDigest({
@@ -8001,8 +8011,12 @@ function requiredReviewText(value: unknown, label: string): string {
   return value.trim();
 }
 
-function trustedScopeLabel(source: "environment" | "postgres_role_setting" | "verified_http_claim", binding: string): string {
+function trustedScopeLabel(
+  source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization",
+  binding: string,
+): string {
   if (source === "verified_http_claim") return `verified HTTP claim ${binding}`;
+  if (source === "reviewed_organization") return binding;
   return source === "postgres_role_setting"
     ? `the read-only database credential (${binding})`
     : `the operator environment (${binding})`;

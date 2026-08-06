@@ -11,14 +11,14 @@ type ExploreBoundary = ExplorationBoundaryDraft | ActivatedExplorationBoundary;
 export type ExploreTrustedScope = {
   tenant: string;
   principal: string;
-  tenant_source: "environment" | "postgres_role_setting" | "verified_http_claim";
+  tenant_source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization";
   tenant_binding: string;
   principal_source: "environment" | "verified_http_claim" | "not_required";
   principal_binding?: string;
 };
 
 export type ExploreHttpSessionContext = {
-  tenant_id: string;
+  tenant_id?: string;
   principal: string;
   provenance: "http_claims";
 };
@@ -50,19 +50,32 @@ export async function resolveExploreTrustedScope(input: {
     if (input.boundary.deployment_profile !== "production") {
       throw new ExploreTrustedScopeError("Verified HTTP claim bindings are only valid for a reviewed production Explore boundary.");
     }
-    const tenant = normalizedScopeValue(input.sessionContext?.tenant_id);
+    const reviewedOrganization = input.boundary.organization_scope?.organization_id;
+    const tenant = reviewedOrganization ?? normalizedScopeValue(input.sessionContext?.tenant_id);
     const principal = normalizedScopeValue(input.sessionContext?.principal);
     if (input.sessionContext?.provenance !== "http_claims" || !tenant || !principal) {
       throw new ExploreTrustedScopeError(
-        "Production Explore requires a verified tenant and principal on every HTTP session.",
-        [input.boundary.trusted_context.tenant_claim, input.boundary.trusted_context.principal_claim],
+        reviewedOrganization
+          ? "Single-organization production Explore requires a verified principal on every HTTP session."
+          : "Production Explore requires a verified tenant and principal on every HTTP session.",
+        [
+          ...(input.boundary.trusted_context.tenant_claim ? [input.boundary.trusted_context.tenant_claim] : []),
+          input.boundary.trusted_context.principal_claim,
+        ],
       );
+    }
+    if (reviewedOrganization
+      && input.sessionContext?.tenant_id
+      && input.sessionContext.tenant_id !== reviewedOrganization) {
+      throw new ExploreTrustedScopeError("The HTTP session tenant does not match the exact reviewed single-organization identity.");
     }
     return {
       tenant,
       principal,
-      tenant_source: "verified_http_claim",
-      tenant_binding: input.boundary.trusted_context.tenant_claim,
+      tenant_source: reviewedOrganization ? "reviewed_organization" : "verified_http_claim",
+      tenant_binding: reviewedOrganization
+        ? `fixed organization ${reviewedOrganization}`
+        : input.boundary.trusted_context.tenant_claim!,
       principal_source: "verified_http_claim",
       principal_binding: input.boundary.trusted_context.principal_claim,
     };
@@ -76,6 +89,16 @@ export async function resolveExploreTrustedScope(input: {
       `Scoped Explore requires trusted ${input.boundary.trusted_context.principal_env} outside model arguments.`,
       [input.boundary.trusted_context.principal_env],
     );
+  }
+  if (input.boundary.organization_scope) {
+    return {
+      tenant: input.boundary.organization_scope.organization_id,
+      principal: configuredPrincipal ?? "",
+      tenant_source: "reviewed_organization",
+      tenant_binding: `fixed organization ${input.boundary.organization_scope.organization_id}`,
+      principal_source: principalRequired ? "environment" : "not_required",
+      ...(principalRequired ? { principal_binding: input.boundary.trusted_context.principal_env } : {}),
+    };
   }
   if (configuredTenant) {
     return {

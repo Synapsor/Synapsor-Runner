@@ -1,6 +1,6 @@
 # Runner 1.7.0 Production Explore Hardening
 
-Last verified: 2026-08-05
+Last verified: 2026-08-06
 
 ## Workspace
 
@@ -629,3 +629,95 @@ Verification:
 
 This advisory remains part of unpublished Runner 1.7.0. No Spec/DSL bump,
 Cloud-repository change, push, or publish was performed.
+
+## Single-Organization Scoped Explore (Complete)
+
+Requested outcome: allow a genuinely one-organization PostgreSQL or MySQL
+source with no tenant column to use local/staging and production HTTP Explore
+without adding a fake column or view. Multi-tenant behavior must remain
+unchanged and fail closed.
+
+Implemented so far:
+
+- Added an optional, additive boundary-level `organization_scope` declaration:
+  `single_organization`, a fixed organization ID, and the exact
+  `all_rows_belong_to_one_organization` acknowledgment. Its absence preserves
+  legacy boundary JSON and multi-tenant behavior.
+- Bound the declaration into draft authority, activation digest, generation
+  lock, active-boundary validation, and active-boundary-set compatibility.
+- Added a hard generation, activation, and pre-query refusal guard when live
+  inspection finds tenant candidates, tenant-marked columns, or RLS metadata.
+  The error enumerates the evidence and confirms no boundary/query activation.
+- Single-organization resources must have neither direct nor derived tenant
+  scope. Multi-tenant resources still require exactly one. Direct and derived
+  principal scope remain unchanged and optional.
+- SQL compilation emits no tenant predicate only when the active boundary has
+  the exact reviewed declaration. Principal predicates still compile normally.
+- Local Explore resolves the fixed organization ID without requiring
+  `SYNAPSOR_TENANT_ID`; a reviewed principal still requires
+  `SYNAPSOR_PRINCIPAL`.
+- Production HTTP config supports mutually exclusive
+  `production_explore.single_organization_id` or `session_auth.tenant_claim`.
+  The principal claim remains mandatory. JWT verification ignores any
+  request-supplied tenant in single-organization mode and binds the fixed ID for
+  accounting/audit. Session creation rejects an identity mismatch.
+- `start` and `boundary draft` accept the explicit pair
+  `--single-tenant --organization-id <stable-id>`. Production draft generation
+  additionally requires `--principal-claim` and forbids `--tenant-claim`.
+- `config init --production-explore` derives the fixed identity from a reviewed
+  draft or accepts `--single-tenant-organization-id`; generated config omits
+  the tenant claim.
+- Boundary review decisions now include and retain the global organization
+  acknowledgment plus per-resource whole-organization access. The CLI review
+  summary states that no tenant predicate is applied; model-facing
+  `describe_data` reports the posture without exposing the organization ID.
+- Boundary regeneration, review mutations, and Workbench rescan preserve the
+  exact mode. Doctor reports the reviewed one-organization posture.
+- Protect conversion fails early with a clear message because protected named
+  capabilities still require a direct tenant column. Writes remain unchanged.
+- Updated CLI help and the production/local Explore operator documentation.
+
+Final implementation corrections from live use:
+
+- A tenant-free query exposed a compiler assumption that every query had at
+  least one scope predicate, producing `WHERE GROUP BY` or `WHERE LIMIT`.
+  Aggregate and row compilers now omit `WHERE` when there are no predicates;
+  focused regressions cover both shapes.
+- The strict MCP output validator initially omitted the new model-safe
+  `organization_scope` posture. It now accepts only the fixed posture fields and
+  still excludes the configured organization ID.
+- Generated local config and `.env.example` no longer request a tenant binding
+  for a fixed-organization boundary. Doctor accepts that exact authoring posture
+  without `SYNAPSOR_TENANT_ID`, while retaining principal checks where reviewed.
+
+Final verification completed:
+
+- Full suite with live PostgreSQL accounting enabled: 90 files and
+  1,404/1,404 tests passed; the PostgreSQL accounting suite ran rather than
+  skipping.
+- A fresh real PostgreSQL source with no tenant column or RLS completed
+  interactive draft, review, exact activation, provider selection, and a real
+  aggregate. It returned six `open` rows totaling 2,100 and six `paid` rows
+  totaling 5,700 with no tenant environment value and an unchanged source
+  snapshot.
+- Doctor passed that active local boundary, reported the fixed-organization
+  posture, and did not request `SYNAPSOR_TENANT_ID`.
+- PostgreSQL secured HTTP production Explore passed with a principal-only JWT,
+  exact two-tool exposure, safe model-facing posture, whole-organization
+  analytics, per-principal budget isolation, mandatory principal identity,
+  fixed-organization startup mismatch refusal, and no source mutation.
+- MySQL secured HTTP production Explore now includes the same real tenant-free,
+  principal-only scenario. It passed whole-organization analytics,
+  per-principal budget isolation, mandatory principal identity, exact two-tool
+  exposure, and source-mutation checks alongside the existing multi-tenant and
+  derived-scope scenarios.
+- Packed production HTTP passed through the public CLI artifact and includes
+  the fixed-organization PostgreSQL scenario.
+- Auto Boundary and Workbench Ask visual gates passed on desktop and mobile,
+  including the reviewed whole-organization posture and exact activation path.
+- Existing multi-tenant PostgreSQL/MySQL behavior, tenant/principal isolation,
+  suppression, differencing, atomic accounting, source/session ceilings,
+  derived scope, and read-only source verification remained green.
+
+No Cloud-repository files, package versions, Spec/DSL versions, tags, releases,
+or published artifacts were changed.

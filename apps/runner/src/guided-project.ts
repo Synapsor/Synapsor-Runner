@@ -104,6 +104,7 @@ export async function initializeGuidedProject(input: {
 
   const sourceName = input.build.exploration_boundary.source;
   const trustedContext = input.build.exploration_boundary.trusted_context;
+  const singleOrganization = Boolean(input.build.exploration_boundary.organization_scope);
   const principalRequired = input.build.exploration_boundary.pack.resources
     .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
   const config = {
@@ -121,10 +122,10 @@ export async function initializeGuidedProject(input: {
     trusted_context: {
       provider: "environment",
       values: {
-        tenant_id_env: trustedContext.tenant_env,
+        ...(!singleOrganization ? { tenant_id_env: trustedContext.tenant_env } : {}),
         ...(principalRequired ? { principal_env: trustedContext.principal_env } : {}),
       },
-      tenant_binding: "tenant_id",
+      ...(!singleOrganization ? { tenant_binding: "tenant_id" } : {}),
       ...(principalRequired ? { principal_binding: "principal" } : {}),
     },
     capabilities: [],
@@ -326,7 +327,7 @@ function environmentExample(build: GuidedBuild): string {
     .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
   const variables = [
     build.lock.source_env,
-    trustedContext.tenant_env,
+    ...(!build.exploration_boundary.organization_scope ? [trustedContext.tenant_env] : []),
     ...(principalRequired ? [trustedContext.principal_env] : []),
     "SYNAPSOR_OPERATOR_ID",
   ];
