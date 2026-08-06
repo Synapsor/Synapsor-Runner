@@ -31,6 +31,11 @@ run corepack pnpm --dir "$ROOT" exec vitest run \
   --testTimeout=20000 \
   --hookTimeout=20000 \
   apps/runner/src/cli.test.ts \
+  apps/runner/src/auto-boundary.test.ts \
+  apps/runner/src/explore-trusted-scope.test.ts \
+  apps/runner/src/production-explore-runtime.test.ts \
+  apps/runner/src/scoped-explore-boundary-set.test.ts \
+  apps/runner/src/scoped-explore.test.ts \
   packages/proposal-store/src/index.test.ts \
   packages/mcp-server/src/index.test.ts \
   packages/config/src/index.test.ts \
@@ -40,12 +45,15 @@ run corepack pnpm --dir "$ROOT" exec vitest run \
   packages/handler/src/index.test.ts
 run corepack pnpm --dir "$ROOT" test:mcp-client-configs
 run corepack pnpm --dir "$ROOT" test:first-run
+run node "$ROOT/scripts/verify-production-explore-http.mjs"
+run node "$ROOT/scripts/verify-production-explore-mysql-http.mjs"
 
 run "$ROOT/scripts/verify-public-commands.sh"
 run "$ROOT/scripts/verify-local-runner.sh"
 run node "$ROOT/scripts/check-runner-publish-manifest.mjs" --source
 run node "$ROOT/scripts/check-public-package-version-collisions.mjs"
 run "$ROOT/scripts/verify-packed-runner.sh"
+run node "$ROOT/scripts/verify-packed-production-explore-http.mjs"
 run "$ROOT/scripts/verify-packed-own-db.sh"
 run node "$ROOT/scripts/verify-packed-first-run-cli.mjs"
 run node "$ROOT/scripts/check-license-content.mjs"

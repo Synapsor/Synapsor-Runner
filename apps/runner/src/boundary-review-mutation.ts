@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   inspectDatabase,
@@ -52,6 +53,10 @@ export type BoundaryResourceReviewRequest = {
   aggregate_measures?: string[];
   count_distinct_fields?: string[];
   time_bucket_fields?: string[];
+  field_enum?: {
+    field: string;
+    values: string[];
+  };
   minimum_cohort_size?: number;
   max_ranked_groups?: number;
   relationship_ids?: string[];
@@ -117,6 +122,11 @@ export type BoundaryReviewSemanticDiff = {
   removed_kept_out_fields: string[];
   added_model_withheld_fields: string[];
   removed_model_withheld_fields: string[];
+  reviewed_enum_changes: Array<{
+    field: string;
+    before: string[];
+    after: string[];
+  }>;
   added_relationships: string[];
   removed_relationships: string[];
   minimum_cohort_before: number | null;
@@ -672,6 +682,14 @@ function managedDecisionsForRequest(
       exposure: "allow_reviewed_use",
     }));
   }
+  if (request.field_enum) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "field_enum",
+      field: request.field_enum.field,
+      values: request.field_enum.values,
+    }));
+  }
   if (request.minimum_cohort_size !== undefined) {
     decisions.push(normalizeManagedBoundaryReviewDecision({
       ...common,
@@ -876,6 +894,7 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     request.time_bucket_fields,
     request.relationship_ids,
     request.withhold_from_model_fields,
+    request.field_enum ? [request.field_enum.field] : undefined,
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
@@ -900,6 +919,7 @@ function canStageIncompleteScopeResolution(
     request.count_distinct_fields,
     request.time_bucket_fields,
     request.relationship_ids,
+    request.field_enum ? [request.field_enum.field] : undefined,
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
@@ -933,6 +953,19 @@ function semanticDiff(
     beforeResource?.relationships.map((item) => item.id),
     afterResource?.relationships.map((item) => item.id),
   );
+  const enumFields = new Set([
+    ...Object.keys(beforeResource?.field_enums ?? {}),
+    ...Object.keys(afterResource?.field_enums ?? {}),
+  ]);
+  const reviewedEnumChanges = [...enumFields]
+    .sort()
+    .flatMap((field) => {
+      const beforeValues = beforeResource?.field_enums[field] ?? [];
+      const afterValues = afterResource?.field_enums[field] ?? [];
+      return JSON.stringify(beforeValues) === JSON.stringify(afterValues)
+        ? []
+        : [{ field, before: [...beforeValues], after: [...afterValues] }];
+    });
   return {
     resource_id: resourceId,
     before_included: Boolean(beforeResource),
@@ -946,6 +979,7 @@ function semanticDiff(
     removed_kept_out_fields: keptOut.removed,
     added_model_withheld_fields: modelWithheld.added,
     removed_model_withheld_fields: modelWithheld.removed,
+    reviewed_enum_changes: reviewedEnumChanges,
     added_relationships: relationships.added,
     removed_relationships: relationships.removed,
     minimum_cohort_before: beforeResource?.minimum_cohort_size ?? null,
@@ -1082,6 +1116,17 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
       "The reviewed ranked-group ceiling must be an integer from 1 through 10000.",
     );
   }
+  if (request.field_enum
+    && (!Array.isArray(request.field_enum.values)
+      || request.field_enum.values.some((value) => typeof value !== "string")
+      || request.field_enum.values.length > 64
+      || new Set(request.field_enum.values).size !== request.field_enum.values.length
+      || request.field_enum.values.some((value) => [...value].length > 64)
+      || Buffer.byteLength(JSON.stringify(request.field_enum.values), "utf8") > 2_048)) {
+    throw new Error(
+      "Reviewed categorical values must contain at most 64 unique values of at most 64 characters and 2048 bytes total.",
+    );
+  }
   const values = [
     request.resource_id,
     request.actor,
@@ -1116,6 +1161,7 @@ function validateBoundaryRequestAgainstResource(
     ...(request.aggregate_measures ?? []),
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),
+    ...(request.field_enum ? [request.field_enum.field] : []),
   ].filter((field): field is string => typeof field === "string");
   const unknown = [...new Set(requestedColumns.filter((field) => !known.has(field)))].sort();
   if (unknown.length) {
@@ -1123,6 +1169,23 @@ function validateBoundaryRequestAgainstResource(
       `Unknown field${unknown.length === 1 ? "" : "s"} ${unknown.map((field) => JSON.stringify(field)).join(", ")} ` +
       `for ${resource.id}. Available columns: ${columns.join(", ")}.`,
     );
+  }
+
+  if (request.field_enum) {
+    const field = resource.fields.find((candidate) => candidate.name === request.field_enum!.field);
+    if (!field?.enum_values?.length) {
+      throw new Error(
+        `${resource.id}.${request.field_enum.field} has no bounded schema-declared categorical values to review.`,
+      );
+    }
+    const schemaValues = new Set(field.enum_values);
+    const added = request.field_enum.values.filter((value) => !schemaValues.has(value));
+    if (added.length) {
+      throw new Error(
+        `${resource.id}.${request.field_enum.field} may only remove schema-declared values. ` +
+        `Not declared by the database: ${added.map((value) => JSON.stringify(value)).join(", ")}.`,
+      );
+    }
   }
 
   const exposureRequests = new Map<string, string>();
@@ -1172,6 +1235,23 @@ function assertRequestedExposureState(
       );
     }
   }
+  if (request.field_enum) {
+    const actual = resource.field_enums[request.field_enum.field] ?? [];
+    if (JSON.stringify(actual) !== JSON.stringify(request.field_enum.values)) {
+      throw new Error(
+        `Reviewed categorical values for ${request.resource_id}.${request.field_enum.field} ` +
+        "were not reflected in the disabled candidate.",
+      );
+    }
+    if (request.field_enum.values.length === 0
+      && (Object.hasOwn(resource.filterable_fields, request.field_enum.field)
+        || resource.groupable_fields.includes(request.field_enum.field))) {
+      throw new Error(
+        `${request.resource_id}.${request.field_enum.field} disabled its categorical allowlist ` +
+        "but retained filter or group authority.",
+      );
+    }
+  }
 }
 
 function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRecord {
@@ -1192,6 +1272,9 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     aggregate_measures: sortedOrNull(request.aggregate_measures),
     count_distinct_fields: sortedOrNull(request.count_distinct_fields),
     time_bucket_fields: sortedOrNull(request.time_bucket_fields),
+    field_enum: request.field_enum
+      ? { field: request.field_enum.field, values: [...request.field_enum.values] }
+      : null,
     minimum_cohort_size: request.minimum_cohort_size ?? null,
     max_ranked_groups: request.max_ranked_groups ?? null,
     relationship_ids: sortedOrNull(request.relationship_ids),
@@ -1217,6 +1300,7 @@ function requestArrays(request: BoundaryResourceReviewRequest): string[] {
     ...(request.aggregate_measures ?? []),
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),
+    ...(request.field_enum ? [request.field_enum.field, ...request.field_enum.values] : []),
     ...(request.relationship_ids ?? []),
   ];
 }

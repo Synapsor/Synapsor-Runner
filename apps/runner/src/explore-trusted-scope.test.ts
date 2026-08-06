@@ -120,6 +120,71 @@ describe("Explore trusted scope", () => {
       readPostgresRoleSetting: vi.fn(),
     })).rejects.toThrow(/not valid for this source/);
   });
+
+  it("binds production tenant and principal only from the verified HTTP session", async () => {
+    const candidate = productionBoundary();
+    const scope = await resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {
+        SYNAPSOR_TENANT_ID: "environment-tenant-must-not-win",
+        SYNAPSOR_PRINCIPAL: "environment-principal-must-not-win",
+      },
+      sessionContext: {
+        tenant_id: "tenant-from-jwt",
+        principal: "principal-from-jwt",
+        provenance: "http_claims",
+      },
+      readPostgresRoleSetting: vi.fn(),
+    });
+
+    expect(scope).toEqual({
+      tenant: "tenant-from-jwt",
+      principal: "principal-from-jwt",
+      tenant_source: "verified_http_claim",
+      tenant_binding: "org_id",
+      principal_source: "verified_http_claim",
+      principal_binding: "sub",
+    });
+  });
+
+  it("requires both verified HTTP scopes for every production Explore session", async () => {
+    for (const sessionContext of [
+      undefined,
+      { tenant_id: "tenant-a", principal: "", provenance: "http_claims" as const },
+      { tenant_id: "", principal: "principal-a", provenance: "http_claims" as const },
+    ]) {
+      await expect(resolveExploreTrustedScope({
+        boundary: productionBoundary(),
+        lock: lock(),
+        inspection: inspection(),
+        env: {
+          SYNAPSOR_TENANT_ID: "environment-fallback-forbidden",
+          SYNAPSOR_PRINCIPAL: "environment-fallback-forbidden",
+        },
+        ...(sessionContext ? { sessionContext } : {}),
+      })).rejects.toMatchObject({
+        missingBindings: ["org_id", "sub"],
+      });
+    }
+  });
+
+  it("refuses HTTP claim bindings on a non-production boundary", async () => {
+    const candidate = productionBoundary();
+    candidate.deployment_profile = "staging";
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {},
+      sessionContext: {
+        tenant_id: "tenant-a",
+        principal: "principal-a",
+        provenance: "http_claims",
+      },
+    })).rejects.toThrow(/only valid for a reviewed production Explore boundary/);
+  });
 });
 
 function boundary(roleBound: boolean): ExplorationBoundaryDraft {
@@ -186,6 +251,18 @@ function boundary(roleBound: boolean): ExplorationBoundaryDraft {
     },
     unresolved_decisions: [],
   };
+}
+
+function productionBoundary(): ExplorationBoundaryDraft {
+  const candidate = boundary(false);
+  candidate.deployment_profile = "production";
+  candidate.pack.name = "reviewed_production";
+  candidate.trusted_context = {
+    provider: "http_claims",
+    tenant_claim: "org_id",
+    principal_claim: "sub",
+  };
+  return candidate;
 }
 
 function lock(): GenerationLock {

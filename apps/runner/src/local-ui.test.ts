@@ -2190,6 +2190,11 @@ export default defineCapability({
   it("persists reviewed field exceptions and regenerates every managed boundary artifact", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-regenerate-"));
     const inspection = boundaryReviewInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "membership_status")!.enum_values = [
+      "active",
+      "paused",
+      "cancelled",
+    ];
     let currentInspection = inspection;
     const project = {
       root: tempDir,
@@ -2276,6 +2281,50 @@ export default defineCapability({
         "x-synapsor-ui-token": "boundary-regenerate-token",
         "x-synapsor-csrf": "boundary-regenerate-csrf",
       };
+      const enumReview = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_enum",
+          resource_id: "public.members",
+          field: "membership_status",
+          values: ["active", "paused"],
+          actor: "owner@example.test",
+          reason: "Do not expose the internal cancelled lifecycle state to this agent.",
+        },
+      );
+      expect(enumReview).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              field_enums: { membership_status: ["active", "paused"] },
+            }],
+          },
+        },
+        semantic_diff: {
+          reviewed_enum_changes: [{
+            field: "membership_status",
+            before: ["active", "paused", "cancelled"],
+            after: ["active", "paused"],
+          }],
+        },
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            field_enums: {
+              membership_status: {
+                values: ["active", "paused"],
+                actor: "owner@example.test",
+              },
+            },
+          },
+        },
+      });
       const cohort = await postJson(
         `http://${server.host}:${server.port}/api/boundary/regenerate`,
         mutationHeaders,
@@ -2305,6 +2354,12 @@ export default defineCapability({
       )).toMatchObject({
         resources: {
           "public.members": {
+            field_enums: {
+              membership_status: {
+                values: ["active", "paused"],
+                actor: "owner@example.test",
+              },
+            },
             minimum_cohort: {
               value: 1,
               actor: "owner@example.test",
@@ -2312,6 +2367,10 @@ export default defineCapability({
           },
         },
       });
+      await expect(fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )).resolves.toBe(`${JSON.stringify(activeBeforeReview, null, 2)}\n`);
       const wholeBoundaryCohort = await postJson(
         `http://${server.host}:${server.port}/api/boundary/regenerate`,
         mutationHeaders,
@@ -2741,6 +2800,38 @@ export default defineCapability({
       expect(activated.ask_configuration.authority_digest)
         .not.toBe(initialAskStatus.authority_digest);
       expect(JSON.stringify(activated)).not.toContain(retainedProviderKey);
+
+      const updatedAskStatus = await getJson(`${url}/api/ask/status`, mutationHeaders);
+      expect(updatedAskStatus.tools.map((tool: { name: string }) => tool.name)).toEqual([
+        "app.describe_data",
+        "app.explore_data",
+      ]);
+      expect(updatedAskStatus.boundary_catalog).toMatchObject({
+        schema_version: "synapsor.boundary-catalog.v1",
+        relationship_count: expect.any(Number),
+        boundaries: [expect.objectContaining({
+          name: activated.active.pack.name,
+          relationships: expect.arrayContaining([expect.objectContaining({
+            source_table: "public.members",
+            target_table: "public.teams",
+            cardinality: "many_to_one",
+            proven: true,
+          })]),
+        })],
+      });
+      expect(updatedAskStatus.boundary_mermaid).toContain("erDiagram");
+      expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_MEMBERS");
+      expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_TEAMS");
+      expect(updatedAskStatus.boundary_diagrams).toEqual([
+        expect.objectContaining({
+          boundary_name: activated.active.pack.name,
+          digest: activated.active.activation.digest,
+          file_name: expect.stringMatching(/\.boundary-diagram\.md$/),
+          large: false,
+          mermaid: expect.stringContaining("PUBLIC_MEMBERS"),
+          markdown: expect.stringContaining("## Mermaid ER Diagram"),
+        }),
+      ]);
 
       const askResult = await postJson(`${url}/api/ask/run`, mutationHeaders, {
         question: "What access is reviewed now?",

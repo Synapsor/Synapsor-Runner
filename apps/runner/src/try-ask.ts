@@ -56,6 +56,11 @@ import {
   padTerminalBlock,
   terminalContentWidth,
 } from "./terminal-layout.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import {
+  buildBoundaryCatalogModel,
+  type BoundaryCatalogModel,
+} from "./boundary-catalog.js";
 
 export type TryAskDependencies = {
   env?: NodeJS.ProcessEnv;
@@ -81,6 +86,7 @@ export type TryAskDependencies = {
   }) => Promise<number>;
   runPostAccessAsk?: (args: string[]) => Promise<number>;
   readSecret?: typeof readHiddenSecret;
+  boundaryCatalogLoader?: (projectRoot: string) => Promise<BoundaryCatalogModel | undefined>;
 };
 
 export async function tryAsk(
@@ -369,6 +375,9 @@ export async function tryAsk(
       env,
       });
       const activeBoundary = await resolveActiveBoundarySummary(projectRoot);
+      const boundaryCatalog = await (
+        dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog
+      )(projectRoot);
       const pendingBoundaryReview = await resolvePendingBoundaryReviewSummary(projectRoot);
       const listProtectable = dependencies.listProtectable ?? listProtectableQueries;
       const createDraft = dependencies.createProtectedDraft ?? createProtectedQueryDraft;
@@ -382,6 +391,7 @@ export async function tryAsk(
       profileLabel: profile,
       reviewedDataAreas: accessSummary.table_count,
       accessSummary,
+      boundaryCatalog,
       pendingBoundaryReview,
       operatorLabel: localAskOperator(env),
       verboseAttempts: verbose,
@@ -538,6 +548,18 @@ export async function tryAsk(
     await workbench?.close().catch(() => undefined);
   }
   return 0;
+}
+
+async function loadActiveBoundaryCatalog(
+  projectRoot: string,
+): Promise<BoundaryCatalogModel | undefined> {
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot).catch(
+    (error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    },
+  );
+  return boundaries.length ? buildBoundaryCatalogModel(boundaries) : undefined;
 }
 
 async function revalidateCliAskAuthority(input: {

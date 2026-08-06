@@ -1,0 +1,397 @@
+# Runner 1.7.0 Production Explore Hardening
+
+Last verified: 2026-08-05
+
+## Workspace
+
+- Worktree: `/home/sandesh-tiwari/Desktop/C++/synapsor-runner-production-explore`
+- Branch: `feature/production-scoped-explore-http`
+- Base: `origin/main` at Runner 1.6.7
+- No commit, push, publish, or Spec/DSL change has been performed.
+
+## Completed Hardening
+
+- Production Explore audit/evidence uses a dedicated append-only PostgreSQL sink. It no longer reloads, rewrites, locks, or consumes capacity in the proposal ledger.
+- Audit append failure is best effort and cannot discard an already bounded query result. Metadata content and redaction are unchanged.
+- Source executors use a process-wide, reference-counted pool per source and engine. `source_max_connections` defaults to 8 and is reported by doctor/startup attestation.
+- Streamable HTTP enforces `max_sessions_per_principal`, default 4, independently for each verified principal.
+- Production session idle timeout defaults to 120 seconds. Runtime close is awaited with a five-second bound, failures are logged, and server shutdown awaits pending closes.
+- Budget cleanup moved off the reservation hot path into hourly maintenance. Created-at indexes support all retention work.
+- Budget reservations and production audit events retain seven days. Privacy releases retain the active rolling 24-hour differencing window using the same PostgreSQL clock for conflict checks and cleanup, so application-clock skew cannot shorten the defense.
+- The privacy-release subtraction defense, per-principal accounting key, tenant/principal JWT scope, suppression, atomic reservations, and exact two-tool model surface are unchanged.
+
+## Live-Gate Defect Found And Fixed
+
+The first MySQL HTTP run passed its workload but stack-overflowed during shutdown. `runtime.close()` synchronously closed its transport before `closePromise` had been assigned, allowing `onclose` to re-enter disposal recursively. Runtime shutdown is now deferred until the close guard is installed, with a focused re-entrancy regression test.
+
+## Follow-Up Audit Regressions Fixed
+
+- A transient shared-executor bootstrap failure no longer poisons the process. Rejected bootstrap promises clear only their own cached entry, so a later MCP session retries; a successful process-wide lease remains cached and still enforces the configured source-connection ceiling.
+- Production factory shutdown tolerates a rejected bootstrap and a failed executor release. Streamable HTTP cleanup now attempts the session factory, shared runtime resources, and shared store closes independently, then reports any collected failures only after every close has run.
+- Streamable HTTP startup failure uses the same resilient cleanup path while preserving the original startup error.
+- The retention-maintenance warning now states that a failed run retries at the next hourly maintenance window, matching the scheduler's actual behavior.
+- Focused regressions prove first-bootstrap failure followed by successful retry with one acquired executor, and prove shared resources plus the store close even when the session factory close throws.
+
+## Verification
+
+- Full suite with live PostgreSQL accounting enabled: 86 files, 1,333 tests passed; `production-explore-postgres.test.ts` ran 8/8 rather than skipping.
+- Release gate: passed for `@synapsor/runner@1.7.0`, including typecheck, 564-test release subset, MCP client configs, first-run proof, source and packed package checks, and npm publish dry-run.
+- PostgreSQL production HTTP: passed; exact two tools, principal isolation, row isolation, atomic reservation, source ceiling 2, session ceiling 2, dedicated audit sink, suppression, doctor attestation, and no source mutation.
+- MySQL production HTTP: passed with tenant isolation, source ceiling 2, session ceiling 2, and no source mutation.
+- Packed production HTTP: passed with the same controls through the public packed CLI artifact.
+- Packed first-run CLI: PostgreSQL and MySQL both resolved blocked scope inline, kept column review open, activated the reviewed boundary, and reached model selection without source mutation.
+- Workbench Ask visual gate: passed on desktop/mobile; provider key not persisted and browser storage remained empty.
+- Auto Boundary Workbench visual gate: passed across desktop, mobile, keyboard, blocked, stale, failure, and large-schema states.
+- `git diff --check`: passed.
+
+## Owner Decision Preserved
+
+The required tenant-wide budget ceiling and tenant advisory lock remain unchanged as the documented coordinated-probing backstop. Hitting that ceiling can refuse all principals in one tenant, while other tenants remain unaffected. This was not silently removed or converted to principal-only accounting; changing that tradeoff requires explicit owner direction.
+
+Production Explore audit append remains deliberately best effort. A temporary audit-sink outage can lose forensic metadata, but cannot bypass or skip the separately awaited budget reservation, suppression, trusted-scope, or subtraction-defense paths. Changing audit availability to fail queries closed remains an explicit owner decision.
+
+## Production Explore DX Follow-Up
+
+The post-hardening DX audit is resolved without changing the production security register:
+
+- Doctor and startup attestation now reject an active production boundary set that spans more than one source. The report names each `boundary -> source` mapping and tells the operator to split sources across Runner deployments, so doctor can no longer mark a deployment healthy when the first session would fail.
+- Tenant response limits now have a dedicated optional `max_response_cells_per_response` setting. Runtime enforcement clamps that tenant value to the selected boundary's reviewed response cap; the 24-hour extracted-cell allowance is no longer reused as a per-response limit.
+- `synapsor-runner config init --production-explore` generates a complete zero-authority runtime skeleton from the reviewed production boundary and generation lock. It derives the source, engine, database URL environment name, and scope claim names, while requiring explicit issuer, audience, and accounting namespace values. It writes no URLs, credentials, JWTs, or HMAC material.
+- Production `boundary draft` now points directly to the generator when no runtime config exists.
+- Serve startup failures render the complete attestation report and the exact `doctor` command instead of failing one prerequisite per restart.
+- HMAC validation and docs require at least 32 bytes of random key material and explicitly reject short hexadecimal strings such as a 32-character hex value, which has only 16 bytes of entropy.
+- Doctor emits non-blocking warnings when tenant query, cell, differencing, response, or rate ceilings are lower than a reviewed boundary's per-principal budgets. Tenant ceilings remain authoritative and unchanged.
+- Production examples no longer put ignored static values under `trusted_context` when `http_claims` is authoritative.
+- README wording was trimmed to 1,487 words after the content gate caught a 20-word overage; root and packaged copies remain identical.
+
+## Final Verification After DX Follow-Up
+
+- `corepack pnpm typecheck`: passed.
+- `git diff --check`: passed.
+- Full suite with live PostgreSQL accounting enabled: 86 files, 1,339 tests passed; `production-explore-postgres.test.ts` ran 8/8.
+- Production runtime regressions: 17/17 passed, including multi-source attestation, aggregate startup errors, tenant-budget warnings, and short-hex HMAC rejection.
+- PostgreSQL production HTTP E2E: passed with exact two-tool surface, principal budget isolation, tenant/principal row isolation, atomic reservation, source ceiling 2, session ceiling 2, dedicated audit, suppression, doctor attestation, and no source mutation.
+- MySQL production HTTP E2E: passed with the same tool surface, principal budget isolation, tenant row isolation, source/session ceilings 2, and no source mutation.
+- Packed production HTTP E2E: passed through the public packed CLI artifact with all PostgreSQL controls above.
+- Release gate: passed for `@synapsor/runner@1.7.0`, including 571 release-subset tests, MCP client config checks, disposable first-run proof, production PostgreSQL/MySQL HTTP E2E, public commands, local bundle, packed bundle, packed own-database onboarding, packed PostgreSQL/MySQL first-run onboarding, license/content checks, and npm publish dry run.
+- Packed first-run onboarding reached model selection in about 4.4 seconds for both PostgreSQL and MySQL without source mutation.
+- Test containers created by the gates were removed; only unrelated pre-existing containers remain.
+
+No commit, push, publish, Spec/DSL bump, or technical deep-dive edit was performed.
+
+## First-Developer Onboarding DX Follow-Up
+
+The fresh-adopter onboarding findings are resolved without relaxing tenant scope, principal scope, review, or production Explore controls:
+
+- Root help now starts with two explicit choices: `synapsor-runner try` without a database, or `synapsor-runner start --from-env DATABASE_URL` for an own-database first run. It distinguishes interactive `start` from scriptable `onboard db` before listing the full command surface.
+- A table selector no longer silently switches a real TTY into automation. Interactive `start` and `onboard db` prompt for the capability mode, trusted tenant column, and remaining decisions; selecting the table continues to primary-key and scope review instead of exiting.
+- Non-TTY onboarding validates the whole requested journey first and reports every missing decision in one error, including table, mode, tenant posture, write patch, review acknowledgement, and overwrite acknowledgement where applicable. Help includes one canonical read-only automation recipe.
+- Existing generated files require explicit replacement in both interactive and scripted paths. Interactive setup asks before replacement; noninteractive setup requires `--force`. A write-free `--dry-run` does not require `--force`.
+- Guided onboarding runs `doctor --setup`. Expected unset environment values render as `Synapsor Runner setup: incomplete` with the exact next environment variables, while real config/runtime problems still render as failed and return nonzero.
+- Explicit production tenant/principal claim flags must match the reviewed boundary draft. Config generation refuses mismatches instead of producing a config that passes schema validation but fails runtime attestation.
+- PostgreSQL control-database separation is reported as passed only when a PostgreSQL production boundary actually reached and passed that check. Failed or MySQL-only boundary sets cannot emit the PostgreSQL pass line.
+- Production Explore rejects result-envelope and tool-alias presentation flags instead of silently ignoring them. Help and operator docs state that the production model surface is exactly `app.describe_data` and `app.explore_data` with one fixed reviewed envelope.
+- Guided onboarding, HTTP MCP, and production Explore documentation now provide consistent interactive and noninteractive recipes and preserve the fixed production surface.
+
+## Final Verification After Onboarding DX Follow-Up
+
+- Focused onboarding/production regressions: 4 passed; 148 unrelated CLI tests skipped.
+- Full suite with live PostgreSQL accounting enabled: 86 files, 1,344 tests passed; the PostgreSQL accounting suite ran 8/8 rather than skipping.
+- Manual PTY first-developer run used the built `@synapsor/runner@1.7.0` CLI against a fresh read-only PostgreSQL role and table. Table selection continued into primary-key and tenant review, conservative read-only defaults completed, `customer_email` was kept out automatically, config/contract/MCP snippets were generated, the semantic-tool proof passed, and expected unset tenant/principal values ended as `setup: incomplete` rather than `doctor: failed`.
+- Built CLI no-argument help displayed the two `New here?` paths before the command list.
+- Built CLI non-TTY setup reported table, mode, tenant scope, and overwrite decisions together; the canonical dry run succeeded against an existing output without `--force` and did not replace it.
+- Release gate passed for `@synapsor/runner@1.7.0`: typecheck; 13 release files and 576 tests; MCP client config/live tool-list checks; disposable first-run proof; PostgreSQL and MySQL production HTTP Explore; source/public command checks; packed runner; packed production HTTP; packed own-database writeback; packed PostgreSQL/MySQL first-run onboarding; license/content checks; and npm publish dry-run.
+- Packed fresh first runs resolved scope inline, kept column review open, activated the reviewed boundary, and reached model choice in 3.2 seconds for PostgreSQL and 3.2 seconds for MySQL without source mutation.
+- `git diff --check` passed. Root and packaged READMEs are byte-identical and exactly 1,500 words each.
+
+No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical deep-dive edit was performed.
+
+## Onboarding DX Round 2 Follow-Up
+
+The two follow-up reports were reproduced and fixed without weakening normal
+doctor checks or production Explore attestation:
+
+- `doctor --setup` now classifies missing environment bindings by role instead
+  of treating every `env:*` failure as deferred setup. Human-supplied tenant and
+  principal bindings, writer credentials, and handler settings may remain
+  `setup: incomplete` immediately after artifact generation. The primary source
+  read credential and required shared-HTTP session-auth secret, public-key, or
+  JWKS bindings are deployability requirements; missing any of them reports
+  `setup: failed` and exits nonzero.
+- Setup formatting marks only genuinely deferred bindings as `is not set yet`.
+  Required credentials remain hard failures in the same report, so a mixed
+  pending-plus-required state cannot produce a false green result.
+- Noninteractive shadow/review onboarding now reports all operation and
+  writeback decisions in its initial preflight. UPDATE and DELETE require
+  `--conflict-column`; INSERT requires `--dedup`. Review-mode direct SQL, HTTP
+  handler, and command handler paths require `--write-url-env`,
+  `--handler-url-env`, and `--handler-command-env`, respectively. Runner-ledger
+  UPDATE also requires `--version-advance`.
+- Shadow mode keeps its correct proposal-only semantics: operation guards are
+  required, but a writer credential is not required because shadow authority
+  cannot apply a source mutation.
+- CLI help and onboarding docs now use the real `--dedup` mapping syntax and
+  include complete read-only and reviewed-write automation examples.
+
+## Verification After Onboarding DX Round 2
+
+- Focused setup-status tests: 3/3 passed, covering deferred trusted bindings,
+  missing required read credentials, and missing required JWKS with a deferred
+  tenant binding.
+- Focused CLI onboarding regressions: 5/5 passed, including one-shot INSERT and
+  HTTP-handler preflight plus nonzero setup behavior for a missing read
+  credential.
+- Full suite with live PostgreSQL accounting enabled: 87 files, 1,347 tests
+  passed; the PostgreSQL accounting suite ran 8/8 rather than skipping.
+- PostgreSQL production HTTP, MySQL production HTTP, and packed production HTTP
+  E2E checks passed with principal isolation, source/session ceilings, and no
+  source mutation.
+- The complete 1.7.0 release gate passed: typecheck; 13 release files and
+  576 tests; MCP client configurations; disposable first-run proof; PostgreSQL
+  and MySQL production HTTP; source and public-command checks; local and packed
+  artifacts; guarded own-database writeback; packed PostgreSQL/MySQL fresh CLI
+  onboarding; license/content checks; manifest and public dependency checks;
+  npm publish dry run; and `git diff --check`.
+- Packed fresh CLI onboarding resolved blocked scope inline, kept column review
+  open, activated the boundary, and reached model choice in about 3.2 seconds
+  on both PostgreSQL and MySQL without source mutation.
+
+No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
+deep-dive edit was performed.
+
+## Generation Lock, Model Choice, Catalog, And Sensitive-Access DX Follow-Up
+
+The final 1.7.0 DX findings are implemented without weakening generation-lock
+validation, boundary activation, sensitive-field review, or the model-facing
+tool surface:
+
+- Every stale generation-lock error now includes a copy-paste regeneration
+  command derived from the reviewed `source_env`. Guided `start --cli` also
+  offers `R Regenerate against current posture`, then returns to the ordinary
+  disabled review and separate human activation flow. The stale check itself
+  remains fail-closed.
+- A first-run Enter no longer commits the preselected OpenAI model. Before any
+  provider credential prompt, Runner requires an explicit choice among OpenAI,
+  Anthropic, a local OpenAI-compatible model, an existing MCP client, or Later.
+  `M` continues to change the provider/model after that choice.
+- `/catalog` now shows the active reviewed join graph alongside each table's
+  analytical surface. `/catalog --diagram` renders one shared boundary catalog
+  model as a terminal relationship map and a copyable Mermaid `erDiagram`.
+  Workbench uses the same model for its paginated `What can I ask?` view and
+  reviewed relationship map.
+- The catalog is strictly boundary-scoped and metadata-only. It omits external
+  tables, never exposes kept-out values, redacts hidden join-key names, and was
+  not added to `app.describe_data` or `app.explore_data`; the model-facing
+  surface remains exactly those two tools.
+- Sensitive-field widening keeps its actor and concrete-reason requirement.
+  Empty reasons now print `Rejected: ... no change was made` and re-prompt;
+  Escape prints a cancelled/no-change result; successful edits name the exact
+  field, new access, actor, and reason; and identical repeats report unchanged
+  without creating another revision or requesting another reason.
+- Choosing Runner-only now explains that visibility is not analytical
+  capability: it does not grant Group, Total/Average, or Count unique, and the
+  editor points to the separate advanced operation controls.
+
+## Final Verification After DX Follow-Up
+
+- `corepack pnpm typecheck`: passed.
+- `git diff --check`: passed before and after all gates.
+- Focused boundary CLI and picker suite: 61/61 passed.
+- Focused guided-start, auto-boundary, and Scoped Explore suite: 83/83 passed.
+- Shared catalog, Analytics shell, Workbench, and local UI suite: 100/100
+  passed.
+- Ask regressions: 14/14 passed with the real active-boundary catalog loader
+  remaining strict; only explicit in-memory test gateways omit that loader.
+- Full suite with live PostgreSQL accounting enabled: 88 files, 1,352 tests
+  passed; the PostgreSQL accounting suite ran 8/8 rather than skipping.
+- PostgreSQL, MySQL, and packed production HTTP Explore E2Es passed with the
+  exact two-tool surface, principal budget isolation, tenant/principal scope,
+  atomic reservation, source and session ceilings, suppression, attestation,
+  and no source mutation.
+- Workbench boundary visual gate passed across 27 captured states. Workbench
+  Ask visual gate passed across 7 captured states, including paginated access,
+  relationship counts, session-only provider credentials, and zero browser
+  storage. The tracked visual baselines were refreshed for the intended UI.
+- A real PTY first-run against PostgreSQL confirmed that Enter opens provider
+  choice before any OpenAI key prompt. Choosing the existing MCP-client path
+  activated only the reviewed boundary and continued without a provider key.
+- A real PTY active two-table boundary confirmed `/catalog` join/reachability
+  output and `/catalog --diagram` ASCII plus valid Mermaid output.
+- A real PTY sensitive-field edit confirmed empty-reason rejection and
+  re-focus, exact success confirmation, unchanged/idempotent repeat behavior,
+  Runner-only capability guidance, and the persistent pending-activation
+  banner after returning to Ask.
+- The complete release gate was rerun with captured output and exited 0 for
+  `@synapsor/runner@1.7.0`: 13 release files and 576 tests; MCP-client config
+  checks; disposable first-run proof; PostgreSQL/MySQL production HTTP Explore;
+  public commands; local and packed artifacts; packed production HTTP; packed
+  guarded own-database onboarding; packed PostgreSQL/MySQL fresh CLI onboarding;
+  license/content and manifest checks; npm publish dry-run; and final diff
+  validation.
+
+No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
+deep-dive edit was performed.
+
+## Operation-Specific Onboarding Recipe Follow-Up
+
+- The noninteractive recovery example now matches the requested write
+  operation. INSERT prints `--operation insert`, a patch, and the required
+  `--dedup` mapping; DELETE prints `--operation delete` with a conflict guard;
+  UPDATE retains its existing update recipe.
+- The detected missing decisions, generated authority, review, activation, and
+  runtime behavior are unchanged. This is presentation-only first-run guidance.
+- The focused INSERT recovery regression passed, typecheck passed, and the
+  complete CLI suite passed 152/152.
+- A built-CLI human check reproduced the incomplete INSERT command and verified
+  that the visible recovery block is titled `Canonical review-mode INSERT
+  automation` and contains `--operation insert` plus the deduplication mapping.
+
+No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
+deep-dive edit was performed.
+
+## Schema Enum Review And Boundary Diagram Follow-Up
+
+The final catalog and categorical-value work is implemented in both terminal
+and Workbench operator surfaces without adding a model-facing tool or reading
+source rows for metadata:
+
+- PostgreSQL native enums and exact `CHECK field IN (...)` / `field =
+  ANY(ARRAY[...])` constraints, plus MySQL `ENUM`, `SET`, and exact `CHECK IN`
+  constraints, now provide schema-declared value vocabularies to an activated
+  boundary. No `SELECT DISTINCT`, sampling, or row-derived inference is used.
+- Schema value sets are all-or-nothing and bounded to 64 values, 64 characters
+  per value, and 2,048 serialized bytes. Oversized, identifier-like,
+  sensitive, kept-out, and model-withheld vocabularies are omitted rather than
+  truncated or exposed.
+- CLI and Workbench let an operator narrow a generated vocabulary or disable
+  its analytical use through the normal boundary review. The decision records
+  actor, reason, and timestamp, changes the boundary digest, remains disabled
+  until separate activation, and can never add a value absent from the
+  schema-declared set.
+- A reviewed vocabulary is enforced before source execution for filters and
+  grouped/selected results. Removed or unknown values receive a concrete
+  `not a reviewed value` refusal with the allowed values. Selecting no values
+  disables filter/group for that field; it never silently restores free-text
+  filtering and therefore remains subtractive-only.
+- Later resource edits preserve an earlier enum decision, repeated identical
+  reviews report unchanged, and the active boundary remains byte-for-byte
+  unchanged until the reviewed draft is activated.
+- `/catalog` includes reviewed relationships and cross-table question shapes.
+  `/catalog --diagram --boundary <name>` renders exactly one active boundary;
+  multiple active boundaries require an exact name and are never merged.
+- `/catalog --diagram --boundary <name> --export [path]` writes a standalone
+  Markdown relationship map and valid Mermaid ER diagram. The default file is
+  digest-bound under `.synapsor/catalog/`, uses exclusive creation, and will
+  not overwrite an existing export. Large boundaries direct the operator to
+  export instead of printing an unreadable terminal graph.
+- Workbench uses the same canonical boundary-catalog model. It provides an
+  exact-boundary selector, real SVG nodes and arrows, proven join details,
+  visible cross-table question suggestions, Mermaid copy, and Markdown
+  download. Large maps retain the downloadable artifact while avoiding a
+  cluttered inline graph.
+- Slash-command parsing and completion now accept argument-bearing actions such
+  as `/details last` and `/catalog --diagram --boundary ...`; valid multiword
+  actions no longer fall through to `No matching action`.
+- Documentation now states the correct 1.7.0 posture: protected capabilities
+  remain the default production surface, while flexible production Explore is
+  explicit, attested, secured-HTTP-only, and fail-closed without every trusted
+  principal, per-principal budget, rate-limit, JWT, and transport prerequisite.
+
+## Final Verification After Enum And Diagram Follow-Up
+
+- `corepack pnpm typecheck`: passed.
+- Full suite with live PostgreSQL accounting enabled: 88 files, 1,361 tests
+  passed; the PostgreSQL accounting suite ran 8/8 rather than skipping.
+- Focused catalog, Analytics shell, Workbench, local UI, enum persistence, and
+  runtime allowlist regressions passed, including external MCP Runner-only
+  redaction and pre-execution removed-value refusal.
+- Workbench Ask visual gate passed across 8 captured states, including an exact
+  boundary selector, real SVG relationship arrows, valid Mermaid, download,
+  and visible cross-table prompts. The Auto Boundary visual gate passed across
+  27 states after a real browser narrowed a three-value enum, supplied actor and
+  reason, observed the pending review, and repeated it idempotently.
+- Live PostgreSQL production HTTP verified an exact four-value `CHECK`-derived
+  vocabulary. Live MySQL production HTTP verified an exact four-value native
+  `ENUM` vocabulary. Both retained the exact two-tool model surface, trusted
+  tenant/principal scope, isolated budgets, source/session ceilings, and no
+  source mutation.
+- The complete release gate exited 0 for `@synapsor/runner@1.7.0`: typecheck;
+  13 release files and 580/580 tests; current Claude Code and Codex MCP config
+  acceptance; disposable first-run proof; PostgreSQL/MySQL production HTTP;
+  public commands; local and packed packages; packed production HTTP; guarded
+  own-database onboarding; packed PostgreSQL/MySQL fresh CLI onboarding;
+  license/content and manifest checks; npm publish dry-run; and final diff
+  validation.
+- Packed fresh CLI onboarding reached explicit provider choice in 3,180 ms on
+  PostgreSQL and 3,178 ms on MySQL, with inline scope resolution, column review
+  retained, exact boundary activation, and no source mutation.
+
+No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
+deep-dive edit was performed.
+
+## Reviewed Enum And Catalog Safety Follow-Up
+
+The three independently reported catalog/enum findings are closed without
+expanding model authority or exposing row-derived values:
+
+- Grouping by a reviewed enum no longer silently removes source rows whose
+  schema value appeared after boundary review. Reviewed labels remain visible;
+  every outside-reviewed label is combined into one deterministic opaque
+  `[outside-reviewed-values]` group. Aggregate totals therefore remain complete
+  while the unreviewed labels remain unavailable to the model.
+- Row-shaped queries that select or explicitly filter a reviewed enum retain
+  the restrictive reviewed-value allowlist. Their result metadata and both
+  operator UIs now state when rows outside that allowlist were excluded.
+  Explicit filters on removed or unknown enum values still refuse before source
+  execution. `count_distinct` remains complete when no explicit enum filter was
+  requested.
+- The safe `reviewed_value_controls` result metadata contains only the affected
+  field and outcome mode. It never includes the full schema vocabulary, removed
+  labels, source labels, or kept-out/model-withheld values. CLI and Workbench
+  show equivalent hardcoded notices; no model-facing tool was added.
+- Explicit catalog diagram exports are confined to the project root. Runner
+  rejects lexical `..`/absolute escapes and also compares real parent paths
+  after directory creation, preventing a project-local symlink from redirecting
+  an export outside the project. Exclusive-create/no-overwrite behavior remains
+  unchanged.
+- Catalog operation summaries no longer present model-withheld fields as normal
+  model-visible analysis. CLI diagrams, paginated catalog output, and Workbench
+  separately label Runner-only aggregate operations as raw-value-withheld and
+  Runner-only group/time operations as label-tokenized. Mermaid output retains
+  counts only and does not expose those field names.
+- Real MySQL production HTTP verification found an additional parameter-binding
+  defect: enum CASE placeholders occur in SELECT before trusted-scope
+  placeholders in WHERE, but the bound values were ordered scope-first. MySQL
+  now binds SELECT CASE values first, then join/WHERE/scope values, then LIMIT;
+  PostgreSQL's numbered-placeholder order is unchanged. A dialect-specific
+  regression locks the exact ordering.
+
+## Final Verification After Reviewed Enum And Catalog Safety Follow-Up
+
+- `corepack pnpm typecheck`: passed after the final MySQL correction.
+- Focused Scoped Explore, Analytics shell, catalog, and Workbench regressions:
+  110/110 passed before the dialect correction; the final exact MySQL binding
+  regression passed afterward.
+- Direct live MySQL production HTTP Explore passed after the binding fix with
+  the exact two-tool surface, principal budget isolation, tenant isolation,
+  source/session ceilings, and no source mutation.
+- Full suite with live PostgreSQL accounting enabled: 88 files, 1,364/1,364
+  tests passed. The PostgreSQL accounting suite ran 8/8 rather than skipping.
+- Auto Boundary Workbench visual gate passed across 27 captured states.
+  Workbench Ask visual gate passed across 8 states with reviewed catalog maps,
+  no persisted provider key, zero browser-storage entries, and no source
+  mutation.
+- The complete 1.7.0 release gate traversed typecheck, 13 release files and
+  580/580 tests, MCP-client configs, disposable first run, live PostgreSQL and
+  MySQL production HTTP, public/local/packed artifacts, packed production HTTP,
+  guarded own-database onboarding, and packed first-run CLI. After the original
+  output handle was lost during session compaction, the final packed first-run
+  and publish/diff tail were rerun independently and passed.
+- Packed first-run CLI passed from fresh projects on PostgreSQL (3,890 ms) and
+  MySQL (3,939 ms), including inline blocked-scope resolution, retained column
+  review, exact activation, provider choice, and no source mutation.
+- `corepack pnpm publish --dry-run --access public --no-git-checks` passed for
+  `@synapsor/runner@1.7.0`; `git diff --check` passed.
+
+No commit, push, publish, Spec/DSL bump, Cloud-repository change, or technical
+deep-dive edit was performed.

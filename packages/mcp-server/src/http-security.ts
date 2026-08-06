@@ -140,7 +140,10 @@ export function resolveHttpSecurity(
     maxRequestBytes: rawLimits?.max_request_bytes ?? 1_048_576,
     maxHeaderBytes: rawLimits?.max_header_bytes ?? 16_384,
     maxSessions: rawLimits?.max_sessions ?? 1_024,
-    sessionIdleTimeoutMs: (rawLimits?.session_idle_timeout_seconds ?? 900) * 1_000,
+    sessionIdleTimeoutMs: (
+      rawLimits?.session_idle_timeout_seconds
+      ?? (config.production_explore?.enabled ? 120 : 900)
+    ) * 1_000,
     requestTimeoutMs: rawLimits?.request_timeout_ms ?? 30_000,
     headersTimeoutMs: rawLimits?.headers_timeout_ms ?? 10_000,
     keepAliveTimeoutMs: rawLimits?.keep_alive_timeout_ms ?? 5_000,

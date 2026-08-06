@@ -611,6 +611,50 @@ try {
       "the current active boundary stopped passing runtime preflight while its replacement was only staged",
       stagedReplacementPreflight,
     );
+    const enumReview = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-enum-review-form][data-enum-field="status"]');
+      if(!form)return null;
+      form.open=true;
+      const values=[...form.querySelectorAll('[data-enum-review-value]')];
+      const removed=values.at(-1);
+      removed.checked=false;
+      form.querySelector('[data-enum-review-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-enum-review-reason]').value='Keep the internal archived lifecycle state outside this reviewed agent boundary.';
+      return {before:values.map(input=>input.value),removed:removed.value,copy:form.textContent};
+    })()`);
+    assert(
+      enumReview
+        && JSON.stringify(enumReview.before) === JSON.stringify(["open", "closed", "archived"])
+        && /database schema metadata/i.test(String(enumReview.copy))
+        && /only by checked values/i.test(String(enumReview.copy)),
+      "Workbench did not expose the complete schema-declared categorical review control",
+      enumReview,
+    );
+    await clickSelector(page, '[data-submit-enum-review="status"]');
+    await waitForExpression(page, `/Recorded: .*\.status keeps 2 reviewed values/.test(document.querySelector('#access-staged-summary')?.textContent||'')`);
+    const enumRecorded = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-enum-review-form][data-enum-field="status"]');
+      form.open=true;
+      const selected=[...form.querySelectorAll('[data-enum-review-value]:checked')].map(input=>input.value);
+      form.querySelector('[data-enum-review-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-enum-review-reason]').value='Keep the internal archived lifecycle state outside this reviewed agent boundary.';
+      return {selected,summary:document.querySelector('#access-staged-summary')?.textContent||''};
+    })()`);
+    assert(
+      JSON.stringify(enumRecorded.selected) === JSON.stringify(["open", "closed"])
+        && /Actor: visual-reviewer@example\.test/.test(enumRecorded.summary),
+      "Workbench did not confirm the exact categorical narrowing and reviewer",
+      enumRecorded,
+    );
+    await clickSelector(page, '[data-submit-enum-review="status"]');
+    await waitForExpression(page, "/Unchanged: this column already uses exactly these allowed values/.test(document.querySelector('[data-enum-review-form][data-enum-field=\"status\"] [data-enum-review-status]')?.textContent||'')");
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "reviewing categorical values changed active authority before confirmation",
+    );
     await screenshot(page, "workbench-access-editor-columns-desktop.png");
     await clickSelector(page, "#show-all-access");
     await waitForExpression(page, "document.querySelectorAll('[data-access-resource]').length === 40");
@@ -1537,7 +1581,7 @@ function table(name, options = {}) {
   const columns = [
     ...(options.omitId ? [] : [column("id", "uuid", { immutable: true })]),
     ...(scoped ? [column("tenant_id", "uuid", { tenant: true, immutable: true })] : []),
-    column("status", "text"),
+    column("status", "text", { enumValues: ["open", "closed", "archived"] }),
     column("created_at", "timestamp with time zone"),
     column("amount_cents", "integer"),
     ...(options.extraColumns ?? []),
@@ -1598,6 +1642,7 @@ function column(name, dataType, flags = {}) {
     nullable: false,
     generated: false,
     ordinal_position: 1,
+    ...(flags.enumValues ? { enum_values: [...flags.enumValues] } : {}),
     suggestions: {
       tenant: flags.tenant ?? false,
       conflict: false,

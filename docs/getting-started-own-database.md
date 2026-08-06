@@ -418,7 +418,8 @@ npx -y @synapsor/runner onboard db \
   --table account_credits \
   --mode review \
   --operation insert \
-  --dedup-columns request_id \
+  --tenant-key tenant_id \
+  --dedup request_id=proposal_id,tenant_id=trusted_tenant \
   --receipt-mode runner_ledger \
   --patch amount_cents=arg:amount_cents \
   --write-url-env SYNAPSOR_DATABASE_WRITE_URL \

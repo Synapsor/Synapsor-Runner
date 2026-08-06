@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -37,6 +38,15 @@ export type ManagedBoundaryReviewDecision =
       resource_id: string;
       field: string;
       exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "field_enum";
+      resource_id: string;
+      field: string;
+      values: string[];
       actor: string;
       reason: string;
       decided_at?: string;
@@ -97,6 +107,26 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
+  if (kind === "field_enum") {
+    if (!Array.isArray(input.values)
+      || input.values.length > 64
+      || input.values.some((value) => typeof value !== "string" || [...value].length > 64)
+      || new Set(input.values).size !== input.values.length
+      || Buffer.byteLength(JSON.stringify(input.values), "utf8") > 2_048) {
+      throw new Error(
+        "field_enum review requires at most 64 unique values, at most 64 characters each and 2048 bytes total.",
+      );
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      field: requiredText(input.field, "field"),
+      values: input.values.map(String),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
   if (kind === "row_identity" || kind === "tenant_key") {
     return {
       kind,
@@ -131,7 +161,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be field_exposure, row_identity, tenant_key, principal_key, or minimum_cohort.",
+    "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, principal_key, or minimum_cohort.",
   );
 }
 
@@ -151,6 +181,16 @@ export function applyManagedBoundaryReviewDecision(
       ...(resource.fields ?? {}),
       [input.field]: {
         exposure: input.exposure,
+        actor: input.actor,
+        reason: input.reason,
+        decided_at: decidedAt,
+      },
+    };
+  } else if (input.kind === "field_enum") {
+    resource.field_enums = {
+      ...(resource.field_enums ?? {}),
+      [input.field]: {
+        values: [...input.values],
         actor: input.actor,
         reason: input.reason,
         decided_at: decidedAt,
@@ -450,17 +490,23 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
     if (detail.startsWith("confirm tenant key ")) {
       return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
         tenant_key: resource.tenant_key,
-        trusted_tenant_env: candidate.trusted_context.tenant_env,
-        ...(candidate.trusted_context.database_role_tenant ? {
-          trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
-        } : {}),
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
+          : {
+            trusted_tenant_env: candidate.trusted_context.tenant_env,
+            ...(candidate.trusted_context.database_role_tenant ? {
+              trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
+            } : {}),
+          }),
         rls_session: resource.rls_session ?? null,
       }, resourceId);
     }
     if (detail.startsWith("confirm principal scope ")) {
       return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
         principal_key: resource.principal_key ?? null,
-        trusted_principal_env: candidate.trusted_context.principal_env,
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
+          : { trusted_principal_env: candidate.trusted_context.principal_env }),
         rls_session: resource.rls_session ?? null,
       }, resourceId);
     }
@@ -481,6 +527,7 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         aggregate_measures: resource.aggregate_measures,
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
+        field_enums: resource.field_enums,
       }, resourceId);
     }
     if (detail === "confirm minimum cohort and extraction/differencing budgets") {

@@ -77,6 +77,44 @@ Running the command again resumes review, or goes directly to
 model/client selection when a boundary is already active. `--no-open` remains
 the noninteractive initialize/resume flag; it does not start terminal review.
 
+## Scripted Artifact Setup
+
+`start` is the recommended interactive first run. `onboard db` is the explicit
+artifact generator for CI and established automation. A canonical read-only
+run is:
+
+```bash
+synapsor-runner onboard db \
+  --from-env DATABASE_URL \
+  --table public.orders \
+  --mode read_only \
+  --tenant-key tenant_id \
+  --yes \
+  --no-open
+```
+
+Noninteractive setup requires the table, mode, and one reviewed tenant-scope
+choice in the same invocation. If several are missing, Runner lists all of
+them together. Use `--single-tenant-dev` only for a reviewed single-tenant
+development source. Use `--force` only after inspecting generated files that
+already exist. In a real terminal, omit `--yes` and `--non-interactive`; table
+selectors seed the wizard, which prompts for mode and tenant scope.
+
+For shadow/review proposals, UPDATE and DELETE also require an explicit
+`--conflict-column`; INSERT requires a source-enforced `--dedup` mapping. Review
+mode additionally requires the credential name for its writeback path:
+`--write-url-env`, `--handler-url-env`, or `--handler-command-env`. Runner lists
+all missing choices together before inspecting or writing generated files.
+
+After generation, deferred trusted-context and writer environment variables are
+reported as `setup incomplete` with one next action. A missing primary database
+read credential, a required shared-HTTP session-auth key, or an invalid config
+reports `setup failed`. The strict reusable check remains:
+
+```bash
+synapsor-runner doctor --config ./synapsor.runner.json
+```
+
 Before human activation, the agent has no generated authority and no source row
 has been read. The fresh local `start` route establishes a development
 authoring profile for this secured loopback process. Supplying the selected

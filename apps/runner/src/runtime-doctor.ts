@@ -17,7 +17,7 @@ import { envValue, optionalArg, outputArg } from "./cli-options.js";
 import { readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { RunnerCapabilityConfig, RunnerSourceConfig, adapters, dynamicImportModule } from "./cli-runtime.js";
 import { validateConfigFile } from "./config-domain.js";
-import { DoctorCheck, LocalDoctorGovernance, LocalDoctorReport, envPresenceCheck, formatLocalDoctorMarkdown, formatLocalDoctorReport, httpHandlerReachabilityCheck, inspectConfiguredSource, localToolNames, proposalApprovalPolicyResolutionDoctorCheck, proposalConflictGuardDoctorCheck, proposalReversibilityDoctorCheck, proposalWritebackResolutionDoctorCheck, sharedPostgresLedgerDoctorChecks, trustedContextsForDoctor } from "./doctor-domain.js";
+import { DoctorCheck, LocalDoctorGovernance, LocalDoctorReport, envPresenceCheck, formatLocalDoctorMarkdown, formatLocalDoctorReport, formatLocalDoctorSetupReport, httpHandlerReachabilityCheck, inspectConfiguredSource, localDoctorSetupStatus, localToolNames, proposalApprovalPolicyResolutionDoctorCheck, proposalConflictGuardDoctorCheck, proposalReversibilityDoctorCheck, proposalWritebackResolutionDoctorCheck, sharedPostgresLedgerDoctorChecks, trustedContextsForDoctor } from "./doctor-domain.js";
 import {
   managedMcpProjectDefinition,
   managedMcpProjectStatus,
@@ -27,6 +27,7 @@ import {
 import { fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { trustedCliContext } from "./operator-authority.js";
+import { inspectProductionExploreStartup } from "./mcp-runtime.js";
 import { capabilityOperation, formatSourceReceiptMode, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackTimeoutMs } from "./writeback-domain.js";
 
 
@@ -49,8 +50,18 @@ export async function localDoctor(args: string[]): Promise<number> {
   for (const warning of validation.warnings) {
     checks.push({ name: `config-warning:${warning.code}`, ok: true, level: "warn", message: warning.message });
   }
+  let productionExploreReport: Awaited<ReturnType<typeof inspectProductionExploreStartup>> | undefined;
   if (validation.ok) {
     parsed = await readRuntimeConfig(configPath);
+  }
+  if (validation.ok && parsed.production_explore !== undefined) {
+    productionExploreReport = await inspectProductionExploreStartup(parsed, process.env);
+    checks.push(...productionExploreReport.checks.map((check) => ({
+      name: `production-explore:${check.name}`,
+      ok: check.ok,
+      level: check.level,
+      message: check.message,
+    })));
   }
   if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
     try {
@@ -102,7 +113,7 @@ export async function localDoctor(args: string[]): Promise<number> {
     const tenantEnv = String(context.values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(context.values.principal_env ?? "SYNAPSOR_PRINCIPAL");
     for (const envName of [tenantEnv, ...(context.principal_required ? [principalEnv] : [])]) {
-      checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`));
+      checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`, "pending"));
     }
   }
   checks.push(...await httpSecurityDoctorChecks(parsed, args));
@@ -150,7 +161,7 @@ export async function localDoctor(args: string[]): Promise<number> {
     if (parsed.mode === "review") {
       if (sourceNeedsSqlWriteback(parsed, sourceName)) {
         if (source.write_url_env) {
-          checks.push(envPresenceCheck(source.write_url_env, `${source.write_url_env} is required for trusted writeback in review mode.`));
+          checks.push(envPresenceCheck(source.write_url_env, `${source.write_url_env} is required for trusted writeback in review mode.`, "pending"));
           const readValue = envValue(process.env, source.read_url_env);
           const writeValue = envValue(process.env, source.write_url_env);
           if (readValue && writeValue && readValue === writeValue) {
@@ -204,7 +215,7 @@ export async function localDoctor(args: string[]): Promise<number> {
     if (executor.type === "http_handler") {
       const urlEnv = String(executor.url_env ?? "");
       if (urlEnv) {
-        checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`));
+        checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`, "pending"));
         const handlerUrl = envValue(process.env, urlEnv);
         if (checkHandlers && handlerUrl) {
           checks.push(await httpHandlerReachabilityCheck(executorName, handlerUrl, Number(executor.timeout_ms ?? 3000)));
@@ -219,10 +230,10 @@ export async function localDoctor(args: string[]): Promise<number> {
       }
       const auth = isRecord(executor.auth) ? executor.auth : undefined;
       const tokenEnv = typeof auth?.token_env === "string" ? auth.token_env : undefined;
-      if (tokenEnv) checks.push(envPresenceCheck(tokenEnv, `${tokenEnv} is required for http_handler executor ${executorName} bearer auth.`));
+      if (tokenEnv) checks.push(envPresenceCheck(tokenEnv, `${tokenEnv} is required for http_handler executor ${executorName} bearer auth.`, "pending"));
       const signingSecretEnv = typeof executor.signing_secret_env === "string" ? executor.signing_secret_env : undefined;
       if (signingSecretEnv) {
-        checks.push(envPresenceCheck(signingSecretEnv, `${signingSecretEnv} is required to sign http_handler requests for executor ${executorName}.`));
+        checks.push(envPresenceCheck(signingSecretEnv, `${signingSecretEnv} is required to sign http_handler requests for executor ${executorName}.`, "pending"));
       } else {
         checks.push({
           name: `executor:${executorName}:handler-signing`,
@@ -234,11 +245,13 @@ export async function localDoctor(args: string[]): Promise<number> {
     }
     if (executor.type === "command_handler") {
       const commandEnv = String(executor.command_env ?? "");
-      if (commandEnv) checks.push(envPresenceCheck(commandEnv, `${commandEnv} is required for command_handler executor ${executorName}.`));
+      if (commandEnv) checks.push(envPresenceCheck(commandEnv, `${commandEnv} is required for command_handler executor ${executorName}.`, "pending"));
     }
   }
 
-  const tools = await localToolNames(parsed, checks);
+  const tools = productionExploreReport?.tools
+    ? [...productionExploreReport.tools]
+    : await localToolNames(parsed, checks);
   const forbiddenTools = tools.filter((tool) => /execute_sql|run_query|approve|commit|apply_writeback/i.test(tool));
   checks.push({
     name: "mcp-tool-boundary",
@@ -265,8 +278,13 @@ export async function localDoctor(args: string[]): Promise<number> {
     process.stdout.write(`wrote redacted doctor report: ${output}\n`);
   } else if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else if (args.includes("--setup")) {
+    process.stdout.write(formatLocalDoctorSetupReport(report));
   } else {
     process.stdout.write(formatLocalDoctorReport(report));
+  }
+  if (args.includes("--setup")) {
+    return localDoctorSetupStatus(report) === "failed" ? 1 : 0;
   }
   return report.ok ? 0 : 1;
 }
@@ -576,7 +594,7 @@ async function httpSecurityDoctorChecks(config: RuntimeConfig, args: string[]): 
     name: "http-security:limits",
     ok: true,
     level: "pass",
-    message: `HTTP bounds: request ${limits?.max_request_bytes ?? 1_048_576} bytes; headers ${limits?.max_header_bytes ?? 16_384} bytes; sessions ${limits?.max_sessions ?? 1_024}; idle ${limits?.session_idle_timeout_seconds ?? 900}s; connections ${limits?.max_connections ?? 2_048}.`,
+    message: `HTTP bounds: request ${limits?.max_request_bytes ?? 1_048_576} bytes; headers ${limits?.max_header_bytes ?? 16_384} bytes; sessions ${limits?.max_sessions ?? 1_024}; idle ${limits?.session_idle_timeout_seconds ?? (config.production_explore?.enabled ? 120 : 900)}s; connections ${limits?.max_connections ?? 2_048}.`,
   });
   const fleetRateScope = config.storage?.shared_postgres?.mode === "runtime_store" ? "shared runtime store (fleet-wide)" : "this Runner process only";
   checks.push({

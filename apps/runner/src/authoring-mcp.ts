@@ -40,7 +40,9 @@ const filter = z.object({
 
 export function createScopedExploreMcpServer(
   runtime: ScopedExploreRuntime | ScopedExploreBoundarySetRuntime,
+  options: { mode?: "local_authoring" | "production_http" } = {},
 ): McpServer {
+  const production = options.mode === "production_http";
   const rowPlan = z.object({
     kind: z.literal("rows"),
     resource: resourceId,
@@ -100,7 +102,7 @@ export function createScopedExploreMcpServer(
   }).strict();
 
   const server = new McpServer(
-    { name: "synapsor-runner-authoring", version: runnerPackage.version },
+    { name: production ? "synapsor-runner-production-explore" : "synapsor-runner-authoring", version: runnerPackage.version },
     { capabilities: { tools: {} } },
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
@@ -121,7 +123,8 @@ export function createScopedExploreMcpServer(
     },
     _meta: {
       "synapsor.kind": "scoped_explore_description",
-      "synapsor.authoring_only": true,
+      "synapsor.authoring_only": !production,
+      "synapsor.production_explore": production,
       "synapsor.raw_sql_exposed": false,
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
@@ -134,7 +137,7 @@ export function createScopedExploreMcpServer(
   })));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: "Runs one bounded row or descriptive aggregate plan against exactly one active reviewed local boundary. Choose the root resource that owns the counted entity or measure. For a related dimension, measure, filter, or time field, pass the target field alias in field and its exact active path alias separately in relationship; never concatenate them. Choose boundary from app.describe_data when required. Plans cannot join or combine separate boundaries. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
+    description: `Runs one bounded row or descriptive aggregate plan against exactly one active reviewed ${production ? "production" : "local"} boundary. Choose the root resource that owns the counted entity or measure. For a related dimension, measure, filter, or time field, pass the target field alias in field and its exact active path alias separately in relationship; never concatenate them. Choose boundary from app.describe_data when required. Plans cannot join or combine separate boundaries. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.`,
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       plan: z.discriminatedUnion("kind", [rowPlan, aggregatePlan]),
@@ -148,7 +151,8 @@ export function createScopedExploreMcpServer(
     },
     _meta: {
       "synapsor.kind": "scoped_explore",
-      "synapsor.authoring_only": true,
+      "synapsor.authoring_only": !production,
+      "synapsor.production_explore": production,
       "synapsor.untrusted_output": true,
       "synapsor.raw_sql_exposed": false,
       "synapsor.approval_tool": false,

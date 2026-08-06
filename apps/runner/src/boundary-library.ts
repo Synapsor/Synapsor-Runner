@@ -371,7 +371,9 @@ function rebaseDisabledBoundary(
 ): ExplorationBoundaryDraft {
   const candidate = structuredClone(draft);
   candidate.pack.name = expectedName;
-  if (stored.deployment_profile === "development" || stored.deployment_profile === "staging") {
+  if (stored.deployment_profile === "development"
+    || stored.deployment_profile === "staging"
+    || stored.deployment_profile === "production") {
     candidate.deployment_profile = stored.deployment_profile;
   }
   candidate.budgets = narrowStoredBudgets(draft, stored);

@@ -508,6 +508,41 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 15_000);
 
+  it("points a production boundary draft directly to the secured runtime config generator", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-boundary-config-handoff-"));
+    const inspection = boundaryInspection();
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await expect(main([
+        "boundary",
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--profile", "production",
+        "--tenant-claim", "tenant_id",
+        "--principal-claim", "sub",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).resolves.toBe(0);
+
+      expect(output).toContain("Then generate the secured production runtime config:");
+      expect(output).toContain("synapsor-runner config init --production-explore");
+      expect(output).toContain(`--project-root '${root}'`);
+      expect(output).toContain("--issuer https://identity.example");
+      expect(output).toContain("--audience https://runner.example/mcp");
+      expect(output).toContain("--accounting-namespace your_org.analytics.production");
+      expect(output).toContain("reuses the reviewed source and JWT claim names");
+      await expect(fs.access(path.join(root, "synapsor.runner.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("records a model-withheld field through the top-level CLI and rejects unknown fields", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-front-door-"));
     const inspection = boundaryInspection();
@@ -819,6 +854,44 @@ describe("boundary operator-plane CLI", () => {
       await expect(fs.readFile(configPath, "utf8")).resolves.toBe(config);
       expect(output).toContain("Generated disabled Auto Boundary draft");
       expect(output).not.toContain("Prepared the local Runner config");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("gives boundary diff a copy-paste regeneration command for the reviewed source env", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-stale-diff-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: ["WAREHOUSE_DATABASE_URL"],
+      },
+      sourceEnv: "WAREHOUSE_DATABASE_URL",
+    });
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.role_posture!.owner = "replacement_owner";
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryCommand([
+        "diff",
+        "--project-root", root,
+      ], async () => drifted)).resolves.toBe(1);
+
+      expect(output).toContain("Generation lock is stale:");
+      expect(output).toContain(
+        "synapsor-runner boundary draft --from-env WAREHOUSE_DATABASE_URL --force && synapsor-runner boundary review",
+      );
+      expect(output).toContain("Review and activation are still required");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1167,6 +1240,8 @@ describe("boundary operator-plane CLI", () => {
       },
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
     });
     let confirmations = 0;
     const confirmationDefaults: Array<boolean | undefined> = [];
@@ -1199,6 +1274,9 @@ describe("boundary operator-plane CLI", () => {
       ));
       expect(confirmations).toBe(3);
       expect(confirmationDefaults).toEqual([true, true, true]);
+      expect(confirmationPrompts[0]).toBe(
+        "Confirm these boundary-wide production HTTP and trusted JWT scope settings?",
+      );
       expect(confirmationPrompts.at(-1)).toBe(
         `Activate "${build.exploration_boundary.pack.name}" now?`,
       );
@@ -1207,6 +1285,9 @@ describe("boundary operator-plane CLI", () => {
       );
       expect(output).toContain("FINAL REVIEW");
       expect(output).toContain("Boundary settings");
+      expect(output).toContain("production HTTP + JWT");
+      expect(output).toContain("production over secured Streamable HTTP");
+      expect(output).not.toContain("local authoring + trusted scope");
       expect(output).toContain("TABLE SIGN-OFF - public.service_visits");
       expect(output).toContain("REVIEWED - NOT ACTIVE");
       expect(output).toContain("REVIEW");
@@ -1215,12 +1296,11 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain(
         `Reviewed boundary "${build.exploration_boundary.pack.name}" is active`,
       );
+      expect(output).toContain("active for secured production HTTP Explore");
+      expect(output).toContain("initialize its shared accounting ledger, and run doctor");
+      expect(output).not.toContain("active for local read-only Explore");
       expect(output).not.toContain("Next: synapsor-runner try ask");
-      expect(activationHandoff).toHaveBeenCalledWith({
-        projectRoot: root,
-        boundaryName: build.exploration_boundary.pack.name,
-        boundaryDigest: explorationBoundaryCandidateDigest(build.exploration_boundary),
-      });
+      expect(activationHandoff).not.toHaveBeenCalled();
       expect(output).not.toContain("Stable ID:");
       expect(output).not.toContain("Type CONFIRM");
       const active = JSON.parse(await fs.readFile(
@@ -1375,6 +1455,167 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("reports deterministic outcomes when focused access widens a sensitive field", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-sensitive-outcome-"));
+    const inspection = boundaryInspection();
+    const table = inspection.tables[0]!;
+    const contactName = structuredClone(table.columns.find((field) => field.name === "status")!);
+    contactName.name = "contact_name";
+    contactName.suggestions.sensitive = true;
+    contactName.suggestions.sensitivity = {
+      state: "high_confidence_sensitive",
+      reason_codes: ["person_name"],
+      reasons: ["The field name indicates a person's name."],
+      evidence_source: "database",
+    };
+    table.columns.push(contactName);
+    table.suggestions.sensitive_columns.push("contact_name");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources[0]?.kept_out_fields)
+      .toContain("contact_name");
+
+    const previousUser = process.env.USER;
+    process.env.USER = "sensitive-reviewer";
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    const selectedTiers = (
+      view: Parameters<BoundaryReviewInteractiveSession["editFieldTiers"]>[0],
+      contactTier: BoundaryFieldTier,
+    ) => Object.fromEntries(view.fields.map((field) => [
+      field.name,
+      field.name === "contact_name"
+        ? contactTier
+        : view.candidate?.kept_out_fields.includes(field.name)
+          ? "kept_out"
+          : view.candidate?.model_withheld_fields?.includes(field.name)
+            ? "withheld_from_model"
+            : "visible",
+    ])) as Record<string, BoundaryFieldTier>;
+
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+
+      const firstChoices = [
+        { resource_id: "public.service_visits", action: "review" as const },
+        undefined,
+      ];
+      const reasonPrompts: string[] = [];
+      let reasonAttempt = 0;
+      const firstSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => firstChoices.shift(),
+        editFieldTiers: async (view) => selectedTiers(view, "withheld_from_model"),
+        promptText: async (prompt) => {
+          reasonPrompts.push(prompt);
+          reasonAttempt += 1;
+          if (reasonAttempt === 1) return "";
+          expect(await readBoundaryReviewProgress(root, build.exploration_boundary))
+            .toBeUndefined();
+          return "Support analytics needs local unique counts.";
+        },
+        confirm: async () => {
+          throw new Error("A focused visibility edit must not activate authority implicitly.");
+        },
+      };
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, firstSession)).resolves.toBe(0);
+
+      expect(reasonPrompts).toEqual([
+        "Required reason for this sensitive-field access change: ",
+        "Required reason for this sensitive-field access change: ",
+      ]);
+      expect(output).toContain(
+        "This widens sensitive-field access:\n  public.service_visits.contact_name -> Runner only (withheld from model)",
+      );
+      expect(output).toContain("Reviewer: sensitive-reviewer");
+      expect(output).toContain("A concrete reason is required before Runner can save this change.");
+      expect(output).toContain("Rejected: a concrete reason is required; no change was made.");
+      expect(output).toContain(
+        "Recorded: public.service_visits.contact_name -> Runner only (withheld from model); " +
+        "actor=sensitive-reviewer; reason=\"Support analytics needs local unique counts.\"",
+      );
+      expect(output).toContain(
+        "Runner only controls where raw values can appear; it does not grant Group, Total/Average, or Count unique.",
+      );
+      expect(output).toContain("--group-fields, --measure-fields, or --count-distinct-fields");
+
+      const progressPath = path.join(root, ".synapsor/boundary-review-progress.json");
+      const applied = JSON.parse(await fs.readFile(progressPath, "utf8")) as {
+        revision: number;
+        candidate: { pack: { resources: Array<{ id: string; model_withheld_fields?: string[] }> } };
+      };
+      expect(applied.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")?.model_withheld_fields).toContain("contact_name");
+      const appliedRevision = applied.revision;
+
+      output = "";
+      const repeatChoices = [
+        { resource_id: "public.service_visits", action: "review" as const },
+        undefined,
+      ];
+      const repeatSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => repeatChoices.shift(),
+        editFieldTiers: async (view) => selectedTiers(view, "withheld_from_model"),
+        promptText: async () => {
+          throw new Error("An idempotent repeat must not ask for another reason.");
+        },
+        confirm: async () => {
+          throw new Error("An idempotent repeat must not activate authority.");
+        },
+      };
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, repeatSession)).resolves.toBe(0);
+      expect(output).toContain(
+        "Unchanged: public.service_visits already has the access levels shown; no change was made.",
+      );
+      expect(JSON.parse(await fs.readFile(progressPath, "utf8")).revision).toBe(appliedRevision);
+
+      output = "";
+      const cancelChoices = [
+        { resource_id: "public.service_visits", action: "review" as const },
+        undefined,
+      ];
+      const cancelSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => cancelChoices.shift(),
+        editFieldTiers: async (view) => selectedTiers(view, "visible"),
+        promptText: async () => undefined,
+        confirm: async () => {
+          throw new Error("Cancelling a sensitive-field edit must not activate authority.");
+        },
+      };
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, cancelSession)).resolves.toBe(0);
+      expect(output).toContain("Cancelled - no sensitive-field access change was made.");
+      const cancelled = JSON.parse(await fs.readFile(progressPath, "utf8"));
+      expect(cancelled.revision).toBe(appliedRevision);
+      expect(cancelled.candidate.pack.resources.find((resource: { id: string }) =>
+        resource.id === "public.service_visits").model_withheld_fields).toContain("contact_name");
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it("returns from a focused column editor to the selected boundary's table list", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-column-back-"));
@@ -2291,6 +2532,65 @@ describe("boundary operator-plane CLI", () => {
       );
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("records a narrow schema-enum allowlist and disables value operations when none remain", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-review-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      expect(build.exploration_boundary.pack.resources[0]!.field_enums.status)
+        .toEqual(["scheduled", "completed"]);
+
+      const narrowed = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        field_enum: { field: "status", values: ["completed"] },
+        actor: "alice",
+        reason: "Keep the agent on completed service visits only.",
+      }, async () => inspection);
+      expect(narrowed.semantic_diff.reviewed_enum_changes).toEqual([{
+        field: "status",
+        before: ["scheduled", "completed"],
+        after: ["completed"],
+      }]);
+      await commitBoundaryResourceReviewMutation(root, narrowed);
+      let context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.field_enums.status).toEqual(["completed"]);
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        field_enum: { field: "status", values: ["completed", "invented"] },
+        actor: "alice",
+        reason: "This must not widen the database-declared set.",
+      }, async () => inspection)).rejects.toThrow(/may only remove schema-declared values.*invented/i);
+
+      const disabled = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        field_enum: { field: "status", values: [] },
+        actor: "alice",
+        reason: "Do not let this boundary filter or group by service status.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, disabled);
+      context = await loadBoundaryReviewContext(root);
+      const resource = context.candidate.pack.resources[0]!;
+      expect(resource.field_enums).not.toHaveProperty("status");
+      expect(resource.filterable_fields).not.toHaveProperty("status");
+      expect(resource.groupable_fields).not.toContain("status");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

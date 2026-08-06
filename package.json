@@ -1,7 +1,7 @@
 {
   "name": "synapsor-runner-monorepo",
   "private": true,
-  "version": "1.6.7",
+  "version": "1.7.0",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "workspaces": [
@@ -60,6 +60,9 @@
     "test:onboarding-generated": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",
     "test:init-own-db": "tsc -b --pretty false && node scripts/smoke-generated-onboarding.mjs",
     "test:mcp-streamable": "vitest run packages/mcp-server/src/index.test.ts apps/runner/src/cli.test.ts",
+    "test:production-explore:http": "corepack pnpm build:runner-package && node scripts/verify-production-explore-http.mjs",
+    "test:production-explore:mysql-http": "corepack pnpm build:runner-package && node scripts/verify-production-explore-mysql-http.mjs",
+    "test:production-explore:packed-http": "node scripts/verify-packed-production-explore-http.mjs",
     "test:mcp-audit": "vitest run apps/runner/src/cli.test.ts",
     "test:reference-app": "tsc -b --pretty false && node scripts/smoke-reference-support-billing-app.mjs",
     "test:app-owned-executor": "examples/mcp-postgres-billing-app-handler/scripts/run-demo.sh",
@@ -121,6 +124,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
     "esbuild": "0.28.1",
+    "mermaid": "11.16.1",
     "pg": "^8.22.0",
     "tsx": "^4.20.0",
     "typescript": "^5.7.0",

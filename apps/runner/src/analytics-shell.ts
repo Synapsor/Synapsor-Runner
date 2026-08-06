@@ -1,5 +1,6 @@
 import readlineCore from "node:readline";
 import readline from "node:readline/promises";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   Readable,
@@ -38,6 +39,15 @@ import {
   renderTerminalJson,
   renderTerminalSql,
 } from "./terminal-syntax.js";
+import {
+  boundaryCatalogRunnerOnlyAnalysisSummary,
+  boundaryCatalogDiagramIsLarge,
+  boundaryCatalogModelFor,
+  buildBoundaryCatalogDiagramExports,
+  renderBoundaryCatalogAscii,
+  renderBoundaryCatalogMermaid,
+  type BoundaryCatalogModel,
+} from "./boundary-catalog.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
@@ -56,7 +66,7 @@ const COMMANDS = [
 
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "List shell actions",
-  "/catalog": "Show what the reviewed boundaries can answer",
+  "/catalog": "Show reviewed tables, joins, and allowed analysis",
   "/analyses": "List recent protectable analyses",
   "/protect": "Protect the latest eligible analysis",
   "/details": "Show safe execution metadata",
@@ -67,22 +77,324 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/exit": "Close the analytics shell",
 };
 
-export function slashCommandSuggestions(line: string): string[] {
-  if (!line.startsWith("/")) return [];
+type SlashCommandSuggestion = {
+  label: string;
+  description: string;
+  completion?: string;
+};
+
+const BASE_COMMAND_SUGGESTIONS: SlashCommandSuggestion[] = COMMANDS.map((command) => ({
+  label: command,
+  description: COMMAND_DESCRIPTIONS[command] ?? "",
+  completion: command,
+}));
+
+function suggestion(
+  label: string,
+  description: string,
+  completion = label,
+): SlashCommandSuggestion {
+  return { label, description, completion };
+}
+
+function syntaxSuggestion(label: string, description: string): SlashCommandSuggestion {
+  return { label, description };
+}
+
+function startsWithToken(candidate: string, input: string): boolean {
+  return candidate.toLowerCase().startsWith(input.toLowerCase());
+}
+
+type CatalogCommandRequest =
+  | { kind: "page"; page: number }
+  | {
+      kind: "diagram";
+      boundary?: string;
+      export_requested: boolean;
+      export_path?: string;
+    };
+
+function parseCatalogCommand(line: string): CatalogCommandRequest | { error: string } {
+  const rest = line.slice("/catalog".length).trim();
+  if (!rest) return { kind: "page", page: 1 };
+  const tokens = shellArgumentTokens(rest);
+  if (!tokens) return { error: "A quoted catalog argument is not closed." };
+  if (tokens.length === 1 && /^[1-9][0-9]*$/.test(tokens[0]!)) {
+    return { kind: "page", page: Number(tokens[0]) };
+  }
+  if (tokens[0] !== "--diagram") {
+    return { error: "Expected a page number or --diagram." };
+  }
+  let boundary: string | undefined;
+  let exportRequested = false;
+  let exportPath: string | undefined;
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token === "--boundary") {
+      if (boundary !== undefined) return { error: "--boundary may be supplied only once." };
+      const value = tokens[index + 1];
+      if (!value || value.startsWith("--")) return { error: "--boundary requires an active boundary name." };
+      boundary = value;
+      index += 1;
+      continue;
+    }
+    if (token === "--export") {
+      if (exportRequested) return { error: "--export may be supplied only once." };
+      exportRequested = true;
+      const value = tokens[index + 1];
+      if (value && !value.startsWith("--")) {
+        exportPath = value;
+        index += 1;
+      }
+      continue;
+    }
+    return { error: `Unknown catalog diagram option ${token}.` };
+  }
+  return {
+    kind: "diagram",
+    ...(boundary ? { boundary } : {}),
+    export_requested: exportRequested,
+    ...(exportPath ? { export_path: exportPath } : {}),
+  };
+}
+
+function shellArgumentTokens(value: string): string[] | undefined {
+  const tokens: string[] = [];
+  let index = 0;
+  while (index < value.length) {
+    while (/\s/.test(value[index] ?? "")) index += 1;
+    if (index >= value.length) break;
+    const quote = value[index] === "\"" || value[index] === "'" ? value[index++] : undefined;
+    let token = "";
+    let closed = quote === undefined;
+    while (index < value.length) {
+      const character = value[index]!;
+      if (quote) {
+        if (character === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        if (character === "\\" && value[index + 1] === quote) {
+          token += quote;
+          index += 2;
+          continue;
+        }
+        token += character;
+        index += 1;
+        continue;
+      }
+      if (/\s/.test(character)) break;
+      token += character;
+      index += 1;
+    }
+    if (!closed) return undefined;
+    if (token) tokens.push(token);
+  }
+  return tokens;
+}
+
+function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | undefined {
   const normalized = line.toLowerCase();
-  return COMMANDS.filter((command) => command.startsWith(normalized));
+
+  if (normalized === "/catalog" || normalized.startsWith("/catalog ")) {
+    const rest = line.slice("/catalog".length).trim();
+    if (!rest) {
+      return [
+        suggestion("/catalog --diagram", "Show connected reviewed paths and Mermaid"),
+        syntaxSuggestion("/catalog <page>", "Show another catalog page"),
+      ];
+    }
+    if (startsWithToken("--diagram", rest) && !rest.includes(" ")) {
+      return [suggestion("/catalog --diagram", "Show connected reviewed paths and Mermaid")];
+    }
+    if (rest.startsWith("--diagram")) {
+      const parsed = parseCatalogCommand(line);
+      if (!("error" in parsed) && parsed.kind === "diagram") {
+        return [
+          syntaxSuggestion(line.trimEnd(), parsed.boundary
+            ? `Show the ${parsed.boundary} reviewed boundary diagram`
+            : "Show a reviewed boundary diagram"),
+          ...(!parsed.boundary
+            ? [syntaxSuggestion(
+              "/catalog --diagram --boundary <name>",
+              "Choose one boundary when several are active",
+            )]
+            : []),
+          ...(!parsed.export_requested
+            ? [syntaxSuggestion(
+              `${line.trimEnd()} --export [path]`,
+              "Export a large diagram as Markdown and Mermaid",
+            )]
+            : []),
+        ];
+      }
+      if ("error" in parsed
+        && (/--boundary\s+[^\s]*$/.test(rest) || /--export(?:\s+[^\s]*)?$/.test(rest))) {
+        return [syntaxSuggestion(line.trimEnd(), parsed.error)];
+      }
+    }
+    if (/^[1-9][0-9]*$/.test(rest)) {
+      return [suggestion(`/catalog ${rest}`, `Show catalog page ${rest}`)];
+    }
+    return [];
+  }
+
+  if (normalized === "/details" || normalized.startsWith("/details ")) {
+    const rest = line.slice("/details".length).trimStart();
+    const tokens = rest.split(/\s+/).filter(Boolean);
+    const trailingSpace = /\s$/.test(line);
+    if (!tokens.length) {
+      return [
+        suggestion("/details last", "Inspect the latest analysis"),
+        suggestion("/details last --sql", "Include redacted operator-only SQL"),
+        syntaxSuggestion("/details <A#>", "Inspect one analysis by reference"),
+        syntaxSuggestion("/details <A#> --sql", "Inspect one analysis and its redacted SQL"),
+      ];
+    }
+    if (tokens.length === 1) {
+      const token = tokens[0]!;
+      if (startsWithToken("last", token)) {
+        return [
+          suggestion("/details last", "Inspect the latest analysis"),
+          suggestion("/details last --sql", "Include redacted operator-only SQL"),
+        ];
+      }
+      if (startsWithToken("--sql", token)) {
+        return [suggestion("/details --sql", "Inspect the latest analysis with redacted SQL")];
+      }
+      if (/^a[0-9]*$/i.test(token)) {
+        if (!/^a[1-9][0-9]*$/i.test(token)) {
+          return [
+            syntaxSuggestion("/details <A#>", "Keep typing an analysis reference, such as A7"),
+            syntaxSuggestion("/details <A#> --sql", "Add --sql for the redacted statement"),
+          ];
+        }
+        const reference = token.toUpperCase();
+        return [
+          suggestion(`/details ${reference}`, `Inspect analysis ${reference}`),
+          suggestion(`/details ${reference} --sql`, `Inspect ${reference} with redacted SQL`),
+        ];
+      }
+      return [];
+    }
+    if (tokens.length === 2 && /^(last|a[1-9][0-9]*)$/i.test(tokens[0]!)) {
+      const reference = tokens[0]!.toLowerCase() === "last"
+        ? "last"
+        : tokens[0]!.toUpperCase();
+      const option = tokens[1]!;
+      if (startsWithToken("--sql", option)) {
+        return [suggestion(
+          `/details ${reference} --sql`,
+          reference === "last"
+            ? "Inspect the latest analysis with redacted SQL"
+            : `Inspect ${reference} with redacted SQL`,
+        )];
+      }
+    }
+    if (tokens.length === 1 && trailingSpace && /^(last|a[1-9][0-9]*)$/i.test(tokens[0]!)) {
+      const reference = tokens[0]!.toLowerCase() === "last"
+        ? "last"
+        : tokens[0]!.toUpperCase();
+      return [suggestion(
+        `/details ${reference} --sql`,
+        "Add the redacted operator-only database statement",
+      )];
+    }
+    return [];
+  }
+
+  if (normalized === "/protect" || normalized.startsWith("/protect ")) {
+    const rest = line.slice("/protect".length).trimStart();
+    const tokens = rest.split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+      return [
+        suggestion("/protect last", "Protect the latest eligible analysis"),
+        syntaxSuggestion("/protect <A#>", "Protect one analysis by reference"),
+        syntaxSuggestion("/protect <A#> as <name>", "Protect it with an explicit capability name"),
+      ];
+    }
+
+    const referenceToken = tokens[0]!;
+    const referenceIsComplete = /^(last|a[1-9][0-9]*)$/i.test(referenceToken);
+    if (tokens.length === 1) {
+      if (startsWithToken("last", referenceToken)) {
+        return [
+          suggestion("/protect last", "Protect the latest eligible analysis"),
+          syntaxSuggestion("/protect last as <name>", "Choose the capability name"),
+        ];
+      }
+      if (/^a[0-9]*$/i.test(referenceToken)) {
+        if (!referenceIsComplete) {
+          return [syntaxSuggestion(
+            "/protect <A#> as <name>",
+            "Keep typing an analysis reference, such as A7",
+          )];
+        }
+        const reference = referenceToken.toUpperCase();
+        return [
+          suggestion(`/protect ${reference}`, `Protect analysis ${reference}`),
+          syntaxSuggestion(`/protect ${reference} as <name>`, "Choose the capability name"),
+        ];
+      }
+      return [];
+    }
+
+    if (!referenceIsComplete || !startsWithToken("as", tokens[1]!)) return [];
+    const reference = referenceToken.toLowerCase() === "last"
+      ? "last"
+      : referenceToken.toUpperCase();
+    if (tokens.length === 2) {
+      return [syntaxSuggestion(
+        `/protect ${reference} as <name>`,
+        "Type a capability name, such as analytics.orders_by_region",
+      )];
+    }
+    if (tokens.length === 3 && /^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(tokens[2]!)) {
+      const command = `/protect ${reference} as ${tokens[2]}`;
+      return [suggestion(command, `Protect ${reference} as ${tokens[2]}`)];
+    }
+    return [];
+  }
+
+  if (normalized === "/access" || normalized.startsWith("/access ")) {
+    const rest = line.slice("/access".length).trim();
+    if (!rest || startsWithToken("workbench", rest)) {
+      return [suggestion("/access workbench", "Open the visual access editor")];
+    }
+    return [];
+  }
+
+  return undefined;
+}
+
+function slashMenuSuggestions(line: string): SlashCommandSuggestion[] {
+  if (!line.startsWith("/")) return [];
+  const argumentSuggestions = argumentCommandSuggestions(line);
+  if (argumentSuggestions !== undefined) return argumentSuggestions;
+  const normalized = line.toLowerCase();
+  return BASE_COMMAND_SUGGESTIONS.filter((entry) =>
+    entry.label.startsWith(normalized));
+}
+
+export function slashCommandSuggestions(line: string): string[] {
+  return slashMenuSuggestions(line).map((entry) => entry.label);
 }
 
 export function renderSlashCommandMenu(line: string, color = false): string {
-  const matches = slashCommandSuggestions(line);
+  const matches = slashMenuSuggestions(line);
   if (!line.startsWith("/")) return "";
   const theme = terminalTheme(color);
   if (!matches.length) {
     return `${theme.warning("No matching action.")} ${theme.key("/help")} lists all actions.`;
   }
+  const labelWidth = Math.min(
+    38,
+    Math.max(20, ...matches.map((entry) => entry.label.length + 2)),
+  );
   return [
-    ...matches.map((command) =>
-      `${theme.key(command.padEnd(20))} ${theme.dim(COMMAND_DESCRIPTIONS[command] ?? "")}`),
+    ...matches.map((entry) =>
+      `${theme.key(entry.label.padEnd(labelWidth))} ${theme.dim(entry.description)}`),
     theme.dim("Keep typing or press Tab to complete."),
   ].join("\n");
 }
@@ -131,6 +443,7 @@ export type AnalyticsShellInput = {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
+  boundaryCatalog?: BoundaryCatalogModel;
   pendingBoundaryReview?: {
     boundary_name: string;
     pending_changes: number;
@@ -357,8 +670,11 @@ export function createTerminalAnalyticsShellIo(input: {
     historySize: 100,
     removeHistoryDuplicates: true,
     completer: (line: string): [string[], string] => {
-      const matches = COMMANDS.filter((command) => command.startsWith(line));
-      return [matches.length ? matches : COMMANDS, line];
+      const matches = slashMenuSuggestions(line)
+        .flatMap((entry) => entry.completion ? [entry.completion] : []);
+      const recognizedAction = COMMANDS.some((command) =>
+        line === command || line.startsWith(`${command} `));
+      return [matches.length ? matches : recognizedAction ? [] : COMMANDS, line];
     },
   });
   rl.on("SIGINT", () => interrupt?.());
@@ -571,7 +887,12 @@ async function handleShellCommand(
     input.io.write([
       "",
       "Actions",
-      "  /catalog [page]              Show what each reviewed table can answer",
+      "  /catalog [page]              Show tables, reviewed joins, and available analysis",
+      "  /catalog --diagram           Diagram the sole active boundary",
+      "  /catalog --diagram --boundary <name>",
+      "                               Diagram one of several active boundaries",
+      "  /catalog --diagram --boundary <name> --export [path]",
+      "                               Export a large diagram as Markdown and Mermaid",
       "  /analyses                    List recent protectable analyses",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
@@ -588,11 +909,26 @@ async function handleShellCommand(
     return "continue";
   }
   if (line === "/catalog" || line.startsWith("/catalog ")) {
+    const catalogRequest = parseCatalogCommand(line);
+    if (!("error" in catalogRequest)
+      && catalogRequest.kind === "diagram"
+      && catalogRequest.export_requested) {
+      input.io.write(await exportReviewedBoundaryCatalog({
+        request: catalogRequest,
+        catalog: input.boundaryCatalog,
+        projectRoot: input.projectRoot,
+        color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+        columns: input.io.columns(),
+      }));
+      return "continue";
+    }
     input.io.write(renderReviewedAccessCatalog({
       line,
       boundaryLabel: input.boundaryLabel,
       summary: input.accessSummary,
+      catalog: input.boundaryCatalog,
       color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+      columns: input.io.columns(),
     }));
     return "continue";
   }
@@ -660,16 +996,73 @@ export function renderReviewedAccessCatalog(input: {
   line: string;
   boundaryLabel?: string;
   summary?: ReviewedAskAccessSummary;
+  catalog?: BoundaryCatalogModel;
   color?: boolean;
   pageSize?: number;
+  columns?: number;
 }): string {
   const theme = terminalTheme(input.color === true);
   const pageSize = Math.max(1, Math.min(10, input.pageSize ?? 5));
-  const rawPage = input.line.slice("/catalog".length).trim();
-  const requestedPage = rawPage === "" ? 1 : Number(rawPage);
-  if (!Number.isSafeInteger(requestedPage) || requestedPage < 1) {
-    return `\n${theme.warning("Usage: /catalog [page]")} ${theme.dim("Page numbers start at 1.")}\n\n`;
+  const request = parseCatalogCommand(input.line);
+  if ("error" in request) {
+    return `\n${theme.warning("Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]")} ` +
+      `${theme.dim(request.error)}\n\n`;
   }
+  if (request.kind === "diagram") {
+    if (!input.catalog?.boundaries.length) {
+      return [
+        "",
+        theme.title("ACTIVE BOUNDARY DIAGRAM"),
+        "No active reviewed boundary diagram is available.",
+        `Use ${theme.key("/access")} to review and activate a boundary first.`,
+        "",
+        "",
+      ].join("\n");
+    }
+    const selection = selectCatalogBoundary(input.catalog, request.boundary);
+    if ("error" in selection) {
+      return [
+        "",
+        theme.title("ACTIVE BOUNDARY DIAGRAM"),
+        theme.warning(selection.error),
+        ...selection.commands.map((command) => `  ${theme.key(command)}`),
+        "",
+        "",
+      ].join("\n");
+    }
+    const selectedCatalog = selection.catalog;
+    const selectedBoundary = selectedCatalog.boundaries[0]!;
+    if (boundaryCatalogDiagramIsLarge(selectedBoundary)) {
+      const command = `/catalog --diagram --boundary ${selectedBoundary.name} --export`;
+      return [
+        "",
+        theme.title("ACTIVE BOUNDARY DIAGRAM"),
+        `${theme.scope(safeTerminalText(selectedBoundary.name))} has ` +
+          `${selectedBoundary.tables.length} tables and ${selectedBoundary.physical_relationship_count} physical joins.`,
+        "The complete diagram is too large for a readable terminal view.",
+        `Export it with ${theme.key(command)}.`,
+        "",
+        "",
+      ].join("\n");
+    }
+    const width = Math.max(48, Math.min(120, input.columns ?? 96));
+    return [
+      "",
+      theme.title("ACTIVE BOUNDARY DIAGRAM"),
+      theme.dim("This is the exact reviewed table and join map available to Ask."),
+      "",
+      renderBoundaryCatalogAscii(selectedCatalog, { width }),
+      "",
+      theme.title("MERMAID ER DIAGRAM"),
+      theme.dim("Copy this block into any Mermaid renderer."),
+      "```mermaid",
+      renderBoundaryCatalogMermaid(selectedCatalog),
+      "```",
+      "",
+      "",
+    ].join("\n");
+  }
+  const requestedPage = request.page;
   const resources = input.summary?.resources ?? [];
   if (!resources.length) {
     return [
@@ -689,22 +1082,57 @@ export function renderReviewedAccessCatalog(input: {
   const start = (requestedPage - 1) * pageSize;
   const visible = resources.slice(start, start + pageSize);
   const defaultBoundary = input.boundaryLabel;
+  const relationshipCount = input.catalog?.relationship_count ?? 0;
   const lines = [
     "",
     theme.title("CAN ASK NOW"),
     theme.dim(
       `${resources.length} reviewed ${resources.length === 1 ? "table" : "tables"} ` +
+      `and ${relationshipCount} reviewed ${relationshipCount === 1 ? "join path" : "join paths"} ` +
       `- page ${requestedPage} of ${pageCount}`,
     ),
+    theme.dim("Use /catalog --diagram for the complete active-boundary relationship map."),
     "",
     ...visible.flatMap((resource) => {
       const boundary = resource.boundary_name ?? defaultBoundary;
+      const catalogBoundary = input.catalog?.boundaries.find((item) =>
+        !boundary || item.name === boundary);
+      const table = catalogBoundary?.tables.find((item) => item.id === resource.id);
+      const relationships = catalogBoundary?.relationships.filter((item) =>
+        item.source_table === resource.id) ?? [];
+      const runnerOnlyAnalysis = table
+        ? boundaryCatalogRunnerOnlyAnalysisSummary(table)
+        : "";
       return [
         `${theme.key(safeTerminalText(resource.label))} ${theme.dim(`(${safeTerminalText(resource.id)})`)}`,
         ...(boundary
           ? [`  Boundary: ${theme.scope(safeTerminalText(boundary))}`]
           : []),
         `  Can answer: ${safeTerminalText(resource.capabilities.join("; "))}`,
+        ...(runnerOnlyAnalysis
+          ? [`  Runner-only analysis: ${safeTerminalText(runnerOnlyAnalysis)}`]
+          : []),
+        ...(relationships.length
+          ? relationships.flatMap((relationship) => {
+            const path = relationship.links.map((link) =>
+              `${safeTerminalText(link.source_table)}.${safeTerminalText(link.source_key)} -> ` +
+              `${safeTerminalText(link.target_table)}.${safeTerminalText(link.target_key)}`)
+              .join(" -> ");
+            return [
+              `  Join path: ${path} (${relationship.path_depth} ` +
+              `${relationship.path_depth === 1 ? "join" : "joins"}, ` +
+              `${relationship.proven ? "catalog proven" : "proof unavailable"})`,
+              ...relationship.suggested_questions.slice(0, 1).map((question) =>
+                `  Ask across path: ${theme.dim(`"${safeTerminalText(question)}"`)}`),
+            ];
+          })
+          : ["  Joins: none reviewed from this table"]),
+        ...(table?.reachable_tables.length
+          ? [`  Reachable: ${safeTerminalText(table.reachable_tables.join(", "))}`]
+          : []),
+        ...(table?.outside_boundary_relationship_count
+          ? [`  Outside boundary: ${table.outside_boundary_relationship_count} relationship not available to Ask`]
+          : []),
         ...resource.suggestions.slice(0, 2).map((suggestion) =>
           `  Try: ${theme.dim(`"${safeTerminalText(suggestion)}"`)}`),
         "",
@@ -720,6 +1148,125 @@ export function renderReviewedAccessCatalog(input: {
     "",
   ];
   return lines.join("\n");
+}
+
+function selectCatalogBoundary(
+  catalog: BoundaryCatalogModel,
+  boundaryName?: string,
+): { catalog: BoundaryCatalogModel } | { error: string; commands: string[] } {
+  if (boundaryName) {
+    const boundary = catalog.boundaries.find((candidate) => candidate.name === boundaryName);
+    if (!boundary) {
+      return {
+        error: `No active reviewed boundary is named ${boundaryName}. Choose one of:`,
+        commands: catalog.boundaries.map((candidate) =>
+          `/catalog --diagram --boundary ${candidate.name}`),
+      };
+    }
+    return { catalog: boundaryCatalogModelFor(catalog, boundary) };
+  }
+  if (catalog.boundaries.length === 1) return { catalog };
+  return {
+    error: `${catalog.boundaries.length} reviewed boundaries are active. Choose which exact authority to diagram:`,
+    commands: catalog.boundaries.map((boundary) =>
+      `/catalog --diagram --boundary ${boundary.name}`),
+  };
+}
+
+async function exportReviewedBoundaryCatalog(input: {
+  request: Extract<CatalogCommandRequest, { kind: "diagram" }>;
+  catalog?: BoundaryCatalogModel;
+  projectRoot?: string;
+  color: boolean;
+  columns: number;
+}): Promise<string> {
+  const theme = terminalTheme(input.color);
+  if (!input.catalog?.boundaries.length) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      "No active reviewed boundary diagram is available.",
+      `Use ${theme.key("/access")} to review and activate a boundary first.`,
+      "",
+      "",
+    ].join("\n");
+  }
+  const selection = selectCatalogBoundary(input.catalog, input.request.boundary);
+  if ("error" in selection) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      theme.warning(selection.error),
+      ...selection.commands.map((command) => `  ${theme.key(`${command} --export`)}`),
+      "",
+      "",
+    ].join("\n");
+  }
+  const boundary = selection.catalog.boundaries[0]!;
+  const projectRoot = path.resolve(input.projectRoot ?? process.cwd());
+  const width = Math.max(72, Math.min(120, input.columns));
+  const diagram = buildBoundaryCatalogDiagramExports(selection.catalog, { width })[0]!;
+  const outputPath = input.request.export_path
+    ? path.resolve(projectRoot, input.request.export_path)
+    : path.join(projectRoot, ".synapsor", "catalog", diagram.file_name);
+  if (!isPathInside(projectRoot, outputPath)) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      theme.warning("Export path must stay inside this project."),
+      `Project: ${theme.value(safeTerminalText(projectRoot))}`,
+      "No file was created.",
+      "",
+      "",
+    ].join("\n");
+  }
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const [realProjectRoot, realOutputDirectory] = await Promise.all([
+    fs.realpath(projectRoot),
+    fs.realpath(path.dirname(outputPath)),
+  ]);
+  if (!isPathInside(realProjectRoot, realOutputDirectory, true)) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      theme.warning("Export directory resolves outside this project."),
+      `Project: ${theme.value(safeTerminalText(realProjectRoot))}`,
+      "No file was created.",
+      "",
+      "",
+    ].join("\n");
+  }
+  try {
+    await fs.writeFile(outputPath, diagram.markdown, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      `The exact digest-bound export already exists: ${theme.value(safeTerminalText(outputPath))}`,
+      "No file was overwritten.",
+      "",
+      "",
+    ].join("\n");
+  }
+  return [
+    "",
+    theme.title("BOUNDARY DIAGRAM EXPORTED"),
+    `Boundary: ${theme.scope(safeTerminalText(boundary.name))}`,
+    `File: ${theme.value(safeTerminalText(outputPath))}`,
+    "Includes the readable relationship map, cross-table question prompts, and Mermaid ERD.",
+    "Source database changed: no.",
+    "",
+    "",
+  ].join("\n");
+}
+
+function isPathInside(root: string, candidate: string, allowRoot = false): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  if (!relative) return allowRoot;
+  return relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
 }
 
 async function showAnalyses(

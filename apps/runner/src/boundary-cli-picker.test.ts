@@ -729,6 +729,33 @@ describe("boundary review terminal picker", () => {
     await expect(edited).resolves.toBe("back");
   });
 
+  it("edits only database-declared categorical values and explains the empty-set consequence", async () => {
+    const view = reviewView();
+    view.fields[0]!.enum_values = ["scheduled", "completed"];
+    view.candidate!.field_enums = { outcome: ["scheduled", "completed"] };
+    view.generated_candidate!.field_enums = { outcome: ["scheduled", "completed"] };
+
+    const first = fakeTerminal();
+    const firstSession = createBoundaryReviewInteractiveSession(first.input, first.output);
+    const action = firstSession.editFieldTiers(view, { focusedAccess: true });
+    await send(first.input, "e");
+    await expect(action).resolves.toBe("enum:outcome");
+    expect(stripAnsi(first.output.read()?.toString() ?? "")).toContain(
+      "E Allowed values for selected column: 2 of 2",
+    );
+
+    const second = fakeTerminal();
+    const secondSession = createBoundaryReviewInteractiveSession(second.input, second.output);
+    const edited = secondSession.editFieldEnumValues!(view, "outcome");
+    await send(second.input, " ");
+    await send(second.input, "\r");
+    await expect(edited).resolves.toEqual(["completed"]);
+    const rendered = stripAnsi(second.output.read()?.toString() ?? "");
+    expect(rendered).toContain("No source rows were sampled");
+    expect(rendered).toContain("Removed values are refused even if guessed");
+    expect(rendered).toContain("Selecting none disables filtering and grouping");
+  });
+
   it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);

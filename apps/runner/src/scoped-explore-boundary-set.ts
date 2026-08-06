@@ -1,5 +1,9 @@
 import path from "node:path";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
+import {
+  ProposalStore,
+  type ExploreBudgetLimits,
+  type ProposalRuntimeStore,
+} from "@synapsor-runner/proposal-store";
 import {
   activatedExplorationBoundarySetDigest,
   loadActivatedExplorationBoundaries,
@@ -16,8 +20,10 @@ import {
   type ResolveExploreTrustedScopeFn,
   type ScopedExploreExecutor,
   type ScopedExploreRuntime,
+  type ScopedExploreMode,
   type ScopedExploreTransport,
 } from "./scoped-explore.js";
+import type { ExploreHttpSessionContext } from "./explore-trusted-scope.js";
 
 export type BoundarySetDescribeInput = {
   boundary?: string;
@@ -51,9 +57,14 @@ type Child = {
 export async function createScopedExploreBoundarySetRuntime(input: {
   projectRoot: string;
   transport: ScopedExploreTransport;
+  mode?: ScopedExploreMode;
   env?: NodeJS.ProcessEnv;
   executor?: ScopedExploreExecutor;
-  store?: ProposalStore;
+  store?: ProposalRuntimeStore;
+  sessionContext?: ExploreHttpSessionContext;
+  productionPrivacyHmacKey?: Buffer;
+  productionAccountingNamespace?: string;
+  productionTenantLimits?: ExploreBudgetLimits;
   clock?: () => number;
   inspectDatabaseFn?: InspectDatabaseFn;
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
@@ -98,9 +109,14 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     const runtime = await (input.runtimeFactory ?? createScopedExploreRuntime)({
       projectRoot,
       transport: input.transport,
+      mode: input.mode,
       boundaryName: boundary.pack.name,
       env: input.env,
       store,
+      ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
+      ...(input.productionPrivacyHmacKey ? { productionPrivacyHmacKey: input.productionPrivacyHmacKey } : {}),
+      ...(input.productionAccountingNamespace ? { productionAccountingNamespace: input.productionAccountingNamespace } : {}),
+      ...(input.productionTenantLimits ? { productionTenantLimits: input.productionTenantLimits } : {}),
       ...(input.executor ? { executor: input.executor } : {}),
       ...(input.clock ? { clock: input.clock } : {}),
       ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
@@ -221,7 +237,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       closed = true;
       await Promise.allSettled([...children.values()].map((child) => child.runtime.close()));
       children.clear();
-      if (ownsStore) store.close();
+      if (ownsStore) await store.close();
     },
   };
   return runtime;

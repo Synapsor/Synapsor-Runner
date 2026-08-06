@@ -200,7 +200,11 @@ fresh secured-loopback `start --from-env` route establishes the development
 authoring profile once. Workbench shows it as read-only status rather than
 asking for another “development/staging/not production” declaration. Established
 manual routes may still provide an explicit profile; missing, unknown,
-production, shared, and remote routes do not gain Scoped Explore.
+shared, and remote routes do not gain Scoped Explore. Production remains off by
+default. An operator may enable it only through the separately attested
+production-Explore profile over secured Streamable HTTP, with verified JWT
+claims, a trusted principal, atomic per-principal privacy budgets, and rate
+limits.
 
 Workbench and `boundary review resource` expose three explicit field tiers:
 
@@ -229,6 +233,21 @@ model-visible fields. Do not describe withheld values as private.
 Raw visibility and aggregate use are separate permissions. A reviewer may
 allow `count_distinct(customer_id)` while keeping every `customer_id` value out
 of results.
+
+For model-visible, non-sensitive categorical fields, Runner may derive a small
+complete value vocabulary from schema metadata: native enum types or simple
+`CHECK field IN (...)` / `field = ANY(...)` constraints. It never samples
+`DISTINCT` row values. Oversized vocabularies are omitted whole rather than
+truncated. The CLI column editor and Workbench **Allowed values** control let an
+operator remove values or disable the vocabulary, but never add values absent
+from the schema declaration. The decision records actor and reason and takes
+effect only after the updated boundary is reviewed and activated.
+
+A present reviewed vocabulary is also an execution allowlist for filters and
+groups. A removed or unknown value is refused before source execution. Disabling
+the vocabulary disables filter and group operations for that field; it does not
+silently reopen free-text filtering. Model-withheld and kept-out fields never
+send their value vocabulary to a model.
 
 Workbench activation requires every generated decision and the operator
 identity. Its single **Activate and ask** action computes, displays as an
@@ -322,9 +341,29 @@ trusted scope. Differencing variants share a root-resource pool over a rolling
 24-hour window, so changing boundaries, crossing UTC midnight, restarting
 Runner, or changing the plan shape cannot reset privacy budgets.
 
-Production still uses protected named capabilities or separate
-project/configuration packs for persona-specific tool surfaces; broad Scoped
-Explore remains local development/staging authority only.
+The human-operated Analytics shell adds a relationship-aware view without
+changing the model-facing tools:
+
+```text
+/catalog
+/catalog --diagram --boundary reviewed_staging
+/catalog --diagram --boundary reviewed_staging --export
+```
+
+Each diagram represents exactly one active boundary. If only one boundary is
+active, `--boundary` may be omitted. With several active boundaries Runner asks
+for the name rather than merging them. Large maps export to a digest-bound
+Markdown file containing a readable relationship map and Mermaid ER diagram.
+Workbench uses the same catalog model and provides the same boundary selector,
+visual relationship graph, suggested cross-table questions, and download. The
+map is generated from activated metadata only; it reads no source rows.
+
+Protected named capabilities remain the default production surface. Flexible
+Scoped Explore may also be served in production only through the explicit,
+attested secured-HTTP mode described in
+[Production Scoped Explore Over HTTP](production-scoped-explore-http.md).
+Without that opt-in and all of its trusted-principal, per-principal budget,
+rate-limit, and transport prerequisites, production Explore remains refused.
 Choose a table with the arrow keys, then choose each column's access explicitly:
 
 - **V - Model + Runner:** reviewed values may appear in Runner's local verified
@@ -750,7 +789,7 @@ value. Protected named reads use the same split and advertise
 
 ## Runtime Enforcement
 
-Scoped Explore is disabled by default and authoring-only. It starts only when
+Scoped Explore is disabled by default. Local authoring Explore starts only when
 all of these are true:
 
 - the trusted launch/configuration context establishes `development` or
@@ -762,13 +801,18 @@ all of these are true:
 - the credential is demonstrably SELECT-only and non-owner;
 - every query also runs in an enforced read-only transaction.
 
-Missing, malformed, unknown, and production profiles are treated as
-production. A superuser, relation owner, write-capable role, `BYPASSRLS` role,
+Missing, malformed, unknown, and production profiles cannot enter the local
+authoring runtime. A superuser, relation owner, write-capable role, `BYPASSRLS` role,
 or unverifiable role may inspect metadata with a warning but cannot read source
 rows through Scoped Explore.
 
-Shared HTTP, Streamable HTTP, remote, and non-loopback runtimes never register
-or advertise broad Explore tools.
+Production Explore is a separate explicit register. It requires a separately
+reviewed production boundary, secured shared Streamable HTTP, asymmetrically
+verified JWT tenant/principal claims, atomic shared-Postgres per-principal and
+tenant accounting, rate limits, current schema/role/generation-lock posture,
+and a startup `--production-explore` opt-in. It exposes the same exact two
+read-only tools and no authoring or activation surface. See
+[Production Scoped Explore Over HTTP](production-scoped-explore-http.md).
 
 ## Audit And Temporary Protect State
 
@@ -906,8 +950,8 @@ corepack pnpm test:host-neutral-example:packed
 The packed gates prove PostgreSQL + Next.js + Prisma + Workbench, ten repeated
 analytical combinations before optional Protect, host-neutral CLI/official-MCP
 parity, structured outputs/catalog pins, denial/suppression/budget checks,
-production Explore absence, protected-capability survival, guarded proposals
-and apply, durable redacted audit, and unchanged source data on every
+production Explore default-off refusal, protected-capability survival, guarded
+proposals and apply, durable redacted audit, and unchanged source data on every
 analytical path. Live PostgreSQL/MySQL relationship gates separately prove
 database parity without claiming MySQL RLS.
 

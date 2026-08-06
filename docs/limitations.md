@@ -1,8 +1,9 @@
 # Limitations
 
 Synapsor Runner is intentionally narrow. It combines deterministic
-whole-application boundary drafting, local authoring-only repeated Explore with
-optional Protect,
+whole-application boundary drafting, local repeated Explore with optional
+Protect, explicit production HTTP Explore under a stricter identity/privacy
+posture,
 guarded writes, opt-in proposal/evidence freshness, verified operator identity,
 default-off supervised execution, and quiet human-attention delivery. Reviewed
 aggregate paths are limited to proven star/depth-two many-to-one relationships,
@@ -69,6 +70,12 @@ enterprise SLA.
   Each plan selects one boundary; overlapping resources require its name and
   cross-boundary joins/unions are unavailable. Session privacy budgets remain
   shared across boundary changes.
+- Explicit production Scoped Explore through the same exact two read-only
+  tools over secured shared Streamable HTTP. It requires a separately reviewed
+  production boundary, mandatory verified tenant/principal JWT claims,
+  per-principal and tenant privacy/rate ceilings, and atomic shared-Postgres
+  accounting. It remains unavailable through static-token, anonymous,
+  cleartext, legacy JSON-RPC, and model-controlled activation paths.
 - Optional development/staging loopback Workbench Ask through OpenAI,
   Anthropic, or a configured OpenAI-compatible endpoint. Provider calls use the
   exact active MCP/runtime surface, explicit direct-egress consent, in-memory
@@ -193,6 +200,9 @@ inspect one bounded shared Postgres ledger across a small fleet. This is still
 not a hosted central evidence service, organization RBAC/SSO, compliance
 retention system, or unbounded search engine. Each bridge operation serializes
 through an advisory lock and fails above configured `max_entries`.
+Production Explore does not route its high-volume query evidence through that
+bridge: it uses a dedicated append-only metadata sink with seven-day retention,
+so analytics traffic cannot consume proposal/writeback ledger capacity.
 
 Only homogeneous 1.x fleet operation is claimed for protocol-v4 compensation
 jobs. Mixed-minor v3/v4 rolling compensation is not claimed.

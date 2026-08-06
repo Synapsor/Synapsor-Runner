@@ -546,6 +546,9 @@ function emitGuidedActionDsl(input: {
   table: TableInfo;
 }): string {
   const { action, boundary, resource, table } = input;
+  if (boundary.trusted_context.provider !== "environment") {
+    throw new Error("Guided write actions are local authoring artifacts and cannot be generated from a production Explore boundary.");
+  }
   const contextName = safeIdentifier(`guided_${safeCapabilityFileName(action.capability_name)}`);
   const lookupArgument = action.lookup_argument || `${singular(resource.table)}_id`;
   const lines = [

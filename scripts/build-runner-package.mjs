@@ -207,6 +207,7 @@ const publicDocs = [
   "oss-vs-cloud.md",
   "prevent-llm-arbitrary-sql.md",
   "production.md",
+  "production-scoped-explore-http.md",
   "reviewed-relationships.md",
   "reviewed-database-views.md",
   "proposal-evidence-freshness.md",

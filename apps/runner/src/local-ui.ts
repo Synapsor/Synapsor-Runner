@@ -72,6 +72,11 @@ import {
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
 import {
+  buildBoundaryCatalogDiagramExports,
+  buildBoundaryCatalogModel,
+  renderBoundaryCatalogMermaid,
+} from "./boundary-catalog.js";
+import {
   consumeGuidedGraduationTip,
   readGuidedOnboardingState,
   resetGuidedOnboardingForBoundaryReview,
@@ -676,6 +681,7 @@ async function handleRequest(input: {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    const boundaryCatalog = buildBoundaryCatalogModel(activeBoundaries);
     const instantCandidate = hasReviewableResource ? instantWorkbenchCandidate(draft) : null;
     const instantFirstValue = instantCandidate
       ? buildInstantFirstValue(instantCandidate)
@@ -684,7 +690,9 @@ async function handleRequest(input: {
     let instantMissingBindings: string[] = [];
     let instantTenantScopeSource: ExploreTrustedScope["tenant_source"] | null = null;
     let instantScopeError: string | null = null;
-    if (instantCandidate && instantResource) {
+    if (instantCandidate
+      && instantResource
+      && instantCandidate.trusted_context.provider === "environment") {
       const configuredTenant = process.env[instantCandidate.trusted_context.tenant_env]?.trim();
       const configuredPrincipal = process.env[instantCandidate.trusted_context.principal_env]?.trim();
       if (instantResource.principal_key && !configuredPrincipal) {
@@ -762,6 +770,9 @@ async function handleRequest(input: {
       boundary_library: boundaryLibrary,
       active,
       active_boundaries: activeBoundaries,
+      boundary_catalog: boundaryCatalog,
+      boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
+      boundary_diagrams: buildBoundaryCatalogDiagramExports(boundaryCatalog),
       journey: await readGuidedOnboardingState(projectRoot),
       operator_identity: instantActivationActor(),
       operator_identity_mode: "dev_env",
@@ -2225,6 +2236,10 @@ async function handleRequest(input: {
     const body = await readJsonBody(request);
     const activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
     const active = activeBoundaries.at(-1)!;
+    if (active.trusted_context.provider !== "environment") {
+      sendJson(response, 409, { ok: false, error: "Production HTTP claim scope cannot be changed in the local Workbench." });
+      return;
+    }
     const principalRequired = activeBoundaries.some((boundary) =>
       boundary.pack.resources.some((resource) => Boolean(resource.principal_key)));
     const tenant = active.trusted_context.database_role_tenant
@@ -2269,6 +2284,9 @@ async function handleRequest(input: {
       const principalRequired = runtimeBoundaries.some((boundary) =>
         boundary.pack.resources.some((resource) =>
           typeof resource.principal_key === "string" && resource.principal_key.length > 0));
+      if (runtime.boundary.trusted_context.provider !== "environment") {
+        throw new Error("The local Workbench cannot bind production HTTP claim scope.");
+      }
       const tenantScope = runtime.trusted_scope?.tenant ?? {
         source: "environment" as const,
         binding: runtime.boundary.trusted_context.tenant_env,
@@ -2572,6 +2590,12 @@ async function handleRequest(input: {
     }
     let gateway: AskToolGateway | undefined;
     try {
+      const activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot)
+        .catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+          throw error;
+        });
+      const boundaryCatalog = buildBoundaryCatalogModel(activeBoundaries);
       gateway = await askGatewayFactory({
         configPath,
         storePath,
@@ -2602,6 +2626,9 @@ async function handleRequest(input: {
         active_boundary_digest: authority.active_boundary_digest,
         active_boundary_set_digest: authority.active_boundary_set_digest,
         active_boundary_digests: authority.active_boundary_digests,
+        boundary_catalog: boundaryCatalog,
+        boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
+        boundary_diagrams: buildBoundaryCatalogDiagramExports(boundaryCatalog),
         runtime_config_digest: authority.runtime_config_digest,
         authority_matches_consent: session.configuration?.authority_digest === authorityDigest,
         tools: tools.map((tool) => ({
@@ -7831,6 +7858,15 @@ function managedReviewMutationRequest(
           : { allow_reviewed_fields: [decision.field] }),
     };
   }
+  if (decision.kind === "field_enum") {
+    return {
+      ...common,
+      field_enum: {
+        field: decision.field,
+        values: [...decision.values],
+      },
+    };
+  }
   if (decision.kind === "row_identity") {
     return { ...common, include: true, row_identity: decision.value };
   }
@@ -7876,6 +7912,26 @@ function applyManagedBoundaryReviewDecision(
         decided_at: decidedAt,
       },
     };
+  } else if (kind === "field_enum") {
+    const field = requiredReviewText(body.field, "field");
+    if (!Array.isArray(body.values)
+      || body.values.length > 64
+      || body.values.some((value) => typeof value !== "string" || [...value].length > 64)
+      || new Set(body.values).size !== body.values.length
+      || Buffer.byteLength(JSON.stringify(body.values), "utf8") > 2_048) {
+      throw new Error(
+        "field_enum review requires at most 64 unique values, at most 64 characters each and 2048 bytes total.",
+      );
+    }
+    resource.field_enums = {
+      ...(resource.field_enums ?? {}),
+      [field]: {
+        values: body.values.map(String),
+        actor,
+        reason,
+        decided_at: decidedAt,
+      },
+    };
   } else if (kind === "row_identity" || kind === "tenant_key") {
     const decision = {
       value: requiredReviewText(body.value, "value"),
@@ -7904,7 +7960,7 @@ function applyManagedBoundaryReviewDecision(
     }
   } else {
     throw new Error(
-      "Managed boundary review kind must be field_exposure, row_identity, tenant_key, principal_key, or minimum_cohort.",
+      "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, principal_key, or minimum_cohort.",
     );
   }
 
@@ -7917,7 +7973,8 @@ function requiredReviewText(value: unknown, label: string): string {
   return value.trim();
 }
 
-function trustedScopeLabel(source: "environment" | "postgres_role_setting", binding: string): string {
+function trustedScopeLabel(source: "environment" | "postgres_role_setting" | "verified_http_claim", binding: string): string {
+  if (source === "verified_http_claim") return `verified HTTP claim ${binding}`;
   return source === "postgres_role_setting"
     ? `the read-only database credential (${binding})`
     : `the operator environment (${binding})`;

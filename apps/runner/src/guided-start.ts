@@ -14,6 +14,8 @@ import { recordOwnDataActivationTiming } from "./activation-report.js";
 import {
   buildAutoBoundary,
   compareGenerationLock,
+  generationLockRemediation,
+  generationLockRemediationCommand,
   loadStructuredProjectEvidence,
   writeAutoBoundaryArtifacts,
   type ExplorationBudgets,
@@ -137,14 +139,6 @@ export async function start(
   }
   if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
     if (args.length > 0) {
-      if (!process.stdin.isTTY && !isScriptedOnboardingArgs(args)) {
-        const sourceEnv = optionalArg(args, "--from-env") ?? "DATABASE_URL";
-        throw new Error(
-          `Fresh Auto Boundary onboarding requires an interactive terminal. ` +
-          `For automation, use --from-env ${sourceEnv} with --table <table> and --yes, ` +
-          `or pass --answers <answers.json>.`,
-        );
-      }
       const openWorkbench = process.stdin.isTTY && process.stdout.isTTY && !args.includes("--no-open") && !args.includes("--dry-run");
       return onboard(["db", ...args, ...(openWorkbench && !args.includes("--open-ui") ? ["--open-ui"] : [])]);
     }
@@ -282,6 +276,35 @@ async function startAutoBoundary(
   const sourceEnv = optionalArg(args, "--from-env");
   if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
   const project = await detectProjectContext(process.cwd());
+  const regenerateInstantBoundary: NonNullable<InstantCliBoundaryActivationInput["regenerateBoundary"]> =
+    async ({ inspection, draft, lock }) => {
+      const evidence = await loadStructuredProjectEvidence(project);
+      const regenerated = buildAutoBoundary({
+        inspection,
+        project,
+        parsedEvidence: evidence.parsed,
+        existingContracts: evidence.existingContracts,
+        sourceEnv: lock.source_env,
+        sourceName: draft.source,
+        inspectedSchema: lock.inspected_schema,
+        deploymentProfile: draft.deployment_profile,
+      });
+      await writeAutoBoundaryArtifacts({
+        projectRoot: project.root,
+        build: regenerated,
+        force: true,
+      });
+      await resetGuidedOnboardingForBoundaryReview({
+        projectRoot: project.root,
+        schemaFingerprint: regenerated.lock.schema_fingerprint,
+        rolePostureFingerprint: regenerated.lock.role_posture_fingerprint,
+      });
+      return {
+        draft: regenerated.exploration_boundary,
+        lock: regenerated.lock,
+        inspection,
+      };
+    };
   const verbose = args.includes("--verbose");
   if (verbose) writeGuidedOutput(formatProjectDetection(project));
   const existingJourney = await readGuidedOnboardingState(project.root);
@@ -328,6 +351,7 @@ async function startAutoBoundary(
           draft: context.draft,
           lock: context.lock,
           schemaInspector,
+          regenerateBoundary: regenerateInstantBoundary,
         });
         if (instant.accepted) {
           return runPostActivationHandoff({
@@ -336,6 +360,7 @@ async function startAutoBoundary(
             consentOnFirstQuestion: true,
           });
         }
+        if (instant.reason === "operator_cancelled") return 0;
       }
       return runBoundaryReview(
         ["--project-root", project.root, "--access"],
@@ -431,6 +456,7 @@ async function startAutoBoundary(
       lock: build.lock,
       schemaInspector,
       initialInspection: inspection,
+      regenerateBoundary: regenerateInstantBoundary,
     });
     if (instant.accepted) {
       return runPostActivationHandoff({
@@ -584,10 +610,29 @@ export async function boundaryCommand(
   if (subcommand === "delete") return boundaryDeleteCommand(rest);
   if (subcommand === "disable") return boundaryDisableCommand(rest);
   if (subcommand === "draft") {
-    assertKnownOptions(rest, new Set(["--from-env", "--engine", "--schema", "--project-root", "--force", "--json"]), "boundary draft");
+    assertKnownOptions(rest, new Set([
+      "--from-env", "--engine", "--schema", "--project-root", "--force", "--json",
+      "--profile", "--tenant-claim", "--principal-claim",
+    ]), "boundary draft");
     const sourceEnv = optionalArg(rest, "--from-env")
       ?? (envValue(process.env, "DATABASE_URL") ? "DATABASE_URL" : undefined);
     if (!sourceEnv) throw new Error("boundary draft requires an exported DATABASE_URL or --from-env <DATABASE_URL_ENV_NAME>.");
+    const deploymentProfile = optionalArg(rest, "--profile") ?? "staging";
+    if (deploymentProfile !== "development" && deploymentProfile !== "staging" && deploymentProfile !== "production") {
+      throw new Error("boundary draft --profile must be development, staging, or production.");
+    }
+    const tenantClaim = optionalArg(rest, "--tenant-claim");
+    const principalClaim = optionalArg(rest, "--principal-claim");
+    if (deploymentProfile === "production") {
+      if (!tenantClaim || !principalClaim) {
+        throw new Error("A production Explore boundary requires --tenant-claim <claim> and --principal-claim <claim> from verified HTTP JWTs.");
+      }
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tenantClaim) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(principalClaim)) {
+        throw new Error("Production Explore tenant and principal claims must be safe top-level JWT claim names.");
+      }
+    } else if (tenantClaim || principalClaim) {
+      throw new Error("--tenant-claim and --principal-claim are only valid with --profile production.");
+    }
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const project = await detectProjectContext(projectRoot);
     const inspection = await schemaInspector({
@@ -604,10 +649,16 @@ export async function boundaryCommand(
       existingContracts: evidence.existingContracts,
       sourceEnv,
       inspectedSchema: optionalArg(rest, "--schema"),
+      deploymentProfile,
+      ...(deploymentProfile === "production"
+        ? { httpClaims: { tenantClaim: tenantClaim!, principalClaim: principalClaim! } }
+        : {}),
     });
     const existingJourney = await readGuidedOnboardingState(projectRoot);
     const existingProject = await resolveSynapsorProject(projectRoot, process.env);
-    const shouldInitializeProject = !existingJourney && !existingProject?.config_path;
+    const shouldInitializeProject = deploymentProfile !== "production"
+      && !existingJourney
+      && !existingProject?.config_path;
     if (shouldInitializeProject) {
       await preflightGuidedProjectInitialization(projectRoot);
     }
@@ -619,7 +670,7 @@ export async function boundaryCommand(
         build,
         force: rest.includes("--force"),
       });
-      if (shouldInitializeProject || existingJourney) {
+      if (deploymentProfile !== "production" && (shouldInitializeProject || existingJourney)) {
         guided = await initializeGuidedProject({
           projectRoot,
           build,
@@ -627,7 +678,7 @@ export async function boundaryCommand(
           instantOnboarding: true,
         });
       }
-      if (existingJourney) {
+      if (deploymentProfile !== "production" && existingJourney) {
         await resetGuidedOnboardingForBoundaryReview({
           projectRoot,
           schemaFingerprint: build.lock.schema_fingerprint,
@@ -653,20 +704,33 @@ export async function boundaryCommand(
       ...(storePath ? [`--store ${shellQuote(displayPath(storePath))}`] : []),
       "--open",
     ].join(" ");
+    const productionConfigCommand = deploymentProfile === "production" && !configPath
+      ? [
+        `${cliCommandName()} config init --production-explore`,
+        `--project-root ${shellQuote(displayedProjectRoot)}`,
+        `--output ${shellQuote(displayPath(path.join(projectRoot, "synapsor.runner.json")))}`,
+        "--issuer https://identity.example",
+        "--audience https://runner.example/mcp",
+        "--accounting-namespace your_org.analytics.production",
+      ].join(" ")
+      : undefined;
     if (rest.includes("--json")) {
       process.stdout.write(`${JSON.stringify({
         ok: true,
         activation: "disabled_unreviewed",
+        deployment_profile: deploymentProfile,
         ...result,
         guided_project_created: guided?.created ?? false,
         ...(configPath ? { config_path: configPath } : {}),
         ...(storePath ? { store_path: storePath } : {}),
         next_action: reviewCommand,
+        ...(productionConfigCommand ? { runtime_config_next_action: productionConfigCommand } : {}),
         visual_alternative: workbenchCommand,
       }, null, 2)}\n`);
     } else {
       process.stdout.write([
         `Generated disabled Auto Boundary draft at ${displayPath(result.root)}.`,
+        `Profile: ${deploymentProfile}.`,
         "State: disabled draft. Active Runner tools are unchanged.",
         ...(guided?.created
           ? [
@@ -677,6 +741,15 @@ export async function boundaryCommand(
         "",
         "Next: review it in this terminal:",
         `  ${reviewCommand}`,
+        ...(productionConfigCommand
+          ? [
+            "",
+            "Then generate the secured production runtime config:",
+            "  Replace the example issuer, audience, and accounting namespace with your deployment values.",
+            `  ${productionConfigCommand}`,
+            "  Runner reuses the reviewed source and JWT claim names from this draft; no secret values are written.",
+          ]
+          : []),
         "",
         "Visual alternative:",
         `  ${workbenchCommand}`,
@@ -697,10 +770,23 @@ export async function boundaryCommand(
       env: process.env,
     });
     const comparison = compareGenerationLock(lock, inspection);
-    if (rest.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: comparison.current, ...comparison }, null, 2)}\n`);
+    const remediationCommand = comparison.current
+      ? undefined
+      : generationLockRemediationCommand(lock);
+    if (rest.includes("--json")) process.stdout.write(`${JSON.stringify({
+      ok: comparison.current,
+      ...comparison,
+      ...(remediationCommand ? { remediation_command: remediationCommand } : {}),
+    }, null, 2)}\n`);
     else process.stdout.write(comparison.current
       ? "Generation lock matches the current schema and database-role posture.\n"
-      : `Generation lock is stale:\n${comparison.changes.map((change) => `  - ${change}`).join("\n")}\n`);
+      : [
+        "Generation lock is stale:",
+        comparison.changes.map((change) => `  - ${change}`).join("\n"),
+        "",
+        generationLockRemediation(lock),
+        "",
+      ].join("\n"));
     return comparison.current ? 0 : 1;
   }
   if (subcommand === "status") {
@@ -955,22 +1041,24 @@ export async function onboard(args: string[]): Promise<number> {
   const outputPath = outputArg(initArgs) ?? "synapsor.runner.json";
   const storePath = optionalArg(initArgs, "--store") ?? "./.synapsor/local.db";
   const scripted = isScriptedOnboardingArgs(initArgs);
-  const result = scripted ? await init(["--non-interactive", ...initArgs]) : await runInitWizard(["--wizard", ...initArgs]);
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && !scripted;
+  if (!interactive) await assertCompleteNonInteractiveOnboardingInput(initArgs, outputPath);
+  const result = interactive
+    ? await runInitWizard(["--wizard", ...initArgs])
+    : await init(["--non-interactive", ...initArgs]);
   if (result !== 0) return result;
   if (rest.includes("--dry-run")) return 0;
   process.stdout.write("\nValidation:\n");
   const configCode = await configValidate(["--config", outputPath]);
   const smokeCode = await mcpSmoke(["--config", outputPath, "--store", storePath]);
-  process.stdout.write("Doctor:\n");
-  const doctorCode = await doctor(["--config", outputPath]);
-  if (doctorCode !== 0) {
-    process.stdout.write("Doctor reported setup attention. This is expected if trusted context or writeback env vars are not set yet.\n");
-  }
+  process.stdout.write("Setup check:\n");
+  const doctorCode = await doctor(["--config", outputPath, "--setup"]);
   process.stdout.write("\nNext commands:\n");
-  process.stdout.write(`1. Serve MCP:\n   ${cliCommandName()} mcp serve --config ${outputPath} --store ${storePath}\n`);
-  process.stdout.write(`2. Open local UI:\n   ${cliCommandName()} ui --open --tour --config ${outputPath} --store ${storePath}\n`);
-  process.stdout.write("3. Approve/apply only after setting a trusted write credential and reviewing the proposal.\n");
-  const ready = configCode === 0 && smokeCode === 0;
+  process.stdout.write("1. Set any environment variables listed under Setup check from .env.example.\n");
+  process.stdout.write(`2. Serve MCP:\n   ${cliCommandName()} mcp serve --config ${outputPath} --store ${storePath}\n`);
+  process.stdout.write(`3. Open local UI:\n   ${cliCommandName()} ui --open --tour --config ${outputPath} --store ${storePath}\n`);
+  process.stdout.write("4. Approve/apply only after setting a trusted write credential and reviewing the proposal.\n");
+  const ready = configCode === 0 && smokeCode === 0 && doctorCode === 0;
   if (ready) {
     await recordOwnDataActivationTiming({
       manifestPath: path.join(path.dirname(path.resolve(outputPath)), ".synapsor/onboarding.json"),
@@ -983,4 +1071,92 @@ export async function onboard(args: string[]): Promise<number> {
     return ui(["--open", "--tour", "--config", outputPath, "--store", storePath]);
   }
   return 0;
+}
+
+
+async function assertCompleteNonInteractiveOnboardingInput(
+  args: string[],
+  outputPath: string,
+): Promise<void> {
+  if (optionalArg(args, "--answers") || optionalArg(args, "--spec")) return;
+  const missing: string[] = [];
+  const mode = optionalArg(args, "--mode");
+  const operation = optionalArg(args, "--operation") ?? "update";
+  const writeback = optionalArg(args, "--writeback") ?? "sql_update";
+  if (!optionalArg(args, "--table")) missing.push("--table <schema.table>");
+  if (!mode) missing.push("--mode read_only|shadow|review");
+  if (!optionalArg(args, "--tenant-key")
+    && !optionalArg(args, "--tenant-column")
+    && !args.includes("--single-tenant-dev")) {
+    missing.push("--tenant-key <column> or --single-tenant-dev");
+  }
+  const hasPatch = ["--patch", "--patch-fixed", "--patch-from-arg"]
+    .some((flag) => optionalArg(args, flag) !== undefined);
+  if (mode && mode !== "read_only" && operation !== "delete" && !hasPatch) {
+    missing.push("--patch <column=arg:name|fixed:value> for shadow/review writes");
+  }
+  if (mode && mode !== "read_only" && (operation === "update" || operation === "delete")
+    && !optionalArg(args, "--conflict-column")) {
+    missing.push(`--conflict-column <column> for ${operation.toUpperCase()}`);
+  }
+  if (mode && mode !== "read_only" && operation === "insert" && !optionalArg(args, "--dedup")) {
+    missing.push("--dedup <column=proposal_id,...> for INSERT");
+  }
+  if (mode === "review" && writeback === "sql_update" && !optionalArg(args, "--write-url-env")) {
+    missing.push("--write-url-env <ENV_NAME> for direct SQL writeback");
+  }
+  if (mode === "review" && writeback === "http_handler" && !optionalArg(args, "--handler-url-env")) {
+    missing.push("--handler-url-env <ENV_NAME> for HTTP handler writeback");
+  }
+  if (mode === "review" && writeback === "command_handler" && !optionalArg(args, "--handler-command-env")) {
+    missing.push("--handler-command-env <ENV_NAME> for command handler writeback");
+  }
+  if (mode === "review" && writeback === "sql_update" && operation === "update"
+    && optionalArg(args, "--receipt-mode") === "runner_ledger"
+    && !optionalArg(args, "--version-advance")) {
+    missing.push("--version-advance integer_increment|database_generated for runner-ledger UPDATE");
+  }
+  if (mode === "review" && !args.includes("--yes")) {
+    missing.push("--yes after reviewing the generated write authority");
+  }
+  if (!args.includes("--dry-run")
+    && !args.includes("--force")
+    && await fileExists(path.resolve(outputPath))) {
+    missing.push(`--force to replace the existing ${displayPath(path.resolve(outputPath))}`);
+  }
+  if (missing.length === 0) return;
+  const sourceEnv = optionalArg(args, "--from-env") ?? "DATABASE_URL";
+  const canonicalWriteOperation = operation === "insert" || operation === "delete"
+    ? operation
+    : "update";
+  const canonicalWriteRecipe = canonicalReviewAutomationRecipe(sourceEnv, canonicalWriteOperation);
+  throw new Error([
+    "Non-interactive own-database setup needs all review decisions in one command.",
+    "Missing:",
+    ...missing.map((item) => `  - ${item}`),
+    "",
+    "Run from an interactive terminal without --yes/--non-interactive to be prompted instead.",
+    mode && mode !== "read_only"
+      ? `Canonical review-mode ${canonicalWriteOperation.toUpperCase()} automation:`
+      : "Canonical read-only automation:",
+    mode && mode !== "read_only"
+      ? `  ${canonicalWriteRecipe}`
+      : `  ${cliCommandName()} onboard db --from-env ${sourceEnv} --table public.orders --mode read_only --tenant-key tenant_id --yes --no-open`,
+    "Use --force only after reviewing the generated files that would be replaced.",
+  ].join("\n"));
+}
+
+
+function canonicalReviewAutomationRecipe(
+  sourceEnv: string,
+  operation: "update" | "insert" | "delete",
+): string {
+  const common = `${cliCommandName()} onboard db --from-env ${sourceEnv} --table public.orders --mode review --operation ${operation} --tenant-key tenant_id`;
+  if (operation === "insert") {
+    return `${common} --patch status=arg:status --dedup request_id=proposal_id,tenant_id=trusted_tenant --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open`;
+  }
+  if (operation === "delete") {
+    return `${common} --conflict-column version --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open`;
+  }
+  return `${common} --conflict-column version --patch status=arg:status --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open`;
 }

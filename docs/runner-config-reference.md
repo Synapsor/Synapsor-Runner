@@ -37,6 +37,7 @@ Unknown keys fail when `strict` is true (the default).
 | `operator_identity` | No | Verified operator identity and apply-role wiring for approve/reject/apply. |
 | `session_auth` | HTTP claims | HS256 development or asymmetric RS256/ES256 session-token verification. |
 | `http_security` | Networked HTTP | Deployment profile, protected channel, endpoint-token env names, OAuth protected-resource metadata, exact Origin/Host policy, and request/session bounds. |
+| `production_explore` | Opt-in production analytics | Separately reviewed production-boundary root, required OAuth scope, opaque shared accounting, source/session ceilings, and tenant-wide limits. |
 | `rate_limits` | No | Operational fixed-window limits; fleet-wide only with shared `runtime_store`. |
 | `metrics` | No | Separately authorized scrapeable HTTP metrics. Disabled by default. |
 | `graduated_trust` | No | Off-by-default, operator-only policy recommendation criteria and kill switch. |
@@ -132,6 +133,48 @@ configured schema must already contain `ledger_entries`, `proposal_locks`,
 `worker_leases`, and `rate_limit_buckets`. Doctor reports env var names and
 table readiness only; it does
 not print database URLs or create the schema.
+
+## Production Explore
+
+`production_explore` is an explicit deployment-only opt-in. It does not widen a
+portable contract or convert a development boundary into production authority.
+
+- `project_root`: local path containing separately reviewed active production
+  boundary artifacts.
+- `required_oauth_scope`: scope every verified session token must grant; it
+  must also appear in `http_security.oauth_resource.required_scopes`.
+- `budget_hmac_key_env`: environment variable containing at least 32 bytes of
+  randomly generated shared secret material used only to create opaque stable
+  accounting keys. A 32-character hex string contains only 16 bytes and is
+  rejected; generate 32 random bytes and encode them as base64url instead.
+- `accounting_namespace`: stable non-secret deployment name shared by every
+  replica.
+- `source_max_connections`: optional process-wide source pool ceiling shared by
+  every production Explore session; defaults to `8`.
+- `max_sessions_per_principal`: optional concurrent MCP-session ceiling for one
+  verified tenant/principal pair; defaults to `4`.
+- `tenant_limits`: rolling 24-hour query, extracted-cell, differencing, and
+  one-minute rate ceilings across every principal in a tenant. Per-principal
+  ceilings remain bound into each reviewed boundary. Optional
+  `max_response_cells_per_response` sets a stricter tenant-wide response cap;
+  when omitted, each response inherits its selected boundary's reviewed cap.
+
+Generate this configuration with `synapsor-runner config init
+--production-explore`; an existing production boundary draft supplies the
+reviewed source and claim names. Issuer, audience, and accounting namespace are
+required explicit inputs. The generated file contains no credentials or secret
+values.
+
+Production Explore defaults the HTTP session idle timeout to 120 seconds unless
+`http_security.limits.session_idle_timeout_seconds` is explicitly configured.
+The source pool is per Runner process, so fleet connection planning must account
+for the maximum replica count.
+
+It additionally requires `storage.shared_postgres.mode = runtime_store`,
+asymmetric `session_auth`, `trusted_context.provider = http_claims`, shared HTTP,
+TLS or a trusted TLS proxy, and an active production boundary with matching
+claim names and source lock. See [Production Scoped Explore Over
+HTTP](production-scoped-explore-http.md).
 
 ## Sources
 

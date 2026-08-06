@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import mysql from "mysql2/promise";
 import { Pool } from "pg";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -16,6 +17,292 @@ export {
 
 export type SourceEngine = "postgres" | "mysql";
 export type InspectEngine = SourceEngine | "auto";
+
+const MAX_SCHEMA_ENUM_VALUES = 64;
+const MAX_SCHEMA_ENUM_VALUE_CHARACTERS = 64;
+const MAX_SCHEMA_ENUM_SERIALIZED_BYTES = 2_048;
+
+type SqlMetadataToken = {
+  kind: "word" | "identifier" | "string" | "symbol";
+  value: string;
+};
+
+export function deriveSchemaDeclaredEnumValues(input: {
+  engine: SourceEngine;
+  column_name: string;
+  column_type?: string;
+  native_values?: string[] | null;
+  check_definitions?: string[];
+}): string[] | undefined {
+  const declaredSets: string[][] = [];
+  if (input.native_values?.length) declaredSets.push(input.native_values.map(String));
+  if (input.engine === "mysql" && input.column_type) {
+    const nativeMysqlValues = parseMysqlEnumOrSet(input.column_type);
+    if (nativeMysqlValues) declaredSets.push(nativeMysqlValues);
+  }
+  for (const definition of input.check_definitions ?? []) {
+    const values = parseSimpleMembershipCheck(definition, input.column_name);
+    if (values) declaredSets.push(values);
+  }
+  if (!declaredSets.length) return undefined;
+
+  let values = unique(declaredSets[0]!);
+  for (const declared of declaredSets.slice(1)) {
+    const allowed = new Set(declared);
+    values = values.filter((value) => allowed.has(value));
+  }
+  if (!values.length || values.length > MAX_SCHEMA_ENUM_VALUES) return undefined;
+  if (values.some((value) => [...value].length > MAX_SCHEMA_ENUM_VALUE_CHARACTERS)) {
+    return undefined;
+  }
+  if (Buffer.byteLength(JSON.stringify(values), "utf8") > MAX_SCHEMA_ENUM_SERIALIZED_BYTES) {
+    return undefined;
+  }
+  return values;
+}
+
+function parseMysqlEnumOrSet(columnType: string): string[] | undefined {
+  const tokens = tokenizeSqlMetadata(columnType);
+  if (!tokens?.length || tokens[0]?.kind !== "word") return undefined;
+  const kind = tokens[0].value.toLowerCase();
+  if (kind !== "enum" && kind !== "set") return undefined;
+  const members = parseStringList(tokens.slice(1));
+  if (!members?.length) return undefined;
+  if (kind === "enum") return members;
+
+  const combinationCount = 2 ** members.length;
+  if (!Number.isSafeInteger(combinationCount) || combinationCount > MAX_SCHEMA_ENUM_VALUES) {
+    return undefined;
+  }
+  return Array.from({ length: combinationCount }, (_, mask) => members
+    .filter((_member, index) => (mask & (1 << index)) !== 0)
+    .join(","));
+}
+
+function parseSimpleMembershipCheck(
+  definition: string,
+  expectedColumn: string,
+): string[] | undefined {
+  let tokens = tokenizeSqlMetadata(definition);
+  if (!tokens?.length) return undefined;
+  if (tokens[0]?.kind === "word" && tokens[0].value.toLowerCase() === "check") {
+    tokens = stripExactOuterPair(tokens.slice(1), "(", ")");
+    if (!tokens) return undefined;
+  }
+  tokens = stripOuterParentheses(tokens);
+
+  const inIndex = findTopLevelToken(tokens, (token) =>
+    token.kind === "word" && token.value.toLowerCase() === "in");
+  if (inIndex > 0) {
+    if (!isColumnOperand(tokens.slice(0, inIndex), expectedColumn)) return undefined;
+    return parseStringList(tokens.slice(inIndex + 1));
+  }
+
+  const equalsIndex = findTopLevelToken(tokens, (token) =>
+    token.kind === "symbol" && token.value === "=");
+  if (equalsIndex <= 0 || !isColumnOperand(tokens.slice(0, equalsIndex), expectedColumn)) {
+    return undefined;
+  }
+  const right = tokens.slice(equalsIndex + 1);
+  if (right[0]?.kind !== "word" || right[0].value.toLowerCase() !== "any") {
+    return undefined;
+  }
+  let arrayExpression = stripExactOuterPair(right.slice(1), "(", ")");
+  if (!arrayExpression) return undefined;
+  arrayExpression = stripCastsAndParentheses(arrayExpression);
+  if (arrayExpression[0]?.kind !== "word"
+    || arrayExpression[0].value.toLowerCase() !== "array") {
+    return undefined;
+  }
+  return parseStringList(arrayExpression.slice(1), "[", "]");
+}
+
+function tokenizeSqlMetadata(value: string): SqlMetadataToken[] | undefined {
+  const tokens: SqlMetadataToken[] = [];
+  for (let index = 0; index < value.length;) {
+    const character = value[index]!;
+    if (/\s/.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (character === "'") {
+      let parsed = "";
+      let closed = false;
+      index += 1;
+      while (index < value.length) {
+        const next = value[index]!;
+        if (next === "'" && value[index + 1] === "'") {
+          parsed += "'";
+          index += 2;
+          continue;
+        }
+        if (next === "'") {
+          index += 1;
+          closed = true;
+          break;
+        }
+        if (next === "\\" && index + 1 < value.length) {
+          parsed += value[index + 1]!;
+          index += 2;
+          continue;
+        }
+        parsed += next;
+        index += 1;
+      }
+      if (!closed) return undefined;
+      tokens.push({ kind: "string", value: parsed });
+      continue;
+    }
+    if (character === '"' || character === "`") {
+      const quote = character;
+      let parsed = "";
+      let closed = false;
+      index += 1;
+      while (index < value.length) {
+        const next = value[index]!;
+        if (next === quote && value[index + 1] === quote) {
+          parsed += quote;
+          index += 2;
+          continue;
+        }
+        if (next === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        parsed += next;
+        index += 1;
+      }
+      if (!closed) return undefined;
+      tokens.push({ kind: "identifier", value: parsed });
+      continue;
+    }
+    if (character === ":" && value[index + 1] === ":") {
+      tokens.push({ kind: "symbol", value: "::" });
+      index += 2;
+      continue;
+    }
+    if ("()[],=".includes(character)) {
+      tokens.push({ kind: "symbol", value: character });
+      index += 1;
+      continue;
+    }
+    const word = /^[A-Za-z_][A-Za-z0-9_$]*/.exec(value.slice(index));
+    if (!word) return undefined;
+    tokens.push({ kind: "word", value: word[0] });
+    index += word[0].length;
+  }
+  return tokens;
+}
+
+function parseStringList(
+  tokens: SqlMetadataToken[],
+  open = "(",
+  close = ")",
+): string[] | undefined {
+  const inner = stripExactOuterPair(tokens, open, close);
+  if (!inner) return undefined;
+  const items = splitTopLevelTokens(inner, ",");
+  if (!items?.length) return undefined;
+  const values: string[] = [];
+  for (const item of items) {
+    let literal = stripCastsAndParentheses(item);
+    if (literal.length === 2
+      && literal[0]?.kind === "word"
+      && literal[0].value.startsWith("_")
+      && literal[1]?.kind === "string") {
+      literal = literal.slice(1);
+    }
+    if (literal.length !== 1 || literal[0]?.kind !== "string") return undefined;
+    values.push(literal[0].value);
+  }
+  return values;
+}
+
+function isColumnOperand(tokens: SqlMetadataToken[], expectedColumn: string): boolean {
+  const operand = stripCastsAndParentheses(tokens);
+  return operand.length === 1
+    && (operand[0]?.kind === "word" || operand[0]?.kind === "identifier")
+    && operand[0].value.toLowerCase() === expectedColumn.toLowerCase();
+}
+
+function stripCastsAndParentheses(tokens: SqlMetadataToken[]): SqlMetadataToken[] {
+  let current = stripOuterParentheses(tokens);
+  while (true) {
+    const castIndex = findTopLevelToken(current, (token) =>
+      token.kind === "symbol" && token.value === "::");
+    if (castIndex < 0) return current;
+    current = stripOuterParentheses(current.slice(0, castIndex));
+  }
+}
+
+function stripOuterParentheses(tokens: SqlMetadataToken[]): SqlMetadataToken[] {
+  let current = tokens;
+  while (true) {
+    const inner = stripExactOuterPair(current, "(", ")");
+    if (!inner) return current;
+    current = inner;
+  }
+}
+
+function stripExactOuterPair(
+  tokens: SqlMetadataToken[],
+  open: string,
+  close: string,
+): SqlMetadataToken[] | undefined {
+  if (tokens[0]?.value !== open || tokens.at(-1)?.value !== close) return undefined;
+  let depth = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index]?.value === open) depth += 1;
+    if (tokens[index]?.value === close) depth -= 1;
+    if (depth < 0 || (depth === 0 && index !== tokens.length - 1)) return undefined;
+  }
+  return depth === 0 ? tokens.slice(1, -1) : undefined;
+}
+
+function findTopLevelToken(
+  tokens: SqlMetadataToken[],
+  predicate: (token: SqlMetadataToken) => boolean,
+): number {
+  let parentheses = 0;
+  let brackets = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token.value === "(") parentheses += 1;
+    else if (token.value === ")") parentheses -= 1;
+    else if (token.value === "[") brackets += 1;
+    else if (token.value === "]") brackets -= 1;
+    else if (parentheses === 0 && brackets === 0 && predicate(token)) return index;
+    if (parentheses < 0 || brackets < 0) return -1;
+  }
+  return -1;
+}
+
+function splitTopLevelTokens(
+  tokens: SqlMetadataToken[],
+  separator: string,
+): SqlMetadataToken[][] | undefined {
+  const output: SqlMetadataToken[][] = [];
+  let start = 0;
+  let parentheses = 0;
+  let brackets = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token.value === "(") parentheses += 1;
+    else if (token.value === ")") parentheses -= 1;
+    else if (token.value === "[") brackets += 1;
+    else if (token.value === "]") brackets -= 1;
+    else if (token.value === separator && parentheses === 0 && brackets === 0) {
+      if (index === start) return undefined;
+      output.push(tokens.slice(start, index));
+      start = index + 1;
+    }
+    if (parentheses < 0 || brackets < 0) return undefined;
+  }
+  if (parentheses !== 0 || brackets !== 0 || start === tokens.length) return undefined;
+  output.push(tokens.slice(start));
+  return output;
+}
 
 export type ColumnInfo = {
   name: string;
@@ -866,6 +1153,26 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        ORDER BY table_schema, table_name, index_name`,
       [schemaParam, schemaParam],
     );
+    let checkRows: mysql.RowDataPacket[] = [];
+    try {
+      const [rows] = await connection.query<mysql.RowDataPacket[]>(
+        `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name,
+                tc.constraint_name AS name, cc.check_clause AS definition
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.check_constraints cc
+           ON cc.constraint_schema = tc.constraint_schema
+          AND cc.constraint_name = tc.constraint_name
+         WHERE tc.constraint_type = 'CHECK'
+           AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+           AND (? IS NULL OR tc.table_schema = ?)
+         ORDER BY tc.table_schema, tc.table_name, tc.constraint_name`,
+        [schemaParam, schemaParam],
+      );
+      checkRows = rows;
+    } catch {
+      // Older MySQL-compatible servers do not expose CHECK_CONSTRAINTS.
+      // Native ENUM/SET metadata remains available through COLUMN_TYPE.
+    }
     const [grantRows] = await connection.query<mysql.RowDataPacket[]>("SHOW GRANTS FOR CURRENT_USER");
     const mysqlGrants = mysqlGrantPosture(
       grantRows.map((row) => String(Object.values(row)[0] ?? "")),
@@ -913,6 +1220,7 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       })),
       triggers: triggerRows as RawTrigger[],
       rowSecurity: [],
+      checks: checkRows as RawCheckConstraint[],
       relationRolePosture,
     });
   } catch (error) {
@@ -1016,9 +1324,19 @@ function normalizeInspection(input: {
   const tables = input.tables.map((raw): TableInfo => {
     const key = tableKey(raw.schema, raw.name);
     const rawColumns = columnsByTable.get(key) ?? [];
+    const tableChecks = checksByTable.get(key) ?? [];
     const primary_key = constraintColumns(keysByTable.get(key) ?? [], "PRIMARY KEY")[0]?.columns ?? [];
     const unique_constraints = constraintColumns(keysByTable.get(key) ?? [], "UNIQUE");
-    const columns = rawColumns.map((column) => normalizeColumn(column, primary_key));
+    const columns = rawColumns.map((column) => normalizeColumn({
+      ...column,
+      enum_values: deriveSchemaDeclaredEnumValues({
+        engine: input.engine,
+        column_name: String(column.name),
+        column_type: column.udt_name,
+        native_values: column.enum_values,
+        check_definitions: tableChecks.map((check) => check.definition),
+      }),
+    }, primary_key));
     const sensitive = columns.filter((column) => column.suggestions.sensitive).map((column) => column.name);
     const default_visible_columns = columns
       .filter((column) => !column.suggestions.sensitive && !column.suggestions.large_or_binary)
@@ -1043,7 +1361,7 @@ function normalizeInspection(input: {
       columns,
       primary_key,
       unique_constraints,
-      check_constraints: (checksByTable.get(key) ?? []).map((check) => ({ name: check.name, definition: check.definition })),
+      check_constraints: tableChecks.map((check) => ({ name: check.name, definition: check.definition })),
       foreign_keys: normalizeForeignKeys(fksByTable.get(key) ?? []),
       referenced_by: normalizeReferencingForeignKeys(incomingFksByTable.get(key) ?? []),
       write_triggers: normalizeTriggers(triggersByTable.get(key) ?? []),

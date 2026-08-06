@@ -521,6 +521,7 @@ describe("try ask", () => {
     ], {
       env,
       gatewayFactory: testGatewayFactory(calls),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: consent,
       providerDependencies: {
         requestJson: async (request) => {
@@ -590,6 +591,7 @@ describe("try ask", () => {
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: async () => true,
       shellIo: {
         read: async () => answers.shift(),
@@ -624,6 +626,7 @@ describe("try ask", () => {
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: async () => true,
       uiServerFactory,
       shellIo: {
@@ -658,6 +661,7 @@ describe("try ask", () => {
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: consent,
       providerDependencies: { requestJson },
       shellIo: {

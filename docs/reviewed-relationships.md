@@ -5,8 +5,10 @@ without exposing a general join planner or SQL. The relationship is authority:
 Runner proposes it from database catalog evidence, a human reviews it, and the
 activated boundary fixes its exact path and semantics.
 
-This feature is part of local, development/staging-only Scoped Explore.
-Production receives only named capabilities created through Protect This Query.
+This feature is available in local development/staging Scoped Explore and in
+the explicit, attested production-Explore HTTP mode. Protected named
+capabilities created through Protect This Query remain the default production
+surface.
 
 ## The Safety Rule
 

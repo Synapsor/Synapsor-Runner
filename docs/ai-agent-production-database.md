@@ -6,8 +6,10 @@ fixed effects, bounded inputs, and approval outside the model.
 
 Runner separates two stages:
 
-1. **Explore in local development or staging.** A read-only boundary lets the
-   agent ask novel typed questions. Broad Explore is never a production tool.
+1. **Explore through reviewed read-only authority.** Local development and
+   staging are the default places to ask novel typed questions. Production
+   Explore is separately opt-in and requires secured HTTP, verified JWT claims,
+   a trusted principal, atomic per-principal privacy budgets, and rate limits.
 2. **Protect the useful operation.** Runner freezes one successful plan into a
    disabled DSL capability, canonical contract, tests, provenance, privacy
    limits, and exact digest. A human reviews and activates that named authority.
@@ -37,5 +39,7 @@ npx -y @synapsor/runner try --prove
 npx -y @synapsor/runner start
 ```
 
-Read [Production](production.md), [Proposal Freshness](proposal-evidence-freshness.md),
-and [Supervised Automatic Apply](supervised-automatic-apply.md).
+Read [Production](production.md),
+[Production Scoped Explore Over HTTP](production-scoped-explore-http.md),
+[Proposal Freshness](proposal-evidence-freshness.md), and
+[Supervised Automatic Apply](supervised-automatic-apply.md).

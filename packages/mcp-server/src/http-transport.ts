@@ -37,6 +37,8 @@ import type {
   StreamableHttpSession,
   ResolvedHttpSecurity,
   MetricsEndpointAccess,
+  StreamableHttpSessionFactory,
+  StreamableHttpSessionRuntime,
 } from "./runtime-types.js";
 import {
   CloudLinkedSynchronizer,
@@ -238,7 +240,8 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const sharedResources = createMcpRuntimeSharedResources(config, env, options.readRow, Date.now, options.credentialResolver);
   const sessions = new Map<string, StreamableHttpSession>();
   const openSessions = new Set<StreamableHttpSession>();
-  const initializingSessions = { count: 0 };
+  const pendingSessionCloses = new Set<Promise<void>>();
+  const initializingSessions = { count: 0, byPrincipal: new Map<string, number>() };
   const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
     void handleStreamableHttpMcpRequest({
       request,
@@ -256,9 +259,13 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       security,
       sessions,
       openSessions,
+      pendingSessionCloses,
       initializingSessions,
       readinessCheck,
       metricsAccess,
+      ...(options.streamableSessionFactory
+        ? { streamableSessionFactory: options.streamableSessionFactory }
+        : {}),
       metricsProvider: () => renderRuntimeMetrics(sharedStore, sharedResources.poolMetrics(), sharedResources.rateLimitMetrics(), readinessCheck),
     });
   };
@@ -288,10 +295,16 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     });
   } catch (error) {
     clearInterval(sessionReaper);
-    await cloudSynchronizer?.stop();
-    await closeStreamableSessions(openSessions);
-    await sharedResources.close();
-    await sharedStore.close();
+    await cleanupStreamableHttpResources({
+      sessions: openSessions,
+      pendingSessionCloses,
+      sharedResources,
+      sharedStore,
+      cloudSynchronizer,
+      streamableSessionFactory: options.streamableSessionFactory,
+    }).catch(() => {
+      process.stderr.write("Warning: Streamable HTTP startup cleanup did not complete cleanly.\n");
+    });
     throw error;
   }
 
@@ -328,7 +341,15 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     url,
     close: () => {
       clearInterval(sessionReaper);
-      return closeStreamableHttpServer(server, openSessions, sharedResources, sharedStore, cloudSynchronizer);
+      return closeStreamableHttpServer(
+        server,
+        openSessions,
+        sharedResources,
+        sharedStore,
+        cloudSynchronizer,
+        options.streamableSessionFactory,
+        pendingSessionCloses,
+      );
     },
   };
 }
@@ -349,12 +370,14 @@ export async function handleStreamableHttpMcpRequest(input: {
   security: ResolvedHttpSecurity;
   sessions: Map<string, StreamableHttpSession>;
   openSessions: Set<StreamableHttpSession>;
-  initializingSessions: { count: number };
+  pendingSessionCloses: Set<Promise<void>>;
+  initializingSessions: { count: number; byPrincipal: Map<string, number> };
   readinessCheck: () => Promise<ReadinessReport>;
   metricsAccess: MetricsEndpointAccess;
   metricsProvider: () => Promise<string>;
+  streamableSessionFactory?: StreamableHttpSessionFactory;
 }): Promise<void> {
-  const { request, response, config, storePath, sharedStore, sharedResources, cloudTools, env, toolNameStyle, resultFormat, sessionVerifier, devNoAuth, security, sessions, openSessions, initializingSessions, readinessCheck, metricsAccess, metricsProvider } = input;
+  const { request, response, config, storePath, sharedStore, sharedResources, cloudTools, env, toolNameStyle, resultFormat, sessionVerifier, devNoAuth, security, sessions, openSessions, pendingSessionCloses, initializingSessions, readinessCheck, metricsAccess, metricsProvider, streamableSessionFactory } = input;
   try {
     if (!validateHttpRequestSecurity(request, response, security)) return;
     if (request.method === "OPTIONS" && request.headers.origin) {
@@ -409,6 +432,7 @@ export async function handleStreamableHttpMcpRequest(input: {
       }
       existing.lastSeenAt = Date.now();
       await existing.transport.handleRequest(request, response);
+      if (existing.closePromise) await existing.closePromise;
       return;
     }
 
@@ -422,7 +446,33 @@ export async function handleStreamableHttpMcpRequest(input: {
       writeJson(response, 503, { ok: false, error: "session_capacity_exhausted", retryable: true, retry_after_ms: 1000 });
       return;
     }
+    const principalSessionKey = authentication.context
+      ? streamablePrincipalSessionKey(authentication.context.tenant_id, authentication.context.principal)
+      : undefined;
+    const perPrincipalLimit = streamableSessionFactory?.maxSessionsPerPrincipal;
+    if (principalSessionKey && perPrincipalLimit) {
+      const openForPrincipal = [...openSessions].filter(
+        (session) => session.principalSessionKey === principalSessionKey,
+      ).length;
+      const initializingForPrincipal = initializingSessions.byPrincipal.get(principalSessionKey) ?? 0;
+      if (openForPrincipal + initializingForPrincipal >= perPrincipalLimit) {
+        response.setHeader("retry-after", "1");
+        writeJson(response, 429, {
+          ok: false,
+          error: "principal_session_capacity_exhausted",
+          retryable: true,
+          retry_after_ms: 1000,
+        });
+        return;
+      }
+    }
     initializingSessions.count += 1;
+    if (principalSessionKey) {
+      initializingSessions.byPrincipal.set(
+        principalSessionKey,
+        (initializingSessions.byPrincipal.get(principalSessionKey) ?? 0) + 1,
+      );
+    }
     let initializingSession: StreamableHttpSession | undefined;
     try {
       const parsedBody = JSON.parse(await readRequestBody(request, security.limits.maxRequestBytes)) as unknown;
@@ -442,37 +492,75 @@ export async function handleStreamableHttpMcpRequest(input: {
         onsessionclosed: (closedSessionId) => {
           const closed = sessions.get(closedSessionId);
           if (closed) {
-            disposeStreamableSession(closed, sessions, openSessions);
+            trackStreamableSessionClose(
+              disposeStreamableSession(closed, sessions, openSessions),
+              pendingSessionCloses,
+            );
           }
         },
       });
-      const runtime = createMcpRuntime(config, {
-        env,
-        storePath,
-        store: sharedStore,
-        sharedResources,
-        resultFormat,
-        cloudTools,
-        trustedContext: authentication.context,
-      });
-      initializingSession = { transport, runtime, authFingerprint: authentication.fingerprint, lastSeenAt: Date.now() };
+      if (streamableSessionFactory && !authentication.context) {
+        throw new McpRuntimeError("HTTP_TRUSTED_CONTEXT_REQUIRED", "This Streamable HTTP surface requires verified tenant and principal session context.");
+      }
+      const runtime: StreamableHttpSessionRuntime = streamableSessionFactory
+        ? await streamableSessionFactory({
+          config,
+          env,
+          store: sharedStore,
+          trustedContext: authentication.context!,
+          ...(toolNameStyle ? { toolNameStyle } : {}),
+          ...(resultFormat ? { resultFormat } : {}),
+        })
+        : (() => {
+          const modelRuntime = createMcpRuntime(config, {
+            env,
+            storePath,
+            store: sharedStore,
+            sharedResources,
+            resultFormat,
+            cloudTools,
+            trustedContext: authentication.context,
+          });
+          const server = createSynapsorMcpServer(modelRuntime, {
+            toolNameStyle,
+            resultFormat,
+          });
+          return {
+            connect: (target) => server.connect(target),
+            close: () => modelRuntime.close(),
+          };
+        })();
+      initializingSession = {
+        transport,
+        runtime,
+        authFingerprint: authentication.fingerprint,
+        ...(principalSessionKey ? { principalSessionKey } : {}),
+        lastSeenAt: Date.now(),
+      };
       openSessions.add(initializingSession);
       transport.onclose = () => {
-        if (initializingSession) disposeStreamableSession(initializingSession, sessions, openSessions);
+        if (initializingSession) {
+          trackStreamableSessionClose(
+            disposeStreamableSession(initializingSession, sessions, openSessions),
+            pendingSessionCloses,
+          );
+        }
       };
-      await createSynapsorMcpServer(runtime, {
-        toolNameStyle,
-        resultFormat,
-      }).connect(transport);
+      await runtime.connect(transport);
       await transport.handleRequest(request, response, parsedBody);
     } catch (error) {
       if (initializingSession) {
-        disposeStreamableSession(initializingSession, sessions, openSessions);
+        await disposeStreamableSession(initializingSession, sessions, openSessions);
         await initializingSession.transport.close().catch(() => undefined);
       }
       throw error;
     } finally {
       initializingSessions.count -= 1;
+      if (principalSessionKey) {
+        const remaining = (initializingSessions.byPrincipal.get(principalSessionKey) ?? 1) - 1;
+        if (remaining > 0) initializingSessions.byPrincipal.set(principalSessionKey, remaining);
+        else initializingSessions.byPrincipal.delete(principalSessionKey);
+      }
     }
   } catch (error) {
     const message = sanitizeHttpError(error, security.activeToken, security.previousToken);
@@ -622,6 +710,8 @@ export async function closeStreamableHttpServer(
   sharedResources: McpRuntimeSharedResources,
   sharedStore: ProposalRuntimeStore,
   cloudSynchronizer?: CloudLinkedSynchronizer,
+  streamableSessionFactory?: StreamableHttpSessionFactory,
+  pendingSessionCloses: Set<Promise<void>> = new Set(),
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
@@ -629,18 +719,60 @@ export async function closeStreamableHttpServer(
       else resolve();
     });
   }).finally(async () => {
-    await cloudSynchronizer?.stop();
-    await closeStreamableSessions(sessions);
-    await sharedResources.close();
-    await sharedStore.close();
+    await cleanupStreamableHttpResources({
+      sessions,
+      pendingSessionCloses,
+      sharedResources,
+      sharedStore,
+      cloudSynchronizer,
+      streamableSessionFactory,
+    });
   });
+}
+
+async function cleanupStreamableHttpResources(input: {
+  sessions: Set<StreamableHttpSession>;
+  pendingSessionCloses: Set<Promise<void>>;
+  sharedResources: McpRuntimeSharedResources;
+  sharedStore: ProposalRuntimeStore;
+  cloudSynchronizer?: CloudLinkedSynchronizer;
+  streamableSessionFactory?: StreamableHttpSessionFactory;
+}): Promise<void> {
+  const failures: unknown[] = [];
+  const settle = async (operation: () => Promise<unknown>): Promise<void> => {
+    try {
+      await operation();
+    } catch (error) {
+      failures.push(error);
+    }
+  };
+  if (input.cloudSynchronizer) {
+    await settle(() => input.cloudSynchronizer!.stop());
+  }
+  await settle(() => closeStreamableSessions(input.sessions));
+  const pendingResults = await Promise.allSettled([...input.pendingSessionCloses]);
+  failures.push(...pendingResults
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason));
+
+  const finalResults = await Promise.allSettled([
+    Promise.resolve().then(() => input.streamableSessionFactory?.close?.()),
+    Promise.resolve().then(() => input.sharedResources.close()),
+    Promise.resolve().then(() => input.sharedStore.close()),
+  ]);
+  failures.push(...finalResults
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason));
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "Streamable HTTP resources did not all close cleanly.");
+  }
 }
 
 export async function closeStreamableSessions(sessions: Set<StreamableHttpSession>): Promise<void> {
   for (const session of [...sessions]) {
     sessions.delete(session);
     await session.transport.close().catch(() => undefined);
-    disposeStreamableSession(session);
+    await disposeStreamableSession(session);
   }
 }
 
@@ -652,19 +784,49 @@ export async function pruneExpiredStreamableSessions(
 ): Promise<void> {
   const expired = [...openSessions].filter((session) => now - session.lastSeenAt >= idleTimeoutMs);
   for (const session of expired) {
-    disposeStreamableSession(session, sessions, openSessions);
+    await disposeStreamableSession(session, sessions, openSessions);
     await session.transport.close().catch(() => undefined);
   }
 }
 
-export function disposeStreamableSession(
+export async function disposeStreamableSession(
   session: StreamableHttpSession,
   sessionMap?: Map<string, StreamableHttpSession>,
   openSessions?: Set<StreamableHttpSession>,
-): void {
-  if (session.closed) return;
+): Promise<void> {
+  if (session.closePromise) return session.closePromise;
   session.closed = true;
   if (session.sessionId) sessionMap?.delete(session.sessionId);
   openSessions?.delete(session);
-  void session.runtime.close();
+  // Defer runtime shutdown until closePromise is assigned. Runtime shutdown can
+  // synchronously close the transport, whose onclose callback re-enters here.
+  session.closePromise = Promise.race([
+    Promise.resolve().then(() => session.runtime.close()),
+    new Promise<never>((_resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("session cleanup timed out")),
+        STREAMABLE_SESSION_CLOSE_TIMEOUT_MS,
+      );
+      timer.unref?.();
+    }),
+  ]).catch(() => {
+    process.stderr.write("Warning: a Streamable HTTP MCP session did not close cleanly within the bounded cleanup window.\n");
+  });
+  return session.closePromise;
+}
+
+function streamablePrincipalSessionKey(tenant: string, principal: string): string {
+  return crypto.createHash("sha256")
+    .update(JSON.stringify([tenant, principal]))
+    .digest("hex");
+}
+
+const STREAMABLE_SESSION_CLOSE_TIMEOUT_MS = 5_000;
+
+function trackStreamableSessionClose(
+  closePromise: Promise<void>,
+  pending: Set<Promise<void>>,
+): void {
+  pending.add(closePromise);
+  void closePromise.finally(() => pending.delete(closePromise));
 }

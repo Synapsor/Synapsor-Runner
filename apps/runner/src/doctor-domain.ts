@@ -52,13 +52,18 @@ export function trustedContextsForDoctor(config: RuntimeConfig): TrustedContextD
 }
 
 
-export function envPresenceCheck(envName: string, message: string): DoctorCheck {
+export function envPresenceCheck(
+  envName: string,
+  message: string,
+  setup: "pending" | "required" = "required",
+): DoctorCheck {
   const value = envValue(process.env, envName);
   return {
     name: `env:${envName}`,
     ok: Boolean(value),
     level: value ? "pass" : "fail",
     message: value ? `${envName} is set.` : message,
+    ...(!value ? { setup } : {}),
   };
 }
 
@@ -458,6 +463,42 @@ export function formatLocalDoctorReport(report: LocalDoctorReport): string {
 }
 
 
+export function localDoctorSetupStatus(report: LocalDoctorReport): "ready" | "incomplete" | "failed" {
+  const failedChecks = report.checks.filter((check) => check.level === "fail");
+  if (failedChecks.some((check) => check.setup !== "pending")) return "failed";
+  return failedChecks.length > 0 ? "incomplete" : "ready";
+}
+
+
+export function formatLocalDoctorSetupReport(report: LocalDoctorReport): string {
+  const status = localDoctorSetupStatus(report);
+  const pendingEnvironment = [...new Set(report.checks
+    .filter((check) => check.level === "fail" && check.name.startsWith("env:") && check.setup === "pending")
+    .map((check) => check.name.slice("env:".length)))]
+    .sort();
+  const lines = [
+    `Synapsor Runner setup: ${status}`,
+    `Config: ${report.config_path}`,
+  ];
+  if (status === "incomplete") {
+    lines.push(`Next: set ${pendingEnvironment.join(" and ")} from .env.example, then rerun ${cliCommandName()} doctor --config ${report.config_path}.`);
+  } else if (status === "failed") {
+    lines.push(`Fix the configuration errors below, then rerun ${cliCommandName()} doctor --config ${report.config_path}.`);
+  } else {
+    lines.push("The generated setup and required environment bindings are ready.");
+  }
+  for (const check of report.checks) {
+    if (check.level === "fail" && check.name.startsWith("env:") && check.setup === "pending") {
+      lines.push(`- ${check.name.slice("env:".length)} is not set yet.`);
+      continue;
+    }
+    const prefix = check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
+    lines.push(`${prefix} ${check.message}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+
 export function formatLocalDoctorMarkdown(report: LocalDoctorReport): string {
   const store = report.store_stats;
   const boundaryOk = report.checks.find((check) => check.name === "mcp-tool-boundary")?.ok === true;
@@ -525,6 +566,7 @@ export type DoctorCheck = {
   ok: boolean;
   level: "pass" | "warn" | "fail";
   message: string;
+  setup?: "pending" | "required";
 };
 
 

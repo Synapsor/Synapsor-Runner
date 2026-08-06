@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { Buffer } from "node:buffer";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -119,6 +120,7 @@ export type BoundaryInference<T> = {
 export type AutoBoundaryField = {
   name: string;
   data_type: string;
+  enum_values?: string[];
   nullable: boolean;
   primary_key: boolean;
   sensitive_suggestion: boolean;
@@ -129,6 +131,7 @@ export type AutoBoundaryField = {
   groupable_suggestion: boolean;
   time_bucket_suggestion: boolean;
   evidence: string[];
+  enum_review_override?: ReviewedEnumValuesDecision;
   review_override?: {
     exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
     actor: string;
@@ -228,7 +231,7 @@ export type ExplorationBudgets = {
 export type ExplorationBoundaryDraft = {
   schema_version: typeof EXPLORATION_BOUNDARY_VERSION;
   activation: "disabled_unreviewed";
-  deployment_profile: "development" | "staging";
+  deployment_profile: "development" | "staging" | "production";
   source: string;
   compiler_version: string;
   spec_version: string;
@@ -238,20 +241,29 @@ export type ExplorationBoundaryDraft = {
    * artifacts retain their exact canonical digest.
    */
   reporting_timezone?: "UTC";
-  trusted_context: {
-    provider: "environment";
-    tenant_env: string;
-    principal_env: string;
-    /**
-     * Additive first-run fallback for PostgreSQL credentials whose reviewed
-     * RLS policies use one stable session setting. The value is resolved from
-     * the authenticated database session and is never stored in this object.
-     */
-    database_role_tenant?: {
-      engine: "postgres";
-      setting: string;
+  trusted_context:
+    | {
+      provider: "environment";
+      tenant_env: string;
+      principal_env: string;
+      /**
+       * Additive first-run fallback for PostgreSQL credentials whose reviewed
+       * RLS policies use one stable session setting. The value is resolved from
+       * the authenticated database session and is never stored in this object.
+       */
+      database_role_tenant?: {
+        engine: "postgres";
+        setting: string;
+      };
+    }
+    | {
+      provider: "http_claims";
+      tenant_claim: string;
+      principal_claim: string;
+      tenant_env?: never;
+      principal_env?: never;
+      database_role_tenant?: never;
     };
-  };
   generation_lock_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
   pack: {
@@ -404,6 +416,7 @@ export type AutoBoundaryReviewOverrides = {
     tenant_key?: ReviewedValueDecision;
     principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     minimum_cohort?: ReviewedMinimumCohortDecision;
+    field_enums?: Record<string, ReviewedEnumValuesDecision>;
     fields?: Record<string, {
       exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
       actor: string;
@@ -422,6 +435,13 @@ export type ReviewedValueDecision = {
 
 export type ReviewedMinimumCohortDecision = {
   value: number;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedEnumValuesDecision = {
+  values: string[];
   actor: string;
   reason: string;
   decided_at: string;
@@ -526,6 +546,32 @@ export function pruneAutoBoundaryReviewOverrides(
       }
     }
     if (decision.minimum_cohort) retained.minimum_cohort = decision.minimum_cohort;
+    const fieldEnums: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["field_enums"]
+    > = {};
+    for (const [fieldName, enumDecision] of Object.entries(decision.field_enums ?? {})) {
+      const column = columns.get(fieldName);
+      if (!column) {
+        removed.push(`${resourceId}.${fieldName}: reviewed categorical field no longer exists`);
+        continue;
+      }
+      const declared = new Set(column.enum_values ?? []);
+      const retainedValues = enumDecision.values.filter((value) => declared.has(value));
+      if (!declared.size && enumDecision.values.length) {
+        removed.push(
+          `${resourceId}.${fieldName}: the schema-declared vocabulary is no longer provable; filtering and grouping remain disabled`,
+        );
+      } else if (retainedValues.length !== enumDecision.values.length) {
+        removed.push(
+          `${resourceId}.${fieldName}: values no longer declared by the database were removed from the reviewed vocabulary`,
+        );
+      }
+      fieldEnums[fieldName] = {
+        ...enumDecision,
+        values: retainedValues,
+      };
+    }
+    if (Object.keys(fieldEnums).length) retained.field_enums = fieldEnums;
     const fields: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["fields"]> = {};
     for (const [fieldName, fieldDecision] of Object.entries(decision.fields ?? {})) {
       const column = columns.get(fieldName);
@@ -560,6 +606,11 @@ export function buildAutoBoundary(input: {
   sourceName?: string;
   inspectedSchema?: string;
   overrides?: AutoBoundaryReviewOverrides;
+  deploymentProfile?: "development" | "staging" | "production";
+  httpClaims?: {
+    tenantClaim: string;
+    principalClaim: string;
+  };
 }): AutoBoundaryBuild {
   const parsedEvidence = input.parsedEvidence ?? [];
   const existingContracts = input.existingContracts ?? [];
@@ -594,7 +645,15 @@ export function buildAutoBoundary(input: {
     protected_authority: graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => resource.id),
     reporting_timezone: "UTC",
   };
-  const provisionalBoundary = buildExplorationBoundaryDraft(graph, sourceName, canonicalJsonDigest(baseLock));
+  const provisionalBoundary = buildExplorationBoundaryDraft(
+    graph,
+    sourceName,
+    canonicalJsonDigest(baseLock),
+    {
+      deploymentProfile: input.deploymentProfile ?? "staging",
+      ...(input.httpClaims ? { httpClaims: input.httpClaims } : {}),
+    },
+  );
   const lock: GenerationLock = {
     ...baseLock,
     authority_dependencies: buildGenerationAuthorityDependencies(input.inspection, provisionalBoundary),
@@ -825,6 +884,22 @@ export function compareGenerationLock(
     current_role_posture_fingerprint: roleFingerprint,
     changes,
   };
+}
+
+export function generationLockRemediationCommand(
+  lock: Pick<GenerationLock, "source_env">,
+): string {
+  return `synapsor-runner boundary draft --from-env ${lock.source_env} --force && synapsor-runner boundary review`;
+}
+
+export function generationLockRemediation(
+  lock: Pick<GenerationLock, "source_env">,
+): string {
+  return [
+    "The reviewed boundary must be regenerated against the current database posture.",
+    `Run from the project directory: ${generationLockRemediationCommand(lock)}`,
+    "Review and activation are still required; stale authority remains unavailable.",
+  ].join("\n");
 }
 
 export function credentialPostureFingerprintForAuthority(
@@ -1108,7 +1183,10 @@ export function assertCurrentExplorationBoundaryAuthority(input: {
 }): void {
   const comparison = compareGenerationLock(input.lock, input.inspection);
   if (!comparison.current) {
-    throw new Error(`Generation lock is stale: ${comparison.changes.join("; ")}.`);
+    throw new Error([
+      `Generation lock is stale: ${comparison.changes.join("; ")}.`,
+      generationLockRemediation(input.lock),
+    ].join("\n"));
   }
   assertExploreRolePosture(input.inspection, input.candidate);
 }
@@ -1312,11 +1390,8 @@ async function writeActivatedExplorationBoundarySet(
   if (sources.size !== 1 || profiles.size !== 1) {
     throw new Error("Active Explore boundaries must use the same reviewed source and deployment profile.");
   }
-  const trustedContexts = new Set(boundaries.map((boundary) => canonicalJsonDigest({
-    tenant_env: boundary.trusted_context.tenant_env,
-    principal_env: boundary.trusted_context.principal_env,
-    database_role_tenant: boundary.trusted_context.database_role_tenant ?? null,
-  })));
+  const trustedContexts = new Set(boundaries.map((boundary) =>
+    canonicalJsonDigest(boundary.trusted_context)));
   if (trustedContexts.size !== 1) {
     throw new Error("Active Explore boundaries must use the same reviewed trusted-context bindings.");
   }
@@ -1456,7 +1531,7 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
     if (!isRecord(rawResource)) throw new Error(`Review overrides for ${resourceId} must be an object.`);
     assertOnlyKeys(
       rawResource,
-      ["row_identity", "tenant_key", "principal_key", "minimum_cohort", "fields"],
+      ["row_identity", "tenant_key", "principal_key", "minimum_cohort", "field_enums", "fields"],
       `${resourceId} review overrides`,
     );
     const resource: AutoBoundaryReviewOverrides["resources"][string] = {};
@@ -1474,6 +1549,20 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
         rawResource.minimum_cohort,
         `${resourceId} minimum cohort`,
       );
+    }
+    if (rawResource.field_enums !== undefined) {
+      if (!isRecord(rawResource.field_enums)) {
+        throw new Error(`${resourceId} enum review overrides must be an object.`);
+      }
+      const fieldEnums: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["field_enums"]> = {};
+      for (const fieldName of Object.keys(rawResource.field_enums).sort()) {
+        assertSafeMapKey(fieldName, "reviewed enum field");
+        fieldEnums[fieldName] = normalizeReviewedEnumValuesDecision(
+          rawResource.field_enums[fieldName],
+          `${resourceId}.${fieldName} reviewed enum`,
+        );
+      }
+      resource.field_enums = fieldEnums;
     }
     if (rawResource.fields !== undefined) {
       if (!isRecord(rawResource.fields)) throw new Error(`${resourceId} field review overrides must be an object.`);
@@ -1542,6 +1631,29 @@ function normalizeReviewedMinimumCohortDecision(
   };
 }
 
+function normalizeReviewedEnumValuesDecision(
+  value: unknown,
+  label: string,
+): ReviewedEnumValuesDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["values", "actor", "reason", "decided_at"], `${label} decision`);
+  if (!Array.isArray(value.values)
+    || value.values.length > 64
+    || value.values.some((item) => typeof item !== "string" || [...item].length > 64)
+    || new Set(value.values).size !== value.values.length) {
+    throw new Error(`${label} values must contain at most 64 unique strings of at most 64 characters each.`);
+  }
+  if (Buffer.byteLength(JSON.stringify(value.values), "utf8") > 2_048) {
+    throw new Error(`${label} values exceed the 2048-byte reviewed vocabulary limit.`);
+  }
+  return {
+    values: value.values.map(String),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
 function applyReviewOverrides(
   graph: AutoBoundaryEvidenceGraph,
   overrides: AutoBoundaryReviewOverrides,
@@ -1598,6 +1710,25 @@ function applyReviewOverrides(
     }
     if (override.minimum_cohort) {
       resource.minimum_cohort_override = { ...override.minimum_cohort };
+    }
+
+    for (const [fieldName, enumOverride] of Object.entries(override.field_enums ?? {})) {
+      const field = resource.fields.find((candidate) => candidate.name === fieldName);
+      if (!field) throw new Error(`Enum review override references unknown field ${resourceId}.${fieldName}.`);
+      if (!field.enum_values?.length && enumOverride.values.length) {
+        throw new Error(`${resourceId}.${fieldName} has no bounded schema-declared value set to review.`);
+      }
+      if (field.enum_values?.length) {
+        assertSubset(
+          enumOverride.values,
+          field.enum_values,
+          `${resourceId}.${fieldName} reviewed enum values`,
+        );
+      }
+      field.enum_review_override = structuredClone(enumOverride);
+      field.evidence.push(
+        `human enum review override: ${enumOverride.values.length} of ${field.enum_values?.length ?? 0} schema values retained`,
+      );
     }
 
     for (const [fieldName, fieldOverride] of Object.entries(override.fields ?? {})) {
@@ -1777,8 +1908,22 @@ function assertBoundaryCandidateNarrowsDraft(
 ): void {
   if (candidate.schema_version !== draft.schema_version) throw new Error("Exploration boundary schema version cannot change during review.");
   if (candidate.activation !== "disabled_unreviewed") throw new Error("A reviewed candidate must still be disabled before activation.");
-  if (candidate.deployment_profile !== "development" && candidate.deployment_profile !== "staging") {
-    throw new Error("Scoped Explore activation is limited to an explicit development or staging profile.");
+  if (draft.deployment_profile === "production" && candidate.deployment_profile !== "production") {
+    throw new Error("A production boundary cannot be downgraded during review.");
+  }
+  if (draft.deployment_profile !== "production" && candidate.deployment_profile === "production") {
+    throw new Error("A local authoring draft cannot be promoted to production during review; generate a separate production draft.");
+  }
+  if (candidate.deployment_profile !== "development"
+    && candidate.deployment_profile !== "staging"
+    && candidate.deployment_profile !== "production") {
+    throw new Error("Scoped Explore activation requires an explicit development, staging, or production profile.");
+  }
+  if (candidate.deployment_profile === "production" && candidate.trusted_context.provider !== "http_claims") {
+    throw new Error("Production Scoped Explore requires reviewed tenant and principal HTTP claim bindings.");
+  }
+  if (candidate.deployment_profile !== "production" && candidate.trusted_context.provider !== "environment") {
+    throw new Error("Development and staging Scoped Explore require local trusted context bindings.");
   }
   if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(candidate.pack.name)) {
     throw new Error("The reviewed authoring pack name must be a stable lower-case identifier.");
@@ -1808,9 +1953,25 @@ function assertBoundaryCandidateNarrowsDraft(
       if (resource[field] !== original[field]) throw new Error(`${resource.id} ${field} cannot change during review.`);
     }
     if (JSON.stringify(resource.field_types) !== JSON.stringify(original.field_types)
-      || JSON.stringify(resource.field_enums) !== JSON.stringify(original.field_enums)
       || JSON.stringify(resource.rls_session ?? null) !== JSON.stringify(original.rls_session ?? null)) {
-      throw new Error(`${resource.id} field types, enums, and RLS session bindings cannot change during review.`);
+      throw new Error(`${resource.id} field types and RLS session bindings cannot change during review.`);
+    }
+    assertSubset(
+      Object.keys(resource.field_enums),
+      Object.keys(original.field_enums),
+      `${resource.id} reviewed enum fields`,
+    );
+    for (const [field, values] of Object.entries(resource.field_enums)) {
+      assertSubset(values, original.field_enums[field] ?? [], `${resource.id}.${field} reviewed enum values`);
+    }
+    for (const field of Object.keys(original.field_enums)) {
+      if (!Object.hasOwn(resource.field_enums, field)
+        && (Object.hasOwn(resource.filterable_fields, field)
+          || resource.groupable_fields.includes(field))) {
+        throw new Error(
+          `${resource.id}.${field} cannot disable its reviewed value allowlist while retaining filter or group authority.`,
+        );
+      }
     }
     assertSubset(resource.selectable_fields, original.selectable_fields, `${resource.id} selectable fields`);
     assertSubset(resource.sortable_fields, original.sortable_fields, `${resource.id} sortable fields`);
@@ -2369,6 +2530,7 @@ function buildResource(
       return {
         name: column.name,
         data_type: column.data_type,
+        ...(column.enum_values?.length ? { enum_values: [...column.enum_values] } : {}),
         nullable: column.nullable,
         primary_key: table.primary_key.includes(column.name),
         sensitive_suggestion: keptOutByClassification,
@@ -2527,6 +2689,10 @@ function buildExplorationBoundaryDraft(
   graph: AutoBoundaryEvidenceGraph,
   sourceName: string,
   lockFingerprint: `sha256:${string}`,
+  options: {
+    deploymentProfile: "development" | "staging" | "production";
+    httpClaims?: { tenantClaim: string; principalClaim: string };
+  },
 ): ExplorationBoundaryDraft {
   const resources = graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => {
     const trustedScopeFields = new Set([resource.tenant_key.selected, resource.principal_key.selected].filter((field): field is string => Boolean(field)));
@@ -2540,13 +2706,18 @@ function buildExplorationBoundaryDraft(
       .filter((field) => field.review_override?.exposure === "withhold_from_model")
       .map((field) => field.name)
       .filter((field) => !keptOutSet.has(field));
+    const enumDisabledFields = new Set(resource.fields
+      .filter((field) => field.enum_review_override?.values.length === 0)
+      .map((field) => field.name));
     const selectable = resource.fields
       .filter((field) => field.raw_visible_suggestion
         && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
       .map((field) => field.name);
     const sortable = selectable.filter((field) => !trustedScopeFields.has(field));
     const filterable = Object.fromEntries(resource.fields
-      .filter((field) => field.raw_visible_suggestion && !trustedScopeFields.has(field.name))
+      .filter((field) => field.raw_visible_suggestion
+        && !trustedScopeFields.has(field.name)
+        && !enumDisabledFields.has(field.name))
       .map((field) => [field.name, operatorsForType(field.data_type)]));
     const relationships = resource.relationships
       .filter((relationship) => {
@@ -2631,17 +2802,17 @@ function buildExplorationBoundaryDraft(
       ...(resource.principal_key.selected ? { principal_key: resource.principal_key.selected } : {}),
       field_types: Object.fromEntries(resource.fields.map((field) => [field.name, field.data_type])),
       field_enums: Object.fromEntries(resource.fields
-        .filter((field) => field.evidence.some((item) => item.startsWith("database enum values:")))
-        .map((field) => [
-          field.name,
-          field.evidence.find((item) => item.startsWith("database enum values:"))!.slice("database enum values:".length).trim().split(/,\s*/),
-        ])),
+        .flatMap((field) => {
+          const values = reviewedBoundaryEnumValues(field, keptOutSet, trustedScopeFields);
+          return values ? [[field.name, values] as const] : [];
+        })),
       selectable_fields: selectable,
       filterable_fields: filterable,
       sortable_fields: sortable,
       groupable_fields: resource.fields.filter((field) => field.groupable_suggestion
         && !keptOutSet.has(field.name)
-        && !trustedScopeFields.has(field.name)).map((field) => field.name),
+        && !trustedScopeFields.has(field.name)
+        && !enumDisabledFields.has(field.name)).map((field) => field.name),
       aggregate_measures: resource.fields.filter((field) => field.aggregate_measure_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => field.name),
@@ -2667,28 +2838,43 @@ function buildExplorationBoundaryDraft(
   const databaseRoleTenantSetting = graph.engine === "postgres"
     ? commonDatabaseRoleTenantSetting(resources)
     : undefined;
+  if (options.deploymentProfile === "production" && !options.httpClaims) {
+    throw new Error("Production Explore boundary generation requires explicit tenant and principal HTTP claim names.");
+  }
+  if (options.deploymentProfile !== "production" && options.httpClaims) {
+    throw new Error("HTTP claim bindings are only valid for a production Explore boundary.");
+  }
   const draft: ExplorationBoundaryDraft = {
     schema_version: EXPLORATION_BOUNDARY_VERSION,
     activation: "disabled_unreviewed" as const,
-    deployment_profile: "staging" as const,
+    deployment_profile: options.deploymentProfile,
     source: sourceName,
     compiler_version: AUTO_BOUNDARY_COMPILER_VERSION,
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
     reporting_timezone: "UTC",
-    trusted_context: {
-      provider: "environment" as const,
-      tenant_env: "SYNAPSOR_TENANT_ID",
-      principal_env: "SYNAPSOR_PRINCIPAL",
-      ...(databaseRoleTenantSetting ? {
-        database_role_tenant: {
-          engine: "postgres" as const,
-          setting: databaseRoleTenantSetting,
-        },
-      } : {}),
-    },
+    trusted_context: options.deploymentProfile === "production"
+      ? {
+        provider: "http_claims" as const,
+        tenant_claim: options.httpClaims!.tenantClaim,
+        principal_claim: options.httpClaims!.principalClaim,
+      }
+      : {
+        provider: "environment" as const,
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+        ...(databaseRoleTenantSetting ? {
+          database_role_tenant: {
+            engine: "postgres" as const,
+            setting: databaseRoleTenantSetting,
+          },
+        } : {}),
+      },
     generation_lock_fingerprint: lockFingerprint,
     role_posture_fingerprint: graph.database_role.fingerprint,
-    pack: { name: "reviewed_staging", resources },
+    pack: {
+      name: options.deploymentProfile === "production" ? "reviewed_production" : "reviewed_staging",
+      resources,
+    },
     budgets: { ...DEFAULT_BUDGETS },
     unresolved_decisions: [] as string[],
   };
@@ -2813,14 +2999,18 @@ function generatedContractTests(
 
 function unresolvedDecisions(
   graph: AutoBoundaryEvidenceGraph,
-  boundary?: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context">,
+  boundary?: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context" | "deployment_profile">,
 ): string[] {
   const boundaryResources = new Map(
     (boundary?.pack.resources ?? []).map((resource) => [resource.id, resource]),
   );
   return unique([
-    "deployment profile: confirm development or staging authoring-only use",
-    boundary?.trusted_context.database_role_tenant
+    boundary?.deployment_profile === "production"
+      ? "deployment profile: confirm production Explore over secured HTTP with mandatory per-principal scope and privacy accounting"
+      : "deployment profile: confirm development or staging authoring-only use",
+    boundary?.trusted_context.provider === "http_claims"
+      ? `trusted context: confirm tenant and principal come only from verified HTTP claims ${boundary.trusted_context.tenant_claim} and ${boundary.trusted_context.principal_claim}`
+      : boundary?.trusted_context.database_role_tenant
       ? `trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting ${boundary.trusted_context.database_role_tenant.setting} and principal scope remains outside model arguments`
       : "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments",
     ...(!graph.database_role.verified || !graph.database_role.read_only
@@ -2940,6 +3130,26 @@ function isTimestampType(type: string): boolean {
 
 function isCategoricalType(type: string, enumValues?: string[]): boolean {
   return Boolean(enumValues?.length) || /char|text|enum|boolean|bool/i.test(type);
+}
+
+function reviewedBoundaryEnumValues(
+  field: AutoBoundaryField,
+  keptOutFields: Set<string>,
+  trustedScopeFields: Set<string>,
+): string[] | undefined {
+  const values = field.enum_review_override?.values ?? field.enum_values;
+  if (!values?.length
+    || values.length > 64
+    || field.primary_key
+    || isReferenceIdentifierName(field.name)
+    || field.sensitivity.state !== "structurally_low_risk"
+    || keptOutFields.has(field.name)
+    || trustedScopeFields.has(field.name)
+    || values.some((value) => [...value].length > 64)
+    || Buffer.byteLength(JSON.stringify(values), "utf8") > 2_048) {
+    return undefined;
+  }
+  return [...values];
 }
 
 function operatorsForType(type: string): Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in"> {

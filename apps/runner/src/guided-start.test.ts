@@ -196,10 +196,14 @@ describe("guided start surfaces", () => {
     }
   });
 
-  it("records one conservative human gesture, rechecks authority, and activates before Ask", async () => {
+  it("requires an explicit provider choice before activating and starting Ask", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-instant-"));
     const schemaInspector = vi.fn(async () => inspection());
     const promptText = vi.fn(async () => "");
+    const chooseAskSelection = vi.fn(async () => ({
+      route: "anthropic" as const,
+      model: "claude-owner-selected",
+    }));
     const runPostActivationHandoff = vi.fn(async () => 0);
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -231,6 +235,7 @@ describe("guided start surfaces", () => {
             session: {
               promptText,
             },
+            chooseAskSelection,
           }),
           runBoundaryReview: vi.fn(async () => {
             throw new Error("Detailed review should not open after Quick Start is accepted.");
@@ -244,11 +249,13 @@ describe("guided start surfaces", () => {
       expect(promptText).toHaveBeenCalledWith(
         "ENTER Start asking   E Change access   M Change model\nChoice [Enter]: ",
       );
+      expect(chooseAskSelection).toHaveBeenCalledOnce();
+      expect(chooseAskSelection).toHaveBeenCalledWith(undefined);
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
         selection: {
-          route: "openai",
-          model: "gpt-5-mini",
+          route: "anthropic",
+          model: "claude-owner-selected",
         },
         consentOnFirstQuestion: true,
       });
@@ -256,7 +263,11 @@ describe("guided start surfaces", () => {
       expect(output).toContain("Runner prepared one conservative, connected boundary");
       expect(output).toContain("TABLES       Service Visits");
       expect(output).toContain("Suggested from this boundary:");
-      expect(output).toContain("MODEL        OpenAI / gpt-5-mini");
+      expect(output).toContain(
+        "MODEL        Choose OpenAI, Anthropic, a local model, or an MCP client",
+      );
+      expect(output).toContain("Model Anthropic / claude-owner-selected");
+      expect(output).not.toContain("MODEL        OpenAI / gpt-5-mini");
       expect(output).toContain("read-only · tenant fixed by read-only login");
       expect(output).toContain("Use /access later to add tables or boundaries without restarting this model session.");
       expect(output).toContain("✓ Ready");
@@ -301,6 +312,103 @@ describe("guided start surfaces", () => {
     }
   });
 
+  it("regenerates a stale Quick Start draft in place and still requires a separate activation gesture", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-stale-"));
+    const original = inspection();
+    const current = structuredClone(original);
+    current.tables[0]!.role_posture!.owner = "replacement_owner";
+    let inspections = 0;
+    const schemaInspector = vi.fn(async () => {
+      inspections += 1;
+      return inspections === 1 ? original : current;
+    });
+    const prompts: string[] = [];
+    const actions = ["", "r", ""];
+    let inactiveAtRegeneration = false;
+    let inactiveAtSecondReview = false;
+    const promptText = vi.fn(async (prompt: string) => {
+      prompts.push(prompt);
+      const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+      const activeExists = await fs.access(activePath).then(() => true, () => false);
+      if (prompt.includes("Regenerate against current posture")) {
+        inactiveAtRegeneration = !activeExists;
+      } else if (prompts.filter((item) => item.includes("Start asking")).length === 2) {
+        inactiveAtSecondReview = !activeExists;
+      }
+      return actions.shift() ?? "";
+    });
+    const runPostActivationHandoff = vi.fn(async () => 0);
+    const chooseAskSelection = vi.fn(async () => ({
+      route: "openai-compatible" as const,
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "qwen2.5:7b",
+    }));
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    process.chdir(projectRoot);
+
+    try {
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--cli"],
+        {
+          interactive: true,
+          schemaInspector,
+          runInstantCliBoundary: (input) => activateInstantCliBoundary({
+            ...input,
+            env: { ...process.env, USER: "developer@example.test" },
+            resolveTrustedScopeFn: vi.fn(async () => ({
+              tenant: "tenant-from-database-role",
+              principal: "",
+              tenant_source: "postgres_role_setting" as const,
+              tenant_binding: "app.tenant_id",
+              principal_source: "not_required" as const,
+            })),
+            session: { promptText },
+            chooseAskSelection,
+          }),
+          runBoundaryReview: vi.fn(async () => {
+            throw new Error("Detailed review should not open after inline regeneration.");
+          }),
+          runPostActivationHandoff,
+          openWorkbench: vi.fn(async () => 0),
+        },
+      )).resolves.toBe(0);
+
+      expect(schemaInspector).toHaveBeenCalledTimes(3);
+      expect(prompts.filter((prompt) => prompt.includes("Start asking"))).toHaveLength(2);
+      expect(prompts).toContain(
+        "R Regenerate against current posture   Q Pause\nChoice [R]: ",
+      );
+      expect(inactiveAtRegeneration).toBe(true);
+      expect(inactiveAtSecondReview).toBe(true);
+      expect(output).toContain("DATABASE POSTURE CHANGED");
+      expect(output).toContain("database role, grants, ownership, or RLS posture changed");
+      expect(output).toContain("✓ Regenerated disabled boundary against the current posture.");
+      expect(output).toContain(
+        "No authority is active. Review the new boundary, then press Enter separately to activate it.",
+      );
+      expect(runPostActivationHandoff).toHaveBeenCalledOnce();
+      expect(chooseAskSelection).toHaveBeenCalledOnce();
+
+      const active = JSON.parse(await fs.readFile(
+        path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )) as { role_posture_fingerprint: string; activation: { mode: string } };
+      const lock = JSON.parse(await fs.readFile(
+        path.join(projectRoot, ".synapsor/generation-lock.json"),
+        "utf8",
+      )) as { role_posture_fingerprint: string };
+      expect(active.role_posture_fingerprint).toBe(lock.role_posture_fingerprint);
+      expect(active.activation.mode).toBe("instant_development");
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("changes the provider and exact model inside the same Quick Start review surface", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-model-"));
     const schemaInspector = vi.fn(async () => inspection());
@@ -339,10 +447,7 @@ describe("guided start surfaces", () => {
         },
       )).resolves.toBe(0);
 
-      expect(chooseAskSelection).toHaveBeenCalledWith({
-        route: "openai",
-        model: "gpt-5-mini",
-      });
+      expect(chooseAskSelection).toHaveBeenCalledWith(undefined);
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
         selection: {
@@ -360,8 +465,13 @@ describe("guided start surfaces", () => {
   it("returns from model selection to Quick Start without losing the prior selection", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-model-back-"));
     const schemaInspector = vi.fn(async () => inspection());
-    const actions = ["m", ""];
-    const chooseAskSelection = vi.fn(async () => undefined);
+    const actions = ["m", "m", ""];
+    const chooseAskSelection = vi.fn()
+      .mockResolvedValueOnce({
+        route: "anthropic" as const,
+        model: "claude-owner-selected",
+      })
+      .mockResolvedValueOnce(undefined);
     const runPostActivationHandoff = vi.fn(async () => 0);
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -394,10 +504,15 @@ describe("guided start surfaces", () => {
         },
       )).resolves.toBe(0);
 
+      expect(chooseAskSelection).toHaveBeenNthCalledWith(1, undefined);
+      expect(chooseAskSelection).toHaveBeenNthCalledWith(2, {
+        route: "anthropic",
+        model: "claude-owner-selected",
+      });
       expect(output).toContain("Model selection cancelled. Your previous model is unchanged.");
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
-        selection: { route: "openai", model: "gpt-5-mini" },
+        selection: { route: "anthropic", model: "claude-owner-selected" },
         consentOnFirstQuestion: true,
       });
     } finally {

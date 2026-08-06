@@ -430,6 +430,7 @@ describe("Scoped Explore", () => {
       );
       resource.selectable_fields.push("billing_token");
       resource.count_distinct_fields.push("billing_token");
+      resource.filterable_fields.billing_token = ["eq"];
       resource.model_withheld_fields = ["billing_token"];
       resource.field_enums.billing_token = ["billing-token-secret", "billing-token-other"];
     });
@@ -483,9 +484,179 @@ describe("Scoped Explore", () => {
       });
       expect(JSON.stringify(result)).not.toContain("billing-token-secret");
       expect(result._meta).toBeUndefined();
+
+      const refused = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.subscriptions",
+            measures: [{ function: "count" }],
+            where: [{ field: "billing_token", op: "eq", value: "guessed-token" }],
+            top_n: 1,
+          },
+        },
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused)).toContain("reviewed values are withheld from the model");
+      expect(JSON.stringify(refused)).not.toContain("billing-token-secret");
+      expect(JSON.stringify(refused)).not.toContain("billing-token-other");
     } finally {
       await client.close();
       await server.close();
+      await runtime.close();
+    }
+  });
+
+  it("refuses removed schema values, buckets grouped drift, and discloses row allowlist scope", async () => {
+    const inspection = churnInspection();
+    const region = inspection.tables[0]!.columns.find((field) => field.name === "region")!;
+    region.enum_values = ["north", "south"];
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.field_enums.region = ["north"];
+    }, inspection);
+    const queries: CompiledExploreQuery[] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async (query) => {
+          queries.push(structuredClone(query));
+          return [{ dimension_0: "north", measure_0: 8, __cohort_size: 8 }];
+        },
+        executeBatch: async ({ queries: batch }) => batch.map((query) => {
+          queries.push(structuredClone(query));
+          const bucketMarker = query.reviewed_value_controls?.find((control) =>
+            control.kind === "bucket_unreviewed_values")?.marker;
+          return bucketMarker
+            ? [
+              { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+              { dimension_0: bucketMarker, measure_0: 6, __cohort_size: 6 },
+            ]
+            : [{ region: "north", measure_0: 8, __cohort_size: 8 }];
+        }),
+        close: async () => undefined,
+      },
+    });
+    try {
+      const described = await runtime.describe({ resource: "public.subscriptions" });
+      expect(described).toMatchObject({
+        resources: [{ field_enums: { region: ["north"] } }],
+      });
+      queries.length = 0;
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        where: [{ field: "region", op: "eq", value: "south" }],
+        top_n: 10,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_PLAN_INVALID",
+        message: expect.stringMatching(/south.*not a reviewed value.*north.*No source query was executed/i),
+        details: expect.objectContaining({ source_query_executed: false }),
+      });
+      expect(queries).toHaveLength(0);
+
+      const grouped = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        where: [{ field: "reason_category", op: "eq", value: "free_text_still_allowed" }],
+        top_n: 10,
+      });
+      expect(grouped.data).toEqual(expect.arrayContaining([
+        { region: "north", count: 8 },
+        { region: "[outside-reviewed-values]", count: 6 },
+      ]));
+      expect(grouped.privacy).toMatchObject({
+        reviewed_value_controls: {
+          bucketed_fields: [{
+            resource: "public.subscriptions",
+            field: "region",
+            output_field: "region",
+            bucket_returned: true,
+            bucket_token: "[outside-reviewed-values]",
+          }],
+          source_values_exposed: false,
+        },
+      });
+      expect(JSON.stringify(grouped)).not.toContain("south");
+      expect(queries).toHaveLength(1);
+      expect(queries[0]!.sql).toMatch(/CASE WHEN .*region.* IN \(\$[0-9]+\).* ELSE \$[0-9]+ END AS "dimension_0"/);
+      expect(queries[0]!.sql.split(" WHERE ")[1]).not.toMatch(/region" IN/);
+      expect(queries[0]!.params).toEqual(expect.arrayContaining([
+        "free_text_still_allowed",
+        "north",
+      ]));
+
+      const mysqlGroupedPlan = validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        where: [{ field: "reason_category", op: "eq", value: "free_text_still_allowed" }],
+        top_n: 10,
+      }, fixture.boundary);
+      const [mysqlGroupedQuery] = compileExplorePlan(mysqlGroupedPlan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, "mysql");
+      expect(mysqlGroupedQuery?.sql).toMatch(/CASE WHEN .* IN \(\?\).* ELSE \? END AS `dimension_0`/);
+      expect(mysqlGroupedQuery?.params[0]).toBe("north");
+      expect(mysqlGroupedQuery?.params[1]).toMatch(/^__synapsor_unreviewed_[a-f0-9]+__$/);
+      expect(mysqlGroupedQuery?.params.indexOf("tenant-acme")).toBeGreaterThan(1);
+      expect(mysqlGroupedQuery?.params.indexOf("free_text_still_allowed")).toBeGreaterThan(1);
+
+      const rows = await runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 10,
+      });
+      expect(rows).toMatchObject({
+        data: [{ region: "north" }],
+        privacy: {
+          reviewed_value_controls: {
+            excluded_fields: [{
+              resource: "public.subscriptions",
+              field: "region",
+              effect: "rows_outside_reviewed_values_excluded",
+            }],
+          },
+        },
+      });
+      expect(queries.at(-1)!.sql.split(" WHERE ")[1]).toMatch(/region" IN \(\$[0-9]+\)/);
+
+      const countBoundary = structuredClone(fixture.boundary);
+      countBoundary.pack.resources[0]!.count_distinct_fields.push("region");
+      const distinctPlan = validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count_distinct", field: "region" }],
+        top_n: 1,
+      }, countBoundary);
+      const [distinctQuery] = compileExplorePlan(distinctPlan, countBoundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, "postgres");
+      expect(distinctQuery?.sql).toContain('COUNT(DISTINCT t0."region")');
+      expect(distinctQuery?.sql.split(" WHERE ")[1]).not.toMatch(/region" IN/);
+
+      await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        where: [{ field: "region", op: "neq", value: "north" }],
+        top_n: 1,
+      });
+      expect(queries.at(-1)!.sql).toMatch(/region" <> \$[0-9]+/);
+      expect(queries.at(-1)!.sql).toMatch(/region" IN \(\$[0-9]+\)/);
+      expect(queries.at(-1)!.params).toEqual(expect.arrayContaining(["north"]));
+    } finally {
       await runtime.close();
     }
   });
@@ -1525,8 +1696,8 @@ describe("Scoped Explore", () => {
         limit: 1,
       })).rejects.toMatchObject({
         code: "EXPLORE_LOCK_STALE",
-        message: expect.stringContaining(
-          "Reviewed field public.subscriptions.region changed type from text to integer",
+        message: expect.stringMatching(
+          /Reviewed field public\.subscriptions\.region changed type from text to integer[\s\S]*boundary draft --from-env DATABASE_URL --force/,
         ),
       });
       expect(changedExecutions).toBe(0);
@@ -1677,7 +1848,12 @@ describe("Scoped Explore", () => {
       transport: "stdio",
       env: fixture.env,
       inspectDatabaseFn: async () => changedRole,
-    })).rejects.toMatchObject({ code: "EXPLORE_LOCK_STALE" });
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringContaining(
+        "synapsor-runner boundary draft --from-env DATABASE_URL --force",
+      ),
+    });
 
     const overflowRuntime = await createScopedExploreRuntime({
       projectRoot: fixture.root,
@@ -2385,6 +2561,185 @@ describe("Scoped Explore", () => {
     await failed.close();
   }, 20_000);
 
+  it("runs production HTTP Explore with claim-bound scope and hierarchical privacy accounting", async () => {
+    const fixture = await activatedProductionFixture();
+    const claimBudget = vi.fn(async () => ({
+      allowed: true as const,
+      principal_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 10,
+        differencing_attempts: 1,
+      },
+      tenant_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 10,
+        differencing_attempts: 1,
+      },
+      principal_variant_already_counted: false,
+      tenant_variant_already_counted: false,
+    }));
+    const completeBudget = vi.fn(async () => ({ completed: true as const }));
+    const claimPrivacy = vi.fn(async () => ({ allowed: true as const }));
+    const store = new ProposalStore();
+    Object.assign(store, {
+      claimProductionExploreBudgetReservation: claimBudget,
+      completeProductionExploreBudgetReservation: completeBudget,
+      claimProductionExplorePrivacyRelease: claimPrivacy,
+    });
+    const execute = vi.fn(async () => [] as Record<string, unknown>[]);
+    const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
+      expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
+      return queries.map(() => [
+        { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+        { dimension_0: "small", measure_0: 2, __cohort_size: 2 },
+      ]);
+    });
+    const tenantLimits = {
+      max_queries_per_session: 10_000,
+      max_extracted_cells_per_session: 1_000_000,
+      max_differencing_queries: 2_000,
+      rate_limit_per_minute: 1_000,
+      max_response_cells: 1_000_000,
+    };
+    const hmacKey = Buffer.from("shared-production-accounting-key-32-bytes-minimum");
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "streamable_http",
+      mode: "production_http",
+      env: {
+        ...fixture.env,
+        SYNAPSOR_TENANT_ID: "environment-tenant-must-not-win",
+        SYNAPSOR_PRINCIPAL: "environment-principal-must-not-win",
+      },
+      store,
+      sessionContext: {
+        tenant_id: "tenant-from-jwt",
+        principal: "principal-from-jwt",
+        provenance: "http_claims",
+      },
+      productionPrivacyHmacKey: hmacKey,
+      productionAccountingNamespace: "example.analytics.production",
+      productionTenantLimits: tenantLimits,
+      executor: { execute, executeBatch, close: async () => undefined },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-04T13:00:00.000Z"),
+    });
+    try {
+      expect(runtime.trusted_scope).toEqual({
+        tenant: { source: "verified_http_claim", binding: "org_id" },
+        principal: { source: "verified_http_claim", binding: "sub" },
+      });
+      await runtime.describe({ include_time_coverage: true });
+      expect(execute).not.toHaveBeenCalled();
+      expect(executeBatch).not.toHaveBeenCalled();
+
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 5,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        privacy: { suppressed_groups: 1 },
+        source_database_changed: false,
+      });
+      expect((result as Record<string, unknown>).protect).toBeUndefined();
+      expect(executeBatch).toHaveBeenCalledTimes(1);
+      const compiled = executeBatch.mock.calls[0]![0].queries[0]!;
+      expect(compiled.sql).toContain('t0."tenant_id" = $1');
+      expect(compiled.sql).toContain('t0."account_id" = $2');
+      expect(compiled.params.slice(0, 2)).toEqual(["tenant-from-jwt", "principal-from-jwt"]);
+      expect(compiled.params[2]).toBe(fixture.boundary.budgets.max_groups + 1);
+      expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        principal_limits: fixture.boundary.budgets,
+        tenant_limits: {
+          ...tenantLimits,
+          max_response_cells: fixture.boundary.budgets.max_response_cells,
+        },
+      }));
+      expect(claimPrivacy).toHaveBeenCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        release_kind: "suppressed_grouping",
+      }));
+      expect(completeBudget).toHaveBeenCalledWith(expect.objectContaining({
+        result_released: true,
+      }));
+      const durableAudit = JSON.stringify(store.listQueryAudit());
+      expect(durableAudit).not.toContain("tenant-from-jwt");
+      expect(durableAudit).not.toContain("principal-from-jwt");
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("derives replica-stable opaque production budget scopes", async () => {
+    const [firstFixture, secondFixture] = await Promise.all([
+      activatedProductionFixture(),
+      activatedProductionFixture(),
+    ]);
+    const seen: Array<{ principal: string; tenant: string }> = [];
+    const create = async (root: string, inspection: SchemaInspection) => {
+      const store = new ProposalStore();
+      Object.assign(store, {
+        claimProductionExploreBudgetReservation: vi.fn(async (input: Record<string, unknown>) => {
+          seen.push({
+            principal: String(input.principal_scope_fingerprint),
+            tenant: String(input.tenant_scope_fingerprint),
+          });
+          return {
+            allowed: true,
+            principal_usage_after_reservation: { query_count: 1, queries_last_minute: 1, extracted_cells: 1, differencing_attempts: 0 },
+            tenant_usage_after_reservation: { query_count: 1, queries_last_minute: 1, extracted_cells: 1, differencing_attempts: 0 },
+            principal_variant_already_counted: false,
+            tenant_variant_already_counted: false,
+          };
+        }),
+        completeProductionExploreBudgetReservation: vi.fn(async () => ({ completed: true })),
+        claimProductionExplorePrivacyRelease: vi.fn(async () => ({ allowed: true })),
+      });
+      const runtime = await createScopedExploreRuntime({
+        projectRoot: root,
+        transport: "streamable_http",
+        mode: "production_http",
+        env: { DATABASE_URL: "postgresql://unused.example.test/synapsor" },
+        store,
+        sessionContext: { tenant_id: "tenant-a", principal: "alice", provenance: "http_claims" },
+        productionPrivacyHmacKey: Buffer.from("shared-production-accounting-key-32-bytes-minimum"),
+        productionAccountingNamespace: "example.analytics.production",
+        productionTenantLimits: {
+          max_queries_per_session: 100,
+          max_extracted_cells_per_session: 10_000,
+          max_differencing_queries: 10,
+          rate_limit_per_minute: 20,
+          max_response_cells: 10_000,
+        },
+        executor: fixedExecutor([{ region: "north" }]),
+        inspectDatabaseFn: async () => inspection,
+      });
+      await runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      });
+      await runtime.close();
+      store.close();
+    };
+
+    await create(firstFixture.root, firstFixture.inspection);
+    await create(secondFixture.root, secondFixture.inspection);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toEqual(seen[1]);
+  });
+
   it("revalidates dependency drift before every call in a long-running authoring runtime", async () => {
     const fixture = await activatedFixture();
     let currentInspection = fixture.inspection;
@@ -2564,6 +2919,71 @@ async function activatedFixture(
       SYNAPSOR_TENANT_ID: "tenant-acme",
       SYNAPSOR_PRINCIPAL: "pm-1",
     },
+  };
+}
+
+async function activatedProductionFixture(): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-explore-"));
+  temporaryRoots.push(root);
+  const inspection = churnInspection();
+  const resource = inspection.tables[0]!;
+  resource.columns.splice(2, 0, column("account_id", "uuid", { immutable: true }));
+  resource.suggestions.default_visible_columns.push("account_id");
+  resource.row_level_security_policies!.push({
+    name: "principal_read",
+    command: "SELECT",
+    permissive: true,
+    roles: ["app_reader"],
+    using_expression: "(account_id = current_setting('app.principal_id')::uuid)",
+  });
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: ["nextjs"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    deploymentProfile: "production",
+    httpClaims: { tenantClaim: "org_id", principalClaim: "sub" },
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.subscriptions": {
+          principal_key: {
+            value: "account_id",
+            actor: "production-owner@example.test",
+            reason: "Each authenticated account may analyze only its own subscription rows.",
+            decided_at: "2026-08-04T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "production-owner@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: { DATABASE_URL: "postgresql://unused.example.test/synapsor" },
   };
 }
 

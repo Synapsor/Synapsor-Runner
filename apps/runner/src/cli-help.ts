@@ -11,13 +11,20 @@ export function usage(args: string[] = []): void {
 
 Safe MCP tools for Postgres/MySQL-backed agent actions.
 
+New here?
+  No database needed: ${cmd} try
+  Connect your database: ${cmd} start --from-env DATABASE_URL
+
+\`start\` is the interactive guided first run. \`onboard db\` is the explicit,
+scriptable one-command artifact generator for CI and established automation.
+
 Usage:
   ${cmd} <command>
 
 Commands:
   try          Run an isolated proof, or ask/explore/call active project tools
   inspect      Inspect a Postgres/MySQL schema
-  start        Start guided own-database setup, or no-arg legacy worker polling
+  start        Interactive guided first run, or no-arg legacy worker polling
   action       Validate/watch disabled TypeScript Safe Action drafts
   up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
@@ -30,7 +37,7 @@ Commands:
   dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
   language-server  Start the Synapsor contract LSP over stdio
   cloud        Register runner metadata or dry-run contract push to Cloud
-  onboard      One-command own-database setup
+  onboard      Scriptable one-command own-database artifact setup
   smoke        Test generated tool calls before wiring an MCP client
   tools        List model-facing MCP tools and aliases
   writeback    Print direct SQL writeback receipt DDL, grants, and checks
@@ -166,12 +173,18 @@ activates the result.
 	`,
     config: `Usage:
   ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
+  ${cmd} config init --production-explore --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
 Initialize or validate local Runner wiring before tools preview, doctor, smoke,
 or MCP serve. config init creates a valid read-only zero-authority shell using
 environment-variable references and refuses to overwrite an existing file.
+With --production-explore it emits the complete zero-authority shared-Postgres,
+JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
+It reuses source and claim bindings from a production boundary draft when one
+exists; issuer, audience, and accounting namespace remain explicit operator
+inputs. No database URL, JWT, HMAC key, or other secret value is written.
 Contract paths are resolved relative to the config file. SQLite store paths are
 resolved by the Runner process working directory.
 `,
@@ -299,9 +312,13 @@ Options:
   --tls-ca-env <ENV> --require-client-cert
 `,
     start: `Usage:
+  # Recommended interactive first run
   ${cmd} start --from-env DATABASE_URL [--schema public]
   ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose]
-  ${cmd} start --from-env DATABASE_URL --table invoices [--mode read_only|shadow|review]
+
+  # Canonical non-interactive read-only setup
+  ${cmd} start --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
+
   ${cmd} start --from-env DATABASE_URL --answers ./answers.json --yes
   ${cmd} start --action refund_order --description "Propose one reviewed order refund" [--based-on billing.inspect_order]
   ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
@@ -331,10 +348,13 @@ editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`
 retains its established behavior: initialize or resume
 without opening a browser or starting an interactive review.
 
-Established --table, --answers, onboard db, --mode, noninteractive, JSON, and
-CI routes retain the guided one-object behavior and never unexpectedly prompt
-or open a browser. A valid config/boundary handshake does not count as a real
-own-data read.
+In a terminal, selectors such as --table seed the interactive wizard instead
+of disabling its prompts. For CI, provide --table, --mode, and either
+--tenant-key or --single-tenant-dev together; Runner reports every missing
+decision in one error. Add --force only after reviewing existing generated
+files. --answers remains the stable file-driven automation path. These routes
+never unexpectedly open a browser, and a valid config/boundary handshake does
+not count as a real own-data read.
 
 With no flags, start the legacy cloud-linked writeback polling worker from the
 worker environment config. Prefer \`${cmd} runner start\` for that worker path
@@ -344,6 +364,7 @@ the local reviewed contract and proposal before writeback.
 `,
     boundary: `Usage:
   ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
+  ${cmd} boundary draft --from-env DATABASE_URL --profile production --tenant-claim tenant_id --principal-claim sub [--project-root .]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
   ${cmd} boundary review --map [--all] [--project-root .]
@@ -368,6 +389,9 @@ the local reviewed contract and proposal before writeback.
 Draft the whole deterministic application boundary without opening a browser,
 inspect/export its disabled review state, and compare the generation lock with
 the current schema and exact database role/grant/RLS posture. Interactive review
+uses development/staging by default. Production Explore requires a separate
+production draft whose tenant and principal claim names match the verified JWT
+session contract; claim values never enter the draft or model arguments.
 from a fresh directory also prepares the validated local Runner config, SQLite
 ledger, and MCP snippets needed by the eventual Ask handoff; it writes
 environment-variable names but no credential values. An established config is
@@ -586,7 +610,7 @@ Inspect schema metadata without mutating the database or printing credentials.
   ${cmd} init --wizard --from-env DATABASE_URL [--mode read_only|review|shadow] [--out synapsor.runner.json]
   ${cmd} init --engine postgres --url-env DATABASE_URL --mode review --table public.invoices --operation update
   ${cmd} init --inspection-json schema.json --table invoices --mode review --operation update --patch late_fee_cents=fixed:0,waiver_reason=arg:reason
-  ${cmd} init --inspection-json schema.json --table account_credits --mode review --operation insert --dedup-columns request_id --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents
+  ${cmd} init --inspection-json schema.json --table account_credits --mode review --operation insert --dedup request_id=proposal_id,tenant_id=trusted_tenant --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents
   ${cmd} init --inspection-json schema.json --table sessions --mode review --operation delete
   ${cmd} init --answers answers.json --yes
   ${cmd} init --inspection-json schema.json --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
@@ -676,10 +700,21 @@ This command never prints database URLs or write credentials.
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio] [--read-only] [--local] [--alias-mode canonical|openai|both] [--result-format v1|v2]
   ${cmd} mcp serve --authoring --project-root .
   ${cmd} mcp serve --transport streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN [--result-format v2]
+  ${cmd} mcp serve --transport streamable-http --production-explore --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy
 
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
 Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
 The explicit --authoring route exposes only app.describe_data and app.explore_data after a local human activates the current development/staging boundary. It refuses HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner.
+The explicit --production-explore route exposes the same two read-only tools
+from separately reviewed production boundaries. It requires asymmetric JWT
+tenant/principal claims, the configured OAuth scope, direct TLS or a trusted
+TLS proxy, and atomic shared-Postgres per-principal plus tenant privacy
+accounting. Static tokens, no-auth, cleartext break glass, Protect, approval,
+apply, configuration, credentials, and SQL are unavailable on this surface.
+Production Explore also fixes the public names to app.describe_data and
+app.explore_data and fixes the reviewed result envelope. It rejects
+--alias-mode, --tool-name-style, --openai-tool-aliases, and --result-format
+instead of silently ignoring them.
 For Streamable HTTP, Bearer may present either an operator-provisioned opaque endpoint token or an identity-provider-issued signed JWT. Runner never issues or refreshes these credentials.
 Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names. Use --alias-mode both to expose canonical and alias names.
 Use --result-format v2 to return one stable ok/summary/data/proposal/error envelope from every tool call.
@@ -689,8 +724,11 @@ Use --result-format v2 to return one stable ok/summary/data/proposal/error envel
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8766] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--alias-mode canonical|openai|both] [--result-format v1|v2]
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM --tls-ca-env SYNAPSOR_TLS_CA_PEM --require-client-cert
+  ${cmd} mcp serve-streamable-http --production-explore --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy
 
 Start the spec-compatible MCP Streamable HTTP endpoint for clients and SDKs that support HTTP MCP.
+With --production-explore, tool names and the reviewed result envelope are
+fixed. Presentation alias and result-format flags are rejected explicitly.
 HTTP Bearer is the credential presentation scheme. It carries either an opaque
 single-service endpoint token or a signed per-session JWT; Bearer does not make
 the credential a JWT. Runner never issues either credential. An operator creates
@@ -715,6 +753,9 @@ Security:
   - mTLS supplements Bearer authentication; it does not replace tenant/principal claims unless your deployment is explicitly single-tenant.
   - CORS is disabled by default. --cors-origin accepts one exact origin, never a wildcard.
   - Shared deployments require http_claims, signed session_auth, exact issuer/audience, and RFC 9728 oauth_resource metadata in Runner config.
+  - Production Explore additionally requires an active production boundary,
+    a mandatory principal claim, one shared HMAC key, and shared Postgres
+    atomic privacy accounting. Run doctor before serving.
   - Diagnose the exact posture with: ${cmd} doctor --config ./synapsor.runner.json --transport streamable-http --host 127.0.0.1
 `,
     "mcp serve-http": `Usage:
@@ -803,17 +844,26 @@ Templates:
 The template receives an approved proposal writeback request and must return an applied/conflict/failed receipt. Re-check tenant, principal, idempotency, row/version guards, and business policy before mutating state.
 `,
     onboard: `Usage:
-  ${cmd} onboard db --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
-  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --operation update --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
-  ${cmd} onboard db --from-env DATABASE_URL --table account_credits --mode review --operation insert --dedup-columns request_id --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
-  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes
+  # Interactive artifact setup
+  ${cmd} onboard db --from-env DATABASE_URL [--schema public]
+
+  # Canonical non-interactive read-only setup
+  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
+
+  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode review --operation update --tenant-key tenant_id --conflict-column updated_at --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open
+  ${cmd} onboard db --from-env DATABASE_URL --table public.account_credits --mode review --operation insert --tenant-key tenant_id --dedup request_id=proposal_id,tenant_id=trusted_tenant --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open
+  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode review --operation update --tenant-key tenant_id --conflict-column updated_at --patch late_fee_cents=fixed:0 --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes --no-open
   ${cmd} onboard db --answers answers.json --yes
 
 Guided own-database setup: inspect schema, choose one object, create trusted
 context, choose read-only/shadow/review mode, select guarded single-row
 INSERT/UPDATE/DELETE or an app-owned handler, select receipt authority, generate
 semantic tools, validate config, and run a tool-boundary smoke check.
-Use --yes/--non-interactive with explicit flags, or --answers, when CI or an LLM agent must run without prompts.
+In a terminal, Runner prompts for mode and trusted tenant scope. For CI, pass
+--table, --mode, and either --tenant-key or --single-tenant-dev together; write
+modes also require their reviewed patch and --yes. Missing automation decisions
+are reported together. Use --answers for a stable file-driven run, and add
+--force only after reviewing existing generated files.
 `,
     propose: `Usage:
   ${cmd} propose <capability-name> --sample [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -861,6 +911,7 @@ security guarantee.
 `,
     doctor: `Usage:
   ${cmd} doctor --config synapsor.runner.json
+  ${cmd} doctor --config synapsor.runner.json --setup
   ${cmd} doctor --config synapsor.runner.json --json
   ${cmd} doctor --config synapsor.runner.json --check-handlers
   ${cmd} doctor --config synapsor.runner.json --check-writeback
@@ -873,6 +924,10 @@ security guarantee.
   ${cmd} doctor --first-run
 
 Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, operation-specific direct SQL writeback readiness, receipt authority, and local store stats. Reports are redacted; do not paste secrets into issues.
+Use --setup immediately after onboarding. Deferred trusted-context and writer
+bindings are shown as setup incomplete next steps. A missing primary read
+credential, required HTTP session-auth key, or invalid configuration reports
+setup failed. Normal doctor remains strict.
 With --transport streamable-http/http, doctor also reports bind scope, channel protection, auth/identity mode, issuer/audience/resource, key readiness, static-token strength/rotation, exact Origin/Host policy, request/session limits, rate-limit scope, and remediation without printing credential values.
 Use --check-writeback to verify the configured receipt mode. source_db/precreated uses rollback-only probes and never runs CREATE; source_db/auto_migrate verifies the fixed migration; runner_ledger verifies its durable intent store and requires no source receipt table.
 Use --check-rls only on a disposable or explicitly approved live PostgreSQL target to run read-only cross-tenant/principal and pooled-context canaries for sources configured with database_scope.mode=postgres_rls.

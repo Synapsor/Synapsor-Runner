@@ -491,6 +491,13 @@ issues short-lived access tokens; Runner verifies them but does not store user
 passwords or issue refresh tokens. See [HTTP MCP](http-mcp.md) before exposing a
 listener outside loopback.
 
+Flexible production analytics is a separate explicit mode, not a consequence
+of enabling shared HTTP. See [Production Scoped Explore Over
+HTTP](production-scoped-explore-http.md) for the required production boundary,
+JWT principal scope, hierarchical privacy budgets, shared control ledger, and
+`--production-explore` startup attestation. Fixed named capabilities remain the
+narrower default for known production question shapes.
+
 Run the transport-specific doctor check before serving:
 
 ```bash

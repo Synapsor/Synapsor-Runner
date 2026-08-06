@@ -5,7 +5,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@synapsor/runner@1.6.7",
+        "@synapsor/runner@1.7.0",
         "mcp",
         "serve",
         "--config",

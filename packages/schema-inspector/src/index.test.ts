@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assessDirectWritePrerequisites,
+  deriveSchemaDeclaredEnumValues,
   generateRunnerConfigFromSpec,
   mysqlGrantPosture,
   summarizeInspection,
@@ -9,6 +10,73 @@ import {
 } from "./index.js";
 
 describe("schema inspector helpers", () => {
+  it("derives complete bounded categorical vocabularies from schema metadata", () => {
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: [
+        "CHECK ((status = ANY (ARRAY['open'::text, 'paid'::text, 'void'::text])))",
+      ],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: [
+        "CHECK (((\"status\")::text IN ('open'::text, 'paid'::text, 'void'::text)))",
+      ],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "status",
+      check_definitions: ["`status` in (_utf8mb4'open',_utf8mb4'paid',_utf8mb4'void')"],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "status",
+      column_type: "enum('open','paid','can''t_bill')",
+    })).toEqual(["open", "paid", "can't_bill"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "channels",
+      column_type: "set('web','mobile')",
+    })).toEqual(["", "web", "mobile", "web,mobile"]);
+  });
+
+  it("omits incomplete, unrelated, or oversized schema vocabularies all-or-nothing", () => {
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: ["CHECK (status IN ('open', 'paid') OR archived = true)"],
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: ["CHECK (plan IN ('free', 'team'))"],
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: ["open", "paid", "void"],
+      check_definitions: ["CHECK (status IN ('open', 'paid'))"],
+    })).toEqual(["open", "paid"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: Array.from({ length: 65 }, (_, index) => `state_${index}`),
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: ["x".repeat(65)],
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: Array.from({ length: 40 }, (_, index) =>
+        `${String(index).padStart(2, "0")}_${"x".repeat(57)}`),
+    })).toBeUndefined();
+  });
+
   it("maps MySQL grants to exact relations and fails closed on roles or elevated authority", () => {
     const relations = [
       { schema: "fitflow", table: "memberships" },

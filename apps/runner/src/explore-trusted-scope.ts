@@ -11,10 +11,16 @@ type ExploreBoundary = ExplorationBoundaryDraft | ActivatedExplorationBoundary;
 export type ExploreTrustedScope = {
   tenant: string;
   principal: string;
-  tenant_source: "environment" | "postgres_role_setting";
+  tenant_source: "environment" | "postgres_role_setting" | "verified_http_claim";
   tenant_binding: string;
-  principal_source: "environment" | "not_required";
+  principal_source: "environment" | "verified_http_claim" | "not_required";
   principal_binding?: string;
+};
+
+export type ExploreHttpSessionContext = {
+  tenant_id: string;
+  principal: string;
+  provenance: "http_claims";
 };
 
 export class ExploreTrustedScopeError extends Error {
@@ -37,8 +43,30 @@ export async function resolveExploreTrustedScope(input: {
   lock: GenerationLock;
   inspection: SchemaInspection;
   env: NodeJS.ProcessEnv;
+  sessionContext?: ExploreHttpSessionContext;
   readPostgresRoleSetting?: ReadPostgresRoleSetting;
 }): Promise<ExploreTrustedScope> {
+  if (input.boundary.trusted_context.provider === "http_claims") {
+    if (input.boundary.deployment_profile !== "production") {
+      throw new ExploreTrustedScopeError("Verified HTTP claim bindings are only valid for a reviewed production Explore boundary.");
+    }
+    const tenant = normalizedScopeValue(input.sessionContext?.tenant_id);
+    const principal = normalizedScopeValue(input.sessionContext?.principal);
+    if (input.sessionContext?.provenance !== "http_claims" || !tenant || !principal) {
+      throw new ExploreTrustedScopeError(
+        "Production Explore requires a verified tenant and principal on every HTTP session.",
+        [input.boundary.trusted_context.tenant_claim, input.boundary.trusted_context.principal_claim],
+      );
+    }
+    return {
+      tenant,
+      principal,
+      tenant_source: "verified_http_claim",
+      tenant_binding: input.boundary.trusted_context.tenant_claim,
+      principal_source: "verified_http_claim",
+      principal_binding: input.boundary.trusted_context.principal_claim,
+    };
+  }
   const principalRequired = input.boundary.pack.resources.some((resource) =>
     typeof resource.principal_key === "string" && resource.principal_key.length > 0);
   const configuredTenant = input.env[input.boundary.trusted_context.tenant_env]?.trim();

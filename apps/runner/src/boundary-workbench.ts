@@ -153,6 +153,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .access-column:last-child{border-bottom:0}.access-column:hover{background:var(--surface-2)}.access-column.highlighted{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
 	    .access-column-copy{min-width:0}.access-column-copy strong,.access-column-copy small{display:block;overflow-wrap:anywhere}.access-column-copy small{color:var(--muted)}.access-column-risk{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px}
 	    .access-column-tier{display:grid;gap:4px;color:var(--muted);font-size:11px;font-weight:700}.access-column-tier select{min-height:38px}.access-column-consequence{font-weight:500;line-height:1.35}.access-column .review-form{grid-column:1/-1;margin:2px 0 4px}
+	    .enum-review{grid-column:1/-1;margin:2px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--bg)}.enum-review>summary{cursor:pointer;font-weight:700}.enum-review-values{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;margin:10px 0}.enum-review-values .check{margin:0;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 	    .access-secondary{margin-top:10px}.access-secondary>summary{font-weight:700}.access-secondary[open]{padding-bottom:6px}
 	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{margin:0}.access-final strong{color:var(--text)}
 	    .hidden{display:none!important}.screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
@@ -233,6 +234,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .ask-boundary-row strong{color:#78867e;font-size:10px;text-transform:uppercase}.ask-boundary-row span{color:#cbd6d0;font-size:13px;overflow-wrap:anywhere}
     .ask-boundary-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.ask-boundary-pagination-status{color:#839189;font-size:12px}.ask-boundary-pagination-actions{display:flex;gap:7px}.ask-boundary-pagination-actions button{min-width:96px;min-height:36px;padding:6px 10px}
     .ask-boundary-examples{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.ask-boundary-examples .question{width:auto;min-height:38px;padding:8px 11px;font-size:13px}
+	    .boundary-catalog-map{margin-top:16px;padding-top:14px;border-top:1px solid #26372f}.boundary-catalog-map>summary{color:#dce6e1;font-weight:750;cursor:pointer}.boundary-catalog-summary{margin:8px 0 14px;color:#839189;font-size:12px}.boundary-catalog-controls{display:grid;grid-template-columns:minmax(220px,360px) auto;gap:10px;align-items:end;margin:12px 0}.boundary-catalog-controls .actions{margin:0}.boundary-catalog-boundary{margin-top:14px}.boundary-catalog-boundary h4{margin:0 0 10px}.boundary-catalog-graph{width:100%;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c}.boundary-catalog-graph svg{display:block;min-width:100%;height:auto}.boundary-catalog-graph .node{fill:#0d1813;stroke:#75e3b7;stroke-width:1.5}.boundary-catalog-graph .node-title{fill:#eef5f1;font-size:13px;font-weight:750}.boundary-catalog-graph .node-field{fill:#91a198;font:11px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-graph .edge{fill:none;stroke:#75e3b7;stroke-width:2}.boundary-catalog-graph .edge.unproven{stroke:#f0aa68;stroke-dasharray:6 5}.boundary-catalog-graph .edge-label{fill:#9aaba2;font:10px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-nodes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.boundary-catalog-node{min-width:0;padding:12px;border:1px solid #2b3c34;border-radius:6px;background:#0a120f}.boundary-catalog-node strong,.boundary-catalog-node small{display:block}.boundary-catalog-node small{margin-top:5px;color:#839189;overflow-wrap:anywhere}.boundary-catalog-edges{display:grid;gap:7px;margin-top:10px}.boundary-catalog-edge{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:9px;padding:10px 12px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-edge.unproven{border-left-color:#f0aa68}.boundary-catalog-edge code{overflow-wrap:anywhere}.boundary-catalog-edge span{text-align:center;color:#839189;font-size:11px}.boundary-catalog-mermaid{margin-top:12px}.boundary-catalog-mermaid pre{max-height:320px;margin:10px 0 0;padding:13px;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c;color:#bcd5c8;font-size:12px;white-space:pre}
+	    .boundary-catalog-path{border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-path.unproven{border-left-color:#f0aa68}.boundary-catalog-path .boundary-catalog-edge{border-left:0;background:transparent}.boundary-catalog-question{margin:0;padding:0 12px 11px;color:#cbd6d0;font-size:12px}.boundary-catalog-question strong{color:#75e3b7}.boundary-catalog-questions{margin:12px 0;padding:12px 14px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-questions strong{color:#75e3b7}.boundary-catalog-questions ul{margin:8px 0 0;padding-left:20px}.boundary-catalog-questions li+li{margin-top:5px}.boundary-catalog-capabilities{color:#aab8b1!important}
 	    .boundary-proof-report{margin:0 0 18px;padding:18px;border:1px solid var(--line);border-left:3px solid var(--good);border-radius:8px;background:var(--good-soft)}.boundary-proof-report.failed{border-left-color:var(--bad);background:var(--bad-soft)}.boundary-proof-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.boundary-proof-head h3{margin:3px 0}.boundary-proof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.boundary-proof-item{padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.boundary-proof-item strong,.boundary-proof-item small{display:block}.boundary-proof-item small{margin-top:3px;color:var(--muted)}
 	    .ask-proof-actions{order:1;display:flex;justify-content:flex-end;gap:8px;margin:-6px 0 14px}#boundary-proof-result{order:1}
     body.ask-focus-mode #ask-chat>.ask-disclosure{order:4;margin-top:26px;color:#77857e}
@@ -310,7 +313,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       body.ask-focus-mode .ask-head h3{font-size:30px}.ask-state{width:100%;justify-content:center}.ask-state .quiet{min-height:38px}.ask-grid{grid-template-columns:1fr}
       body.ask-focus-mode #ask-starters{grid-template-columns:1fr}.ask-transcript>.ask-turn:not(.answer)>p{font-size:24px}
       body.ask-focus-mode .ask-verified{padding:20px}.ask-verified-head{align-items:flex-start}.runner-verified{font-size:10px}
-      .ask-boundary-grid,.boundary-proof-grid{grid-template-columns:1fr}.ask-boundary-summary{display:grid;gap:2px}.ask-boundary-resource{padding:13px}.ask-boundary-actions{align-items:stretch;flex-direction:column}.ask-boundary-actions button{width:100%}
+	      .ask-boundary-grid,.boundary-proof-grid,.boundary-catalog-nodes{grid-template-columns:1fr}.ask-boundary-summary{display:grid;gap:2px}.ask-boundary-resource{padding:13px}.ask-boundary-actions{align-items:stretch;flex-direction:column}.ask-boundary-actions button{width:100%}.boundary-catalog-controls{grid-template-columns:1fr}.boundary-catalog-edge{grid-template-columns:1fr;gap:5px}.boundary-catalog-edge span{text-align:left}
       .ask-boundary-pagination{align-items:stretch;flex-direction:column}.ask-boundary-pagination-actions{display:grid;grid-template-columns:1fr 1fr}.ask-boundary-pagination-actions button{width:100%}
       body.ask-result-mode main{padding-top:28px}.ask-result-mode .ask-transcript>.ask-turn:not(.answer)>p{font-size:30px}body.ask-result-mode .ask-answer-grid{grid-template-columns:1fr}.ask-result-mode .ask-model-panel,.ask-result-mode .ask-verified{padding:20px}.ask-result-mode .ask-composer{grid-template-columns:1fr;padding:16px}
     }
@@ -555,7 +558,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             <div id="ask-submit-consent" class="ask-disclosure hidden"></div>
             <div class="ask-disclosure"><strong>Session-only conversation</strong><p>Questions, tool results, and model responses stay in memory and are cleared when this Workbench stops or you select Clear. Model output is untrusted; database facts must come through a reviewed tool call.</p></div>
             <details id="ask-boundary-guide" class="ask-boundary-guide">
-              <summary><span class="ask-boundary-summary"><strong>What can I ask?</strong><small id="ask-boundary-summary">Loading the active reviewed boundary...</small></span></summary>
+              <summary><span class="ask-boundary-summary"><strong>What can I ask?</strong><small id="ask-boundary-summary">Loading tables and the reviewed relationship map...</small></span></summary>
               <div id="ask-boundary-body" class="ask-boundary-body"></div>
             </details>
             <div class="ask-proof-actions"><button id="prove-boundary-chat" data-prove-boundary class="secondary" type="button">Prove this boundary</button><button data-tune-boundary class="quiet" type="button">Tune access</button></div>
@@ -678,6 +681,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let guidedActionData=null;
     let guidedActionDraft=null;
     let askStatus=null;
+	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
+	    let boundaryMermaid="erDiagram";
+	    let boundaryDiagrams=[];
+	    let boundaryGraphSequence=0;
     let askConsentOnSubmit=false;
     let askStarterPrompts=[];
     const askBoundaryPageSize=6;
@@ -1220,7 +1227,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
 			      panel.innerHTML=
 			        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
-		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"");
+		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"")
+		        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams);
+		      wireBoundaryRelationshipMaps(panel);
 			      byId("edit-boundary-tables").onclick=()=>openFocusedAccessReview();
 			      byId("review-pending-boundary")?.addEventListener("click",openFocusedActivationReview);
 		      byId("new-boundary").onclick=()=>{
@@ -1838,6 +1847,57 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
+    async function submitManagedEnumReview(field,form){
+      const status=form.querySelector("[data-enum-review-status]");
+      const actor=form.querySelector("[data-enum-review-actor]").value.trim();
+      const reason=form.querySelector("[data-enum-review-reason]").value.trim();
+      const values=[...form.querySelectorAll("[data-enum-review-value]:checked")].map(input=>input.value);
+      const resourceId=selectedResource;
+      try{
+        if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+        const current=JSON.parse(decodeURIComponent(form.dataset.enumCurrent||"%5B%5D"));
+        if(JSON.stringify(values)===JSON.stringify(current)){
+          status.className="status-message";
+          status.textContent="Unchanged: this column already uses exactly these allowed values. No boundary revision was created.";
+          return;
+        }
+        status.className="status-message";
+        status.textContent="Saving this reviewed value allowlist in the disabled boundary...";
+        await post("/api/boundary/regenerate",{
+          kind:"field_enum",
+          resource_id:resourceId,
+          field,
+          values,
+          actor,
+          reason
+        });
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent="Recorded: "+resourceId+"."+field+" keeps "+(values.length?values.length+" reviewed value"+(values.length===1?"":"s"):"no values; filtering and grouping are disabled")+". Actor: "+actor+".";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function managedEnumReviewPanel(field,schemaValues,reviewedValues,decision){
+      const selected=new Set(reviewedValues);
+      const values=schemaValues.map(value=>'<label class="check"><input data-enum-review-value type="checkbox" value="'+esc(value)+'" '+(selected.has(value)?"checked":"")+'><span><code>'+esc(value)+'</code></span></label>').join("");
+      const decisionText=decision
+        ?'<p>Last reviewed by '+esc(decision.actor)+' at '+esc(decision.decided_at)+': '+esc(decision.reason)+'</p>'
+        :"";
+      return '<details class="enum-review" data-enum-review-form data-enum-field="'+esc(field)+'" data-enum-current="'+esc(encodeURIComponent(JSON.stringify(reviewedValues)))+'"><summary>Allowed values · '+esc(reviewedValues.length)+' of '+esc(schemaValues.length)+'</summary>'
+        +'<p>Runner learned this complete list from database schema metadata; no source rows were sampled. The AI may filter or group only by checked values. Removed values are refused even if guessed.</p>'
+        +'<p><strong>Selecting none disables filtering and grouping for this column.</strong> It does not restore free-text access.</p>'
+        +decisionText
+        +'<div class="enum-review-values">'+values+'</div>'
+        +'<div class="form-grid"><label class="field">Human reviewer<input data-enum-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-enum-review-reason maxlength="500" rows="2" placeholder="Explain why the AI should be limited to exactly these values."></textarea></label></div>'
+        +'<div class="actions"><button data-submit-enum-review="'+esc(field)+'" type="button">Save allowed values</button></div><span data-enum-review-status class="status-message"></span></details>';
+    }
+
     function managedReviewForm(field,exposure,placeholder){
       return '<div class="review-form hidden" data-managed-review-form data-field="'+esc(field)+'" data-exposure="'+esc(exposure)+'"><label class="field">Human reviewer<input data-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-review-reason maxlength="500" rows="2" placeholder="'+esc(placeholder)+'"></textarea></label><div class="actions"><button data-submit-field-review="'+esc(field)+'" data-exposure="'+esc(exposure)+'" type="button">Save this reviewed choice</button><button class="quiet" data-cancel-field-review type="button">Cancel</button></div><span data-review-status class="status-message"></span></div>';
     }
@@ -2096,12 +2156,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		              tier!=="withheld"?managedReviewForm(field.name,"withhold_from_model","Why may the agent use this field while its values stay out of model context?"):"",
 		              tier!=="kept_out"?managedReviewForm(field.name,"keep_out","Why should this field become unavailable to plans?"):""
 		            ].join("");
-	        const highlighted=field.name===highlightedAccessField;
-	        return '<div class="access-column '+(highlighted?"highlighted":"")+'" data-access-column="'+esc(field.name)+'" data-column-kept-out="'+esc(String(kept))+'" '+(highlighted?'data-access-highlighted="true"':"")+'>'
-	          +'<span class="access-column-copy"><strong><code>'+esc(field.name)+'</code></strong><small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small><span class="access-column-risk">'+stateBadge+unavailableBadge+'</span></span>'
-	          +tierControl
-	          +reviewForms
-	          +'</div>';
+		        const schemaEnum=Array.isArray(field.enum_values)?field.enum_values:[];
+		        const enumReviewable=Boolean(resource&&schemaEnum.length&&(Object.hasOwn(source?.field_enums||{},field.name)||field.enum_review_override));
+		        const reviewedEnum=enumReviewable
+		          ?Object.hasOwn(resource.field_enums||{},field.name)
+		            ?resource.field_enums[field.name]
+		            :field.enum_review_override?[]:schemaEnum
+		          :[];
+		        const enumControl=enumReviewable
+		          ?managedEnumReviewPanel(field.name,schemaEnum,reviewedEnum,field.enum_review_override)
+		          :"";
+		        const highlighted=field.name===highlightedAccessField;
+		        return '<div class="access-column '+(highlighted?"highlighted":"")+'" data-access-column="'+esc(field.name)+'" data-column-kept-out="'+esc(String(kept))+'" '+(highlighted?'data-access-highlighted="true"':"")+'>'
+		          +'<span class="access-column-copy"><strong><code>'+esc(field.name)+'</code></strong><small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small><span class="access-column-risk">'+stateBadge+unavailableBadge+'</span></span>'
+		          +tierControl
+		          +reviewForms
+		          +enumControl
+		          +'</div>';
 	      };
 	      const columnList='<div class="access-column-list" data-access-column-list>'+orderedFields.map(renderColumnRow).join("")+'</div>';
 		      const privacyButton=resource?'<button class="quiet" id="open-resource-privacy" type="button">Privacy · minimum group '+esc(resource.minimum_cohort_size)+'</button>':"";
@@ -2222,8 +2293,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         }
       });
       document.querySelectorAll("[data-open-field-review]").forEach(button=>button.onclick=()=>openManagedFieldReview(button.dataset.openFieldReview,button.dataset.exposure));
-      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
-      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
+	      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
+	      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
+	      document.querySelectorAll("[data-submit-enum-review]").forEach(button=>button.onclick=()=>submitManagedEnumReview(button.dataset.submitEnumReview,button.closest("[data-enum-review-form]")));
       document.querySelectorAll("[data-submit-scope-review]").forEach(button=>button.onclick=()=>submitManagedScopeReview(button.dataset.submitScopeReview,button.closest("[data-scope-review-form]")));
       document.querySelectorAll("[data-submit-cohort-review]").forEach(button=>button.onclick=()=>submitManagedCohortReview(button.closest("[data-cohort-review-form]")));
       document.querySelectorAll("[data-permission-field]").forEach(input=>input.onchange=()=>setPermission(selectedResource,input.dataset.permissionField,input.dataset.permissionKey,input.checked));
@@ -2300,15 +2372,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const unresolvedRelationship=candidate.pack.resources
           .flatMap(resource=>(resource.relationships||[]).map(relationship=>({resource,relationship})))
           .find(item=>item.relationship.unmatched_rows==="review_required");
-        const rows=candidate.pack.resources.map(resource=>{
-          const modelFields=(resource.selectable_fields||[]).filter(field=>!(resource.model_withheld_fields||[]).includes(field));
-          const runnerFields=resource.model_withheld_fields||[];
-          const links=(resource.relationships||[]).map(relationship=>relationship.target_resource);
-          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.join(", ")||"None")+'</small>';
+	        const rows=candidate.pack.resources.map(resource=>{
+	          const modelFields=(resource.selectable_fields||[]).filter(field=>!(resource.model_withheld_fields||[]).includes(field));
+	          const runnerFields=resource.model_withheld_fields||[];
+	          const links=(resource.relationships||[]).map(relationship=>relationship.target_resource);
+	          const resourceReview=reviewResource(resource.id);
+	          const disabledEnums=(resourceReview?.fields||[])
+	            .filter(field=>field.enum_review_override&&field.enum_review_override.values.length===0)
+	            .map(field=>field.name);
+	          const enumSummary=[
+	            ...Object.entries(resource.field_enums||{}).map(([field,values])=>field+": "+values.join(" | ")),
+	            ...disabledEnums.map(field=>field+": none (filter/group disabled)")
+	          ];
+	          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.join(", ")||"None")+'</small>';
           const principalScope=resource.principal_key
             ?'Principal required: '+resource.principal_key+' via '+candidate.trusted_context.principal_env
             :'Principal: not required';
-          return '<tr><td><strong>'+esc(resource.id)+'</strong><small>Tenant scope: '+esc(resource.tenant_key)+' · '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small></td>'
+	          return '<tr><td><strong>'+esc(resource.id)+'</strong><small>Tenant scope: '+esc(resource.tenant_key)+' · '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small></td>'
             +'<td>'+fieldCell(modelFields,"model-visible")+'</td>'
             +'<td>'+fieldCell(runnerFields,"Runner-only")+'</td>'
             +'<td>'+fieldCell(resource.kept_out_fields||[],"kept out")+'</td>'
@@ -2572,6 +2652,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const payload=await getJson("/api/ask/status");
         askStatus=payload;
+        boundaryCatalog=payload.boundary_catalog||boundaryCatalog;
+        boundaryMermaid=payload.boundary_mermaid||boundaryMermaid;
+        boundaryDiagrams=payload.boundary_diagrams||boundaryDiagrams;
         shell.classList.remove("hidden");
         renderAskStatus();
       }catch(error){
@@ -2858,7 +2941,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const totalMeasures=resources.reduce((count,resource)=>
         count+1+askBoundaryValues(resource,"aggregate_measures").length+askBoundaryValues(resource,"count_distinct_fields").length,0);
       const collectionLabel=reviewedCollectionLabelForResources(resources);
-      summary.textContent=resources.length+" "+(resources.length===1?(collectionLabel==="tables"?"table":"table or view"):collectionLabel)+" · "+totalMeasures+" measure"+(totalMeasures===1?"":"s")+" · "+totalGroups+" grouping"+(totalGroups===1?"":"s");
+      const reviewedJoins=boundaryCatalog?.relationship_count||0;
+      summary.textContent=resources.length+" "+(resources.length===1?(collectionLabel==="tables"?"table":"table or view"):collectionLabel)+" · "+totalMeasures+" measure"+(totalMeasures===1?"":"s")+" · "+totalGroups+" grouping"+(totalGroups===1?"":"s")+" · "+reviewedJoins+" join"+(reviewedJoins===1?"":"s");
       const resourceSignature=resources.map(resource=>resource.id||resource.table||describedResourceLabel(resource)).join("|");
       if(resourceSignature!==askBoundaryResourceSignature){
         askBoundaryResourceSignature=resourceSignature;
@@ -2875,11 +2959,18 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const groups=askBoundaryValues(resource,"groupable_fields");
         const dates=askBoundaryValues(resource,"time_bucket_fields");
         const filters=askBoundaryValues(resource,"filterable_fields");
+        const catalogBoundary=(boundaryCatalog?.boundaries||[]).find(boundary=>
+          !resource.boundary_name||boundary.name===resource.boundary_name
+        );
+        const joins=(catalogBoundary?.relationships||[]).filter(relationship=>
+          relationship.source_table===(resource.id||resource.table)
+        );
         return '<section class="ask-boundary-resource"><h4>'+esc(describedResourceLabel(resource))+'</h4>'
           +'<div class="ask-boundary-row"><strong>Calculate</strong><span>'+esc(measures.join(" · ")||"Record count")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Compare by</strong><span>'+esc(groups.join(" · ")||"No reviewed grouping")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Time</strong><span>'+esc(dates.join(" · ")||"No reviewed time field")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Filter by</strong><span>'+esc(filters.join(" · ")||"No reviewed filters")+'</span></div>'
+          +'<div class="ask-boundary-row"><strong>Joins</strong><span>'+(joins.length?joins.map(relationship=>'→ '+esc(relationship.target_table)+' · '+esc(relationship.cardinality.replaceAll("_","-"))+' · '+(relationship.proven?'proven':'unproven')).join('<br>'):'No reviewed join from this table')+'</span></div>'
           +'</section>';
       }).join("");
       const examples=askStarterPrompts.slice(0,3).map((prompt,index)=>
@@ -2891,6 +2982,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       body.innerHTML='<p class="ask-boundary-intro">These are the exact analytical choices available to this conversation. Anything not shown remains outside the model tool surface.</p>'
         +'<div class="ask-boundary-grid">'+cards+'</div>'
         +pagination
+        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams)
         +(examples?'<div class="ask-boundary-examples">'+examples+'</div>':"")
         +askBoundaryEditAction();
       const previous=byId("ask-boundary-previous");
@@ -2902,6 +2994,182 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("ask-question").focus();
       });
       wireAskBoundaryEditAction();
+      wireBoundaryRelationshipMaps(body);
+    }
+
+    function renderBoundaryRelationshipMap(model,diagrams){
+      const boundaries=model?.boundaries||[];
+      if(!boundaries.length)return '';
+      const preferred=[boundaryLibrary?.selected_name,activeBoundary?.pack?.name]
+        .find(name=>boundaries.some(boundary=>boundary.name===name))||boundaries[0].name;
+      const options=boundaries.map(boundary=>
+        '<option value="'+esc(boundary.name)+'" '+(boundary.name===preferred?'selected':'')+'>'
+        +esc(boundary.name)+' · '+esc(boundary.tables.length)+' table'
+        +(boundary.tables.length===1?'':'s')+'</option>').join('');
+      const sections=boundaries.map(boundary=>{
+        const diagram=(diagrams||[]).find(item=>item.boundary_name===boundary.name)||{};
+        const nodes=(boundary.tables||[]).map(table=>{
+          const fields=(table.model_visible_fields||[]).map(field=>field.name);
+          const shown=fields.slice(0,8);
+          const hidden=[];
+          if(table.runner_only_field_count)hidden.push(table.runner_only_field_count+' Runner-only');
+          if(table.kept_out_field_count)hidden.push(table.kept_out_field_count+' kept out');
+          const analysis=['record counts'];
+          if((table.aggregate_measures||[]).length)analysis.push('totals/averages: '+table.aggregate_measures.join(', '));
+          if((table.count_distinct_fields||[]).length)analysis.push('unique counts: '+table.count_distinct_fields.join(', '));
+          if((table.groupable_fields||[]).length)analysis.push('group by: '+table.groupable_fields.join(', '));
+          if((table.time_bucket_fields||[]).length)analysis.push('time: '+table.time_bucket_fields.join(', '));
+          const runnerOnly=table.runner_only_analysis||{};
+          const runnerAnalysis=[];
+          if((runnerOnly.aggregate_measures||[]).length)runnerAnalysis.push('totals/averages: '+runnerOnly.aggregate_measures.join(', ')+' (raw values withheld)');
+          if((runnerOnly.count_distinct_fields||[]).length)runnerAnalysis.push('unique counts: '+runnerOnly.count_distinct_fields.join(', ')+' (raw values withheld)');
+          if((runnerOnly.groupable_fields||[]).length)runnerAnalysis.push('group by: '+runnerOnly.groupable_fields.join(', ')+' (labels tokenized)');
+          if((runnerOnly.time_bucket_fields||[]).length)runnerAnalysis.push('time: '+runnerOnly.time_bucket_fields.join(', ')+' (labels tokenized)');
+          return '<div class="boundary-catalog-node"><strong>'+esc(table.id)+'</strong><small>Model-visible: '+esc(shown.join(', ')||'none')+(fields.length>shown.length?' · +'+esc(fields.length-shown.length)+' more':'')+'</small><small class="boundary-catalog-capabilities">Can analyze: '+esc(analysis.join(' · '))+'</small>'+(runnerAnalysis.length?'<small class="boundary-catalog-capabilities"><strong>Runner-only analysis:</strong> '+esc(runnerAnalysis.join(' · '))+'</small>':'')+'<small>'+esc(hidden.join(' · ')||'No hidden reviewed fields')+'</small></div>';
+        }).join('');
+        const edges=(boundary.relationships||[]).map(relationship=>{
+          const links=(relationship.links||[]).length?relationship.links:[{source_table:relationship.source_table,target_table:relationship.target_table,source_key:relationship.source_key,target_key:relationship.target_key}];
+          const path=links.map(link=>link.source_table+'.'+link.source_key+' → '+link.target_table+'.'+link.target_key).join(' → ');
+          const question=(relationship.suggested_questions||[])[0];
+          return '<div class="boundary-catalog-path '+(relationship.proven?'':'unproven')+'"><div class="boundary-catalog-edge"><code>'+esc(relationship.source_table)+'</code><span>'+esc(path)+'<br>'+esc(relationship.path_depth)+' '+(relationship.path_depth===1?'join':'joins')+' · '+esc(relationship.cardinality.replaceAll('_','-'))+' · '+(relationship.proven?'catalog proven':'proof unavailable')+' →</span><code>'+esc(relationship.target_table)+'</code></div>'+(question?'<p class="boundary-catalog-question"><strong>Try asking</strong> “'+esc(question)+'”</p>':'')+'</div>';
+        }).join('');
+        const large=diagram.large===true||boundary.tables.length>10||(boundary.physical_relationship_count||0)>15;
+        const graph=large
+          ?'<div class="band notice"><strong>Download this large boundary map</strong><p>'+esc(boundary.tables.length)+' tables and '+esc(boundary.physical_relationship_count||0)+' physical joins would be difficult to read inline. The export includes the full readable map and Mermaid ER diagram.</p></div>'
+          :renderBoundaryGraphSvg(boundary);
+        const questions=[...new Set((boundary.relationships||[]).flatMap(relationship=>relationship.suggested_questions||[]))].slice(0,3);
+        const questionPanel=questions.length?'<div class="boundary-catalog-questions"><strong>Try cross-table questions</strong><ul>'+questions.map(question=>'<li>“'+esc(question)+'”</li>').join('')+'</ul></div>':'';
+        const detail=large?'':'<details><summary>Reviewed join details</summary><div class="boundary-catalog-nodes">'+nodes+'</div><div class="boundary-catalog-edges">'+(edges||'<p class="muted">No reviewed join paths in this boundary.</p>')+'</div></details>';
+        return '<section class="boundary-catalog-boundary" data-boundary-catalog-section="'+esc(boundary.name)+'" '+(boundary.name===preferred?'':'hidden')+'><h4>'+esc(boundary.name)+'</h4>'+graph+questionPanel+detail+'<details class="boundary-catalog-mermaid"><summary>Mermaid source</summary><pre>'+esc(diagram.mermaid||'erDiagram')+'</pre></details></section>';
+      }).join('');
+      return '<details class="boundary-catalog-map" data-boundary-catalog-map><summary>Reviewed relationship map</summary><div class="boundary-catalog-controls"><label class="field">Boundary<select data-boundary-catalog-select>'+options+'</select></label><div class="actions"><button class="secondary" data-download-boundary-diagram type="button">Download full diagram</button><button class="quiet" data-copy-boundary-mermaid type="button">Copy Mermaid</button></div></div><p class="boundary-catalog-summary" data-boundary-catalog-summary></p><span class="status-message" data-boundary-catalog-status aria-live="polite"></span>'+sections+'</details>';
+    }
+
+    function renderBoundaryGraphSvg(boundary){
+      const tables=boundary.tables||[];
+      if(!tables.length)return '<p class="muted">No reviewed tables are available in this boundary.</p>';
+      const ids=new Set(tables.map(table=>table.id));
+      const links=[];
+      const seen=new Set();
+      (boundary.relationships||[]).forEach(relationship=>(relationship.links||[]).forEach(link=>{
+        if(!ids.has(link.source_table)||!ids.has(link.target_table))return;
+        const key=[link.source_table,link.target_table,link.source_key,link.target_key].join('|');
+        if(seen.has(key))return;
+        seen.add(key);
+        links.push(Object.assign({},link,{proven:link.proven!==false}));
+      }));
+      const outgoing=new Map(tables.map(table=>[table.id,[]]));
+      const indegree=new Map(tables.map(table=>[table.id,0]));
+      links.forEach(link=>{
+        outgoing.get(link.source_table).push(link.target_table);
+        indegree.set(link.target_table,(indegree.get(link.target_table)||0)+1);
+      });
+      const rank=new Map(tables.map(table=>[table.id,0]));
+      const queue=tables.map(table=>table.id).filter(id=>(indegree.get(id)||0)===0).sort();
+      const visited=new Set();
+      while(queue.length){
+        const source=queue.shift();
+        if(visited.has(source))continue;
+        visited.add(source);
+        (outgoing.get(source)||[]).forEach(target=>{
+          rank.set(target,Math.max(rank.get(target)||0,(rank.get(source)||0)+1));
+          indegree.set(target,(indegree.get(target)||0)-1);
+          if(indegree.get(target)===0)queue.push(target);
+        });
+      }
+      const maxRank=Math.max(0,...rank.values());
+      tables.filter(table=>!visited.has(table.id)).forEach((table,index)=>rank.set(table.id,maxRank+1+index));
+      const columns=new Map();
+      tables.forEach(table=>{
+        const value=rank.get(table.id)||0;
+        const column=columns.get(value)||[];
+        column.push(table);
+        column.sort((left,right)=>left.id.localeCompare(right.id));
+        columns.set(value,column);
+      });
+      const nodeWidth=250,nodeHeight=126,xGap=100,yGap=30,pad=28;
+      const ranks=[...columns.keys()].sort((left,right)=>left-right);
+      const maxRows=Math.max(...ranks.map(value=>columns.get(value).length));
+      const width=pad*2+ranks.length*nodeWidth+Math.max(0,ranks.length-1)*xGap;
+      const height=pad*2+maxRows*nodeHeight+Math.max(0,maxRows-1)*yGap;
+      const positions=new Map();
+      ranks.forEach((value,columnIndex)=>{
+        const column=columns.get(value);
+        const columnHeight=column.length*nodeHeight+Math.max(0,column.length-1)*yGap;
+        const offset=pad+(height-pad*2-columnHeight)/2;
+        column.forEach((table,rowIndex)=>positions.set(table.id,{
+          x:pad+columnIndex*(nodeWidth+xGap),
+          y:offset+rowIndex*(nodeHeight+yGap)
+        }));
+      });
+      const marker='catalog-arrow-'+String(boundary.name).replace(/[^A-Za-z0-9_-]/g,'-')+'-'+(++boundaryGraphSequence);
+      const edgeSvg=links.map(link=>{
+        const source=positions.get(link.source_table),target=positions.get(link.target_table);
+        if(!source||!target)return '';
+        const sx=source.x+nodeWidth,sy=source.y+nodeHeight/2,tx=target.x,ty=target.y+nodeHeight/2,mx=(sx+tx)/2,my=(sy+ty)/2-7;
+        const label=link.hidden_join_key?'reviewed hidden key':link.source_key+' → '+link.target_key;
+        return '<path class="edge '+(link.proven?'':'unproven')+'" d="M '+sx+' '+sy+' C '+mx+' '+sy+', '+mx+' '+ty+', '+tx+' '+ty+'" marker-end="url(#'+marker+')"></path><text class="edge-label" x="'+mx+'" y="'+my+'" text-anchor="middle">'+esc(label.slice(0,42))+'</text>';
+      }).join('');
+      const nodeSvg=tables.map(table=>{
+        const point=positions.get(table.id);
+        const fields=(table.model_visible_fields||[]).slice(0,4).map(field=>field.name);
+        const hidden=(table.runner_only_field_count||0)+(table.kept_out_field_count||0);
+        const lines=[...fields,...((table.model_visible_fields||[]).length>4?['+'+((table.model_visible_fields||[]).length-4)+' more visible']:[]),...(hidden?[''+hidden+' unavailable to model']:[])].slice(0,5);
+        return '<g><rect class="node" x="'+point.x+'" y="'+point.y+'" width="'+nodeWidth+'" height="'+nodeHeight+'" rx="6"></rect><text class="node-title" x="'+(point.x+14)+'" y="'+(point.y+23)+'">'+esc(table.id.slice(0,34))+'</text>'+lines.map((line,index)=>'<text class="node-field" x="'+(point.x+14)+'" y="'+(point.y+47+index*16)+'">'+esc(line.slice(0,34))+'</text>').join('')+'</g>';
+      }).join('');
+      return '<div class="boundary-catalog-graph" role="img" aria-label="Reviewed table relationship diagram for '+esc(boundary.name)+'"><svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'"><defs><marker id="'+marker+'" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#75e3b7"></polygon></marker></defs>'+edgeSvg+nodeSvg+'</svg></div>';
+    }
+
+    function wireBoundaryRelationshipMaps(scope=document){
+      scope.querySelectorAll('[data-boundary-catalog-map]').forEach(root=>{
+        const select=root.querySelector('[data-boundary-catalog-select]');
+        const summary=root.querySelector('[data-boundary-catalog-summary]');
+        const status=root.querySelector('[data-boundary-catalog-status]');
+        const update=()=>{
+          const name=select.value;
+          root.querySelectorAll('[data-boundary-catalog-section]').forEach(section=>{
+            section.hidden=section.dataset.boundaryCatalogSection!==name;
+          });
+          const boundary=(boundaryCatalog.boundaries||[]).find(item=>item.name===name);
+          if(boundary)summary.textContent=boundary.tables.length+' reviewed table'+(boundary.tables.length===1?'':'s')+' · '+(boundary.physical_relationship_count||0)+' physical join'+((boundary.physical_relationship_count||0)===1?'':'s')+' · '+boundary.relationships.length+' reviewed path'+(boundary.relationships.length===1?'':'s')+'. This is one exact active boundary; it is never merged with another.';
+          status.textContent='';
+        };
+        select.onchange=update;
+        root.querySelector('[data-download-boundary-diagram]').onclick=()=>{
+          const diagram=(boundaryDiagrams||[]).find(item=>item.boundary_name===select.value);
+          if(!diagram){
+            status.className='status-message error';
+            status.textContent='This boundary export is unavailable. Reload Workbench and retry.';
+            return;
+          }
+          const blob=new Blob([diagram.markdown],{type:'text/markdown'});
+          const href=URL.createObjectURL(blob);
+          const anchor=document.createElement('a');
+          anchor.href=href;
+          anchor.download=diagram.file_name;
+          anchor.click();
+          URL.revokeObjectURL(href);
+          status.className='status-message';
+          status.textContent='Downloaded the exact '+diagram.boundary_name+' boundary map. No source rows were read.';
+        };
+        root.querySelector('[data-copy-boundary-mermaid]').onclick=async()=>{
+          const diagram=(boundaryDiagrams||[]).find(item=>item.boundary_name===select.value);
+          if(!diagram){
+            status.className='status-message error';
+            status.textContent='Mermaid source is unavailable. Reload Workbench and retry.';
+            return;
+          }
+          try{
+            await navigator.clipboard.writeText(diagram.mermaid);
+            status.className='status-message';
+            status.textContent='Copied Mermaid for '+diagram.boundary_name+'.';
+          }catch{
+            status.className='status-message error';
+            status.textContent='Clipboard access was unavailable. Open Mermaid source and copy it manually.';
+          }
+        };
+        update();
+      });
     }
 
     function askReviewTarget(call){
@@ -3341,17 +3609,40 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const privacyGuidance=suppressed>0
 	          ?suppressionReviewGuidance(plan,boundaryName,minimumCohort)
 	          :null;
+	        const reviewedValueNotice=reviewedValueControlHtml(result);
 	        const verifiedData=rows.length
           ?'<details class="verified-data-details"><summary>View verified data ('+esc(returned)+' '+resultKind+(returned===1?"":"s")+')</summary><div class="verified-data-body">'+resultDataHtml(plan,rows,semantics,boundaryName)+'</div></details>'
           :'<p class="ask-verified-count">No rows or groups passed the reviewed scope and privacy thresholds.</p>';
         return '<section class="ask-tool-trace"><p>'+esc(planSentence(plan,boundaryName))+'</p>'
           +(rows.length?'<p class="ask-verified-count">'+esc(returned)+' verified '+resultKind+(returned===1?"":"s")+' returned.</p>':"")
           +verifiedData
+		          +reviewedValueNotice
 		          +(privacyGuidance?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum group size'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')
           +(protectToken?'<button class="secondary" data-ask-protect="'+esc(protectToken)+'" type="button">Protect as reusable capability</button>':'')
 	          +exploreEvidenceDisclosure(call,result,true)+'</section>';
       }
 	      return '<section class="ask-tool-trace"><strong>Reviewed Runner tool completed</strong><details><summary>Advanced bounded result</summary><pre>'+esc(JSON.stringify({arguments:call.arguments,result},null,2))+'</pre></details></section>';
+	    }
+
+	    function reviewedValueControlHtml(result){
+	      const controls=result?.privacy?.reviewed_value_controls;
+	      if(!controls||typeof controls!=="object")return "";
+	      const bucketed=Array.isArray(controls.bucketed_fields)?controls.bucketed_fields:[];
+	      const excluded=Array.isArray(controls.excluded_fields)?controls.excluded_fields:[];
+	      const messages=[];
+	      bucketed.forEach(item=>{
+	        const field=(item.resource||"reviewed table")+"."+(item.field||"categorical field");
+	        messages.push(item.bucket_returned&&item.bucket_token
+	          ?field+" includes one opaque "+item.bucket_token+" group for source values outside the reviewed value list. Their labels were not exposed."
+	          :field+" contained source values outside the reviewed value list. Runner combined them before privacy and result limits; their labels were not exposed.");
+	      });
+	      excluded.forEach(item=>{
+	        const field=(item.resource||"reviewed table")+"."+(item.field||"categorical field");
+	        messages.push("This result is limited to reviewed values for "+field+". Rows with other values, if any, were excluded.");
+	      });
+	      return messages.length
+	        ?'<div class="band notice"><strong>Reviewed value controls</strong>'+messages.map(message=>'<p>'+esc(message)+'</p>').join("")+'</div>'
+	        :"";
 	    }
 
 	    function suppressionReviewGuidance(plan,boundaryName,minimumCohort){
@@ -4060,7 +4351,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const privacyGuidance=result.privacy.suppressed_groups>0
 		          ?suppressionReviewGuidance(plan,selectedBoundary,result.privacy.minimum_cohort_size)
 		          :null;
-		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
+		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
 			        byId("ask-another-result").onclick=()=>{if(plan.kind==="rows")switchExploreMode("aggregate");byId("explore-composer").open=true;byId("explore-composer").scrollIntoView({behavior:"auto",block:"start"})};
 		        if(byId("review-result-privacy"))byId("review-result-privacy").onclick=()=>openAccessEditor(plan.resource,undefined,true);
 		        byId("protect-result").onclick=async()=>{preferredProtectQueryRef=resultProtectQueryRef;await loadProtect(resultProtectQueryRef);setView("protect")};
@@ -4686,6 +4977,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      reviewReport=payload.review;
 	      activeBoundary=payload.active;
 	      activeBoundaries=payload.active_boundaries||[];
+	      boundaryCatalog=payload.boundary_catalog||{schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
+	      boundaryMermaid=payload.boundary_mermaid||"erDiagram";
+	      boundaryDiagrams=payload.boundary_diagrams||[];
 	      journey=payload.journey;
       instantOnboarding=payload.instant_onboarding;
       const namedAuthorityActive=!activeBoundaries.length&&journey?.authority_active===true;

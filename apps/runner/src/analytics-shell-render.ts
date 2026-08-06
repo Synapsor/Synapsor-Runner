@@ -424,6 +424,8 @@ export function renderAnalysis(
       ? `No aggregate value can be shown under the reviewed minimum group size${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`
       : "No reviewed rows or groups were returned.");
   }
+  const reviewedValueNotices = reviewedValueControlNotices(analysis.result);
+  if (reviewedValueNotices.length) lines.push("", ...reviewedValueNotices);
   const suppressed = suppressedGroupCount(analysis.result);
   if (suppressed > 0) {
     const shapeHint = minimumCohortQuestionShapeHint(analysis, minimumCohort);
@@ -437,6 +439,32 @@ export function renderAnalysis(
     );
   }
   return lines;
+}
+
+function reviewedValueControlNotices(result: Record<string, unknown>): string[] {
+  const privacy = record(result.privacy);
+  const controls = record(privacy.reviewed_value_controls);
+  const bucketed = Array.isArray(controls.bucketed_fields)
+    ? records(controls.bucketed_fields)
+    : [];
+  const excluded = Array.isArray(controls.excluded_fields)
+    ? records(controls.excluded_fields)
+    : [];
+  return [
+    ...bucketed.map((item) => {
+      const resource = stringValue(item.resource) ?? "the reviewed table";
+      const field = stringValue(item.field) ?? "categorical field";
+      const token = stringValue(item.bucket_token);
+      return item.bucket_returned === true && token
+        ? `Reviewed value control: ${resource}.${field} contains an opaque ${token} group for source values outside the reviewed value list. Their labels were not exposed.`
+        : `Reviewed value control: ${resource}.${field} contained source values outside the reviewed value list. Runner combined them before privacy and result limits; their labels were not exposed.`;
+    }),
+    ...excluded.map((item) => {
+      const resource = stringValue(item.resource) ?? "the reviewed table";
+      const field = stringValue(item.field) ?? "categorical field";
+      return `Reviewed value control: this result is limited to reviewed values for ${resource}.${field}. Rows with other values, if any, were excluded.`;
+    }),
+  ].map(safeTerminalText);
 }
 
 function minimumCohortRecoveryPath(analysis: AnalyticsAnalysis): string {

@@ -1,4 +1,6 @@
 import { PassThrough } from "node:stream";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -24,6 +26,7 @@ import {
 import type {
   AskTurnResult,
 } from "./model-ask.js";
+import type { BoundaryCatalogModel } from "./boundary-catalog.js";
 
 const digest = `sha256:${"a".repeat(64)}` as const;
 
@@ -93,6 +96,37 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain("one row per account id");
     expect(output).toContain("Try a coarser reviewed grouping");
     expect(output).toContain("Highlight public.support_tickets; do not open its columns");
+  });
+
+  it("discloses opaque enum buckets and row allowlist exclusions in verified output", () => {
+    const grouped = analysis("A1", 0);
+    grouped.result.data = [{ status: "[unreviewed:abc123:1]", count: 7 }];
+    grouped.result.privacy = {
+      minimum_cohort_size: 5,
+      suppressed_groups: 0,
+      totals_returned: false,
+      reviewed_value_controls: {
+        bucketed_fields: [{
+          resource: "public.orders",
+          field: "status",
+          output_field: "status",
+          bucket_returned: true,
+          bucket_token: "[unreviewed:abc123:1]",
+        }],
+        excluded_fields: [{
+          resource: "public.orders",
+          field: "channel",
+          effect: "rows_outside_reviewed_values_excluded",
+        }],
+        source_values_exposed: false,
+      },
+    };
+
+    const output = renderAnalysis(grouped).join("\n");
+    expect(output).toContain("public.orders.status contains an opaque [unreviewed:abc123:1] group");
+    expect(output).toContain("Their labels were not exposed");
+    expect(output).toContain("limited to reviewed values for public.orders.channel");
+    expect(output).toContain("Rows with other values, if any, were excluded");
   });
 
   it("renders TrailPeak-style verified aggregates with business labels and readable values", () => {
@@ -965,7 +999,7 @@ describe("Synapsor Analytics shell", () => {
       pageSize: 5,
     });
     expect(page).toContain("CAN ASK NOW");
-    expect(page).toContain("7 reviewed tables - page 2 of 2");
+    expect(page).toContain("7 reviewed tables and 0 reviewed join paths - page 2 of 2");
     expect(page).toContain("Table 6 (public.table_6)");
     expect(page).toContain("Boundary: support_review");
     expect(page).toContain("Can answer: record counts; grouping by Field 6");
@@ -974,7 +1008,9 @@ describe("Synapsor Analytics shell", () => {
     expect(renderReviewedAccessCatalog({
       line: "/catalog all",
       summary: { table_count: resources.length, resources, suggestions: [] },
-    })).toContain("Usage: /catalog [page]");
+    })).toContain(
+      "Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]",
+    );
   });
 
   it("exposes the detailed reviewed catalog as a shell action", async () => {
@@ -995,6 +1031,7 @@ describe("Synapsor Analytics shell", () => {
         }],
         suggestions: ["Which statuses have the most orders?"],
       },
+      boundaryCatalog: reviewedCatalog(),
       io,
       ask: vi.fn(),
       listAnalyses: async () => [],
@@ -1005,14 +1042,170 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("CAN ASK NOW");
     expect(io.output()).toContain("Boundary: reviewed_staging");
     expect(io.output()).toContain("Can answer: record counts; grouping by Status");
+    expect(io.output()).toContain(
+      "Join path: public.orders.customer_id -> public.customers.id (1 join, catalog proven)",
+    );
+    expect(io.output()).toContain('Ask across path: "What is total order cents by customer region?"');
+    expect(io.output()).toContain("Reachable: public.customers");
+    expect(io.output()).toContain("/catalog --diagram");
+  });
+
+  it("renders the shared active-boundary model as ASCII and Mermaid", async () => {
+    const io = fakeIo(["/catalog --diagram", "/exit"], 72);
+    await runAnalyticsShell({
+      providerLabel: "Anthropic",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 2,
+      boundaryCatalog: reviewedCatalog(),
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+    expect(io.output()).toContain("ACTIVE BOUNDARY DIAGRAM");
+    expect(io.output()).toContain("Boundary reviewed_staging");
+    expect(io.output()).toContain("2 tables | 1 physical join | 1 reviewed path");
+    expect(io.output()).toContain("[public.orders]");
+    expect(io.output()).toContain("customer_id -> [public.customers].id");
+    expect(io.output()).toContain("TRY CROSS-TABLE QUESTIONS");
+    expect(io.output()).toContain("```mermaid");
+    expect(io.output()).toContain("PUBLIC_ORDERS }o--|| PUBLIC_CUSTOMERS");
+  });
+
+  it("requires an exact boundary for multi-boundary diagrams and exports one digest-bound map", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-catalog-export-"));
+    try {
+      const catalog = reviewedCatalog();
+      const second = structuredClone(catalog.boundaries[0]!);
+      second.name = "support_review";
+      second.digest = `sha256:${"b".repeat(64)}`;
+      catalog.boundaries.push(second);
+      catalog.table_count = 4;
+      catalog.relationship_count = 2;
+      catalog.physical_relationship_count = 2;
+
+      const io = fakeIo([
+        "/catalog --diagram",
+        "/catalog --diagram --boundary support_review --export",
+        "/exit",
+      ]);
+      await runAnalyticsShell({
+        projectRoot,
+        providerLabel: "OpenAI",
+        boundaryLabel: "2 active boundaries",
+        profileLabel: "development",
+        reviewedDataAreas: 4,
+        boundaryCatalog: catalog,
+        io,
+        ask: vi.fn(),
+        listAnalyses: async () => [],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+
+      expect(io.output()).toContain("2 reviewed boundaries are active");
+      expect(io.output()).toContain("/catalog --diagram --boundary reviewed_staging");
+      expect(io.output()).toContain("BOUNDARY DIAGRAM EXPORTED");
+      const exported = path.join(
+        projectRoot,
+        ".synapsor/catalog/support_review-bbbbbbbbbbbb.boundary-diagram.md",
+      );
+      const content = await fs.readFile(exported, "utf8");
+      expect(content).toContain("# Reviewed Boundary: support_review");
+      expect(content).toContain("## Mermaid ER Diagram");
+      expect(content).toContain("PUBLIC_ORDERS }o--|| PUBLIC_CUSTOMERS");
+      expect(content).toContain("TRY CROSS-TABLE QUESTIONS");
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses explicit diagram exports outside the project, including symlink escapes", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-catalog-confined-"));
+    const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-catalog-outside-"));
+    const siblingPath = path.join(path.dirname(projectRoot), `${path.basename(projectRoot)}-escaped.md`);
+    const absolutePath = path.join(outsideRoot, "absolute-escaped.md");
+    const symlinkPath = path.join(projectRoot, "linked-outside");
+    await fs.symlink(outsideRoot, symlinkPath, "dir");
+    try {
+      const io = fakeIo([
+        `/catalog --diagram --boundary reviewed_staging --export ../${path.basename(siblingPath)}`,
+        `/catalog --diagram --boundary reviewed_staging --export ${absolutePath}`,
+        "/catalog --diagram --boundary reviewed_staging --export linked-outside/symlink-escaped.md",
+        "/exit",
+      ]);
+      await runAnalyticsShell({
+        projectRoot,
+        providerLabel: "OpenAI",
+        boundaryLabel: "reviewed_staging",
+        profileLabel: "development",
+        reviewedDataAreas: 2,
+        boundaryCatalog: reviewedCatalog(),
+        io,
+        ask: vi.fn(),
+        listAnalyses: async () => [],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+
+      expect(io.output()).toContain("Export path must stay inside this project");
+      expect(io.output()).toContain("Export directory resolves outside this project");
+      await expect(fs.access(siblingPath)).rejects.toThrow();
+      await expect(fs.access(absolutePath)).rejects.toThrow();
+      await expect(fs.access(path.join(outsideRoot, "symlink-escaped.md"))).rejects.toThrow();
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+      await fs.rm(outsideRoot, { recursive: true, force: true });
+      await fs.rm(siblingPath, { force: true });
+    }
   });
 
   it("shows, filters, and fully clears transient slash actions while editing", async () => {
     expect(slashCommandSuggestions("/")).toContain("/access");
     expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/access-workbench"]);
+    expect(slashCommandSuggestions("/catalog --d")).toEqual(["/catalog --diagram"]);
+    expect(slashCommandSuggestions("/catalog --diagram ")).toEqual(["/catalog --diagram"]);
     expect(slashCommandSuggestions("question")).toEqual([]);
     expect(renderSlashCommandMenu("/ac")).toContain("/access-workbench");
+    expect(renderSlashCommandMenu("/catalog --diagram")).toContain(
+      "Show connected reviewed paths and Mermaid",
+    );
+    expect(renderSlashCommandMenu("/catalog --diagram")).not.toContain("No matching action");
     expect(renderSlashCommandMenu("/missing")).toContain("No matching action");
+
+    for (const command of [
+      "/catalog 2",
+      "/catalog --diagram --boundary reviewed_staging",
+      "/catalog --diagram --boundary reviewed_staging --export",
+      "/details last",
+      "/details --sql",
+      "/details A7",
+      "/details last --sql",
+      "/details A7 --sql",
+      "/protect last",
+      "/protect A7",
+      "/protect A7 as analytics.orders_by_region",
+      "/access workbench",
+    ]) {
+      expect(renderSlashCommandMenu(command), command).not.toContain("No matching action");
+    }
+    for (const partial of [
+      "/details l",
+      "/details A",
+      "/details A7 --s",
+      "/protect A",
+      "/protect A7 as",
+      "/access work",
+    ]) {
+      expect(renderSlashCommandMenu(partial), partial).not.toContain("No matching action");
+    }
+    expect(renderSlashCommandMenu("/details yesterday")).toContain("No matching action");
+    expect(renderSlashCommandMenu("/catalog zero")).toContain("No matching action");
 
     const readable = new PassThrough();
     const writable = new PassThrough();
@@ -1060,6 +1253,46 @@ describe("Synapsor Analytics shell", () => {
     expect(chunks.join("")).not.toContain("\u001b[u");
     expect(chunks.join("")).not.toContain("\u001b7");
     expect(chunks.join("")).not.toContain("\u001b8");
+    io.close();
+  });
+
+  it("keeps the complete catalog diagram action valid in the live slash menu", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough();
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const answer = io.read("synapsor> ");
+
+    readable.write("/catalog --diagram");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const rendered = chunks.join("");
+    expect(rendered).toContain("/catalog --diagram");
+    expect(rendered).toContain("Show connected reviewed paths and Mermaid");
+    expect(rendered).not.toContain("No matching action");
+
+    readable.write("\r");
+    await expect(answer).resolves.toBe("/catalog --diagram");
+    io.close();
+  });
+
+  it("keeps accepted argument commands valid in the live slash menu", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough();
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const answer = io.read("synapsor> ");
+
+    readable.write("/details last");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const rendered = chunks.join("");
+    expect(rendered).toContain("/details last");
+    expect(rendered).toContain("Inspect the latest analysis");
+    expect(rendered).not.toContain("No matching action");
+
+    readable.write("\r");
+    await expect(answer).resolves.toBe("/details last");
     io.close();
   });
 
@@ -1833,6 +2066,91 @@ function dummyDraft() {
     review_path: "REVIEW.md",
     literal_positions: [],
     converted_arguments: [],
+  };
+}
+
+function reviewedCatalog(): BoundaryCatalogModel {
+  return {
+    schema_version: "synapsor.boundary-catalog.v1",
+    table_count: 2,
+    relationship_count: 1,
+    physical_relationship_count: 1,
+    boundaries: [{
+      name: "reviewed_staging",
+      digest,
+      physical_relationship_count: 1,
+      tables: [
+        {
+          id: "public.orders",
+          label: "Orders",
+          model_visible_fields: [
+            { name: "id", data_type: "text" },
+            { name: "status", data_type: "text" },
+          ],
+          runner_only_field_count: 0,
+          kept_out_field_count: 1,
+          outside_boundary_relationship_count: 0,
+          reachable_tables: ["public.customers"],
+          groupable_fields: ["status"],
+          aggregate_measures: ["total_cents"],
+          count_distinct_fields: ["id"],
+          time_bucket_fields: ["created_at"],
+          runner_only_analysis: {
+            groupable_fields: [],
+            aggregate_measures: [],
+            count_distinct_fields: [],
+            time_bucket_fields: [],
+          },
+        },
+        {
+          id: "public.customers",
+          label: "Customers",
+          model_visible_fields: [
+            { name: "id", data_type: "text" },
+            { name: "region", data_type: "text" },
+          ],
+          runner_only_field_count: 0,
+          kept_out_field_count: 2,
+          outside_boundary_relationship_count: 0,
+          reachable_tables: [],
+          groupable_fields: ["region"],
+          aggregate_measures: [],
+          count_distinct_fields: ["id"],
+          time_bucket_fields: [],
+          runner_only_analysis: {
+            groupable_fields: [],
+            aggregate_measures: [],
+            count_distinct_fields: [],
+            time_bucket_fields: [],
+          },
+        },
+      ],
+      relationships: [{
+        id: "orders_customer_fkey",
+        source_table: "public.orders",
+        target_table: "public.customers",
+        source_key: "customer_id",
+        target_key: "id",
+        hidden_join_key: false,
+        cardinality: "many_to_one",
+        proven: true,
+        nullable: false,
+        path_depth: 1,
+        links: [{
+          source_table: "public.orders",
+          target_table: "public.customers",
+          source_key: "customer_id",
+          target_key: "id",
+          hidden_join_key: false,
+          proven: true,
+          nullable: false,
+        }],
+        suggested_questions: [
+          "What is total order cents by customer region?",
+          "How did total order cents change by month for each customer region?",
+        ],
+      }],
+    }],
   };
 }
 

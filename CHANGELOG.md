@@ -1,6 +1,35 @@
 # Changelog
 
-## 1.6.7 (prepared, not published)
+## 1.7.0 (prepared, not published)
+
+### Production Scoped Explore Over Secured HTTP
+
+- Adds an explicit read-only production Explore deployment over MCP Streamable
+  HTTP. It serves only `app.describe_data` and `app.explore_data`; SQL,
+  credentials, Protect, activation, approval, apply, and configuration remain
+  outside the model-facing surface.
+- Requires separately generated and reviewed production boundaries with tenant
+  and principal values taken only from verified asymmetric JWT claims. Tenant
+  scope is injected on every query; reviewed principal columns add row scope,
+  while every authenticated principal is independently budgeted.
+- Adds durable shared-Postgres privacy accounting with atomic principal and
+  tenant reservations, rolling query/extraction/differencing limits, rate
+  limits, and tenant-level complementary-release protection. Concurrent calls
+  cannot both consume the final allowance.
+- Fails startup closed without explicit opt-in, read-only mode, secured shared
+  HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
+  material, shared accounting, and current exact-digest production authority.
+- Proves PostgreSQL and MySQL source execution through the official MCP client,
+  including scope isolation, suppression, concurrency, source immutability,
+  `doctor`, the public CLI entrypoint, and a clean packed installation.
+- Leaves local/staging Explore, protected named capabilities, existing boundary
+  digests, and Spec/DSL `1.8.0` semantics unchanged.
+
+Prepared package versions: `@synapsor/runner@1.7.0` and the optional
+`synapsor-runner@1.7.0` command alias. Spec and DSL remain at their
+already-published `1.8.0` versions. No package is published by this change.
+
+## 1.6.7 (published 2026-08-04)
 
 ### First-Run, Explore, And Privacy Review Corrections
 
@@ -25,9 +54,8 @@
 - Adds packed first-run and human-PTY coverage alongside the full test,
   Workbench visual, compatibility, PostgreSQL, and MySQL gates.
 
-Prepared package versions: `@synapsor/runner@1.6.7` and the optional
-`synapsor-runner@1.6.7` command alias. Spec and DSL remain at their
-already-published `1.8.0` versions. No package is published by this change.
+Published package versions: `@synapsor/runner@1.6.7` and the optional
+`synapsor-runner@1.6.7` command alias. Spec and DSL remain at `1.8.0`.
 
 ## 1.6.6 (published 2026-08-03)
 

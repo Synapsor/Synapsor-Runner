@@ -107,7 +107,7 @@ describe("Scoped Explore active boundary routing", () => {
     }
   });
 
-  it("keeps the MCP surface at two tools and routes an explicit reviewed boundary", async () => {
+  it("keeps the production MCP surface at two read-only tools and routes an explicit reviewed boundary", async () => {
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);
     const explore = vi.fn(async () => ({
@@ -135,7 +135,7 @@ describe("Scoped Explore active boundary routing", () => {
       }),
       close: async () => undefined,
     } as ScopedExploreBoundarySetRuntime;
-    const server = createScopedExploreMcpServer(runtime);
+    const server = createScopedExploreMcpServer(runtime, { mode: "production_http" });
     const client = new Client({ name: "boundary-set-test", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -146,6 +146,13 @@ describe("Scoped Explore active boundary routing", () => {
         "app.describe_data",
         "app.explore_data",
       ]);
+      expect(tools.tools.every((tool) =>
+        tool._meta?.["synapsor.production_explore"] === true
+        && tool._meta?.["synapsor.authoring_only"] === false
+        && tool._meta?.["synapsor.raw_sql_exposed"] === false
+        && tool._meta?.["synapsor.approval_tool"] === false
+        && tool._meta?.["synapsor.commit_tool"] === false))
+        .toBe(true);
       expect(tools.tools.every((tool) =>
         !Object.hasOwn(tool._meta ?? {}, "synapsor.boundary_set_digest")
         && !Object.hasOwn(tool._meta ?? {}, "synapsor.boundary_digest")))

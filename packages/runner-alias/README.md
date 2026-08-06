@@ -9,8 +9,8 @@ the model raw SQL or database credentials.
 npx -y synapsor-runner start
 ```
 
-It contains no independent runtime. Version `1.6.7` depends on exactly
-`@synapsor/runner@1.6.7` and delegates every command to that package. The
+It contains no independent runtime. Version `1.7.0` depends on exactly
+`@synapsor/runner@1.7.0` and delegates every command to that package. The
 canonical package, documentation, source, and security policy remain under
 `@synapsor/runner`.
 

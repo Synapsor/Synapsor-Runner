@@ -33,6 +33,16 @@
                 "mode": { "const": "read_only" },
                 "capabilities": { "maxItems": 0 }
               }
+            },
+            {
+              "required": ["production_explore"],
+              "properties": {
+                "mode": { "const": "read_only" },
+                "production_explore": {
+                  "properties": { "enabled": { "const": true } },
+                  "required": ["enabled"]
+                }
+              }
             }
           ]
         }
@@ -214,6 +224,71 @@
     "notifications": {
       "description": "Optional operator-owned human-attention delivery. Disabled unless explicitly enabled; notification responses never carry approval or mutation authority.",
       "$ref": "#/$defs/notifications"
+    },
+    "production_explore": {
+      "description": "Explicit opt-in for read-only Scoped Explore over secured shared Streamable HTTP. Requires verified JWT tenant/principal claims and atomic shared Postgres privacy accounting.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "project_root",
+        "required_oauth_scope",
+        "budget_hmac_key_env",
+        "accounting_namespace",
+        "tenant_limits"
+      ],
+      "properties": {
+        "enabled": { "const": true },
+        "project_root": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "://" }
+        },
+        "required_oauth_scope": { "$ref": "#/$defs/oauth_scope" },
+        "budget_hmac_key_env": { "$ref": "#/$defs/env_name" },
+        "accounting_namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.:-]*$"
+        },
+        "source_max_connections": {
+          "description": "Process-wide source database connection ceiling shared by every production Explore session.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 8
+        },
+        "max_sessions_per_principal": {
+          "description": "Maximum concurrent Streamable HTTP MCP sessions for one verified tenant/principal pair.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 4
+        },
+        "tenant_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_queries_per_rolling_24_hours",
+            "max_extracted_cells_per_rolling_24_hours",
+            "max_differencing_queries_per_rolling_24_hours",
+            "requests_per_minute"
+          ],
+          "properties": {
+            "max_queries_per_rolling_24_hours": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+            "max_extracted_cells_per_rolling_24_hours": { "type": "integer", "minimum": 1, "maximum": 1000000000 },
+            "max_differencing_queries_per_rolling_24_hours": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+            "requests_per_minute": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+            "max_response_cells_per_response": {
+              "description": "Optional tenant-wide single-response ceiling. When absent, every response inherits its reviewed boundary's lower per-principal ceiling.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000000
+            }
+          }
+        }
+      }
     },
     "capabilities": {
       "description": "Embedded compatibility capabilities. May be empty when contracts supplies the capability catalog.",

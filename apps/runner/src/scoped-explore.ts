@@ -6,6 +6,12 @@ import { Pool, type PoolClient } from "pg";
 import {
   ProposalStore,
   type ExploreBudgetUsage,
+  type ExploreBudgetLimits,
+  type ExploreBudgetReservationInput,
+  type ExploreBudgetReservationDecision,
+  type ProductionExploreBudgetReservationInput,
+  type ProductionExploreBudgetReservationDecision,
+  type ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import {
   PrivacyBoundaryError,
@@ -19,6 +25,7 @@ import {
   AUTO_BOUNDARY_SPEC_VERSION,
   compareGenerationLock,
   credentialPostureFingerprintForAuthority,
+  generationLockRemediation,
   loadActivatedExplorationBoundary,
   loadGenerationLockForActivatedBoundary,
   relationshipAuthorityDependencyFingerprint,
@@ -35,6 +42,7 @@ import {
 import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,
+  type ExploreHttpSessionContext,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
 
@@ -108,6 +116,7 @@ export type AggregateExplorePlan = {
 export type ExplorePlan = RowExplorePlan | AggregateExplorePlan;
 
 export type ScopedExploreTransport = "stdio" | "loopback_workbench" | "streamable_http" | "remote_http";
+export type ScopedExploreMode = "local_authoring" | "production_http";
 
 export type ScopedExploreErrorCode =
   | "EXPLORE_DISABLED"
@@ -152,8 +161,8 @@ export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
   trusted_scope?: {
-    tenant: { source: "environment" | "postgres_role_setting"; binding: string };
-    principal: { source: "environment" | "not_required"; binding?: string };
+    tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim"; binding: string };
+    principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
   };
   describe(input?: {
     resource?: string;
@@ -171,6 +180,15 @@ export type CompiledExploreQuery = {
   resources: BoundaryResource[];
   period?: "period_1" | "period_2";
   reporting_timezone?: "UTC";
+  reviewed_value_controls?: CompiledReviewedValueControl[];
+};
+
+type CompiledReviewedValueControl = {
+  kind: "bucket_unreviewed_values" | "exclude_unreviewed_rows";
+  resource: string;
+  field: string;
+  output_column?: string;
+  marker?: string;
 };
 
 export type ScopedExploreExecutor = {
@@ -198,13 +216,18 @@ export type ResolveExploreTrustedScopeFn = typeof resolveExploreTrustedScope;
 export async function prepareScopedExplore(input: {
   projectRoot: string;
   transport: ScopedExploreTransport;
+  mode?: ScopedExploreMode;
   boundaryName?: string;
   env?: NodeJS.ProcessEnv;
   inspectDatabaseFn?: InspectDatabaseFn;
 }): Promise<PreparedExplore> {
   const projectRoot = path.resolve(input.projectRoot);
-  if (input.transport !== "stdio" && input.transport !== "loopback_workbench") {
-    throw new ScopedExploreError("EXPLORE_TRANSPORT_FORBIDDEN", "Scoped Explore is an authoring-only local stdio or secured loopback Workbench feature.");
+  const mode = input.mode ?? "local_authoring";
+  if (mode === "production_http" && input.transport !== "streamable_http") {
+    throw new ScopedExploreError("EXPLORE_TRANSPORT_FORBIDDEN", "Production Explore is available only through the secured Streamable HTTP transport.");
+  }
+  if (mode === "local_authoring" && input.transport !== "stdio" && input.transport !== "loopback_workbench") {
+    throw new ScopedExploreError("EXPLORE_TRANSPORT_FORBIDDEN", "Local Scoped Explore is available only through stdio or the secured loopback Workbench.");
   }
   const boundary = await loadActivatedExplorationBoundary(
     projectRoot,
@@ -212,8 +235,13 @@ export async function prepareScopedExplore(input: {
   ).catch((error) => {
     throw scopedExploreBoundaryLoadError(error);
   });
-  if (boundary.deployment_profile !== "development" && boundary.deployment_profile !== "staging") {
-    throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "Missing, unknown, malformed, and production profiles cannot enable Scoped Explore.");
+  if (mode === "production_http" && boundary.deployment_profile !== "production") {
+    throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "Production HTTP Explore requires a separately reviewed and activated production boundary.");
+  }
+  if (mode === "local_authoring"
+    && boundary.deployment_profile !== "development"
+    && boundary.deployment_profile !== "staging") {
+    throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "A production boundary cannot be served by the local authoring Explore runtime.");
   }
   if (boundary.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION || boundary.spec_version !== AUTO_BOUNDARY_SPEC_VERSION) {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active exploration boundary was compiled by a different compiler or Spec version.");
@@ -239,14 +267,20 @@ export async function prepareScopedExplore(input: {
       !== lock.authority_dependencies.credential_posture_fingerprint) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        "Generated authority is stale: the inspected credential posture changed.",
+        [
+          "Generated authority is stale: the inspected credential posture changed.",
+          generationLockRemediation(lock),
+        ].join("\n"),
       );
     }
     assertGlobalReadOnlyPosture(inspection);
   } else {
     const comparison = compareGenerationLock(lock, inspection);
     if (!comparison.current) {
-      throw new ScopedExploreError("EXPLORE_LOCK_STALE", `Generated authority is stale: ${comparison.changes.join("; ")}.`);
+      throw new ScopedExploreError("EXPLORE_LOCK_STALE", [
+        `Generated authority is stale: ${comparison.changes.join("; ")}.`,
+        generationLockRemediation(lock),
+      ].join("\n"));
     }
     if (rolePostureFingerprint(inspection) !== boundary.role_posture_fingerprint) {
       throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Database role, grant, ownership, or RLS posture changed after boundary activation.");
@@ -259,26 +293,33 @@ export async function prepareScopedExplore(input: {
 export async function createScopedExploreRuntime(input: {
   projectRoot: string;
   transport: ScopedExploreTransport;
+  mode?: ScopedExploreMode;
   boundaryName?: string;
   env?: NodeJS.ProcessEnv;
   executor?: ScopedExploreExecutor;
-  store?: ProposalStore;
+  store?: ProposalRuntimeStore;
+  sessionContext?: ExploreHttpSessionContext;
+  productionPrivacyHmacKey?: Buffer;
+  productionAccountingNamespace?: string;
+  productionTenantLimits?: ExploreBudgetLimits;
   clock?: () => number;
   inspectDatabaseFn?: InspectDatabaseFn;
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
 }): Promise<ScopedExploreRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const env = input.env ?? process.env;
+  const mode = input.mode ?? "local_authoring";
   const prepared = await prepareScopedExplore({
     projectRoot,
     transport: input.transport,
+    mode,
     ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
     env,
     ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
   });
   const databaseUrl = env[prepared.lock.source_env];
   if (!databaseUrl) throw new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE", `${prepared.lock.source_env} is not set.`);
-  const principalRequired = prepared.boundary.pack.resources.some((resource) =>
+  const principalRequired = mode === "production_http" || prepared.boundary.pack.resources.some((resource) =>
     typeof resource.principal_key === "string" && resource.principal_key.length > 0);
   const trustedScopeResolver = input.resolveTrustedScopeFn ?? resolveExploreTrustedScope;
   const trustedScope = await trustedScopeResolver({
@@ -286,6 +327,7 @@ export async function createScopedExploreRuntime(input: {
     lock: prepared.lock,
     inspection: prepared.inspection,
     env,
+    ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
   }).catch((error) => {
     throw scopedExploreTrustedScopeError(
       error,
@@ -296,10 +338,42 @@ export async function createScopedExploreRuntime(input: {
   const trustedTenant = trustedScope.tenant;
   const principal = trustedScope.principal;
   const auditKey = await loadAuditKey(projectRoot);
+  const privacyHmacKey = mode === "production_http"
+    ? input.productionPrivacyHmacKey
+    : auditKey;
+  if (!privacyHmacKey || privacyHmacKey.byteLength < 32) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Production Explore requires one shared 32-byte-or-longer HMAC key for opaque cross-process privacy accounting.",
+    );
+  }
+  if (mode === "production_http" && !input.productionTenantLimits) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Production Explore requires explicit tenant-wide query, extraction, differencing, and rate ceilings.",
+    );
+  }
+  if (mode === "production_http"
+    && (!input.productionAccountingNamespace
+      || !/^[a-z][a-z0-9_.:-]{0,127}$/.test(input.productionAccountingNamespace))) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Production Explore requires one stable reviewed accounting namespace shared by every replica.",
+    );
+  }
   const clock = input.clock ?? Date.now;
-  const projectFingerprint = hmac(auditKey, projectRoot);
-  const tenantFingerprint = hmac(auditKey, trustedTenant);
-  const principalFingerprint = principal ? hmac(auditKey, principal) : "not_configured";
+  const projectFingerprint = hmac(
+    privacyHmacKey,
+    mode === "production_http" ? input.productionAccountingNamespace! : projectRoot,
+  );
+  const tenantFingerprint = hmac(privacyHmacKey, trustedTenant);
+  const principalFingerprint = principal ? hmac(privacyHmacKey, principal) : "not_configured";
+  const tenantPrivacyScopeFingerprint = canonicalJsonDigest({
+    version: "synapsor.explore-privacy-tenant-scope.v1",
+    project: projectFingerprint,
+    source: prepared.boundary.source,
+    tenant: tenantFingerprint,
+  });
   const privacyScopeFingerprint = canonicalJsonDigest({
     version: "synapsor.explore-privacy-scope.v1",
     project: projectFingerprint,
@@ -314,7 +388,7 @@ export async function createScopedExploreRuntime(input: {
   const ownsStore = !input.store;
   const store = input.store ?? new ProposalStore(path.join(projectRoot, ".synapsor/local.db"));
   const ownsExecutor = !input.executor;
-  const executor = input.executor ?? createDatabaseExecutor({
+  const executor = input.executor ?? createScopedExploreDatabaseExecutor({
     engine: prepared.lock.engine,
     databaseUrl,
   });
@@ -347,7 +421,9 @@ export async function createScopedExploreRuntime(input: {
       prepared.boundary,
       request,
       reviewableBoundary,
-      request.include_time_coverage === false ? {} : await reviewedTimeCoverage(),
+      mode === "production_http" || request.include_time_coverage === false
+        ? {}
+        : await reviewedTimeCoverage(),
     ),
     explore: async (unknownPlan) => {
       let currentPrepared: PreparedExplore;
@@ -355,6 +431,7 @@ export async function createScopedExploreRuntime(input: {
         currentPrepared = await prepareScopedExplore({
           projectRoot,
           transport: input.transport,
+          mode,
           boundaryName: prepared.boundary.pack.name,
           env,
           ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
@@ -371,6 +448,7 @@ export async function createScopedExploreRuntime(input: {
           lock: currentPrepared.lock,
           inspection: currentPrepared.inspection,
           env,
+          ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
         }).catch((error) => {
           throw scopedExploreTrustedScopeError(
             error,
@@ -381,6 +459,7 @@ export async function createScopedExploreRuntime(input: {
         assertTrustedScopeUnchanged(trustedScope, currentScope);
       } catch (error) {
         await recordPreExecutionRefusalAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -403,6 +482,7 @@ export async function createScopedExploreRuntime(input: {
           reviewableBoundary,
         );
         await recordPreExecutionRefusalAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -418,6 +498,7 @@ export async function createScopedExploreRuntime(input: {
         assertPreparedExplorePlanAuthority(plan, currentPrepared);
       } catch (error) {
         await recordPreExecutionRefusalAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -431,7 +512,9 @@ export async function createScopedExploreRuntime(input: {
         throw error;
       }
       const executionStartedAt = clock();
-      const normalizedAuditPlan = normalizedAudit(plan, auditKey);
+      // Production budget variants must be stable across replicas. The shared
+      // HMAC key keeps literals opaque while making accounting deterministic.
+      const normalizedAuditPlan = normalizedAudit(plan, privacyHmacKey);
       const queryFingerprint = canonicalJsonDigest(normalizedAuditPlan);
       const familyFingerprint = canonicalJsonDigest({
         version: "synapsor.explore-differencing-family.v2",
@@ -450,32 +533,64 @@ export async function createScopedExploreRuntime(input: {
           { tenant: trustedTenant, principal },
           prepared.lock.engine,
         );
-        const reservation = store.claimExploreBudgetReservation({
-          reservation_id: reservationId,
-          scope_fingerprint: privacyScopeFingerprint,
-          legacy_session_fingerprints: legacySessionFingerprints({
-            auditKey,
-            projectRoot,
-            tenant: trustedTenant,
-            principal,
-            now: executionStartedAt,
-          }),
-          resource_id: plan.resource,
-          variant_fingerprint: variantFingerprint,
-          requires_differencing: requiresDifferencingProtection(plan, prepared.boundary),
-          estimated_response_cells: estimatedResponseCells,
-          limits: prepared.boundary.budgets,
-          now: new Date(executionStartedAt).toISOString(),
-        });
+        const requiresDifferencing = requiresDifferencingProtection(plan, prepared.boundary);
+        const reservation = mode === "production_http"
+          ? await claimProductionExploreBudget(store, {
+            reservation_id: reservationId,
+            principal_scope_fingerprint: privacyScopeFingerprint,
+            tenant_scope_fingerprint: tenantPrivacyScopeFingerprint,
+            resource_id: plan.resource,
+            variant_fingerprint: variantFingerprint,
+            requires_differencing: requiresDifferencing,
+            estimated_response_cells: estimatedResponseCells,
+            principal_limits: prepared.boundary.budgets,
+            tenant_limits: {
+              ...input.productionTenantLimits!,
+              // A deployment-wide ceiling may be stricter, but can never make
+              // one response looser than this reviewed boundary permits.
+              max_response_cells: Math.min(
+                input.productionTenantLimits!.max_response_cells,
+                prepared.boundary.budgets.max_response_cells,
+              ),
+            },
+            now: new Date(executionStartedAt).toISOString(),
+          })
+          : await claimLocalExploreBudget(store, {
+            reservation_id: reservationId,
+            scope_fingerprint: privacyScopeFingerprint,
+            legacy_session_fingerprints: legacySessionFingerprints({
+              auditKey,
+              projectRoot,
+              tenant: trustedTenant,
+              principal,
+              now: executionStartedAt,
+            }),
+            resource_id: plan.resource,
+            variant_fingerprint: variantFingerprint,
+            requires_differencing: requiresDifferencing,
+            estimated_response_cells: estimatedResponseCells,
+            limits: prepared.boundary.budgets,
+            now: new Date(executionStartedAt).toISOString(),
+          });
         if (!reservation.allowed) {
+          const exhaustedScope = "exhausted_scope" in reservation
+            && (reservation.exhausted_scope === "principal" || reservation.exhausted_scope === "tenant")
+            ? reservation.exhausted_scope
+            : undefined;
           throw new ScopedExploreError(
             reservation.code === "RATE_LIMIT_EXHAUSTED"
               ? "EXPLORE_RATE_LIMITED"
               : "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-            exploreBudgetRefusalMessage(reservation.code, reservation.message),
+            exploreBudgetRefusalMessage(
+              reservation.code,
+              reservation.message,
+              exhaustedScope,
+            ),
           );
         }
-        budgetUsage = reservation.usage_after_reservation;
+        budgetUsage = "principal_usage_after_reservation" in reservation
+          ? reservation.principal_usage_after_reservation
+          : reservation.usage_after_reservation;
       } catch (error) {
         const refusal = error instanceof ScopedExploreError
           ? error
@@ -484,10 +599,11 @@ export async function createScopedExploreRuntime(input: {
             "Runner could not reserve the reviewed privacy budget, so no source query was executed.",
           );
         await recordPreExecutionRefusalAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
-          auditKey,
+          auditKey: privacyHmacKey,
           plan,
           unknownPlan,
           stage: "budget",
@@ -511,8 +627,9 @@ export async function createScopedExploreRuntime(input: {
           resultRows.push(...rows.map((row) => query.period ? { __period: query.period, ...row } : row));
         });
       } catch (error) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -532,10 +649,16 @@ export async function createScopedExploreRuntime(input: {
       }
       let response: ReturnType<typeof shapeExploreResponse>;
       try {
-        response = shapeExploreResponse(plan, resultRows, prepared.boundary);
+        response = shapeExploreResponse(
+          plan,
+          resultRows,
+          prepared.boundary,
+          compiledQueries,
+        );
       } catch (error) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -555,8 +678,9 @@ export async function createScopedExploreRuntime(input: {
       }
       const serializedBytes = Buffer.byteLength(JSON.stringify(response.data), "utf8");
       if (serializedBytes > prepared.boundary.budgets.max_response_bytes || response.cells > prepared.boundary.budgets.max_response_cells) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -575,17 +699,20 @@ export async function createScopedExploreRuntime(input: {
         throw new ScopedExploreError("EXPLORE_RESPONSE_TOO_LARGE", "Scoped Explore refused a result that exceeded the reviewed cell or byte budget.");
       }
       try {
-        enforcePrivacyComplementRelease(store, {
+        await enforcePrivacyComplementRelease(store, {
           boundary: prepared.boundary,
           privacyScopeFingerprint,
+          tenantPrivacyScopeFingerprint,
           queryFingerprint,
           plan,
           response,
-          auditKey,
+          auditKey: privacyHmacKey,
+          mode,
         });
       } catch (error) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -604,19 +731,20 @@ export async function createScopedExploreRuntime(input: {
         throw error;
       }
       const completedAt = clock();
-      let completedBudget: ReturnType<ProposalStore["completeExploreBudgetReservation"]>;
+      let completedBudget;
       try {
-        completedBudget = store.completeExploreBudgetReservation({
+        completedBudget = await completeExploreBudget(store, {
           reservation_id: reservationId,
           result_released: true,
           returned_cells: response.cells,
           completed_at: new Date(completedAt).toISOString(),
-        });
+        }, mode);
       } catch {
         completedBudget = { completed: false, reason: "reservation_missing" };
       }
       if (!completedBudget.completed) {
         await recordExploreAudit(store, {
+          mode,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -645,6 +773,7 @@ export async function createScopedExploreRuntime(input: {
         ),
       };
       const evidence = await recordExploreEvidence(store, {
+        mode,
         boundary: prepared.boundary,
         generationLockFingerprint: prepared.boundary.generation_lock_fingerprint,
         rolePostureFingerprint: prepared.boundary.role_posture_fingerprint,
@@ -666,21 +795,23 @@ export async function createScopedExploreRuntime(input: {
         executionStartedAt,
         completedAt,
       });
-      const protectToken = await storeProtectedPlan({
-        projectRoot,
-        auditKey,
-        boundaryDigest: prepared.boundary.activation.digest,
-        plan,
-        now: completedAt,
-        metadata: {
-          evidence_bundle_id: evidence.evidence_bundle_id,
-          query_audit_handle: queryFingerprint,
-          outcome: response.status,
-          returned_rows_or_groups: response.rowCount,
-          returned_cells: response.cells,
-          suppressed_groups: response.suppressed,
-        },
-      });
+      const protectToken = mode === "local_authoring"
+        ? await storeProtectedPlan({
+          projectRoot,
+          auditKey,
+          boundaryDigest: prepared.boundary.activation.digest,
+          plan,
+          now: completedAt,
+          metadata: {
+            evidence_bundle_id: evidence.evidence_bundle_id,
+            query_audit_handle: queryFingerprint,
+            outcome: response.status,
+            returned_rows_or_groups: response.rowCount,
+            returned_cells: response.cells,
+            suppressed_groups: response.suppressed,
+          },
+        })
+        : undefined;
       const resultSemantics = describeExploreResult({
         plan,
         boundary: prepared.boundary,
@@ -721,6 +852,16 @@ export async function createScopedExploreRuntime(input: {
             : {}),
           suppressed_groups: response.suppressed,
           totals_returned: false,
+          ...(response.reviewedValueControls.bucketed.length
+            || response.reviewedValueControls.excluded.length
+            ? {
+              reviewed_value_controls: {
+                bucketed_fields: response.reviewedValueControls.bucketed,
+                excluded_fields: response.reviewedValueControls.excluded,
+                source_values_exposed: false,
+              },
+            }
+            : {}),
         },
         audit: {
           query_fingerprint: queryFingerprint,
@@ -731,16 +872,18 @@ export async function createScopedExploreRuntime(input: {
         },
         evidence_bundle_id: evidence.evidence_bundle_id,
         evidence_resource: `synapsor://evidence/${evidence.evidence_bundle_id}`,
-        protect: {
-          token: protectToken.token,
-          expires_at: protectToken.expires_at,
-          action: "Open the secured local Workbench and choose Protect this query.",
-        },
+        ...(protectToken ? {
+          protect: {
+            token: protectToken.token,
+            expires_at: protectToken.expires_at,
+            action: "Use the local operator CLI or Workbench to Protect this analysis.",
+          },
+        } : {}),
       };
     },
     close: async () => {
       if (ownsExecutor) await executor.close();
-      if (ownsStore) store.close();
+      if (ownsStore) await store.close();
     },
   };
 }
@@ -753,6 +896,7 @@ export function assertPreparedExplorePlanAuthority(
   assertPlanAuthorityDependenciesCurrent(
     plan,
     prepared.boundary,
+    prepared.lock,
     prepared.lock.authority_dependencies,
     prepared.inspection,
   );
@@ -953,17 +1097,18 @@ export function compileExplorePlan(
   context: { tenant: string; principal: string },
   engine: "postgres" | "mysql",
 ): CompiledExploreQuery[] {
+  const enumBucketMarker = `__synapsor_unreviewed_${crypto.randomBytes(16).toString("hex")}__`;
   if (plan.kind === "rows") return [withReportingTimezone(
     compileRowPlan(plan, boundary, context, engine),
     boundary,
   )];
   const ranges = plan.comparison?.ranges;
   if (!ranges?.length) return [withReportingTimezone(
-    compileAggregatePlan(plan, boundary, context, engine),
+    compileAggregatePlan(plan, boundary, context, engine, enumBucketMarker),
     boundary,
   )];
   return ranges.map((range, index) => withReportingTimezone(
-    compileAggregatePlan(plan, boundary, context, engine, {
+    compileAggregatePlan(plan, boundary, context, engine, enumBucketMarker, {
       range,
       period: index === 0 ? "period_1" : "period_2",
     }),
@@ -1268,12 +1413,19 @@ function compileRowPlan(
   boundary: ActivatedExplorationBoundary,
   context: { tenant: string; principal: string },
   engine: "postgres" | "mysql",
-): { sql: string; params: Scalar[]; resources: BoundaryResource[] } {
+): Omit<CompiledExploreQuery, "reporting_timezone"> {
   const resource = resourceFor(boundary, plan.resource);
   const params: Scalar[] = [];
   const alias = "t0";
   const where = scopePredicates(resource, alias, context, params, engine);
   for (const filter of plan.where ?? []) where.push(filterSql(filter, resource, alias, params, engine));
+  const enumUses = unique([
+    ...plan.select,
+    ...(plan.where ?? []).map((filter) => filter.field),
+  ].filter((field) => resource.field_enums[field]?.length));
+  for (const field of enumUses) {
+    where.push(reviewedEnumAllowlistSql(resource, field, alias, params, engine));
+  }
   const columns = plan.select.map((field) => `${alias}.${quote(field, engine)} AS ${quote(field, engine)}`);
   const order = plan.order_by?.length
     ? ` ORDER BY ${plan.order_by.map((item) => `${alias}.${quote(item.field, engine)} ${item.direction.toUpperCase()}`).join(", ")}`
@@ -1283,6 +1435,15 @@ function compileRowPlan(
     sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias} WHERE ${where.join(" AND ")}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
     resources: [resource],
+    ...(enumUses.length
+      ? {
+        reviewed_value_controls: enumUses.map((field) => ({
+          kind: "exclude_unreviewed_rows" as const,
+          resource: resource.id,
+          field,
+        })),
+      }
+      : {}),
   };
 }
 
@@ -1291,8 +1452,9 @@ function compileAggregatePlan(
   boundary: ActivatedExplorationBoundary,
   context: { tenant: string; principal: string },
   engine: "postgres" | "mysql",
+  enumBucketMarker: string,
   comparison?: { range: { start: string; end: string }; period: "period_1" | "period_2" },
-): { sql: string; params: Scalar[]; resources: BoundaryResource[]; period?: "period_1" | "period_2" } {
+): Omit<CompiledExploreQuery, "reporting_timezone"> {
   const root = resourceFor(boundary, plan.resource);
   const relationshipIds = unique([
     plan.relationship,
@@ -1316,6 +1478,32 @@ function compileAggregatePlan(
     const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
     where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
   }
+  const enumUses = (plan.where ?? []).map((filter) => ({
+    field: filter.field,
+    relationship: filter.relationship,
+  }));
+  const appliedEnumAllowlist = new Set<string>();
+  const reviewedValueControls: CompiledReviewedValueControl[] = [];
+  for (const use of enumUses) {
+    const target = use.relationship ? joined.targets.get(use.relationship) : undefined;
+    const resource = target?.resource ?? root;
+    if (!resource.field_enums[use.field]?.length) continue;
+    const key = `${target?.alias ?? "t0"}.${use.field}`;
+    if (appliedEnumAllowlist.has(key)) continue;
+    appliedEnumAllowlist.add(key);
+    where.push(reviewedEnumAllowlistSql(
+      resource,
+      use.field,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    ));
+    reviewedValueControls.push({
+      kind: "exclude_unreviewed_rows",
+      resource: resource.id,
+      field: use.field,
+    });
+  }
   if (comparison) {
     const target = plan.comparison?.relationship
       ? joined.targets.get(plan.comparison.relationship)
@@ -1327,14 +1515,41 @@ function compileAggregatePlan(
     params.push(comparison.range.end);
     where.push(`${alias}.${column} < ${placeholder(params.length, engine)}`);
   }
+  const parametersBeforeSelect = params.length;
   const select: string[] = [];
   const groupBy: string[] = [];
   (plan.dimensions ?? []).forEach((dimension, index) => {
-    const alias = dimension.relationship
-      ? joined.targets.get(dimension.relationship)!.alias
-      : "t0";
+    const target = dimension.relationship
+      ? joined.targets.get(dimension.relationship)!
+      : undefined;
+    const alias = target?.alias ?? "t0";
+    const resource = target?.resource ?? root;
+    const outputColumn = `dimension_${index}`;
+    if (resource.field_enums[dimension.field]?.length) {
+      const expression = reviewedEnumBucketSql(
+        resource,
+        dimension.field,
+        alias,
+        params,
+        engine,
+        enumBucketMarker,
+      );
+      select.push(`${expression} AS ${quote(outputColumn, engine)}`);
+      // PostgreSQL and MySQL both support positional GROUP BY. The reviewed
+      // ordinal avoids repeating parameterized CASE values on MySQL and cannot
+      // collide with a source column named like the internal output alias.
+      groupBy.push(String(select.length));
+      reviewedValueControls.push({
+        kind: "bucket_unreviewed_values",
+        resource: resource.id,
+        field: dimension.field,
+        output_column: outputColumn,
+        marker: enumBucketMarker,
+      });
+      return;
+    }
     const expression = `${alias}.${quote(dimension.field, engine)}`;
-    select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
+    select.push(`${expression} AS ${quote(outputColumn, engine)}`);
     groupBy.push(expression);
   });
   // A comparison aggregates each bounded range as one period. The reviewed
@@ -1361,6 +1576,7 @@ function compileAggregatePlan(
     select.push(`${expression} AS ${quote(`measure_${index}`, engine)}`);
   });
   select.push(`COUNT(*) AS ${quote("__cohort_size", engine)}`);
+  const parametersAfterSelect = params.length;
   const order = plan.order_by?.kind === "measure"
     ? ` ORDER BY ${quote(`measure_${plan.order_by.index}`, engine)} ${plan.order_by.direction.toUpperCase()}`
     : plan.order_by?.kind === "time_bucket" && !comparison
@@ -1374,8 +1590,17 @@ function compileAggregatePlan(
   params.push(aggregateUnderlyingGroupLimit(plan, boundary) + 1);
   return {
     sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql} WHERE ${where.join(" AND ")}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
-    params,
+    params: engine === "mysql"
+      ? [
+        ...params.slice(parametersBeforeSelect, parametersAfterSelect),
+        ...params.slice(0, parametersBeforeSelect),
+        ...params.slice(parametersAfterSelect),
+      ]
+      : params,
     resources: joined.resources,
+    ...(reviewedValueControls.length
+      ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
+      : {}),
     ...(comparison ? { period: comparison.period } : {}),
   };
 }
@@ -1429,6 +1654,7 @@ function shapeExploreResponse(
   plan: ExplorePlan,
   rows: Record<string, unknown>[],
   boundary: ActivatedExplorationBoundary,
+  compiledQueries: CompiledExploreQuery[],
 ): {
   data: Record<string, Scalar>[];
   rowCount: number;
@@ -1436,7 +1662,31 @@ function shapeExploreResponse(
   suppressed: number;
   status: "ok" | "empty" | "fully_suppressed" | "incomplete_comparison";
   incompleteComparisons: number;
+  reviewedValueControls: {
+    bucketed: Array<{
+      resource: string;
+      field: string;
+      output_field: string;
+      bucket_returned: boolean;
+      bucket_token?: string;
+    }>;
+    excluded: Array<{
+      resource: string;
+      field: string;
+      effect: "rows_outside_reviewed_values_excluded";
+    }>;
+  };
 } {
+  const compiledControls = uniqueReviewedValueControls(
+    compiledQueries.flatMap((query) => query.reviewed_value_controls ?? []),
+  );
+  const excluded = compiledControls
+    .filter((control) => control.kind === "exclude_unreviewed_rows")
+    .map((control) => ({
+      resource: control.resource,
+      field: control.field,
+      effect: "rows_outside_reviewed_values_excluded" as const,
+    }));
   if (plan.kind === "rows") {
     const data = rows.map((row) => Object.fromEntries(plan.select.map((field) => [field, safeDatabaseValue(row[field])])));
     return {
@@ -1446,6 +1696,7 @@ function shapeExploreResponse(
       suppressed: 0,
       status: data.length ? "ok" : "empty",
       incompleteComparisons: 0,
+      reviewedValueControls: { bucketed: [], excluded },
     };
   }
   const resource = resourceFor(boundary, plan.resource);
@@ -1500,6 +1751,41 @@ function shapeExploreResponse(
       return output;
     });
     const ordered = sortExploreData(plan, data, aliases).slice(0, plan.top_n);
+    const bucketed = compiledControls
+      .filter((control): control is CompiledReviewedValueControl & {
+        kind: "bucket_unreviewed_values";
+        output_column: string;
+        marker: string;
+      } => {
+        const outputColumn = control.output_column;
+        const marker = control.marker;
+        return control.kind === "bucket_unreviewed_values"
+          && typeof outputColumn === "string"
+          && typeof marker === "string"
+          && normalized.some((row) => row[outputColumn] === marker);
+      })
+      .map((control) => {
+        const dimensionIndex = Number(control.output_column.replace(/^dimension_/, ""));
+        const outputField = aliases.dimensions[dimensionIndex] ?? control.output_column;
+        let bucketToken = "[outside-reviewed-values]";
+        let suffix = 2;
+        while (ordered.some((row) => row[outputField] === bucketToken)) {
+          bucketToken = `[outside-reviewed-values-${suffix++}]`;
+        }
+        let bucketReturned = false;
+        for (const row of ordered) {
+          if (row[outputField] !== control.marker) continue;
+          row[outputField] = bucketToken;
+          bucketReturned = true;
+        }
+        return {
+          resource: control.resource,
+          field: control.field,
+          output_field: outputField,
+          bucket_returned: bucketReturned,
+          ...(bucketReturned ? { bucket_token: bucketToken } : {}),
+        };
+      });
     const incompleteComparisons = comparison?.incomplete ?? 0;
     const status = ordered.length
       ? "ok"
@@ -1515,6 +1801,7 @@ function shapeExploreResponse(
       suppressed: shaped.suppressed_groups,
       status,
       incompleteComparisons,
+      reviewedValueControls: { bucketed, excluded },
     };
   } catch (error) {
     if (error instanceof PrivacyBoundaryError) {
@@ -1669,6 +1956,7 @@ function describeExploreResult(input: {
     cells: number;
     suppressed: number;
     incompleteComparisons: number;
+    reviewedValueControls: ReturnType<typeof shapeExploreResponse>["reviewedValueControls"];
   };
   queryFingerprint: `sha256:${string}`;
   serializedBytes: number;
@@ -1805,6 +2093,21 @@ function describeExploreResult(input: {
       incomplete_comparison_groups: input.response.incompleteComparisons,
       suppression_aware_totals_returned: false,
     },
+    ...(input.response.reviewedValueControls.bucketed.length
+      || input.response.reviewedValueControls.excluded.length
+      ? {
+        reviewed_value_controls: {
+          bucketed_fields: input.response.reviewedValueControls.bucketed.map((item) => ({
+            resource: item.resource,
+            field: item.field,
+            output_field: item.output_field,
+            bucket_returned: item.bucket_returned,
+          })),
+          excluded_fields: input.response.reviewedValueControls.excluded,
+          source_values_exposed: false,
+        },
+      }
+      : {}),
     returned: {
       rows_or_groups: input.response.rowCount,
       cells: input.response.cells,
@@ -2238,31 +2541,73 @@ function estimatedExploreResponseCells(plan: ExplorePlan): number {
   return plan.top_n * fieldsPerGroup;
 }
 
-function exploreBudgetRefusalMessage(code: string, fallback: string): string {
+function exploreBudgetRefusalMessage(
+  code: string,
+  fallback: string,
+  exhaustedScope?: "principal" | "tenant",
+): string {
+  const scope = exhaustedScope === "tenant"
+    ? "The tenant-wide production safety ceiling"
+    : exhaustedScope === "principal"
+      ? "This authenticated principal's production budget"
+      : "The reviewed budget";
   if (code === "QUERY_BUDGET_EXHAUSTED") {
-    return "The reviewed rolling 24-hour query budget is exhausted.";
+    return `${scope} has exhausted its rolling 24-hour query allowance.`;
   }
   if (code === "EXTRACTION_BUDGET_EXHAUSTED") {
-    return "The reviewed response or rolling 24-hour extraction budget would be exceeded.";
+    return `${scope} would exceed its response or rolling 24-hour extracted-cell allowance.`;
   }
   if (code === "DIFFERENCING_BUDGET_EXHAUSTED") {
-    return "Too many distinct cohort-protected plans were released for this table in the rolling 24-hour privacy window.";
+    return `${scope} has released too many distinct cohort-protected plans for this table in the rolling 24-hour privacy window.`;
   }
   return fallback;
 }
 
-function releaseExploreBudgetReservation(
-  store: ProposalStore,
+async function claimLocalExploreBudget(
+  store: ProposalRuntimeStore,
+  input: ExploreBudgetReservationInput,
+): Promise<ExploreBudgetReservationDecision> {
+  if (!store.claimExploreBudgetReservation) {
+    throw new Error("The configured runtime store does not implement local Explore privacy reservations.");
+  }
+  return await store.claimExploreBudgetReservation(input);
+}
+
+async function claimProductionExploreBudget(
+  store: ProposalRuntimeStore,
+  input: ProductionExploreBudgetReservationInput,
+): Promise<ProductionExploreBudgetReservationDecision> {
+  if (!store.claimProductionExploreBudgetReservation) {
+    throw new Error("The configured shared runtime store does not implement atomic production Explore privacy reservations.");
+  }
+  return await store.claimProductionExploreBudgetReservation(input);
+}
+
+async function completeExploreBudget(
+  store: ProposalRuntimeStore,
+  input: Parameters<NonNullable<ProposalRuntimeStore["completeExploreBudgetReservation"]>>[0],
+  mode: ScopedExploreMode,
+) {
+  const method = mode === "production_http"
+    ? store.completeProductionExploreBudgetReservation
+    : store.completeExploreBudgetReservation;
+  if (!method) throw new Error("The configured runtime store cannot complete Explore privacy reservations.");
+  return await method.call(store, input);
+}
+
+async function releaseExploreBudgetReservation(
+  store: ProposalRuntimeStore,
   reservationId: string,
   completedAt: number,
-): void {
+  mode: ScopedExploreMode,
+): Promise<void> {
   try {
-    store.completeExploreBudgetReservation({
+    await completeExploreBudget(store, {
       reservation_id: reservationId,
       result_released: false,
       returned_cells: 0,
       completed_at: new Date(completedAt).toISOString(),
-    });
+    }, mode);
   } catch {
     // A stranded pending reservation remains a conservative budget charge.
   }
@@ -2297,17 +2642,19 @@ function requiresDifferencingProtection(
   return true;
 }
 
-function enforcePrivacyComplementRelease(
-  store: ProposalStore,
+async function enforcePrivacyComplementRelease(
+  store: ProposalRuntimeStore,
   input: {
     boundary: ActivatedExplorationBoundary;
     privacyScopeFingerprint: `sha256:${string}`;
+    tenantPrivacyScopeFingerprint: `sha256:${string}`;
     queryFingerprint: `sha256:${string}`;
     plan: ExplorePlan;
     response: ReturnType<typeof shapeExploreResponse>;
     auditKey: Buffer;
+    mode: ScopedExploreMode;
   },
-): void {
+): Promise<void> {
   if (input.plan.kind !== "aggregate") return;
   const resource = resourceFor(input.boundary, input.plan.resource);
   if (resource.minimum_cohort_size <= 1) return;
@@ -2320,15 +2667,32 @@ function enforcePrivacyComplementRelease(
       : undefined
     : "scalar_total" as const;
   if (!releaseKind) return;
-  let decision: ReturnType<ProposalStore["claimExplorePrivacyRelease"]>;
+  let decision;
   try {
-    decision = store.claimExplorePrivacyRelease({
-      scope_fingerprint: input.privacyScopeFingerprint,
+    const common = {
       complement_fingerprints: privacyComplementFingerprints(input.plan, input.auditKey),
       release_kind: releaseKind,
       query_fingerprint: input.queryFingerprint,
       boundary_digest: input.boundary.activation.digest,
-    });
+    };
+    if (input.mode === "production_http") {
+      if (!store.claimProductionExplorePrivacyRelease) {
+        throw new Error("Production privacy release accounting is unavailable.");
+      }
+      decision = await store.claimProductionExplorePrivacyRelease({
+        ...common,
+        principal_scope_fingerprint: input.privacyScopeFingerprint,
+        tenant_scope_fingerprint: input.tenantPrivacyScopeFingerprint,
+      });
+    } else {
+      if (!store.claimExplorePrivacyRelease) {
+        throw new Error("Local privacy release accounting is unavailable.");
+      }
+      decision = await store.claimExplorePrivacyRelease({
+        ...common,
+        scope_fingerprint: input.privacyScopeFingerprint,
+      });
+    }
   } catch {
     throw new ScopedExploreError(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
@@ -2412,8 +2776,9 @@ function exploreComplexity(plan: ExplorePlan): number {
 }
 
 async function recordPreExecutionRefusalAudit(
-  store: ProposalStore,
+  store: ProposalRuntimeStore,
   input: {
+    mode: ScopedExploreMode;
     boundary: ActivatedExplorationBoundary;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
@@ -2438,7 +2803,7 @@ async function recordPreExecutionRefusalAudit(
   const errorCode = input.error instanceof ScopedExploreError
     ? input.error.code
     : "EXPLORE_PLAN_INVALID";
-  store.recordQueryAudit({
+  await recordExploreQueryAudit(store, input.mode, {
     source_id: input.boundary.source,
     query_fingerprint: queryFingerprint,
     table_name: input.plan?.resource ?? "app.explore_data",
@@ -2465,8 +2830,9 @@ async function recordPreExecutionRefusalAudit(
 }
 
 async function recordExploreAudit(
-  store: ProposalStore,
+  store: ProposalRuntimeStore,
   input: {
+    mode: ScopedExploreMode;
     boundary: ActivatedExplorationBoundary;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
@@ -2483,7 +2849,7 @@ async function recordExploreAudit(
     now: number;
   },
 ): Promise<void> {
-  store.recordQueryAudit({
+  await recordExploreQueryAudit(store, input.mode, {
     source_id: input.boundary.source,
     query_fingerprint: input.queryFingerprint,
     table_name: resourceFor(input.boundary, input.plan.resource).id,
@@ -2526,8 +2892,9 @@ function boundedUnknownSerialization(value: unknown): string {
 }
 
 async function recordExploreEvidence(
-  store: ProposalStore,
+  store: ProposalRuntimeStore,
   input: {
+    mode: ScopedExploreMode;
     boundary: ActivatedExplorationBoundary;
     generationLockFingerprint: `sha256:${string}`;
     rolePostureFingerprint: `sha256:${string}`;
@@ -2580,7 +2947,7 @@ async function recordExploreEvidence(
     source_database_changed: false,
     recorded_at: recordedAt,
   };
-  store.recordEvidenceBundle({
+  await recordExploreEvidenceBundle(store, input.mode, {
     evidence_bundle_id: evidenceBundleId,
     tenant_id: `keyed:${hmac(input.auditKey, input.tenant)}`,
     payload: {
@@ -2623,6 +2990,70 @@ async function recordExploreEvidence(
     }],
   });
   return { evidence_bundle_id: evidenceBundleId };
+}
+
+let lastProductionExploreAuditWarningAt = 0;
+
+async function recordExploreQueryAudit(
+  store: ProposalRuntimeStore,
+  mode: ScopedExploreMode,
+  audit: Parameters<ProposalRuntimeStore["recordQueryAudit"]>[0],
+): Promise<void> {
+  if (mode !== "production_http") {
+    await store.recordQueryAudit(audit);
+    return;
+  }
+  await appendProductionExploreAudit(store, {
+    event_id: `audit_explore_${crypto.randomBytes(12).toString("hex")}`,
+    event_kind: "query_audit",
+    payload: { query_audit: audit },
+    created_at: productionExploreAuditCreatedAt(audit.payload),
+  });
+}
+
+async function recordExploreEvidenceBundle(
+  store: ProposalRuntimeStore,
+  mode: ScopedExploreMode,
+  evidence: Parameters<ProposalRuntimeStore["recordEvidenceBundle"]>[0],
+): Promise<void> {
+  if (mode !== "production_http") {
+    await store.recordEvidenceBundle(evidence);
+    return;
+  }
+  await appendProductionExploreAudit(store, {
+    event_id: evidence.evidence_bundle_id,
+    event_kind: "evidence_bundle",
+    payload: { evidence_bundle: evidence },
+    created_at: productionExploreAuditCreatedAt(evidence.payload),
+  });
+}
+
+async function appendProductionExploreAudit(
+  store: ProposalRuntimeStore,
+  event: Parameters<NonNullable<ProposalRuntimeStore["recordProductionExploreAuditEvent"]>>[0],
+): Promise<void> {
+  try {
+    if (!store.recordProductionExploreAuditEvent) {
+      throw new Error("The production audit sink is unavailable.");
+    }
+    await store.recordProductionExploreAuditEvent(event);
+  } catch {
+    const now = Date.now();
+    if (now - lastProductionExploreAuditWarningAt >= 60_000) {
+      lastProductionExploreAuditWarningAt = now;
+      process.stderr.write(
+        "Warning: Runner could not append production Explore metadata evidence. The bounded query result remains available; inspect the shared control database.\n",
+      );
+    }
+  }
+}
+
+function productionExploreAuditCreatedAt(payload: Record<string, unknown>): string {
+  for (const key of ["recorded_at", "completed_at", "execution_started_at"]) {
+    const value = payload[key];
+    if (typeof value === "string" && Number.isFinite(Date.parse(value))) return value;
+  }
+  return new Date().toISOString();
 }
 
 function normalizedAudit(plan: ExplorePlan, auditKey: Buffer): Record<string, unknown> {
@@ -2683,9 +3114,14 @@ function filterSql(
   return `${column} ${operator} ${placeholder(params.length, engine)}`;
 }
 
-function createDatabaseExecutor(input: { engine: "postgres" | "mysql"; databaseUrl: string }): ScopedExploreExecutor {
+export function createScopedExploreDatabaseExecutor(input: {
+  engine: "postgres" | "mysql";
+  databaseUrl: string;
+  maxConnections?: number;
+}): ScopedExploreExecutor {
+  const maxConnections = Math.max(1, Math.min(input.maxConnections ?? 4, 100));
   if (input.engine === "postgres") {
-    const pool = new Pool({ connectionString: input.databaseUrl, max: 4, connectionTimeoutMillis: 3000, idleTimeoutMillis: 10_000 });
+    const pool = new Pool({ connectionString: input.databaseUrl, max: maxConnections, connectionTimeoutMillis: 3000, idleTimeoutMillis: 10_000 });
     const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
       const client = await pool.connect();
       try {
@@ -2719,7 +3155,7 @@ function createDatabaseExecutor(input: { engine: "postgres" | "mysql"; databaseU
       close: () => pool.end(),
     };
   }
-  const pool = mysql.createPool({ uri: input.databaseUrl, connectionLimit: 4, connectTimeout: 3000, dateStrings: true });
+  const pool = mysql.createPool({ uri: input.databaseUrl, connectionLimit: maxConnections, connectTimeout: 3000, dateStrings: true });
   const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
     const connection = await pool.getConnection();
     try {
@@ -2834,6 +3270,7 @@ function assertAuthorityDependenciesShape(dependencies: GenerationAuthorityDepen
 function assertPlanAuthorityDependenciesCurrent(
   plan: ExplorePlan,
   boundary: ActivatedExplorationBoundary,
+  lock: GenerationLock,
   dependencies: GenerationAuthorityDependencies,
   inspection: SchemaInspection,
 ): void {
@@ -2850,14 +3287,20 @@ function assertPlanAuthorityDependenciesCurrent(
       || canonicalJsonDigest(dependency.links) !== relationship.proof.digest) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        `Reviewed relationship ${relationshipId} is not bound to the current generation-lock proof.`,
+        withGenerationLockRemediation(
+          `Reviewed relationship ${relationshipId} is not bound to the current generation-lock proof.`,
+          lock,
+        ),
       );
     }
     const currentProof = relationshipAuthorityDependencyFingerprint(dependency, inspection);
     if (currentProof !== dependency.proof_digest) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        `Reviewed relationship ${relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
+        withGenerationLockRemediation(
+          `Reviewed relationship ${relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
+          lock,
+        ),
       );
     }
     for (const link of dependency.links) {
@@ -2871,18 +3314,28 @@ function assertPlanAuthorityDependenciesCurrent(
     if (!dependency) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        `Reviewed resource ${resourceId} is not represented in the generation-lock dependencies.`,
+        withGenerationLockRemediation(
+          `Reviewed resource ${resourceId} is not represented in the generation-lock dependencies.`,
+          lock,
+        ),
       );
     }
     const current = resourceAuthorityDependencyFingerprint(dependency, inspection);
     if (current !== dependency.fingerprint) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        describeReviewedResourceDrift(resource, dependency, inspection),
+        withGenerationLockRemediation(
+          describeReviewedResourceDrift(resource, dependency, inspection),
+          lock,
+        ),
       );
     }
     assertResourceReadOnlyPosture(inspection, resource);
   }
+}
+
+function withGenerationLockRemediation(message: string, lock: GenerationLock): string {
+  return `${message}\n${generationLockRemediation(lock)}`;
 }
 
 function describeReviewedResourceDrift(
@@ -3020,8 +3473,79 @@ function assertTypedLiteral(resource: BoundaryResource, field: string, value: Sc
     throw planError(`${resource.id}.${field} requires a string filter value`);
   }
   const enumValues = resource.field_enums[field];
-  if (enumValues?.length && !enumValues.includes(String(value))) throw planError(`${resource.id}.${field} requires a reviewed enum value`);
+  if (enumValues?.length && !enumValues.includes(String(value))) {
+    const modelWithheld = (resource.model_withheld_fields ?? []).includes(field);
+    throw new ScopedExploreError(
+      "EXPLORE_PLAN_INVALID",
+      `${JSON.stringify(String(value))} is not a reviewed value for ${resource.id}.${field}. ` +
+      (modelWithheld
+        ? "The reviewed values are withheld from the model. "
+        : `Reviewed values: ${enumValues.map((item) => JSON.stringify(item)).join(", ")}. `) +
+      "No source query was executed.",
+      {
+        reason: "categorical_value_not_reviewed",
+        resource: resource.id,
+        field,
+        ...(!modelWithheld ? { reviewed_values: [...enumValues] } : {}),
+        source_query_executed: false,
+      },
+    );
+  }
   if (typeof value === "string" && value.length > 512) throw planError("string filter values are limited to 512 characters");
+}
+
+function reviewedEnumAllowlistSql(
+  resource: BoundaryResource,
+  field: string,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): string {
+  const values = resource.field_enums[field];
+  if (!values?.length) throw planError(`${resource.id}.${field} has no active reviewed value allowlist`);
+  const placeholders = values.map((value) => {
+    params.push(value);
+    return placeholder(params.length, engine);
+  });
+  return `${alias}.${quote(field, engine)} IN (${placeholders.join(", ")})`;
+}
+
+function reviewedEnumBucketSql(
+  resource: BoundaryResource,
+  field: string,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+  marker: string,
+): string {
+  const values = resource.field_enums[field];
+  if (!values?.length) throw planError(`${resource.id}.${field} has no active reviewed value allowlist`);
+  const column = `${alias}.${quote(field, engine)}`;
+  const textColumn = engine === "postgres"
+    ? `CAST(${column} AS TEXT)`
+    : `CAST(${column} AS CHAR)`;
+  const placeholders = values.map((value) => {
+    params.push(value);
+    return placeholder(params.length, engine);
+  });
+  params.push(marker);
+  return `CASE WHEN ${column} IS NULL THEN NULL WHEN ${textColumn} IN (${placeholders.join(", ")}) THEN ${textColumn} ELSE ${placeholder(params.length, engine)} END`;
+}
+
+function uniqueReviewedValueControls(
+  controls: CompiledReviewedValueControl[],
+): CompiledReviewedValueControl[] {
+  const uniqueControls = new Map<string, CompiledReviewedValueControl>();
+  for (const control of controls) {
+    const key = [
+      control.kind,
+      control.resource,
+      control.field,
+      control.output_column ?? "",
+    ].join("\u0000");
+    if (!uniqueControls.has(key)) uniqueControls.set(key, control);
+  }
+  return [...uniqueControls.values()];
 }
 
 function qualified(resource: BoundaryResource, engine: "postgres" | "mysql"): string {

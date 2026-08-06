@@ -154,7 +154,10 @@ no-database demo, wire your database, then read deeper concepts.
   propose-only fixtures that catch changed capability calls, business diffs,
   policy outcomes, tenant handling, and hidden-field behavior.
 - [Bounded Aggregate Reads](aggregate-reads.md): fixed production scalar
-  aggregates plus the separate authoring-only reviewed aggregate Explore path.
+  aggregates plus reviewed aggregate Explore.
+- [Production Scoped Explore Over HTTP](production-scoped-explore-http.md):
+  opt-in ad-hoc production analytics with verified JWT scope, per-principal and
+  tenant budgets, atomic accounting, and the exact two-tool surface.
 - [Reviewed Relationship Paths](reviewed-relationships.md): catalog-proven
   star/depth-two aggregate paths, demand-driven operator review, nullable-link
   semantics, per-relation scope, and the permanent no-general-join boundary.

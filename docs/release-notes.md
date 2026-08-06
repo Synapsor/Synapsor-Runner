@@ -10,7 +10,38 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.6.7 (prepared, not published)
+## 1.7.0 (prepared, not published)
+
+### Production Scoped Explore Over Secured HTTP
+
+- Operators can now serve a separately reviewed production Explore boundary
+  over secured MCP Streamable HTTP for genuinely ad-hoc read-only analytics.
+  The remote model surface remains exactly `app.describe_data` and
+  `app.explore_data`.
+- Every request requires a verified asymmetrically signed JWT. Runner always
+  injects tenant scope, always uses the principal as the privacy/rate identity,
+  and adds principal row filtering wherever the reviewed table has a
+  `principal_key`. Prompts and tool arguments cannot select either scope.
+- Shared Postgres accounting atomically enforces per-principal and tenant query,
+  extraction, differencing, complementary-release, and rate limits across
+  replicas. One principal cannot starve another; concurrent requests cannot
+  both spend the final allowance.
+- Production Explore is off by default and fails closed without read-only mode,
+  exact production authority, verified issuer/audience/claims and OAuth scope,
+  direct TLS or a trusted TLS proxy, shared HMAC material, and initialized
+  shared accounting.
+- Real PostgreSQL and MySQL HTTP journeys verify official MCP interoperability,
+  row scope, suppression, budget isolation, concurrency, source immutability,
+  public `doctor` attestation, and packed-package behavior.
+- Local/staging Explore and protected named capabilities retain their existing
+  behavior. Existing boundary digests remain compatible, so Spec and DSL stay
+  at `1.8.0`.
+
+Prepared package versions: `@synapsor/runner@1.7.0` and
+`synapsor-runner@1.7.0`. Spec and DSL remain at their already-published `1.8.0`
+versions. No package is published by this change.
+
+## 1.6.7 (published 2026-08-04)
 
 ### Clear First-Run Review And Privacy Controls
 
@@ -42,9 +73,8 @@ for the Synapsor Cloud CLI.
   MCP authority paths. The packed first-run, browser visual, compatibility, and
   full test gates cover the corrected journey.
 
-Prepared package versions: `@synapsor/runner@1.6.7` and
-`synapsor-runner@1.6.7`. Spec and DSL remain at their already-published `1.8.0`
-versions. No package is published by this change.
+Published package versions: `@synapsor/runner@1.6.7` and
+`synapsor-runner@1.6.7`. Spec and DSL remain at `1.8.0`.
 
 ## 1.6.6 (published 2026-08-03)
 

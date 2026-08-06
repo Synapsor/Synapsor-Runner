@@ -86,12 +86,15 @@ Current `1.6.6` scope:
   Postgres review state, pools, rate limits, readiness, quorum, dead letters,
   and backup/restore/retention.
 
-Scoped Explore is an authoring-plane feature, not a production runtime feature.
-It is disabled by default, requires an explicit development/staging profile and
-a demonstrably read-only non-owner role, and is never advertised by production,
-unknown-profile, shared HTTP, remote, or non-loopback surfaces. Production uses
-only activated named capabilities, including capabilities created through
-Protect.
+Scoped Explore is disabled by default. Its ordinary authoring register requires
+an explicit development/staging profile, local stdio or loopback Workbench, and
+a demonstrably read-only non-owner role. An independent opt-in production
+register may serve exactly `app.describe_data` and `app.explore_data` over
+secured shared Streamable HTTP after a separate production boundary review. It
+requires verified JWT tenant/principal scope, per-principal plus tenant privacy
+budgets, rate limits, and atomic shared-Postgres accounting. Unknown profiles
+and ordinary remote HTTP still gain no Explore authority. Activated named
+capabilities, including Protect output, remain the narrower production choice.
 
 Stable `1.x` compatibility covers the documented `synapsor-runner` binary,
 config schema version `1`, canonical public contracts, result envelopes,

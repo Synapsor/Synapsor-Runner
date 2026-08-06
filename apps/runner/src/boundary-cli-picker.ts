@@ -13,9 +13,12 @@ import {
 export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
 export type BoundaryFieldTierEditResult =
   | Record<string, BoundaryFieldTier>
+  | `enum:${string}`
   | "back"
   | "privacy"
   | undefined;
+
+export type BoundaryFieldEnumEditResult = string[] | "back" | undefined;
 
 export type BoundaryBlockedResolution =
   | {
@@ -69,6 +72,10 @@ export type BoundaryReviewInteractiveSession = {
     view: BoundaryResourceReviewView,
     options?: { focusedAccess?: boolean },
   ): Promise<BoundaryFieldTierEditResult>;
+  editFieldEnumValues?(
+    view: BoundaryResourceReviewView,
+    field: string,
+  ): Promise<BoundaryFieldEnumEditResult>;
   resolveBlockedResource?(
     view: BoundaryResourceReviewView,
   ): Promise<BoundaryBlockedResolution>;
@@ -107,6 +114,7 @@ export function createBoundaryReviewInteractiveSession(
     chooseResource: (resources, overview, options) =>
       chooseResource(resources, overview, options, input, output),
     editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),
+    editFieldEnumValues: (view, field) => editFieldEnumValues(view, field, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
     promptText: (prompt) => readTerminalTextWithEscape(
       formatTextPromptWithBack(prompt, theme),
@@ -885,7 +893,7 @@ async function editFieldTiers(
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   let selected = 0;
   let showMap = false;
-  return withRawKeys(input, output, async (nextKey, render) => {
+  return withRawKeys<BoundaryFieldTierEditResult>(input, output, async (nextKey, render) => {
     while (true) {
       if (showMap) {
         render([
@@ -905,6 +913,10 @@ async function editFieldTiers(
       const start = boundedWindowStart(selected, fields.length, 12);
       const visible = fields.slice(start, start + 12);
       const highlighted = fields[selected]!;
+      const enumValues = reviewableEnumValues(view, highlighted);
+      const reviewedEnumValues = enumValues
+        ? currentReviewedEnumValues(view, highlighted, enumValues)
+        : undefined;
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
       render([
@@ -917,6 +929,9 @@ async function editFieldTiers(
         `${theme.key("P")} Privacy threshold: minimum group ${
           (view.candidate ?? view.generated_candidate)!.minimum_cohort_size
         } (${(view.candidate ?? view.generated_candidate)!.minimum_cohort_size === 1 ? "suppression off" : "small groups withheld"})`,
+        ...(enumValues
+          ? [`${theme.key("E")} Allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
+          : []),
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
         "",
         theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),
@@ -958,6 +973,9 @@ async function editFieldTiers(
         continue;
       }
       if (key.name === "p") return "privacy";
+      if (key.name === "e" && enumValues) {
+        return `enum:${highlighted.name}`;
+      }
       if (key.name === "up") selected = (selected - 1 + fields.length) % fields.length;
       if (key.name === "down") selected = (selected + 1) % fields.length;
       if (key.name === "space" || key.name === "right") {
@@ -972,6 +990,85 @@ async function editFieldTiers(
       if (key.name === "return" || key.name === "enter") return tiers;
     }
   });
+}
+
+async function editFieldEnumValues(
+  view: BoundaryResourceReviewView,
+  fieldName: string,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<BoundaryFieldEnumEditResult> {
+  const field = view.fields.find((candidate) => candidate.name === fieldName);
+  const schemaValues = field ? reviewableEnumValues(view, field) : undefined;
+  if (!field || !schemaValues) {
+    throw new Error(`${view.resource_id}.${fieldName} has no reviewed database-declared value list.`);
+  }
+  const selectedValues = new Set(currentReviewedEnumValues(view, field, schemaValues));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  let selected = 0;
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      const start = boundedWindowStart(selected, schemaValues.length, 12);
+      const visible = schemaValues.slice(start, start + 12);
+      render([
+        theme.title(`REVIEW ALLOWED VALUES - ${safeTerminalText(view.resource_id)}.${safeTerminalText(fieldName)}`),
+        "Runner learned this complete list from database schema metadata. No source rows were sampled.",
+        "The AI may filter or group only by checked values. Removed values are refused even if guessed.",
+        "Selecting none disables filtering and grouping for this column; it does not enable free-text access.",
+        "",
+        `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Toggle value   ` +
+          `${theme.key("A")} Keep all   ${theme.key("N")} Keep none`,
+        `${theme.key("Enter")} Continue to recorded review   ${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+        "",
+        ...visible.map((value, index) => {
+          const absolute = start + index;
+          const line = `${absolute === selected ? ">" : " "} ` +
+            `[${selectedValues.has(value) ? "x" : " "}] ${safeTerminalText(value)}`;
+          return absolute === selected ? theme.focus(line) : line;
+        }),
+        "",
+        theme.bold(`${selectedValues.size} of ${schemaValues.length} values kept`),
+      ]);
+      const key = await nextKey();
+      if (isBackToResources(key)) return "back";
+      if (isCancel(key)) return undefined;
+      if (key.name === "up") selected = (selected - 1 + schemaValues.length) % schemaValues.length;
+      if (key.name === "down") selected = (selected + 1) % schemaValues.length;
+      if (key.name === "space") {
+        const value = schemaValues[selected]!;
+        if (selectedValues.has(value)) selectedValues.delete(value);
+        else selectedValues.add(value);
+      }
+      if (key.name === "a") schemaValues.forEach((value) => selectedValues.add(value));
+      if (key.name === "n") selectedValues.clear();
+      if (key.name === "return" || key.name === "enter") {
+        return schemaValues.filter((value) => selectedValues.has(value));
+      }
+    }
+  });
+}
+
+function reviewableEnumValues(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+): string[] | undefined {
+  const candidate = view.candidate ?? view.generated_candidate;
+  if (!candidate || !field.enum_values?.length) return undefined;
+  const generatedEnum = Object.hasOwn(candidate.field_enums, field.name);
+  if (!generatedEnum && !field.enum_review_override) return undefined;
+  return [...field.enum_values];
+}
+
+function currentReviewedEnumValues(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+  schemaValues: string[],
+): string[] {
+  const candidate = view.candidate ?? view.generated_candidate;
+  if (Object.hasOwn(candidate?.field_enums ?? {}, field.name)) {
+    return [...(candidate?.field_enums[field.name] ?? [])];
+  }
+  return field.enum_review_override ? [] : [...schemaValues];
 }
 
 function currentFieldTier(view: BoundaryResourceReviewView, field: string): BoundaryFieldTier {

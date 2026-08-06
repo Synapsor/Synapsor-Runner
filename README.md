@@ -36,25 +36,26 @@ Use a SELECT-only, non-owner development or staging credential:
 npx -y @synapsor/runner start
 ```
 
-The first command needs no install. Later examples use `synapsor-runner`;
-install it once with:
+The first command needs no install. Later examples assume a global install:
 
 ```bash
 npm install --global @synapsor/runner
 ```
 
-Without a global install, prefix later commands with `npx -y @synapsor/runner`.
+Otherwise, prefix them with `npx -y @synapsor/runner`.
 
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner first
 inspects schema metadata, not source rows. It proposes conservative read access
 that grants the agent nothing until you review and activate it. You do not need
 to write DSL or JSON to begin.
 
-For a terminal-only journey:
+For the interactive terminal first run:
 
 ```bash
 synapsor-runner start --from-env DATABASE_URL --cli
 ```
+
+For automation, run `synapsor-runner onboard --help`; missing decisions are reported together.
 
 Review the conservative starting boundary, then press Enter to activate it. Use
 `M` to choose OpenAI, Anthropic, or a loopback model, and `E` to change tables
@@ -85,10 +86,7 @@ synapsor-runner mcp install \
   --project --authoring --project-root . --yes
 ```
 
-Cursor, Claude Code/Desktop, VS Code, Codex, OpenAI Agents, LangChain/LangGraph,
-Google ADK, LlamaIndex, and generic MCP clients are documented in
-[Client Recipes](docs/client-recipes.md). The no-model Workbench composer remains
-available when you want to construct an exact reviewed plan manually.
+See [Client Recipes](docs/client-recipes.md) for supported MCP hosts.
 
 Local development/staging Explore exposes only:
 
@@ -126,10 +124,11 @@ The model cannot activate the offered review path. Normal answers keep model
 interpretation separate from Runner-rendered facts; `/details` shows the exact
 typed request, validated plan, runtime checks, suppression, and evidence.
 
-Flexible Explore is intentionally local authoring access over stdio or secured
-loopback Workbench. Remote HTTP and production MCP surfaces expose only
-activated named capabilities. See [Explore And Protect](docs/auto-boundary-and-scoped-explore.md)
-and [Workbench Ask](docs/workbench-ask.md).
+Explore is local by default. Production opt-in over secured Streamable HTTP
+requires verified JWT scope, per-principal and tenant budgets, rate limits, and
+atomic shared-Postgres accounting. See
+[Production Scoped Explore Over HTTP](docs/production-scoped-explore-http.md)
+and [Explore And Protect](docs/auto-boundary-and-scoped-explore.md).
 
 ## Turn A Useful Question Into Production Access
 
@@ -144,8 +143,8 @@ artifacts fail closed. The model cannot invoke Protect or activation.
 `/details A2 --sql` can show an operator-only parameterized statement with all
 values redacted. SQL never reaches the model, MCP response, or durable evidence.
 
-For production, switch the selected project client from temporary Explore to
-the activated named capability:
+For fixed production question shapes, switch the selected project client from
+temporary Explore to the activated named capability:
 
 ```bash
 CLIENT=claude-code # or cursor / vscode
@@ -155,7 +154,9 @@ synapsor-runner mcp install "$CLIENT" --project \
   --yes
 ```
 
-Production does not expose `app.explore_data`.
+Protected capabilities remain the narrowest production choice. For reviewed
+ad-hoc analytics, `synapsor-runner config init --production-explore` generates
+secured runtime config from the boundary without secrets.
 
 ## Let Agents Propose Bounded Changes
 

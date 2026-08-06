@@ -96,7 +96,9 @@ export function instantLocalBoundaryCandidate(
   }
 
   const candidate = structuredClone(draft);
-  candidate.deployment_profile = "development";
+  candidate.deployment_profile = draft.deployment_profile === "production"
+    ? "production"
+    : "development";
   candidate.pack.resources = selected.map((resource) => ({
     ...structuredClone(resource),
     relationships: resource.relationships

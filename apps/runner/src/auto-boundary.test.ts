@@ -59,6 +59,51 @@ describe("Auto Boundary compiler", () => {
     expect(JSON.stringify(first)).not.toContain("customer@example.com");
   });
 
+  it("exposes only bounded low-risk schema vocabularies and binds reviewed narrowing into the digest", () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.columns.find((field) => field.name === "region")!.enum_values = ["north", "south"];
+    table.columns.find((field) => field.name === "id")!.enum_values = ["record_a", "record_b"];
+    table.columns.find((field) => field.name === "billing_token")!.enum_values = [
+      "secret_a",
+      "secret_b",
+    ];
+    table.columns.find((field) => field.name === "reason_category")!.enum_values =
+      Array.from({ length: 65 }, (_, index) => `reason_${index}`);
+
+    const generated = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/enums"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = generated.exploration_boundary.pack.resources[0]!;
+    expect(resource.field_enums).toEqual({ region: ["north", "south"] });
+    expect(JSON.stringify(resource.field_enums)).not.toMatch(/record_a|secret_a|reason_64/);
+
+    const overrides = applyManagedBoundaryReviewDecision({
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {},
+    }, {
+      kind: "field_enum",
+      resource_id: "public.subscriptions",
+      field: "region",
+      values: ["north"],
+      actor: "owner@example.test",
+      reason: "Keep this agent on the reviewed north-region vocabulary.",
+      decided_at: "2026-08-05T00:00:00.000Z",
+    });
+    const narrowed = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/enums"),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    expect(narrowed.exploration_boundary.pack.resources[0]!.field_enums)
+      .toEqual({ region: ["north"] });
+    expect(explorationBoundaryCandidateDigest(narrowed.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(generated.exploration_boundary));
+  });
+
   it("proposes only catalog-proven many-to-one paths, caps chains at two links, and requires nullable semantics", () => {
     const result = buildAutoBoundary({
       inspection: relationshipChainInspection({ nullableProduct: true }),
@@ -905,6 +950,11 @@ describe("Auto Boundary compiler", () => {
 
   it("prunes only review inputs invalidated by schema drift", () => {
     const inspection = churnInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "reason_category")!.enum_values = [
+      "north",
+      "south",
+      "new_region",
+    ];
     const decision = {
       value: "id",
       actor: "reviewer@example.test",
@@ -917,6 +967,14 @@ describe("Auto Boundary compiler", () => {
         "public.subscriptions": {
           row_identity: decision,
           tenant_key: { ...decision, value: "tenant_id" },
+          field_enums: {
+            reason_category: {
+              values: ["north", "removed_region"],
+              actor: decision.actor,
+              reason: decision.reason,
+              decided_at: decision.decided_at,
+            },
+          },
           fields: {
             region: {
               exposure: "keep_out" as const,
@@ -942,13 +1000,35 @@ describe("Auto Boundary compiler", () => {
     expect(result.overrides.resources["public.subscriptions"]).toMatchObject({
       row_identity: { value: "id" },
       tenant_key: { value: "tenant_id" },
+      field_enums: { reason_category: { values: ["north"] } },
       fields: { region: { exposure: "keep_out" } },
     });
     expect(result.overrides.resources).not.toHaveProperty("public.removed_table");
     expect(result.removed).toEqual([
       "public.removed_table: resource no longer exists",
+      "public.subscriptions.reason_category: values no longer declared by the database were removed from the reviewed vocabulary",
       "public.subscriptions.removed_field: reviewed field no longer exists",
     ]);
+
+    const noLongerCategorical = structuredClone(inspection);
+    delete noLongerCategorical.tables[0]!.columns
+      .find((field) => field.name === "reason_category")!.enum_values;
+    const disabled = pruneAutoBoundaryReviewOverrides(noLongerCategorical, result.overrides);
+    expect(disabled.overrides.resources["public.subscriptions"]?.field_enums?.reason_category?.values)
+      .toEqual([]);
+    expect(disabled.removed).toContain(
+      "public.subscriptions.reason_category: the schema-declared vocabulary is no longer provable; filtering and grouping remain disabled",
+    );
+    const rebuilt = buildAutoBoundary({
+      inspection: noLongerCategorical,
+      project: projectSummary("/workspace/pruned-enum"),
+      sourceEnv: "DATABASE_URL",
+      overrides: disabled.overrides,
+    });
+    const rebuiltResource = rebuilt.exploration_boundary.pack.resources[0]!;
+    expect(rebuiltResource.field_enums).not.toHaveProperty("reason_category");
+    expect(rebuiltResource.filterable_fields).not.toHaveProperty("reason_category");
+    expect(rebuiltResource.groupable_fields).not.toContain("reason_category");
   });
 
   it("keeps empty or entirely unscoped schemas at zero authority so Workbench can resolve exceptions", () => {
@@ -1266,7 +1346,9 @@ describe("Auto Boundary compiler", () => {
         confirmation: `ACTIVATE ${digest}`,
         confirmedDecisions: candidate.unresolved_decisions,
         currentInspection: privileged,
-      })).rejects.toThrow(/generation lock is stale|read-only/i);
+      })).rejects.toThrow(
+        /generation lock is stale[\s\S]*boundary draft --from-env DATABASE_URL --force && synapsor-runner boundary review/i,
+      );
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }
@@ -1349,6 +1431,79 @@ describe("Auto Boundary compiler", () => {
       build.exploration_boundary,
       narrowed,
     ).candidate.pack.resources[0]!.kept_out_fields).toContain("region");
+  });
+
+  it("builds and activates a separately reviewed production boundary bound to HTTP claims", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-boundary-"));
+    try {
+      const inspection = churnInspection();
+      const build = buildAutoBoundary({
+        inspection,
+        project: projectSummary(projectRoot),
+        sourceEnv: "DATABASE_URL",
+        deploymentProfile: "production",
+        httpClaims: {
+          tenantClaim: "org_id",
+          principalClaim: "sub",
+        },
+      });
+      expect(build.exploration_boundary).toMatchObject({
+        deployment_profile: "production",
+        source: "local_postgres",
+        trusted_context: {
+          provider: "http_claims",
+          tenant_claim: "org_id",
+          principal_claim: "sub",
+        },
+        pack: { name: "reviewed_production" },
+      });
+      expect(JSON.stringify(build.exploration_boundary)).not.toContain("SYNAPSOR_TENANT_ID");
+      expect(JSON.stringify(build.exploration_boundary)).not.toContain("SYNAPSOR_PRINCIPAL");
+
+      await writeAutoBoundaryArtifacts({ projectRoot, build });
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      const active = await activateExplorationBoundary({
+        projectRoot,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "production-owner@example.test",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      expect(active).toMatchObject({
+        deployment_profile: "production",
+        trusted_context: {
+          provider: "http_claims",
+          tenant_claim: "org_id",
+          principal_claim: "sub",
+        },
+        activation: { state: "active", actor: "production-owner@example.test" },
+      });
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("binds production claim names into authority and refuses implicit claim bindings", () => {
+    const input = {
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/production"),
+      sourceEnv: "DATABASE_URL",
+      deploymentProfile: "production" as const,
+    };
+    expect(() => buildAutoBoundary(input)).toThrow(/requires explicit tenant and principal HTTP claim names/);
+
+    const first = buildAutoBoundary({
+      ...input,
+      httpClaims: { tenantClaim: "org_id", principalClaim: "sub" },
+    });
+    const second = buildAutoBoundary({
+      ...input,
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "user_id" },
+    });
+    expect(explorationBoundaryCandidateDigest(first.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(second.exploration_boundary));
   });
 });
 
@@ -1539,7 +1694,7 @@ function column(
   name: string,
   dataType: string,
   overrides: Partial<{ tenant: boolean; conflict: boolean; sensitive: boolean; immutable: boolean; large_or_binary: boolean }> = {},
-) {
+): SchemaInspection["tables"][number]["columns"][number] {
   return {
     name,
     data_type: dataType,

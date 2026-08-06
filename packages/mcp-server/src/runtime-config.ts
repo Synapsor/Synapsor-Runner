@@ -138,12 +138,18 @@ export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cw
   const generatedAuthority = config.generated_authority?.generation_lock_path
     ? { ...config.generated_authority, generation_lock_path: path.resolve(baseDir, config.generated_authority.generation_lock_path) }
     : config.generated_authority;
+  const productionExplore = config.production_explore?.project_root
+    ? { ...config.production_explore, project_root: path.resolve(baseDir, config.production_explore.project_root) }
+    : config.production_explore;
   if (!Array.isArray(config.contracts) || config.contracts.length === 0) {
-    if (governance === config.governance && generatedAuthority === config.generated_authority) return config;
+    if (governance === config.governance
+      && generatedAuthority === config.generated_authority
+      && productionExplore === config.production_explore) return config;
     return {
       ...config,
       ...(governance ? { governance } : {}),
       ...(generatedAuthority ? { generated_authority: generatedAuthority } : {}),
+      ...(productionExplore ? { production_explore: productionExplore } : {}),
     };
   }
   const seenCapabilities = new Map<string, string>();
@@ -158,6 +164,7 @@ export function resolveRuntimeConfig(config: RuntimeConfig, baseDir = process.cw
     ...config,
     ...(governance ? { governance } : {}),
     ...(generatedAuthority ? { generated_authority: generatedAuthority } : {}),
+    ...(productionExplore ? { production_explore: productionExplore } : {}),
     contexts: { ...(config.contexts ?? {}) },
     capabilities: [...(config.capabilities ?? [])],
     policies: [...(config.policies ?? [])],

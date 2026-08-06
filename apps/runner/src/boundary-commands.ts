@@ -84,7 +84,7 @@ type BoundaryReviewBundle = {
   mutation_bindings: BoundaryReviewMutationBindings;
   authority: {
     source: string;
-    deployment_profile: "development" | "staging";
+    deployment_profile: "development" | "staging" | "production";
     compiler_version: string;
     spec_version: string;
     generation_lock_fingerprint: `sha256:${string}`;
@@ -1508,7 +1508,9 @@ async function confirmAndActivateFocusedBoundary(input: {
   }
   const actor = localInteractiveActor();
   const accepted = await input.session.confirm(
-    `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`,
+    context.candidate.deployment_profile === "production"
+      ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore?`
+      : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`,
     { defaultValue: true },
   );
   if (!accepted) {
@@ -1553,28 +1555,39 @@ function formatFocusedBoundaryActivationReview(
     const relationships = resource.relationships.map(
       (relationship) => `${relationship.target_resource} (${relationship.cardinality.replaceAll("_", "-")})`,
     );
+    const reviewedValues = Object.entries(resource.field_enums).map(
+      ([field, values]) => `${field}: ${values.join(" | ")}`,
+    );
     return [
       ...(index === 0 ? [] : [["", ""]]),
       ["Table", resource.id],
       ["Model + Runner", fieldList(modelFields)],
       ["Runner only", fieldList(resource.model_withheld_fields ?? [])],
       ["Kept out", fieldList(resource.kept_out_fields)],
+      ["Value allowlists", reviewedValues.length ? reviewedValues.join("; ") : "None"],
       ["Reviewed links", relationships.length ? relationships.join(", ") : "None"],
     ];
   });
   const tenantKeys = [...new Set(bundle.candidate.pack.resources.map((resource) => resource.tenant_key))];
-  const tenantBinding = bundle.candidate.trusted_context.database_role_tenant
-    ? `database role ${bundle.candidate.trusted_context.database_role_tenant.setting}`
-    : bundle.candidate.trusted_context.tenant_env;
+  const tenantBinding = bundle.candidate.trusted_context.provider === "http_claims"
+    ? `verified JWT claim ${bundle.candidate.trusted_context.tenant_claim}`
+    : bundle.candidate.trusted_context.database_role_tenant
+      ? `database role ${bundle.candidate.trusted_context.database_role_tenant.setting}`
+      : bundle.candidate.trusted_context.tenant_env;
   const principalScopes = bundle.candidate.pack.resources
     .filter((resource) => Boolean(resource.principal_key))
     .map((resource) => `${resource.id}.${resource.principal_key}`);
   const tenantScopeSummary = `${tenantKeys.length === 1
     ? `${tenantKeys[0]} on every table`
     : tenantKeys.join(", ")} via ${tenantBinding}`;
+  const principalBinding = bundle.candidate.trusted_context.provider === "http_claims"
+    ? `verified JWT claim ${bundle.candidate.trusted_context.principal_claim}`
+    : bundle.candidate.trusted_context.principal_env;
   const principalScopeSummary = principalScopes.length
-    ? `Required for ${principalScopes.join(", ")} via ${bundle.candidate.trusted_context.principal_env}`
-    : "Not required for this boundary";
+    ? `Row filtering required for ${principalScopes.join(", ")} via ${principalBinding}`
+    : bundle.candidate.deployment_profile === "production"
+      ? `Required for per-user privacy budgets via ${principalBinding}; no reviewed principal row column`
+      : "Not required for this boundary";
   const accessTable = formatTextTable(
     ["REVIEWED ACCESS", "VALUE"],
     accessRows,
@@ -1599,7 +1612,12 @@ function formatFocusedBoundaryActivationReview(
           ?? bundle.candidate.budgets.max_groups} candidate groups, suppress small cohorts, ` +
         `then return at most top ${bundle.candidate.budgets.max_top_n}`,
       ],
-      ["Writes", "None - this boundary is local read-only Explore"],
+      [
+        "Writes",
+        bundle.candidate.deployment_profile === "production"
+          ? "None - this boundary is read-only production Explore"
+          : "None - this boundary is local read-only Explore",
+      ],
     ],
     [22, 76],
   );
@@ -1751,7 +1769,9 @@ async function confirmBoundaryReviewInteractively(input: {
   if (boundaryDecisions.length) {
     process.stdout.write(formatBoundarySettingsSignoff(input.context.bundle));
     const accepted = await input.session.confirm(
-      "Confirm these boundary-wide local-authoring and trusted-scope settings?",
+      input.context.candidate.deployment_profile === "production"
+        ? "Confirm these boundary-wide production HTTP and trusted JWT scope settings?"
+        : "Confirm these boundary-wide local-authoring and trusted-scope settings?",
       { defaultValue: true },
     );
     if (accepted === undefined) {
@@ -1970,14 +1990,27 @@ async function interactiveBoundaryResourceReview(input: {
   });
   if (selected === "back") return "back";
   if (selected === "privacy") return interactiveMinimumCohortReview(input);
+  if (typeof selected === "string") {
+    if (selected.startsWith("enum:")) {
+      return interactiveBoundaryEnumReview({ ...input, field: selected.slice("enum:".length) });
+    }
+    throw new Error(`Unsupported column review action: ${selected}.`);
+  }
   if (!selected) {
-    process.stdout.write("Boundary column review cancelled. Nothing was saved or activated.\n");
+    process.stdout.write("Cancelled - no column access change was made or activated.\n");
     return 0;
   }
   const changed = changedFieldTiers(input.view, selected);
   const includeResource = !input.view.candidate && Boolean(input.view.generated_candidate);
   if (!changed.length && !includeResource) {
-    if (input.focusedAccess) return "back";
+    if (input.focusedAccess) {
+      process.stdout.write([
+        `Unchanged: ${input.resourceId} already has the access levels shown; no change was made.`,
+        "Agent authority is unchanged.",
+        "",
+      ].join("\n"));
+      return "back";
+    }
     await confirmBoundaryResourceInteractively({
       projectRoot: input.projectRoot,
       resourceId: input.resourceId,
@@ -2002,15 +2035,41 @@ async function interactiveBoundaryResourceReview(input: {
     ].join("\n"));
     return input.focusedAccess ? "back" : 0;
   }
-  const reason = explicitReasonRequired
-    ? await input.session.promptText(
-      trustedScopeChange
-        ? "Why may this fixed trusted-scope value use the selected output access level? "
-        : "Why may this sensitive field become available to Runner or the model? ",
-    )
-    : input.focusedAccess
+  let reason: string | undefined;
+  if (explicitReasonRequired) {
+    const auditedChanges = changed.map(({ field, tier }) =>
+      `${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}`);
+    const reviewedChangeLabel = trustedScopeChange ? "trusted-scope" : "sensitive-field";
+    process.stdout.write([
+      `This widens ${reviewedChangeLabel} access:`,
+      ...auditedChanges.map((change) => `  ${change}`),
+      `Reviewer: ${actor}`,
+      "A concrete reason is required before Runner can save this change.",
+      "Pressing Enter with an empty reason will not apply the change.",
+      "",
+    ].join("\n"));
+    const prompt = `Required reason for this ${reviewedChangeLabel} access change`;
+    while (reason === undefined) {
+      const entered = await input.session.promptText(`${prompt}: `);
+      if (entered === undefined) {
+        process.stdout.write(`Cancelled - no ${reviewedChangeLabel} access change was made.\n\n`);
+        return input.focusedAccess ? "back" : 0;
+      }
+      if (!entered.trim()) {
+        process.stdout.write([
+          "Rejected: a concrete reason is required; no change was made.",
+          "Enter the reason now, or press Esc to cancel.",
+          "",
+        ].join("\n"));
+        continue;
+      }
+      reason = entered.trim();
+    }
+  } else {
+    reason = input.focusedAccess
       ? "Staged through the focused access editor; this exact boundary revision requires final human confirmation."
       : await input.session.promptText("Reason for this access decision: ");
+  }
   if (!reason) {
     process.stdout.write([
       "Returned to column review. This access change was not saved.",
@@ -2030,11 +2089,22 @@ async function interactiveBoundaryResourceReview(input: {
     actor,
     reason,
   };
-  const preview = await prepareBoundaryResourceReviewMutation(
-    input.projectRoot,
-    request,
-    input.schemaInspector,
-  );
+  let preview: BoundaryReviewMutationPreview;
+  try {
+    preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      request,
+      input.schemaInspector,
+    );
+  } catch (error) {
+    if (!input.focusedAccess) throw error;
+    process.stdout.write([
+      `Rejected: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
+      "No boundary change was made or activated.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
   if (!input.focusedAccess) {
     process.stdout.write(formatBoundaryMutationPreview(preview, input.view));
     if (!await input.session.confirm(
@@ -2045,13 +2115,35 @@ async function interactiveBoundaryResourceReview(input: {
       return 0;
     }
   }
-  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>;
+  try {
+    committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  } catch (error) {
+    if (!input.focusedAccess) throw error;
+    process.stdout.write([
+      `Rejected: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
+      "No boundary change was made or activated.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
   process.stdout.write(input.focusedAccess
-    ? formatFocusedBoundaryEditSaved(
-      input.resourceId,
-      includeResource ? "added" : "updated",
-      committed.review_revision,
-    )
+    ? [
+      formatFocusedBoundaryEditSaved(
+        input.resourceId,
+        includeResource ? "added" : "updated",
+        committed.review_revision,
+      ).trimEnd(),
+      ...changed.map(({ field, tier }) =>
+        `Recorded: ${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}; actor=${actor}; reason=${JSON.stringify(reason)}`),
+      ...(changed.some(({ tier }) => tier === "withheld_from_model")
+        ? [
+          "Access-level note: Runner only controls where raw values can appear; it does not grant Group, Total/Average, or Count unique.",
+          "If an operation was refused, review that operation separately in Workbench Advanced field operations or with --group-fields, --measure-fields, or --count-distinct-fields.",
+        ]
+        : []),
+      "",
+    ].join("\n")
     : formatBoundaryMutationCommit(
       input.projectRoot,
       committed.review_revision,
@@ -2059,6 +2151,107 @@ async function interactiveBoundaryResourceReview(input: {
       actor,
     ));
   return input.focusedAccess ? "back" : 0;
+}
+
+async function interactiveBoundaryEnumReview(input: {
+  projectRoot: string;
+  resourceId: string;
+  field: string;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  focusedAccess?: boolean;
+}): Promise<number | "back" | "review"> {
+  const inspectedField = input.view.fields.find((field) => field.name === input.field);
+  const schemaValues = inspectedField?.enum_values;
+  const candidate = input.view.candidate ?? input.view.generated_candidate;
+  if (!inspectedField || !schemaValues?.length || !candidate) {
+    process.stdout.write(
+      `Unchanged: ${input.resourceId}.${input.field} has no bounded database-declared value list to review.\n`,
+    );
+    return "back";
+  }
+  if (!input.session.editFieldEnumValues) {
+    throw new Error("This terminal session cannot edit reviewed categorical values.");
+  }
+  const selected = await input.session.editFieldEnumValues(input.view, input.field);
+  if (selected === "back") return "back";
+  if (!selected) {
+    process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
+    return "back";
+  }
+  const current = Object.hasOwn(candidate.field_enums, input.field)
+    ? candidate.field_enums[input.field] ?? []
+    : inspectedField.enum_review_override
+      ? []
+      : schemaValues;
+  if (JSON.stringify(current) === JSON.stringify(selected)) {
+    process.stdout.write([
+      `Unchanged: ${input.resourceId}.${input.field} already uses these allowed values.`,
+      "Agent authority is unchanged.",
+      "",
+    ].join("\n"));
+    return "back";
+  }
+
+  const actor = input.focusedAccess
+    ? localInteractiveActor()
+    : await input.session.promptText("Human reviewer identity (audit label, not a password): ");
+  if (!actor) {
+    process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
+    return "back";
+  }
+  process.stdout.write([
+    `Reviewing allowed values for ${input.resourceId}.${input.field}.`,
+    `Database-declared maximum: ${schemaValues.join(", ")}`,
+    `Values to keep: ${selected.length ? selected.join(", ") : "none"}`,
+    selected.length
+      ? "Removed values will be refused before a source query, even if an AI guesses them."
+      : "Keeping none disables filtering and grouping for this column; it does not enable free-text access.",
+    `Reviewer: ${actor}`,
+    "A concrete reason is required. Pressing Enter with an empty reason will not save the change.",
+    "",
+  ].join("\n"));
+  let reason: string | undefined;
+  while (reason === undefined) {
+    const entered = await input.session.promptText("Required reason for this allowed-value change: ");
+    if (entered === undefined) {
+      process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
+      return "back";
+    }
+    if (!entered.trim()) {
+      process.stdout.write([
+        "Rejected: a concrete reason is required; no change was made.",
+        "Enter the reason now, or press Esc to cancel.",
+        "",
+      ].join("\n"));
+      continue;
+    }
+    reason = entered.trim();
+  }
+
+  const preview = await prepareBoundaryResourceReviewMutation(
+    input.projectRoot,
+    {
+      resource_id: input.resourceId,
+      ...(!input.view.candidate && input.view.generated_candidate ? { include: true } : {}),
+      field_enum: { field: input.field, values: selected },
+      actor,
+      reason,
+    },
+    input.schemaInspector,
+  );
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Recorded: ${input.resourceId}.${input.field} allowed values -> ${selected.length ? selected.join(" | ") : "none (filtering and grouping disabled)"}.`,
+    `Actor: ${actor}. Reason: ${reason}`,
+    `Saved in disabled boundary revision ${committed.review_revision}. Agent authority changed: no.`,
+    "The active Ask session keeps using the previous boundary until this revision is reviewed and activated.",
+    "",
+  ].join("\n"));
+  return input.focusedAccess
+    ? offerImmediateBoundaryActivation(input.session)
+    : "back";
 }
 
 async function interactiveMinimumCohortReview(input: {
@@ -2267,6 +2460,12 @@ function focusedEditNeedsExplicitReason(
     return (previous === "kept_out" && tier !== "kept_out")
       || (previous === "withheld_from_model" && tier === "visible");
   });
+}
+
+function focusedTierOutcome(tier: BoundaryFieldTier): string {
+  if (tier === "withheld_from_model") return "Runner only (withheld from model)";
+  if (tier === "kept_out") return "Kept out";
+  return "Model + Runner";
 }
 
 function formatFocusedBoundaryEditSaved(
@@ -2869,7 +3068,9 @@ export async function boundaryActivateCommand(
     process.stdout.write([
       formatBoundaryReviewSummary(context.bundle, { nextAction: false }).trimEnd(),
       `Exact reviewed fingerprint: ${context.bundle.candidate_digest}`,
-      "Activation adds this reviewed boundary to local read-only Explore. Each query remains inside exactly one active boundary.",
+      context.candidate.deployment_profile === "production"
+        ? "Activation makes this boundary eligible only for an explicitly configured secured production HTTP Explore runtime."
+        : "Activation adds this reviewed boundary to local read-only Explore. Each query remains inside exactly one active boundary.",
       "",
     ].join("\n"));
     if (!confirmation) {
@@ -2926,7 +3127,9 @@ export async function boundaryActivateCommand(
       status: "boundary_active",
       completedStep: "boundary_active",
       authorityActive: true,
-      recommendedNextAction: "Choose a model or MCP client and ask your first reviewed question.",
+      recommendedNextAction: active.deployment_profile === "production"
+        ? "Configure the secured production HTTP runtime, initialize shared accounting, and run doctor before serving."
+        : "Choose a model or MCP client and ask your first reviewed question.",
       now: active.activation.activated_at,
     }).catch(() => undefined);
     if (consumedDecision) {
@@ -2950,7 +3153,9 @@ export async function boundaryActivateCommand(
         contract_digest: active.activation.digest,
         attention_required: false,
         immediate_default: false,
-        summary: "Verified operator activated reviewed local authoring authority",
+        summary: active.deployment_profile === "production"
+          ? "Verified operator activated reviewed production HTTP Explore authority"
+          : "Verified operator activated reviewed local authoring authority",
         workbench_path: "/",
         details: {
           authority_type: "scoped_explore",
@@ -2973,7 +3178,9 @@ export async function boundaryActivateCommand(
     process.stdout.write(args.includes("--json")
       ? `${JSON.stringify(payload, null, 2)}\n`
       : [
-        `Reviewed boundary "${active.pack.name}" is active for local read-only Explore.`,
+        active.deployment_profile === "production"
+          ? `Reviewed boundary "${active.pack.name}" is active for secured production HTTP Explore.`
+          : `Reviewed boundary "${active.pack.name}" is active for local read-only Explore.`,
         `Exact fingerprint: ${active.activation.digest}`,
         "Source database changed: no",
         "",
@@ -2996,7 +3203,11 @@ export async function boundaryActivateCommand(
   } finally {
     consumedDecision?.store.close();
   }
-  if (!headless && !args.includes("--json") && activationHandoff && activatedBoundary) {
+  if (!headless
+    && !args.includes("--json")
+    && activationHandoff
+    && activatedBoundary
+    && activatedBoundary.deployment_profile !== "production") {
     return activationHandoff({
       projectRoot,
       boundaryName: activatedBoundary.pack.name,
@@ -3004,9 +3215,13 @@ export async function boundaryActivateCommand(
     });
   }
   if (!headless && !args.includes("--json") && activatedBoundary) {
-    process.stdout.write(
-      `Next: ${cliCommandName()} try ask --provider openai --model gpt-5-mini\n`,
-    );
+    process.stdout.write(activatedBoundary.deployment_profile === "production"
+      ? [
+        "Next: configure the secured production HTTP runtime, initialize its shared accounting ledger, and run doctor.",
+        "Guide: docs/production-scoped-explore-http.md",
+        "",
+      ].join("\n")
+      : `Next: ${cliCommandName()} try ask --provider openai --model gpt-5-mini\n`);
   }
   return 0;
 }
@@ -3148,7 +3363,9 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
     rows.push([
       "Boundary settings",
       "-",
-      "local authoring + trusted scope",
+      bundle.authority.deployment_profile === "production"
+        ? "production HTTP + JWT scope"
+        : `${bundle.authority.deployment_profile} local authoring`,
       "-",
       "Sign-off needed",
     ]);
@@ -3198,7 +3415,9 @@ function formatBoundarySettingsSignoff(bundle: BoundaryReviewBundle): string {
       [
         [
           "Where this can run",
-          `${bundle.authority.deployment_profile} local authoring; production and remote Explore are refused`,
+          bundle.authority.deployment_profile === "production"
+            ? "production over secured Streamable HTTP; explicit runtime opt-in and verified JWT scope required"
+            : `${bundle.authority.deployment_profile} local authoring; production and remote Explore are refused`,
         ],
         [
           "Customer/user scope",

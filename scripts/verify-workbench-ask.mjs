@@ -507,6 +507,33 @@ try {
       "Ask did not offer an operator path to review or expand the boundary",
       boundaryGuide,
     );
+    await evaluate(page, "document.querySelector('#ask-boundary-body [data-boundary-catalog-map]').open=true");
+    await waitForExpression(page, "document.querySelectorAll('#ask-boundary-body .boundary-catalog-graph svg path.edge').length > 0");
+    const relationshipMap = await evaluate(page, `({
+      boundaries:[...document.querySelectorAll('#ask-boundary-body [data-boundary-catalog-select] option')].map(option=>option.value),
+      summary:document.querySelector('#ask-boundary-body [data-boundary-catalog-summary]')?.textContent,
+      arrows:document.querySelectorAll('#ask-boundary-body .boundary-catalog-graph svg path.edge').length,
+      nodes:document.querySelectorAll('#ask-boundary-body .boundary-catalog-graph svg rect.node').length,
+      questions:document.querySelector('#ask-boundary-body .boundary-catalog-questions')?.textContent,
+      mermaid:document.querySelector('#ask-boundary-body .boundary-catalog-mermaid pre')?.textContent,
+      downloadLabel:document.querySelector('#ask-boundary-body [data-download-boundary-diagram]')?.textContent
+    })`);
+    assert(
+      relationshipMap.boundaries.length === 1
+        && relationshipMap.boundaries[0] === "reviewed_staging"
+        && /one exact active boundary; it is never merged/i.test(String(relationshipMap.summary))
+        && relationshipMap.arrows >= 1
+        && relationshipMap.nodes >= 2
+        && /try cross-table questions/i.test(String(relationshipMap.questions))
+        && /account (region|status)/i.test(String(relationshipMap.questions))
+        && /erDiagram/.test(String(relationshipMap.mermaid))
+        && /PUBLIC_(INVOICES|ORDERS).*PUBLIC_ACCOUNTS/s.test(String(relationshipMap.mermaid))
+        && /download full diagram/i.test(String(relationshipMap.downloadLabel)),
+      "Workbench did not render the exact active-boundary relationship graph and export",
+      relationshipMap,
+    );
+    await evaluate(page, "document.querySelector('#ask-boundary-body [data-boundary-catalog-map]').scrollIntoView({behavior:'auto',block:'start'})");
+    await screenshot(page, "workbench-ask-relationship-map-desktop.png");
     const firstBoundaryPage = await evaluate(page, `({
       status:document.querySelector(".ask-boundary-pagination-status")?.textContent,
       headings:[...document.querySelectorAll("#ask-boundary-body .ask-boundary-resource h4")].map(node=>node.textContent),
@@ -988,12 +1015,20 @@ function supportingAnalyticsTable(name) {
     columns: [
       column("id", "uuid", { immutable: true }),
       column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("account_id", "uuid", { immutable: true }),
       column("status", "text"),
       column("created_at", "timestamp with time zone"),
     ],
     primary_key: ["id"],
     unique_constraints: [{ name: `${name}_pkey`, columns: ["id"] }],
-    foreign_keys: [],
+    foreign_keys: [{
+      name: `${name}_account_fkey`,
+      columns: ["account_id"],
+      referenced_schema: "public",
+      referenced_table: "accounts",
+      referenced_columns: ["id"],
+      nullable: false,
+    }],
     indexes: [{ name: `${name}_pkey`, columns: ["id"], unique: true }],
     row_level_security: true,
     row_level_security_policies: [{
@@ -1023,7 +1058,7 @@ function supportingAnalyticsTable(name) {
       tenant_columns: ["tenant_id"],
       conflict_columns: [],
       sensitive_columns: [],
-      default_visible_columns: ["id", "tenant_id", "status", "created_at"],
+      default_visible_columns: ["id", "tenant_id", "account_id", "status", "created_at"],
     },
   };
 }
